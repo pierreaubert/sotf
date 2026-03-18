@@ -21,8 +21,8 @@ use super::loss::{
     DriversLossData, HeadphoneLossData, LossType, SpeakerLossData, drivers_flat_loss, flat_loss,
     flat_loss_asymmetric, headphone_loss, speaker_score_loss,
 };
-use super::optim_de::optimize_filters_autoeq;
-use super::optim_mh::optimize_filters_mh;
+use super::optim_de::{optimize_filters_autoeq, optimize_filters_autoeq_with_callback};
+use super::optim_mh::{optimize_filters_mh, optimize_filters_mh_with_callback};
 #[cfg(feature = "nlopt")]
 use super::optim_nlopt::optimize_filters_nlopt;
 use super::x2peq::x2spl;
@@ -805,6 +805,77 @@ pub fn optimize_filters_with_algo_override(
             &autoeq_name,
             cli_args,
         ),
+        None => Err((format!("Unknown algorithm: {}", algo), f64::INFINITY)),
+    }
+}
+
+/// Simple progress callback: (iteration, best_loss) -> continue/stop
+///
+/// Used to thread per-iteration optimizer progress through the room EQ call chain.
+pub type OptimProgressCallback =
+    Box<dyn FnMut(usize, f64) -> crate::de::CallbackAction + Send>;
+
+/// Optimize filter parameters with a progress callback for per-iteration updates.
+///
+/// Wraps the simple `(iteration, loss)` callback into the library-specific
+/// intermediate types expected by DE and MH optimizers. NLopt has no callback
+/// support so the callback is ignored for NLopt algorithms.
+#[allow(clippy::too_many_arguments)]
+pub fn optimize_filters_with_callback(
+    x: &mut [f64],
+    lower_bounds: &[f64],
+    upper_bounds: &[f64],
+    objective_data: ObjectiveData,
+    cli_args: &crate::cli::Args,
+    mut callback: OptimProgressCallback,
+) -> Result<(String, f64), (String, f64)> {
+    let algo = &cli_args.algo;
+    let population = cli_args.population;
+    let maxeval = cli_args.maxeval;
+
+    match parse_algorithm_name(algo) {
+        #[cfg(feature = "nlopt")]
+        Some(AlgorithmCategory::Nlopt(nlopt_algo)) => {
+            // NLopt does not support iteration callbacks — run without one
+            optimize_filters_nlopt(
+                x,
+                lower_bounds,
+                upper_bounds,
+                objective_data,
+                nlopt_algo,
+                population,
+                maxeval,
+            )
+        }
+        Some(AlgorithmCategory::Metaheuristics(mh_name)) => {
+            let mh_cb: Box<
+                dyn FnMut(&super::optim_mh::MHIntermediate) -> crate::de::CallbackAction + Send,
+            > = Box::new(move |intermediate| callback(intermediate.iter, intermediate.fun));
+            optimize_filters_mh_with_callback(
+                x,
+                lower_bounds,
+                upper_bounds,
+                objective_data,
+                &mh_name,
+                population,
+                maxeval,
+                mh_cb,
+            )
+        }
+        Some(AlgorithmCategory::AutoEQ(autoeq_name)) => {
+            let de_cb: Box<
+                dyn FnMut(&crate::de::DEIntermediate) -> crate::de::CallbackAction + Send,
+            > = Box::new(move |intermediate| callback(intermediate.iter, intermediate.fun));
+            optimize_filters_autoeq_with_callback(
+                x,
+                lower_bounds,
+                upper_bounds,
+                objective_data,
+                &autoeq_name,
+                cli_args,
+                de_cb,
+            )
+        }
         None => Err((format!("Unknown algorithm: {}", algo), f64::INFINITY)),
     }
 }

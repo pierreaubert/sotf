@@ -29,6 +29,9 @@ pub const HIGHSHELF_FREQ: f64 = 4000.0;
 /// Maximum allowed shelf gain magnitude (dB)
 const MAX_SHELF_GAIN_DB: f64 = 6.0;
 
+/// Maximum allowed flat gain magnitude (dB) — prevents solver divergence on narrow-band data
+const MAX_FLAT_GAIN_DB: f64 = 12.0;
+
 /// Minimum correction magnitude to bother applying (dB)
 const MIN_CORRECTION_DB: f64 = 0.3;
 
@@ -118,10 +121,10 @@ pub fn compute_spectral_alignment(
         let (ls_fit, hs_fit, flat_fit, residual_rms) =
             fit_shelf_gain_iterative(&diff, &active_freq, sample_rate, &weights);
 
-        // Negate to get corrections, then clamp shelf gains
+        // Negate to get corrections, then clamp gains
         let ls_gain = (-ls_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
         let hs_gain = (-hs_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
-        let flat_gain = -flat_fit;
+        let flat_gain = (-flat_fit).clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB);
 
         results.insert(
             name.clone(),
@@ -276,7 +279,7 @@ pub fn compute_target_alignment(
     // Determine corrections (negative of fit)
     let ls_gain = (-ls_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
     let hs_gain = (-hs_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
-    let flat_gain = -flat_fit;
+    let flat_gain = (-flat_fit).clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB);
 
     // If corrections are negligible, return None
     if ls_gain.abs() < MIN_CORRECTION_DB
@@ -483,10 +486,18 @@ fn fit_shelf_gain_iterative(
 
     // Initial linear estimate using 1 dB basis
     let (ls_basis, hs_basis) = build_basis_vectors(freq, sample_rate);
-    let (mut ls_gain, mut hs_gain, mut flat_gain, _) =
+    let (ls_init, hs_init, flat_init, _) =
         solve_3x3_wls(diff, &ls_basis, &hs_basis, &flat_basis, weights);
 
-    // Gauss-Newton refinement
+    // NaN guard on initial solve (ill-conditioned matrix)
+    let (mut ls_gain, mut hs_gain, mut flat_gain) =
+        if !ls_init.is_finite() || !hs_init.is_finite() || !flat_init.is_finite() {
+            (0.0, 0.0, 0.0)
+        } else {
+            (ls_init, hs_init, flat_init)
+        };
+
+    // Gauss-Newton refinement with bounded iteration to prevent divergence
     for _ in 0..SHELF_FIT_ITERATIONS {
         // Evaluate actual nonlinear shelf response at current gains
         let actual = evaluate_shelf_response(freq, sample_rate, ls_gain, hs_gain, flat_gain);
@@ -498,9 +509,20 @@ fn fit_shelf_gain_iterative(
         // Solve for corrections (flat basis Jacobian is trivially 1.0)
         let (d_ls, d_hs, d_flat, _) = solve_3x3_wls(&residual, &j_ls, &j_hs, &flat_basis, weights);
 
+        // NaN guard: if the solver diverged, stop iterating
+        if !d_ls.is_finite() || !d_hs.is_finite() || !d_flat.is_finite() {
+            break;
+        }
+
         ls_gain += d_ls;
         hs_gain += d_hs;
         flat_gain += d_flat;
+
+        // Clamp intermediate values to prevent divergence on narrow-band data
+        // where basis vectors can become nearly collinear
+        ls_gain = ls_gain.clamp(-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0);
+        hs_gain = hs_gain.clamp(-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0);
+        flat_gain = flat_gain.clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB);
     }
 
     // Final residual RMS

@@ -147,28 +147,32 @@ cross-windows-x86: cross-base-win-x86
 # MACOS (native build, outputs to dist/)
 # ----------------------------------------------------------------------
 
-# macOS ARM64: SotF + sotf-tui → dist/
+# macOS ARM64: SotF DMG + sotf-tui → dist/
 [group('cross')]
 cross-macos-arm64:
 	@echo "Building macOS ARM64 binaries..."
-	cargo build --release --target aarch64-apple-darwin --bin sotf-tui
-	cargo build --release --target aarch64-apple-darwin --bin SotF -p sotf-gpui
+	cargo build --release --target aarch64-apple-darwin --bin sotf-tui --features hal,onnx
+	cargo build --release --target aarch64-apple-darwin --bin SotF -p sotf-gpui --features hal,onnx
 	mkdir -p dist
 	cp target/aarch64-apple-darwin/release/sotf-tui dist/sotf-tui-macos-arm64
 	cp target/aarch64-apple-darwin/release/SotF dist/SotF-macos-arm64
-	@echo "Done! Binaries copied to dist/"
+	@echo "Building DMG..."
+	./scripts/build-dmg-sotf.sh --arch arm64
+	@echo "Done! Binaries and DMG copied to dist/"
 
-# macOS x86_64: SotF + sotf-tui → dist/
+# macOS x86_64: SotF DMG + sotf-tui → dist/
 [group('cross')]
 cross-macos-x86:
 	@echo "Building macOS x86_64 binaries..."
 	rustup target add x86_64-apple-darwin 2>/dev/null || true
-	cargo build --release --target x86_64-apple-darwin --bin sotf-tui
-	cargo build --release --target x86_64-apple-darwin --bin SotF -p sotf-gpui
+	cargo build --release --target x86_64-apple-darwin --bin sotf-tui --features hal,onnx
+	cargo build --release --target x86_64-apple-darwin --bin SotF -p sotf-gpui --features hal,onnx
 	mkdir -p dist
 	cp target/x86_64-apple-darwin/release/sotf-tui dist/sotf-tui-macos-x86_64
 	cp target/x86_64-apple-darwin/release/SotF dist/SotF-macos-x86_64
-	@echo "Done! Binaries copied to dist/"
+	@echo "Building DMG..."
+	./scripts/build-dmg-sotf.sh --arch x86_64
+	@echo "Done! Binaries and DMG copied to dist/"
 
 # macOS DMG (build only, sign separately with sign-macos.sh)
 [group('cross')]

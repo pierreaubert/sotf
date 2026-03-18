@@ -257,10 +257,10 @@ build_binary() {
 
     if $CROSS_COMPILE; then
         log_info "Cross-compiling for $TARGET..."
-        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$PACKAGE_NAME" --target "$TARGET"
+        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$PACKAGE_NAME" --target "$TARGET" --features onnx
     else
         log_info "Building native Linux binary..."
-        cargo build --release --package "$PACKAGE_NAME"
+        cargo build --release --package "$PACKAGE_NAME" --features onnx
     fi
 
     if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then
@@ -273,9 +273,9 @@ build_binary() {
     # Build TUI binary
     log_info "Building TUI binary..."
     if $CROSS_COMPILE; then
-        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$TUI_PACKAGE_NAME" --target "$TARGET"
+        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$TUI_PACKAGE_NAME" --target "$TARGET" --features onnx
     else
-        cargo build --release --package "$TUI_PACKAGE_NAME"
+        cargo build --release --package "$TUI_PACKAGE_NAME" --features onnx
     fi
 
     if [ ! -f "$BUILD_DIR/$TUI_BINARY_NAME" ]; then

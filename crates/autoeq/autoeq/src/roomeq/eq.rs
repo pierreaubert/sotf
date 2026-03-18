@@ -31,6 +31,27 @@ pub fn optimize_channel_eq(
     target_config: Option<&TargetCurveConfig>,
     sample_rate: f64,
 ) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
+    optimize_channel_eq_inner(curve, config, target_config, sample_rate, None)
+}
+
+/// Optimize EQ filters for a single channel with per-iteration progress callback
+pub fn optimize_channel_eq_with_callback(
+    curve: &Curve,
+    config: &OptimizerConfig,
+    target_config: Option<&TargetCurveConfig>,
+    sample_rate: f64,
+    callback: crate::optim::OptimProgressCallback,
+) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
+    optimize_channel_eq_inner(curve, config, target_config, sample_rate, Some(callback))
+}
+
+fn optimize_channel_eq_inner(
+    curve: &Curve,
+    config: &OptimizerConfig,
+    target_config: Option<&TargetCurveConfig>,
+    sample_rate: f64,
+    callback: Option<crate::optim::OptimProgressCallback>,
+) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
     // Clamp optimizer frequency range to measurement data range.
     // Without this, filters get distributed into regions with no data and produce
     // nonsensical gains (e.g. -70 dB) that don't affect the loss function.
@@ -238,13 +259,24 @@ pub fn optimize_channel_eq(
     let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
 
     // Perform optimization
-    let opt_result = crate::optim::optimize_filters(
-        &mut x,
-        &lower_bounds,
-        &upper_bounds,
-        objective_data.clone(),
-        &args,
-    );
+    let opt_result = if let Some(cb) = callback {
+        crate::optim::optimize_filters_with_callback(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data.clone(),
+            &args,
+            cb,
+        )
+    } else {
+        crate::optim::optimize_filters(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data.clone(),
+            &args,
+        )
+    };
 
     // Handle result - optimizer returns Result<(String, f64), (String, f64)>
     let (_converged_msg, final_loss) = match opt_result {
@@ -295,6 +327,37 @@ pub fn optimize_channel_eq_multi(
     multi_config: &MultiMeasurementConfig,
     target_config: Option<&TargetCurveConfig>,
     sample_rate: f64,
+) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
+    optimize_channel_eq_multi_inner(curves, config, multi_config, target_config, sample_rate, None)
+}
+
+/// Optimize EQ across multiple measurement curves with per-iteration progress callback
+pub fn optimize_channel_eq_multi_with_callback(
+    curves: &[Curve],
+    config: &OptimizerConfig,
+    multi_config: &MultiMeasurementConfig,
+    target_config: Option<&TargetCurveConfig>,
+    sample_rate: f64,
+    callback: crate::optim::OptimProgressCallback,
+) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
+    optimize_channel_eq_multi_inner(
+        curves,
+        config,
+        multi_config,
+        target_config,
+        sample_rate,
+        Some(callback),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn optimize_channel_eq_multi_inner(
+    curves: &[Curve],
+    config: &OptimizerConfig,
+    multi_config: &MultiMeasurementConfig,
+    target_config: Option<&TargetCurveConfig>,
+    sample_rate: f64,
+    callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
     assert!(!curves.is_empty(), "curves must not be empty");
 
@@ -465,8 +528,18 @@ pub fn optimize_channel_eq_multi(
     let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
 
     // Run optimization
-    let opt_result =
-        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, primary, &args);
+    let opt_result = if let Some(cb) = callback {
+        crate::optim::optimize_filters_with_callback(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            primary,
+            &args,
+            cb,
+        )
+    } else {
+        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, primary, &args)
+    };
 
     let (_converged_msg, final_loss) = match opt_result {
         Ok((msg, loss)) => (msg, loss),

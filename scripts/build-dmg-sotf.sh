@@ -37,6 +37,7 @@ APP_BUNDLE="$DMG_DIR/$APP_NAME.app"
 # Command line options
 UNIVERSAL=false
 CLEAN=false
+ARCH=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -49,11 +50,16 @@ while [[ $# -gt 0 ]]; do
             CLEAN=true
             shift
             ;;
+        --arch)
+            ARCH="$2"
+            shift 2
+            ;;
         --help|-h)
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
             echo "  --universal   Build universal binary (Intel + Apple Silicon)"
+            echo "  --arch <arch> Architecture label for DMG name (e.g., arm64, x86_64)"
             echo "  --clean       Clean build directory before building"
             echo "  --help        Show this help message"
             echo ""
@@ -66,6 +72,13 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Build DMG filename with optional arch
+if [ -n "$ARCH" ]; then
+    DMG_FILENAME="$APP_NAME-macos-${ARCH}-${VERSION}.dmg"
+else
+    DMG_FILENAME="$APP_NAME-${VERSION}.dmg"
+fi
 
 # Color output
 RED='\033[0;31m'
@@ -124,8 +137,8 @@ build_binary() {
         rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
         # Build for both architectures
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --target x86_64-apple-darwin --target-dir ./target-static
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --target aarch64-apple-darwin --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features hal,onnx --target x86_64-apple-darwin --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features hal,onnx --target aarch64-apple-darwin --target-dir ./target-static
 
         # Create universal binary
         mkdir -p "$BUILD_DIR"
@@ -136,7 +149,7 @@ build_binary() {
 
         log_success "Universal binary created"
     else
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features hal,onnx --target-dir ./target-static
     fi
 
     if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then
@@ -332,7 +345,7 @@ create_icns() {
 create_dmg() {
     log_info "Creating DMG..."
 
-    local dmg_path="$DMG_DIR/$APP_NAME-$VERSION.dmg"
+    local dmg_path="$DMG_DIR/$DMG_FILENAME"
     local dmg_temp="$DMG_DIR/temp.dmg"
 
     rm -f "$dmg_path" "$dmg_temp"
@@ -408,7 +421,7 @@ main() {
     log_success "Build complete!"
     log_info "=========================================="
 
-    local dmg_path="$DMG_DIR/$APP_NAME-$VERSION.dmg"
+    local dmg_path="$DMG_DIR/$DMG_FILENAME"
     if [ -f "$dmg_path" ]; then
         # Copy final artifact to dist/
         mkdir -p "$PROJECT_ROOT/dist"

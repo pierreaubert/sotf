@@ -8,7 +8,7 @@
 # Usage:
 #   ./sign-macos.sh                    # Sign all artifacts in dist/
 #   ./sign-macos.sh --notarize         # Sign and notarize
-#   ./sign-macos.sh dist/SotF-0.5.11.dmg  # Sign a specific file
+#   ./sign-macos.sh dist/SotF-macos-arm64-X.Y.Z.dmg  # Sign a specific file
 #
 # Environment variables:
 #   DEVELOPER_ID             - Developer ID Application certificate name
@@ -22,6 +22,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$PROJECT_ROOT/dist"
+
+# Extract version from root Cargo.toml
+VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+if [ -z "$VERSION" ]; then
+    echo "ERROR: Could not extract version from Cargo.toml"
+    exit 1
+fi
 
 NOTARIZE=false
 SPECIFIC_FILES=()
@@ -86,16 +93,107 @@ check_prerequisites() {
     fi
 }
 
-# Sign a DMG file
+# Sign a DMG file (signs the app bundle inside, then recreates the DMG)
 sign_dmg() {
     local dmg_path="$1"
-    log_info "Signing DMG: $(basename "$dmg_path")"
+    local dmg_name
+    dmg_name=$(basename "$dmg_path")
+    log_info "Signing DMG: $dmg_name"
 
+    # Mount the DMG to extract the app bundle
+    local mount_point
+    mount_point=$(mktemp -d)
+    hdiutil attach "$dmg_path" -mountpoint "$mount_point" -nobrowse -quiet
+
+    # Find the .app bundle inside
+    local app_bundle=""
+    for app in "$mount_point"/*.app; do
+        if [ -d "$app" ]; then
+            app_bundle="$app"
+            break
+        fi
+    done
+
+    if [ -z "$app_bundle" ]; then
+        hdiutil detach "$mount_point" -quiet
+        rmdir "$mount_point"
+        log_error "No .app bundle found inside DMG"
+        exit 1
+    fi
+
+    local app_name
+    app_name=$(basename "$app_bundle")
+    log_info "  Found app bundle: $app_name"
+
+    # Copy the app bundle to a staging area (DMG is read-only)
+    local staging_dir
+    staging_dir=$(mktemp -d)
+    cp -R "$app_bundle" "$staging_dir/"
+
+    # Also copy any other files from the DMG (e.g., Applications symlink)
+    for item in "$mount_point"/*; do
+        local item_name
+        item_name=$(basename "$item")
+        if [ "$item_name" != "$app_name" ]; then
+            cp -R "$item" "$staging_dir/" 2>/dev/null || true
+        fi
+    done
+
+    hdiutil detach "$mount_point" -quiet
+    rmdir "$mount_point"
+
+    local staged_app="$staging_dir/$app_name"
+
+    # Sign frameworks/dylibs first (inside-out signing)
+    local frameworks_dir="$staged_app/Contents/Frameworks"
+    if [ -d "$frameworks_dir" ]; then
+        for dylib in "$frameworks_dir"/*; do
+            if [ -f "$dylib" ]; then
+                codesign --force --sign "$DEVELOPER_ID" \
+                    --options runtime \
+                    --timestamp \
+                    "$dylib"
+                log_info "  Signed dylib: $(basename "$dylib")"
+            fi
+        done
+    fi
+
+    # Sign the main binary with hardened runtime + timestamp
+    local binary="$staged_app/Contents/MacOS/"*
+    for bin in $binary; do
+        if [ -f "$bin" ] && file "$bin" | grep -q "Mach-O"; then
+            codesign --force --sign "$DEVELOPER_ID" \
+                --options runtime \
+                --timestamp \
+                "$bin"
+            log_info "  Signed binary: $(basename "$bin")"
+        fi
+    done
+
+    # Sign the whole app bundle
+    codesign --force --sign "$DEVELOPER_ID" \
+        --options runtime \
+        --timestamp \
+        "$staged_app"
+
+    # Verify the app bundle signature
+    codesign --verify --verbose=2 --strict "$staged_app"
+    log_success "App bundle signed and verified"
+
+    # Recreate the DMG with the signed app bundle
+    rm -f "$dmg_path"
+    hdiutil create -volname "${app_name%.app}" \
+        -srcfolder "$staging_dir" \
+        -ov -format UDZO \
+        "$dmg_path"
+
+    # Sign the DMG itself
     codesign --force --sign "$DEVELOPER_ID" --timestamp "$dmg_path"
 
-    # Verify
+    rm -rf "$staging_dir"
+
     codesign --verify --verbose=2 "$dmg_path"
-    log_success "DMG signed: $(basename "$dmg_path")"
+    log_success "DMG signed: $dmg_name"
 }
 
 # Sign a pkg file
@@ -180,7 +278,7 @@ sign_file() {
 
 main() {
     log_info "=========================================="
-    log_info "macOS Code Signing"
+    log_info "macOS Code Signing v${VERSION}"
     log_info "=========================================="
 
     check_prerequisites
@@ -191,9 +289,9 @@ main() {
             sign_file "$f"
         done
     else
-        # Sign all macOS artifacts in dist/
+        # Sign current-version macOS artifacts in dist/
         local found=false
-        for f in "$DIST_DIR"/*.dmg "$DIST_DIR"/*.pkg; do
+        for f in "$DIST_DIR"/*"$VERSION"*.dmg "$DIST_DIR"/*"$VERSION"*.pkg; do
             if [ -f "$f" ]; then
                 sign_file "$f"
                 found=true
@@ -201,7 +299,7 @@ main() {
         done
 
         if ! $found; then
-            log_warning "No DMG or pkg files found in $DIST_DIR"
+            log_warning "No DMG or pkg files for v${VERSION} found in $DIST_DIR"
             log_info "Run build-dmg-sotf.sh or build-dmg-daemon.sh first"
             exit 1
         fi

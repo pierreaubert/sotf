@@ -13,6 +13,7 @@ use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use super::config::validate_room_config;
 use super::crossover;
@@ -527,25 +528,74 @@ pub fn optimize_room(
         },
     );
 
-    // Process each speaker sequentially so we can report progress
+    // Process each speaker sequentially so we can report progress.
+    // Wrap callback in Arc<Mutex> so we can create per-speaker OptimProgressCallbacks.
+    let max_iterations = config.optimizer.max_iter;
+    let callback_shared: Arc<Mutex<Option<RoomOptimizationCallback>>> =
+        Arc::new(Mutex::new(callback));
+
     let mut results: Vec<SpeakerProcessResult> = Vec::with_capacity(total_speakers);
     for (speaker_idx, (channel_name, speaker_config)) in channels_to_process.into_iter().enumerate()
     {
         info!("Processing channel: {}", channel_name);
 
-        send_progress(
-            &mut callback,
-            &RoomOptimizationProgress {
-                current_speaker: channel_name.clone(),
-                speaker_index: speaker_idx,
-                total_speakers,
-                iteration: 0,
-                max_iterations: 0,
-                loss: 0.0,
-                overall_progress: speaker_idx as f64 / total_speakers as f64,
-                message: Some(format!("Processing channel: {}", channel_name)),
-            },
-        );
+        {
+            let mut guard = callback_shared.lock().unwrap();
+            let stop = send_progress(
+                &mut guard,
+                &RoomOptimizationProgress {
+                    current_speaker: channel_name.clone(),
+                    speaker_index: speaker_idx,
+                    total_speakers,
+                    iteration: 0,
+                    max_iterations: 0,
+                    loss: 0.0,
+                    overall_progress: speaker_idx as f64 / total_speakers as f64,
+                    message: Some(format!("Processing channel: {}", channel_name)),
+                },
+            );
+            if stop {
+                break;
+            }
+        }
+
+        // Create a per-speaker OptimProgressCallback that forwards to the room callback
+        let eq_callback: Option<crate::optim::OptimProgressCallback> = {
+            let cb = Arc::clone(&callback_shared);
+            let name = channel_name.clone();
+            let si = speaker_idx;
+            let ts = total_speakers;
+            let mi = max_iterations;
+            Some(Box::new(move |iter: usize, loss: f64| {
+                let base_progress = si as f64 / ts as f64;
+                let speaker_progress = if mi > 0 {
+                    iter as f64 / mi as f64
+                } else {
+                    0.0
+                };
+                let overall = (base_progress + speaker_progress / ts as f64).min(1.0);
+
+                if let Ok(mut guard) = cb.lock()
+                    && let Some(room_cb) = guard.as_mut()
+                {
+                    let action = room_cb(&RoomOptimizationProgress {
+                        current_speaker: name.clone(),
+                        speaker_index: si,
+                        total_speakers: ts,
+                        iteration: iter,
+                        max_iterations: mi,
+                        loss,
+                        overall_progress: overall,
+                        message: None,
+                    });
+                    return match action {
+                        CallbackAction::Continue => crate::de::CallbackAction::Continue,
+                        CallbackAction::Stop => crate::de::CallbackAction::Stop,
+                    };
+                }
+                crate::de::CallbackAction::Continue
+            }))
+        };
 
         let result = process_speaker_internal(
             &channel_name,
@@ -553,6 +603,7 @@ pub fn optimize_room(
             config,
             sample_rate,
             output_dir,
+            eq_callback,
         );
 
         match result {
@@ -567,22 +618,28 @@ pub fn optimize_room(
                 arrival_time_ms,
                 fir_coeffs,
             )) => {
-                send_progress(
-                    &mut callback,
-                    &RoomOptimizationProgress {
-                        current_speaker: channel_name.clone(),
-                        speaker_index: speaker_idx,
-                        total_speakers,
-                        iteration: 0,
-                        max_iterations: 0,
-                        loss: post_score,
-                        overall_progress: (speaker_idx + 1) as f64 / total_speakers as f64,
-                        message: Some(format!(
-                            "Channel {}: {:.4} -> {:.4}",
-                            channel_name, pre_score, post_score
-                        )),
-                    },
-                );
+                {
+                    let mut guard = callback_shared.lock().unwrap();
+                    let stop = send_progress(
+                        &mut guard,
+                        &RoomOptimizationProgress {
+                            current_speaker: channel_name.clone(),
+                            speaker_index: speaker_idx,
+                            total_speakers,
+                            iteration: 0,
+                            max_iterations: 0,
+                            loss: post_score,
+                            overall_progress: (speaker_idx + 1) as f64 / total_speakers as f64,
+                            message: Some(format!(
+                                "Channel {}: {:.4} -> {:.4}",
+                                channel_name, pre_score, post_score
+                            )),
+                        },
+                    );
+                    // Note: can't break here since we're inside a match arm.
+                    // The stop signal is handled by the per-iteration callback.
+                    let _ = stop;
+                }
 
                 results.push(Ok((
                     channel_name,
@@ -1118,6 +1175,7 @@ pub fn optimize_speaker(
         &room_config,
         sample_rate,
         None,
+        None,
     )?;
 
     Ok(SpeakerOptimizationResult {
@@ -1144,12 +1202,20 @@ fn process_speaker_internal(
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: Option<&Path>,
+    callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<MixedModeResult> {
     let output_dir = output_dir.unwrap_or(Path::new("."));
 
     match speaker_config {
         SpeakerConfig::Single(source) => {
-            process_single_speaker(channel_name, source, room_config, sample_rate, output_dir)
+            process_single_speaker(
+                channel_name,
+                source,
+                room_config,
+                sample_rate,
+                output_dir,
+                callback,
+            )
         }
         SpeakerConfig::Group(group) => {
             process_speaker_group(channel_name, group, room_config, sample_rate, output_dir)
@@ -1202,6 +1268,7 @@ fn optimize_eq_maybe_multi(
     target_config: Option<&super::types::TargetCurveConfig>,
     sample_rate: f64,
     channel_name: &str,
+    callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<(Vec<Biquad>, f64)> {
     use super::types::MultiMeasurementStrategy;
 
@@ -1227,13 +1294,24 @@ fn optimize_eq_maybe_multi(
             curves.len()
         );
 
-        eq::optimize_channel_eq_multi(
-            &curves,
-            optimizer_config,
-            multi_config,
-            target_config,
-            sample_rate,
-        )
+        if let Some(cb) = callback {
+            eq::optimize_channel_eq_multi_with_callback(
+                &curves,
+                optimizer_config,
+                multi_config,
+                target_config,
+                sample_rate,
+                cb,
+            )
+        } else {
+            eq::optimize_channel_eq_multi(
+                &curves,
+                optimizer_config,
+                multi_config,
+                target_config,
+                sample_rate,
+            )
+        }
         .map_err(|e| AutoeqError::OptimizationFailed {
             message: format!(
                 "Multi-measurement EQ optimization failed for channel {}: {}",
@@ -1241,12 +1319,22 @@ fn optimize_eq_maybe_multi(
             ),
         })
     } else {
-        eq::optimize_channel_eq(
-            optimization_curve,
-            optimizer_config,
-            target_config,
-            sample_rate,
-        )
+        if let Some(cb) = callback {
+            eq::optimize_channel_eq_with_callback(
+                optimization_curve,
+                optimizer_config,
+                target_config,
+                sample_rate,
+                cb,
+            )
+        } else {
+            eq::optimize_channel_eq(
+                optimization_curve,
+                optimizer_config,
+                target_config,
+                sample_rate,
+            )
+        }
         .map_err(|e| AutoeqError::OptimizationFailed {
             message: format!("EQ optimization failed for channel {}: {}", channel_name, e),
         })
@@ -1262,6 +1350,7 @@ fn process_single_speaker(
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: &Path,
+    callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<MixedModeResult> {
     // Load measurement
     let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
@@ -1694,12 +1783,22 @@ fn process_single_speaker(
                 room_config.target_curve.as_ref()
             };
 
-            let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
-                &hybrid_optim_curve,
-                &opt_config, // Use modified config
-                effective_target,
-                sample_rate,
-            )
+            let (eq_filters, _opt_loss) = if let Some(cb) = callback {
+                eq::optimize_channel_eq_with_callback(
+                    &hybrid_optim_curve,
+                    &opt_config, // Use modified config
+                    effective_target,
+                    sample_rate,
+                    cb,
+                )
+            } else {
+                eq::optimize_channel_eq(
+                    &hybrid_optim_curve,
+                    &opt_config, // Use modified config
+                    effective_target,
+                    sample_rate,
+                )
+            }
             .map_err(|e| AutoeqError::OptimizationFailed {
                 message: format!(
                     "IIR optimization failed for channel {}: {}",
@@ -1876,6 +1975,7 @@ fn process_single_speaker(
                         effective_target,
                         sample_rate,
                         channel_name,
+                        callback,
                     )?;
                     filters
                 }
@@ -1888,6 +1988,7 @@ fn process_single_speaker(
                     effective_target,
                     sample_rate,
                     channel_name,
+                    callback,
                 )?;
                 filters
             };
