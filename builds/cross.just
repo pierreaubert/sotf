@@ -101,29 +101,47 @@ cross-debug-linux-x86: cross-base-linux-x86-gnu
 # WINDOWS (cross-compiled in Docker via llvm-mingw)
 # ----------------------------------------------------------------------
 
-# Windows ARM64: sotf-tui.exe → dist/
+# Windows ARM64: sotf-tui.exe + signed MSIX → dist/
+# Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated
 [group('cross')]
 cross-windows-arm64: cross-base-win-arm64
-	@echo "Building Docker image..."
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "Building Docker image..."
 	docker build -t sotf-win-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-pc-windows-gnullvm .
-	@echo "Building in Docker container..."
+	echo "Building in Docker container..."
 	mkdir -p dist
-	docker run --rm -v "$(pwd)":/project -w /project -e CARGO_TARGET_DIR=/project/.docker-target sotf-win-arm64 \
-		cargo build --release --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui
+	docker_env=(-e CARGO_TARGET_DIR=/project/.docker-target)
+	# Forward CA cert env vars into Docker if set
+	if [ -n "${WINDOWS_CERT_FILE:-}" ]; then
+		docker_env+=(-e WINDOWS_CERT_FILE -e WINDOWS_CERT_PASSWORD)
+		[ -n "${WINDOWS_TIMESTAMP_URL:-}" ] && docker_env+=(-e WINDOWS_TIMESTAMP_URL)
+	fi
+	docker run --rm -v "$(pwd)":/project -w /project "${docker_env[@]}" sotf-win-arm64 \
+		bash -c 'cargo build --release --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir .docker-target/aarch64-pc-windows-gnullvm/release --arch arm64'
 	cp .docker-target/aarch64-pc-windows-gnullvm/release/sotf-tui.exe dist/sotf-tui-windows-arm64.exe
-	@echo "Done! dist/sotf-tui-windows-arm64.exe"
+	echo "Done! dist/sotf-tui-windows-arm64.exe + MSIX in dist/"
 
-# Windows x86_64: sotf-tui.exe → dist/
+# Windows x86_64: sotf-tui.exe + signed MSIX → dist/
+# Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated
 [group('cross')]
 cross-windows-x86: cross-base-win-x86
-	@echo "Building Docker image..."
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "Building Docker image..."
 	docker build -t sotf-win-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-pc-windows-gnullvm .
-	@echo "Building in Docker container..."
+	echo "Building in Docker container..."
 	mkdir -p dist
-	docker run --rm -v "$(pwd)":/project -w /project -e CARGO_TARGET_DIR=/project/.docker-target sotf-win-x86 \
-		cargo build --release --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui
+	docker_env=(-e CARGO_TARGET_DIR=/project/.docker-target)
+	# Forward CA cert env vars into Docker if set
+	if [ -n "${WINDOWS_CERT_FILE:-}" ]; then
+		docker_env+=(-e WINDOWS_CERT_FILE -e WINDOWS_CERT_PASSWORD)
+		[ -n "${WINDOWS_TIMESTAMP_URL:-}" ] && docker_env+=(-e WINDOWS_TIMESTAMP_URL)
+	fi
+	docker run --rm -v "$(pwd)":/project -w /project "${docker_env[@]}" sotf-win-x86 \
+		bash -c 'cargo build --release --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir .docker-target/x86_64-pc-windows-gnullvm/release --arch x64'
 	cp .docker-target/x86_64-pc-windows-gnullvm/release/sotf-tui.exe dist/sotf-tui-windows-x86_64.exe
-	@echo "Done! dist/sotf-tui-windows-x86_64.exe"
+	echo "Done! dist/sotf-tui-windows-x86_64.exe + MSIX in dist/"
 
 # ----------------------------------------------------------------------
 # MACOS (native build, outputs to dist/)

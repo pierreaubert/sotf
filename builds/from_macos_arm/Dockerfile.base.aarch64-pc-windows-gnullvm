@@ -12,6 +12,9 @@ RUN apt-get update && apt-get install -y \
     ninja-build \
     ca-certificates \
     xz-utils \
+    zip \
+    openssl \
+    osslsigncode \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust

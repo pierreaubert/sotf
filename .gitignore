@@ -10,6 +10,9 @@ mutants.out
 /.docker-target
 /tools
 
+# signing certificates (NEVER commit private keys)
+/certs/
+
 # python
 __pycache__
 

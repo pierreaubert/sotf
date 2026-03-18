@@ -299,6 +299,10 @@ main() {
     build_binaries
     create_distribution
 
+    # Build MSIX package
+    log_info "Building MSIX package..."
+    "$SCRIPT_DIR/build-msix.sh" --build-dir "$BUILD_DIR" --arch x64
+
     log_info "=========================================="
     log_success "Build complete!"
     log_info "=========================================="
