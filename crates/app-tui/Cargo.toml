@@ -82,6 +82,11 @@ core-foundation-sys = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 
+[features]
+default = []
+onnx = ["sotf-plugins/onnx"]
+hal = ["sotf-player/hal"]
+
 [lib]
 name = "sotf_audio_player_tui"
 path = "lib.rs"

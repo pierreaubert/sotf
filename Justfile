@@ -183,8 +183,19 @@ prod-roomeq:
 
 # shortcuts
 [group('build')]
+[macos]
 tui:
 	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx, hal"
+
+[group('build')]
+[linux]
+tui:
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx"
+
+[group('build')]
+[windows]
+tui:
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx"
 
 [group('build')]
 gpui:
