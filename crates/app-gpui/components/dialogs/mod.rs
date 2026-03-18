@@ -1,5 +1,7 @@
 //! Dialog and modal rendering components
 
+mod tutorial;
+
 use crate::app::Screen;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
@@ -807,21 +809,34 @@ impl PlayerView {
                                 .children(presets.iter().enumerate().map(|(idx, preset)| {
                                     let is_selected = idx == selected_preset;
                                     let theme = theme.clone();
+                                    let state_click = self.state.clone();
+                                    let hover_bg = theme.surface_hover;
                                     div()
+                                        .id(("save-preset-item", idx))
                                         .p_1()
                                         .rounded_md()
                                         .text_sm()
+                                        .cursor_pointer()
                                         .when(is_selected, |d| {
                                             d.bg(theme.accent_muted).text_color(theme.text_primary)
                                         })
-                                        .when(!is_selected, |d| d.text_color(theme.text_secondary))
+                                        .when(!is_selected, |d| {
+                                            d.text_color(theme.text_secondary)
+                                                .hover(move |s| s.bg(hover_bg))
+                                        })
+                                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                            state_click.update(cx, |state, _cx| {
+                                                state.app.plugin_state.selected_preset_index = idx;
+                                                state.app.input_state.plugin_file_input.clear();
+                                            });
+                                        })
                                         .child(preset.clone())
                                 })),
                         )
                     }),
             )
             .footer(
-                Text::new("Enter: Save | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel")
+                Text::new("Enter: Save | Click/↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel")
                     .size(TextSize::Xs)
                     .muted(true),
             )
@@ -872,14 +887,31 @@ impl PlayerView {
                                 .children(presets.iter().enumerate().map(|(idx, preset)| {
                                     let is_selected = idx == selected_preset;
                                     let theme = theme.clone();
+                                    let state_click = self.state.clone();
+                                    let hover_bg = theme.surface_hover;
                                     div()
+                                        .id(("load-preset-item", idx))
                                         .p_1()
                                         .rounded_md()
                                         .text_sm()
+                                        .cursor_pointer()
                                         .when(is_selected, |d| {
                                             d.bg(theme.accent_muted).text_color(theme.text_primary)
                                         })
-                                        .when(!is_selected, |d| d.text_color(theme.text_secondary))
+                                        .when(!is_selected, |d| {
+                                            d.text_color(theme.text_secondary)
+                                                .hover(move |s| s.bg(hover_bg))
+                                        })
+                                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                            state_click.update(cx, |state, _cx| {
+                                                state.app.plugin_state.selected_preset_index = idx;
+                                                state.app.input_state.plugin_file_input.clear();
+                                                state.app.load_selected_preset();
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                                state.app.clear_autocomplete();
+                                            });
+                                        })
                                         .child(preset.clone())
                                 })),
                         )

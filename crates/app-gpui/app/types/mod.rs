@@ -65,6 +65,8 @@ pub enum InputMode {
     ChannelConflict,
     /// Context menu is open (album, queue item, etc.)
     ContextMenu,
+    /// Tutorial dialog shown on first launch
+    Tutorial,
 }
 
 impl InputMode {

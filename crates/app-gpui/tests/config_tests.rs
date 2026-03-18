@@ -123,6 +123,7 @@ fn test_config_serialization() {
         font_scale: 1.0,
         release_channel: ReleaseChannel::default(),
         scanner_threads: Some(2),
+        tutorial_completed: false,
     };
     let json = serde_json::to_string(&config).unwrap();
     let deserialized: Config = serde_json::from_str(&json).unwrap();

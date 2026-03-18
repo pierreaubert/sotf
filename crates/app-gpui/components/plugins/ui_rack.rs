@@ -345,7 +345,7 @@ impl PlayerView {
 
     /// Render the horizontal plugin rack strip
     fn render_plugin_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (plugins_data, selected_idx, theme, preset_open, preset_list) = {
+        let (plugins_data, selected_idx, theme, preset_open, preset_list, last_loaded_preset) = {
             let state = self.state.read(cx);
             let chain = &state.app.plugin_state.chain;
             let plugins: Vec<_> = chain
@@ -365,12 +365,14 @@ impl PlayerView {
                 .collect();
             let preset_open = state.app.plugin_state.plugin_preset_open;
             let preset_list = state.app.plugin_state.plugin_preset_list.clone();
+            let last_loaded_preset = state.app.plugin_state.last_loaded_preset.clone();
             (
                 plugins,
                 state.app.plugin_state.selected_plugin_index,
                 state.app.ui_state.theme.clone(),
                 preset_open,
                 preset_list,
+                last_loaded_preset,
             )
         };
 
@@ -468,8 +470,83 @@ impl PlayerView {
                                     .child(format!("{} plugins", plugin_count)),
                             ),
                     )
-                    // Spacer to balance home button
-                    .child(div().w(rems(2.5)))
+                    // Preset buttons (right-aligned)
+                    .child({
+                        let state_for_load = self.state.clone();
+                        let state_for_save = self.state.clone();
+                        let btn_text_muted = text_muted;
+                        let btn_surface_hover = surface_hover;
+
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            // Show current preset name if one is loaded
+                            .when_some(last_loaded_preset.clone(), |d, name| {
+                                d.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(btn_text_muted)
+                                        .child(name),
+                                )
+                            })
+                            // Load button
+                            .child(
+                                div()
+                                    .id("rack-load-preset")
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .px_2()
+                                    .h(rems(1.75))
+                                    .cursor_pointer()
+                                    .rounded_md()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(btn_text_muted)
+                                    .hover(move |s| s.bg(btn_surface_hover))
+                                    .child("Load")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        move |_, _, cx| {
+                                            state_for_load.update(cx, |state, _cx| {
+                                                state.app.refresh_plugin_presets();
+                                                state.app.input_state.plugin_file_input.clear();
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::LoadPlugins;
+                                            });
+                                        },
+                                    ),
+                            )
+                            // Save button
+                            .child(
+                                div()
+                                    .id("rack-save-preset")
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .px_2()
+                                    .h(rems(1.75))
+                                    .cursor_pointer()
+                                    .rounded_md()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(btn_text_muted)
+                                    .hover(move |s| s.bg(btn_surface_hover))
+                                    .child("Save")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        move |_, _, cx| {
+                                            state_for_save.update(cx, |state, _cx| {
+                                                state.app.refresh_plugin_presets();
+                                                state.app.input_state.plugin_file_input.clear();
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::SavePlugins;
+                                            });
+                                        },
+                                    ),
+                            )
+                    })
             })
             // Plugin modules strip — Ozone-style rack
             .child(

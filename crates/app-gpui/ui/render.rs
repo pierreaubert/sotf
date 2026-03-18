@@ -379,6 +379,10 @@ impl Render for PlayerView {
                             _ => {}
                         }
                     }
+                    crate::app::InputMode::Tutorial => {
+                        cx.stop_propagation();
+                        view.handle_tutorial_key(event, cx);
+                    }
                     crate::app::InputMode::ChannelConflict => {
                         cx.stop_propagation();
                         match event.keystroke.key.as_str() {
@@ -516,6 +520,10 @@ impl Render for PlayerView {
             .when(
                 input_mode == crate::app::InputMode::EmptyLibraryPrompt,
                 |div| div.child(self.render_empty_library_prompt(cx)),
+            )
+            .when(
+                input_mode == crate::app::InputMode::Tutorial,
+                |div| div.child(self.render_tutorial_dialog(cx)),
             )
             .when(
                 input_mode == crate::app::InputMode::EditingPluginNode,

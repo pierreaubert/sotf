@@ -36,6 +36,8 @@ enum InputMode {
     EmptyLibraryPrompt,
     EditingPluginNode,
     ChannelConflict,
+    ContextMenu,
+    Tutorial,
 }
 
 impl InputMode {
@@ -72,6 +74,8 @@ const ALL_MODES: &[InputMode] = &[
     InputMode::EmptyLibraryPrompt,
     InputMode::EditingPluginNode,
     InputMode::ChannelConflict,
+    InputMode::ContextMenu,
+    InputMode::Tutorial,
 ];
 
 /// All modes where text input happens and shortcuts MUST be blocked.
@@ -96,6 +100,8 @@ const NON_TEXT_INPUT_MODES: &[InputMode] = &[
     InputMode::EmptyLibraryPrompt,
     InputMode::EditingPluginNode,
     InputMode::ChannelConflict,
+    InputMode::ContextMenu,
+    InputMode::Tutorial,
 ];
 
 /// Test: All text input modes are recognized by is_text_input()

@@ -94,6 +94,10 @@ pub struct UIState {
     pub release_channel: ReleaseChannel,
     /// Number of scanner threads (None = auto-detect, capped at 4)
     pub scanner_threads: Option<u8>,
+    /// Current tutorial screen index (0-6)
+    pub tutorial_screen: usize,
+    /// Whether "don't show again" checkbox is checked in tutorial dialog
+    pub tutorial_dont_show: bool,
 }
 
 impl Default for UIState {
@@ -123,6 +127,8 @@ impl Default for UIState {
             font_scale: 1.0,
             release_channel: ReleaseChannel::default(),
             scanner_threads: None,
+            tutorial_screen: 0,
+            tutorial_dont_show: false,
         }
     }
 }

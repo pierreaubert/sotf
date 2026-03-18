@@ -197,6 +197,9 @@ pub struct App {
     pub channel_conflict_path: Option<std::path::PathBuf>,
     pub channel_conflicts: Vec<sotf_audio_player::ChannelConflict>,
     pub channel_conflict_track_channels: usize,
+
+    /// Whether the tutorial has been completed/dismissed (persisted to config)
+    pub tutorial_completed: bool,
 }
 
 /// GPUI-compatible state wrapper
@@ -293,6 +296,7 @@ impl App {
             channel_conflict_path: None,
             channel_conflicts: Vec::new(),
             channel_conflict_track_channels: 2,
+            tutorial_completed: false,
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
@@ -669,6 +673,14 @@ impl App {
         }
         self.ui_state.startup_db_check_done = true;
 
+        // Show tutorial on first launch
+        if !self.tutorial_completed {
+            self.ui_state.input_mode = InputMode::Tutorial;
+            self.ui_state.tutorial_screen = 0;
+            self.is_loading_initial_data = false;
+            return;
+        }
+
         // Try to load from database
         if let Err(e) = self.load_library_from_database() {
             log::warn!("Failed to load library from database: {}", e);
@@ -951,6 +963,9 @@ impl App {
             }
         }
 
+        // Restore tutorial completed state
+        self.tutorial_completed = config.tutorial_completed;
+
         // Restore scanner thread count
         self.ui_state.scanner_threads = config.scanner_threads;
         if let Some(threads) = config.scanner_threads {
@@ -1037,6 +1052,7 @@ impl App {
             font_scale: self.ui_state.font_scale,
             release_channel: self.ui_state.release_channel,
             scanner_threads: self.ui_state.scanner_threads,
+            tutorial_completed: self.tutorial_completed,
         };
         config.save()?;
         Ok(())

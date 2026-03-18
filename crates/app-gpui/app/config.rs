@@ -225,6 +225,9 @@ pub struct Config {
     /// Number of scanner threads for waveform/bliss/replaygain (None = auto-detect)
     #[serde(default)]
     pub scanner_threads: Option<u8>,
+    /// Whether the tutorial has been completed/dismissed
+    #[serde(default)]
+    pub tutorial_completed: bool,
 }
 
 fn default_font_scale() -> f32 {
@@ -255,6 +258,7 @@ impl Config {
                 font_scale: default_font_scale(),
                 release_channel: ReleaseChannel::default(),
                 scanner_threads: None,
+                tutorial_completed: false,
             });
         }
 
