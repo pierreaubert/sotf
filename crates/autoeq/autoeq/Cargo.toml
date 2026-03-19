@@ -93,6 +93,10 @@ name = "roomeq-qa-coverage"
 path = "bin/roomeq_qa_coverage.rs"
 
 [[bin]]
+name = "roomeq-qa-features"
+path = "bin/roomeq_qa_features.rs"
+
+[[bin]]
 name = "convert-recording"
 path = "bin/convert_recording.rs"
 

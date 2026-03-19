@@ -2134,8 +2134,10 @@ fn process_single_speaker(
 
             // Compute final response including all filters (HPF + EQ).
             // Apply to curve_raw (original measurement) since all_filters already
-            // includes the excursion HPF. The optimizer worked on the HPF-adjusted
-            // curve, but the final display/scoring uses raw + all_filters.
+            // includes the excursion HPF.
+            // NOTE: broadband biquads are NOT included here — they're in broadband_plugins
+            // which are part of the DSP chain output. The post_score measures the EQ-only
+            // improvement. The QA binary should compare scores within the same loss metric.
             let all_resp =
                 response::compute_peq_complex_response(&all_filters, &curve_raw.freq, sample_rate);
             let final_curve = response::apply_complex_response(&curve_raw, &all_resp);
