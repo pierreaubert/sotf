@@ -106,9 +106,13 @@ fn test_broadband_matching() {
         .as_f64()
         .expect("gain_db");
     eprintln!("Found gain: {} dB", gain_db);
+    // The broadband flat_gain_db is a *correction* gain (relative adjustment),
+    // NOT an absolute target level. For a measurement at ~80dB with a flat target
+    // at the measurement's mean SPL, the correction should be small (< 10dB).
     assert!(
-        gain_db < -50.0,
-        "Gain should be significantly negative to match flat target level (approx -80dB)"
+        gain_db.abs() < 10.0,
+        "Broadband gain correction should be small, got {:.1}dB",
+        gain_db
     );
 
     // Check for EQ plugin (broadband matching should add LS + HS = 2 filters)

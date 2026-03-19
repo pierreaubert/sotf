@@ -62,12 +62,19 @@ fn run_roomeq_on_generated(scenario_name: &str) {
         result.combined_post_score
     );
 
-    // Verify all channels have EQ results
+    // Verify all channels have EQ results.
+    // Sub/LFE channels may legitimately have empty biquads when the "do no harm"
+    // guard in the 2.1 workflow discards Post-EQ that would degrade the response.
+    let sub_names = ["LFE", "lfe", "sub"];
     for (channel_name, channel_result) in &result.channel_results {
-        assert!(
-            !channel_result.biquads.is_empty(),
-            "{scenario_name}: channel '{channel_name}' has no biquad filters"
-        );
+        let is_sub = sub_names.iter().any(|s| channel_name.eq_ignore_ascii_case(s))
+            || channel_name.to_lowercase().starts_with("sub");
+        if !is_sub {
+            assert!(
+                !channel_result.biquads.is_empty(),
+                "{scenario_name}: channel '{channel_name}' has no biquad filters"
+            );
+        }
         // Allow up to 10% per-channel regression — the optimizer minimizes the
         // combined score across all channels, so individual channels may trade
         // a small regression for a better overall result.
