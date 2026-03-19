@@ -988,6 +988,13 @@ pub struct ChannelOptResult {
     pub corrected_response: Option<Vec<(f64, f64)>>,
     /// Normalized frequency response
     pub normalized_response: Option<Vec<(f64, f64)>>,
+    /// Effective target curve from the optimizer (mean_spl + tilt).
+    /// When present, the frontend should display this instead of a flat-at-0dB line.
+    pub target_curve: Option<Vec<(f64, f64)>>,
+    /// Group delay before optimization (freq_hz, delay_ms). Present when phase data exists.
+    pub group_delay_before: Option<Vec<(f64, f64)>>,
+    /// Group delay after optimization (freq_hz, delay_ms). Present when phase data exists.
+    pub group_delay_after: Option<Vec<(f64, f64)>>,
 }
 
 /// DSP chain output format (matches roomeq output)
@@ -1294,8 +1301,8 @@ pub struct RoomEqState {
     pub channel_results: Vec<ChannelOptResult>,
     /// Overall progress (0.0 - 1.0)
     pub overall_progress: f32,
-    /// Progress history for visualization: (iteration, loss, optional_score)
-    pub progress_history: Vec<(usize, f64, Option<f64>)>,
+    /// Progress history for visualization: (iteration, loss, channel_name)
+    pub progress_history: Vec<(usize, f64, String)>,
     /// Current iteration number
     pub current_iteration: usize,
     /// Current loss value

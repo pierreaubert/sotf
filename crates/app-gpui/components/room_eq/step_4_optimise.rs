@@ -1,5 +1,5 @@
 use crate::app::types::room_eq::InteractiveChartStateWrapper;
-use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
+use crate::components::graphs::common::theme_to_chart_theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -489,23 +489,31 @@ impl PlayerView {
                 let chart_state = room_eq.progress_chart_state.as_ref().map(|w| w.inner());
                 let chart_theme = theme_to_chart_theme(&theme);
 
-                // Filter out status messages (loss <= 0.0 or non-finite) so they
-                // don't pollute the chart with fake "Best: 0.0000" entries.
-                let valid_history: Vec<(usize, f64, Option<f64>)> = history
-                    .iter()
-                    .filter(|(_, loss, _)| loss.is_finite() && *loss > 0.0)
-                    .copied()
-                    .collect();
-                let iterations: Vec<f64> =
-                    valid_history.iter().map(|&(i, _, _)| i as f64).collect();
-                let losses: Vec<f64> =
-                    valid_history.iter().map(|&(_, loss, _)| loss).collect();
+                // Filter out status messages (loss <= 0.0 or non-finite)
+                // Group by channel name, preserving insertion order
+                let mut channel_order: Vec<String> = Vec::new();
+                let mut channel_data: std::collections::HashMap<String, (Vec<f64>, Vec<f64>)> =
+                    std::collections::HashMap::new();
+                let mut all_losses: Vec<f64> = Vec::new();
 
-                let current_loss_val = losses.last().copied().unwrap_or(0.0);
-                let best_loss = losses.iter().copied().fold(f64::INFINITY, f64::min);
+                for (iter, loss, speaker) in &history {
+                    if !loss.is_finite() || *loss <= 0.0 {
+                        continue;
+                    }
+                    all_losses.push(*loss);
+                    if !channel_data.contains_key(speaker) {
+                        channel_order.push(speaker.clone());
+                        channel_data.insert(speaker.clone(), (Vec::new(), Vec::new()));
+                    }
+                    let (iters, losses) = channel_data.get_mut(speaker).unwrap();
+                    iters.push(*iter as f64);
+                    losses.push(*loss);
+                }
+                let current_loss_val = all_losses.last().copied().unwrap_or(0.0);
+                let best_loss = all_losses.iter().copied().fold(f64::INFINITY, f64::min);
 
-                // Calculate Y range from data
-                let (loss_min, loss_max) = losses
+                // Calculate Y range from all channel data
+                let (loss_min, loss_max) = all_losses
                     .iter()
                     .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), &v| {
                         (min.min(v), max.max(v))
@@ -521,8 +529,12 @@ impl PlayerView {
                     1.0
                 };
 
-                // Get domain bounds - use interactive state only when zoomed, otherwise use computed range
-                let x_max_data = iterations.last().copied().unwrap_or(100.0);
+                // X range: each channel restarts at 0
+                let x_max_data = channel_data
+                    .values()
+                    .map(|(iters, _)| iters.last().copied().unwrap_or(0.0))
+                    .fold(0.0_f64, f64::max)
+                    .max(100.0);
                 let (x_min, x_max) = chart_state
                     .filter(|s| s.is_zoomed())
                     .map(|s| s.x_domain())
@@ -549,18 +561,64 @@ impl PlayerView {
                     y_min_domain + 1.0
                 };
 
-                let chart = line(&iterations, &losses)
-                    .title("Optimization Process")
-                    .x_label("Iteration")
-                    .y_label("Loss")
-                    .label("Loss")
-                    .x_range(x_min, x_max)
-                    .y_range(y_min_domain, y_max_domain)
-                    .color(rgba_to_u32(theme.graph_colors.filter_response))
-                    .stroke_width(2.0)
-                    .theme(chart_theme)
-                    .size(700.0, 250.0)
-                    .build();
+                // Per-channel colors (cycle through a palette)
+                let channel_colors: &[u32] = &[
+                    0x1f77b4, // blue
+                    0xff7f0e, // orange
+                    0x2ca02c, // green
+                    0xd62728, // red
+                    0x9467bd, // purple
+                    0x8c564b, // brown
+                    0xe377c2, // pink
+                    0x7f7f7f, // gray
+                ];
+
+                // Build chart: first channel is the primary series, rest are added
+                let chart = if let Some(first_ch) = channel_order.first() {
+                    let (iters, losses) = &channel_data[first_ch];
+                    let mut builder = line(iters, losses)
+                        .title("Optimization Process")
+                        .x_label("Iteration")
+                        .y_label("Loss")
+                        .label(format!("Loss {}", first_ch))
+                        .x_range(x_min, x_max)
+                        .y_range(y_min_domain, y_max_domain)
+                        .color(channel_colors[0])
+                        .stroke_width(2.0)
+                        .theme(chart_theme)
+                        .size(700.0, 250.0);
+
+                    for (idx, ch_name) in channel_order.iter().enumerate().skip(1) {
+                        let (ch_iters, ch_losses) = &channel_data[ch_name];
+                        let color = channel_colors[idx % channel_colors.len()];
+                        // Each channel has its own X (iteration) values, so use
+                        // add_series_with_x to avoid misaligning Y against the
+                        // primary series X.
+                        builder = builder.add_series_with_x(
+                            ch_iters,
+                            ch_losses,
+                            Some(&format!("Loss {}", ch_name)),
+                            color,
+                            2.0,
+                            1.0,
+                        );
+                    }
+                    builder.build()
+                } else {
+                    // No data yet — build an empty chart
+                    line(&[0.0], &[0.0])
+                        .title("Optimization Process")
+                        .x_label("Iteration")
+                        .y_label("Loss")
+                        .label("Loss")
+                        .x_range(0.0, 100.0)
+                        .y_range(0.0, 1.0)
+                        .color(channel_colors[0])
+                        .stroke_width(2.0)
+                        .theme(chart_theme)
+                        .size(700.0, 250.0)
+                        .build()
+                };
 
                 // Build the chart element, wrapping with interactive if state is available
                 let chart_element: Option<gpui::AnyElement> = chart.ok().map(|c| {
@@ -714,7 +772,8 @@ impl PlayerView {
         let state_clone = self.state.clone();
 
         // Create async channel for progress updates from blocking thread
-        let (progress_tx, progress_rx) = smol::channel::bounded::<(usize, f64, f32)>(100);
+        let (progress_tx, progress_rx) =
+            smol::channel::bounded::<(usize, f64, f32, String)>(100);
 
         // Clone state for progress receiver task
         let state_for_progress = self.state.clone();
@@ -722,24 +781,24 @@ impl PlayerView {
         // Spawn a task to receive progress updates and update UI
         cx.spawn({
             async move |_, cx| {
-                while let Ok((iteration, loss, overall_progress)) = progress_rx.recv().await {
+                while let Ok((iteration, loss, overall_progress, speaker)) =
+                    progress_rx.recv().await
+                {
                     state_for_progress.update(&mut cx.clone(), |state, cx| {
                         state.app.measurement_state.room_eq_state.current_iteration = iteration;
                         state.app.measurement_state.room_eq_state.current_loss = loss;
                         state.app.measurement_state.room_eq_state.overall_progress =
                             overall_progress;
 
-                        // Add to progress history (limit to avoid memory issues).
-                        // Use history length as global index instead of per-speaker
-                        // iteration to keep the X-axis monotonically increasing.
+                        // Add to progress history with channel name.
+                        // Each channel's iterations restart from 0 on the X axis.
                         let history = &mut state
                             .app
                             .measurement_state
                             .room_eq_state
                             .progress_history;
                         if history.len() < 10000 {
-                            let global_idx = history.len();
-                            history.push((global_idx, loss, None));
+                            history.push((iteration, loss, speaker));
                         }
                         cx.notify();
                     });
@@ -765,6 +824,7 @@ impl PlayerView {
                     let iteration = progress.iteration;
                     let loss = progress.loss;
                     let max_iterations = progress.max_iterations;
+                    let speaker = progress.current_speaker.clone();
 
                     let overall = if max_iterations > 0 {
                         iteration as f32 / max_iterations as f32
@@ -773,7 +833,7 @@ impl PlayerView {
                     };
 
                     // Send progress update (non-blocking)
-                    let _ = progress_tx_clone.try_send((iteration, loss, overall));
+                    let _ = progress_tx_clone.try_send((iteration, loss, overall, speaker));
                     CallbackAction::Continue
                 });
 
@@ -840,6 +900,23 @@ impl PlayerView {
                                             .zip(channel_res.final_curve.spl.iter())
                                             .map(|(&f, &db)| (f, db))
                                             .collect(),
+                                    ),
+                                    target_curve: room_result
+                                        .channels
+                                        .get(name)
+                                        .and_then(|chain| chain.target_curve.as_ref())
+                                        .map(|tc| {
+                                            tc.freq
+                                                .iter()
+                                                .zip(tc.spl.iter())
+                                                .map(|(&f, &db)| (f, db))
+                                                .collect()
+                                        }),
+                                    group_delay_before: compute_group_delay_from_curve(
+                                        &channel_res.initial_curve,
+                                    ),
+                                    group_delay_after: compute_group_delay_from_curve(
+                                        &channel_res.final_curve,
                                     ),
                                 }
                             })
@@ -970,4 +1047,20 @@ fn flatten_json(value: &serde_json::Value, prefix: String, pairs: &mut Vec<(Stri
             pairs.push((prefix, "null".to_string()));
         }
     }
+}
+
+/// Compute group delay from a Curve's phase data.
+/// Returns None if no phase data is available.
+fn compute_group_delay_from_curve(curve: &autoeq::Curve) -> Option<Vec<(f64, f64)>> {
+    let phase = curve.phase.as_ref()?;
+    let unwrapped = autoeq::loss::phase_aware::unwrap_phase_degrees(phase);
+    let gd = autoeq::loss::phase_aware::compute_group_delay(&curve.freq, &unwrapped);
+    Some(
+        curve
+            .freq
+            .iter()
+            .zip(gd.iter())
+            .map(|(&f, &d)| (f, d))
+            .collect(),
+    )
 }

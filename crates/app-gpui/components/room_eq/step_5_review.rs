@@ -296,20 +296,22 @@ impl PlayerView {
                 .into_any_element();
         }
 
-        // Generate target curve data for display
-        let target_curve_data = if room_eq.optimizer_config.target_curve == "custom" {
+        // Clamp selected index to valid range
+        let idx = selected_idx.min(channel_results.len().saturating_sub(1));
+        let result = &channel_results[idx];
+
+        // Use the backend's effective target curve (mean_spl + tilt) when available.
+        // This shows what the optimizer actually aimed for instead of a misleading 0dB line.
+        // Falls back to the UI-generated target curve if the backend didn't provide one.
+        let target_curve_data = if result.target_curve.is_some() {
+            result.target_curve.clone()
+        } else if room_eq.optimizer_config.target_curve == "custom" {
             Some(room_eq.custom_target_curve.generate_curve())
         } else if room_eq.optimizer_config.target_curve == "flat" {
             Some(CustomTargetCurve::new_flat().generate_curve())
         } else {
-            // For other standard curves, we don't visualize them yet
-            // TODO: Add support for standard curves visualization
             None
         };
-
-        // Clamp selected index to valid range
-        let idx = selected_idx.min(channel_results.len().saturating_sub(1));
-        let result = &channel_results[idx];
 
         render_channel_result_card(
             result,
