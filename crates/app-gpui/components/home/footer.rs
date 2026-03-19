@@ -14,6 +14,8 @@ use gpui_ui_kit::{
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::components::themed_tooltip as footer_tooltip;
+
 /// Custom element to capture waveform bounds and render bars
 struct WaveformElement {
     waveform: Option<Vec<u8>>,
@@ -330,32 +332,14 @@ impl PlayerView {
         let text_secondary = theme.text_secondary;
         let text_muted = theme.text_muted;
 
-        let title_raw = if title.is_empty() {
+        let title_text = if title.is_empty() {
             no_track_label.to_string()
         } else {
             title.clone()
         };
 
-        // Truncate track title if too long (max 30 characters)
-        let title_text = if title_raw.chars().count() > 30 {
-            title_raw.chars().take(30).collect::<String>() + "..."
-        } else {
-            title_raw
-        };
-
-        // Truncate album name if too long (max 35 characters)
-        let album_text = if album_name.chars().count() > 35 {
-            album_name.chars().take(35).collect::<String>() + "..."
-        } else {
-            album_name.clone()
-        };
-
-        // Truncate artist name if too long (max 35 characters)
-        let artist_text = if artist.chars().count() > 35 {
-            artist.chars().take(35).collect::<String>() + "..."
-        } else {
-            artist.clone()
-        };
+        let album_text = album_name.clone();
+        let artist_text = artist.clone();
 
         VStack::new()
             .spacing(StackSpacing::Xs)
@@ -490,7 +474,8 @@ impl PlayerView {
                             .items_center()
                             .gap_1()
                             // Previous track
-                            .child(
+                            .child({
+                                let tt = theme_clone.clone();
                                 div()
                                     .id("transport-prev-wrapper")
                                     .on_click(cx.listener(
@@ -502,6 +487,7 @@ impl PlayerView {
                                             );
                                         },
                                     ))
+                                    .tooltip(move |_window, cx| footer_tooltip("Previous Track", &tt, cx))
                                     .child(
                                         IconButton::with_child(
                                             "transport-prev",
@@ -513,12 +499,14 @@ impl PlayerView {
                                         .size(IconButtonSize::Sm)
                                         .rounded_full()
                                         .theme(theme_clone.to_icon_button_theme()),
-                                    ),
-                            )
+                                    )
+                            })
                             // Seek backward
-                            .child(
+                            .child({
+                                let tt = theme_clone.clone();
                                 div()
                                     .id("transport-seek-back-wrapper")
+                                    .tooltip(move |_window, cx| footer_tooltip("Seek Back 30s", &tt, cx))
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
@@ -546,8 +534,8 @@ impl PlayerView {
                                         .size(IconButtonSize::Sm)
                                         .rounded_full()
                                         .theme(theme_clone.to_icon_button_theme()),
-                                    ),
-                            )
+                                    )
+                            })
                             // Play/Pause
                             .child({
                                 let play_icon = if is_playing {
@@ -555,6 +543,8 @@ impl PlayerView {
                                 } else {
                                     IconName::Play
                                 };
+                                let tt = theme_clone.clone();
+                                let play_label = if is_playing { "Pause" } else { "Play" };
                                 div()
                                     .id("transport-play-wrapper")
                                     .on_click(cx.listener(
@@ -566,6 +556,7 @@ impl PlayerView {
                                             );
                                         },
                                     ))
+                                    .tooltip(move |_window, cx| footer_tooltip(play_label, &tt, cx))
                                     .child(
                                         IconButton::with_child(
                                             "transport-play",
@@ -581,9 +572,11 @@ impl PlayerView {
                                     )
                             })
                             // Seek forward
-                            .child(
+                            .child({
+                                let tt = theme_clone.clone();
                                 div()
                                     .id("transport-seek-fwd-wrapper")
+                                    .tooltip(move |_window, cx| footer_tooltip("Seek Forward 30s", &tt, cx))
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
@@ -612,12 +605,14 @@ impl PlayerView {
                                         .size(IconButtonSize::Sm)
                                         .rounded_full()
                                         .theme(theme_clone.to_icon_button_theme()),
-                                    ),
-                            )
+                                    )
+                            })
                             // Next track
-                            .child(
+                            .child({
+                                let tt = theme_clone.clone();
                                 div()
                                     .id("transport-next-wrapper")
+                                    .tooltip(move |_window, cx| footer_tooltip("Next Track", &tt, cx))
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, window, cx| {
                                             view.next_track(
@@ -638,8 +633,8 @@ impl PlayerView {
                                         .size(IconButtonSize::Sm)
                                         .rounded_full()
                                         .theme(theme_clone.to_icon_button_theme()),
-                                    ),
-                            ),
+                                    )
+                            }),
                     ) // close inner transport div
                     .when(!is_hal_mode, |el| {
                         el.child(
@@ -728,23 +723,17 @@ impl PlayerView {
         ) = {
             let state = self.state.read(cx);
             let theme = &state.app.ui_state.theme;
-            // Get device name and truncate to 7 characters
             let device_name = state
                 .app
                 .audio_device_state
                 .current_output_device_name
                 .clone()
                 .unwrap_or_else(|| default_device_label.to_string());
-            let truncated_device = if device_name.len() > 7 {
-                device_name.chars().take(7).collect::<String>()
-            } else {
-                device_name
-            };
             (
                 state.app.playback.volume,
                 state.app.playback.muted,
                 state.app.ui_state.show_device_popup,
-                truncated_device,
+                device_name,
                 state.app.ui_state.current_screen,
                 theme.text_secondary,
                 theme.surface_hover,
@@ -843,12 +832,16 @@ impl PlayerView {
                                         .size(IconSize::Xxl)
                                         .color(theme_clone.text_secondary),
                                 )
-                                // Device name below (truncated to 7 chars)
+                                // Device name below
                                 .child(
                                     div()
                                         .text_xs()
                                         .text_color(text_secondary)
                                         .text_center()
+                                        .max_w(rems(5.0))
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .whitespace_nowrap()
                                         .child(current_device),
                                 ),
                         ),
@@ -1118,9 +1111,11 @@ impl PlayerView {
 
         let focus_handle = self.volume_focus_handle.clone();
 
+        let tt = theme.clone();
         div()
             .id("volume-button")
             .cursor_pointer()
+            .tooltip(move |_window, cx| footer_tooltip("Volume (scroll to adjust)", &tt, cx))
             .track_focus(&focus_handle)
             .focus(|style| {
                 style

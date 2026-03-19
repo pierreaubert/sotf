@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1440, initial-scale=1">
+<title>SotF - Library Screen (Dark Theme)</title>
+<style>
+  /* Design tokens from tokens.json */
+  :root {
+    /* Typography */
+    --font-family: 'B612', 'SF Pro', system-ui, sans-serif;
+    --font-size-xs: 12px;
+    --font-size-sm: 14px;
+    --font-size-md: 14px;
+    --font-size-lg: 18px;
+    --font-size-xl: 20px;
+    --font-size-xxl: 24px;
+    --font-weight-light: 300;
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* Spacing */
+    --spacing-none: 0px;
+    --spacing-xs: 2px;
+    --spacing-sm: 4px;
+    --spacing-md: 8px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
+    --spacing-xxl: 32px;
+
+    /* Sizing */
+    --separator-size: 20px;
+    --border-radius: 4px;
+
+    /* Dark theme colors */
+    --bg: #1e1e1e;
+    --bg-secondary: #252525;
+    --bg-tertiary: #2d2d2d;
+    --surface: #2d2d2d;
+    --surface-hover: #3e3e3e;
+    --surface-selected: #264f78;
+
+    --text-primary: #ffffff;
+    --text-secondary: #eeeeee;
+    --text-muted: #bbbbbb;
+    --text-disabled: #666666;
+    --text-on-accent: #ffffff;
+    --text-on-accent-muted: rgba(255,255,255,0.8);
+    --icon-on-accent: #ffffff;
+
+    --border: #555555;
+    --border-focused: #1c8cd9;
+
+    --accent: #0a84ff;
+    --accent-hover: #3d9cff;
+    --accent-muted: #264f78;
+
+    --success: #4ec9b0;
+    --warning: #dcdcaa;
+    --error: #f48771;
+    --info: #569cd6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-family);
+    background: var(--bg);
+    color: var(--text-primary);
+    width: 1440px;
+    height: 900px;
+    overflow: hidden;
+  }
+
+  .app-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Menu Bar */
+  .menu-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .menu-buttons {
+    display: flex;
+    gap: var(--spacing-xs);
+  }
+
+  .menu-btn {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    font-family: var(--font-family);
+  }
+
+  .menu-btn:hover {
+    background: var(--surface-hover);
+  }
+
+  .menu-status {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+  }
+
+  /* Library Screen */
+  .library-screen {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: var(--spacing-md);
+  }
+
+  /* Sort Tabs */
+  .sort-tabs {
+    display: flex;
+    justify-content: center;
+    margin-bottom: var(--spacing-md);
+    flex-shrink: 0;
+  }
+
+  .tabs-container {
+    display: flex;
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 14px;
+    cursor: pointer;
+    border-right: 1px solid var(--border);
+    min-width: 80px;
+    gap: 2px;
+    transition: background 0.15s;
+  }
+
+  .tab-item:last-child { border-right: none; }
+
+  .tab-item.selected {
+    background: var(--accent);
+  }
+
+  .tab-item:not(.selected):hover {
+    background: var(--surface-hover);
+  }
+
+  .tab-icon {
+    font-size: 16px;
+    color: var(--text-muted);
+    line-height: 1;
+  }
+
+  .tab-item.selected .tab-icon {
+    color: var(--icon-on-accent);
+  }
+
+  .tab-label {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    font-weight: var(--font-weight-medium);
+  }
+
+  .tab-item.selected .tab-label {
+    color: var(--text-on-accent);
+  }
+
+  .tab-badge {
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--surface-hover);
+    padding: 1px 6px;
+    border-radius: 10px;
+    line-height: 1.4;
+  }
+
+  .tab-item.selected .tab-badge {
+    background: rgba(255,255,255,0.2);
+    color: var(--text-on-accent-muted);
+  }
+
+  /* Year Filter Bar */
+  .filter-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    border-radius: 8px 8px 0 0;
+    flex-shrink: 0;
+  }
+
+  .filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--spacing-sm);
+  }
+
+  .filter-btn {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    border: 1px solid var(--border);
+    font-family: var(--font-family);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .filter-btn.active {
+    background: var(--accent);
+    color: var(--text-on-accent);
+    border-color: var(--accent);
+  }
+
+  .filter-btn:hover:not(.active) {
+    background: var(--surface-hover);
+  }
+
+  /* Album Grid */
+  .album-grid-container {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .album-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-md);
+    content-visibility: auto;
+    align-content: flex-start;
+  }
+
+  /* Section Divider */
+  .section-divider {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-top: var(--spacing-lg);
+    padding-bottom: var(--spacing-md);
+  }
+
+  .section-divider-label {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+
+  .section-divider-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Album Card */
+  .album-card {
+    width: 140px;
+    border-radius: 8px;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .album-card:hover {
+    background: var(--surface-hover);
+  }
+
+  .album-card.selected {
+    border: 1px solid var(--accent);
+    background: rgba(10, 132, 255, 0.1);
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+  }
+
+  .album-card-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .album-thumbnail {
+    width: 140px;
+    height: 140px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+  }
+
+  .album-thumbnail-placeholder {
+    font-size: 48px;
+    color: var(--text-muted);
+    opacity: 0.5;
+  }
+
+  .album-title {
+    width: 100%;
+    margin-top: 4px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .album-artist {
+    width: 100%;
+    font-size: 10px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .album-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9px;
+    color: var(--text-muted);
+    width: 100%;
+  }
+
+  .album-meta .heart {
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .album-meta .heart.fav {
+    color: var(--accent);
+  }
+
+  .album-meta .dr-icon {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+  }
+
+  /* Scrollbar styling for dark theme */
+  .album-grid-container::-webkit-scrollbar {
+    width: 8px;
+  }
+  .album-grid-container::-webkit-scrollbar-track {
+    background: var(--bg);
+  }
+  .album-grid-container::-webkit-scrollbar-thumb {
+    background: var(--surface-hover);
+    border-radius: 4px;
+  }
+</style>
+<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+</head>
+<body>
+<div class="app-container">
+  <!-- Menu Bar -->
+  <div class="menu-bar">
+    <div class="menu-buttons">
+      <button class="menu-btn">File</button>
+      <button class="menu-btn">Show</button>
+      <button class="menu-btn">Help</button>
+    </div>
+    <div class="menu-status"></div>
+  </div>
+
+  <!-- Library Screen -->
+  <div class="library-screen">
+    <!-- Sort Tabs -->
+    <div class="sort-tabs">
+      <div class="tabs-container">
+        <div class="tab-item selected">
+          <span class="tab-icon">&#128191;</span>
+          <span class="tab-label">Years</span>
+          <span class="tab-badge">1955-2025</span>
+        </div>
+        <div class="tab-item">
+          <span class="tab-icon">&#128193;</span>
+          <span class="tab-label">Genres</span>
+          <span class="tab-badge">42</span>
+        </div>
+        <div class="tab-item">
+          <span class="tab-icon">&#128100;</span>
+          <span class="tab-label">Artists</span>
+          <span class="tab-badge">386</span>
+        </div>
+        <div class="tab-item">
+          <span class="tab-icon">&#128191;</span>
+          <span class="tab-label">Albums</span>
+          <span class="tab-badge">1,247</span>
+        </div>
+        <div class="tab-item">
+          <span class="tab-icon">&#9835;</span>
+          <span class="tab-label">Tracks</span>
+          <span class="tab-badge">14,892</span>
+        </div>
+        <div class="tab-item">
+          <span class="tab-icon">&#9998;</span>
+          <span class="tab-label">Composers</span>
+          <span class="tab-badge">128</span>
+        </div>
+        <div class="tab-item">
+          <span class="tab-icon">&#127926;</span>
+          <span class="tab-label">Stereo/Multi</span>
+          <span class="tab-badge">980/204/63</span>
+        </div>
+        <div class="tab-item">
+          <span class="tab-icon">&#128269;</span>
+          <span class="tab-label">Search</span>
+          <span class="tab-badge">Albums</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Year Filter Bar (default tab = Years with 2020s selected) -->
+    <div class="filter-bar">
+      <div class="filter-row">
+        <button class="filter-btn">1950s (3)</button>
+        <button class="filter-btn">1960s (28)</button>
+        <button class="filter-btn">1970s (89)</button>
+        <button class="filter-btn">1980s (142)</button>
+        <button class="filter-btn">1990s (186)</button>
+        <button class="filter-btn">2000s (234)</button>
+        <button class="filter-btn">2010s (312)</button>
+        <button class="filter-btn active">2020s (253)</button>
+      </div>
+      <div class="filter-row">
+        <button class="filter-btn">2020 (38)</button>
+        <button class="filter-btn">2021 (42)</button>
+        <button class="filter-btn">2022 (51)</button>
+        <button class="filter-btn">2023 (48)</button>
+        <button class="filter-btn active">2024 (44)</button>
+        <button class="filter-btn">2025 (30)</button>
+      </div>
+    </div>
+
+    <!-- Album Grid -->
+    <div class="album-grid-container">
+      <div class="album-grid">
+        <!-- Section Divider: 2024 -->
+        <div class="section-divider">
+          <span class="section-divider-label">2024</span>
+          <div class="section-divider-line"></div>
+        </div>
+
+        <!-- Album Card 1 (selected) -->
+        <div class="album-card selected">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #1a3a5c, #2d6a9f, #1a3a5c);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">The Tortured Poets Dept.</div>
+            <div class="album-artist">Taylor Swift</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/44.1k</span>
+              <span class="dr-icon">&#127925;14</span>
+              <span>#31</span>
+              <span class="heart fav">&#9829;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 2 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #2d1a3a, #5c2d6a, #2d1a3a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Hit Me Hard and Soft</div>
+            <div class="album-artist">Billie Eilish</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/48k</span>
+              <span class="dr-icon">&#127925;11</span>
+              <span>#10</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 3 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #3a2d1a, #6a5c2d, #3a2d1a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Cowboy Carter</div>
+            <div class="album-artist">Beyoncé</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>16/44.1k</span>
+              <span class="dr-icon">&#127925;8</span>
+              <span>#27</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 4 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #1a2d3a, #2d5c6a, #1a2d3a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Short n' Sweet</div>
+            <div class="album-artist">Sabrina Carpenter</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/96k</span>
+              <span class="dr-icon">&#127925;9</span>
+              <span>#12</span>
+              <span class="heart fav">&#9829;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 5 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #3a1a2d, #6a2d5c, #3a1a2d);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Brat</div>
+            <div class="album-artist">Charli xcx</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>16/44.1k</span>
+              <span class="dr-icon">&#127925;7</span>
+              <span>#15</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 6 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #1a3a2d, #2d6a5c, #1a3a2d);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">GNX</div>
+            <div class="album-artist">Kendrick Lamar</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/48k</span>
+              <span class="dr-icon">&#127925;10</span>
+              <span>#12</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 7 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #2d2d1a, #5c5c2d, #2d2d1a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">The Rise and Fall of...</div>
+            <div class="album-artist">Bring Me The Horizon</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/44.1k</span>
+              <span class="dr-icon">&#127925;6</span>
+              <span>#14</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 8 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #1a1a3a, #2d2d6a, #1a1a3a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Eternal Sunshine</div>
+            <div class="album-artist">Ariana Grande</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>16/44.1k</span>
+              <span class="dr-icon">&#127925;8</span>
+              <span>#13</span>
+              <span class="heart fav">&#9829;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 9 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #3a3a1a, #6a6a2d, #3a3a1a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Radical Optimism</div>
+            <div class="album-artist">Dua Lipa</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/48k</span>
+              <span class="dr-icon">&#127925;9</span>
+              <span>#11</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Divider: 2023 -->
+        <div class="section-divider">
+          <span class="section-divider-label">2023</span>
+          <div class="section-divider-line"></div>
+        </div>
+
+        <!-- Album Card 10 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #2d1a2d, #5c2d5c, #2d1a2d);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">1989 (Taylor's Version)</div>
+            <div class="album-artist">Taylor Swift</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/96k</span>
+              <span class="dr-icon">&#127925;12</span>
+              <span>#22</span>
+              <span class="heart fav">&#9829;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 11 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #1a3a1a, #2d6a2d, #1a3a1a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">In the End It Always...</div>
+            <div class="album-artist">The Japanese House</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>16/44.1k</span>
+              <span class="dr-icon">&#127925;10</span>
+              <span>#12</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 12 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #3a2d2d, #6a5c5c, #3a2d2d);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Did You Know That...</div>
+            <div class="album-artist">Arctic Monkeys</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/44.1k</span>
+              <span class="dr-icon">&#127925;11</span>
+              <span>#10</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 13 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #2d3a1a, #5c6a2d, #2d3a1a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Javelin</div>
+            <div class="album-artist">Sufjan Stevens</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/96k</span>
+              <span class="dr-icon">&#127925;13</span>
+              <span>#10</span>
+              <span class="heart fav">&#9829;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 14 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #1a2d2d, #2d5c5c, #1a2d2d);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">The Record</div>
+            <div class="album-artist">boygenius</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/48k</span>
+              <span class="dr-icon">&#127925;11</span>
+              <span>#12</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 15 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #3a1a1a, #6a2d2d, #3a1a1a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Guts</div>
+            <div class="album-artist">Olivia Rodrigo</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>16/44.1k</span>
+              <span class="dr-icon">&#127925;8</span>
+              <span>#12</span>
+              <span class="heart fav">&#9829;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 16 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #2d1a3a, #5c3a6a, #2d1a3a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">Utopia</div>
+            <div class="album-artist">Travis Scott</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/44.1k</span>
+              <span class="dr-icon">&#127925;6</span>
+              <span>#19</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Album Card 17 -->
+        <div class="album-card">
+          <div class="album-card-inner">
+            <div class="album-thumbnail">
+              <div style="width:140px;height:140px;background:linear-gradient(135deg, #1a3a3a, #2d6a6a, #1a3a3a);display:flex;align-items:center;justify-content:center">
+                <span style="font-size:36px;opacity:0.6">&#9835;</span>
+              </div>
+            </div>
+            <div class="album-title">72 Seasons</div>
+            <div class="album-artist">Metallica</div>
+            <div class="album-meta">
+              <span>FLAC</span>
+              <span>24/96k</span>
+              <span class="dr-icon">&#127925;7</span>
+              <span>#12</span>
+              <span class="heart">&#9825;</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

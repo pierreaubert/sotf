@@ -855,14 +855,11 @@ fn render_group_delay_graph(
     // Filter to 20Hz-20kHz and compute y range
     let in_range = |f: f64| (20.0..=20000.0).contains(&f);
 
-    let before_values: Vec<f64> = if let Some(before) = gd_before {
-        before.iter().map(|(_, d)| *d).collect()
-    } else {
-        vec![0.0; frequencies.len()]
-    };
+    let before_values: Option<Vec<f64>> =
+        gd_before.map(|b| b.iter().map(|(_, d)| *d).collect());
 
-    let after_values: Vec<f64> = if let Some(after) = gd_after {
-        // Interpolate after to match before's frequency grid
+    let after_values: Option<Vec<f64>> = gd_after.map(|after| {
+        // Interpolate after to match the reference frequency grid
         frequencies
             .iter()
             .map(|&f| {
@@ -880,16 +877,14 @@ fn render_group_delay_graph(
                 }
             })
             .collect()
-    } else {
-        vec![0.0; frequencies.len()]
-    };
+    });
 
-    // Compute y range from data in audible range
+    // Compute y range from whichever datasets are present
     let mut y_min = f64::INFINITY;
     let mut y_max = f64::NEG_INFINITY;
     for (i, &f) in frequencies.iter().enumerate() {
         if in_range(f) {
-            for vals in [&before_values, &after_values] {
+            for vals in [&before_values, &after_values].into_iter().flatten() {
                 if let Some(&v) = vals.get(i)
                     && v.is_finite()
                 {
@@ -909,22 +904,37 @@ fn render_group_delay_graph(
     y_min = (y_min - margin).floor();
     y_max = (y_max + margin).ceil();
 
-    let mut chart_builder = line(&frequencies, &before_values)
+    // Build chart: use whichever series is available as primary.
+    // Only show "Before" when the measurement actually had phase data —
+    // don't draw a misleading flat line at 0ms.
+    let (primary_values, primary_label, primary_color) = if let Some(ref bv) = before_values {
+        (bv.as_slice(), "Before", BLUE)
+    } else if let Some(ref av) = after_values {
+        (av.as_slice(), "After", ORANGE)
+    } else {
+        // Should not happen due to .when() guard, but handle gracefully
+        return div().into_any_element();
+    };
+
+    let mut chart_builder = line(&frequencies, primary_values)
         .x_scale(ScaleType::Log)
         .x_range(20.0, 20000.0)
         .y_range(y_min, y_max)
         .y_label("GD (ms)")
-        .label("Before")
+        .label(primary_label)
         .legend_position(LegendPosition::Bottom)
-        .color(BLUE)
+        .color(primary_color)
         .stroke_width(1.5)
         .opacity(0.7)
         .theme(chart_theme)
         .size(GRAPH_WIDTH, GRAPH_HEIGHT);
 
-    if gd_after.is_some() {
+    // Add the secondary series only if it's different from the primary
+    if before_values.is_some()
+        && let Some(ref av) = after_values
+    {
         chart_builder =
-            chart_builder.add_series(&after_values, Some("After"), ORANGE, 1.5, 0.9);
+            chart_builder.add_series(av, Some("After"), ORANGE, 1.5, 0.9);
     }
 
     let chart = match chart_builder.build() {

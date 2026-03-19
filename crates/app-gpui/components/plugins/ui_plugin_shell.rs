@@ -44,8 +44,15 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     }
 }
 
-/// Get the icon string for a plugin type
-fn plugin_icon(plugin_type: &PluginType) -> &'static str {
+/// Get the icon string for a plugin type.
+///
+/// For LoudnessMonitor, pass `is_input_mon` / `is_output_mon` to pick a
+/// directional arrow; otherwise the generic monitor icon is used.
+pub fn plugin_icon(
+    plugin_type: &PluginType,
+    is_input_mon: bool,
+    is_output_mon: bool,
+) -> &'static str {
     match plugin_type {
         PluginType::EQ => "≈",
         PluginType::Gain => "▲",
@@ -57,10 +64,18 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::MultibandCompressor => "◎",
         PluginType::MultibandExpander => "◇",
         PluginType::LoudnessCompensation => "♫",
-        PluginType::FletcherMunson => "♫",
+        PluginType::FletcherMunson => "\u{1f3a7}", // headphones emoji
         PluginType::BinauralDecoder => "◎",
         PluginType::Convolution => "∿",
-        PluginType::LoudnessMonitor => "◐",
+        PluginType::LoudnessMonitor => {
+            if is_input_mon {
+                "◁"
+            } else if is_output_mon {
+                "▷"
+            } else {
+                "◐"
+            }
+        }
         PluginType::SpectrumAnalyzer => "▓",
         PluginType::ChannelMuteSolo => "◧",
         PluginType::Matrix => "⊞",
@@ -74,6 +89,58 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::MonoToStereo => "⊕",
         PluginType::Crossfeed => "⊞",
         PluginType::Delay => "⏱",
+    }
+}
+
+/// Get the display name for a plugin type (short form for rack cards).
+pub fn plugin_short_name(
+    plugin_type: &PluginType,
+    is_input_mon: bool,
+    is_output_mon: bool,
+    is_permanent: bool,
+) -> &'static str {
+    match plugin_type {
+        PluginType::EQ => "Equalizer",
+        PluginType::Gain => {
+            if is_permanent {
+                "Replay Gain"
+            } else {
+                "Gain"
+            }
+        }
+        PluginType::Upmixer => "Upmixer",
+        PluginType::Compressor => "Compressor",
+        PluginType::Limiter => "Limiter",
+        PluginType::Gate => "Gate",
+        PluginType::Expander => "Expander",
+        PluginType::MultibandCompressor => "MB Comp",
+        PluginType::MultibandExpander => "MB Expand",
+        PluginType::LoudnessCompensation => "Loudness",
+        PluginType::FletcherMunson => "F-M EQ",
+        PluginType::BinauralDecoder => "Binaural",
+        PluginType::Convolution => "Convolution",
+        PluginType::LoudnessMonitor => {
+            if is_input_mon {
+                "In Monitor"
+            } else if is_output_mon {
+                "Out Monitor"
+            } else {
+                "Monitor"
+            }
+        }
+        PluginType::SpectrumAnalyzer => "Spectrum",
+        PluginType::ChannelMuteSolo => "Mixer",
+        PluginType::Matrix => "Matrix",
+        PluginType::XTC => "XTC",
+        PluginType::Denoiser => "Denoiser",
+        PluginType::Pnd => "PND",
+        PluginType::ABCompare => "A/B Comp",
+        PluginType::BandSplit => "Split",
+        PluginType::BandMerge => "Merge",
+        PluginType::Downmix => "Downmix",
+        PluginType::MonoToStereo => "Mono->2.0",
+        PluginType::Crossfeed => "Crossfeed",
+        PluginType::Delay => "Delay",
     }
 }
 
@@ -97,7 +164,7 @@ pub fn render_plugin_shell(
     on_bypass: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
 ) -> impl IntoElement {
     let accent = plugin_accent_color(plugin_type, theme);
-    let icon = plugin_icon(plugin_type);
+    let icon = plugin_icon(plugin_type, false, false);
     let name = plugin_type.name().to_uppercase();
 
     div()

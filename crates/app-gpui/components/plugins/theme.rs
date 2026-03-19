@@ -39,31 +39,8 @@ pub struct MeterTheme {
 }
 
 impl MeterTheme {
-    /// Create default meter theme with green/yellow/red colors
-    #[allow(clippy::should_implement_trait)]
-    pub fn default() -> Self {
-        use crate::theme::Theme;
-        let theme = Theme::dark();
-        Self {
-            color_normal: theme.meter_normal,
-            color_warning: theme.meter_warning,
-            color_critical: theme.meter_clip,
-            color_info: theme.info,
-            color_background: theme.surface,
-            color_border: theme.border,
-            color_text: theme.text_secondary,
-            color_text_muted: theme.text_muted,
-            bar_height: 20.0,
-            border_radius: 4.0,
-            border_width: 1.0,
-            label_width: 32.0,        // Reduced from 80px to make bars 60% longer
-            value_width: 50.0,        // Value display width
-            warning_threshold: 0.75,  // 75% of range
-            critical_threshold: 0.90, // 90% of range
-        }
-    }
-
-    /// Create meter theme from the current app theme
+    /// Create meter theme from the current app theme.
+    /// Always use this instead of constructing manually — ensures theme consistency.
     pub fn from_theme(theme: &crate::theme::Theme) -> Self {
         Self {
             color_normal: theme.meter_normal,

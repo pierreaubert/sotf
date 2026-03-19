@@ -19,7 +19,7 @@ impl Theme {
             text_primary: rgb(0xffffff), // Pure white for max contrast on dark background
             text_secondary: rgb(0xe0f2d8),
             text_muted: rgb(0xc8dcc0),
-            text_disabled: rgb(0x88a67a),
+            text_disabled: rgb(0x9aba90), // ~4.5:1 contrast on #1a2418 (WCAG AA)
 
             // Border colors
             border: rgb(0x4a5a45),         // More visible border

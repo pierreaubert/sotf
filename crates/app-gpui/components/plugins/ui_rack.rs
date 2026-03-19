@@ -20,6 +20,8 @@ use sotf_audio_player::PluginType;
 use sotf_audio_player_midi::MidiMappingEngine;
 use sotf_audio_player_midi::mapping::MidiOverlay;
 
+use crate::components::themed_tooltip as make_tooltip;
+
 /// Drag information for plugin reordering
 #[derive(Clone)]
 pub struct PluginDragInfo {
@@ -77,82 +79,11 @@ impl Render for PluginDragInfo {
     }
 }
 
-// Plugin color scheme for different types - uses theme colors
-fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
-    match plugin_type {
-        PluginType::EQ => theme.plugin_colors.eq,
-        PluginType::Gain => theme.plugin_colors.gain,
-        PluginType::Upmixer => theme.plugin_colors.upmixer,
-        PluginType::Compressor => theme.plugin_colors.compressor,
-        PluginType::Limiter => theme.plugin_colors.limiter,
-        PluginType::Gate => theme.plugin_colors.gate,
-        PluginType::Expander => theme.plugin_colors.gate, // Reuse gate color for expander
-        PluginType::MultibandCompressor => theme.plugin_colors.compressor, // Reuse compressor color
-        PluginType::MultibandExpander => theme.plugin_colors.gate, // Reuse gate color
-        PluginType::LoudnessCompensation => theme.plugin_colors.loudness,
-        PluginType::FletcherMunson => theme.plugin_colors.loudness, // Reuse loudness color
-        PluginType::BinauralDecoder => theme.plugin_colors.binaural,
-        PluginType::Convolution => theme.plugin_colors.convolution,
-        // Use neutral text_primary color for monitor plugins (In/Out Monitor) instead of green
-        PluginType::LoudnessMonitor => theme.text_primary,
-        PluginType::SpectrumAnalyzer => theme.plugin_colors.spectrum,
-        PluginType::ChannelMuteSolo => theme.plugin_colors.mute_solo,
-        PluginType::Matrix => theme.plugin_colors.upmixer, // Reuse upmixer color for matrix
-        PluginType::XTC => theme.plugin_colors.binaural,   // Reuse binaural color for XTC
-        PluginType::Denoiser => theme.plugin_colors.eq,    // Reuse eq color for denoiser
-        PluginType::Pnd => theme.plugin_colors.eq,         // Reuse eq color for pnd
-        PluginType::ABCompare => theme.plugin_colors.compressor, // A/B Compare - use compressor color
-        PluginType::BandSplit => theme.plugin_colors.upmixer, // Reuse upmixer color for band split
-        PluginType::BandMerge => theme.plugin_colors.upmixer, // Reuse upmixer color for band merge
-        PluginType::Downmix => theme.plugin_colors.upmixer,   // Reuse upmixer color for downmix
-        PluginType::MonoToStereo => theme.plugin_colors.binaural, // Reuse binaural color for mono to stereo
-        PluginType::Crossfeed => theme.plugin_colors.binaural, // Reuse binaural color for crossfeed
-        PluginType::Delay => theme.plugin_colors.eq,
-    }
-}
-
-fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> &'static str {
-    match plugin_type {
-        PluginType::EQ => "≈",
-        PluginType::Gain => "▲",
-        PluginType::Upmixer => "◈",
-        PluginType::Compressor => "◉",
-        PluginType::Limiter => "█",
-        PluginType::Gate => "⊡",
-        PluginType::Expander => "⊟",
-        PluginType::MultibandCompressor => "◎",
-        PluginType::MultibandExpander => "◇",
-        PluginType::LoudnessCompensation => "♫",
-        PluginType::FletcherMunson => "🎧",
-        PluginType::BinauralDecoder => "◎",
-        PluginType::Convolution => "∿",
-        PluginType::LoudnessMonitor => {
-            if is_input_mon {
-                "◁" // Input monitor - left-pointing triangle
-            } else if is_output_mon {
-                "▷" // Output monitor - right-pointing triangle
-            } else {
-                "◐" // User-added monitor
-            }
-        }
-        PluginType::SpectrumAnalyzer => "▓",
-        PluginType::ChannelMuteSolo => "◧",
-        PluginType::Matrix => "⊞",
-        PluginType::XTC => "⊗",
-        PluginType::Denoiser => "◌",
-        PluginType::Pnd => "♪",
-        PluginType::ABCompare => "⇄", // A/B Compare - bidirectional arrow
-        PluginType::BandSplit => "⊥", // Split - T-junction symbol
-        PluginType::BandMerge => "⊤", // Merge - inverted T-junction
-        PluginType::Downmix => "▼",   // Downmix - downward triangle
-        PluginType::MonoToStereo => "⊕", // Mono to Stereo - circular plus
-        PluginType::Crossfeed => "⊞", // Crossfeed - boxed plus
-        PluginType::Delay => "⏱",
-    }
-}
+// Plugin visual identity — canonical implementations in ui_plugin_shell.rs
+use super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_icon, plugin_short_name};
 
 fn short_name(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> &'static str {
-    short_name_with_permanent(plugin_type, is_input_mon, is_output_mon, false)
+    plugin_short_name(plugin_type, is_input_mon, is_output_mon, false)
 }
 
 fn short_name_with_permanent(
@@ -161,49 +92,7 @@ fn short_name_with_permanent(
     is_output_mon: bool,
     is_permanent: bool,
 ) -> &'static str {
-    match plugin_type {
-        PluginType::EQ => "Equalizer",
-        PluginType::Gain => {
-            if is_permanent {
-                "Replay Gain"
-            } else {
-                "Gain"
-            }
-        }
-        PluginType::Upmixer => "Upmixer",
-        PluginType::Compressor => "Compressor",
-        PluginType::Limiter => "Limiter",
-        PluginType::Gate => "Gate",
-        PluginType::Expander => "Expander",
-        PluginType::MultibandCompressor => "MB Comp",
-        PluginType::MultibandExpander => "MB Expand",
-        PluginType::LoudnessCompensation => "Loudness",
-        PluginType::FletcherMunson => "F-M EQ",
-        PluginType::BinauralDecoder => "Binaural",
-        PluginType::Convolution => "Convolution",
-        PluginType::LoudnessMonitor => {
-            if is_input_mon {
-                "In Monitor"
-            } else if is_output_mon {
-                "Out Monitor"
-            } else {
-                "Monitor"
-            }
-        }
-        PluginType::SpectrumAnalyzer => "Spectrum",
-        PluginType::ChannelMuteSolo => "Mixer",
-        PluginType::Matrix => "Matrix",
-        PluginType::XTC => "XTC",
-        PluginType::Denoiser => "Denoiser",
-        PluginType::Pnd => "PND",
-        PluginType::ABCompare => "A/B Comp",
-        PluginType::BandSplit => "Split",
-        PluginType::BandMerge => "Merge",
-        PluginType::Downmix => "Downmix",
-        PluginType::MonoToStereo => "Mono->2.0",
-        PluginType::Crossfeed => "Crossfeed",
-        PluginType::Delay => "Delay",
-    }
+    plugin_short_name(plugin_type, is_input_mon, is_output_mon, is_permanent)
 }
 
 /// Convert speaker config string to output channel count
@@ -345,7 +234,7 @@ impl PlayerView {
 
     /// Render the horizontal plugin rack strip
     fn render_plugin_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (plugins_data, selected_idx, theme, preset_open, preset_list, last_loaded_preset) = {
+        let (plugins_data, selected_idx, theme, preset_open, preset_list, last_loaded_preset, has_pending_update) = {
             let state = self.state.read(cx);
             let chain = &state.app.plugin_state.chain;
             let plugins: Vec<_> = chain
@@ -366,6 +255,7 @@ impl PlayerView {
             let preset_open = state.app.plugin_state.plugin_preset_open;
             let preset_list = state.app.plugin_state.plugin_preset_list.clone();
             let last_loaded_preset = state.app.plugin_state.last_loaded_preset.clone();
+            let has_pending_update = state.app.plugin_state.pending_plugin_update.is_some();
             (
                 plugins,
                 state.app.plugin_state.selected_plugin_index,
@@ -373,6 +263,7 @@ impl PlayerView {
                 preset_open,
                 preset_list,
                 last_loaded_preset,
+                has_pending_update,
             )
         };
 
@@ -468,7 +359,16 @@ impl PlayerView {
                                     .text_xs()
                                     .text_color(theme.text_muted)
                                     .child(format!("{} plugins", plugin_count)),
-                            ),
+                            )
+                            .when(has_pending_update, |d| {
+                                d.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.accent)
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child("Applying..."),
+                                )
+                            }),
                     )
                     // Preset buttons (right-aligned)
                     .child({
@@ -704,7 +604,12 @@ impl PlayerView {
                                                 .text_size(rems(0.625))
                                                 .text_color(theme_c.text_on_accent)
                                                 .font_weight(FontWeight::BOLD)
-                                                .child(if enabled { "A" } else { "B" }),
+                                                .child(if enabled { "A" } else { "B" })
+                                                .tooltip({
+                                                    let theme = theme_c.clone();
+                                                    let label = if enabled { "Bypass" } else { "Activate" };
+                                                    move |_window, cx| make_tooltip(label, &theme, cx)
+                                                }),
                                         )
                                         // S (Solo) button — functional
                                         .child(
@@ -737,7 +642,11 @@ impl PlayerView {
                                                 )
                                                 .text_size(rems(0.5625))
                                                 .font_weight(FontWeight::BOLD)
-                                                .child("S"),
+                                                .child("S")
+                                                .tooltip({
+                                                    let theme = theme_c.clone();
+                                                    move |_window, cx| make_tooltip("Solo", &theme, cx)
+                                                }),
                                         )
                                         // P (Presets) button
                                         .child(
@@ -767,6 +676,7 @@ impl PlayerView {
                                                                     ps.plugin_preset_open = None;
                                                                     ps.plugin_preset_save_mode = false;
                                                                     ps.plugin_preset_input.clear();
+                                                                    ps.confirm_delete_preset = None;
                                                                 } else {
                                                                     // Open and populate list
                                                                     if let Some(plugin) = ps.chain.plugins().get(idx) {
@@ -784,10 +694,16 @@ impl PlayerView {
                                                 )
                                                 .text_size(rems(0.5625))
                                                 .font_weight(FontWeight::BOLD)
-                                                .child("P"),
+                                                .child("P")
+                                                .tooltip({
+                                                    let theme = theme_c.clone();
+                                                    move |_window, cx| make_tooltip("Presets", &theme, cx)
+                                                }),
                                         )
                                         // X (Remove) or lock icon for permanent
                                         .when(!is_permanent, |d| {
+                                            let theme_tt = theme_c.clone();
+                                            let confirming = self.state.read(cx).app.plugin_state.confirm_remove_plugin == Some(idx);
                                             d.child(
                                                 div()
                                                     .id(("plugin-close", idx))
@@ -798,9 +714,10 @@ impl PlayerView {
                                                     .items_center()
                                                     .justify_center()
                                                     .cursor_pointer()
-                                                    .hover(|s| s.bg(theme_c.error).text_color(theme_c.text_on_accent))
+                                                    .when(confirming, |d| d.bg(theme_c.error).text_color(theme_c.text_on_accent))
+                                                    .when(!confirming, |d| d.hover(|s| s.bg(theme_c.error).text_color(theme_c.text_on_accent)))
                                                     .text_size(rems(0.625))
-                                                    .text_color(theme_c.text_muted)
+                                                    .when(!confirming, |d| d.text_color(theme_c.text_muted))
                                                     .font_weight(FontWeight::BOLD)
                                                     .on_mouse_up(
                                                         MouseButton::Left,
@@ -808,14 +725,25 @@ impl PlayerView {
                                                             move |view, _e: &MouseUpEvent, _, cx| {
                                                                 cx.stop_propagation();
                                                                 view.state.update(cx, |state, _cx| {
-                                                                    state.app.remove_plugin(idx);
-                                                                    state.app.update_level_meter_groups();
+                                                                    if state.app.plugin_state.confirm_remove_plugin == Some(idx) {
+                                                                        // Second click: confirmed
+                                                                        state.app.plugin_state.confirm_remove_plugin = None;
+                                                                        state.app.remove_plugin(idx);
+                                                                        state.app.update_level_meter_groups();
+                                                                    } else {
+                                                                        // First click: ask for confirmation
+                                                                        state.app.plugin_state.confirm_remove_plugin = Some(idx);
+                                                                    }
                                                                 });
                                                                 cx.notify();
                                                             },
                                                         ),
                                                     )
-                                                    .child("X"),
+                                                    .child(if confirming { "?" } else { "X" })
+                                                    .tooltip({
+                                                        let label = if confirming { "Click again to confirm removal" } else { "Remove" };
+                                                        move |_window, cx| make_tooltip(label, &theme_tt, cx)
+                                                    }),
                                             )
                                         })
                                         // Lock icon for permanent plugins
@@ -896,13 +824,16 @@ impl PlayerView {
                                                                 .text_ellipsis()
                                                                 .child(name.clone()),
                                                         )
-                                                        .child(
+                                                        .child({
+                                                            let confirming_del = self.state.read(cx).app.plugin_state.confirm_delete_preset.as_ref()
+                                                                .is_some_and(|(pi_idx, pn)| *pi_idx == idx && pn == name);
+                                                            let name_confirm = name.clone();
                                                             div()
                                                                 .id(("preset-del", pi))
                                                                 .text_size(rems(0.5))
-                                                                .text_color(theme_i.text_muted)
                                                                 .cursor_pointer()
-                                                                .hover(|s| s.text_color(theme_i.error))
+                                                                .when(confirming_del, |d| d.text_color(theme_i.error).font_weight(FontWeight::BOLD))
+                                                                .when(!confirming_del, |d| d.text_color(theme_i.text_muted).hover(|s| s.text_color(theme_i.error)))
                                                                 .on_mouse_up(
                                                                     MouseButton::Left,
                                                                     cx.listener(
@@ -910,18 +841,27 @@ impl PlayerView {
                                                                             cx.stop_propagation();
                                                                             view.state.update(cx, |state, _cx| {
                                                                                 let ps = &mut state.app.plugin_state;
-                                                                                if let Some(plugin) = ps.chain.plugins().get(idx) {
-                                                                                    let pt = plugin.plugin_type().clone();
-                                                                                    let _ = sotf_audio_player::PluginController::delete_plugin_preset(&pt, &name_del);
-                                                                                    ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
+                                                                                let is_confirmed = ps.confirm_delete_preset.as_ref()
+                                                                                    .is_some_and(|(pi_idx, pn)| *pi_idx == idx && *pn == name_del);
+                                                                                if is_confirmed {
+                                                                                    // Second click: confirmed
+                                                                                    ps.confirm_delete_preset = None;
+                                                                                    if let Some(plugin) = ps.chain.plugins().get(idx) {
+                                                                                        let pt = plugin.plugin_type().clone();
+                                                                                        let _ = sotf_audio_player::PluginController::delete_plugin_preset(&pt, &name_del);
+                                                                                        ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
+                                                                                    }
+                                                                                } else {
+                                                                                    // First click: ask for confirmation
+                                                                                    ps.confirm_delete_preset = Some((idx, name_confirm.clone()));
                                                                                 }
                                                                             });
                                                                             cx.notify();
                                                                         },
                                                                     ),
                                                                 )
-                                                                .child("X"),
-                                                        )
+                                                                .child(if confirming_del { "?" } else { "X" })
+                                                        })
                                                 }
                                             ))
                                             .child({
@@ -1246,6 +1186,8 @@ impl PlayerView {
                                         })
                                         // X (Remove) or lock icon
                                         .when(!is_permanent, |d| {
+                                            let theme_tt = theme_c.clone();
+                                            let confirming = self.state.read(cx).app.plugin_state.confirm_remove_plugin == Some(idx);
                                             d.child(
                                                 div()
                                                     .id(("plugin-close-tail", idx))
@@ -1256,9 +1198,10 @@ impl PlayerView {
                                                     .items_center()
                                                     .justify_center()
                                                     .cursor_pointer()
-                                                    .hover(|s| s.bg(theme_c.error).text_color(theme_c.text_on_accent))
+                                                    .when(confirming, |d| d.bg(theme_c.error).text_color(theme_c.text_on_accent))
+                                                    .when(!confirming, |d| d.hover(|s| s.bg(theme_c.error).text_color(theme_c.text_on_accent)))
                                                     .text_size(rems(0.625))
-                                                    .text_color(theme_c.text_muted)
+                                                    .when(!confirming, |d| d.text_color(theme_c.text_muted))
                                                     .font_weight(FontWeight::BOLD)
                                                     .on_mouse_up(
                                                         MouseButton::Left,
@@ -1266,14 +1209,23 @@ impl PlayerView {
                                                             move |view, _e: &MouseUpEvent, _, cx| {
                                                                 cx.stop_propagation();
                                                                 view.state.update(cx, |state, _cx| {
-                                                                    state.app.remove_plugin(idx);
-                                                                    state.app.update_level_meter_groups();
+                                                                    if state.app.plugin_state.confirm_remove_plugin == Some(idx) {
+                                                                        state.app.plugin_state.confirm_remove_plugin = None;
+                                                                        state.app.remove_plugin(idx);
+                                                                        state.app.update_level_meter_groups();
+                                                                    } else {
+                                                                        state.app.plugin_state.confirm_remove_plugin = Some(idx);
+                                                                    }
                                                                 });
                                                                 cx.notify();
                                                             },
                                                         ),
                                                     )
-                                                    .child("X"),
+                                                    .child(if confirming { "?" } else { "X" })
+                                                    .tooltip({
+                                                        let label = if confirming { "Click again to confirm removal" } else { "Remove" };
+                                                        move |_window, cx| make_tooltip(label, &theme_tt, cx)
+                                                    }),
                                             )
                                         })
                                         .when(is_permanent, |d| {

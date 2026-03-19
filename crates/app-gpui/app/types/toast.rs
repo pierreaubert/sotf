@@ -33,7 +33,12 @@ impl ToastMessage {
     }
 
     pub fn error(message: impl Into<String>) -> Self {
-        Self::new(message.into(), ToastType::Error)
+        Self {
+            message: message.into(),
+            toast_type: ToastType::Error,
+            created_at: Instant::now(),
+            auto_dismiss_ms: Some(15000), // 15 seconds for errors (more time to read)
+        }
     }
 
     pub fn info(message: impl Into<String>) -> Self {

@@ -1597,7 +1597,7 @@ impl RoomEqState {
         let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
         let mut crossovers: HashMap<String, BackendCrossoverConfig> = HashMap::new();
 
-        // Helper to convert measurement to curve
+        // Helper to convert measurement to curve (preserving phase if available)
         let to_curve = |meas: &ChannelMeasurement| -> autoeq::Curve {
             let frequencies: Vec<f64> = meas
                 .measurement
@@ -1611,23 +1611,43 @@ impl RoomEqState {
                 .iter()
                 .map(|&db| db as f64)
                 .collect();
+            let phase = if !meas.measurement.phase_deg.is_empty()
+                && meas.measurement.phase_deg.len() == frequencies.len()
+            {
+                Some(ndarray::Array1::from_vec(
+                    meas.measurement
+                        .phase_deg
+                        .iter()
+                        .map(|&p| p as f64)
+                        .collect(),
+                ))
+            } else {
+                None
+            };
 
             autoeq::Curve {
                 freq: ndarray::Array1::from_vec(frequencies),
                 spl: ndarray::Array1::from_vec(magnitude_db),
-                phase: None,
+                phase,
             }
         };
 
-        // Helper to convert recording result to curve
+        // Helper to convert recording result to curve (preserving phase if available)
         let result_to_curve = |res: &RecordingResult| -> autoeq::Curve {
             let frequencies: Vec<f64> = res.frequencies.iter().map(|&f| f as f64).collect();
             let magnitude_db: Vec<f64> = res.magnitude_db.iter().map(|&db| db as f64).collect();
+            let phase = if !res.phase_deg.is_empty() && res.phase_deg.len() == frequencies.len() {
+                Some(ndarray::Array1::from_vec(
+                    res.phase_deg.iter().map(|&p| p as f64).collect(),
+                ))
+            } else {
+                None
+            };
 
             autoeq::Curve {
                 freq: ndarray::Array1::from_vec(frequencies),
                 spl: ndarray::Array1::from_vec(magnitude_db),
-                phase: None,
+                phase,
             }
         };
 

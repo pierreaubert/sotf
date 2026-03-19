@@ -358,6 +358,10 @@ impl App {
                 screen.maturity(),
                 self.ui_state.release_channel
             );
+            self.ui_state.toast_message = Some(crate::app::ToastMessage::info(format!(
+                "{:?} is not available on the {:?} release channel",
+                screen, self.ui_state.release_channel
+            )));
             crate::app::Screen::Library
         };
         let old_screen = self.ui_state.current_screen;
@@ -371,6 +375,7 @@ impl App {
                 format!("screen: {}", trigger),
             );
             self.ui_state.current_screen = target;
+            self.plugin_state.clear_confirmations();
         }
     }
 

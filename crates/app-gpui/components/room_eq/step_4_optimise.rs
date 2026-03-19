@@ -490,6 +490,7 @@ impl PlayerView {
                 let chart_theme = theme_to_chart_theme(&theme);
 
                 // Filter out status messages (loss <= 0.0 or non-finite)
+                // Also skip completion messages (iter==0 after real data — draws line back to 0)
                 // Group by channel name, preserving insertion order
                 let mut channel_order: Vec<String> = Vec::new();
                 let mut channel_data: std::collections::HashMap<String, (Vec<f64>, Vec<f64>)> =
@@ -498,6 +499,11 @@ impl PlayerView {
 
                 for (iter, loss, speaker) in &history {
                     if !loss.is_finite() || *loss <= 0.0 {
+                        continue;
+                    }
+                    // Skip completion/status messages that would draw a line back to x=0
+                    // These have iter==0 after the channel already has progress data
+                    if *iter == 0 && channel_data.contains_key(speaker) {
                         continue;
                     }
                     all_losses.push(*loss);
@@ -578,7 +584,7 @@ impl PlayerView {
                     let (iters, losses) = &channel_data[first_ch];
                     let mut builder = line(iters, losses)
                         .title("Optimization Process")
-                        .x_label("Iteration")
+                        .x_label("Iterations")
                         .y_label("Loss")
                         .label(format!("Loss {}", first_ch))
                         .x_range(x_min, x_max)
@@ -608,7 +614,7 @@ impl PlayerView {
                     // No data yet — build an empty chart
                     line(&[0.0], &[0.0])
                         .title("Optimization Process")
-                        .x_label("Iteration")
+                        .x_label("Iterations")
                         .y_label("Loss")
                         .label("Loss")
                         .x_range(0.0, 100.0)
