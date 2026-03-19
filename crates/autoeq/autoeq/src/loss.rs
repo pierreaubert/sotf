@@ -904,7 +904,7 @@ pub fn multisub_flat_loss(
 ///
 /// # Notes
 /// Used as part of the Olive et al. headphone preference prediction model.
-fn calculate_standard_deviation_in_range(
+pub fn calculate_standard_deviation_in_range(
     freq: &Array1<f64>,
     deviation: &Array1<f64>,
     fmin: f64,

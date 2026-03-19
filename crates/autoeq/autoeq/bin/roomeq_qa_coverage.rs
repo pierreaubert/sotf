@@ -25,6 +25,8 @@ use std::thread;
 
 use clap::Parser;
 
+use autoeq::loss::calculate_standard_deviation_in_range;
+use autoeq::loss::phase_aware::{compute_group_delay, unwrap_phase_degrees};
 use autoeq::roomeq::{
     CallbackAction, ProcessingMode, RoomConfig, RoomOptimizationResult, merge_json_objects,
     optimize_room,
@@ -464,6 +466,7 @@ fn validate_result(
     result: &RoomOptimizationResult,
     room_size: RoomSize,
     method: ProcessingMethod,
+    config: &RoomConfig,
 ) -> Vec<String> {
     let mut failures = Vec::new();
 
@@ -558,6 +561,60 @@ fn validate_result(
                     name, i, bq.db_gain
                 ));
             }
+        }
+
+        // Check 6: Group delay reasonableness (FIR/Mixed modes with phase data)
+        if matches!(method, ProcessingMethod::Fir | ProcessingMethod::Mixed)
+            && let Some(ref phase) = ch_result.final_curve.phase
+        {
+            // Unwrap phase to avoid discontinuities that cause GD spikes
+            let unwrapped = unwrap_phase_degrees(phase);
+            // compute_group_delay returns values in ms
+            let gd = compute_group_delay(&ch_result.final_curve.freq, &unwrapped);
+            // Use passband mean (not global) for accurate std dev
+            let mut gd_sum = 0.0;
+            let mut gd_count = 0usize;
+            for j in 0..ch_result.final_curve.freq.len() {
+                if ch_result.final_curve.freq[j] >= 20.0
+                    && ch_result.final_curve.freq[j] <= 500.0
+                {
+                    gd_sum += gd[j];
+                    gd_count += 1;
+                }
+            }
+            if gd_count == 0 {
+                continue;
+            }
+            let gd_mean = gd_sum / gd_count as f64;
+            let deviation = &gd - gd_mean;
+            let gd_std = calculate_standard_deviation_in_range(
+                &ch_result.final_curve.freq,
+                &deviation,
+                20.0,
+                500.0,
+            );
+            // GD std dev should be reasonable (< 50ms)
+            if gd_std > 50.0 {
+                failures.push(format!(
+                    "channel '{}': group delay std dev {:.1}ms > 50ms",
+                    name, gd_std
+                ));
+            }
+        }
+
+        // Check 7: FIR taps length matches configured taps
+        if matches!(method, ProcessingMethod::Fir | ProcessingMethod::Mixed)
+            && let Some(ref fir_coeffs) = ch_result.fir_coeffs
+            && let Some(ref fir_config) = config.optimizer.fir
+            && !fir_coeffs.is_empty()
+            && fir_coeffs.len() != fir_config.taps
+        {
+            failures.push(format!(
+                "channel '{}': FIR coeffs length {} != configured taps {}",
+                name,
+                fir_coeffs.len(),
+                fir_config.taps
+            ));
         }
     }
 
@@ -726,7 +783,7 @@ fn run_test_case(tc: &TestCase, maxeval: usize) -> TestResult {
     let post = result.combined_post_score;
     let dur = start.elapsed().as_millis() as u64;
 
-    let validation_failures = validate_result(&result, tc.room_size(), tc.method);
+    let validation_failures = validate_result(&result, tc.room_size(), tc.method, &config);
 
     TestResult::success(
         &name,
