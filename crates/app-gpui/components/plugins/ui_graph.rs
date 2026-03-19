@@ -518,6 +518,8 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::MonoToStereo => theme.accent,
         PluginType::Crossfeed => theme.accent,
         PluginType::Delay => theme.info,
+        PluginType::Aec => theme.info,
+        PluginType::Beamformer => theme.accent,
     }
 }
 
@@ -562,6 +564,10 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         // Crossfeed: stereo in/out
         PluginType::Crossfeed => (2, 2),
         PluginType::Delay => (2, 2),
+        // AEC: 2 in (mic + ref), 1 out
+        PluginType::Aec => (2, 1),
+        // Beamformer: M in, 1 out (default 2 mics)
+        PluginType::Beamformer => (2, 1),
     }
 }
 

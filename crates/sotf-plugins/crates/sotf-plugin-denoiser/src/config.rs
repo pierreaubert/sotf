@@ -227,6 +227,10 @@ pub struct DenoiserPluginParams {
     /// Spectral subtraction floor
     #[serde(default = "default_spectral_sub_beta")]
     pub spectral_sub_beta: f32,
+
+    /// Algorithm backend: 0=Classical, 1=RNNoise, 2=DeepFilter, 3=HybridNeural
+    #[serde(default)]
+    pub algorithm: usize,
 }
 
 impl Default for DenoiserPluginParams {
@@ -259,6 +263,7 @@ impl Default for DenoiserPluginParams {
             spectral_sub_enabled: default_spectral_sub_enabled(),
             spectral_sub_alpha: default_spectral_sub_alpha(),
             spectral_sub_beta: default_spectral_sub_beta(),
+            algorithm: 0,
         }
     }
 }

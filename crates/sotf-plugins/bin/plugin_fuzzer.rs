@@ -1269,6 +1269,7 @@ impl PluginFuzzer for ConvolutionFuzzer {
             ir_file: "".to_string(), // Not used with direct IR load
             mix: rng.random_range(0.1..1.0),
             gain_db: rng.random_range(-12.0..0.0),
+            use_nupc: true,
         };
 
         let plugin = ConvolutionPlugin::from_params(channels, self.sample_rate, params.clone())

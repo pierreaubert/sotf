@@ -108,6 +108,8 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::MonoToStereo => theme.plugin_colors.binaural, // Reuse binaural color for mono to stereo
         PluginType::Crossfeed => theme.plugin_colors.binaural, // Reuse binaural color for crossfeed
         PluginType::Delay => theme.plugin_colors.eq,
+        PluginType::Aec => theme.plugin_colors.eq,
+        PluginType::Beamformer => theme.plugin_colors.binaural,
     }
 }
 
@@ -148,6 +150,8 @@ fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool
         PluginType::MonoToStereo => "⊕", // Mono to Stereo - circular plus
         PluginType::Crossfeed => "⊞", // Crossfeed - boxed plus
         PluginType::Delay => "⏱",
+        PluginType::Aec => "⊘",
+        PluginType::Beamformer => "⊙",
     }
 }
 
@@ -203,6 +207,8 @@ fn short_name_with_permanent(
         PluginType::MonoToStereo => "Mono->2.0",
         PluginType::Crossfeed => "Crossfeed",
         PluginType::Delay => "Delay",
+        PluginType::Aec => "AEC",
+        PluginType::Beamformer => "Beamfmr",
     }
 }
 

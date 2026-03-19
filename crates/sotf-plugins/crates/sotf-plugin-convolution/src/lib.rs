@@ -2,6 +2,8 @@
 // Convolution Plugin - Partitioned FFT-based convolution
 // ============================================================================
 
+pub mod nupc;
+
 use arc_swap::ArcSwap;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
@@ -26,6 +28,13 @@ pub struct ConvolutionPluginParams {
     pub ir_file: String,
     pub mix: f32,
     pub gain_db: f32,
+    /// Use Non-Uniform Partitioned Convolution for long IRs
+    #[serde(default = "default_use_nupc")]
+    pub use_nupc: bool,
+}
+
+fn default_use_nupc() -> bool {
+    true
 }
 
 struct ConvolutionState {

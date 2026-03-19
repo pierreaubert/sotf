@@ -2,7 +2,9 @@
 members = [
     "crates/sotf-plugins/crates/sotf-host",
     "crates/sotf-plugins/crates/sotf-plugin-ab-compare",
+    "crates/sotf-plugins/crates/sotf-plugin-aec",
     "crates/sotf-plugins/crates/sotf-plugin-band-merge",
+    "crates/sotf-plugins/crates/sotf-plugin-beamformer",
     "crates/sotf-plugins/crates/sotf-plugin-band-split",
     "crates/sotf-plugins/crates/sotf-plugin-binaural",
     "crates/sotf-plugins/crates/sotf-plugin-channel-mute-solo",
@@ -125,6 +127,7 @@ num-traits = "0.2"
 rayon = "1.11"
 rustfft = "6.4"
 realfft = "3.5"
+nalgebra = { version = "0.33", default-features = false, features = ["std"] }
 metaheuristics-nature = "10.1"
 nlopt = "0.8"
 
@@ -154,7 +157,9 @@ gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }
 sotf-plugin-ab-compare = { path = "crates/sotf-plugins/crates/sotf-plugin-ab-compare" }
+sotf-plugin-aec = { path = "crates/sotf-plugins/crates/sotf-plugin-aec" }
 sotf-plugin-band-merge = { path = "crates/sotf-plugins/crates/sotf-plugin-band-merge" }
+sotf-plugin-beamformer = { path = "crates/sotf-plugins/crates/sotf-plugin-beamformer" }
 sotf-plugin-band-split = { path = "crates/sotf-plugins/crates/sotf-plugin-band-split" }
 sotf-plugin-binaural = { path = "crates/sotf-plugins/crates/sotf-plugin-binaural" }
 sotf-plugin-channel-mute-solo = { path = "crates/sotf-plugins/crates/sotf-plugin-channel-mute-solo" }
@@ -298,6 +303,9 @@ nokhwa = { version = "0.10", default-features = false }
 
 # QR code decoding from camera
 rqrr = "0.10.0"
+
+# RNNoise (pure Rust)
+nnnoiseless = "0.1"
 
 # ONNX Runtime
 ort = "2.0.0-rc.10"

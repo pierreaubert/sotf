@@ -15,3 +15,4 @@ realfft = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
 sotf-plugin-pnd = { workspace = true }
+nnnoiseless = { workspace = true }

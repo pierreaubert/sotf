@@ -9,8 +9,9 @@ use super::{
     ThreadEvent,
 };
 use sotf_plugins::{
-    CompressorPluginParams, ConvolutionPlugin, ConvolutionPluginParams, CrossoverPlugin,
-    CrossoverPluginParams, DelayPlugin, DelayPluginParams, DenoiserPlugin, DenoiserPluginParams,
+    AecPlugin, AecPluginParams, BeamformerPlugin, BeamformerPluginParams, CompressorPluginParams, ConvolutionPlugin,
+    ConvolutionPluginParams, CrossoverPlugin, CrossoverPluginParams, DelayPlugin, DelayPluginParams,
+    DenoiserPlugin, DenoiserPluginParams,
     EqPluginParams, ExpanderPluginParams, FletcherMunsonPluginParams, GainPluginParams,
     GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams,
     LoudnessMonitorPlugin, MultibandCompressorPluginParams, MultibandExpanderPluginParams, Plugin,
@@ -892,6 +893,22 @@ fn create_plugin(
 
             let plugin = DelayPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "aec" => {
+            let params: AecPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse AEC plugin parameters: {}", e))?;
+
+            let plugin = AecPlugin::from_params(sample_rate, params);
+            Ok(Box::new(plugin))
+        }
+
+        "beamformer" => {
+            let params: BeamformerPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse beamformer plugin parameters: {}", e))?;
+
+            let plugin = BeamformerPlugin::from_params(sample_rate, params);
+            Ok(Box::new(plugin))
         }
 
         "loudness_compensation" => {

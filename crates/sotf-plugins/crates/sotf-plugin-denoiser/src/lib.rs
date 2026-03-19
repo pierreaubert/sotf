@@ -29,6 +29,8 @@ use std::sync::Arc;
 
 use sotf_host::analyzer::RealTimeCache;
 
+pub mod backend;
+pub mod backend_rnnoise;
 mod config;
 mod fft;
 mod hiss;

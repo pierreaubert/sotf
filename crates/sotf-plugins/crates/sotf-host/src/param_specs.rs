@@ -1560,6 +1560,8 @@ pub mod convolution {
         ParamSpec::file_path("IR File", "ir_file", "General").setup(),
         ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "General").output(),
         ParamSpec::float("Gain", "gain_db", 0.0, -20.0, 20.0, 0.5, "dB", "General").output(),
+        ParamSpec::bool_param("Use NUPC", "use_nupc", true, "General")
+            .structural(),
     ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[ControlSpec::file_picker(0)], // ir_file
@@ -2231,11 +2233,19 @@ pub mod denoiser {
         )
         .structural()
         .secondary("Noise Profile"),
+        ParamSpec::choice(
+            "Algorithm",
+            "algorithm",
+            0,
+            &["Classical", "RNNoise", "DeepFilter", "HybridNeural"],
+            "General",
+        )
+        .structural(),
     ];
     use crate::plugin_layout::*;
     /// Denoiser: 0=reduction, 1=floor, 2=smoothing, 3=attack, 4=release,
     /// 5=low_latency, 6=polyphonic, 7=crack_sens, 8-11=MCRA, 12=transparency,
-    /// 13-18=analysis toggles, 19-22=hiss, 23-25=spectral_sub, 26-28=noise_profile
+    /// 13-18=analysis toggles, 19-22=hiss, 23-25=spectral_sub, 26-28=noise_profile, 29=algorithm
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
             ControlSpec::toggle(5), // low_latency
@@ -3639,6 +3649,126 @@ pub mod crossfeed {
         column_constraints: &[
             ColumnConstraint::main(350.0),
             ColumnConstraint::output(120.0, 0.6),
+        ],
+    };
+}
+
+// ============================================================================
+// AEC Plugin (Acoustic Echo Cancellation)
+// ============================================================================
+
+pub mod aec {
+    use super::ParamSpec;
+    use crate::plugin_layout::*;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float(
+            "Echo Tail",
+            "echo_tail_ms",
+            200.0,
+            50.0,
+            500.0,
+            10.0,
+            "ms",
+            "AEC",
+        ),
+        ParamSpec::float(
+            "Step Size",
+            "step_size",
+            0.5,
+            0.1,
+            0.9,
+            0.05,
+            "",
+            "AEC",
+        ),
+        ParamSpec::bool_param("Post-Filter", "post_filter_enabled", true, "AEC").output(),
+    ];
+    pub const LAYOUT: PluginLayout = PluginLayout {
+        config: &[],
+        main: &[ControlGroup {
+            title: "",
+            controls: &[
+                ControlSpec::slider(0), // echo_tail_ms
+                ControlSpec::slider(1), // step_size
+            ],
+        }],
+        output: &[ControlSpec::toggle(2)], // post_filter_enabled
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &[
+            ColumnConstraint::main(200.0),
+            ColumnConstraint::output(120.0, 0.6),
+        ],
+    };
+}
+
+// ============================================================================
+// Beamformer Plugin
+// ============================================================================
+
+pub mod beamformer {
+    use super::ParamSpec;
+    use crate::plugin_layout::*;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::int(
+            "Microphones",
+            "num_mics",
+            2,
+            2,
+            8,
+            1,
+            "",
+            "Array",
+        )
+        .structural(),
+        ParamSpec::float(
+            "Mic Spacing",
+            "mic_spacing_cm",
+            5.0,
+            1.0,
+            50.0,
+            0.5,
+            "cm",
+            "Array",
+        )
+        .structural(),
+        ParamSpec::float(
+            "Steer Angle",
+            "steer_angle_deg",
+            0.0,
+            -180.0,
+            180.0,
+            1.0,
+            "°",
+            "General",
+        ),
+        ParamSpec::choice(
+            "Algorithm",
+            "beamformer_type",
+            0,
+            &["MVDR", "Superdirective", "GSC"],
+            "General",
+        )
+        .structural(),
+    ];
+    pub const LAYOUT: PluginLayout = PluginLayout {
+        config: &[
+            ControlSpec::slider(0), // num_mics
+            ControlSpec::slider(1), // mic_spacing_cm
+        ],
+        main: &[ControlGroup {
+            title: "",
+            controls: &[
+                ControlSpec::slider(2), // steer_angle_deg
+                ControlSpec::selector(3), // beamformer_type
+            ],
+        }],
+        output: &[],
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &[
+            ColumnConstraint::config(150.0, 0.4),
+            ColumnConstraint::main(200.0),
         ],
     };
 }

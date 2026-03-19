@@ -343,7 +343,7 @@ impl_param_accessors! {
     Convolution {
         params: param_specs::convolution::PARAMS,
         layout: Some(&param_specs::convolution::LAYOUT),
-        fields: [ir_file: skip, mix: f64, gain_db: f64]
+        fields: [ir_file: skip, mix: f64, gain_db: f64, use_nupc: bool]
     },
     BinauralDecoder {
         params: param_specs::binaural::PARAMS,
@@ -384,6 +384,7 @@ impl_param_accessors! {
             hiss_enabled: bool, hiss_threshold_db: f64, hiss_frequency_hz: f64, hiss_strength: f64,
             spectral_sub_enabled: bool, spectral_sub_alpha: f64, spectral_sub_beta: f64,
             learn_noise: bool, use_captured_profile: bool, clear_profile: bool,
+            algorithm: usize,
         ]
     },
     Pnd {
@@ -444,6 +445,16 @@ impl_param_accessors! {
         params: param_specs::delay::PARAMS,
         layout: Some(&param_specs::delay::LAYOUT),
         fields: [delay_ms: f64, feedback: f64, mix: f64]
+    },
+    Aec {
+        params: param_specs::aec::PARAMS,
+        layout: Some(&param_specs::aec::LAYOUT),
+        fields: [echo_tail_ms: f64, step_size: f64, post_filter_enabled: bool]
+    },
+    Beamformer {
+        params: param_specs::beamformer::PARAMS,
+        layout: Some(&param_specs::beamformer::LAYOUT),
+        fields: [num_mics: usize, mic_spacing_cm: f64, steer_angle_deg: f64, beamformer_type: usize]
     },
     EQ {
         params: param_specs::eq::GLOBAL_PARAMS,

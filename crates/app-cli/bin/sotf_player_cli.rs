@@ -3135,6 +3135,7 @@ fn build_rack_mode_plugins(
                         learn_noise: plugins.denoiser.learn_noise,
                         use_captured_profile: plugins.denoiser.use_captured_profile,
                         clear_profile: plugins.denoiser.clear_profile,
+                        algorithm: 0,
                     };
                 }
                 log::info!("Rack: Added Denoiser plugin");
@@ -3194,6 +3195,7 @@ fn build_rack_mode_plugins(
                         ir_file: ir_path.to_string_lossy().to_string(),
                         mix: plugins.convolution.mix as f64,
                         gain_db: plugins.convolution.gain_db as f64,
+                        use_nupc: true,
                     };
                 }
                 log::info!("Rack: Added Convolution plugin");

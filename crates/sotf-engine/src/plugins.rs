@@ -82,6 +82,8 @@ pub enum PluginType {
     MonoToStereo,
     Crossfeed,
     Delay,
+    Aec,
+    Beamformer,
 }
 
 impl PluginType {
@@ -114,6 +116,8 @@ impl PluginType {
             Self::MonoToStereo => "Mono to Stereo",
             Self::Crossfeed => "Crossfeed",
             Self::Delay => "Delay",
+            Self::Aec => "AEC",
+            Self::Beamformer => "Beamformer",
         }
     }
 
@@ -146,6 +150,8 @@ impl PluginType {
             Self::MonoToStereo => "Convert mono signal to pseudo-stereo",
             Self::Crossfeed => "Headphone crossfeed for speaker-like listening",
             Self::Delay => "Simple delay effect with feedback",
+            Self::Aec => "Acoustic Echo Cancellation (PBFDAF + Two-Path + Post-Filter)",
+            Self::Beamformer => "Microphone array beamformer (MVDR / Superdirective / GSC)",
         }
     }
 
@@ -178,6 +184,8 @@ impl PluginType {
             Self::MonoToStereo,
             Self::Crossfeed,
             Self::Delay,
+            Self::Aec,
+            Self::Beamformer,
         ]
     }
 
@@ -217,9 +225,12 @@ impl PluginType {
             | Self::LoudnessCompensation
             | Self::MonoToStereo => ReleaseChannel::Beta,
 
-            Self::BinauralDecoder | Self::Convolution | Self::Pnd | Self::Denoiser => {
-                ReleaseChannel::Alpha
-            }
+            Self::BinauralDecoder
+            | Self::Convolution
+            | Self::Pnd
+            | Self::Denoiser
+            | Self::Aec
+            | Self::Beamformer => ReleaseChannel::Alpha,
         }
     }
 }
@@ -364,6 +375,8 @@ use sotf_plugins::param_specs::band_merge as band_merge_specs;
 use sotf_plugins::param_specs::band_split as band_split_specs;
 use sotf_plugins::param_specs::binaural as binaural_specs;
 use sotf_plugins::param_specs::channel_mute_solo as cms_specs;
+use sotf_plugins::param_specs::aec as aec_specs;
+use sotf_plugins::param_specs::beamformer as beamformer_specs;
 use sotf_plugins::param_specs::compressor as compressor_specs;
 use sotf_plugins::param_specs::convolution as convolution_specs;
 use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
@@ -578,6 +591,11 @@ sotf_plugins::serde_param_default! {
     fn default_denoiser_spectral_sub_enabled() -> bool = "spectral_sub_enabled";
     fn default_denoiser_spectral_sub_alpha() -> f64 = "spectral_sub_alpha";
     fn default_denoiser_spectral_sub_beta() -> f64 = "spectral_sub_beta";
+    fn default_denoiser_algorithm() -> usize = "algorithm";
+}
+
+fn default_use_nupc() -> bool {
+    true
 }
 
 sotf_plugins::serde_param_default! {
@@ -652,6 +670,21 @@ sotf_plugins::serde_param_default! {
     fn default_delay_ms() -> f64 = "delay_ms";
     fn default_delay_feedback() -> f64 = "feedback";
     fn default_delay_mix() -> f64 = "mix";
+}
+
+sotf_plugins::serde_param_default! {
+    aec_specs::PARAMS;
+    fn default_aec_echo_tail_ms() -> f64 = "echo_tail_ms";
+    fn default_aec_step_size() -> f64 = "step_size";
+    fn default_aec_post_filter_enabled() -> bool = "post_filter_enabled";
+}
+
+sotf_plugins::serde_param_default! {
+    beamformer_specs::PARAMS;
+    fn default_beamformer_num_mics() -> usize = "num_mics";
+    fn default_beamformer_mic_spacing_cm() -> f64 = "mic_spacing_cm";
+    fn default_beamformer_steer_angle_deg() -> f64 = "steer_angle_deg";
+    fn default_beamformer_type() -> usize = "beamformer_type";
 }
 
 fn default_spectrum_num_bins() -> usize {
@@ -1003,6 +1036,8 @@ pub enum PluginSettings {
         ir_file: String,
         mix: f64,
         gain_db: f64,
+        #[serde(default = "default_use_nupc")]
+        use_nupc: bool,
     },
     LoudnessMonitor,
     SpectrumAnalyzer {
@@ -1145,6 +1180,8 @@ pub enum PluginSettings {
         use_captured_profile: bool,
         #[serde(default)]
         clear_profile: bool,
+        #[serde(default = "default_denoiser_algorithm")]
+        algorithm: usize,
     },
     Pnd {
         #[serde(default = "default_pnd_correction_strength")]
@@ -1292,6 +1329,24 @@ pub enum PluginSettings {
         #[serde(default = "default_delay_mix")]
         mix: f64,
     },
+    Aec {
+        #[serde(default = "default_aec_echo_tail_ms")]
+        echo_tail_ms: f64,
+        #[serde(default = "default_aec_step_size")]
+        step_size: f64,
+        #[serde(default = "default_aec_post_filter_enabled")]
+        post_filter_enabled: bool,
+    },
+    Beamformer {
+        #[serde(default = "default_beamformer_num_mics")]
+        num_mics: usize,
+        #[serde(default = "default_beamformer_mic_spacing_cm")]
+        mic_spacing_cm: f64,
+        #[serde(default = "default_beamformer_steer_angle_deg")]
+        steer_angle_deg: f64,
+        #[serde(default = "default_beamformer_type")]
+        beamformer_type: usize,
+    },
 }
 
 impl PluginSettings {
@@ -1324,6 +1379,8 @@ impl PluginSettings {
             Self::MonoToStereo { .. } => PluginType::MonoToStereo,
             Self::Crossfeed { .. } => PluginType::Crossfeed,
             Self::Delay { .. } => PluginType::Delay,
+            Self::Aec { .. } => PluginType::Aec,
+            Self::Beamformer { .. } => PluginType::Beamformer,
         }
     }
 
@@ -1334,6 +1391,8 @@ impl PluginSettings {
             Self::XTC { .. } => Some(2),
             Self::Crossfeed { .. } => Some(2),
             Self::MonoToStereo { .. } => Some(1),
+            Self::Aec { .. } => Some(2),
+            Self::Beamformer { num_mics, .. } => Some(*num_mics),
             _ => None,
         }
     }
@@ -1388,6 +1447,32 @@ impl PluginSettings {
                     "delay_ms": delay_ms,
                     "feedback": feedback,
                     "mix": mix,
+                }),
+            ),
+            Self::Aec {
+                echo_tail_ms,
+                step_size,
+                post_filter_enabled,
+            } => PluginConfig::new(
+                "aec",
+                json!({
+                    "echo_tail_ms": *echo_tail_ms as f32,
+                    "step_size": *step_size as f32,
+                    "post_filter_enabled": post_filter_enabled,
+                }),
+            ),
+            Self::Beamformer {
+                num_mics,
+                mic_spacing_cm,
+                steer_angle_deg,
+                beamformer_type,
+            } => PluginConfig::new(
+                "beamformer",
+                json!({
+                    "num_mics": num_mics,
+                    "mic_spacing_cm": *mic_spacing_cm as f32,
+                    "steer_angle_deg": *steer_angle_deg as f32,
+                    "beamformer_type": beamformer_type,
                 }),
             ),
             Self::EQ {
@@ -1822,12 +1907,14 @@ impl PluginSettings {
                 ir_file,
                 mix,
                 gain_db,
+                use_nupc,
             } => PluginConfig::new(
                 "convolution",
                 json!({
                     "ir_file": ir_file,
                     "mix": mix,
                     "gain_db": gain_db,
+                    "use_nupc": use_nupc,
                 }),
             ),
             Self::LoudnessMonitor => PluginConfig::new("loudness_monitor", json!({})),
@@ -1997,6 +2084,7 @@ impl PluginSettings {
                 learn_noise,
                 use_captured_profile,
                 clear_profile,
+                algorithm,
             } => PluginConfig::new(
                 "denoiser",
                 json!({
@@ -2029,6 +2117,7 @@ impl PluginSettings {
                     "learn_noise": learn_noise,
                     "use_captured_profile": use_captured_profile,
                     "clear_profile": clear_profile,
+                    "algorithm": algorithm,
                 }),
             ),
             Self::Pnd {
@@ -2369,6 +2458,7 @@ impl PluginSettings {
                     ir_file: String::new(),
                     mix: p(cv, "mix").default_f64(),
                     gain_db: p(cv, "gain_db").default_f64(),
+                    use_nupc: p(cv, "use_nupc").default_bool(),
                 }
             }
             PluginType::LoudnessMonitor => Self::LoudnessMonitor,
@@ -2462,6 +2552,7 @@ impl PluginSettings {
                     learn_noise: p(d, "learn_noise").default_bool(),
                     use_captured_profile: p(d, "use_captured_profile").default_bool(),
                     clear_profile: p(d, "clear_profile").default_bool(),
+                    algorithm: p(d, "algorithm").default_usize(),
                 }
             }
             PluginType::Pnd => {
@@ -2550,6 +2641,23 @@ impl PluginSettings {
                     delay_ms: p(d, "delay_ms").default_f64(),
                     feedback: p(d, "feedback").default_f64(),
                     mix: p(d, "mix").default_f64(),
+                }
+            }
+            PluginType::Aec => {
+                let a = aec_specs::PARAMS;
+                Self::Aec {
+                    echo_tail_ms: p(a, "echo_tail_ms").default_f64(),
+                    step_size: p(a, "step_size").default_f64(),
+                    post_filter_enabled: p(a, "post_filter_enabled").default_bool(),
+                }
+            }
+            PluginType::Beamformer => {
+                let b = beamformer_specs::PARAMS;
+                Self::Beamformer {
+                    num_mics: p(b, "num_mics").default_usize(),
+                    mic_spacing_cm: p(b, "mic_spacing_cm").default_f64(),
+                    steer_angle_deg: p(b, "steer_angle_deg").default_f64(),
+                    beamformer_type: p(b, "beamformer_type").default_usize(),
                 }
             }
         }
