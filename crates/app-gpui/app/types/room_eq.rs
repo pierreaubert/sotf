@@ -786,6 +786,11 @@ pub struct RoomEqOptimizerConfig {
     pub multi_seat: MultiSeatConfig,
     #[serde(default)]
     pub multi_measurement: MultiMeasurementUiConfig,
+
+    /// True when settings were imported from a backend config file (recordings.json).
+    /// When set, `apply_smart_defaults()` skips overriding feature toggles.
+    #[serde(default)]
+    pub imported_from_file: bool,
 }
 
 impl Default for RoomEqOptimizerConfig {
@@ -826,18 +831,20 @@ impl Default for RoomEqOptimizerConfig {
             phase_alignment: PhaseAlignmentConfig::default(),
             multi_seat: MultiSeatConfig::default(),
             multi_measurement: MultiMeasurementUiConfig::default(),
+            imported_from_file: false,
         }
     }
 }
 
 impl RoomEqOptimizerConfig {
-    /// Import core optimizer parameters from a backend `OptimizerConfig`.
+    /// Import optimizer parameters and feature toggles from a backend `OptimizerConfig`.
     ///
     /// This is used when loading a RoomConfig JSON file so that the GPUI
     /// uses the same optimizer settings as the roomeq CLI.
-    /// Only imports parameters that affect optimization results; UI-specific
-    /// and feature-toggle settings are left for `apply_smart_defaults()`.
+    /// Sets `imported_from_file = true` so that `apply_smart_defaults()` will
+    /// not override the imported feature toggle state.
     pub fn import_from_backend(&mut self, backend: &BackendOptimizerConfig) {
+        // Core optimizer parameters
         self.algorithm = backend.algorithm.clone();
         self.num_filters = backend.num_filters;
         self.min_q = backend.min_q;
@@ -856,9 +863,91 @@ impl RoomEqOptimizerConfig {
         self.atolerance = backend.atolerance;
         self.refine = backend.refine;
         self.local_algo = backend.local_algo.clone();
-        if let Some(seed) = backend.seed {
-            self.seed = Some(seed);
+        self.seed = backend.seed;
+
+        // Feature toggles: None in backend = feature was not configured = disabled.
+        self.target_tilt.enabled = backend.target_tilt.is_some();
+        if let Some(ref tilt) = backend.target_tilt {
+            self.target_tilt.tilt_type = match tilt.tilt_type {
+                TiltType::Harman => "harman".to_string(),
+                TiltType::Custom => "custom".to_string(),
+                TiltType::Flat => "flat".to_string(),
+            };
+            self.target_tilt.slope = tilt.slope_db_per_octave;
+            self.target_tilt.reference_freq = tilt.reference_freq;
+            self.target_tilt.bass_shelf_db = tilt.bass_shelf_db;
+            self.target_tilt.bass_shelf_freq = tilt.bass_shelf_freq;
         }
+
+        self.excursion_protection.enabled = backend.excursion_protection.as_ref().is_some_and(|e| e.enabled);
+        if let Some(ref ep) = backend.excursion_protection {
+            self.excursion_protection.auto_detect_f3 = ep.auto_detect_f3;
+            self.excursion_protection.manual_f3_hz = ep.manual_f3_hz.unwrap_or(40.0);
+            self.excursion_protection.filter_order = ep.filter_order;
+            self.excursion_protection.filter_type = match ep.filter_type {
+                HighpassType::Butterworth => "bw".to_string(),
+                HighpassType::LinkwitzRiley => "lr".to_string(),
+            };
+            self.excursion_protection.margin_octaves = ep.margin_octaves;
+        }
+
+        self.schroeder_split.enabled = backend.schroeder_split.as_ref().is_some_and(|s| s.enabled);
+        if let Some(ref ss) = backend.schroeder_split {
+            self.schroeder_split.schroeder_freq = ss.schroeder_freq;
+            self.schroeder_split.low_freq_max_q = ss.low_freq_config.max_q;
+            self.schroeder_split.low_freq_allow_boost = ss.low_freq_config.allow_boost;
+            self.schroeder_split.high_freq_max_q = ss.high_freq_config.max_q;
+            self.schroeder_split.high_freq_shelving_only = ss.high_freq_config.shelving_only;
+        }
+
+        self.broadband_target_matching.enabled = backend.broadband_target_matching.as_ref().is_some_and(|b| b.enabled);
+
+        self.allow_delay = backend.allow_delay.unwrap_or(false);
+
+        self.gd_opt.enabled = backend.gd_opt.as_ref().is_some_and(|g| g.enabled);
+        if let Some(ref gd) = backend.gd_opt {
+            self.gd_opt.target_ms = gd.target_ms;
+        }
+
+        self.vog.enabled = backend.vog.as_ref().is_some_and(|v| v.enabled);
+        if let Some(ref vog) = backend.vog {
+            self.vog.reference_channel = vog.reference_channel.clone();
+        }
+
+        self.phase_alignment.enabled = backend.phase_alignment.as_ref().is_some_and(|p| p.enabled);
+        if let Some(ref pa) = backend.phase_alignment {
+            self.phase_alignment.min_freq = pa.min_freq;
+            self.phase_alignment.max_freq = pa.max_freq;
+            self.phase_alignment.optimize_polarity = pa.optimize_polarity;
+            self.phase_alignment.max_delay_ms = pa.max_delay_ms;
+        }
+
+        self.multi_seat.enabled = backend.multi_seat.as_ref().is_some_and(|m| m.enabled);
+        if let Some(ref ms) = backend.multi_seat {
+            self.multi_seat.strategy = match ms.strategy {
+                autoeq::roomeq::MultiSeatStrategy::MinimizeVariance => "variance".to_string(),
+                autoeq::roomeq::MultiSeatStrategy::PrimaryWithConstraints => "primary".to_string(),
+                autoeq::roomeq::MultiSeatStrategy::Average => "average".to_string(),
+            };
+            self.multi_seat.primary_seat = ms.primary_seat;
+            self.multi_seat.max_deviation_db = ms.max_deviation_db;
+        }
+
+        if let Some(ref mm) = backend.multi_measurement {
+            self.multi_measurement.enabled = true;
+            self.multi_measurement.strategy = match mm.strategy {
+                autoeq::roomeq::MultiMeasurementStrategy::Average => "average".to_string(),
+                autoeq::roomeq::MultiMeasurementStrategy::WeightedSum => "weighted_sum".to_string(),
+                autoeq::roomeq::MultiMeasurementStrategy::Minimax => "minimax".to_string(),
+                autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized => "variance_penalized".to_string(),
+            };
+            self.multi_measurement.variance_lambda = mm.variance_lambda;
+            self.multi_measurement.weights = mm.weights.clone().unwrap_or_default();
+        } else {
+            self.multi_measurement.enabled = false;
+        }
+
+        self.imported_from_file = true;
     }
 }
 
@@ -1357,8 +1446,15 @@ impl RoomEqState {
 
         let config = &mut self.optimizer_config;
 
-        // Loss type: always flat for roomeq
+        // Loss type is always flat for room EQ
         config.loss_type = "flat".to_string();
+
+        // Only override algorithm/seed defaults when not imported from file
+        if !config.imported_from_file {
+            config.local_algo = "cobyla".to_string();
+            config.refine = true;
+            config.seed = None;
+        }
 
         // System type: auto-detect from channel count
         config.system_type = if is_surround {
@@ -1367,37 +1463,24 @@ impl RoomEqState {
             "stereo".to_string()
         };
 
-        // Algorithm: local refinement with COBYLA
-        config.local_algo = "cobyla".to_string();
-        config.refine = true;
-
-        // Target tilt: harman by default
-        config.target_tilt.enabled = true;
-        config.target_tilt.tilt_type = "harman".to_string();
-
-        // Advanced Room Correction: on by default
-        config.excursion_protection.enabled = true;
-        config.schroeder_split.enabled = true;
-
-        // Allow delay: on by default
-        config.allow_delay = true;
-
-        // Broadband target matching: on by default
-        config.broadband_target_matching.enabled = true;
-
-        // Reproducible seed: off by default
-        config.seed = None;
-
-        // Group delay optimization: on if subwoofer present
-        config.gd_opt.enabled = has_subwoofer;
-
-        // Voice of God: on if height channels present
-        config.vog.enabled = has_height;
-        config.vog.reference_channel = if is_cinema {
-            "C".to_string()
-        } else {
-            "L".to_string()
-        };
+        // Feature flags: only auto-enable when NOT imported from file.
+        // When imported, the file's feature state is authoritative
+        // (None = disabled, Some = enabled with those params).
+        if !config.imported_from_file {
+            config.target_tilt.enabled = true;
+            config.target_tilt.tilt_type = "harman".to_string();
+            config.excursion_protection.enabled = true;
+            config.schroeder_split.enabled = true;
+            config.allow_delay = true;
+            config.broadband_target_matching.enabled = true;
+            config.gd_opt.enabled = has_subwoofer;
+            config.vog.enabled = has_height;
+            config.vog.reference_channel = if is_cinema {
+                "C".to_string()
+            } else {
+                "L".to_string()
+            };
+        }
     }
 
     /// Get channel names from speaker configs
@@ -1773,6 +1856,18 @@ impl RoomEqState {
                 None
             },
         };
+
+        log::info!(
+            "RoomConfig: filters={}, max_q={}, max_freq={}, schroeder={}, target_tilt={}, excursion={}, broadband={}, imported={}",
+            optimizer.num_filters,
+            optimizer.max_q,
+            optimizer.max_freq,
+            optimizer.schroeder_split.is_some(),
+            optimizer.target_tilt.is_some(),
+            optimizer.excursion_protection.is_some(),
+            optimizer.broadband_target_matching.is_some(),
+            self.optimizer_config.imported_from_file,
+        );
 
         RoomConfig {
             version: autoeq::roomeq::default_config_version(),
