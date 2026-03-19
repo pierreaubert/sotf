@@ -202,6 +202,7 @@ pub fn build_channel_dsp_chain_with_curves(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        target_curve: None,
     }
 }
 
@@ -363,6 +364,7 @@ pub fn build_multidriver_dsp_chain_with_curves(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        target_curve: None,
     }
 }
 
@@ -454,6 +456,7 @@ pub fn build_multisub_dsp_chain_with_curves(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        target_curve: None,
     }
 }
 
@@ -535,6 +538,7 @@ pub fn build_dba_dsp_chain_with_curves(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        target_curve: None,
     }
 }
 
@@ -607,6 +611,7 @@ pub fn build_cardioid_dsp_chain_with_curves(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        target_curve: None,
     }
 }
 
@@ -760,6 +765,7 @@ pub fn build_mixed_mode_crossover_chain(
         eq_response: None,
         pre_ir: None,
         post_ir: None,
+        target_curve: None,
     }
 }
 
@@ -1059,6 +1065,7 @@ mod tests {
             eq_response: None,
             pre_ir: None,
             post_ir: None,
+            target_curve: None,
         };
 
         add_delay_plugin(&mut chain, 10.0);

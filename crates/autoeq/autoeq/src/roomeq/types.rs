@@ -625,7 +625,7 @@ impl Default for TargetTiltConfig {
     fn default() -> Self {
         Self {
             tilt_type: TiltType::Flat,
-            slope_db_per_octave: default_tilt_slope(),
+            slope_db_per_octave: 0.0,
             reference_freq: default_tilt_reference_freq(),
             bass_shelf_db: 0.0,
             bass_shelf_freq: default_bass_shelf_freq(),
@@ -1366,6 +1366,12 @@ pub struct ChannelDspChain {
     /// EQ filter response curve (correction magnitude in dB) (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eq_response: Option<CurveData>,
+
+    /// Effective target curve the optimizer worked against (optional).
+    /// This is the mean-shifted + tilt target in absolute SPL coordinates,
+    /// so the frontend can display what the optimizer was actually aiming for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_curve: Option<CurveData>,
 
     /// Impulse response before correction (optional, requires phase data)
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -137,19 +137,13 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         result.add_warning("max_iter is 0, optimization will not run".to_string());
     }
 
-    // Validate algorithm choice
-    let valid_algorithms = [
-        "cobyla",
-        "de",
-        "nlopt:cobyla",
-        "nlopt:bobyqa",
-        "nlopt:sbplx",
-        "autoeq:de",
-    ];
-    if !valid_algorithms
-        .iter()
-        .any(|&a| opt.algorithm.starts_with(a))
-    {
+    // Validate algorithm choice — accept known library prefixes and bare names
+    let valid_prefixes = ["nlopt:", "mh:", "autoeq:"];
+    let valid_bare = ["cobyla", "de"];
+    let algo = opt.algorithm.as_str();
+    let is_known = valid_prefixes.iter().any(|p| algo.starts_with(p))
+        || valid_bare.contains(&algo);
+    if !is_known {
         result.add_warning(format!(
             "Unknown algorithm '{}', may not be supported",
             opt.algorithm

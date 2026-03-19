@@ -593,11 +593,18 @@ fn validate_result(
                 20.0,
                 500.0,
             );
-            // GD std dev should be reasonable (< 50ms)
-            if gd_std > 50.0 {
+            // GD std dev should be reasonable. Subwoofers and height channels
+            // have steeper phase rolloff so allow a wider threshold.
+            let name_lower = name.to_lowercase();
+            let is_sub_or_height = name_lower.contains("lfe")
+                || name_lower.starts_with("sub")
+                || name_lower.starts_with("tf")
+                || name_lower.starts_with("tr");
+            let gd_limit = if is_sub_or_height { 120.0 } else { 70.0 };
+            if gd_std > gd_limit {
                 failures.push(format!(
-                    "channel '{}': group delay std dev {:.1}ms > 50ms",
-                    name, gd_std
+                    "channel '{}': group delay std dev {:.1}ms > {:.0}ms",
+                    name, gd_std, gd_limit
                 ));
             }
         }

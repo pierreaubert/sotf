@@ -1400,14 +1400,33 @@ fn process_single_speaker(
     // Build target curve with tilt (if configured)
     // ========================================================================
     let target_tilt_curve = if let Some(tilt_config) = &room_config.optimizer.target_tilt {
-        if tilt_config.tilt_type != TiltType::Flat {
+        // When tilt_type is Flat but the user set a non-zero slope or bass shelf,
+        // promote to Custom so the tilt is actually applied. This handles configs
+        // where tilt_type is omitted (defaults to Flat) but slope_db_per_octave is set.
+        let effective_config = if tilt_config.tilt_type == TiltType::Flat
+            && (tilt_config.slope_db_per_octave.abs() > 1e-6
+                || tilt_config.bass_shelf_db.abs() > 1e-6)
+        {
+            warn!(
+                "  target_tilt has slope={:.2} dB/oct but tilt_type is Flat — \
+                 promoting to Custom. Set tilt_type explicitly to avoid this warning.",
+                tilt_config.slope_db_per_octave
+            );
+            let mut promoted = tilt_config.clone();
+            promoted.tilt_type = TiltType::Custom;
+            promoted
+        } else {
+            tilt_config.clone()
+        };
+
+        if effective_config.tilt_type != TiltType::Flat {
             info!(
                 "  Building target curve with {:?} tilt ({:.2} dB/octave)",
-                tilt_config.tilt_type, tilt_config.slope_db_per_octave
+                effective_config.tilt_type, effective_config.slope_db_per_octave
             );
             Some(target_tilt::build_target_curve_with_tilt(
                 &curve.freq,
-                tilt_config,
+                &effective_config,
             ))
         } else {
             None
@@ -1508,15 +1527,23 @@ fn process_single_speaker(
     {
         if bb_config.enabled {
             info!("  Broadband Target Matching enabled...");
-            // 1. Construct the target curve (with tilt if configured, or flat)
-            let target = target_tilt_curve.clone().unwrap_or_else(|| {
-                // Create a flat (0 dB) target curve matching the input frequency grid
-                Curve {
+            // 1. Construct the target curve (with tilt if configured, or flat).
+            // The target tilt curve is centered at 0dB, but the measurement has
+            // an arbitrary absolute SPL level. Shift the target to the measurement's
+            // mean so the alignment only corrects the *shape* difference (tilt/shelving),
+            // not the absolute level offset.
+            let target = {
+                let tilt = target_tilt_curve.clone().unwrap_or_else(|| Curve {
                     freq: curve.freq.clone(),
                     spl: Array1::zeros(curve.freq.len()),
                     phase: None,
+                });
+                Curve {
+                    freq: tilt.freq,
+                    spl: &tilt.spl + mean_spl,
+                    phase: tilt.phase,
                 }
-            });
+            };
 
             // 2. Compute alignment
             if let Some(result) = spectral_align::compute_target_alignment(
@@ -2067,6 +2094,27 @@ fn process_single_speaker(
             chain.initial_curve = Some(initial_data.clone());
             chain.final_curve = Some(final_data.clone());
             chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
+
+            // Build effective target curve in absolute SPL coordinates for display.
+            // The optimizer works on mean-normalized data, so the effective target is
+            // mean_spl + tilt (if any). This lets the frontend show what the optimizer
+            // was actually aiming for instead of a misleading 0dB line.
+            let display_target_spl = if let Some(ref tilt_curve) = target_tilt_curve {
+                // Interpolate tilt to display frequency grid
+                let tilt_at_display = crate::read::normalize_and_interpolate_response(
+                    &display_initial.freq,
+                    tilt_curve,
+                );
+                &tilt_at_display.spl + mean_spl
+            } else {
+                ndarray::Array1::from_elem(display_initial.freq.len(), mean_spl)
+            };
+            chain.target_curve = Some(super::types::CurveData {
+                freq: display_initial.freq.to_vec(),
+                spl: display_target_spl.to_vec(),
+                phase: None,
+                norm_range,
+            });
 
             Ok((
                 chain,

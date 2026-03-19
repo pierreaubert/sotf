@@ -1059,4 +1059,100 @@ mod tests {
             );
         }
     }
+
+    /// Regression test: broadband target matching must not produce large corrections
+    /// when the measurement is level-shifted relative to the target.
+    ///
+    /// Before the fix, `compute_target_alignment` compared a measurement at +5dB mean
+    /// against a 0dB-centered target, producing a catastrophic -5dB flat_gain that
+    /// cascaded into +20dB EQ boosts. The caller must level-align the target to the
+    /// measurement's mean before calling this function.
+    #[test]
+    fn test_target_alignment_level_offset_must_not_cause_large_correction() {
+        // Simulate a measurement at ~5 dB mean (typical room measurement)
+        let measurement = make_curve(|_| 5.0);
+        // Target: level-aligned to measurement mean (5.0) + small tilt (-0.8 dB/oct)
+        let target = make_curve(|f| 5.0 + (-0.8) * (f / 1000.0).log2());
+
+        let result = compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
+
+        // With a level-aligned target, the flat gain should be small (only tilt mismatch)
+        if let Some(r) = &result {
+            assert!(
+                r.flat_gain_db.abs() < 3.0,
+                "flat_gain should be small when target is level-aligned, got {:.2}dB",
+                r.flat_gain_db
+            );
+        }
+
+        // Now test the BAD case: target NOT level-aligned (centered at 0dB).
+        // This is what caused the catastrophic bug. The correction should be large.
+        let bad_target = make_curve(|f| (-0.8) * (f / 1000.0).log2());
+        let bad_result =
+            compute_target_alignment(&measurement, &bad_target, 20.0, 20000.0, SAMPLE_RATE);
+
+        if let Some(r) = &bad_result {
+            // The flat_gain will be clamped to MAX_FLAT_GAIN_DB, but it's still large
+            assert!(
+                r.flat_gain_db.abs() > 3.0,
+                "un-aligned target should produce large flat_gain, got {:.2}dB",
+                r.flat_gain_db
+            );
+        }
+    }
+
+    /// Test that target alignment with a flat measurement and flat target at same level
+    /// produces negligible corrections.
+    #[test]
+    fn test_target_alignment_same_level_flat() {
+        let mean_level = 7.0; // arbitrary absolute SPL
+        let measurement = make_curve(|_| mean_level);
+        let target = make_curve(|_| mean_level);
+
+        let result = compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
+
+        // Should be None (negligible corrections) or have very small values
+        if let Some(r) = &result {
+            assert!(
+                r.flat_gain_db.abs() < MIN_CORRECTION_DB,
+                "flat_gain should be negligible, got {:.4}dB",
+                r.flat_gain_db
+            );
+            assert!(
+                r.lowshelf_gain_db.abs() < MIN_CORRECTION_DB,
+                "lowshelf should be negligible, got {:.4}dB",
+                r.lowshelf_gain_db
+            );
+            assert!(
+                r.highshelf_gain_db.abs() < MIN_CORRECTION_DB,
+                "highshelf should be negligible, got {:.4}dB",
+                r.highshelf_gain_db
+            );
+        }
+    }
+
+    /// Test that target alignment with tilt produces shelf corrections, not flat gain.
+    #[test]
+    fn test_target_alignment_tilt_produces_shelf_not_flat() {
+        let mean_level = 5.0;
+        // Flat measurement
+        let measurement = make_curve(|_| mean_level);
+        // Tilted target at same mean level
+        let target = make_curve(|f| mean_level + (-0.8) * (f / 1000.0).log2());
+
+        let result = compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
+
+        if let Some(r) = result {
+            // Should have shelf corrections (the tilt shape) but small flat gain
+            assert!(
+                r.flat_gain_db.abs() < 2.0,
+                "flat_gain should be small for pure tilt, got {:.2}dB",
+                r.flat_gain_db
+            );
+            // At least one shelf should be non-trivial to correct the tilt
+            let has_shelf = r.lowshelf_gain_db.abs() > MIN_CORRECTION_DB
+                || r.highshelf_gain_db.abs() > MIN_CORRECTION_DB;
+            assert!(has_shelf, "tilt should produce shelf corrections");
+        }
+    }
 }

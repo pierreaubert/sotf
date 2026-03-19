@@ -1799,6 +1799,7 @@ fn validate_broadband_target_matching(
     _option_config: &RoomConfig,
 ) -> (bool, String) {
     let mut details = Vec::new();
+    let mut pass = true;
 
     // Check 1: broadband matching should produce gain/EQ plugins in the DSP chain
     let has_broadband_plugins = option_result.channels.values().any(|chain| {
@@ -1813,17 +1814,36 @@ fn validate_broadband_target_matching(
         "shelf_plugins=absent".to_string()
     });
 
-    // Check 2: score should not be significantly worse than baseline
+    // Check 2: score must not be worse than baseline (regression test for the
+    // level-offset bug where broadband matching applied a massive gain shift,
+    // causing the EQ optimizer to produce +20dB boosts and catastrophic results).
     let score_ok = option_result.combined_post_score
         <= OPTION_SCORE_TOLERANCE * baseline_result.combined_post_score;
+    if !score_ok {
+        pass = false;
+    }
     details.push(format!(
-        "score: baseline={:.4} broadband={:.4}",
+        "score: baseline={:.4} broadband={:.4} (limit={:.1}x)",
         baseline_result.combined_post_score,
-        option_result.combined_post_score
+        option_result.combined_post_score,
+        OPTION_SCORE_TOLERANCE,
     ));
 
-    // Pass if score is acceptable (shelf plugins are informational)
-    (score_ok, details.join("; "))
+    // Check 3: per-channel regression — no channel should get catastrophically worse.
+    // This catches the level-offset bug where individual channels got 3x worse scores.
+    for (ch_name, option_ch) in &option_result.channel_results {
+        if let Some(baseline_ch) = baseline_result.channel_results.get(ch_name)
+            && option_ch.post_score > baseline_ch.post_score * 2.0
+        {
+            pass = false;
+            details.push(format!(
+                "{}: REGRESSED {:.2} -> {:.2}",
+                ch_name, baseline_ch.post_score, option_ch.post_score
+            ));
+        }
+    }
+
+    (pass, details.join("; "))
 }
 
 /// OE-7: Phase alignment - delay plugin present in sub channel, score not worse
