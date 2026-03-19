@@ -21,9 +21,14 @@
 pub mod analysis;
 pub mod audio_features;
 pub mod ebur128;
+pub mod esprit;
 pub mod fast_math;
+pub mod instantaneous_frequency;
 pub mod replaygain;
+pub mod rtpghi;
+pub mod simd;
 pub mod signals;
+pub mod stft;
 pub mod waveform;
 
 // Re-export commonly used types
