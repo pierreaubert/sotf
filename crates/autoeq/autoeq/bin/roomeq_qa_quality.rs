@@ -450,13 +450,6 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
         OptionOverride::BroadbandTargetMatching => {
             config.optimizer.broadband_target_matching =
                 Some(BroadbandTargetMatchingConfig { enabled: true });
-            // Broadband matching needs a target to match against —
-            // set a Harman-style tilt so the shelves have work to do.
-            config.optimizer.target_tilt = Some(TargetTiltConfig {
-                tilt_type: TiltType::Custom,
-                slope_db_per_octave: -0.8,
-                ..TargetTiltConfig::default()
-            });
         }
         OptionOverride::PhaseAlignment => {
             config.optimizer.phase_alignment = Some(PhaseAlignmentConfig::default());
@@ -498,13 +491,6 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
         }
         OptionOverride::BroadbandTargetMatching => {
             config.optimizer.broadband_target_matching = None;
-            // Baseline also gets the same target_tilt so the only difference
-            // is whether broadband shelf matching is applied before fine EQ.
-            config.optimizer.target_tilt = Some(TargetTiltConfig {
-                tilt_type: TiltType::Custom,
-                slope_db_per_octave: -0.8,
-                ..TargetTiltConfig::default()
-            });
         }
         OptionOverride::PhaseAlignment => {
             config.optimizer.phase_alignment = None;
@@ -583,12 +569,13 @@ enum TestCase {
         fem_subdir: &'static str,
         optim_subdir: &'static str,
     },
-    /// Per-option A/B test: baseline vs with-option
+    /// Per-option A/B test: baseline vs with-option(s)
+    /// Supports single options and combinations.
     OptionEffect {
         name: &'static str,
         fem_subdir: &'static str,
         optim_subdir: &'static str,
-        option: OptionOverride,
+        options: Vec<OptionOverride>,
     },
 }
 
@@ -659,64 +646,331 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
         },
-        // Part D: Per-option effect tests
+        // Part D: Per-option effect tests (single option)
         TestCase::OptionEffect {
             name: "OE target_tilt",
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
-            option: OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+            options: vec![OptionOverride::TargetTilt { slope_db_per_octave: -0.8 }],
         },
         TestCase::OptionEffect {
             name: "OE excursion_protection",
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
-            option: OptionOverride::ExcursionProtection,
+            options: vec![OptionOverride::ExcursionProtection],
         },
         TestCase::OptionEffect {
             name: "OE schroeder_split",
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
-            option: OptionOverride::SchroederSplit {
+            options: vec![OptionOverride::SchroederSplit {
                 schroeder_freq: 300.0,
                 low_max_q: 10.0,
                 high_max_q: 1.0,
-            },
+            }],
         },
         TestCase::OptionEffect {
             name: "OE asymmetric_loss",
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
-            option: OptionOverride::AsymmetricLoss,
+            options: vec![OptionOverride::AsymmetricLoss],
         },
         TestCase::OptionEffect {
             name: "OE psychoacoustic",
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
-            option: OptionOverride::Psychoacoustic,
+            options: vec![OptionOverride::Psychoacoustic],
         },
         TestCase::OptionEffect {
             name: "OE broadband_target_matching",
             fem_subdir: "medium_surround_5_1",
             optim_subdir: "medium_surround_5_1",
-            option: OptionOverride::BroadbandTargetMatching,
+            options: vec![OptionOverride::BroadbandTargetMatching],
         },
         TestCase::OptionEffect {
             name: "OE phase_alignment",
             fem_subdir: "medium_surround_5_1",
             optim_subdir: "medium_surround_5_1",
-            option: OptionOverride::PhaseAlignment,
+            options: vec![OptionOverride::PhaseAlignment],
         },
         TestCase::OptionEffect {
             name: "OE multi_measurement_minimax",
             fem_subdir: "medium_multi_seat",
             optim_subdir: "medium_multi_seat",
-            option: OptionOverride::MultiMeasurementMinimax,
+            options: vec![OptionOverride::MultiMeasurementMinimax],
         },
         TestCase::OptionEffect {
             name: "OE multi_measurement_variance",
             fem_subdir: "medium_multi_seat",
             optim_subdir: "medium_multi_seat",
-            option: OptionOverride::MultiMeasurementVariancePenalized,
+            options: vec![OptionOverride::MultiMeasurementVariancePenalized],
+        },
+        // ================================================================
+        // Part E: Combination tests — multi-option interaction coverage
+        // ================================================================
+
+        // --- E.1: Loss shaping pairs (both modify the objective function) ---
+        TestCase::OptionEffect {
+            name: "COMBO asymmetric+psycho",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::AsymmetricLoss,
+                OptionOverride::Psychoacoustic,
+            ],
+        },
+
+        // --- E.2: Frequency partitioning (both constrain low freq behaviour) ---
+        TestCase::OptionEffect {
+            name: "COMBO schroeder+excursion",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::SchroederSplit {
+                    schroeder_freq: 300.0,
+                    low_max_q: 10.0,
+                    high_max_q: 1.0,
+                },
+                OptionOverride::ExcursionProtection,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO schroeder+asymmetric",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::SchroederSplit {
+                    schroeder_freq: 300.0,
+                    low_max_q: 10.0,
+                    high_max_q: 1.0,
+                },
+                OptionOverride::AsymmetricLoss,
+            ],
+        },
+
+        // --- E.3: Target shaping (tilt defines the target, broadband pre-corrects) ---
+        TestCase::OptionEffect {
+            name: "COMBO tilt+psycho",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::Psychoacoustic,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO tilt+excursion",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::ExcursionProtection,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO tilt+broadband 5.1",
+            fem_subdir: "medium_surround_5_1",
+            optim_subdir: "medium_surround_5_1",
+            options: vec![
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::BroadbandTargetMatching,
+            ],
+        },
+
+        // --- E.4: Sub integration combos (phase + other options on 5.1) ---
+        TestCase::OptionEffect {
+            name: "COMBO phase+psycho 5.1",
+            fem_subdir: "medium_surround_5_1",
+            optim_subdir: "medium_surround_5_1",
+            options: vec![
+                OptionOverride::PhaseAlignment,
+                OptionOverride::Psychoacoustic,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO phase+asymmetric 5.1",
+            fem_subdir: "medium_surround_5_1",
+            optim_subdir: "medium_surround_5_1",
+            options: vec![
+                OptionOverride::PhaseAlignment,
+                OptionOverride::AsymmetricLoss,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO phase+broadband+tilt 5.1",
+            fem_subdir: "medium_surround_5_1",
+            optim_subdir: "medium_surround_5_1",
+            options: vec![
+                OptionOverride::PhaseAlignment,
+                OptionOverride::BroadbandTargetMatching,
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+            ],
+        },
+
+        // --- E.5: Multi-measurement combos ---
+        TestCase::OptionEffect {
+            name: "COMBO minimax+psycho+asymmetric",
+            fem_subdir: "medium_multi_seat",
+            optim_subdir: "medium_multi_seat",
+            options: vec![
+                OptionOverride::MultiMeasurementMinimax,
+                OptionOverride::Psychoacoustic,
+                OptionOverride::AsymmetricLoss,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO variance+tilt+psycho",
+            fem_subdir: "medium_multi_seat",
+            optim_subdir: "medium_multi_seat",
+            options: vec![
+                OptionOverride::MultiMeasurementVariancePenalized,
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::Psychoacoustic,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO minimax+schroeder+excursion",
+            fem_subdir: "medium_multi_seat",
+            optim_subdir: "medium_multi_seat",
+            options: vec![
+                OptionOverride::MultiMeasurementMinimax,
+                OptionOverride::SchroederSplit {
+                    schroeder_freq: 300.0,
+                    low_max_q: 10.0,
+                    high_max_q: 1.0,
+                },
+                OptionOverride::ExcursionProtection,
+            ],
+        },
+
+        // --- E.6: Triple+ combos on stereo (interaction stress tests) ---
+        TestCase::OptionEffect {
+            name: "COMBO tilt+schroeder+asymmetric+psycho",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::SchroederSplit {
+                    schroeder_freq: 300.0,
+                    low_max_q: 10.0,
+                    high_max_q: 1.0,
+                },
+                OptionOverride::AsymmetricLoss,
+                OptionOverride::Psychoacoustic,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO tilt+excursion+schroeder+psycho",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::ExcursionProtection,
+                OptionOverride::SchroederSplit {
+                    schroeder_freq: 300.0,
+                    low_max_q: 10.0,
+                    high_max_q: 1.0,
+                },
+                OptionOverride::Psychoacoustic,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO excursion+asymmetric+psycho",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::ExcursionProtection,
+                OptionOverride::AsymmetricLoss,
+                OptionOverride::Psychoacoustic,
+            ],
+        },
+
+        // --- E.7: Kitchen sink (all compatible options per scenario) ---
+        TestCase::OptionEffect {
+            name: "COMBO all stereo options",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::ExcursionProtection,
+                OptionOverride::SchroederSplit {
+                    schroeder_freq: 300.0,
+                    low_max_q: 10.0,
+                    high_max_q: 1.0,
+                },
+                OptionOverride::AsymmetricLoss,
+                OptionOverride::Psychoacoustic,
+                OptionOverride::BroadbandTargetMatching,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO all 5.1 options",
+            fem_subdir: "medium_surround_5_1",
+            optim_subdir: "medium_surround_5_1",
+            options: vec![
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::ExcursionProtection,
+                OptionOverride::PhaseAlignment,
+                OptionOverride::AsymmetricLoss,
+                OptionOverride::Psychoacoustic,
+                OptionOverride::BroadbandTargetMatching,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO all multi-seat minimax options",
+            fem_subdir: "medium_multi_seat",
+            optim_subdir: "medium_multi_seat",
+            options: vec![
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::ExcursionProtection,
+                OptionOverride::SchroederSplit {
+                    schroeder_freq: 300.0,
+                    low_max_q: 10.0,
+                    high_max_q: 1.0,
+                },
+                OptionOverride::AsymmetricLoss,
+                OptionOverride::Psychoacoustic,
+                OptionOverride::MultiMeasurementMinimax,
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO all multi-seat variance options",
+            fem_subdir: "medium_multi_seat",
+            optim_subdir: "medium_multi_seat",
+            options: vec![
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::ExcursionProtection,
+                OptionOverride::SchroederSplit {
+                    schroeder_freq: 300.0,
+                    low_max_q: 10.0,
+                    high_max_q: 1.0,
+                },
+                OptionOverride::AsymmetricLoss,
+                OptionOverride::Psychoacoustic,
+                OptionOverride::MultiMeasurementVariancePenalized,
+            ],
+        },
+
+        // --- E.8: Sub topology combos (2.1 scenario) ---
+        TestCase::OptionEffect {
+            name: "COMBO phase+excursion+tilt 2.1",
+            fem_subdir: "small_stereo_2_1",
+            optim_subdir: "small_stereo_2_1",
+            options: vec![
+                OptionOverride::PhaseAlignment,
+                OptionOverride::ExcursionProtection,
+                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+            ],
+        },
+        TestCase::OptionEffect {
+            name: "COMBO phase+asymmetric+psycho 2.1",
+            fem_subdir: "small_stereo_2_1",
+            optim_subdir: "small_stereo_2_1",
+            options: vec![
+                OptionOverride::PhaseAlignment,
+                OptionOverride::AsymmetricLoss,
+                OptionOverride::Psychoacoustic,
+            ],
         },
     ]
 }
@@ -1115,12 +1369,17 @@ fn run_option_effect_test(
     fem_subdir: &str,
     optim_dir: &Path,
     optim_subdir: &str,
-    option: &OptionOverride,
+    options: &[OptionOverride],
 ) -> Result<(String, Vec<TestResult>)> {
     let mut out = String::new();
     let mut results = Vec::new();
 
-    writeln!(out, "\n--- {} ({}) ---", name, option).unwrap();
+    let options_str: String = options
+        .iter()
+        .map(|o| o.to_string())
+        .collect::<Vec<_>>()
+        .join(" + ");
+    writeln!(out, "\n--- {} ({}) ---", name, options_str).unwrap();
 
     let base_config_path = fem_dir.join(format!("{}/config.json", fem_subdir));
     let override_path = optim_dir.join(format!("{}/optimiser-iir.json", optim_subdir));
@@ -1130,17 +1389,44 @@ fn run_option_effect_test(
         None
     };
 
-    // Load and run baseline (option disabled)
+    let needs_multi_measurement = options.iter().any(|o| {
+        matches!(
+            o,
+            OptionOverride::MultiMeasurementMinimax
+                | OptionOverride::MultiMeasurementVariancePenalized
+        )
+    });
+
+    // BroadbandTargetMatching needs a target tilt to have something to match.
+    // When the combo doesn't include an explicit TargetTilt, both baseline and
+    // option get a default -0.8 dB/oct tilt so the only variable is broadband.
+    let has_broadband = options
+        .iter()
+        .any(|o| matches!(o, OptionOverride::BroadbandTargetMatching));
+    let has_tilt = options
+        .iter()
+        .any(|o| matches!(o, OptionOverride::TargetTilt { .. }));
+    let default_tilt = if has_broadband && !has_tilt {
+        Some(TargetTiltConfig {
+            tilt_type: TiltType::Custom,
+            slope_db_per_octave: -0.8,
+            ..TargetTiltConfig::default()
+        })
+    } else {
+        None
+    };
+
+    // Load and run baseline (all options disabled)
     let (mut baseline_config, _) =
         load_config(&base_config_path, override_path.as_deref())?;
     apply_qa_overrides(&mut baseline_config);
-    disable_option(&mut baseline_config, option);
-
-    // For multi-measurement tests, enable multiple paths
-    if matches!(
-        option,
-        OptionOverride::MultiMeasurementMinimax | OptionOverride::MultiMeasurementVariancePenalized
-    ) {
+    for option in options {
+        disable_option(&mut baseline_config, option);
+    }
+    if let Some(ref tilt) = default_tilt {
+        baseline_config.optimizer.target_tilt = Some(tilt.clone());
+    }
+    if needs_multi_measurement {
         enable_multi_measurement_paths(&mut baseline_config, fem_dir, fem_subdir);
     }
 
@@ -1154,62 +1440,110 @@ fn run_option_effect_test(
     )
     .unwrap();
 
-    // Load and run with option enabled
+    // Load and run with all options enabled
     let (mut option_config, _) =
         load_config(&base_config_path, override_path.as_deref())?;
     apply_qa_overrides(&mut option_config);
-    apply_option_override(&mut option_config, option);
-
-    // For multi-measurement tests, enable multiple paths
-    if matches!(
-        option,
-        OptionOverride::MultiMeasurementMinimax | OptionOverride::MultiMeasurementVariancePenalized
-    ) {
+    for option in options {
+        apply_option_override(&mut option_config, option);
+    }
+    if let Some(ref tilt) = default_tilt {
+        option_config.optimizer.target_tilt = Some(tilt.clone());
+    }
+    if needs_multi_measurement {
         enable_multi_measurement_paths(&mut option_config, fem_dir, fem_subdir);
     }
 
     let option_result = run_optimization(&option_config)
-        .with_context(|| format!("{} with-option", name))?;
+        .with_context(|| format!("{} with-options", name))?;
 
     writeln!(
         out,
-        "  with-option: post={:.4} (pre={:.4})",
+        "  with-options: post={:.4} (pre={:.4})",
         option_result.combined_post_score, option_result.combined_pre_score
     )
     .unwrap();
 
-    // Validate per-option invariant
-    let (pass, reason) =
-        validate_option_effect(option, &baseline_config, &baseline_result, &option_config, &option_result);
+    // Validate each per-option invariant individually
+    let mut all_pass = true;
+    for option in options {
+        let (pass, reason) = validate_option_effect(
+            option,
+            &baseline_config,
+            &baseline_result,
+            &option_config,
+            &option_result,
+            options.len(),
+        );
 
-    let status = if pass { "PASS" } else { "FAIL" };
-    writeln!(out, "  invariant: {}  ({})", status, reason).unwrap();
+        let status = if pass { "PASS" } else { "FAIL" };
+        writeln!(out, "  {}: {}  ({})", option, status, reason).unwrap();
 
-    results.push(TestResult {
-        label: name.to_string(),
-        pre_score: baseline_result.combined_post_score,
-        post_score: option_result.combined_post_score,
-        pass,
-        reason,
-    });
+        if !pass {
+            all_pass = false;
+            results.push(TestResult {
+                label: format!("{} [{}]", name, option),
+                pre_score: baseline_result.combined_post_score,
+                post_score: option_result.combined_post_score,
+                pass: false,
+                reason,
+            });
+        }
+    }
+
+    // Combo-level check: combined result should still converge (post < pre)
+    let converged = option_result.combined_post_score < option_result.combined_pre_score;
+    if !converged {
+        all_pass = false;
+        let reason = format!(
+            "no convergence: post {:.4} >= pre {:.4}",
+            option_result.combined_post_score, option_result.combined_pre_score
+        );
+        writeln!(out, "  convergence: FAIL  ({})", reason).unwrap();
+        results.push(TestResult {
+            label: format!("{} [convergence]", name),
+            pre_score: option_result.combined_pre_score,
+            post_score: option_result.combined_post_score,
+            pass: false,
+            reason,
+        });
+    }
+
+    // If everything passed, push a single PASS result
+    if all_pass {
+        results.push(TestResult {
+            label: name.to_string(),
+            pre_score: baseline_result.combined_post_score,
+            post_score: option_result.combined_post_score,
+            pass: true,
+            reason: format!(
+                "all {} invariants pass, post={:.4}",
+                options.len(),
+                option_result.combined_post_score
+            ),
+        });
+    }
 
     Ok((out, results))
 }
 
-/// Per-option validation logic
+/// Per-option validation logic.
+/// `num_options` is the total number of simultaneously active options — validators
+/// can widen tolerances when many options interact.
 fn validate_option_effect(
     option: &OptionOverride,
     _baseline_config: &RoomConfig,
     baseline_result: &RoomOptimizationResult,
     option_config: &RoomConfig,
     option_result: &RoomOptimizationResult,
+    num_options: usize,
 ) -> (bool, String) {
     match option {
         OptionOverride::TargetTilt { slope_db_per_octave } => {
             validate_target_tilt(*slope_db_per_octave, baseline_result, option_result)
         }
         OptionOverride::ExcursionProtection => {
-            validate_excursion_protection(baseline_result, option_result)
+            validate_excursion_protection(baseline_result, option_result, num_options)
         }
         OptionOverride::SchroederSplit { schroeder_freq, low_max_q, high_max_q } => {
             validate_schroeder_split(*schroeder_freq, *low_max_q, *high_max_q, option_result)
@@ -1290,9 +1624,14 @@ fn validate_target_tilt(
 fn validate_excursion_protection(
     baseline_result: &RoomOptimizationResult,
     option_result: &RoomOptimizationResult,
+    num_options: usize,
 ) -> (bool, String) {
     let mut checks_pass = true;
     let mut details = Vec::new();
+
+    // In combos, other options (tilt, broadband shelves) can shift low-freq energy,
+    // so widen the tolerance when multiple options are active, capped at 3dB.
+    let tolerance_db = (1.0 + (num_options.saturating_sub(1) as f64) * 0.5).min(3.0);
 
     for (ch_name, option_ch) in &option_result.channel_results {
         if let Some(baseline_ch) = baseline_result.channel_results.get(ch_name) {
@@ -1301,8 +1640,7 @@ fn validate_excursion_protection(
             let option_low = mean_spl_in_range(&option_ch.final_curve, 20.0, 40.0);
 
             // With excursion protection, low freq SPL should be <= baseline (no boost)
-            // Allow small tolerance (1 dB) since optimizer might differ slightly
-            if option_low > baseline_low + 1.0 {
+            if option_low > baseline_low + tolerance_db {
                 checks_pass = false;
                 details.push(format!(
                     "{}: low_freq {:.1}dB > baseline {:.1}dB",
@@ -1721,14 +2059,14 @@ fn main() -> Result<()> {
                         name,
                         fem_subdir,
                         optim_subdir,
-                        option,
+                        options,
                     } => run_option_effect_test(
                         name,
                         &fem_dir,
                         fem_subdir,
                         &optim_dir,
                         optim_subdir,
-                        &option,
+                        &options,
                     ),
                 }
             })
