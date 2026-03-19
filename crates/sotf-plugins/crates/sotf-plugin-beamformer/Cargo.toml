@@ -1,0 +1,25 @@
+[package]
+name = "sotf-plugin-beamformer"
+description = "SOTF Beamformer plugin - MVDR, superdirective, and GSC beamformers"
+version = "0.5.4"
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_beamformer"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-beamformer"
+path = "bin/qa_beamformer.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+nalgebra = { workspace = true }
+realfft = { workspace = true }
+rustfft = { workspace = true }
+serde = { workspace = true }
+math-dsp = { workspace = true }
