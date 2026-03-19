@@ -29,9 +29,14 @@ mod step_6_export;
 impl PlayerView {
     /// Main Room EQ screen entry point
     pub(crate) fn render_room_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let current_step = state.app.measurement_state.room_eq_state.step;
+        let (theme, current_step, current_hint) = {
+            let state = self.state.read(cx);
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.measurement_state.room_eq_state.step,
+                state.app.current_hint.clone(),
+            )
+        };
 
         // Content for current step
         let content = match current_step {
@@ -48,6 +53,36 @@ impl PlayerView {
             .size_full()
             .bg(theme.background)
             .child(self.render_room_eq_header(cx))
+            // Contextual hint banner (only Room EQ hints)
+            .when_some(
+                current_hint.filter(|h| {
+                    matches!(
+                        h.hint_id,
+                        crate::components::dialogs::tutorial::HintId::RoomEqFirstVisit
+                    )
+                }),
+                |d, hint| {
+                    d.child(
+                        div()
+                            .id("roomeq-hint-banner")
+                            .cursor_pointer()
+                            .on_mouse_up(
+                                gpui::MouseButton::Left,
+                                cx.listener(|view, _: &gpui::MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.dismiss_hint();
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            .child(
+                                crate::components::dialogs::tutorial::render_hint_banner(
+                                    &hint, &theme,
+                                ),
+                            ),
+                    )
+                },
+            )
             .child(
                 div()
                     .id("room-eq-content")

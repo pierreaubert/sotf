@@ -1329,6 +1329,10 @@ pub struct RoomEqState {
     /// Custom target curve for manual entry mode
     pub custom_target_curve: CustomTargetCurve,
 
+    /// When false (default), the Configure step shows only basic settings
+    /// (mode, algorithm, num_filters, target_curve). Toggle to show all parameters.
+    pub show_advanced_config: bool,
+
     // === Multi-position data detection ===
     /// Whether loaded data has multi-position measurements (MeasurementSource::Multiple)
     pub has_multi_position_data: bool,
@@ -1361,6 +1365,7 @@ impl Default for RoomEqState {
             review_y_axis_auto: true,
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
+            show_advanced_config: false,
             has_multi_position_data: false,
             multi_position_counts: Vec::new(),
         }

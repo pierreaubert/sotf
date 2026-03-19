@@ -95,6 +95,39 @@ fn short_name_with_permanent(
     plugin_short_name(plugin_type, is_input_mon, is_output_mon, is_permanent)
 }
 
+/// Brief description for each plugin type (shown in add-plugin menu tooltips).
+fn plugin_description(plugin_type: &PluginType) -> &'static str {
+    match plugin_type {
+        PluginType::EQ => "Parametric equalizer with biquad filters",
+        PluginType::Gain => "Simple volume control",
+        PluginType::Upmixer => "Stereo to surround upmixing (FFT-based)",
+        PluginType::Compressor => "Dynamic range compression",
+        PluginType::Limiter => "Peak limiter to prevent clipping",
+        PluginType::Gate => "Noise gate — silences below threshold",
+        PluginType::Expander => "Dynamic range expansion",
+        PluginType::MultibandCompressor => "Multiband dynamic range compression",
+        PluginType::MultibandExpander => "Multiband dynamic range expansion",
+        PluginType::LoudnessCompensation => "Equal-loudness contour compensation",
+        PluginType::FletcherMunson => "Fletcher-Munson equal-loudness correction",
+        PluginType::BinauralDecoder => "HRTF-based binaural rendering",
+        PluginType::Convolution => "FFT convolution with impulse response files",
+        PluginType::LoudnessMonitor => "EBU R128 loudness measurement",
+        PluginType::SpectrumAnalyzer => "FFT-based spectrum analysis",
+        PluginType::ChannelMuteSolo => "Per-channel mute, solo, and dim",
+        PluginType::Matrix => "Channel matrix mixing with gain control",
+        PluginType::XTC => "Crosstalk cancellation for speakers",
+        PluginType::Denoiser => "Audio denoising (spectral subtraction)",
+        PluginType::Pnd => "Perceptual noise diffusion",
+        PluginType::ABCompare => "A/B comparison between two signal paths",
+        PluginType::BandSplit => "Split signal into frequency bands",
+        PluginType::BandMerge => "Merge frequency bands back together",
+        PluginType::Downmix => "Downmix multichannel to stereo",
+        PluginType::MonoToStereo => "Convert mono to stereo",
+        PluginType::Crossfeed => "Headphone crossfeed for natural imaging",
+        PluginType::Delay => "Audio delay with feedback control",
+    }
+}
+
 /// Convert speaker config string to output channel count
 fn speaker_config_to_channels(config: &str) -> usize {
     match config {
@@ -115,6 +148,7 @@ fn speaker_config_to_channels(config: &str) -> usize {
 impl PlayerView {
     pub(crate) fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let current_hint = self.state.read(cx).app.current_hint.clone();
 
         div()
             .id("plugins-screen")
@@ -201,6 +235,32 @@ impl PlayerView {
                     });
                 }),
             )
+            // Contextual hint banner (dismissible, only show Studio-relevant hints)
+            .when_some(current_hint.filter(|h| {
+                matches!(
+                    h.hint_id,
+                    crate::components::dialogs::tutorial::HintId::StudioFirstVisit
+                        | crate::components::dialogs::tutorial::HintId::FirstPluginAdded
+                )
+            }), |d, hint| {
+                d.child(
+                    div()
+                        .id("hint-banner")
+                        .cursor_pointer()
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.dismiss_hint();
+                                });
+                                cx.notify();
+                            }),
+                        )
+                        .child(
+                            crate::components::dialogs::tutorial::render_hint_banner(&hint, &theme),
+                        ),
+                )
+            })
             // Plugin Rack Strip (top) - only show if not collapsed
             .when(!self.state.read(cx).app.rack_detail_collapsed, |d| {
                 d.child(self.render_plugin_rack(cx))
@@ -1542,6 +1602,7 @@ impl PlayerView {
                 &[
                     PluginType::EQ,
                     PluginType::Gain,
+                    PluginType::Delay,
                     PluginType::Denoiser,
                     PluginType::Pnd,
                     PluginType::LoudnessCompensation,
@@ -1569,7 +1630,14 @@ impl PlayerView {
                     PluginType::ABCompare,
                 ],
             ),
-            ("Routing", &[PluginType::BandSplit, PluginType::BandMerge]),
+            (
+                "Routing",
+                &[
+                    PluginType::ChannelMuteSolo,
+                    PluginType::BandSplit,
+                    PluginType::BandMerge,
+                ],
+            ),
         ];
 
         let mut category_rows: Vec<gpui::AnyElement> = Vec::new();
@@ -1594,6 +1662,8 @@ impl PlayerView {
 
                 let color = plugin_color(&pt, &theme);
                 let name = short_name(&pt, false, false);
+                let icon = plugin_icon(&pt, false, false);
+                let description = plugin_description(&pt);
                 let theme_c = theme.clone();
                 let text_on_accent = theme_c.text_on_accent;
                 let btn_id = global_idx;
@@ -1615,6 +1685,10 @@ impl PlayerView {
                         .text_color(color)
                         .cursor_pointer()
                         .hover(move |s| s.bg(color).text_color(text_on_accent))
+                        .tooltip({
+                            let theme = theme_c.clone();
+                            move |_window, cx| make_tooltip(description, &theme, cx)
+                        })
                         .on_mouse_up(
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -1626,8 +1700,8 @@ impl PlayerView {
                                 cx.notify();
                             }),
                         )
-                        // Colored dot + name
-                        .child(div().w(px(6.0)).h(px(6.0)).rounded_full().bg(color))
+                        // Icon + name
+                        .child(icon)
                         .child(name)
                         .into_any_element(),
                 );

@@ -1060,6 +1060,8 @@ impl PlayerView {
                     .disabled(!channel.allows(crate::app::Screen::RoomEq.maturity())),
                 MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘5"),
                 MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘6"),
+                MenuItem::separator(),
+                MenuItem::new("tutorial", "Show Tutorial"),
             ],
         )
         .theme(theme.to_menu_theme())
@@ -1081,6 +1083,10 @@ impl PlayerView {
                     }
                     "spinorama" => {
                         state.app.ui_state.current_screen = crate::app::Screen::Spinorama
+                    }
+                    "tutorial" => {
+                        state.app.ui_state.input_mode = crate::app::InputMode::Tutorial;
+                        state.app.ui_state.tutorial_screen = 0;
                     }
                     _ => {}
                 }

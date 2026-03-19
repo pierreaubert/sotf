@@ -228,6 +228,9 @@ pub struct Config {
     /// Whether the tutorial has been completed/dismissed
     #[serde(default)]
     pub tutorial_completed: bool,
+    /// Contextual hints that have been seen and dismissed
+    #[serde(default)]
+    pub seen_hints: Vec<String>,
 }
 
 fn default_font_scale() -> f32 {
@@ -259,6 +262,7 @@ impl Config {
                 release_channel: ReleaseChannel::default(),
                 scanner_threads: None,
                 tutorial_completed: false,
+                seen_hints: Vec::new(),
             });
         }
 

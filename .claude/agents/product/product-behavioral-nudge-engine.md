@@ -45,7 +45,7 @@ export function generateSprintNudge(pendingTasks: Task[], userProfile: UserPsych
       actionButton: "Start 5 Min Sprint"
     };
   }
-  
+
   // Standard execution for a standard profile
   return {
     channel: 'EMAIL',

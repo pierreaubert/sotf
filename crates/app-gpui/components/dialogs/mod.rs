@@ -1,6 +1,6 @@
 //! Dialog and modal rendering components
 
-mod tutorial;
+pub mod tutorial;
 
 use crate::app::Screen;
 use crate::components::icons::{Icon, IconName};
@@ -260,111 +260,32 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Md)
                     .align(StackAlign::Center)
-                    // Links section
+                    // Links section — uses render_external_link for consistency
                     .child(
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .align(StackAlign::Start)
-                            .child(
-                                div()
-                                    .id("link-new-features")
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .p_3()
-                                    .w_full()
-                                    .rounded_md()
-                                    .bg(theme.surface_hover)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.accent_muted))
-                                    .child(Text::new("🚀").size(TextSize::Lg))
-                                    .child(
-                                        VStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Text::new("Request New Features")
-                                                    .size(TextSize::Sm)
-                                                    .weight(TextWeight::Semibold)
-                                                    .color(theme.text_primary),
-                                            )
-                                            .child(
-                                                Text::new("Share your ideas for new features")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.text_secondary),
-                                            ),
-                                    )
-                                    .on_mouse_up(MouseButton::Left, |_, _window, cx| {
-                                        cx.open_url(
-                                            "https://github.com/pierreaubert/sotf/discussions/117",
-                                        );
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id("link-report-bugs")
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .p_3()
-                                    .w_full()
-                                    .rounded_md()
-                                    .bg(theme.surface_hover)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.accent_muted))
-                                    .child(Text::new("🐛").size(TextSize::Lg))
-                                    .child(
-                                        VStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Text::new("Report Bugs")
-                                                    .size(TextSize::Sm)
-                                                    .weight(TextWeight::Semibold)
-                                                    .color(theme.text_primary),
-                                            )
-                                            .child(
-                                                Text::new("Help us fix issues you encounter")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.text_secondary),
-                                            ),
-                                    )
-                                    .on_mouse_up(MouseButton::Left, |_, _window, cx| {
-                                        cx.open_url(
-                                            "https://github.com/pierreaubert/sotf/discussions/116",
-                                        );
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id("link-github")
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .p_3()
-                                    .w_full()
-                                    .rounded_md()
-                                    .bg(theme.surface_hover)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.accent_muted))
-                                    .child(Text::new("📦").size(TextSize::Lg))
-                                    .child(
-                                        VStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Text::new("GitHub Repository")
-                                                    .size(TextSize::Sm)
-                                                    .weight(TextWeight::Semibold)
-                                                    .color(theme.text_primary),
-                                            )
-                                            .child(
-                                                Text::new("View source code and documentation")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.text_secondary),
-                                            ),
-                                    )
-                                    .on_mouse_up(MouseButton::Left, |_, _window, cx| {
-                                        cx.open_url("https://github.com/pierreaubert/sotf");
-                                    }),
-                            ),
+                            .child(self.render_external_link(
+                                "🚀",
+                                "Request New Features",
+                                "Share your ideas for new features",
+                                "https://github.com/pierreaubert/sotf/discussions/117",
+                                &theme,
+                            ))
+                            .child(self.render_external_link(
+                                "🐛",
+                                "Report Bugs",
+                                "Help us fix issues you encounter",
+                                "https://github.com/pierreaubert/sotf/discussions/116",
+                                &theme,
+                            ))
+                            .child(self.render_external_link(
+                                "📦",
+                                "GitHub Repository",
+                                "View source code and documentation",
+                                "https://github.com/pierreaubert/sotf",
+                                &theme,
+                            )),
                     ),
             )
             .footer(
@@ -540,10 +461,10 @@ impl PlayerView {
                 crate::app::ToastType::Info => ToastVariant::Info,
                 crate::app::ToastType::Warning => ToastVariant::Warning,
             };
-            (t.message.clone(), variant)
+            (t.message.clone(), variant, t.action.as_ref().map(|a| a.label.clone()))
         });
 
-        if let Some((message, variant)) = toast_data {
+        if let Some((message, variant, action_label)) = toast_data {
             let (bg_color, border_color, text_color) = match variant {
                 ToastVariant::Success => (theme.toast_success_bg, theme.success, theme.success),
                 ToastVariant::Error => (theme.toast_error_bg, theme.error, theme.error),
@@ -580,6 +501,44 @@ impl PlayerView {
                                         .color(text_color),
                                 ),
                         )
+                        .when_some(action_label, |d, label| {
+                            d.child(
+                                div()
+                                    .id("toast-action")
+                                    .cursor_pointer()
+                                    .px_2()
+                                    .py_1()
+                                    .rounded_md()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(text_color)
+                                    .border_1()
+                                    .border_color(text_color)
+                                    .hover(move |s| s.bg(Theme::with_opacity(text_color, 0.15)))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                            let action_id = view
+                                                .state
+                                                .read(cx)
+                                                .app
+                                                .ui_state
+                                                .toast_message
+                                                .as_ref()
+                                                .and_then(|t| t.action.as_ref())
+                                                .map(|a| a.action_id.clone());
+                                            if let Some(id) = action_id {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.ui_state.toast_message = None;
+                                                    state.app.handle_toast_action(&id);
+                                                });
+                                                cx.notify();
+                                            }
+                                        }),
+                                    )
+                                    .child(label),
+                            )
+                        })
                         .child(
                             div()
                                 .id("toast-dismiss")
