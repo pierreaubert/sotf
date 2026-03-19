@@ -1658,19 +1658,22 @@ fn validate_excursion_protection(
     (checks_pass, details.join("; "))
 }
 
-/// OE-3: Schroeder split - structural validation
+/// OE-3: Schroeder split - structural and Q-limit validation
 ///
 /// The Schroeder split should produce filters with different characteristics
 /// above and below the Schroeder frequency:
 /// - Below: higher Q (narrow, targeting room modes), predominantly cuts
 /// - Above: lower Q (broad, gentle tone control)
 ///
-/// We validate structurally (mean Q below > mean Q above) rather than
-/// strict per-filter constraints, since COBYLA may not perfectly enforce bounds.
+/// We validate:
+/// 1. Structural: mean Q below >= mean Q above
+/// 2. Hard Q limits: every filter above Schroeder must respect high_max_q,
+///    even though below-Schroeder Q can be high. This prevents the optimizer
+///    from placing narrow aggressive filters in the tone-control band.
 fn validate_schroeder_split(
     schroeder_freq: f64,
-    _low_max_q: f64,
-    _high_max_q: f64,
+    low_max_q: f64,
+    high_max_q: f64,
     option_result: &RoomOptimizationResult,
 ) -> (bool, String) {
     let mut total_low_q = 0.0;
@@ -1678,18 +1681,36 @@ fn validate_schroeder_split(
     let mut low_count = 0usize;
     let mut high_count = 0usize;
     let mut low_boosts = 0usize;
+    let mut q_violations = Vec::new();
 
-    for ch_result in option_result.channel_results.values() {
-        for bq in &ch_result.biquads {
+    for (ch_name, ch_result) in &option_result.channel_results {
+        for (i, bq) in ch_result.biquads.iter().enumerate() {
             if bq.freq < schroeder_freq {
                 total_low_q += bq.q;
                 low_count += 1;
                 if bq.db_gain > 0.1 {
                     low_boosts += 1;
                 }
+                // Below Schroeder: Q must stay within configured low_max_q.
+                // Allow 20% tolerance since COBYLA may not perfectly enforce bounds.
+                if bq.q > low_max_q * 1.2 {
+                    q_violations.push(format!(
+                        "{} f{}({:.0}Hz): Q={:.1}>{:.1}",
+                        ch_name, i, bq.freq, bq.q, low_max_q
+                    ));
+                }
             } else {
                 total_high_q += bq.q;
                 high_count += 1;
+                // Above Schroeder: Q must respect the tighter high_max_q.
+                // This is the key invariant — prevents narrow aggressive
+                // filters in the tone-control band.
+                if bq.q > high_max_q * 1.2 {
+                    q_violations.push(format!(
+                        "{} f{}({:.0}Hz): Q={:.1}>{:.1}",
+                        ch_name, i, bq.freq, bq.q, high_max_q
+                    ));
+                }
             }
         }
     }
@@ -1706,21 +1727,31 @@ fn validate_schroeder_split(
         0.0
     };
 
-    // Structural checks:
-    // 1. Mean Q below Schroeder should be >= mean Q above (narrower targeting of modes)
-    let q_ok = mean_low_q >= mean_high_q * 0.8; // allow some tolerance
-    // 2. Majority of below-Schroeder filters should be cuts (allow up to 50% boosts
-    //    since some boosts may be needed for dips between modes)
-    let boost_ok = boost_pct <= 60.0;
-    let pass = q_ok && boost_ok;
+    let mut details = Vec::new();
 
-    (
-        pass,
-        format!(
-            "mean_Q: low={:.2} high={:.2}; low_boost={:.0}% ({}/{})",
-            mean_low_q, mean_high_q, boost_pct, low_boosts, low_count
-        ),
-    )
+    // Structural checks:
+    // 1. Mean Q below Schroeder should be >= mean Q above
+    let q_ok = mean_low_q >= mean_high_q * 0.8;
+    details.push(format!(
+        "mean_Q: low={:.2} high={:.2}",
+        mean_low_q, mean_high_q
+    ));
+
+    // 2. Majority of below-Schroeder filters should be cuts
+    let boost_ok = boost_pct <= 60.0;
+    details.push(format!(
+        "low_boost={:.0}% ({}/{})",
+        boost_pct, low_boosts, low_count
+    ));
+
+    // 3. Hard Q-limit violations
+    let q_limits_ok = q_violations.is_empty();
+    if !q_limits_ok {
+        details.push(format!("Q violations: {}", q_violations.join(", ")));
+    }
+
+    let pass = q_ok && boost_ok && q_limits_ok;
+    (pass, details.join("; "))
 }
 
 /// OE-4: Asymmetric loss - peaks should be penalized more than dips
@@ -1840,6 +1871,36 @@ fn validate_broadband_target_matching(
                 "{}: REGRESSED {:.2} -> {:.2}",
                 ch_name, baseline_ch.post_score, option_ch.post_score
             ));
+        }
+    }
+
+    // Check 4: double-tilt detection — if broadband matching includes the tilt
+    // in its target, the corrected curve's slope will be much steeper than the
+    // baseline's. Compare slopes: the broadband-corrected slope should not diverge
+    // more than 3 dB/oct from the baseline's slope.
+    for (ch_name, option_ch) in &option_result.channel_results {
+        if let Some(baseline_ch) = baseline_result.channel_results.get(ch_name)
+            && let Some(baseline_slope) = regression_slope_per_octave_in_range(
+                &baseline_ch.final_curve.freq,
+                &baseline_ch.final_curve.spl,
+                100.0,
+                1000.0,
+            )
+            && let Some(option_slope) = regression_slope_per_octave_in_range(
+                &option_ch.final_curve.freq,
+                &option_ch.final_curve.spl,
+                100.0,
+                1000.0,
+            )
+        {
+            let slope_diff = (option_slope - baseline_slope).abs();
+            if slope_diff > 3.0 {
+                pass = false;
+                details.push(format!(
+                    "{}: DOUBLE-TILT slope_diff={:.1}dB/oct (baseline={:.1} broadband={:.1})",
+                    ch_name, slope_diff, baseline_slope, option_slope
+                ));
+            }
         }
     }
 

@@ -889,6 +889,19 @@ pub fn optimize_room(
             warn!("Phase alignment enabled but no valid sub-main pairings found.");
         } else {
             info!("Running phase alignment optimization...");
+            send_progress(
+                &mut callback_shared.lock().unwrap(),
+                &RoomOptimizationProgress {
+                    current_speaker: String::new(),
+                    speaker_index: 0,
+                    total_speakers: pairings.len(),
+                    iteration: 0,
+                    max_iterations: 0,
+                    loss: 0.0,
+                    overall_progress: 0.0,
+                    message: Some("Running phase alignment...".to_string()),
+                },
+            );
 
             for (sub_name, main_name) in &pairings {
                 let sub_curve = match curves.get(sub_name) {
@@ -973,6 +986,20 @@ pub fn optimize_room(
 
         if pairings.is_empty() {
             warn!("GD-Opt enabled but no valid sub-main pairings found.");
+        } else {
+            send_progress(
+                &mut callback_shared.lock().unwrap(),
+                &RoomOptimizationProgress {
+                    current_speaker: String::new(),
+                    speaker_index: 0,
+                    total_speakers: pairings.len(),
+                    iteration: 0,
+                    max_iterations: 0,
+                    loss: 0.0,
+                    overall_progress: 0.0,
+                    message: Some("Running group delay optimization...".to_string()),
+                },
+            );
         }
 
         let min_freq = config.optimizer.min_freq;
@@ -983,6 +1010,19 @@ pub fn optimize_room(
                 (curves.get(&sub_name), curves.get(&main_name))
             {
                 info!("  Optimizing GD for '{}' vs '{}'", main_name, sub_name);
+                send_progress(
+                    &mut callback_shared.lock().unwrap(),
+                    &RoomOptimizationProgress {
+                        current_speaker: format!("GD {}", main_name),
+                        speaker_index: 0,
+                        total_speakers: 1,
+                        iteration: 0,
+                        max_iterations: 0,
+                        loss: 0.0,
+                        overall_progress: 0.0,
+                        message: Some(format!("Optimizing GD for '{}'", main_name)),
+                    },
+                );
 
                 match group_delay::optimize_gd_iir(
                     sub_curve,
@@ -1527,25 +1567,20 @@ fn process_single_speaker(
     {
         if bb_config.enabled {
             info!("  Broadband Target Matching enabled...");
-            // 1. Construct the target curve (with tilt if configured, or flat).
-            // The target tilt curve is centered at 0dB, but the measurement has
-            // an arbitrary absolute SPL level. Shift the target to the measurement's
-            // mean so the alignment only corrects the *shape* difference (tilt/shelving),
-            // not the absolute level offset.
-            let target = {
-                let tilt = target_tilt_curve.clone().unwrap_or_else(|| Curve {
-                    freq: curve.freq.clone(),
-                    spl: Array1::zeros(curve.freq.len()),
-                    phase: None,
-                });
-                Curve {
-                    freq: tilt.freq,
-                    spl: &tilt.spl + mean_spl,
-                    phase: tilt.phase,
-                }
+            // 1. Construct a FLAT target at the measurement's mean level.
+            // The tilt is handled exclusively by the EQ optimizer (which subtracts
+            // the tilt curve before optimizing). Including the tilt here would
+            // double-apply it: broadband shelves push toward tilt, then the EQ
+            // normalizer subtracts tilt again, leaving only shelf artifacts.
+            let target = Curve {
+                freq: curve.freq.clone(),
+                spl: Array1::from_elem(curve.freq.len(), mean_spl),
+                phase: None,
             };
 
-            // 2. Compute alignment
+            // 2. Compute alignment across the full audible range (20-20kHz).
+            // The target is flat at mean_spl, so the alignment fits gentle
+            // shelves + gain to correct the measurement's broadband shape.
             if let Some(result) = spectral_align::compute_target_alignment(
                 &curve,
                 &target,

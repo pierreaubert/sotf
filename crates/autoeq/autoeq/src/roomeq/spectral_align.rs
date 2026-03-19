@@ -1155,4 +1155,96 @@ mod tests {
             assert!(has_shelf, "tilt should produce shelf corrections");
         }
     }
+
+    /// Regression test: broadband target matching must use a FLAT target
+    /// (at the measurement's mean level), NOT a tilted target.
+    ///
+    /// If the target includes the tilt, the broadband shelves push the measurement
+    /// toward the tilt, and then the EQ optimizer subtracts the tilt again — double-
+    /// applying it. The correct pattern is:
+    ///   broadband target = flat at mean_spl  (only corrects broadband shape)
+    ///   EQ optimizer target = measurement - tilt_curve  (handles tilt)
+    ///
+    /// With a tilted target, the broadband shelves add the tilt shape.
+    /// Then `optimization_curve = curve_for_optim - tilt_curve` subtracts it
+    /// again, but the shelf approximation doesn't perfectly cancel, leaving
+    /// artifacts that the EQ fights against. We verify the flat target
+    /// does NOT include tilt-shaped shelves.
+    #[test]
+    fn test_broadband_must_use_flat_target_not_tilted() {
+        // Flat measurement at uniform level
+        let measurement = make_curve(|_| 5.0);
+
+        // CORRECT: flat target at measurement level → negligible corrections
+        let flat_target = make_curve(|_| 5.0);
+        let flat_result =
+            compute_target_alignment(&measurement, &flat_target, 20.0, 20000.0, SAMPLE_RATE);
+
+        // BAD: tilted target → shelves try to impose the tilt shape
+        let tilted_target = make_curve(|f| 5.0 + (-0.8) * (f / 1000.0).log2());
+        let tilted_result =
+            compute_target_alignment(&measurement, &tilted_target, 20.0, 20000.0, SAMPLE_RATE);
+
+        // With flat measurement + flat target: corrections should be negligible
+        let flat_total = flat_result
+            .as_ref()
+            .map(|r| r.flat_gain_db.abs() + r.lowshelf_gain_db.abs() + r.highshelf_gain_db.abs())
+            .unwrap_or(0.0);
+        assert!(
+            flat_total < 1.0,
+            "flat measurement + flat target should need negligible correction, got {:.2}dB",
+            flat_total
+        );
+
+        // With flat measurement + tilted target: shelves must be non-trivial
+        // (the alignment tries to impose a tilt that doesn't exist in the data)
+        if let Some(r) = &tilted_result {
+            let tilted_total =
+                r.flat_gain_db.abs() + r.lowshelf_gain_db.abs() + r.highshelf_gain_db.abs();
+            assert!(
+                tilted_total > 1.0,
+                "flat measurement + tilted target should produce shelf corrections, got {:.2}dB",
+                tilted_total
+            );
+        }
+    }
+
+    /// Test that broadband alignment only produces low-Q (gentle) corrections.
+    /// The shelf filters have fixed frequencies (200Hz, 4000Hz) and the
+    /// gains are clamped to MAX_SHELF_GAIN_DB (6dB). This ensures the
+    /// broadband stage never produces aggressive narrow corrections.
+    #[test]
+    fn test_broadband_corrections_are_gentle() {
+        // Measurement with a 10dB peak at 300Hz (aggressive room mode)
+        let measurement = make_curve(|f| {
+            let peak = 10.0 * (-((f.log2() - 300.0_f64.log2()).powi(2)) / 0.5).exp();
+            5.0 + peak
+        });
+        let target = make_curve(|_| 5.0);
+
+        let result =
+            compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
+
+        if let Some(r) = result {
+            // Shelf gains must be within the clamped limits
+            assert!(
+                r.lowshelf_gain_db.abs() <= MAX_SHELF_GAIN_DB + 0.01,
+                "lowshelf {:.2}dB exceeds limit {:.1}dB",
+                r.lowshelf_gain_db,
+                MAX_SHELF_GAIN_DB
+            );
+            assert!(
+                r.highshelf_gain_db.abs() <= MAX_SHELF_GAIN_DB + 0.01,
+                "highshelf {:.2}dB exceeds limit {:.1}dB",
+                r.highshelf_gain_db,
+                MAX_SHELF_GAIN_DB
+            );
+            assert!(
+                r.flat_gain_db.abs() <= MAX_FLAT_GAIN_DB + 0.01,
+                "flat_gain {:.2}dB exceeds limit {:.1}dB",
+                r.flat_gain_db,
+                MAX_FLAT_GAIN_DB
+            );
+        }
+    }
 }
