@@ -78,6 +78,10 @@ fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f64) {
 
     // find_db_point uses an absolute threshold, so compute peak - 3 dB
     let peak_spl = spl_f32.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    if peak_spl < -100.0 {
+        // Measurement is essentially silence — passband detection is undefined
+        return (None, 0.0);
+    }
     let threshold = peak_spl - 3.0;
 
     let f_low = find_db_point(&freqs_f32, &spl_f32, threshold, true).unwrap_or(freqs_f32[0]);
@@ -3283,4 +3287,27 @@ fn process_cardioid(
         None,
         None, // IIR-only for cardioid
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::Array1;
+
+    #[test]
+    fn test_passband_silence_returns_none() {
+        // All SPL at -120 dB (essentially silence)
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 1000.0, 10000.0]),
+            spl: Array1::from_vec(vec![-120.0, -120.0, -120.0]),
+            phase: None,
+        };
+        let (passband, mean) = detect_passband_and_mean(&curve);
+        assert!(
+            passband.is_none(),
+            "silence measurement should return None passband, got {:?}",
+            passband
+        );
+        assert_eq!(mean, 0.0);
+    }
 }

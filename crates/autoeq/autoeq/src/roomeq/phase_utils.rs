@@ -189,11 +189,9 @@ pub fn unwrap_phase_degrees(phase_deg: &Array1<f64>) -> Array1<f64> {
 
     for &p in phase_deg.iter().skip(1) {
         let diff = p - prev;
-        if diff > 180.0 {
-            offset -= 360.0;
-        } else if diff < -180.0 {
-            offset += 360.0;
-        }
+        // Multi-wrap unwrapping: handles jumps > 360 deg between sparse points
+        let wraps = (diff / 360.0).round();
+        offset -= wraps * 360.0;
         unwrapped.push(p + offset);
         prev = p;
     }
@@ -285,6 +283,19 @@ mod tests {
             "Flat response mean phase should be near 0, got {}",
             mean_phase
         );
+    }
+
+    #[test]
+    fn test_unwrap_phase_multi_wrap() {
+        // Phase sequence with two full wraps between points (sparse measurements)
+        // Raw: [0, 10, -350, -710]
+        // Expected unwrapped: [0, 10, 10, 10] (each jump is ~360 deg)
+        let phase = Array1::from_vec(vec![0.0, 10.0, -350.0, -710.0]);
+        let unwrapped = unwrap_phase_degrees(&phase);
+        assert_approx_eq(unwrapped[0], 0.0, 0.01);
+        assert_approx_eq(unwrapped[1], 10.0, 0.01);
+        assert_approx_eq(unwrapped[2], 10.0, 0.01); // -350 + 360 = 10
+        assert_approx_eq(unwrapped[3], 10.0, 0.01); // -710 + 720 = 10
     }
 
     #[test]

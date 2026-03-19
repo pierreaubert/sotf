@@ -41,10 +41,54 @@ pub fn constraint_ceiling(
 pub fn viol_ceiling_from_spl(peq_spl: &Array1<f64>, max_db: f64, _peq_model: PeqModel) -> f64 {
     let mut max_excess = 0.0_f64;
     for &v in peq_spl.iter() {
+        if !v.is_finite() {
+            return f64::INFINITY;
+        }
         let excess = (v - max_db).max(0.0);
         if excess > max_excess {
             max_excess = excess;
         }
     }
     max_excess
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::Array1;
+
+    #[test]
+    fn test_ceiling_nan_returns_infinity() {
+        let spl = Array1::from_vec(vec![1.0, f64::NAN, 3.0]);
+        let result = viol_ceiling_from_spl(&spl, 5.0, PeqModel::Pk);
+        assert!(result.is_infinite() && result > 0.0);
+    }
+
+    #[test]
+    fn test_ceiling_inf_returns_infinity() {
+        let spl = Array1::from_vec(vec![1.0, f64::INFINITY, 3.0]);
+        let result = viol_ceiling_from_spl(&spl, 5.0, PeqModel::Pk);
+        assert!(result.is_infinite() && result > 0.0);
+    }
+
+    #[test]
+    fn test_ceiling_neg_inf_returns_infinity() {
+        let spl = Array1::from_vec(vec![1.0, f64::NEG_INFINITY, 3.0]);
+        let result = viol_ceiling_from_spl(&spl, 5.0, PeqModel::Pk);
+        assert!(result.is_infinite() && result > 0.0);
+    }
+
+    #[test]
+    fn test_ceiling_no_violation() {
+        let spl = Array1::from_vec(vec![1.0, 2.0, 3.0]);
+        let result = viol_ceiling_from_spl(&spl, 5.0, PeqModel::Pk);
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn test_ceiling_with_violation() {
+        let spl = Array1::from_vec(vec![1.0, 8.0, 3.0]);
+        let result = viol_ceiling_from_spl(&spl, 5.0, PeqModel::Pk);
+        assert!((result - 3.0).abs() < 1e-10);
+    }
 }

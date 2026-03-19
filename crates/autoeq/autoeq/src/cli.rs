@@ -763,6 +763,16 @@ pub fn validate_args(args: &Args) -> Result<(), String> {
         ));
     }
 
+    // Check that max_freq does not exceed Nyquist frequency
+    let nyquist = args.sample_rate / 2.0;
+    if args.max_freq > nyquist {
+        return Err(format!(
+            "max_freq ({:.0} Hz) exceeds Nyquist frequency ({:.0} Hz) at sample rate {:.0} Hz. \
+             Biquad filters above Nyquist have undefined behavior.",
+            args.max_freq, nyquist, args.sample_rate
+        ));
+    }
+
     // Check smoothing parameters
     if args.smooth_n < 1 || args.smooth_n > 24 {
         return Err(format!(

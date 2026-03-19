@@ -519,6 +519,9 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 let error = &peq_spl - &data.deviation;
                 let s = speaker_score_loss(sd, &data.freqs, &peq_spl);
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq) / 3.0;
+                // SpeakerScore fitness: minimize (100 - score + flatness/3)
+                // - 100.0: reference ceiling for Harman speaker score (typical range 0-100)
+                // - /3.0: reduces flatness weight to ~25% vs score (empirically tuned)
                 100.0 - s + p
             } else {
                 log::error!("speaker score loss requested but score data is missing");
@@ -536,6 +539,9 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 };
                 let s = headphone_loss(&error_curve);
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
+                // HeadphoneScore fitness: minimize (1000 - score + flatness*20)
+                // - 1000.0: reference ceiling for Olive preference score (max ~114.49)
+                // - *20.0: amplifies flatness term (headphone score has small dynamic range)
                 1000.0 - s + p * 20.0
             } else {
                 log::error!("headphone score loss requested but headphone data is missing");
@@ -628,6 +634,9 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 let error = &peq_spl - &data.deviation;
                 let s = speaker_score_loss(sd, &data.freqs, &peq_spl);
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq) / 3.0;
+                // SpeakerScore fitness: minimize (100 - score + flatness/3)
+                // - 100.0: reference ceiling for Harman speaker score (typical range 0-100)
+                // - /3.0: reduces flatness weight to ~25% vs score (empirically tuned)
                 100.0 - s + p
             } else {
                 log::error!("speaker score loss requested but score data is missing");
@@ -648,10 +657,10 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     phase: None,
                 };
                 let s = headphone_loss(&error_curve);
-                // compute flat error
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
-                // wants to maximize the score and improve the flatness
-                // println!("DEBUG Headphone score: s={:.3} p={:.3} fitness={:.3}", s, p, 1000.0 - s + p * 20.0);
+                // HeadphoneScore fitness: minimize (1000 - score + flatness*20)
+                // - 1000.0: reference ceiling for Olive preference score (max ~114.49)
+                // - *20.0: amplifies flatness term (headphone score has small dynamic range)
                 1000.0 - s + p * 20.0
             } else {
                 log::error!("headphone score loss requested but headphone data is missing");
