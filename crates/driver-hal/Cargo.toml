@@ -10,6 +10,9 @@ description = "Shared memory interface for Swift HAL driver communication"
 name = "driver_hal"
 crate-type = ["lib"]
 
+[dependencies]
+driver-common = { workspace = true }
+
 # This crate is macOS-only (Core Audio HAL driver)
 [target.'cfg(target_os = "macos")'.dependencies]
 # Shared memory mapping

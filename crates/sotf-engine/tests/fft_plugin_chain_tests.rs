@@ -50,7 +50,7 @@ fn test_fft_chain_arbitrary_frame_sizes() {
         muted: false,
         config_path: None,
         watch_config: false,
-        hal_mode: false,
+        driver_mode: false,
         allow_virtual_output: true,
     };
 

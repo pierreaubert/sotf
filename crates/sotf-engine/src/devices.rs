@@ -55,6 +55,130 @@ fn format_to_string(format: cpal::SampleFormat) -> String {
     }
 }
 
+// =============================================================================
+// ASIO Host Selection (Windows only, requires `asio` feature)
+// =============================================================================
+
+/// ASIO device prefix. Device identifiers starting with "ASIO:" will use the
+/// ASIO host instead of the default (WASAPI) host on Windows.
+///
+/// Example: "ASIO:Focusrite USB ASIO" selects the Focusrite ASIO driver.
+pub const ASIO_DEVICE_PREFIX: &str = "ASIO:";
+
+/// Check if a device identifier requests an ASIO device.
+/// Case-insensitive: "ASIO:", "asio:", "Asio:" all match.
+pub fn is_asio_device(identifier: &str) -> bool {
+    identifier.len() >= ASIO_DEVICE_PREFIX.len()
+        && identifier[..ASIO_DEVICE_PREFIX.len()].eq_ignore_ascii_case(ASIO_DEVICE_PREFIX)
+}
+
+/// Strip the "ASIO:" prefix from a device identifier, returning the actual device name.
+/// Case-insensitive: "ASIO:", "asio:", "Asio:" prefixes are all stripped.
+pub fn strip_asio_prefix(identifier: &str) -> &str {
+    if is_asio_device(identifier) {
+        &identifier[ASIO_DEVICE_PREFIX.len()..]
+    } else {
+        identifier
+    }
+}
+
+/// Get the appropriate cpal Host for a device identifier.
+///
+/// On Windows with the `asio` feature enabled, if the identifier starts with "ASIO:",
+/// returns the ASIO host. Otherwise returns the default host (WASAPI on Windows,
+/// CoreAudio on macOS, ALSA on Linux).
+///
+/// # ASIO Usage
+///
+/// To use an ASIO device, prefix the device name with "ASIO:":
+/// ```text
+/// "ASIO:Focusrite USB ASIO"     -> uses ASIO host, device "Focusrite USB ASIO"
+/// "Focusrite USB ASIO"          -> uses default host (WASAPI)
+/// "Built-in Output"             -> uses default host
+/// ```
+///
+/// ASIO provides lower latency (~2-5ms vs WASAPI's ~10-30ms) but requires:
+/// - ASIO drivers installed for the audio hardware
+/// - The `asio` feature enabled at build time (requires Steinberg ASIO SDK)
+/// - Exclusive device access (other apps can't use the device simultaneously)
+pub fn get_host_for_device(device_identifier: Option<&str>) -> cpal::Host {
+    #[cfg(all(target_os = "windows", feature = "asio"))]
+    {
+        if let Some(id) = device_identifier {
+            if is_asio_device(id) {
+                let asio_name = strip_asio_prefix(id);
+                log::info!(
+                    "[AUDIO] ASIO device requested: '{}', initializing ASIO host",
+                    asio_name
+                );
+
+                match cpal::host_from_id(cpal::HostId::Asio) {
+                    Ok(host) => {
+                        log::info!("[AUDIO] ASIO host initialized successfully");
+                        return host;
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "[AUDIO] Failed to initialize ASIO host: {}. Falling back to default host.",
+                            e
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(all(target_os = "windows", feature = "asio")))]
+    if let Some(id) = device_identifier
+        && is_asio_device(id)
+    {
+        #[cfg(not(target_os = "windows"))]
+        log::warn!(
+            "[AUDIO] ASIO device '{}' requested but ASIO is only available on Windows",
+            strip_asio_prefix(id)
+        );
+        #[cfg(all(target_os = "windows", not(feature = "asio")))]
+        log::warn!(
+            "[AUDIO] ASIO device '{}' requested but the 'asio' feature is not enabled. \
+             Rebuild with --features asio to enable ASIO support.",
+            strip_asio_prefix(id)
+        );
+    }
+
+    cpal::default_host()
+}
+
+/// List ASIO devices available on the system.
+///
+/// Returns device names prefixed with "ASIO:" for use with `get_host_for_device`.
+/// Returns an empty Vec if ASIO is not available.
+#[cfg(all(target_os = "windows", feature = "asio"))]
+pub fn list_asio_devices() -> Vec<String> {
+    match cpal::host_from_id(cpal::HostId::Asio) {
+        Ok(host) => {
+            let mut devices = Vec::new();
+            if let Ok(output_devices) = host.output_devices() {
+                for device in output_devices {
+                    if let Ok(desc) = device.description() {
+                        devices.push(format!("{}{}", ASIO_DEVICE_PREFIX, desc.name()));
+                    }
+                }
+            }
+            devices
+        }
+        Err(e) => {
+            log::debug!("[AUDIO] ASIO not available: {}", e);
+            Vec::new()
+        }
+    }
+}
+
+/// List ASIO devices (stub when ASIO is not available).
+#[cfg(not(all(target_os = "windows", feature = "asio")))]
+pub fn list_asio_devices() -> Vec<String> {
+    Vec::new()
+}
+
 /// Extract device info from cpal device using description() and id()
 fn get_device_info<D: DeviceTrait>(device: &D) -> Option<(String, Option<String>, Option<String>)> {
     // Get display name from description
@@ -1255,5 +1379,53 @@ mod tests {
     #[test]
     fn test_probe_channel_order_deduplicates_matching_default() {
         assert_eq!(probe_channel_order(2, 2), vec![2]);
+    }
+
+    #[test]
+    fn test_is_asio_device() {
+        assert!(is_asio_device("ASIO:Focusrite USB ASIO"));
+        assert!(is_asio_device("ASIO:"));
+        assert!(!is_asio_device("Focusrite USB ASIO"));
+        assert!(!is_asio_device("Built-in Output"));
+        assert!(!is_asio_device(""));
+        assert!(!is_asio_device("ASI")); // too short
+    }
+
+    #[test]
+    fn test_is_asio_device_case_insensitive() {
+        assert!(is_asio_device("asio:Focusrite"));
+        assert!(is_asio_device("Asio:Focusrite"));
+        assert!(is_asio_device("aSiO:Focusrite"));
+    }
+
+    #[test]
+    fn test_strip_asio_prefix() {
+        assert_eq!(strip_asio_prefix("ASIO:Focusrite USB ASIO"), "Focusrite USB ASIO");
+        assert_eq!(strip_asio_prefix("ASIO:"), "");
+        assert_eq!(strip_asio_prefix("Focusrite"), "Focusrite");
+        assert_eq!(strip_asio_prefix(""), "");
+    }
+
+    #[test]
+    fn test_strip_asio_prefix_case_insensitive() {
+        assert_eq!(strip_asio_prefix("asio:MyDevice"), "MyDevice");
+        assert_eq!(strip_asio_prefix("Asio:MyDevice"), "MyDevice");
+    }
+
+    #[test]
+    fn test_get_host_for_device_default_without_asio_prefix() {
+        // Without ASIO prefix, should return default host (never panics)
+        let _host = get_host_for_device(None);
+        let _host = get_host_for_device(Some("Built-in Output"));
+        let _host = get_host_for_device(Some("Focusrite USB ASIO"));
+    }
+
+    #[test]
+    fn test_list_asio_devices_returns_vec() {
+        // On non-Windows or without ASIO feature, returns empty vec
+        let devices = list_asio_devices();
+        #[cfg(not(all(target_os = "windows", feature = "asio")))]
+        assert!(devices.is_empty());
+        let _ = devices;
     }
 }

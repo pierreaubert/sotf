@@ -1,0 +1,15 @@
+[package]
+name = "driver-common"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Platform-agnostic audio driver trait for system-wide audio capture"
+
+[lib]
+name = "driver_common"
+crate-type = ["lib"]
+
+[dependencies]
+serde = { workspace = true }
+log = { workspace = true }

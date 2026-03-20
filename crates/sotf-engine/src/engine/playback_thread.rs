@@ -169,8 +169,17 @@ fn run_playback_thread(
     recycle_tx: SyncSender<Vec<f32>>,
     allow_virtual_output: bool,
 ) -> Result<(), String> {
-    // Initialize cpal
-    let host = cpal::default_host();
+    // Initialize cpal host — ASIO host if "ASIO:" prefix, default otherwise
+    let host = crate::devices::get_host_for_device(output_device.as_deref());
+
+    // Strip ASIO prefix from device name for actual device lookup
+    let output_device = output_device.map(|d| {
+        if crate::devices::is_asio_device(&d) {
+            crate::devices::strip_asio_prefix(&d).to_string()
+        } else {
+            d
+        }
+    });
 
     // Select output device
     let device = if let Some(device_identifier) = output_device {
