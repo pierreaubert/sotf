@@ -1,6 +1,6 @@
 //! Tutorial dialog shown on first launch to introduce the app's features.
 //!
-//! Simplified 3-screen welcome flow + contextual hint system.
+//! Also provides a contextual hint system for first-time feature encounters.
 
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -11,10 +11,10 @@ use gpui_ui_kit::{
 };
 
 // ============================================================================
-// Welcome Tutorial (3-screen dialog)
+// Tutorial Dialog (7-screen walkthrough)
 // ============================================================================
 
-const TUTORIAL_SCREEN_COUNT: usize = 3;
+const TUTORIAL_SCREEN_COUNT: usize = 7;
 
 struct TutorialScreen {
     title: &'static str,
@@ -28,31 +28,68 @@ const TUTORIAL_SCREENS: [TutorialScreen; TUTORIAL_SCREEN_COUNT] = [
         image: "tutorial/player.webp",
         content: &[
             "SotF is a high-fidelity audio player with built-in DSP processing.",
-            "Browse your music library, build a queue, and enjoy real-time audio plugins \u{2014} EQ, compression, upmixing, and more.",
+            "Browse your music library, build a queue, and enjoy playback with real-time audio plugins.",
+            "Use the top navigation bar to switch between Library, Queue, Studio (plugins), and more.",
         ],
     },
     TutorialScreen {
-        title: "Key Features",
+        title: "Plugin Rack",
         image: "tutorial/rack.webp",
         content: &[
-            "Plugin Rack \u{2014} Chain audio processors in the Studio screen. Drag to reorder, toggle to bypass.",
-            "Room EQ \u{2014} Optimize speaker response using your own measurements.",
-            "Headphone & Spinorama EQ \u{2014} Target curves for headphones and speakers from spinorama.org data.",
+            "The Studio screen hosts your plugin rack \u{2014} a chain of audio processors applied in real time.",
+            "Add plugins like Crossfeed and Fletcher-Munson compensation for headphone listening.",
+            "Plugins include EQ, compressor, gate, limiter, upmixer, and more. Drag to reorder, toggle to bypass.",
         ],
     },
     TutorialScreen {
-        title: "Getting Started",
+        title: "Recording",
+        image: "tutorial/recording.webp",
+        content: &[
+            "Measure your speakers or room using sweep signals or pink noise.",
+            "Connect a calibrated microphone, select input/output channels, and capture frequency response data.",
+            "Recordings are saved as CSV files for use in Room EQ optimization.",
+        ],
+    },
+    TutorialScreen {
+        title: "Spinorama EQ",
+        image: "tutorial/spinorama.webp",
+        content: &[
+            "Optimize speaker EQ using measurement data from spinorama.org.",
+            "Search for your speaker model, choose a target curve, and let the optimizer find the best parametric EQ filters.",
+            "Results can be exported and loaded directly into the plugin rack.",
+        ],
+    },
+    TutorialScreen {
+        title: "Headphone EQ",
+        image: "tutorial/headphone.webp",
+        content: &[
+            "Target the Harman curve or other headphone targets for accurate reproduction.",
+            "Load your headphone's frequency response and optimize PEQ filters to match the target.",
+            "Supports multiple optimization algorithms for best results.",
+        ],
+    },
+    TutorialScreen {
+        title: "Room EQ",
+        image: "tutorial/roomeq.webp",
+        content: &[
+            "Correct room acoustics with multi-channel support.",
+            "Use your own measurements or recordings to generate per-channel EQ corrections.",
+            "Supports crossover configuration, target curves, and multiple optimization modes.",
+        ],
+    },
+    TutorialScreen {
+        title: "Preferences",
         image: "tutorial/settings.webp",
         content: &[
-            "Add a music folder in Settings > Library to start browsing your collection.",
-            "Use keyboard shortcuts for fast navigation: \u{2318}0-6 to switch screens, Space to play/pause.",
-            "Press ? at any time for keyboard shortcuts. Contextual hints will appear as you explore features.",
+            "Customize the app in Settings: theme, language, keybindings, audio device, and font scale.",
+            "Manage your music library directories and configure scanner threads for background analysis.",
+            "Plugin presets can be saved and loaded from the Settings screen.",
         ],
     },
 ];
 
 // ============================================================================
-// Contextual Hints
+// Contextual Hints (shown once per feature encounter)
 // ============================================================================
 
 /// Unique identifiers for contextual hints shown once per feature encounter.
@@ -161,7 +198,7 @@ pub fn render_hint_banner(
 }
 
 // ============================================================================
-// Tutorial Dialog Rendering
+// Tutorial Dialog Rendering (original 7-screen walkthrough, unchanged)
 // ============================================================================
 
 impl PlayerView {
