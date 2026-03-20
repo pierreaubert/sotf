@@ -234,3 +234,48 @@ impl Default for XtcPluginParams {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_spectral_normalization_is_true() {
+        let params = XtcPluginParams::default();
+        assert!(
+            params.spectral_normalization,
+            "Default spectral_normalization should be true"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_empty_json_spectral_normalization_true() {
+        let json = "{}";
+        let params: XtcPluginParams = serde_json::from_str(json).unwrap();
+        assert!(
+            params.spectral_normalization,
+            "Deserializing empty JSON should default spectral_normalization to true"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_explicit_false_spectral_normalization() {
+        let json = r#"{"spectral_normalization": false}"#;
+        let params: XtcPluginParams = serde_json::from_str(json).unwrap();
+        assert!(
+            !params.spectral_normalization,
+            "Explicitly setting spectral_normalization=false should be respected"
+        );
+    }
+
+    #[test]
+    fn test_default_values_are_sensible() {
+        let params = XtcPluginParams::default();
+        assert!((params.distance_m - 2.0).abs() < f32::EPSILON);
+        assert!((params.speaker_angle_deg - 30.0).abs() < f32::EPSILON);
+        assert!(params.enabled);
+        assert!(params.auto_gain_enabled);
+        assert!(!params.room_reflections_enabled);
+        assert!(!params.pinna_model_enabled);
+    }
+}

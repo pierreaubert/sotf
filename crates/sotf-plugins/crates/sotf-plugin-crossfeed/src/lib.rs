@@ -1098,6 +1098,68 @@ mod tests {
     }
 
     #[test]
+    fn test_itd_delay_accuracy() {
+        // Set itd_delay_ms=0.5. Process an impulse on L only.
+        // Verify the crossfeed to R arrives later than with itd_delay_ms=0.
+        let n = 200;
+        let sr = 48000;
+
+        // Helper: process an L-only impulse and find the frame where R channel
+        // first exceeds a threshold.
+        let find_r_onset = |itd_ms: f32| -> usize {
+            let mut params = CrossfeedPluginParams::default();
+            params.mode = CrossfeedMode::Bauer;
+            params.bauer_feed_db = 6.0;
+            params.itd_delay_ms = itd_ms;
+            params.mix = 1.0;
+            let mut p = CrossfeedPlugin::new(params).unwrap();
+            p.initialize(sr).unwrap();
+
+            let mut buffer = vec![0.0f32; n * 2];
+            buffer[0] = 1.0; // impulse at frame 0, L channel
+
+            p.process_in_place(
+                &mut buffer,
+                &ProcessContext {
+                    sample_rate: sr,
+                    num_frames: n,
+                },
+            )
+            .unwrap();
+
+            // Find the first frame where |R| > threshold
+            let threshold = 0.001;
+            for f in 0..n {
+                if buffer[f * 2 + 1].abs() > threshold {
+                    return f;
+                }
+            }
+            n // never found
+        };
+
+        let onset_no_delay = find_r_onset(0.0);
+        let onset_with_delay = find_r_onset(0.5);
+
+        // 0.5ms at 48kHz = 24 samples. The delayed version should arrive later.
+        assert!(
+            onset_with_delay > onset_no_delay,
+            "ITD 0.5ms should delay R onset: no_delay_onset={}, delayed_onset={}",
+            onset_no_delay,
+            onset_with_delay
+        );
+
+        // The difference should be approximately 24 samples
+        let diff = onset_with_delay - onset_no_delay;
+        assert!(
+            (diff as i32 - 24).unsigned_abs() <= 3,
+            "ITD difference should be ~24 samples (0.5ms@48kHz), got {} (onset_no={}, onset_with={})",
+            diff,
+            onset_no_delay,
+            onset_with_delay
+        );
+    }
+
+    #[test]
     fn test_disabled_passthrough() {
         let mut params = CrossfeedPluginParams::default();
         params.enabled = false;

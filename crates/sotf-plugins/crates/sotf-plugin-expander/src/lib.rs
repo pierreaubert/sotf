@@ -944,6 +944,51 @@ mod tests {
         );
     }
 
+    /// Sidechain HPF at 0 Hz should be effectively disabled: a low-frequency
+    /// signal should still trigger expansion normally.
+    #[test]
+    fn test_sidechain_hpf_zero_hz_passes_low_freq() {
+        let params = ExpanderPluginParams {
+            sidechain_hpf_hz: 0.0,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            range_db: 40.0,
+            attack_ms: 1.0,
+            release_ms: 50.0,
+            mix: 1.0,
+            ..Default::default()
+        };
+        let mut p = ExpanderPlugin::with_params(1, params);
+        p.initialize(48000).unwrap();
+
+        // Generate a 50 Hz sine at -10 dBFS (above -20 threshold)
+        let num_frames = 4800;
+        let amplitude = 10.0_f32.powf(-10.0 / 20.0); // ~0.316
+        let mut buf = vec![0.0f32; num_frames];
+        for i in 0..num_frames {
+            buf[i] = amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin();
+        }
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        p.process_in_place(&mut buf, &ctx).unwrap();
+
+        // With HPF=0 (disabled), the 50 Hz signal should be detected and the
+        // gate should be open (signal above threshold = no expansion).
+        // Output should be close to input amplitude.
+        let last_rms: f32 = buf[4000..].iter().map(|x| x * x).sum::<f32>()
+            / (num_frames - 4000) as f32;
+        let last_rms = last_rms.sqrt();
+        let expected_rms = amplitude / 2.0_f32.sqrt(); // RMS of sine
+        assert!(
+            last_rms > expected_rms * 0.5,
+            "With HPF=0, low-freq signal above threshold should pass through. \
+             RMS={last_rms:.4}, expected ~{expected_rms:.4}"
+        );
+    }
+
     /// Regression: attack/release coefficients were swapped.
     /// With fast attack (1ms) and slow release (200ms), the gate should close
     /// quickly when signal drops below threshold. If coefficients are swapped,

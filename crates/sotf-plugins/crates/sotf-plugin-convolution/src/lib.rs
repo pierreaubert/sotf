@@ -680,6 +680,119 @@ mod tests {
         );
     }
 
+    /// With mix=0.0 (fully dry), output should equal input.
+    #[test]
+    fn test_mix_zero_is_dry_passthrough() {
+        let channels = 1;
+        let sr = 48000;
+        // Dirac impulse at sample 0
+        let ir = vec![vec![1.0]];
+        let mut plugin = make_plugin_with_ir(channels, sr, ir);
+        // Set mix to 0.0 (fully dry)
+        plugin.mix_value = 0.0;
+        plugin.mix.set_target(0.0);
+        plugin.mix.reset(0.0);
+
+        // Process enough blocks for the convolution to settle
+        let total_frames = PARTITION_SIZE * 3;
+        let mut buffer: Vec<f32> = (0..total_frames)
+            .map(|i| (i as f32 * 0.1).sin())
+            .collect();
+        let original = buffer.clone();
+
+        for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
+            let block_end = (block_start + PARTITION_SIZE).min(total_frames);
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin
+                .process_in_place(&mut buffer[block_start..block_end], &ctx)
+                .unwrap();
+        }
+
+        // With mix=0.0, the output formula is: dry*1.0 + wet*0.0 = dry
+        // Check that output matches original input
+        for (i, (&got, &exp)) in buffer.iter().zip(original.iter()).enumerate() {
+            assert!(
+                (got - exp).abs() < 1e-4,
+                "mix=0 passthrough mismatch at sample {}: got {}, expected {}",
+                i, got, exp
+            );
+        }
+    }
+
+    /// With gain_db=6.0, the wet signal should be louder than with gain_db=0.0.
+    #[test]
+    fn test_gain_db_increases_output() {
+        let channels = 1;
+        let sr = 48000;
+        let ir = vec![vec![1.0]]; // Unity IR
+
+        // Process with gain_db=0.0
+        let mut plugin_0db = make_plugin_with_ir(channels, sr, ir.clone());
+        plugin_0db.mix_value = 1.0;
+        plugin_0db.mix.set_target(1.0);
+        plugin_0db.mix.reset(1.0);
+        plugin_0db.gain_db_value = 0.0;
+        plugin_0db.gain_linear.set_target(1.0);
+        plugin_0db.gain_linear.reset(1.0);
+
+        let total_frames = PARTITION_SIZE * 4;
+        let input_signal: Vec<f32> = (0..total_frames)
+            .map(|i| (i as f32 * 0.05).sin() * 0.5)
+            .collect();
+
+        let mut buffer_0db = input_signal.clone();
+        for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
+            let block_end = (block_start + PARTITION_SIZE).min(total_frames);
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin_0db
+                .process_in_place(&mut buffer_0db[block_start..block_end], &ctx)
+                .unwrap();
+        }
+
+        // Process with gain_db=6.0
+        let mut plugin_6db = make_plugin_with_ir(channels, sr, ir);
+        plugin_6db.mix_value = 1.0;
+        plugin_6db.mix.set_target(1.0);
+        plugin_6db.mix.reset(1.0);
+        let gain_linear_6db = 10.0f32.powf(6.0 / 20.0);
+        plugin_6db.gain_db_value = 6.0;
+        plugin_6db.gain_linear.set_target(gain_linear_6db);
+        plugin_6db.gain_linear.reset(gain_linear_6db);
+
+        let mut buffer_6db = input_signal.clone();
+        for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
+            let block_end = (block_start + PARTITION_SIZE).min(total_frames);
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin_6db
+                .process_in_place(&mut buffer_6db[block_start..block_end], &ctx)
+                .unwrap();
+        }
+
+        // Compare energy in the settled region (skip first partition for edge effects)
+        let skip = PARTITION_SIZE * 2;
+        let energy_0db: f32 = buffer_0db[skip..].iter().map(|s| s * s).sum();
+        let energy_6db: f32 = buffer_6db[skip..].iter().map(|s| s * s).sum();
+
+        assert!(
+            energy_6db > energy_0db * 1.5,
+            "gain_db=6 should produce notably more energy than gain_db=0: {} vs {}",
+            energy_6db,
+            energy_0db
+        );
+    }
+
     /// Long IR stability: no NaN or Inf after 10000 frames.
     #[test]
     fn test_long_ir_stability() {

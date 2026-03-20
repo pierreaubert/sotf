@@ -1045,6 +1045,61 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_enable_ftz_daz_does_not_panic() {
+        // enable_ftz_daz() should complete without panicking on any platform.
+        // On x86_64 or aarch64 it returns true; on other platforms false.
+        let result = enable_ftz_daz();
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        assert!(result, "enable_ftz_daz should return true on supported platforms");
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        assert!(!result, "enable_ftz_daz should return false on unsupported platforms");
+    }
+
+    #[test]
+    fn test_apply_gain_simd_known_values() {
+        // Apply gain of 2.0 to known input
+        let mut buffer = vec![1.0, 2.0, 3.0, 4.0, -1.0, 0.5, -0.5, 0.0, 1.5];
+        let expected: Vec<f32> = buffer.iter().map(|&x| x * 2.0).collect();
+        apply_gain_simd(&mut buffer, 2.0);
+        for (i, (&got, &exp)) in buffer.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (got - exp).abs() < 1e-6,
+                "apply_gain_simd mismatch at index {}: got {}, expected {}",
+                i, got, exp
+            );
+        }
+    }
+
+    #[test]
+    fn test_apply_gain_simd_zero_gain() {
+        let mut buffer = vec![1.0, -2.0, 3.5, 0.7];
+        apply_gain_simd(&mut buffer, 0.0);
+        for (i, &v) in buffer.iter().enumerate() {
+            assert_eq!(v, 0.0, "apply_gain_simd with zero gain: index {} not zero", i);
+        }
+    }
+
+    #[test]
+    fn test_apply_gain_simd_unity_gain() {
+        let original = vec![1.0, -2.0, 3.5, 0.7, 0.0, -0.1];
+        let mut buffer = original.clone();
+        apply_gain_simd(&mut buffer, 1.0);
+        assert_eq!(buffer, original);
+    }
+
+    #[test]
+    fn test_apply_per_channel_gain_simd_stereo() {
+        // Stereo buffer: apply different gains to L and R
+        let mut buffer = vec![1.0, 2.0, 3.0, 4.0]; // 2 frames, 2 channels
+        let gains = vec![0.5, 2.0]; // L=0.5, R=2.0
+        apply_per_channel_gain_simd(&mut buffer, 2, &gains);
+        assert!((buffer[0] - 0.5).abs() < 1e-6, "L frame 0");
+        assert!((buffer[1] - 4.0).abs() < 1e-6, "R frame 0");
+        assert!((buffer[2] - 1.5).abs() < 1e-6, "L frame 1");
+        assert!((buffer[3] - 8.0).abs() < 1e-6, "R frame 1");
+    }
+
     // ============================================================================
     // SIMD Correctness Tests
     // ============================================================================

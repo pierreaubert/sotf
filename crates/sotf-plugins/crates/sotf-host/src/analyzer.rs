@@ -267,3 +267,73 @@ impl Default for SpectrumData {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Create a RealTimeCache, update it, load it -- verify the loaded value
+    /// matches what was written.
+    #[test]
+    fn test_realtime_cache_update_and_load() {
+        let mut cache = RealTimeCache::new(42i32);
+
+        // Initial value
+        let val = cache.load();
+        assert_eq!(*val, 42);
+
+        // Update
+        cache.update(|v| *v = 99);
+        let val = cache.load();
+        assert_eq!(*val, 99);
+
+        // Multiple updates
+        cache.update(|v| *v += 1);
+        cache.update(|v| *v += 1);
+        let val = cache.load();
+        assert_eq!(*val, 101);
+    }
+
+    /// Verify that load returns an Arc and holding it doesn't block further updates.
+    #[test]
+    fn test_realtime_cache_concurrent_read() {
+        let mut cache = RealTimeCache::new(0i32);
+        cache.update(|v| *v = 10);
+
+        // Hold a reference to the current value
+        let held = cache.load();
+        assert_eq!(*held, 10);
+
+        // Update while held reference exists -- should not panic
+        cache.update(|v| *v = 20);
+        let new_val = cache.load();
+        assert_eq!(*new_val, 20);
+
+        // Old reference still valid
+        assert_eq!(*held, 10);
+    }
+
+    /// Verify RealTimeCache works with a struct (not just primitives).
+    #[test]
+    fn test_realtime_cache_with_struct() {
+        #[derive(Clone, Default)]
+        struct TestData {
+            level: f32,
+            count: usize,
+        }
+
+        let mut cache = RealTimeCache::new(TestData {
+            level: -60.0,
+            count: 0,
+        });
+
+        cache.update(|d| {
+            d.level = -12.5;
+            d.count = 42;
+        });
+
+        let data = cache.load();
+        assert_eq!(data.level, -12.5);
+        assert_eq!(data.count, 42);
+    }
+}

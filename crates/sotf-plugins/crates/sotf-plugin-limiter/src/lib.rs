@@ -724,6 +724,97 @@ mod tests {
         assert_eq!(dr_val, Some(ParameterValue::Bool(true)));
     }
 
+    /// Ceiling and mix parameters: with mix=0.0, output should be the dry
+    /// (delayed) signal unchanged. With mix=1.0, output should be limited.
+    #[test]
+    fn test_limiter_mix_parameter() {
+        let sr = 48000u32;
+
+        // Create limiter with mix=0 set via parameter after init (so smoother starts at 0)
+        let mut p_dry = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        p_dry.initialize(sr).unwrap();
+        p_dry
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+            .unwrap();
+
+        let mut p_wet = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        p_wet.initialize(sr).unwrap();
+
+        // Process a warmup block to let the mix smoother converge to 0
+        let warmup = 4800; // 100ms
+        let mut warmup_buf_dry = vec![0.0f32; warmup];
+        let mut warmup_buf_wet = vec![0.0f32; warmup];
+        let warmup_ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames: warmup,
+        };
+        p_dry
+            .process_in_place(&mut warmup_buf_dry, &warmup_ctx)
+            .unwrap();
+        p_wet
+            .process_in_place(&mut warmup_buf_wet, &warmup_ctx)
+            .unwrap();
+
+        let num_frames = 4096;
+        let make_signal = || {
+            let mut buf = vec![0.0f32; num_frames];
+            for i in 0..num_frames {
+                buf[i] = 0.9 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr as f32).sin();
+            }
+            buf
+        };
+        let mut buf_dry = make_signal();
+        let mut buf_wet = make_signal();
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames,
+        };
+        p_dry.process_in_place(&mut buf_dry, &ctx).unwrap();
+        p_wet.process_in_place(&mut buf_wet, &ctx).unwrap();
+
+        let thresh_lin = fast_pow10(-6.0 / 20.0);
+
+        // mix=0 (dry): after lookahead fills, peaks should exceed threshold (no limiting)
+        let dry_peak: f32 = buf_dry[500..].iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        assert!(
+            dry_peak > thresh_lin,
+            "mix=0 (dry) should pass through unaltered, peak={dry_peak:.4} > threshold={thresh_lin:.4}"
+        );
+
+        // mix=1 (wet): after lookahead fills, peaks should be below threshold
+        let wet_peak: f32 = buf_wet[500..].iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        assert!(
+            wet_peak <= thresh_lin * 1.1,
+            "mix=1 (wet) should be limited, peak={wet_peak:.4} > threshold={thresh_lin:.4}"
+        );
+    }
+
+    /// With threshold=-6dB, a 0dBFS signal should not exceed the threshold
+    /// in the output (after lookahead fills).
+    #[test]
+    fn test_limiter_ceiling_enforcement() {
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        p.initialize(48000).unwrap();
+
+        let num_frames = 4096;
+        let mut buf = vec![1.0f32; num_frames]; // 0 dBFS
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        p.process_in_place(&mut buf, &ctx).unwrap();
+
+        let thresh_lin = fast_pow10(-6.0 / 20.0);
+        // After lookahead settles (~240 samples at 5ms), output should not exceed threshold
+        for (i, &s) in buf[500..].iter().enumerate() {
+            assert!(
+                s.abs() <= thresh_lin * 1.05,
+                "Frame {}: sample {s:.4} exceeds ceiling {thresh_lin:.4}",
+                i + 500
+            );
+        }
+    }
+
     /// Test that reset clears true peak detectors and dual release state.
     #[test]
     fn test_reset_clears_new_state() {

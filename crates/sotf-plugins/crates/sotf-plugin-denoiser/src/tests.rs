@@ -601,3 +601,44 @@ fn test_low_frequency_content() {
     let sum: f32 = input.iter().map(|x| x.abs()).sum();
     assert!(sum > 0.0, "Low frequency should produce output");
 }
+
+/// Bootstrap noise floor seeding: process only 5 frames of noise, then 5 frames
+/// of signal. After the short bootstrap, the denoiser should still produce output
+/// (not all zeros).
+#[test]
+fn test_bootstrap_noise_floor_seeding() {
+    let mut params = DenoiserPluginParams::default();
+    params.reduction_db = 12.0;
+    let mut plugin = DenoiserPlugin::from_params(1, params);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let block_size = plugin.fft_size; // one FFT frame = 1 "frame" of STFT
+
+    // Phase 1: Feed 5 blocks of noise to seed the noise floor
+    for _ in 0..5 {
+        let mut noise = make_noisy_signal(block_size, 1, -60.0, -20.0);
+        let ctx = ProcessContext {
+            sample_rate: SAMPLE_RATE,
+            num_frames: block_size,
+        };
+        plugin.process_in_place(&mut noise, &ctx).unwrap();
+    }
+
+    // Phase 2: Feed 5 blocks of clean signal
+    let mut total_energy = 0.0f32;
+    for _ in 0..5 {
+        let mut signal = make_test_signal(block_size, 1, 1000.0);
+        let ctx = ProcessContext {
+            sample_rate: SAMPLE_RATE,
+            num_frames: block_size,
+        };
+        plugin.process_in_place(&mut signal, &ctx).unwrap();
+        total_energy += signal.iter().map(|x| x * x).sum::<f32>();
+    }
+
+    assert!(
+        total_energy > 0.0,
+        "After bootstrap noise seeding and signal processing, output should not be all zeros. Energy: {}",
+        total_energy
+    );
+}

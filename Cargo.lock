@@ -9522,6 +9522,7 @@ dependencies = [
  "realfft",
  "rustfft 6.4.1",
  "serde",
+ "serde_json",
  "sotf-host",
  "symphonia",
  "symphonia-codec-pcm",

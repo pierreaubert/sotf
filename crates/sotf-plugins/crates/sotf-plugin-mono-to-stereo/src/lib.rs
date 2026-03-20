@@ -571,6 +571,57 @@ mod tests {
         assert!(any_differ, "L and R should differ at width=1.0");
     }
 
+    /// Verify that mono-to-stereo energy compensation keeps output RMS within 3 dB
+    /// of input RMS. This ensures the decorrelation + OLA path doesn't significantly
+    /// change the perceived loudness.
+    #[test]
+    fn test_mono_to_stereo_energy_compensation() {
+        let mut p = MonoToStereoPlugin::new();
+        p.haas_delay_ms = 0.0;
+        p.initialize(48000).unwrap();
+        p.stereo_width.reset(0.5); // moderate width
+
+        let total_frames = FFT_SIZE * 20;
+        let sr = 48000.0_f32;
+        // Use a 440 Hz sine to keep things simple
+        let input: Vec<f32> = (0..total_frames)
+            .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr).sin())
+            .collect();
+        let mut output = vec![0.0; total_frames * 2];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: total_frames,
+            },
+        )
+        .unwrap();
+
+        // Measure RMS in settled region
+        let start = FFT_SIZE * 8;
+        let end = FFT_SIZE * 18;
+        let input_rms: f64 = (input[start..end].iter().map(|s| (*s as f64).powi(2)).sum::<f64>()
+            / (end - start) as f64)
+            .sqrt();
+
+        let mut stereo_energy = 0.0_f64;
+        for frame in start..end {
+            let l = output[frame * 2] as f64;
+            let r = output[frame * 2 + 1] as f64;
+            // Average power of L and R
+            stereo_energy += (l * l + r * r) / 2.0;
+        }
+        let output_rms = (stereo_energy / (end - start) as f64).sqrt();
+
+        let ratio_db = 20.0 * (output_rms / input_rms).log10();
+        assert!(
+            ratio_db.abs() < 3.0,
+            "Stereo output RMS should be within 3 dB of mono input RMS, \
+             but got {ratio_db:.2} dB (in_rms={input_rms:.6}, out_rms={output_rms:.6})"
+        );
+    }
+
     /// Test that freq_dependent mode produces less decorrelation at low frequencies
     /// and more at high frequencies. We compare L/R correlation for a bass signal
     /// vs a treble signal: bass should be more correlated (closer to mono).

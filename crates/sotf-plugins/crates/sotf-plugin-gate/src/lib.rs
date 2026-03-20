@@ -713,4 +713,93 @@ mod tests {
         .unwrap();
         assert!(b[999] < 0.05);
     }
+
+    /// Sidechain HPF at 200 Hz: a 50 Hz signal below threshold should NOT open
+    /// the gate (HPF filters out the low-freq detection signal). A 1 kHz signal
+    /// at the same level should open it.
+    #[test]
+    fn test_sidechain_hpf_filters_low_freq_detection() {
+        let sr = 48000u32;
+        let threshold_db = -20.0;
+        // Signal amplitude is above threshold in raw dB but below after HPF
+        let amplitude = 10.0_f32.powf(-15.0 / 20.0); // -15 dBFS (above -20 threshold)
+
+        // --- Test 1: 50 Hz signal with HPF=200 Hz. Gate should stay closed. ---
+        let mut p_low = GatePlugin::from_params(
+            1,
+            GatePluginParams {
+                threshold_db,
+                ratio: 100.0,
+                attack_ms: 1.0,
+                hold_ms: 0.0,
+                release_ms: 10.0,
+                mix: 1.0,
+                link_channels: false,
+                sidechain_hpf_hz: 200.0,
+                range_db: 80.0,
+                hysteresis_db: 0.0,
+                knee_db: 0.0,
+                lookahead_ms: 0.0,
+            },
+        );
+        p_low.initialize(sr).unwrap();
+
+        let num_frames = 9600; // 200ms
+        let mut buf_low = vec![0.0f32; num_frames];
+        for i in 0..num_frames {
+            buf_low[i] =
+                amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr as f32).sin();
+        }
+
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames,
+        };
+        p_low.process_in_place(&mut buf_low, &ctx).unwrap();
+
+        // The 50 Hz signal should be significantly attenuated because the HPF
+        // at 200 Hz filters out the 50 Hz from the sidechain detection.
+        let rms_low: f32 = buf_low[4800..].iter().map(|x| x * x).sum::<f32>()
+            / (num_frames - 4800) as f32;
+        let rms_low = rms_low.sqrt();
+
+        // --- Test 2: 1 kHz signal with HPF=200 Hz. Gate should open. ---
+        let mut p_high = GatePlugin::from_params(
+            1,
+            GatePluginParams {
+                threshold_db,
+                ratio: 100.0,
+                attack_ms: 1.0,
+                hold_ms: 0.0,
+                release_ms: 10.0,
+                mix: 1.0,
+                link_channels: false,
+                sidechain_hpf_hz: 200.0,
+                range_db: 80.0,
+                hysteresis_db: 0.0,
+                knee_db: 0.0,
+                lookahead_ms: 0.0,
+            },
+        );
+        p_high.initialize(sr).unwrap();
+
+        let mut buf_high = vec![0.0f32; num_frames];
+        for i in 0..num_frames {
+            buf_high[i] =
+                amplitude * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin();
+        }
+
+        p_high.process_in_place(&mut buf_high, &ctx).unwrap();
+
+        let rms_high: f32 = buf_high[4800..].iter().map(|x| x * x).sum::<f32>()
+            / (num_frames - 4800) as f32;
+        let rms_high = rms_high.sqrt();
+
+        // 1 kHz should pass through much louder than 50 Hz (gate open vs closed)
+        assert!(
+            rms_high > rms_low * 2.0,
+            "1kHz (RMS={rms_high:.5}) should pass through gate much louder than 50Hz (RMS={rms_low:.5}) \
+             when sidechain HPF=200Hz"
+        );
+    }
 }

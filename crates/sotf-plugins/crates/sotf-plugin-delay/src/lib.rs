@@ -582,6 +582,86 @@ mod tests {
     }
 
     #[test]
+    fn test_mix_zero_equals_dry() {
+        // mix=0.0 -> output equals input (dry only, no delayed signal)
+        let mut p = DelayPlugin::new(1, 10.0, 0.0, 0.0); // mix=0
+        p.initialize(48000).unwrap();
+
+        let num_frames = 1000;
+        let original: Vec<f32> = (0..num_frames)
+            .map(|i| (i as f32 * 0.1).sin())
+            .collect();
+        let mut buffer = original.clone();
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // With mix=0, output = input * (1-0) + delayed * 0 = input
+        for (i, (&out, &inp)) in buffer.iter().zip(original.iter()).enumerate() {
+            assert!(
+                (out - inp).abs() < 1e-6,
+                "mix=0 should equal dry input at frame {}: out={}, in={}",
+                i,
+                out,
+                inp
+            );
+        }
+    }
+
+    #[test]
+    fn test_mix_one_equals_delayed() {
+        // mix=1.0 -> output equals delayed signal only (no dry signal)
+        let sr = 48000;
+        let delay_ms = 10.0;
+        let delay_samples = (delay_ms / 1000.0 * sr as f32).round() as usize;
+        let mut p = DelayPlugin::new(1, delay_ms, 0.0, 1.0); // mix=1, feedback=0
+        p.initialize(sr).unwrap();
+
+        // Create an impulse
+        let num_frames = delay_samples + 200;
+        let mut buffer = vec![0.0f32; num_frames];
+        buffer[0] = 1.0; // impulse
+
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // With mix=1 and feedback=0:
+        // output = input * (1-1) + delayed * 1 = delayed only
+        // Frame 0: no delay history, so delayed=0, output=0 (not the impulse!)
+        assert!(
+            buffer[0].abs() < 0.01,
+            "mix=1 frame 0 should be ~0 (delayed only), got {}",
+            buffer[0]
+        );
+
+        // The impulse should appear at the delay offset
+        // Find the peak in output (should be at delay_samples)
+        let peak_idx = buffer
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+            .unwrap()
+            .0;
+        assert!(
+            (peak_idx as i32 - delay_samples as i32).unsigned_abs() <= 1,
+            "mix=1 peak should be at delay offset {}, found at {}",
+            delay_samples,
+            peak_idx
+        );
+    }
+
+    #[test]
     fn test_parameter_validation() {
         let mut p = DelayPlugin::new(1, 100.0, 0.3, 0.5);
         p.initialize(48000).unwrap();

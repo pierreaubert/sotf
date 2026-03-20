@@ -933,3 +933,114 @@ impl Plugin for PndPlugin {
         Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// With high drift_smoothing, the correction ratio should change slowly
+    /// (no sudden jumps between frames).
+    #[test]
+    fn test_drift_smoothing_slow_correction() {
+        let mut p = PndPlugin::new(2);
+        p.drift_smoothing = 0.99; // very high smoothing
+        p.correction_strength = 1.0;
+        p.initialize(48000).unwrap();
+
+        let nf = RESAMPLER_CHUNK_SIZE;
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
+
+        // Process several blocks and track how current_ratio evolves
+        let mut ratios = Vec::new();
+        for block in 0..10 {
+            let input: Vec<f32> = (0..nf * 2)
+                .map(|i| {
+                    0.3 * (2.0 * std::f32::consts::PI * 440.0 * (block * nf * 2 + i) as f32
+                        / 48000.0)
+                        .sin()
+                })
+                .collect();
+            let mut output = vec![0.0f32; nf * 2];
+            let _ = p.process(&input, &mut output, &ctx);
+            ratios.push(p.current_ratio);
+        }
+
+        // With high smoothing, ratio changes should be very small between blocks
+        for i in 1..ratios.len() {
+            let delta = (ratios[i] - ratios[i - 1]).abs();
+            assert!(
+                delta < 0.01,
+                "Correction ratio changed too fast at block {i}: delta={delta:.6}, \
+                 prev={:.6}, curr={:.6}",
+                ratios[i - 1],
+                ratios[i]
+            );
+        }
+    }
+
+    /// Setting analysis_window_ms to different values should not cause panics
+    /// or errors, and the plugin should process audio correctly.
+    #[test]
+    fn test_analysis_window_parameter_values() {
+        for &window_ms in &[10.0, 50.0, 100.0, 200.0] {
+            let mut p = PndPlugin::new(2);
+            p.analysis_window_ms = window_ms;
+            p.initialize(48000).unwrap();
+
+            let nf = RESAMPLER_CHUNK_SIZE;
+            let ctx = ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            };
+
+            let input: Vec<f32> = (0..nf * 2)
+                .map(|i| 0.3 * (i as f32 * 0.01).sin())
+                .collect();
+            let mut output = vec![0.0f32; nf * 2];
+            let result = p.process(&input, &mut output, &ctx);
+            assert!(
+                result.is_ok(),
+                "PND plugin should process without error with analysis_window_ms={window_ms}"
+            );
+            assert!(
+                output.iter().all(|s| s.is_finite()),
+                "All output samples should be finite with analysis_window_ms={window_ms}"
+            );
+        }
+    }
+
+    /// Verify set_parameter / get_parameter round-trip for analysis_window_ms.
+    #[test]
+    fn test_analysis_window_param_roundtrip() {
+        let mut p = PndPlugin::new(1);
+        p.initialize(44100).unwrap();
+
+        p.set_parameter(
+            ParameterId::from("analysis_window_ms"),
+            ParameterValue::Float(75.0),
+        )
+        .unwrap();
+
+        let val = p.get_parameter(&ParameterId::from("analysis_window_ms"));
+        assert_eq!(val, Some(ParameterValue::Float(75.0)));
+    }
+
+    /// Verify set_parameter / get_parameter round-trip for drift_smoothing.
+    #[test]
+    fn test_drift_smoothing_param_roundtrip() {
+        let mut p = PndPlugin::new(1);
+        p.initialize(44100).unwrap();
+
+        p.set_parameter(
+            ParameterId::from("drift_smoothing"),
+            ParameterValue::Float(0.85),
+        )
+        .unwrap();
+
+        let val = p.get_parameter(&ParameterId::from("drift_smoothing"));
+        assert_eq!(val, Some(ParameterValue::Float(0.85)));
+    }
+}

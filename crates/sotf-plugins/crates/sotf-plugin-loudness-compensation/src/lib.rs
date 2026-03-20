@@ -718,6 +718,77 @@ mod tests {
         );
     }
 
+    /// Verify 3-band topology: 2 lowshelf + 1 peak + 2 highshelf = 5 filters.
+    /// When mid_enabled is toggled off, the peak filter gain becomes 0 dB (passthrough).
+    #[test]
+    fn test_three_band_topology_filter_count() {
+        let p = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
+        // Each channel should have exactly 5 filters
+        assert_eq!(
+            p.filters[0].len(),
+            LoudnessCompensationPlugin::FILTER_COUNT,
+            "Channel 0 should have {} filters",
+            LoudnessCompensationPlugin::FILTER_COUNT
+        );
+        assert_eq!(
+            p.filters[1].len(),
+            LoudnessCompensationPlugin::FILTER_COUNT,
+            "Channel 1 should have {} filters",
+            LoudnessCompensationPlugin::FILTER_COUNT
+        );
+    }
+
+    #[test]
+    fn test_mid_disabled_sets_peak_gain_zero() {
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+        // Confirm mid is enabled by default
+        assert!(p.mid_enabled);
+
+        // Disable mid band
+        p.set_parameter(ParameterId::from("mid_enabled"), ParameterValue::Bool(false))
+            .unwrap();
+        assert!(!p.mid_enabled);
+
+        // The peak filter (index 2) should have gain_db == 0.0.
+        // We verify by processing: with mid disabled, a mid-frequency signal
+        // should see the same behavior as if the peak band didn't exist.
+        // Process two paths: one with mid_enabled=false, one with mid_gain=0.
+        let nf = 4800;
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
+
+        let signal: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 3500.0 * i as f32 / 48000.0).sin())
+            .collect();
+
+        // Path A: mid disabled
+        let mut buf_a = signal.clone();
+        p.process_in_place(&mut buf_a, &ctx).unwrap();
+
+        // Path B: mid enabled but gain=0
+        let mut p2 = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        InPlacePlugin::initialize(&mut p2, 48000).unwrap();
+        p2.set_parameter(ParameterId::from("mid_gain"), ParameterValue::Float(0.0))
+            .unwrap();
+        let mut buf_b = signal.clone();
+        p2.process_in_place(&mut buf_b, &ctx).unwrap();
+
+        // RMS of both should be very close
+        let rms_a: f32 =
+            (buf_a[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        let rms_b: f32 =
+            (buf_b[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        let diff_db = 20.0 * (rms_a / rms_b).log10();
+        assert!(
+            diff_db.abs() < 0.5,
+            "mid_enabled=false should behave like mid_gain=0, but RMS diff is {diff_db:.2} dB"
+        );
+    }
+
     /// Verify that the plugin actually applies gain when configured.
     /// With shelving filters active, a low-frequency signal should be processed
     /// differently than a mid-frequency signal (spectral shaping occurs).

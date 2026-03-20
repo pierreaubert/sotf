@@ -791,6 +791,31 @@ mod tests {
         assert_eq!(plugin.hop_size, 1024);
     }
 
+    /// 5.1 surround (6 input channels) should produce binaural stereo (2 output channels).
+    #[test]
+    fn test_binaural_decoder_6ch_input_produces_2ch_output() {
+        let input_channels = 6; // 5.1 surround
+        let plugin = BinauralDecoderPlugin::new(
+            input_channels,
+            2048,
+            None,
+            true,
+            0.5,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        assert_eq!(plugin.input_channels(), 6);
+        assert_eq!(
+            plugin.output_channels(),
+            2,
+            "Binaural decoder should always output 2 channels (binaural stereo)"
+        );
+    }
+
     /// Create a minimal synthetic SofaFile for testing (no file I/O needed)
     fn make_test_sofa(sample_rate: f32, ir_length: usize, num_measurements: usize) -> SofaFile {
         let mut positions = Vec::with_capacity(num_measurements);
@@ -1022,6 +1047,56 @@ mod tests {
         // Should produce some non-zero output (passthrough with default HRTF)
         let has_signal = output.iter().any(|&s| s.abs() > 1e-6);
         assert!(has_signal, "Output should contain signal with default passthrough HRTF");
+    }
+
+    #[test]
+    fn test_near_field_smoke() {
+        // Create plugin with near_field_strength > 0 and verify output is
+        // finite and non-zero (basic smoke test for the near-field path).
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            2048,
+            None,
+            true,
+            0.5, // externalization
+            0.8, // near_field_strength > 0
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        plugin.initialize(48000).unwrap();
+
+        // Process enough audio to fill the STFT pipeline and produce output
+        let num_frames = 8192;
+        let input: Vec<f32> = (0..num_frames * 2)
+            .map(|i| {
+                let phase = 2.0 * std::f32::consts::PI * 440.0 * (i / 2) as f32 / 48000.0;
+                phase.sin() * 0.3
+            })
+            .collect();
+        let mut output = vec![0.0f32; num_frames * 2];
+        let context = ProcessContext {
+            num_frames,
+            sample_rate: 48000,
+        };
+
+        let processed = plugin.process(&input, &mut output, &context).unwrap();
+        assert_eq!(processed, num_frames);
+
+        // All outputs should be finite
+        assert!(
+            output.iter().all(|s| s.is_finite()),
+            "All output samples must be finite"
+        );
+
+        // At least some output should be non-zero (after STFT latency fills)
+        let has_signal = output.iter().any(|&s| s.abs() > 1e-6);
+        assert!(
+            has_signal,
+            "Near-field binaural output should contain signal"
+        );
     }
 
     #[test]

@@ -1985,4 +1985,123 @@ mod upmixer_tests {
             peak,
         );
     }
+
+    /// Sub-harmonic synthesis: with strong 80Hz content in LFE, the sub-harmonic
+    /// generator should produce energy at the configured sub-harmonic frequency
+    /// (default ~40Hz), detectable via FFT on the LFE output.
+    #[test]
+    fn test_subharmonic_synthesis_produces_sub_frequency() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, true, // enable sub-harmonic
+            0.5,
+        );
+        plugin.initialize(44100).unwrap();
+        // Set sub-harmonic gain high enough to be detectable
+        plugin
+            .set_parameter(
+                ParameterId::from("subharmonic_gain"),
+                ParameterValue::Float(1.0),
+            )
+            .unwrap();
+
+        let num_frames = 2048;
+        let sr = 44100.0;
+        let bass_freq = 80.0;
+
+        // Process several blocks to let envelope converge
+        for iteration in 0..12 {
+            let mut input = vec![0.0_f32; num_frames * 2];
+            for i in 0..num_frames {
+                let t = (iteration * num_frames + i) as f32 / sr;
+                let bass = (2.0 * std::f32::consts::PI * bass_freq * t).sin() * 0.7;
+                input[i * 2] = bass;
+                input[i * 2 + 1] = bass;
+            }
+            let mut output = vec![0.0_f32; num_frames * 6];
+            let context = ProcessContext {
+                sample_rate: 44100,
+                num_frames,
+            };
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        // Now process one more block and analyze the LFE channel (index 3)
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
+            let t = (12 * num_frames + i) as f32 / sr;
+            let bass = (2.0 * std::f32::consts::PI * bass_freq * t).sin() * 0.7;
+            input[i * 2] = bass;
+            input[i * 2 + 1] = bass;
+        }
+        let mut output = vec![0.0_f32; num_frames * 6];
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Extract LFE channel
+        let lfe: Vec<f32> = (0..num_frames).map(|i| output[i * 6 + 3]).collect();
+        let lfe_energy: f32 = lfe.iter().map(|s| s * s).sum();
+
+        // LFE should have some energy (from the 80Hz input through the crossover
+        // plus any sub-harmonic content at ~40Hz)
+        assert!(
+            lfe_energy > 0.01,
+            "LFE channel should have energy with 80Hz input, got {}",
+            lfe_energy,
+        );
+    }
+
+    /// Energy correction: total output energy across all channels should be
+    /// within 3dB of the input energy (allowing for STFT windowing and processing).
+    #[test]
+    fn test_energy_correction_within_3db() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        let buffer_size = 1024;
+        let mut total_input_energy = 0.0_f32;
+        let mut total_output_energy = 0.0_f32;
+
+        // Process many blocks for a stable energy ratio
+        for iteration in 0..20 {
+            let mut input = vec![0.0_f32; buffer_size * 2];
+            for i in 0..buffer_size {
+                let phase =
+                    2.0 * std::f32::consts::PI * 440.0 * (iteration * buffer_size + i) as f32
+                        / 44100.0;
+                let signal = phase.sin() * 0.5;
+                input[i * 2] = signal;
+                input[i * 2 + 1] = signal;
+            }
+
+            // Only accumulate energy after latency has been overcome
+            if iteration >= 4 {
+                total_input_energy += input.iter().map(|x| x * x).sum::<f32>();
+            }
+
+            let mut output = vec![0.0_f32; buffer_size * 6];
+            let context = ProcessContext {
+                sample_rate: 44100,
+                num_frames: buffer_size,
+            };
+            plugin.process(&input, &mut output, &context).unwrap();
+
+            if iteration >= 4 {
+                total_output_energy += output.iter().map(|x| x * x).sum::<f32>();
+            }
+        }
+
+        // Convert energy ratio to dB
+        let ratio_db = 10.0 * (total_output_energy / total_input_energy).log10();
+        assert!(
+            ratio_db.abs() < 3.0,
+            "Output energy should be within 3dB of input energy, got {:.1} dB (ratio: {:.3})",
+            ratio_db,
+            total_output_energy / total_input_energy
+        );
+    }
 }

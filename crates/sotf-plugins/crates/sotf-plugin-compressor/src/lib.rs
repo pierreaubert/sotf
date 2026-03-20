@@ -1571,6 +1571,74 @@ mod tests {
     }
 
     #[test]
+    fn test_program_dependent_release_slower_than_fixed() {
+        // With program_dependent_release, a sustained loud signal should
+        // cause a slower release than without it. We compare the envelope
+        // state after a loud burst followed by silence.
+        let sr = 48000;
+        let channels = 1;
+        let release_ms = 30.0; // short release for measurable difference
+
+        // Generate: 50ms loud burst + 100ms silence
+        let burst_frames = (0.05 * sr as f32) as usize;
+        let silence_frames = (0.1 * sr as f32) as usize;
+        let total = burst_frames + silence_frames;
+
+        let make_signal = || -> Vec<f32> {
+            (0..total)
+                .map(|i| {
+                    if i < burst_frames {
+                        0.8 * (2.0 * PI * 1000.0 * i as f32 / sr as f32).sin()
+                    } else {
+                        0.0
+                    }
+                })
+                .collect()
+        };
+
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames: total,
+        };
+
+        // Fixed release
+        let mut comp_fixed =
+            CompressorPlugin::new(channels, -20.0, 8.0, 0.1, release_ms, 0.0, 0.0)
+                .with_smoothing_time(0.0);
+        comp_fixed.initialize(sr).unwrap();
+        comp_fixed.program_dependent_release = false;
+        comp_fixed.link_channels = false;
+        let mut buf_fixed = make_signal();
+        comp_fixed
+            .process_in_place(&mut buf_fixed, &ctx)
+            .unwrap();
+
+        // Program-dependent release
+        let mut comp_pdr =
+            CompressorPlugin::new(channels, -20.0, 8.0, 0.1, release_ms, 0.0, 0.0)
+                .with_smoothing_time(0.0);
+        comp_pdr.initialize(sr).unwrap();
+        comp_pdr.program_dependent_release = true;
+        comp_pdr.link_channels = false;
+        let mut buf_pdr = make_signal();
+        comp_pdr
+            .process_in_place(&mut buf_pdr, &ctx)
+            .unwrap();
+
+        // After the burst, the envelope still has gain reduction.
+        // With program-dependent release (dual release with slow multiplier 4x),
+        // the envelope should release slower. Check that the envelope at the end
+        // is larger (more gain reduction remaining) with PDR.
+        assert!(
+            comp_pdr.envelope[0] > comp_fixed.envelope[0],
+            "Program-dependent release should have more residual gain reduction: \
+             PDR envelope={}, fixed envelope={}",
+            comp_pdr.envelope[0],
+            comp_fixed.envelope[0]
+        );
+    }
+
+    #[test]
     fn test_rt_safety_with_features_enabled() {
         use sotf_host::{InPlacePluginAdapter, Plugin, assert_no_allocs};
         let sample_rate = 48000;

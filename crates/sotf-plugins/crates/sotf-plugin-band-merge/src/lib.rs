@@ -426,6 +426,50 @@ mod tests {
         assert!((o[0] - 2.0).abs() < 0.05, "got {}", o[0]);
     }
 
+    /// With all bands at unity gain (0 dB) and no mutes, the reconstruction
+    /// error should be near 0 dB.
+    #[test]
+    fn test_reconstruction_error_db_unity() {
+        let mut p = BandMergePlugin::new(2, 3).unwrap();
+
+        // Process with non-trivial signal
+        let nf = 100;
+        let in_ch = 2 * 3; // 2 output channels * 3 bands
+        let out_ch = 2;
+        let mut input = vec![0.0f32; nf * in_ch];
+        for frame in 0..nf {
+            for band in 0..3 {
+                for ch in 0..2 {
+                    input[frame * in_ch + band * out_ch + ch] =
+                        0.3 * ((frame * 3 + band) as f32 * 0.1).sin();
+                }
+            }
+        }
+        let mut output = vec![0.0f32; nf * out_ch];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            },
+        )
+        .unwrap();
+
+        // Get reconstruction_error_db via get_parameter
+        let err = p
+            .get_parameter(&ParameterId::from("reconstruction_error_db"))
+            .unwrap();
+        if let ParameterValue::Float(err_db) = err {
+            assert!(
+                err_db.abs() < 0.1,
+                "With unity gains and no mutes, reconstruction error should be near 0 dB, got {err_db:.4}"
+            );
+        } else {
+            panic!("reconstruction_error_db should be a Float parameter");
+        }
+    }
+
     #[test]
     fn test_band_merge_parameters_list() {
         let p = BandMergePlugin::new(2, 3).unwrap();

@@ -453,6 +453,51 @@ mod tests {
     }
 
     #[test]
+    fn test_band_split_per_band_gain_accuracy() {
+        // Set band_0_gain_db=6.0 on a 2-band split.
+        // Process DC signal -> band 0 output with +6dB should be ~2x louder
+        // than with 0dB gain.
+        use sotf_host::parameters::{ParameterId, ParameterValue};
+
+        let n = 10000;
+        let input = vec![1.0f32; n];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: n,
+        };
+
+        // Reference: 0dB gain (unity)
+        let mut p_ref = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
+        p_ref.initialize(48000).unwrap();
+        let mut out_ref = vec![0.0f32; n * 2];
+        p_ref.process(&input, &mut out_ref, &ctx).unwrap();
+        let ref_band0_last = out_ref[(n - 1) * 2]; // band 0 of last frame
+
+        // With +6dB gain on band 0
+        let mut p_boosted = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
+        p_boosted.initialize(48000).unwrap();
+        p_boosted
+            .set_parameter(
+                ParameterId("band_0_gain_db".to_string()),
+                ParameterValue::Float(6.0),
+            )
+            .unwrap();
+        let mut out_boosted = vec![0.0f32; n * 2];
+        p_boosted.process(&input, &mut out_boosted, &ctx).unwrap();
+        let boosted_band0_last = out_boosted[(n - 1) * 2];
+
+        // +6dB ≈ 2x linear gain
+        let ratio = boosted_band0_last / ref_band0_last;
+        assert!(
+            (ratio - 2.0).abs() < 0.15,
+            "Band 0 with +6dB should be ~2x louder: ref={}, boosted={}, ratio={}",
+            ref_band0_last,
+            boosted_band0_last,
+            ratio
+        );
+    }
+
+    #[test]
     fn test_band_split_frequency_parameter() {
         let mut p =
             BandSplitPlugin::new_multiband(1, &[500.0, 5000.0], "LR24").unwrap();

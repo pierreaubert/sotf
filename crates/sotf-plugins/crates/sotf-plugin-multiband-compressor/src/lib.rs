@@ -1191,6 +1191,57 @@ mod tests {
         );
     }
 
+    /// Changing a crossover frequency mid-stream should not produce clicks or
+    /// non-finite values. The output must remain bounded.
+    #[test]
+    fn test_crossover_frequency_change_no_discontinuity() {
+        let mut p = MultibandCompressorPlugin::new(1);
+        p.initialize(48000).unwrap();
+
+        let nf = 2400;
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
+
+        // Process a block with default crossover
+        let mut b1: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (i as f32 * 0.1).sin())
+            .collect();
+        p.process_in_place(&mut b1, &ctx).unwrap();
+        let last_before = b1[nf - 1];
+
+        // Change crossover frequency mid-stream
+        p.set_parameter(
+            ParameterId::from("crossover_freq_1"),
+            ParameterValue::Float(800.0),
+        )
+        .unwrap();
+
+        // Process another block
+        let mut b2: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * ((nf + i) as f32 * 0.1).sin())
+            .collect();
+        p.process_in_place(&mut b2, &ctx).unwrap();
+
+        // All output must be finite and bounded
+        for (i, &s) in b2.iter().enumerate() {
+            assert!(
+                s.is_finite() && s.abs() < 10.0,
+                "Sample {} after crossover change is non-finite or unbounded: {}",
+                i,
+                s
+            );
+        }
+
+        // The transition should not produce a large jump
+        let jump = (b2[0] - last_before).abs();
+        assert!(
+            jump < 1.0,
+            "Crossover frequency change caused discontinuity: jump={jump:.4}"
+        );
+    }
+
     /// Verify compression actually reduces loud signals.
     #[test]
     fn test_mb_comp_reduces_loud_signal() {

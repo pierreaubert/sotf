@@ -318,4 +318,47 @@ mod tests {
         .unwrap();
         assert!((b[0] - 1.0).abs() < 1e-5);
     }
+
+    /// Sample rate deferred initialization: create gain plugin, call
+    /// initialize(96000), then verify smoothers respond correctly at the
+    /// new rate (a gain change converges within expected time).
+    #[test]
+    fn test_sample_rate_deferred_initialization() {
+        let mut p = GainPlugin::with_smoothing(1, 0.0, 20.0);
+        // Initialize at 96000 Hz
+        p.initialize(96000).unwrap();
+
+        // Set a new gain target
+        p.set_gain_db(-6.0);
+        let target_linear = GainPlugin::db_to_linear(-6.0);
+
+        // At 96000 Hz with 20ms smoothing, we need ~5*tau = ~100ms = 9600 samples
+        // to converge. Process 200ms worth of samples to be safe.
+        let num_frames = 19200; // 200ms at 96kHz
+        let mut buf = vec![1.0f32; num_frames];
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 96000,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // After 200ms, the smoother should have converged to the target gain
+        let last_sample = buf[num_frames - 1];
+        assert!(
+            (last_sample - target_linear).abs() < 0.01,
+            "After 200ms at 96kHz, gain should converge to {target_linear:.4}, got {last_sample:.4}"
+        );
+
+        // Verify it didn't converge too fast (after only 1ms = 96 samples)
+        // by checking the output wasn't already at target near the beginning
+        let early_sample = buf[96]; // ~1ms
+        let diff_from_target = (early_sample - target_linear).abs();
+        assert!(
+            diff_from_target > 0.01,
+            "After only 1ms, gain should still be transitioning (diff={diff_from_target:.4})"
+        );
+    }
 }

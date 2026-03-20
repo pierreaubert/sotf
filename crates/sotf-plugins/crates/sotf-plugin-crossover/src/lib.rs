@@ -716,6 +716,54 @@ mod tests {
     }
 
     #[test]
+    fn test_crossover_output_selection_highpass_rejects_dc() {
+        // Highpass mode should reject DC (output near zero)
+        let mut p = CrossoverPlugin::new(1, "LR24", 1000.0, "high").unwrap();
+        p.initialize(48000).unwrap();
+        let num_frames = 10000;
+        let input = vec![1.0f32; num_frames]; // DC
+        let mut output = vec![0.0; num_frames];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames,
+            },
+        )
+        .unwrap();
+        assert!(
+            output[num_frames - 1].abs() < 0.05,
+            "Highpass should reject DC, got {}",
+            output[num_frames - 1]
+        );
+    }
+
+    #[test]
+    fn test_crossover_output_selection_lowpass_passes_dc() {
+        // Lowpass mode should pass DC (output near 1.0)
+        let mut p = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
+        p.initialize(48000).unwrap();
+        let num_frames = 10000;
+        let input = vec![1.0f32; num_frames]; // DC
+        let mut output = vec![0.0; num_frames];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames,
+            },
+        )
+        .unwrap();
+        assert!(
+            output[num_frames - 1] > 0.95,
+            "Lowpass should pass DC, got {}",
+            output[num_frames - 1]
+        );
+    }
+
+    #[test]
     fn test_crossover_mode_parameter() {
         let mut p = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
         p.initialize(48000).unwrap();
@@ -730,5 +778,59 @@ mod tests {
 
         let val = p.get_parameter(&ParameterId::from("mode"));
         assert_eq!(val, Some(ParameterValue::String("both".to_string())));
+    }
+
+    /// Changing frequency_2 on a 3-way crossover should not panic and should
+    /// continue producing finite output.
+    #[test]
+    fn test_3way_frequency_update_no_panic() {
+        let mut p =
+            CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
+        p.initialize(48000).unwrap();
+        assert_eq!(p.output_channels(), 3); // 3 bands
+
+        let num_frames = 2000;
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        // Process a block before parameter change
+        let input: Vec<f32> = (0..num_frames)
+            .map(|i| 0.3 * (i as f32 * 0.1).sin())
+            .collect();
+        let mut output = vec![0.0f32; num_frames * 3];
+        p.process(&input, &mut output, &ctx).unwrap();
+
+        // Change frequency_2 (the second crossover point)
+        p.set_parameter(
+            ParameterId::from("frequency_2"),
+            ParameterValue::Float(8000.0),
+        )
+        .unwrap();
+
+        // Verify the parameter was accepted
+        let val = p.get_parameter(&ParameterId::from("frequency_2"));
+        assert_eq!(val, Some(ParameterValue::Float(8000.0)));
+
+        // Process another block after the change -- must not panic
+        let input2: Vec<f32> = (0..num_frames)
+            .map(|i| 0.3 * ((num_frames + i) as f32 * 0.1).sin())
+            .collect();
+        let mut output2 = vec![0.0f32; num_frames * 3];
+        p.process(&input2, &mut output2, &ctx).unwrap();
+
+        // All output must be finite
+        assert!(
+            output2.iter().all(|s| s.is_finite()),
+            "All output samples must be finite after frequency_2 change"
+        );
+
+        // At least some output should be non-zero
+        let has_signal = output2.iter().any(|s| s.abs() > 1e-6);
+        assert!(
+            has_signal,
+            "Output should contain non-zero samples after frequency change"
+        );
     }
 }

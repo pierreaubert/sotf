@@ -728,4 +728,100 @@ mod tests {
         .unwrap();
         assert!(b[999].is_finite());
     }
+
+    /// ISO 226 contour-based compensation: when iso_226=true and playback volume
+    /// is lower than reference, gain smoothers should target different gains per band
+    /// (bass should get more boost than midrange).
+    #[test]
+    fn test_iso_226_contour_frequency_dependent_gains() {
+        let mut p = FletcherMunsonPlugin::new(2);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+        // Enable ISO 226 mode and set playback volume well below reference
+        // Parameters are in dBFS: playback_volume_db range [-80, 0], reference_level_db [-40, 0]
+        // delta = reference - playback; positive delta activates compensation
+        p.set_parameter(ParameterId::from("iso_226"), ParameterValue::Bool(true))
+            .unwrap();
+        p.set_parameter(
+            ParameterId::from("playback_volume_db"),
+            ParameterValue::Float(-40.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(-14.0),
+        )
+        .unwrap();
+
+        // Advance smoothers to see targets (delta = -14 - (-40) = 26 dB)
+        let band_gains: Vec<f32> = p.gain_smoothers.iter_mut().map(|s| {
+            // Advance enough to converge
+            s.next_n(48000)
+        }).collect();
+
+        // Bass band (band 0, ~60 Hz) should have more boost than mid band (band 1, ~250 Hz)
+        assert!(
+            band_gains[0] > band_gains[1],
+            "ISO 226: bass ({:.2} dB) should get more boost than midrange ({:.2} dB)",
+            band_gains[0],
+            band_gains[1]
+        );
+
+        // At least the bass band should have positive gain
+        assert!(
+            band_gains[0] > 0.1,
+            "ISO 226: bass band should have significant boost, got {:.2} dB",
+            band_gains[0]
+        );
+    }
+
+    /// Playback volume driven behavior: at reference level (delta=0), all gains
+    /// should be 0. At lower playback volume, gains should be positive.
+    #[test]
+    fn test_playback_volume_driven_behavior() {
+        let mut p = FletcherMunsonPlugin::new(2);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+        // Set playback at reference level (delta = 0)
+        // Both at -14 dBFS → delta = 0
+        p.set_parameter(
+            ParameterId::from("playback_volume_db"),
+            ParameterValue::Float(-14.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(-14.0),
+        )
+        .unwrap();
+
+        // Advance smoothers to converge
+        let gains_at_ref: Vec<f32> = p.gain_smoothers.iter_mut().map(|s| s.next_n(48000)).collect();
+
+        // All gains should be 0 at reference level
+        for (i, &g) in gains_at_ref.iter().enumerate() {
+            assert!(
+                g.abs() < 0.01,
+                "At reference level, band {} gain should be ~0, got {:.4}",
+                i,
+                g
+            );
+        }
+
+        // Now set playback volume lower (delta = -14 - (-40) = 26 dB)
+        p.set_parameter(
+            ParameterId::from("playback_volume_db"),
+            ParameterValue::Float(-40.0),
+        )
+        .unwrap();
+
+        let gains_at_low: Vec<f32> = p.gain_smoothers.iter_mut().map(|s| s.next_n(48000)).collect();
+
+        // At lower playback volume, at least the bass band should have positive gain
+        assert!(
+            gains_at_low[0] > 0.1,
+            "At low playback volume, bass gain should be positive, got {:.4}",
+            gains_at_low[0]
+        );
+    }
 }

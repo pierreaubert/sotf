@@ -735,6 +735,47 @@ mod tests {
         assert!(rms.sqrt() > 0.1);
     }
 
+    /// After reset(), processing silence should produce silence (no residual
+    /// from previously processed audio leaking through).
+    #[test]
+    fn test_reset_clears_residual() {
+        let mut resampler = ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap();
+        resampler.initialize(44100).unwrap();
+
+        let num_frames = 1024;
+        let ctx = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+
+        // Process a loud signal
+        let loud_input: Vec<f32> = (0..num_frames * 2)
+            .map(|i| {
+                0.9 * (2.0 * std::f32::consts::PI * 1000.0 * (i / 2) as f32 / 44100.0).sin()
+            })
+            .collect();
+        let max_output = resampler.output_frames_for_input(num_frames);
+        let mut output = vec![0.0_f32; max_output * 2];
+        resampler.process(&loud_input, &mut output, &ctx).unwrap();
+
+        // Reset
+        resampler.reset();
+
+        // Process silence
+        let silence = vec![0.0_f32; num_frames * 2];
+        let mut output2 = vec![0.0_f32; max_output * 2];
+        resampler.process(&silence, &mut output2, &ctx).unwrap();
+
+        // After reset + processing silence, output RMS should be very low
+        let rms: f32 =
+            (output2.iter().map(|x| x * x).sum::<f32>() / output2.len() as f32).sqrt();
+        assert!(
+            rms < 0.01,
+            "After reset and processing silence, output should be near-silent, \
+             but RMS={rms:.6}"
+        );
+    }
+
     #[test]
     fn test_quality_presets() {
         // Fast

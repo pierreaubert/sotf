@@ -1271,6 +1271,75 @@ mod tests {
         assert!(b[999].is_finite());
     }
 
+    /// Verify that low-frequency content triggers expansion in the lowest band
+    /// even with default detection settings (no sidechain HPF blocking bass).
+    #[test]
+    fn test_low_frequency_triggers_expansion() {
+        let mut params = MultibandExpanderPluginParams {
+            num_bands: 3,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            attack_ms: 1.0,
+            release_ms: 50.0,
+            range_db: 40.0,
+            mix: 1.0,
+            ..Default::default()
+        };
+        params.bands = vec![
+            BandExpanderParams {
+                threshold_db: Some(-20.0),
+                ratio: Some(4.0),
+                hold_ms: Some(0.0),
+                hysteresis_db: Some(0.0),
+                range_db: Some(40.0),
+                ..Default::default()
+            },
+            BandExpanderParams::default(),
+            BandExpanderParams::default(),
+        ];
+        let mut p = MultibandExpanderPlugin::with_params(1, params);
+        p.initialize(48000).unwrap();
+
+        // Feed a loud 50 Hz signal (above threshold) to open the gate
+        let nf = 9600;
+        let mut loud: Vec<f32> = (0..nf)
+            .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin())
+            .collect();
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
+        p.process_in_place(&mut loud, &ctx).unwrap();
+
+        // Verify the loud signal passed through with reasonable level
+        let rms_loud: f32 =
+            (loud[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        assert!(
+            rms_loud > 0.05,
+            "Loud 50 Hz signal should pass through expander (gate open), RMS={rms_loud:.6}"
+        );
+
+        // Now feed a very quiet 50 Hz signal (below threshold)
+        let quiet_amp = 0.001;
+        let mut quiet: Vec<f32> = (0..nf)
+            .map(|i| {
+                quiet_amp
+                    * (2.0 * std::f32::consts::PI * 50.0 * (nf + i) as f32 / 48000.0).sin()
+            })
+            .collect();
+        p.process_in_place(&mut quiet, &ctx).unwrap();
+
+        // The quiet signal should be attenuated (gate closing)
+        let rms_quiet: f32 =
+            (quiet[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        let input_rms = quiet_amp / std::f32::consts::SQRT_2;
+        assert!(
+            rms_quiet < input_rms,
+            "Quiet 50 Hz signal should be attenuated by expander, \
+             but rms_out={rms_quiet:.8} >= input_rms={input_rms:.8}"
+        );
+    }
+
     /// Regression: attack/release coefficients were swapped in per-band processing.
     /// With fast attack and slow release, quiet signals below threshold should be
     /// attenuated quickly (gate closes fast).

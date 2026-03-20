@@ -985,6 +985,66 @@ mod tests {
         );
     }
 
+    /// Solo priority: when one output is soloed, all other outputs should
+    /// have zero gain regardless of their mute/dim state.
+    #[test]
+    fn test_solo_priority_multi_output() {
+        let mut plugin = MatrixPlugin::new(4, 4);
+        // Solo output 2 only
+        let states = vec![
+            ChannelState {
+                muted: false,
+                soloed: false,
+                dimmed: false,
+            },
+            ChannelState {
+                muted: false,
+                soloed: false,
+                dimmed: false,
+            },
+            ChannelState {
+                muted: false,
+                soloed: true,
+                dimmed: false,
+            },
+            ChannelState {
+                muted: false,
+                soloed: false,
+                dimmed: false,
+            },
+        ];
+        let json = serde_json::to_string(&states).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("channel_states"),
+                ParameterValue::String(json),
+            )
+            .unwrap();
+
+        let last = process_converged(&mut plugin, 4);
+        // Only output 2 (soloed) should have non-zero gain
+        assert!(
+            last[0].abs() < TOLERANCE,
+            "Ch0 (not soloed) should be silent, got {}",
+            last[0]
+        );
+        assert!(
+            last[1].abs() < TOLERANCE,
+            "Ch1 (not soloed) should be silent, got {}",
+            last[1]
+        );
+        assert!(
+            (last[2] - 1.0).abs() < TOLERANCE,
+            "Ch2 (soloed) should pass through, got {}",
+            last[2]
+        );
+        assert!(
+            last[3].abs() < TOLERANCE,
+            "Ch3 (not soloed) should be silent, got {}",
+            last[3]
+        );
+    }
+
     #[test]
     fn test_negative_gain_allowed() {
         // Negative gains should work directly (no clamping)

@@ -750,6 +750,38 @@ mod tests {
     }
 
     #[test]
+    fn test_dim_via_channel_states_parameter() {
+        // Set channel 0 to dimmed via the channel_states JSON parameter,
+        // verify channel 0 is attenuated by dim_gain_db and channel 1 is at full level.
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        plugin.set_dim_gain_db(-20.0);
+
+        // Set channel_states via the parameter interface
+        let states_json = r#"[{"muted":false,"soloed":false,"dimmed":true},{"muted":false,"soloed":false,"dimmed":false}]"#;
+        plugin
+            .set_parameter(
+                ParameterId::from("channel_states"),
+                ParameterValue::String(states_json.to_string()),
+            )
+            .unwrap();
+
+        let last_frame = process_converged(&mut plugin, 2);
+        let expected_dim = 10.0_f32.powf(-20.0 / 20.0); // 0.1
+
+        assert!(
+            (last_frame[0] - expected_dim).abs() < TOLERANCE,
+            "Ch0 (dimmed via channel_states param) should be ~{}, got {}",
+            expected_dim,
+            last_frame[0]
+        );
+        assert!(
+            (last_frame[1] - 1.0).abs() < TOLERANCE,
+            "Ch1 (not dimmed) should be at full level, got {}",
+            last_frame[1]
+        );
+    }
+
+    #[test]
     fn test_params_serde_defaults() {
         // When deserializing JSON without dim_gain_db/fade_ms, defaults should apply
         let json = r#"{"enabled": true, "channel_states": []}"#;

@@ -1260,6 +1260,56 @@ mod tests {
         );
     }
 
+    /// Phase coherence alignment: 5.1 signal with strong center channel should
+    /// produce coherent stereo output where L ≈ R for center-only content.
+    #[test]
+    fn test_downmix_center_channel_coherence() {
+        let mut p = DownmixPlugin::new(6);
+        p.phase_coherence = false; // simple mode first
+        p.initialize(48000).unwrap();
+
+        let num_frames = 2048;
+        let mut input = vec![0.0f32; num_frames * 6];
+        // Put a sine wave only in the center channel (ch 2 for 5.1)
+        for k in 0..num_frames {
+            let sample = (k as f32 * 2.0 * std::f32::consts::PI * 440.0 / 48000.0).sin() * 0.5;
+            input[k * 6 + 2] = sample; // Center channel only
+        }
+
+        let mut output = vec![0.0f32; num_frames * 2];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // For center-only content, L and R should be approximately equal
+        // (center is mixed equally to both channels).
+        // Check last 1024 frames after smoother settles.
+        let mut max_diff = 0.0f32;
+        let mut has_signal = false;
+        for k in 1024..num_frames {
+            let l = output[k * 2];
+            let r = output[k * 2 + 1];
+            let diff = (l - r).abs();
+            let mag = l.abs().max(r.abs());
+            if mag > 0.01 {
+                has_signal = true;
+                max_diff = max_diff.max(diff / mag);
+            }
+        }
+
+        assert!(has_signal, "Center channel should produce output");
+        assert!(
+            max_diff < 0.05,
+            "Center-only content should have L ≈ R (max relative diff: {max_diff})"
+        );
+    }
+
     /// Verify all speaker configs produce valid coefficients:
     /// - No negative gains
     /// - All height speakers at the same gain have equal power (constant-power)
