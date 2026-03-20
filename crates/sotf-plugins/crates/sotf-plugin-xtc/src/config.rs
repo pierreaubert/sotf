@@ -26,13 +26,12 @@ pub struct XtcPluginParams {
     #[serde(default = "default_beta_base")]
     pub beta_base: f32,
 
-    /// Regularization boost at low frequencies (<100Hz) (default: 10.0)
-    #[serde(default = "default_beta_low_freq_boost")]
-    pub beta_low_freq_boost: f32,
-
-    /// Regularization boost at high frequencies (>12kHz) (default: 10.0)
-    #[serde(default = "default_beta_high_freq_boost")]
-    pub beta_high_freq_boost: f32,
+    /// Condition number target for regularization (default: 100.0).
+    /// Controls how aggressively the inverse is regularized at ill-conditioned
+    /// frequency bins. Lower values = more regularization = less cancellation.
+    /// Range: 1-1000.
+    #[serde(default = "default_kappa_target")]
+    pub kappa_target: f32,
 
     /// Maximum filter gain in dB (default: 6.0)
     /// Limits how much the cancellation filter can boost any frequency bin.
@@ -64,10 +63,10 @@ pub struct XtcPluginParams {
     #[serde(default = "default_head_tracking_smooth")]
     pub head_tracking_smooth_s: f32,
 
-    /// Enable spectral energy normalization (default: false).
+    /// Enable spectral energy normalization (default: true).
     /// When enabled, normalizes per-bin energy to reduce tonal coloration,
     /// but can degrade cancellation depth.
-    #[serde(default)]
+    #[serde(default = "default_spectral_normalization")]
     pub spectral_normalization: bool,
 
     /// Enable plugin (default: true)
@@ -131,6 +130,12 @@ pub struct XtcPluginParams {
     #[serde(default)]
     pub pinna_model_enabled: bool,
 
+    /// Path to HRTF/SOFA file. When set, uses measured HRTF data as the
+    /// plant matrix C(f) instead of the Woodworth analytical model.
+    /// Supports .sofa and .hrtfdb (SQLite) formats.
+    #[serde(default)]
+    pub hrtf_file: Option<String>,
+
     /// Smoothing time for auto-gain transitions in ms (default: 100.0)
     #[serde(default = "default_auto_gain_smoothing_ms")]
     pub auto_gain_smoothing_ms: f32,
@@ -154,11 +159,8 @@ fn default_beta_base() -> f32 {
 fn default_max_gain_db() -> f32 {
     12.0 // Increased from 6.0 for better cancellation depth
 }
-fn default_beta_low_freq_boost() -> f32 {
-    10.0
-}
-fn default_beta_high_freq_boost() -> f32 {
-    10.0
+fn default_kappa_target() -> f32 {
+    100.0
 }
 fn default_head_shadow_cutoff() -> f32 {
     4000.0
@@ -190,6 +192,9 @@ fn default_auto_gain_enabled() -> bool {
 fn default_auto_gain_max_db() -> f32 {
     24.0 // Increased from 6.0 to prevent saturation
 }
+fn default_spectral_normalization() -> bool {
+    true
+}
 fn default_auto_gain_smoothing_ms() -> f32 {
     100.0
 }
@@ -202,8 +207,7 @@ impl Default for XtcPluginParams {
             head_radius_m: default_head_radius(),
             fft_size: default_fft_size(),
             beta_base: default_beta_base(),
-            beta_low_freq_boost: default_beta_low_freq_boost(),
-            beta_high_freq_boost: default_beta_high_freq_boost(),
+            kappa_target: default_kappa_target(),
             max_gain_db: default_max_gain_db(),
             head_shadow_cutoff_hz: default_head_shadow_cutoff(),
             head_shadow_slope_db_per_octave: default_head_shadow_slope(),
@@ -226,6 +230,7 @@ impl Default for XtcPluginParams {
             auto_gain_max_db: default_auto_gain_max_db(),
             auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
             pinna_model_enabled: false,
+            hrtf_file: None,
         }
     }
 }

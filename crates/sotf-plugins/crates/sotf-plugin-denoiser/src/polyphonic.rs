@@ -2,23 +2,28 @@
 // Polyphonic Note Detection Gain Calculation
 // ============================================================================
 //
-// This module implements a "Spectral Gate" or "Spectral Subtraction" approach
-// focused on preserving tonal content (notes) while heavily attenuating background.
+// This module implements a "Soft Spectral Gate" approach focused on preserving
+// tonal content (notes) while smoothly attenuating background.
 //
-// It uses the noise estimate from MCRA to determine the Signal-to-Noise Ratio (SNR)
-// per bin. If the SNR exceeds a threshold, the bin is considered "signal" (a note)
-// and passed with unity gain. Otherwise, it is attenuated to the floor level.
+// It uses PND (Polyphonic Note Detection) to identify tonal peaks, then applies
+// a cosine taper around each peak for smooth transitions between unity gain and
+// floor gain. This avoids the binary pass/floor artifacts of a hard gate.
 
 use super::DenoiserPlugin;
 
 /// Small constant to prevent division by zero
 const EPSILON: f32 = 1e-10;
 
+/// Half-width of the cosine taper in bins around each detected peak.
+/// This defines the smooth transition zone: bins within TAPER_HALF_WIDTH
+/// of a peak center get a cosine-tapered gain between floor and 1.0.
+const TAPER_HALF_WIDTH: usize = 4;
+
 impl DenoiserPlugin {
-    /// Calculate and apply Polyphonic Note Detection (Spectral Gate) gains
+    /// Calculate and apply Polyphonic Note Detection (Soft Spectral Gate) gains
     ///
     /// Three-pass approach:
-    /// 1. Compute binary gate gains per bin based on SNR threshold
+    /// 1. Compute cosine-tapered gate gains per bin based on detected peaks
     /// 2. Smooth gains across frequency bins (prevents musical noise)
     /// 3. Apply temporal smoothing with attack/release envelope
     pub(super) fn calculate_polyphonic_gains(&mut self) {
@@ -29,22 +34,38 @@ impl DenoiserPlugin {
         let mut bin_count = 0;
 
         for ch in 0..self.channels {
-            // Pass 1: Compute instantaneous gate gain based on PND peaks
+            // Pass 1: Initialize all bins to floor gain
             for k in 0..self.spectrum_size {
                 self.gain[ch][k] = floor_linear;
             }
 
-            // Apply unity gain around detected tonal peaks
+            // Apply cosine-tapered gain around detected tonal peaks.
+            // For each peak, the center bin(s) get unity gain, and surrounding
+            // bins within the taper zone get a smooth cosine blend from 1.0
+            // down to floor_linear.
             let peaks = self.pnd_analyzers[ch].current_matched_peaks();
             for &(freq_hz, _mag) in peaks {
                 let center_k = (freq_hz / bin_hz).round() as usize;
 
-                // Spread unity gain to adjacent bins to account for spectral leakage
-                let start_k = center_k.saturating_sub(1);
-                let end_k = (center_k + 1).min(self.spectrum_size - 1);
+                // Apply cosine taper around the peak center
+                let taper_start = center_k.saturating_sub(TAPER_HALF_WIDTH);
+                let taper_end = (center_k + TAPER_HALF_WIDTH).min(self.spectrum_size - 1);
 
-                for k in start_k..=end_k {
-                    self.gain[ch][k] = 1.0;
+                for k in taper_start..=taper_end {
+                    let dist = (k as f32 - center_k as f32).abs();
+                    let taper_gain = if dist <= 1.0 {
+                        // Center bin and immediate neighbors: unity gain
+                        1.0
+                    } else {
+                        // Cosine taper from 1.0 to 0.0 over TAPER_HALF_WIDTH bins
+                        let t = (dist - 1.0) / (TAPER_HALF_WIDTH as f32 - 1.0);
+                        let cosine_weight =
+                            0.5 * (1.0 + (std::f32::consts::PI * t.min(1.0)).cos());
+                        // Blend between floor and 1.0
+                        floor_linear + cosine_weight * (1.0 - floor_linear)
+                    };
+                    // Take the max in case of overlapping tapers from adjacent peaks
+                    self.gain[ch][k] = self.gain[ch][k].max(taper_gain);
                 }
             }
 

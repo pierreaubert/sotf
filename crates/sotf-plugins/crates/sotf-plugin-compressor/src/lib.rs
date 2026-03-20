@@ -15,6 +15,10 @@
 // - auto_makeup: Automatically add makeup gain based on threshold/ratio
 // - link_channels: Use a shared detector across channels to avoid image shifts
 // - sidechain_hpf_hz: High-pass filter cutoff for the detector sidechain (Hz)
+// - detection_mode: "peak" or "rms" level detection for sidechain
+// - lookahead_ms: Delay audio for anticipatory gain computation (0-20ms)
+// - program_dependent_release: Dual-release envelope (fast transients, slow sustain)
+// - measured_auto_makeup: Use actual gain reduction average instead of heuristic
 
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use serde::{Deserialize, Serialize};
@@ -24,6 +28,7 @@ use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, Paramet
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
+use sotf_host::{DetectionMode, DualRelease, LevelDetector, LookaheadBuffer, MeasuredMakeup};
 use std::f32::consts::PI;
 
 use std::any::Any;
@@ -39,6 +44,9 @@ const CACHE_UPDATE_THROTTLE: usize = 10;
 const EPSILON: f32 = 1e-10;
 const DB_CONVERSION_FACTOR: f32 = 20.0;
 const AUTO_MAKEUP_OVERSHOOT_FACTOR: f32 = 0.5;
+const MAX_LOOKAHEAD_MS: f32 = 20.0;
+const MEASURED_MAKEUP_SMOOTHING_MS: f32 = 1000.0;
+const DUAL_RELEASE_SLOW_MULTIPLIER: f32 = 4.0;
 
 // ============================================================================
 // Configuration
@@ -82,6 +90,22 @@ pub fn default_link_channels() -> bool {
 
 pub fn default_sidechain_hpf_hz() -> f32 {
     pk(CP, "sidechain_hpf_hz").default_f64() as f32
+}
+
+fn default_detection_mode() -> String {
+    "peak".to_string()
+}
+
+fn default_lookahead_ms() -> f32 {
+    pk(CP, "lookahead_ms").default_f64() as f32
+}
+
+fn default_program_dependent_release() -> bool {
+    pk(CP, "program_dependent_release").default_bool()
+}
+
+fn default_measured_auto_makeup() -> bool {
+    pk(CP, "measured_auto_makeup").default_bool()
 }
 
 /// Data exposed by the compressor for monitoring
@@ -141,6 +165,14 @@ pub struct CompressorPluginParams {
     pub link_channels: bool,
     #[serde(default = "default_sidechain_hpf_hz")]
     pub sidechain_hpf_hz: f32,
+    #[serde(default = "default_detection_mode")]
+    pub detection_mode: String,
+    #[serde(default = "default_lookahead_ms")]
+    pub lookahead_ms: f32,
+    #[serde(default = "default_program_dependent_release")]
+    pub program_dependent_release: bool,
+    #[serde(default = "default_measured_auto_makeup")]
+    pub measured_auto_makeup: bool,
 }
 
 // ============================================================================
@@ -184,6 +216,19 @@ pub struct CompressorPlugin {
     param_sidechain_hpf_hz: ParameterId,
     sidechain_hpf_hz: f32,
 
+    param_detection_mode: ParameterId,
+    /// 0 = Peak, 1 = RMS
+    detection_mode_index: usize,
+
+    param_lookahead_ms: ParameterId,
+    lookahead_ms: f32,
+
+    param_program_dependent_release: ParameterId,
+    program_dependent_release: bool,
+
+    param_measured_auto_makeup: ParameterId,
+    measured_auto_makeup: bool,
+
     cached_parameters: Vec<Parameter>,
 
     /// Gain reduction envelope in dB (positive value)
@@ -199,6 +244,14 @@ pub struct CompressorPlugin {
     // Smoothing
     threshold_smoother: Smoother,
     makeup_gain_smoother: Smoother,
+
+    // Shared utilities
+    level_detectors: Vec<LevelDetector>,
+    lookahead_buffer: LookaheadBuffer,
+    dual_release: Vec<DualRelease>,
+    measured_makeup: MeasuredMakeup,
+    /// Temp buffer for lookahead delayed frames (avoids per-frame allocation)
+    lookahead_frame_buf: Vec<f32>,
 
     cache: RealTimeCache<CompressorData>,
     cache_update_counter: usize,
@@ -216,6 +269,8 @@ impl CompressorPlugin {
         makeup_gain_db: f32,
     ) -> Self {
         let sample_rate = DEFAULT_SAMPLE_RATE;
+        let max_lookahead_samples =
+            (MAX_LOOKAHEAD_MS * 0.001 * sample_rate as f32).round() as usize;
         let mut plugin = Self {
             channels,
             sample_rate,
@@ -251,6 +306,18 @@ impl CompressorPlugin {
             param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
             sidechain_hpf_hz: 80.0,
 
+            param_detection_mode: ParameterId::from("detection_mode"),
+            detection_mode_index: 0, // Peak
+
+            param_lookahead_ms: ParameterId::from("lookahead_ms"),
+            lookahead_ms: 0.0,
+
+            param_program_dependent_release: ParameterId::from("program_dependent_release"),
+            program_dependent_release: false,
+
+            param_measured_auto_makeup: ParameterId::from("measured_auto_makeup"),
+            measured_auto_makeup: false,
+
             cached_parameters: Vec::new(),
 
             envelope: vec![0.0; channels],
@@ -267,9 +334,28 @@ impl CompressorPlugin {
                 DEFAULT_SMOOTHING_TIME_MS,
                 sample_rate,
             ),
+
+            level_detectors: (0..channels)
+                .map(|_| LevelDetector::new(DetectionMode::Peak, sample_rate))
+                .collect(),
+            lookahead_buffer: LookaheadBuffer::new(max_lookahead_samples.max(1), channels),
+            dual_release: (0..channels)
+                .map(|_| {
+                    DualRelease::new(
+                        release_ms,
+                        release_ms * DUAL_RELEASE_SLOW_MULTIPLIER,
+                        sample_rate,
+                    )
+                })
+                .collect(),
+            measured_makeup: MeasuredMakeup::new(MEASURED_MAKEUP_SMOOTHING_MS, sample_rate),
+            lookahead_frame_buf: vec![0.0; channels],
+
             cache: RealTimeCache::new(CompressorData::new(channels)),
             cache_update_counter: 0,
         };
+        // Lookahead disabled by default (0ms), set delay to minimum so push works
+        plugin.lookahead_buffer.set_delay(1);
         plugin.rebuild_cached_parameters();
         plugin
     }
@@ -281,6 +367,13 @@ impl CompressorPlugin {
         self.makeup_gain_smoother
             .set_time(time_ms, self.sample_rate);
         self
+    }
+
+    fn detection_mode_string(&self) -> String {
+        match self.detection_mode_index {
+            0 => "peak".to_string(),
+            _ => "rms".to_string(),
+        }
     }
 
     fn rebuild_cached_parameters(&mut self) {
@@ -373,6 +466,40 @@ impl CompressorPlugin {
             .with_description("High-pass filter frequency for sidechain (Hz)")
             .with_group("Sidechain")
             .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_string(
+                "detection_mode",
+                "Detection Mode",
+                self.detection_mode_string(),
+            )
+            .with_description("Level detection mode: peak or rms")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "lookahead_ms",
+                "Lookahead",
+                self.lookahead_ms,
+                pk(CP, "lookahead_ms").min_f64() as f32,
+                pk(CP, "lookahead_ms").max_f64() as f32,
+            )
+            .with_description("Lookahead delay for anticipatory compression (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "program_dependent_release",
+                "Program Dep. Release",
+                self.program_dependent_release,
+            )
+            .with_description("Use dual-release envelope (fast transients, slow sustain)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "measured_auto_makeup",
+                "Measured Auto Makeup",
+                self.measured_auto_makeup,
+            )
+            .with_description("Use measured gain reduction for auto makeup (requires auto_makeup)")
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
         ];
     }
 
@@ -393,6 +520,33 @@ impl CompressorPlugin {
         plugin.link_channels = params.link_channels;
         plugin.sidechain_hpf_hz = params.sidechain_hpf_hz.max(0.0);
 
+        // Detection mode
+        plugin.detection_mode_index = match params.detection_mode.as_str() {
+            "rms" => 1,
+            _ => 0, // "peak" or any unknown
+        };
+        if plugin.detection_mode_index == 1 {
+            let mode = DetectionMode::Rms { window_ms: 10.0 };
+            for det in &mut plugin.level_detectors {
+                det.set_mode(mode);
+            }
+        }
+
+        // Lookahead
+        plugin.lookahead_ms = params.lookahead_ms.clamp(0.0, MAX_LOOKAHEAD_MS);
+        if plugin.lookahead_ms > 0.0 {
+            plugin
+                .lookahead_buffer
+                .set_delay_ms(plugin.lookahead_ms, plugin.sample_rate);
+        }
+
+        // Program-dependent release
+        plugin.program_dependent_release = params.program_dependent_release;
+
+        // Measured auto makeup
+        plugin.measured_auto_makeup = params.measured_auto_makeup;
+
+        plugin.rebuild_cached_parameters();
         plugin
     }
 
@@ -444,6 +598,27 @@ impl CompressorPlugin {
         } else {
             self.sidechain_hpf_alpha = 0.0;
         }
+
+        // Update dual release times
+        for dr in &mut self.dual_release {
+            dr.set_times(
+                self.release_ms,
+                self.release_ms * DUAL_RELEASE_SLOW_MULTIPLIER,
+                self.sample_rate,
+            );
+        }
+    }
+
+    /// Detect level for one sample on a channel, using either peak or RMS mode.
+    #[inline]
+    fn detect_level(&mut self, channel: usize, filtered: f32) -> f32 {
+        if self.detection_mode_index == 0 {
+            // Peak mode: use abs() directly, convert to dB
+            filtered.abs()
+        } else {
+            // RMS mode: use LevelDetector
+            self.level_detectors[channel].process_linear(filtered)
+        }
     }
 
     #[inline]
@@ -474,6 +649,8 @@ impl CompressorPlugin {
     ) -> f32 {
         let coeff = if target_gr > self.envelope[channel] {
             self.attack_coeff
+        } else if self.program_dependent_release {
+            self.dual_release[channel].process(target_gr)
         } else {
             self.release_coeff
         };
@@ -481,18 +658,31 @@ impl CompressorPlugin {
         // One-pole smoothing for the envelope
         self.envelope[channel] = target_gr + coeff * (self.envelope[channel] - target_gr);
 
+        // Feed measured makeup with current gain reduction
+        if self.measured_auto_makeup && self.auto_makeup {
+            self.measured_makeup.update(self.envelope[channel]);
+        }
+
         let wet_gain_linear =
             fast_pow10(-self.envelope[channel] / DB_CONVERSION_FACTOR) * makeup_gain_linear;
 
         let wet = input_sample * wet_gain_linear;
         dry_mix * input_sample + wet_mix * wet
     }
+
+    /// Compute the lookahead delay in samples for the current settings.
+    fn lookahead_delay_samples(&self) -> usize {
+        if self.lookahead_ms <= 0.0 {
+            return 0;
+        }
+        (self.lookahead_ms * 0.001 * self.sample_rate as f32).round() as usize
+    }
 }
 
 impl InPlacePlugin for CompressorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Compressor", "1.2.0", "SotF").with_description(
-            "Optimized dynamic range compressor with fast math and block-based smoothing",
+        PluginInfo::new("Compressor", "1.3.0", "SotF").with_description(
+            "Dynamic range compressor with RMS detection, lookahead, program-dependent release, and measured auto-makeup",
         )
     }
 
@@ -576,6 +766,48 @@ impl InPlacePlugin for CompressorPlugin {
                 self.sidechain_hpf_hz = val.max(0.0);
                 self.update_coefficients();
             }
+        } else if id == self.param_detection_mode {
+            // Accept either String("peak"/"rms") or Float(0.0/1.0) for choice param
+            let new_index = if let Some(s) = value.as_string() {
+                match s {
+                    "rms" | "RMS" => 1,
+                    _ => 0,
+                }
+            } else if let Some(v) = value.as_float() {
+                (v as usize).min(1)
+            } else {
+                0
+            };
+            self.detection_mode_index = new_index;
+            let mode = if new_index == 1 {
+                DetectionMode::Rms { window_ms: 10.0 }
+            } else {
+                DetectionMode::Peak
+            };
+            for det in &mut self.level_detectors {
+                det.set_mode(mode);
+            }
+        } else if id == self.param_lookahead_ms {
+            let val = value
+                .as_float()
+                .unwrap_or(pk(CP, "lookahead_ms").default_f64() as f32);
+            if val.is_finite() {
+                self.lookahead_ms = val.clamp(0.0, MAX_LOOKAHEAD_MS);
+                if self.lookahead_ms > 0.0 {
+                    self.lookahead_buffer
+                        .set_delay_ms(self.lookahead_ms, self.sample_rate);
+                } else {
+                    self.lookahead_buffer.set_delay(1);
+                }
+            }
+        } else if id == self.param_program_dependent_release {
+            self.program_dependent_release = value
+                .as_bool()
+                .unwrap_or(pk(CP, "program_dependent_release").default_bool());
+        } else if id == self.param_measured_auto_makeup {
+            self.measured_auto_makeup = value
+                .as_bool()
+                .unwrap_or(pk(CP, "measured_auto_makeup").default_bool());
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -602,6 +834,14 @@ impl InPlacePlugin for CompressorPlugin {
             Some(ParameterValue::Bool(self.link_channels))
         } else if id == &self.param_sidechain_hpf_hz {
             Some(ParameterValue::Float(self.sidechain_hpf_hz))
+        } else if id == &self.param_detection_mode {
+            Some(ParameterValue::String(self.detection_mode_string()))
+        } else if id == &self.param_lookahead_ms {
+            Some(ParameterValue::Float(self.lookahead_ms))
+        } else if id == &self.param_program_dependent_release {
+            Some(ParameterValue::Bool(self.program_dependent_release))
+        } else if id == &self.param_measured_auto_makeup {
+            Some(ParameterValue::Bool(self.measured_auto_makeup))
         } else {
             None
         }
@@ -614,6 +854,43 @@ impl InPlacePlugin for CompressorPlugin {
         self.makeup_gain_smoother
             .set_time(self.smoothing_time_ms, sample_rate);
         self.update_coefficients();
+
+        // Reinitialize level detectors with new sample rate
+        let mode = if self.detection_mode_index == 1 {
+            DetectionMode::Rms { window_ms: 10.0 }
+        } else {
+            DetectionMode::Peak
+        };
+        self.level_detectors = (0..self.channels)
+            .map(|_| LevelDetector::new(mode, sample_rate))
+            .collect();
+
+        // Reinitialize lookahead buffer
+        let max_lookahead_samples =
+            (MAX_LOOKAHEAD_MS * 0.001 * sample_rate as f32).round() as usize;
+        self.lookahead_buffer
+            .resize(max_lookahead_samples.max(1), self.channels);
+        if self.lookahead_ms > 0.0 {
+            self.lookahead_buffer
+                .set_delay_ms(self.lookahead_ms, sample_rate);
+        } else {
+            self.lookahead_buffer.set_delay(1);
+        }
+
+        // Reinitialize dual release
+        self.dual_release = (0..self.channels)
+            .map(|_| {
+                DualRelease::new(
+                    self.release_ms,
+                    self.release_ms * DUAL_RELEASE_SLOW_MULTIPLIER,
+                    sample_rate,
+                )
+            })
+            .collect();
+
+        // Reinitialize measured makeup
+        self.measured_makeup = MeasuredMakeup::new(MEASURED_MAKEUP_SMOOTHING_MS, sample_rate);
+
         Ok(())
     }
 
@@ -621,6 +898,14 @@ impl InPlacePlugin for CompressorPlugin {
         self.envelope.fill(0.0);
         self.sidechain_hpf_prev_input.fill(0.0);
         self.sidechain_hpf_prev_output.fill(0.0);
+        for det in &mut self.level_detectors {
+            det.reset();
+        }
+        self.lookahead_buffer.reset();
+        for dr in &mut self.dual_release {
+            dr.reset();
+        }
+        self.measured_makeup.reset();
     }
 
     fn process_in_place(
@@ -631,6 +916,7 @@ impl InPlacePlugin for CompressorPlugin {
         enable_ftz_daz();
 
         let num_frames = context.num_frames;
+        let use_lookahead = self.lookahead_ms > 0.0;
 
         let thresh = self.threshold_smoother.next_n(num_frames);
         let makeup_gain = self.makeup_gain_smoother.next_n(num_frames);
@@ -638,11 +924,18 @@ impl InPlacePlugin for CompressorPlugin {
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
 
+        // Compute auto makeup gain
         let auto_makeup_db = if self.auto_makeup {
-            let ratio = self.ratio.max(1.0);
-            let compression_slope = 1.0 - 1.0 / ratio;
-            let avg_overshoot = (-thresh).max(0.0) * AUTO_MAKEUP_OVERSHOOT_FACTOR;
-            avg_overshoot * compression_slope
+            if self.measured_auto_makeup {
+                // Use measured gain reduction average
+                self.measured_makeup.makeup_db()
+            } else {
+                // Heuristic formula
+                let ratio = self.ratio.max(1.0);
+                let compression_slope = 1.0 - 1.0 / ratio;
+                let avg_overshoot = (-thresh).max(0.0) * AUTO_MAKEUP_OVERSHOOT_FACTOR;
+                avg_overshoot * compression_slope
+            }
         } else {
             0.0
         };
@@ -650,46 +943,113 @@ impl InPlacePlugin for CompressorPlugin {
 
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
+                let frame_start = frame * self.channels;
+
+                // Detect level from non-delayed signal
                 let mut detection_level = 0.0_f32;
                 for ch in 0..self.channels {
-                    let sample_idx = frame * self.channels + ch;
+                    let sample_idx = frame_start + ch;
                     let filtered = self.apply_sidechain_filter(ch, buffer[sample_idx]);
-                    detection_level = detection_level.max(filtered.abs());
+                    let level = self.detect_level(ch, filtered);
+                    detection_level = detection_level.max(level);
                 }
 
                 let input_db = DB_CONVERSION_FACTOR * fast_log10(detection_level.max(EPSILON));
                 let target_gr = self.calculate_gain_reduction(input_db, thresh);
 
-                for ch in 0..self.channels {
-                    let sample_idx = frame * self.channels + ch;
-                    let input_sample = buffer[sample_idx];
-                    buffer[sample_idx] = self.apply_gain_for_channel(
-                        ch,
-                        target_gr,
-                        makeup_gain_linear,
-                        input_sample,
-                        dry_mix,
-                        wet_mix,
+                if use_lookahead {
+                    // Push current frame into lookahead, get delayed frame
+                    self.lookahead_buffer.process_frame(
+                        &buffer[frame_start..frame_start + self.channels],
+                        &mut self.lookahead_frame_buf,
                     );
+                    // Apply gain to the delayed audio
+                    for ch in 0..self.channels {
+                        let sample_idx = frame_start + ch;
+                        buffer[sample_idx] = self.apply_gain_for_channel(
+                            ch,
+                            target_gr,
+                            makeup_gain_linear,
+                            self.lookahead_frame_buf[ch],
+                            dry_mix,
+                            wet_mix,
+                        );
+                    }
+                } else {
+                    for ch in 0..self.channels {
+                        let sample_idx = frame_start + ch;
+                        let input_sample = buffer[sample_idx];
+                        buffer[sample_idx] = self.apply_gain_for_channel(
+                            ch,
+                            target_gr,
+                            makeup_gain_linear,
+                            input_sample,
+                            dry_mix,
+                            wet_mix,
+                        );
+                    }
                 }
             }
         } else {
             for frame in 0..num_frames {
-                for ch in 0..self.channels {
-                    let sample_idx = frame * self.channels + ch;
-                    let input_sample = buffer[sample_idx];
-                    let filtered = self.apply_sidechain_filter(ch, input_sample);
-                    let input_db = DB_CONVERSION_FACTOR * fast_log10(filtered.abs().max(EPSILON));
-                    let target_gr = self.calculate_gain_reduction(input_db, thresh);
+                let frame_start = frame * self.channels;
 
-                    buffer[sample_idx] = self.apply_gain_for_channel(
-                        ch,
-                        target_gr,
-                        makeup_gain_linear,
-                        input_sample,
-                        dry_mix,
-                        wet_mix,
+                if use_lookahead {
+                    // For non-linked mode with lookahead, we still need to process
+                    // the entire frame through the lookahead buffer
+                    // First detect levels from non-delayed signal per channel
+                    // Stack alloc for per-channel gain reduction, enough for typical channel counts
+                    #[allow(clippy::needless_range_loop)]
+                    let target_grs = {
+                        let mut grs = [0.0_f32; 32];
+                        for ch in 0..self.channels {
+                            let sample_idx = frame_start + ch;
+                            let filtered = self.apply_sidechain_filter(ch, buffer[sample_idx]);
+                            let level = self.detect_level(ch, filtered);
+                            let input_db =
+                                DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
+                            grs[ch] = self.calculate_gain_reduction(input_db, thresh);
+                        }
+                        grs
+                    };
+
+                    // Push frame through lookahead
+                    self.lookahead_buffer.process_frame(
+                        &buffer[frame_start..frame_start + self.channels],
+                        &mut self.lookahead_frame_buf,
                     );
+
+                    // Apply per-channel gain to delayed audio
+                    #[allow(clippy::needless_range_loop)]
+                    for ch in 0..self.channels {
+                        let sample_idx = frame_start + ch;
+                        buffer[sample_idx] = self.apply_gain_for_channel(
+                            ch,
+                            target_grs[ch],
+                            makeup_gain_linear,
+                            self.lookahead_frame_buf[ch],
+                            dry_mix,
+                            wet_mix,
+                        );
+                    }
+                } else {
+                    for ch in 0..self.channels {
+                        let sample_idx = frame_start + ch;
+                        let input_sample = buffer[sample_idx];
+                        let filtered = self.apply_sidechain_filter(ch, input_sample);
+                        let level = self.detect_level(ch, filtered);
+                        let input_db = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
+                        let target_gr = self.calculate_gain_reduction(input_db, thresh);
+
+                        buffer[sample_idx] = self.apply_gain_for_channel(
+                            ch,
+                            target_gr,
+                            makeup_gain_linear,
+                            input_sample,
+                            dry_mix,
+                            wet_mix,
+                        );
+                    }
                 }
             }
         }
@@ -715,7 +1075,7 @@ impl InPlacePlugin for CompressorPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        0
+        self.lookahead_delay_samples()
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
@@ -762,6 +1122,10 @@ mod tests {
         assert!(!compressor.auto_makeup);
         assert!(compressor.link_channels);
         assert_eq!(compressor.sidechain_hpf_hz, 80.0);
+        assert_eq!(compressor.detection_mode_index, 0); // Peak
+        assert_eq!(compressor.lookahead_ms, 0.0);
+        assert!(!compressor.program_dependent_release);
+        assert!(!compressor.measured_auto_makeup);
     }
 
     #[test]
@@ -835,6 +1199,379 @@ mod tests {
         }
 
         assert_no_allocs("CompressorPlugin::process", || {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        });
+    }
+
+    // ========================================================================
+    // New feature tests
+    // ========================================================================
+
+    #[test]
+    fn test_detection_mode_parameter() {
+        let mut compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0);
+        compressor.initialize(48000).unwrap();
+
+        // Default is peak
+        assert_eq!(
+            compressor.get_parameter(&ParameterId::from("detection_mode")),
+            Some(ParameterValue::String("peak".to_string()))
+        );
+
+        // Set to RMS
+        compressor
+            .set_parameter(
+                ParameterId::from("detection_mode"),
+                ParameterValue::String("rms".to_string()),
+            )
+            .unwrap();
+        assert_eq!(compressor.detection_mode_index, 1);
+        assert_eq!(
+            compressor.get_parameter(&ParameterId::from("detection_mode")),
+            Some(ParameterValue::String("rms".to_string()))
+        );
+
+        // Set back to peak via string
+        compressor
+            .set_parameter(
+                ParameterId::from("detection_mode"),
+                ParameterValue::String("peak".to_string()),
+            )
+            .unwrap();
+        assert_eq!(compressor.detection_mode_index, 0);
+    }
+
+    #[test]
+    fn test_rms_detection_processes() {
+        let mut compressor = CompressorPlugin::new(1, -20.0, 4.0, 0.1, 50.0, 0.0, 0.0)
+            .with_smoothing_time(0.0);
+        compressor.initialize(48000).unwrap();
+        compressor
+            .set_parameter(
+                ParameterId::from("detection_mode"),
+                ParameterValue::String("rms".to_string()),
+            )
+            .unwrap();
+        compressor.link_channels = false;
+
+        // Verify the detection mode was actually applied
+        assert_eq!(compressor.detection_mode_index, 1, "Should be RMS mode");
+
+        // Process a loud signal — RMS should still cause compression
+        // Use a longer signal to ensure the RMS window is fully populated
+        let num_frames = 48000; // 1 second
+        let mut buffer: Vec<f32> = (0..num_frames).map(|i| {
+            0.5 * (2.0 * PI * 1000.0 * i as f32 / 48000.0).sin()
+        }).collect();
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        compressor.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // Check the peak of the last 1000 frames (RMS window is definitely filled)
+        let tail_peak: f32 = buffer[num_frames - 1000..]
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            tail_peak < 0.49,
+            "RMS mode should compress signal (tail peak={tail_peak})"
+        );
+    }
+
+    #[test]
+    fn test_lookahead_parameter() {
+        let mut compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0);
+        compressor.initialize(48000).unwrap();
+
+        // Default is 0
+        assert_eq!(
+            compressor.get_parameter(&ParameterId::from("lookahead_ms")),
+            Some(ParameterValue::Float(0.0))
+        );
+        assert_eq!(compressor.latency_samples(), 0);
+
+        // Set to 5ms
+        compressor
+            .set_parameter(
+                ParameterId::from("lookahead_ms"),
+                ParameterValue::Float(5.0),
+            )
+            .unwrap();
+        assert_eq!(compressor.lookahead_ms, 5.0);
+        // 5ms at 48000 = 240 samples
+        assert_eq!(compressor.latency_samples(), 240);
+    }
+
+    #[test]
+    fn test_lookahead_delays_audio() {
+        let channels = 1;
+        let mut compressor = CompressorPlugin::new(channels, 0.0, 1.0, 100.0, 100.0, 0.0, 0.0)
+            .with_smoothing_time(0.0);
+        compressor.initialize(48000).unwrap();
+        compressor
+            .set_parameter(
+                ParameterId::from("lookahead_ms"),
+                ParameterValue::Float(5.0),
+            )
+            .unwrap();
+        compressor.link_channels = false;
+
+        // ratio 1.0 = no compression, so output should be delayed version of input
+        let delay_samples = 240; // 5ms * 48000
+        let num_frames = delay_samples + 100;
+        let mut buffer = vec![0.0_f32; num_frames];
+        // Put an impulse at frame 0
+        buffer[0] = 1.0;
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        compressor.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // The impulse should appear at frame `delay_samples`
+        let peak_idx = buffer
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+            .unwrap()
+            .0;
+        assert_eq!(
+            peak_idx, delay_samples,
+            "Impulse should be delayed by {delay_samples} samples, found at {peak_idx}"
+        );
+    }
+
+    #[test]
+    fn test_program_dependent_release_parameter() {
+        let mut compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0);
+        compressor.initialize(48000).unwrap();
+
+        assert_eq!(
+            compressor.get_parameter(&ParameterId::from("program_dependent_release")),
+            Some(ParameterValue::Bool(false))
+        );
+
+        compressor
+            .set_parameter(
+                ParameterId::from("program_dependent_release"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+        assert!(compressor.program_dependent_release);
+    }
+
+    #[test]
+    fn test_program_dependent_release_processes() {
+        let mut compressor = CompressorPlugin::new(1, -20.0, 4.0, 0.1, 50.0, 0.0, 0.0)
+            .with_smoothing_time(0.0);
+        compressor.initialize(48000).unwrap();
+        compressor
+            .set_parameter(
+                ParameterId::from("program_dependent_release"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+        compressor.link_channels = false;
+
+        // Process a loud burst followed by silence
+        let num_frames = 9600; // 200ms
+        let mut buffer: Vec<f32> = (0..num_frames).map(|i| {
+            if i < 2400 {
+                // 50ms of loud signal
+                0.5 * (2.0 * PI * 1000.0 * i as f32 / 48000.0).sin()
+            } else {
+                0.0
+            }
+        }).collect();
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        compressor.process_in_place(&mut buffer, &ctx).unwrap();
+        // Just verify it runs without panicking
+    }
+
+    #[test]
+    fn test_measured_auto_makeup_parameter() {
+        let mut compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0);
+        compressor.initialize(48000).unwrap();
+
+        assert_eq!(
+            compressor.get_parameter(&ParameterId::from("measured_auto_makeup")),
+            Some(ParameterValue::Bool(false))
+        );
+
+        compressor
+            .set_parameter(
+                ParameterId::from("measured_auto_makeup"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+        assert!(compressor.measured_auto_makeup);
+    }
+
+    #[test]
+    fn test_measured_auto_makeup_compensates() {
+        let channels = 1;
+        let mut compressor = CompressorPlugin::new(channels, -20.0, 4.0, 0.1, 50.0, 0.0, 0.0)
+            .with_smoothing_time(0.0);
+        compressor.initialize(48000).unwrap();
+        compressor.auto_makeup = true;
+        compressor.measured_auto_makeup = true;
+        compressor.link_channels = false;
+        compressor.rebuild_cached_parameters();
+
+        // Process a sustained loud signal to let measured makeup converge
+        let num_frames = 48000; // 1 second
+        let mut buffer: Vec<f32> = (0..num_frames).map(|i| {
+            0.3 * (2.0 * PI * 1000.0 * i as f32 / 48000.0).sin()
+        }).collect();
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        compressor.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // The measured makeup should have tracked the average gain reduction
+        let makeup = compressor.measured_makeup.makeup_db();
+        assert!(
+            makeup > 0.0,
+            "Measured makeup should be positive when compressing, got {makeup}"
+        );
+    }
+
+    #[test]
+    fn test_from_params_new_fields() {
+        let params = CompressorPluginParams {
+            threshold_db: -20.0,
+            ratio: 4.0,
+            attack_ms: 5.0,
+            release_ms: 50.0,
+            knee_db: 6.0,
+            makeup_gain_db: 0.0,
+            mix: 1.0,
+            auto_makeup: false,
+            link_channels: true,
+            sidechain_hpf_hz: 80.0,
+            detection_mode: "rms".to_string(),
+            lookahead_ms: 5.0,
+            program_dependent_release: true,
+            measured_auto_makeup: true,
+        };
+        let mut plugin = CompressorPlugin::from_params(2, params);
+        plugin.initialize(48000).unwrap();
+
+        assert_eq!(plugin.detection_mode_index, 1);
+        assert_eq!(plugin.lookahead_ms, 5.0);
+        assert!(plugin.program_dependent_release);
+        assert!(plugin.measured_auto_makeup);
+        assert_eq!(plugin.latency_samples(), 240);
+    }
+
+    #[test]
+    fn test_serde_defaults_new_fields() {
+        // Deserialize with no new fields — defaults should apply
+        let json = r#"{"threshold_db": -20.0}"#;
+        let params: CompressorPluginParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.detection_mode, "peak");
+        assert_eq!(params.lookahead_ms, 0.0);
+        assert!(!params.program_dependent_release);
+        assert!(!params.measured_auto_makeup);
+    }
+
+    #[test]
+    fn test_lookahead_linked_channels() {
+        // Ensure lookahead works with linked channels (>1 channel)
+        let channels = 2;
+        let mut compressor =
+            CompressorPlugin::new(channels, 0.0, 1.0, 100.0, 100.0, 0.0, 0.0)
+                .with_smoothing_time(0.0);
+        compressor.initialize(48000).unwrap();
+        compressor
+            .set_parameter(
+                ParameterId::from("lookahead_ms"),
+                ParameterValue::Float(5.0),
+            )
+            .unwrap();
+
+        let delay_samples = 240;
+        let num_frames = delay_samples + 100;
+        let mut buffer = vec![0.0_f32; num_frames * channels];
+        // Put impulse at frame 0, channel 0
+        buffer[0] = 1.0;
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        compressor.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // Check channel 0: impulse should be at frame delay_samples
+        let ch0_peak_frame = (0..num_frames)
+            .max_by(|&a, &b| {
+                buffer[a * channels]
+                    .abs()
+                    .partial_cmp(&buffer[b * channels].abs())
+                    .unwrap()
+            })
+            .unwrap();
+        assert_eq!(ch0_peak_frame, delay_samples);
+    }
+
+    #[test]
+    fn test_rt_safety_with_features_enabled() {
+        use sotf_host::{InPlacePluginAdapter, Plugin, assert_no_allocs};
+        let sample_rate = 48000;
+        let channels = 2;
+        let mut inner = CompressorPlugin::new(channels, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0);
+        inner.initialize(sample_rate).unwrap();
+        // Enable all new features
+        inner
+            .set_parameter(
+                ParameterId::from("detection_mode"),
+                ParameterValue::String("rms".to_string()),
+            )
+            .unwrap();
+        inner
+            .set_parameter(
+                ParameterId::from("lookahead_ms"),
+                ParameterValue::Float(5.0),
+            )
+            .unwrap();
+        inner
+            .set_parameter(
+                ParameterId::from("program_dependent_release"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+        inner.auto_makeup = true;
+        inner
+            .set_parameter(
+                ParameterId::from("measured_auto_makeup"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+
+        let mut plugin = InPlacePluginAdapter::new(inner);
+
+        let input = vec![0.1; 512 * channels];
+        let mut output = vec![0.0; 512 * channels];
+        let ctx = ProcessContext {
+            sample_rate,
+            num_frames: 512,
+        };
+
+        // Warm up
+        for _ in 0..10 {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        }
+
+        assert_no_allocs("CompressorPlugin::process with all features", || {
             plugin.process(&input, &mut output, &ctx).unwrap();
         });
     }

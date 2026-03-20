@@ -5,6 +5,8 @@
 pub mod nupc;
 
 use arc_swap::ArcSwap;
+use audioadapter_buffers::direct::SequentialSliceOfVecs;
+use rubato::{Fft, FixedSync, Resampler};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
@@ -16,9 +18,11 @@ use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
 use symphonia::core::audio::{AudioBufferRef, Signal};
-use symphonia::core::codecs::{Decoder, DecoderOptions};
-use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::codecs::{CodecRegistry, DecoderOptions};
+use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::{Hint, Probe};
 
 const PARTITION_SIZE: usize = 1024;
 const FFT_SIZE: usize = PARTITION_SIZE * 2;
@@ -141,7 +145,20 @@ impl ConvolutionPlugin {
     }
 
     pub fn load_ir(&mut self, path: &str) -> Result<(), String> {
-        let ir_samples = Self::load_wav_file(path)?;
+        let (ir_samples, ir_sample_rate) = Self::load_audio_file(path)?;
+
+        // Resample the IR if its sample rate differs from the engine's sample rate
+        let ir_samples = if ir_sample_rate != 0 && ir_sample_rate != self.sample_rate {
+            log::info!(
+                "Resampling IR from {} Hz to {} Hz",
+                ir_sample_rate,
+                self.sample_rate
+            );
+            Self::resample_ir(&ir_samples, ir_sample_rate, self.sample_rate)?
+        } else {
+            ir_samples
+        };
+
         let ir_channels = ir_samples.len();
         let mut planner = FftPlanner::<f32>::new();
         let fft_forward = planner.plan_fft_forward(FFT_SIZE);
@@ -182,31 +199,178 @@ impl ConvolutionPlugin {
         Ok(())
     }
 
-    fn load_wav_file(path: &str) -> Result<Vec<Vec<f32>>, String> {
+    /// Load an audio file using Symphonia's format probing.
+    /// Supports WAV, FLAC, and AIFF formats.
+    /// Returns (channel_samples, sample_rate).
+    fn load_audio_file(path: &str) -> Result<(Vec<Vec<f32>>, u32), String> {
         use std::fs::File;
-        let file = File::open(Path::new(path)).map_err(|e| format!("IO: {}", e))?;
+        use std::sync::LazyLock;
+
+        // Shared probe and codec registry for IR loading
+        static IR_PROBE: LazyLock<Probe> = LazyLock::new(|| {
+            let mut probe = Probe::default();
+            probe.register_all::<symphonia_format_riff::WavReader>();
+            probe.register_all::<symphonia_format_riff::AiffReader>();
+            probe.register_all::<symphonia_bundle_flac::FlacReader>();
+            probe
+        });
+
+        static IR_CODEC_REGISTRY: LazyLock<CodecRegistry> = LazyLock::new(|| {
+            let mut registry = CodecRegistry::new();
+            registry.register_all::<symphonia_codec_pcm::PcmDecoder>();
+            registry.register_all::<symphonia_bundle_flac::FlacDecoder>();
+            registry
+        });
+
+        let file = File::open(Path::new(path)).map_err(|e| format!("IO: {e}"))?;
         let mss = MediaSourceStream::new(Box::new(file), Default::default());
-        let mut reader = symphonia_format_riff::WavReader::try_new(mss, &FormatOptions::default())
-            .map_err(|e| format!("Probe: {}", e))?;
-        let track = reader.default_track().ok_or("No track")?;
-        let mut decoder = symphonia_codec_pcm::PcmDecoder::try_new(
-            &track.codec_params,
-            &DecoderOptions::default(),
-        )
-        .map_err(|e| format!("Decoder: {}", e))?;
-        let mut samples = vec![Vec::new(); track.codec_params.channels.unwrap().count()];
-        while let Ok(packet) = reader.next_packet() {
-            let decoded = decoder
-                .decode(&packet)
-                .map_err(|e| format!("Decode: {}", e))?;
-            for (ch, sample_ch) in samples.iter_mut().enumerate() {
-                match &decoded {
-                    AudioBufferRef::F32(buf) => sample_ch.extend_from_slice(buf.chan(ch)),
-                    _ => return Err("Format not supported".into()),
+
+        let mut hint = Hint::new();
+        if let Some(ext) = Path::new(path).extension().and_then(|e| e.to_str()) {
+            hint.with_extension(ext);
+        }
+
+        let probe_result = IR_PROBE
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
+            .map_err(|e| format!("Probe: {e}"))?;
+
+        let mut reader = probe_result.format;
+        let track = reader.default_track().ok_or("No track found in IR file")?;
+        let codec_params = track.codec_params.clone();
+
+        let sample_rate = codec_params.sample_rate.unwrap_or(0);
+        let num_channels = codec_params
+            .channels
+            .map(|c| c.count())
+            .unwrap_or(1);
+
+        let mut decoder = IR_CODEC_REGISTRY
+            .make(&codec_params, &DecoderOptions::default())
+            .map_err(|e| format!("Decoder: {e}"))?;
+
+        let mut samples = vec![Vec::new(); num_channels];
+        loop {
+            let packet = match reader.next_packet() {
+                Ok(p) => p,
+                Err(symphonia::core::errors::Error::IoError(ref e))
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    break;
                 }
+                Err(e) => return Err(format!("Read: {e}")),
+            };
+            let decoded = decoder.decode(&packet).map_err(|e| format!("Decode: {e}"))?;
+            match &decoded {
+                AudioBufferRef::F32(buf) => {
+                    for (ch, sample_ch) in samples.iter_mut().enumerate() {
+                        sample_ch.extend_from_slice(buf.chan(ch));
+                    }
+                }
+                AudioBufferRef::S16(buf) => {
+                    let scale = 1.0 / 32768.0;
+                    for (ch, sample_ch) in samples.iter_mut().enumerate() {
+                        sample_ch.extend(buf.chan(ch).iter().map(|&s| s as f32 * scale));
+                    }
+                }
+                AudioBufferRef::S24(buf) => {
+                    let scale = 1.0 / 8388608.0;
+                    for (ch, sample_ch) in samples.iter_mut().enumerate() {
+                        sample_ch.extend(
+                            buf.chan(ch).iter().map(|s| s.inner() as f32 * scale),
+                        );
+                    }
+                }
+                AudioBufferRef::S32(buf) => {
+                    let scale = 1.0 / 2147483648.0;
+                    for (ch, sample_ch) in samples.iter_mut().enumerate() {
+                        sample_ch.extend(buf.chan(ch).iter().map(|&s| s as f32 * scale));
+                    }
+                }
+                _ => return Err("Unsupported sample format in IR file".into()),
             }
         }
-        Ok(samples)
+
+        if samples.iter().all(|ch| ch.is_empty()) {
+            return Err("IR file contains no audio data".into());
+        }
+
+        Ok((samples, sample_rate))
+    }
+
+    /// Resample IR data from one sample rate to another using rubato.
+    fn resample_ir(
+        ir_samples: &[Vec<f32>],
+        source_rate: u32,
+        target_rate: u32,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        let num_channels = ir_samples.len();
+        let chunk_size = 1024;
+
+        let mut resampler = Fft::<f32>::new(
+            source_rate as usize,
+            target_rate as usize,
+            chunk_size,
+            2,
+            num_channels,
+            FixedSync::Input,
+        )
+        .map_err(|e| format!("Failed to create resampler: {e}"))?;
+
+        let source_len = ir_samples[0].len();
+        let estimated_output_len =
+            (source_len as f64 * target_rate as f64 / source_rate as f64) as usize + chunk_size;
+
+        let mut output_channels: Vec<Vec<f32>> = vec![Vec::with_capacity(estimated_output_len); num_channels];
+
+        let mut pos = 0;
+        while pos < source_len {
+            let input_frames_needed = resampler.input_frames_next();
+            let output_frames = resampler.output_frames_next();
+
+            // Prepare input chunks - pad with zeros if we're at the end
+            let input_chunk: Vec<Vec<f32>> = (0..num_channels)
+                .map(|ch| {
+                    let end = (pos + input_frames_needed).min(source_len);
+                    let mut chunk = ir_samples[ch][pos..end].to_vec();
+                    chunk.resize(input_frames_needed, 0.0);
+                    chunk
+                })
+                .collect();
+
+            let mut output_chunk: Vec<Vec<f32>> = vec![vec![0.0; output_frames]; num_channels];
+
+            let input_adapter =
+                SequentialSliceOfVecs::new(&input_chunk, num_channels, input_frames_needed)
+                    .map_err(|e| format!("Input adapter error: {e}"))?;
+            let mut output_adapter =
+                SequentialSliceOfVecs::new_mut(&mut output_chunk, num_channels, output_frames)
+                    .map_err(|e| format!("Output adapter error: {e}"))?;
+
+            match resampler.process_into_buffer(&input_adapter, &mut output_adapter, None) {
+                Ok((_, written)) => {
+                    for (ch, out_ch) in output_channels.iter_mut().enumerate() {
+                        out_ch.extend_from_slice(&output_chunk[ch][..written]);
+                    }
+                }
+                Err(e) => return Err(format!("Resampling error: {e}")),
+            }
+
+            pos += input_frames_needed;
+        }
+
+        // Trim to approximately expected length (remove trailing zeros from padding)
+        let expected_len =
+            (source_len as f64 * target_rate as f64 / source_rate as f64).ceil() as usize;
+        for ch in &mut output_channels {
+            ch.truncate(expected_len);
+        }
+
+        Ok(output_channels)
     }
 }
 

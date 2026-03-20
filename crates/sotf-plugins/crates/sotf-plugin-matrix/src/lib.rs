@@ -10,11 +10,34 @@ use sotf_plugin_channel_mute_solo::ChannelState;
 /// Smoothing time in ms for gain coefficient transitions (~5ms to avoid clicks)
 const GAIN_SMOOTH_MS: f32 = 5.0;
 
+/// Known routing presets
+const PRESET_CUSTOM: &str = "custom";
+const PRESET_STEREO_DOWNMIX: &str = "stereo_downmix";
+const PRESET_MS_ENCODE: &str = "ms_encode";
+const PRESET_MS_DECODE: &str = "ms_decode";
+const PRESET_51_REMAP: &str = "5.1_remap";
+
+const PRESET_CHOICES: &[&str] = &[
+    PRESET_CUSTOM,
+    PRESET_STEREO_DOWNMIX,
+    PRESET_MS_ENCODE,
+    PRESET_MS_DECODE,
+    PRESET_51_REMAP,
+];
+
 /// Matrix mixer plugin that routes N input channels to P output channels
+///
+/// Gains are linear coefficients. Negative gains are allowed and produce
+/// phase inversion. For explicit per-connection phase inversion, use the
+/// `phase_invert` flags which multiply the gain by -1 during processing.
 pub struct MatrixPlugin {
+    preset: String,
     input_channel_map: Vec<usize>,
     output_channel_map: Vec<usize>,
     matrix: Vec<f32>,
+    /// Per-connection phase inversion flags (parallel to `matrix`).
+    /// When set, the effective gain is negated during processing.
+    phase_invert: Vec<bool>,
     gain_smoothers: Vec<Smoother>,
     sample_rate: u32,
     physical_input_channels: usize,
@@ -34,10 +57,13 @@ impl MatrixPlugin {
             .iter()
             .map(|&v| Smoother::new(v, GAIN_SMOOTH_MS, sample_rate))
             .collect();
+        let phase_invert = vec![false; matrix.len()];
         let mut plugin = Self {
+            preset: PRESET_CUSTOM.to_string(),
             input_channel_map: Vec::new(),
             output_channel_map: Vec::new(),
             matrix,
+            phase_invert,
             gain_smoothers,
             sample_rate,
             physical_input_channels: input_channels,
@@ -67,10 +93,13 @@ impl MatrixPlugin {
             .iter()
             .map(|&v| Smoother::new(v, GAIN_SMOOTH_MS, sample_rate))
             .collect();
+        let phase_invert = vec![false; matrix.len()];
         let mut plugin = Self {
+            preset: PRESET_CUSTOM.to_string(),
             input_channel_map: Vec::new(),
             output_channel_map: Vec::new(),
             matrix,
+            phase_invert,
             gain_smoothers,
             sample_rate,
             physical_input_channels: input_channels,
@@ -118,10 +147,13 @@ impl MatrixPlugin {
             .iter()
             .map(|&v| Smoother::new(v, GAIN_SMOOTH_MS, sample_rate))
             .collect();
+        let phase_invert = vec![false; matrix.len()];
         let mut plugin = Self {
+            preset: PRESET_CUSTOM.to_string(),
             input_channel_map,
             output_channel_map,
             matrix,
+            phase_invert,
             gain_smoothers,
             sample_rate,
             physical_input_channels,
@@ -142,14 +174,33 @@ impl MatrixPlugin {
         let num_inputs = self.num_inputs();
         let num_outputs = self.num_outputs();
 
+        // Preset selector (index into PRESET_CHOICES)
+        let preset_idx = PRESET_CHOICES
+            .iter()
+            .position(|&p| p == self.preset)
+            .unwrap_or(0) as i32;
+        params.push(Parameter::new_int(
+            "preset",
+            "Preset",
+            preset_idx,
+            0,
+            (PRESET_CHOICES.len() - 1) as i32,
+        ));
+
         for out_ch in 0..num_outputs {
             for in_ch in 0..num_inputs {
+                let idx = out_ch * num_inputs + in_ch;
                 params.push(Parameter::new_float(
                     &format!("gain_{}_{}", in_ch, out_ch),
                     &format!("Gain In {} Out {}", in_ch, out_ch),
                     0.0,
                     -144.0,
                     24.0,
+                ));
+                params.push(Parameter::new_bool(
+                    &format!("phase_invert_{}_{}", in_ch, out_ch),
+                    &format!("Phase Invert In {} Out {}", in_ch, out_ch),
+                    self.phase_invert.get(idx).copied().unwrap_or(false),
                 ));
             }
             params.push(Parameter::new_bool(
@@ -183,7 +234,7 @@ impl MatrixPlugin {
                 let idx = out_ch * num_inputs + in_ch;
                 let target = self.gain_smoothers[idx].target();
                 let current = self.gain_smoothers[idx].current();
-                if target.abs() > 1e-6 || (current - target).abs() > 1e-6 {
+                if target.abs() > 1e-4 || (current - target).abs() > 1e-4 {
                     self.active_connections.push((in_ch, out_ch, idx));
                 }
             }
@@ -250,6 +301,28 @@ impl MatrixPlugin {
         self.matrix.get(output_ch * num_inputs + input_ch).copied()
     }
 
+    pub fn set_phase_invert(
+        &mut self,
+        input_ch: usize,
+        output_ch: usize,
+        invert: bool,
+    ) -> Result<(), String> {
+        let num_inputs = self.num_inputs();
+        let idx = output_ch * num_inputs + input_ch;
+        if idx >= self.phase_invert.len() {
+            return Err("OOB".into());
+        }
+        self.phase_invert[idx] = invert;
+        Ok(())
+    }
+
+    pub fn get_phase_invert(&self, input_ch: usize, output_ch: usize) -> Option<bool> {
+        let num_inputs = self.num_inputs();
+        self.phase_invert
+            .get(output_ch * num_inputs + input_ch)
+            .copied()
+    }
+
     pub fn with_channel_states(mut self, channel_states: Vec<ChannelState>) -> Self {
         self.channel_states = channel_states;
         self.reset_channel_state_smoothers();
@@ -279,6 +352,74 @@ impl MatrixPlugin {
             };
             self.channel_state_smoothers[ch].set_target(target);
         }
+    }
+
+    /// Apply a routing preset by setting matrix gains to standard values.
+    /// Returns Ok(()) if the preset was applied, Err if it requires different dimensions.
+    fn apply_preset(&mut self, preset: &str) -> Result<(), String> {
+        let ni = self.num_inputs();
+        let no = self.num_outputs();
+        match preset {
+            PRESET_CUSTOM => { /* no-op, user-defined */ }
+            PRESET_STEREO_DOWNMIX => {
+                if ni < 2 || no < 2 {
+                    return Err("stereo_downmix requires at least 2x2".into());
+                }
+                // Zero entire matrix, then set downmix coefficients
+                for idx in 0..self.matrix.len() {
+                    self.matrix[idx] = 0.0;
+                    self.gain_smoothers[idx].set_target(0.0);
+                }
+                // L = L + 0.707*R
+                self.set_gain(0, 0, 1.0)?; // L -> L
+                self.set_gain(1, 0, std::f32::consts::FRAC_1_SQRT_2)?; // R -> L
+                // R = R + 0.707*L
+                self.set_gain(1, 1, 1.0)?; // R -> R
+                self.set_gain(0, 1, std::f32::consts::FRAC_1_SQRT_2)?; // L -> R
+            }
+            PRESET_MS_ENCODE => {
+                if ni < 2 || no < 2 {
+                    return Err("ms_encode requires at least 2x2".into());
+                }
+                for idx in 0..self.matrix.len() {
+                    self.matrix[idx] = 0.0;
+                    self.gain_smoothers[idx].set_target(0.0);
+                }
+                // M = (L+R)*0.5
+                self.set_gain(0, 0, 0.5)?; // L -> M
+                self.set_gain(1, 0, 0.5)?; // R -> M
+                // S = (L-R)*0.5
+                self.set_gain(0, 1, 0.5)?;  // L -> S
+                self.set_gain(1, 1, -0.5)?; // R -> S (negative)
+            }
+            PRESET_MS_DECODE => {
+                if ni < 2 || no < 2 {
+                    return Err("ms_decode requires at least 2x2".into());
+                }
+                for idx in 0..self.matrix.len() {
+                    self.matrix[idx] = 0.0;
+                    self.gain_smoothers[idx].set_target(0.0);
+                }
+                // L = M + S
+                self.set_gain(0, 0, 1.0)?; // M -> L
+                self.set_gain(1, 0, 1.0)?; // S -> L
+                // R = M - S
+                self.set_gain(0, 1, 1.0)?;  // M -> R
+                self.set_gain(1, 1, -1.0)?; // S -> R (negative)
+            }
+            PRESET_51_REMAP => {
+                // Identity pass-through (works for any dimension)
+                for idx in 0..self.matrix.len() {
+                    self.matrix[idx] = 0.0;
+                    self.gain_smoothers[idx].set_target(0.0);
+                }
+                for i in 0..ni.min(no) {
+                    let _ = self.set_gain(i, i, 1.0);
+                }
+            }
+            _ => return Err(format!("Unknown preset: {}", preset)),
+        }
+        Ok(())
     }
 
     fn reset_channel_state_smoothers(&mut self) {
@@ -322,6 +463,19 @@ impl Plugin for MatrixPlugin {
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
         let id_str = id.0.as_str();
+        if id_str == "preset" {
+            let idx = value
+                .as_int()
+                .ok_or_else(|| "preset must be an integer".to_string())?;
+            let idx = idx.clamp(0, (PRESET_CHOICES.len() - 1) as i32) as usize;
+            let preset_name = PRESET_CHOICES[idx].to_string();
+            self.preset = preset_name.clone();
+            if preset_name != PRESET_CUSTOM {
+                self.apply_preset(&preset_name)?;
+            }
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
         if id_str.starts_with("gain_") {
             let parts: Vec<&str> = id_str.split('_').collect();
             let in_ch = parts[1]
@@ -338,6 +492,22 @@ impl Plugin for MatrixPlugin {
                 self.rebuild_cached_parameters();
                 return Ok(());
             }
+            return Ok(());
+        }
+        if let Some(rest) = id_str.strip_prefix("phase_invert_") {
+            // Format: phase_invert_{in_ch}_{out_ch}
+            let parts: Vec<&str> = rest.split('_').collect();
+            let in_ch = parts[0]
+                .parse::<usize>()
+                .map_err(|_| "Invalid input channel".to_string())?;
+            let out_ch = parts[1]
+                .parse::<usize>()
+                .map_err(|_| "Invalid output channel".to_string())?;
+            let v = value
+                .as_bool()
+                .ok_or_else(|| format!("{} must be a bool", id_str))?;
+            self.set_phase_invert(in_ch, out_ch, v)?;
+            self.rebuild_cached_parameters();
             return Ok(());
         }
         if let Some(rest) = id_str.strip_prefix("mute_") {
@@ -388,11 +558,24 @@ impl Plugin for MatrixPlugin {
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         let id_str = id.0.as_str();
+        if id_str == "preset" {
+            let idx = PRESET_CHOICES
+                .iter()
+                .position(|&p| p == self.preset)
+                .unwrap_or(0) as i32;
+            return Some(ParameterValue::Int(idx));
+        }
         if id_str.starts_with("gain_") {
             let parts: Vec<&str> = id_str.split('_').collect();
             let in_ch = parts[1].parse::<usize>().ok()?;
             let out_ch = parts[2].parse::<usize>().ok()?;
             return self.get_gain(in_ch, out_ch).map(ParameterValue::Float);
+        }
+        if let Some(rest) = id_str.strip_prefix("phase_invert_") {
+            let parts: Vec<&str> = rest.split('_').collect();
+            let in_ch = parts[0].parse::<usize>().ok()?;
+            let out_ch = parts[1].parse::<usize>().ok()?;
+            return self.get_phase_invert(in_ch, out_ch).map(ParameterValue::Bool);
         }
         if let Some(rest) = id_str.strip_prefix("mute_") {
             let ch = rest.parse::<usize>().ok()?;
@@ -469,8 +652,10 @@ impl Plugin for MatrixPlugin {
                 self.output_channel_map[logical_out]
             };
 
+            let phase_sign = if self.phase_invert[idx] { -1.0 } else { 1.0 };
+
             for frame in 0..num_frames {
-                let gain = self.gain_smoothers[idx].advance();
+                let gain = self.gain_smoothers[idx].advance() * phase_sign;
                 let ch_gain = self.ch_gains_buffer[frame * out_channels + logical_out];
 
                 output[frame * out_channels + phys_out] +=
@@ -737,5 +922,80 @@ mod tests {
         assert_eq!(got_states.len(), 2);
         assert!(got_states[0].muted);
         assert!(got_states[1].dimmed);
+    }
+
+    #[test]
+    fn test_phase_invert_negates_output() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        plugin.set_phase_invert(0, 0, true).unwrap();
+
+        let last = process_converged(&mut plugin, 2);
+        assert!(
+            (last[0] - (-1.0)).abs() < TOLERANCE,
+            "Ch0 should be inverted, got {}",
+            last[0]
+        );
+        assert!(
+            (last[1] - 1.0).abs() < TOLERANCE,
+            "Ch1 should pass through unaffected, got {}",
+            last[1]
+        );
+    }
+
+    #[test]
+    fn test_phase_invert_via_parameter() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        plugin
+            .set_parameter(
+                ParameterId::from("phase_invert_0_0"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+
+        let got = plugin
+            .get_parameter(&ParameterId::from("phase_invert_0_0"))
+            .unwrap();
+        assert_eq!(got.as_bool(), Some(true));
+
+        let got_other = plugin
+            .get_parameter(&ParameterId::from("phase_invert_1_1"))
+            .unwrap();
+        assert_eq!(got_other.as_bool(), Some(false));
+
+        let last = process_converged(&mut plugin, 2);
+        assert!(
+            (last[0] - (-1.0)).abs() < TOLERANCE,
+            "Ch0 should be inverted via parameter, got {}",
+            last[0]
+        );
+    }
+
+    #[test]
+    fn test_phase_invert_with_gain() {
+        // Phase invert on a connection with gain 0.5 should produce -0.5
+        let mut plugin = MatrixPlugin::new(2, 2);
+        plugin.set_gain(0, 0, 0.5).unwrap();
+        plugin.set_phase_invert(0, 0, true).unwrap();
+
+        let last = process_converged(&mut plugin, 2);
+        assert!(
+            (last[0] - (-0.5)).abs() < TOLERANCE,
+            "Ch0 should be 0.5 * -1 = -0.5, got {}",
+            last[0]
+        );
+    }
+
+    #[test]
+    fn test_negative_gain_allowed() {
+        // Negative gains should work directly (no clamping)
+        let mut plugin = MatrixPlugin::new(2, 2);
+        plugin.set_gain(0, 0, -1.0).unwrap();
+
+        let last = process_converged(&mut plugin, 2);
+        assert!(
+            (last[0] - (-1.0)).abs() < TOLERANCE,
+            "Ch0 with gain -1.0 should produce -1.0, got {}",
+            last[0]
+        );
     }
 }

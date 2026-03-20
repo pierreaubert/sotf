@@ -16,6 +16,7 @@ mod tests;
 pub use config::*;
 use factory::build_path_from_config;
 
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
@@ -130,6 +131,13 @@ pub struct ABComparePlugin {
     bypass: bool,
     mix_transition_ms: f32,
 
+    // Phase inversion
+    phase_invert_a: bool,
+    phase_invert_b: bool,
+
+    // Difference mode (A - B)
+    difference_mode: bool,
+
     // Latency compensation delay lines
     delay_a: DelayLine,
     delay_b: DelayLine,
@@ -137,6 +145,14 @@ pub struct ABComparePlugin {
     // Internal buffers
     buffer_a: Vec<f32>,
     buffer_b: Vec<f32>,
+
+    // Band mask (bandpass filter for isolating frequency range in comparison)
+    band_mask_low_hz: f32,
+    band_mask_high_hz: f32,
+    /// Per-channel highpass filters (one per channel) for band mask low cutoff
+    band_mask_hp: Vec<Biquad>,
+    /// Per-channel lowpass filters (one per channel) for band mask high cutoff
+    band_mask_lp: Vec<Biquad>,
 
     // Cached peak values
     last_peak_a: f64,
@@ -172,6 +188,32 @@ impl ABComparePlugin {
 
         let mix_smoother = Smoother::new(params.mix, params.mix_transition_ms, sample_rate);
 
+        let band_mask_low_hz = params.band_mask_low_hz.clamp(20.0, 20000.0);
+        let band_mask_high_hz = params.band_mask_high_hz.clamp(20.0, 20000.0);
+        let q = 1.0 / std::f64::consts::SQRT_2;
+        let band_mask_hp: Vec<Biquad> = (0..num_channels)
+            .map(|_| {
+                Biquad::new(
+                    BiquadFilterType::Highpass,
+                    band_mask_low_hz as f64,
+                    sample_rate as f64,
+                    q,
+                    0.0,
+                )
+            })
+            .collect();
+        let band_mask_lp: Vec<Biquad> = (0..num_channels)
+            .map(|_| {
+                Biquad::new(
+                    BiquadFilterType::Lowpass,
+                    band_mask_high_hz as f64,
+                    sample_rate as f64,
+                    q,
+                    0.0,
+                )
+            })
+            .collect();
+
         let mut p = Self {
             num_channels,
             sample_rate,
@@ -186,6 +228,13 @@ impl ABComparePlugin {
             selected_path: params.selected_path,
             bypass: params.bypass,
             mix_transition_ms: params.mix_transition_ms,
+            phase_invert_a: params.phase_invert_a,
+            phase_invert_b: params.phase_invert_b,
+            difference_mode: params.difference_mode,
+            band_mask_low_hz,
+            band_mask_high_hz,
+            band_mask_hp,
+            band_mask_lp,
             delay_a: DelayLine::new(),
             delay_b: DelayLine::new(),
             buffer_a: Vec::new(),
@@ -278,6 +327,38 @@ impl ABComparePlugin {
             .with_description("A/B transition smoothing time in milliseconds")
             .with_group("Timing")
             .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool("phase_invert_a", "Phase Invert A", self.phase_invert_a)
+                .with_description("Invert phase of path A output (multiply by -1.0)")
+                .with_group("Mix Control")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("phase_invert_b", "Phase Invert B", self.phase_invert_b)
+                .with_description("Invert phase of path B output (multiply by -1.0)")
+                .with_group("Mix Control")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("difference_mode", "Difference Mode", self.difference_mode)
+                .with_description("Output A - B instead of crossfade mix")
+                .with_group("Mix Control")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "band_mask_low_hz",
+                "Band Mask Low",
+                self.band_mask_low_hz,
+                20.0,
+                20000.0,
+            )
+            .with_description("Highpass cutoff for band-masking the comparison output (Hz)")
+            .with_group("Band Mask")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "band_mask_high_hz",
+                "Band Mask High",
+                self.band_mask_high_hz,
+                20.0,
+                20000.0,
+            )
+            .with_description("Lowpass cutoff for band-masking the comparison output (Hz)")
+            .with_group("Band Mask")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_string(
                 "path_a_config",
                 "Path A Config",
@@ -313,6 +394,39 @@ impl ABComparePlugin {
             build_path_from_config(&self.path_b_config, self.num_channels, self.sample_rate)?;
         self.update_latency_compensation();
         Ok(())
+    }
+
+    /// Returns true if the band mask range is narrower than full spectrum.
+    fn band_mask_active(&self) -> bool {
+        self.band_mask_low_hz > 20.5 || self.band_mask_high_hz < 19999.5
+    }
+
+    /// Rebuild the bandpass filter pair for the current band mask settings.
+    fn rebuild_band_mask_filters(&mut self) {
+        let q = 1.0 / std::f64::consts::SQRT_2;
+        let sr = self.sample_rate as f64;
+        self.band_mask_hp = (0..self.num_channels)
+            .map(|_| {
+                Biquad::new(
+                    BiquadFilterType::Highpass,
+                    self.band_mask_low_hz as f64,
+                    sr,
+                    q,
+                    0.0,
+                )
+            })
+            .collect();
+        self.band_mask_lp = (0..self.num_channels)
+            .map(|_| {
+                Biquad::new(
+                    BiquadFilterType::Lowpass,
+                    self.band_mask_high_hz as f64,
+                    sr,
+                    q,
+                    0.0,
+                )
+            })
+            .collect();
     }
 
     /// Align both paths by delaying the shorter one.
@@ -436,6 +550,39 @@ impl Plugin for ABComparePlugin {
                         .set_time(self.mix_transition_ms, self.sample_rate);
                 }
             }
+            "phase_invert_a" => {
+                self.phase_invert_a = value
+                    .as_bool()
+                    .ok_or_else(|| "phase_invert_a must be a boolean".to_string())?;
+            }
+            "phase_invert_b" => {
+                self.phase_invert_b = value
+                    .as_bool()
+                    .ok_or_else(|| "phase_invert_b must be a boolean".to_string())?;
+            }
+            "difference_mode" => {
+                self.difference_mode = value
+                    .as_bool()
+                    .ok_or_else(|| "difference_mode must be a boolean".to_string())?;
+            }
+            "band_mask_low_hz" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "band_mask_low_hz must be a float".to_string())?;
+                if v.is_finite() {
+                    self.band_mask_low_hz = v.clamp(20.0, 20000.0);
+                    self.rebuild_band_mask_filters();
+                }
+            }
+            "band_mask_high_hz" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "band_mask_high_hz must be a float".to_string())?;
+                if v.is_finite() {
+                    self.band_mask_high_hz = v.clamp(20.0, 20000.0);
+                    self.rebuild_band_mask_filters();
+                }
+            }
             "path_a_config" => {
                 if let ParameterValue::String(json) = value {
                     let config: PathConfig = serde_json::from_str(&json)
@@ -475,6 +622,11 @@ impl Plugin for ABComparePlugin {
             "max_auto_gain_db" => Some(ParameterValue::Float(self.auto_gain.max_gain_db())),
             "gain_smoothing_ms" => Some(ParameterValue::Float(self.auto_gain.smoothing_ms())),
             "mix_transition_ms" => Some(ParameterValue::Float(self.mix_transition_ms)),
+            "phase_invert_a" => Some(ParameterValue::Bool(self.phase_invert_a)),
+            "phase_invert_b" => Some(ParameterValue::Bool(self.phase_invert_b)),
+            "difference_mode" => Some(ParameterValue::Bool(self.difference_mode)),
+            "band_mask_low_hz" => Some(ParameterValue::Float(self.band_mask_low_hz)),
+            "band_mask_high_hz" => Some(ParameterValue::Float(self.band_mask_high_hz)),
             "path_a_config" => serde_json::to_string(&self.path_a_config)
                 .ok()
                 .map(ParameterValue::String),
@@ -500,6 +652,9 @@ impl Plugin for ABComparePlugin {
         // Reset mix smoother with new sample rate
         self.mix_smoother = Smoother::new(self.mix, self.mix_transition_ms, sample_rate);
 
+        // Rebuild band mask filters for new sample rate
+        self.rebuild_band_mask_filters();
+
         Ok(())
     }
 
@@ -521,6 +676,9 @@ impl Plugin for ABComparePlugin {
         // Reset peak values
         self.last_peak_a = 0.0;
         self.last_peak_b = 0.0;
+
+        // Reset band mask filters
+        self.rebuild_band_mask_filters();
 
         // Clear buffers
         self.buffer_a.clear();
@@ -622,24 +780,46 @@ impl Plugin for ABComparePlugin {
         };
         self.mix_smoother.set_target(target_mix);
 
+        // Phase inversion signs
+        let sign_a: f32 = if self.phase_invert_a { -1.0 } else { 1.0 };
+        let sign_b: f32 = if self.phase_invert_b { -1.0 } else { 1.0 };
+
         // Process sample-by-sample
         for frame in 0..context.num_frames {
             // Tick smoothers into loop
             let gain_linear = self.auto_gain.next_gain_linear();
             let current_mix = self.mix_smoother.advance();
 
-            // Equal-power crossfade
-            // mix: -1 = pure A, +1 = pure B
-            let mix_01 = (current_mix + 1.0) / 2.0; // 0 = A, 1 = B
-            let angle = mix_01 * std::f32::consts::FRAC_PI_2; // 0 to PI/2
-            let gain_a = angle.cos();
-            let gain_b = angle.sin();
-
             for ch in 0..self.num_channels {
                 let idx = frame * self.num_channels + ch;
-                let sample_a = self.buffer_a[idx];
-                let sample_b = self.buffer_b[idx] * gain_linear;
-                output[idx] = sample_a * gain_a + sample_b * gain_b;
+                let sample_a = self.buffer_a[idx] * sign_a;
+                let sample_b = self.buffer_b[idx] * gain_linear * sign_b;
+
+                if self.difference_mode {
+                    // Difference mode: output A - B
+                    output[idx] = sample_a - sample_b;
+                } else {
+                    // Equal-power crossfade
+                    // mix: -1 = pure A, +1 = pure B
+                    let mix_01 = (current_mix + 1.0) / 2.0; // 0 = A, 1 = B
+                    let angle = mix_01 * std::f32::consts::FRAC_PI_2; // 0 to PI/2
+                    let gain_a = angle.cos();
+                    let gain_b = angle.sin();
+                    output[idx] = sample_a * gain_a + sample_b * gain_b;
+                }
+            }
+        }
+
+        // Apply band mask filter if the range is narrower than full spectrum
+        if self.band_mask_active() {
+            for frame in 0..context.num_frames {
+                for ch in 0..self.num_channels {
+                    let idx = frame * self.num_channels + ch;
+                    let mut s = output[idx] as f64;
+                    s = self.band_mask_hp[ch].process(s);
+                    s = self.band_mask_lp[ch].process(s);
+                    output[idx] = s as f32;
+                }
             }
         }
 

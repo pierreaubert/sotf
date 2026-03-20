@@ -72,6 +72,37 @@ impl BiquadFilterType {
     }
 }
 
+/// Biquad filter coefficients for external interpolation.
+#[derive(Debug, Clone, Copy)]
+pub struct BiquadCoefficients {
+    /// Feedforward coefficient b0
+    pub b0: f64,
+    /// Feedforward coefficient b1
+    pub b1: f64,
+    /// Feedforward coefficient b2
+    pub b2: f64,
+    /// Feedback coefficient a1 (normalized, a0=1)
+    pub a1: f64,
+    /// Feedback coefficient a2 (normalized, a0=1)
+    pub a2: f64,
+}
+
+impl BiquadCoefficients {
+    /// Linearly interpolate between two sets of coefficients.
+    ///
+    /// `t` ranges from 0.0 (fully `self`) to 1.0 (fully `other`).
+    #[inline(always)]
+    pub fn lerp(&self, other: &BiquadCoefficients, t: f64) -> BiquadCoefficients {
+        BiquadCoefficients {
+            b0: self.b0 + (other.b0 - self.b0) * t,
+            b1: self.b1 + (other.b1 - self.b1) * t,
+            b2: self.b2 + (other.b2 - self.b2) * t,
+            a1: self.a1 + (other.a1 - self.a1) * t,
+            a2: self.a2 + (other.a2 - self.a2) * t,
+        }
+    }
+}
+
 /// Represents a single biquad IIR filter.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Biquad {
@@ -91,11 +122,18 @@ pub struct Biquad {
     b0: f64,
     b1: f64,
     b2: f64,
-    /// Filter state (for processing samples)
+    /// Filter state for DF-I (for processing samples)
     x1: f64,
     x2: f64,
     y1: f64,
     y2: f64,
+    /// Filter state for Transposed Direct Form II
+    s1: f64,
+    s2: f64,
+    /// When true, use Transposed Direct Form II instead of Direct Form I.
+    /// TDF-II has better numerical properties for high-Q narrow filters.
+    #[serde(default)]
+    pub use_tdf2: bool,
     /// Pre-computed coefficients for fast frequency response calculation
     r_up0: f64,
     r_up1: f64,
@@ -139,6 +177,9 @@ impl Biquad {
             x2: 0.0,
             y1: 0.0,
             y2: 0.0,
+            s1: 0.0,
+            s2: 0.0,
+            use_tdf2: false,
             r_up0: 0.0,
             r_up1: 0.0,
             r_up2: 0.0,
@@ -386,7 +427,20 @@ impl Biquad {
     }
 
     /// Processes a single audio sample through the filter.
+    ///
+    /// When `use_tdf2` is true, uses Transposed Direct Form II which has
+    /// better numerical properties for high-Q narrow filters.
     pub fn process(&mut self, x: f64) -> f64 {
+        if self.use_tdf2 {
+            self.process_tdf2(x)
+        } else {
+            self.process_df1(x)
+        }
+    }
+
+    /// Processes a single sample using Direct Form I.
+    #[inline(always)]
+    fn process_df1(&mut self, x: f64) -> f64 {
         let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
             - self.a1 * self.y1
             - self.a2 * self.y2;
@@ -399,11 +453,38 @@ impl Biquad {
         y
     }
 
+    /// Processes a single sample using Transposed Direct Form II.
+    ///
+    /// TDF-II uses two state variables (s1, s2) instead of four (x1, x2, y1, y2):
+    /// ```text
+    /// y  = b0*x + s1
+    /// s1 = b1*x - a1*y + s2
+    /// s2 = b2*x - a2*y
+    /// ```
+    ///
+    /// This form has better numerical properties for high-Q narrow filters
+    /// because it minimizes internal signal magnitudes.
+    #[inline(always)]
+    fn process_tdf2(&mut self, x: f64) -> f64 {
+        let y = self.b0 * x + self.s1;
+        self.s1 = self.b1 * x - self.a1 * y + self.s2;
+        self.s2 = self.b2 * x - self.a2 * y;
+        y
+    }
+
     /// Processes a block of audio samples in-place.
     ///
     /// This method is more efficient than calling `process` for each sample
     /// as it avoids repeated struct field access and allows for better optimization.
     pub fn process_block(&mut self, samples: &mut [f64]) {
+        if self.use_tdf2 {
+            self.process_block_tdf2(samples);
+        } else {
+            self.process_block_df1(samples);
+        }
+    }
+
+    fn process_block_df1(&mut self, samples: &mut [f64]) {
         let b0 = self.b0;
         let b1 = self.b1;
         let b2 = self.b2;
@@ -430,6 +511,28 @@ impl Biquad {
         self.x2 = x2;
         self.y1 = y1;
         self.y2 = y2;
+    }
+
+    fn process_block_tdf2(&mut self, samples: &mut [f64]) {
+        let b0 = self.b0;
+        let b1 = self.b1;
+        let b2 = self.b2;
+        let a1 = self.a1;
+        let a2 = self.a2;
+        let mut s1 = self.s1;
+        let mut s2 = self.s2;
+
+        for x in samples.iter_mut() {
+            let input = *x;
+            let output = b0 * input + s1;
+            s1 = b1 * input - a1 * output + s2;
+            s2 = b2 * input - a2 * output;
+
+            *x = output;
+        }
+
+        self.s1 = s1;
+        self.s2 = s2;
     }
 
     /// Calculates the filter's complex frequency response at a single frequency `f`.
@@ -485,6 +588,39 @@ impl Biquad {
             .mapv(f64::sqrt)
             .mapv(f64::log10)
             * 20.0
+    }
+
+    /// Returns the normalized filter coefficients (a1, a2, b0, b1, b2).
+    pub fn coefficients(&self) -> BiquadCoefficients {
+        BiquadCoefficients {
+            b0: self.b0,
+            b1: self.b1,
+            b2: self.b2,
+            a1: self.a1,
+            a2: self.a2,
+        }
+    }
+
+    /// Processes a single sample using explicitly provided coefficients (DF-I).
+    ///
+    /// Used for coefficient interpolation during parameter transitions.
+    #[inline(always)]
+    pub fn process_with_coefficients(&mut self, x: f64, coeffs: &BiquadCoefficients) -> f64 {
+        if self.use_tdf2 {
+            let y = coeffs.b0 * x + self.s1;
+            self.s1 = coeffs.b1 * x - coeffs.a1 * y + self.s2;
+            self.s2 = coeffs.b2 * x - coeffs.a2 * y;
+            y
+        } else {
+            let y = coeffs.b0 * x + coeffs.b1 * self.x1 + coeffs.b2 * self.x2
+                - coeffs.a1 * self.y1
+                - coeffs.a2 * self.y2;
+            self.x2 = self.x1;
+            self.x1 = x;
+            self.y2 = self.y1;
+            self.y1 = y;
+            y
+        }
     }
 
     /// Returns the filter coefficients as a tuple.
@@ -1349,6 +1485,116 @@ mod tests {
         assert_eq!(row.q, 2.0);
         assert_eq!(row.gain, 6.0);
         assert_eq!(row.kind, "PK");
+    }
+
+    #[test]
+    fn test_tdf2_matches_df1_for_peak() {
+        // DF-I and TDF-II should produce identical output for the same filter
+        let mut df1 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let mut tdf2 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        tdf2.use_tdf2 = true;
+
+        // Process 1000 samples of a sine wave
+        for i in 0..1000 {
+            let x = (i as f64 * 0.1).sin();
+            let y_df1 = df1.process(x);
+            let y_tdf2 = tdf2.process(x);
+            assert!(
+                approx_eq(y_df1, y_tdf2, 1e-10),
+                "sample {}: df1={} tdf2={} diff={}",
+                i,
+                y_df1,
+                y_tdf2,
+                (y_df1 - y_tdf2).abs()
+            );
+        }
+    }
+
+    #[test]
+    fn test_tdf2_matches_df1_for_highshelf() {
+        let mut df1 = Biquad::new(BiquadFilterType::Highshelf, 2000.0, 48000.0, 0.707, -3.0);
+        let mut tdf2 = Biquad::new(BiquadFilterType::Highshelf, 2000.0, 48000.0, 0.707, -3.0);
+        tdf2.use_tdf2 = true;
+
+        for i in 0..1000 {
+            let x = (i as f64 * 0.3).sin();
+            let y_df1 = df1.process(x);
+            let y_tdf2 = tdf2.process(x);
+            assert!(
+                approx_eq(y_df1, y_tdf2, 1e-10),
+                "sample {}: df1={} tdf2={} diff={}",
+                i,
+                y_df1,
+                y_tdf2,
+                (y_df1 - y_tdf2).abs()
+            );
+        }
+    }
+
+    #[test]
+    fn test_tdf2_process_block_matches_single() {
+        let mut single = Biquad::new(BiquadFilterType::Peak, 500.0, 48000.0, 4.0, 10.0);
+        single.use_tdf2 = true;
+        let mut block = Biquad::new(BiquadFilterType::Peak, 500.0, 48000.0, 4.0, 10.0);
+        block.use_tdf2 = true;
+
+        let input: Vec<f64> = (0..256).map(|i| (i as f64 * 0.05).sin()).collect();
+        let single_out: Vec<f64> = input.iter().map(|&x| single.process(x)).collect();
+
+        let mut block_buf = input.clone();
+        block.process_block(&mut block_buf);
+
+        for i in 0..256 {
+            assert!(
+                approx_eq(single_out[i], block_buf[i], 1e-12),
+                "sample {}: single={} block={}",
+                i,
+                single_out[i],
+                block_buf[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_coefficients_and_lerp() {
+        let f1 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0);
+        let f2 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 12.0);
+        let c1 = f1.coefficients();
+        let c2 = f2.coefficients();
+
+        // At t=0, should equal c1
+        let lerp0 = c1.lerp(&c2, 0.0);
+        assert!(approx_eq(lerp0.b0, c1.b0, 1e-15));
+        assert!(approx_eq(lerp0.a1, c1.a1, 1e-15));
+
+        // At t=1, should equal c2
+        let lerp1 = c1.lerp(&c2, 1.0);
+        assert!(approx_eq(lerp1.b0, c2.b0, 1e-15));
+        assert!(approx_eq(lerp1.a1, c2.a1, 1e-15));
+
+        // At t=0.5, should be midpoint
+        let lerp_mid = c1.lerp(&c2, 0.5);
+        assert!(approx_eq(lerp_mid.b0, (c1.b0 + c2.b0) / 2.0, 1e-15));
+    }
+
+    #[test]
+    fn test_process_with_coefficients_matches_normal() {
+        let mut f1 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let mut f2 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let coeffs = f2.coefficients();
+
+        for i in 0..500 {
+            let x = (i as f64 * 0.1).sin();
+            let y1 = f1.process(x);
+            let y2 = f2.process_with_coefficients(x, &coeffs);
+            assert!(
+                approx_eq(y1, y2, 1e-12),
+                "sample {}: normal={} with_coeffs={}",
+                i,
+                y1,
+                y2
+            );
+        }
     }
 }
 

@@ -45,6 +45,12 @@ pub struct ChannelLoudnessParams {
     pub high_freq: f32,
     #[serde(default = "default_high_gain")]
     pub high_gain: f32,
+    #[serde(default = "default_mid_freq")]
+    pub mid_freq: f32,
+    #[serde(default = "default_mid_gain")]
+    pub mid_gain: f32,
+    #[serde(default = "default_mid_q")]
+    pub mid_q: f32,
 }
 
 fn default_low_freq() -> f32 {
@@ -59,6 +65,18 @@ fn default_high_freq() -> f32 {
 fn default_high_gain() -> f32 {
     pk(LC, "high_gain").default_f32()
 }
+fn default_mid_freq() -> f32 {
+    pk(LC, "mid_freq").default_f32()
+}
+fn default_mid_gain() -> f32 {
+    pk(LC, "mid_gain").default_f32()
+}
+fn default_mid_q() -> f32 {
+    pk(LC, "mid_q").default_f32()
+}
+fn default_mid_enabled() -> bool {
+    true
+}
 
 impl Default for ChannelLoudnessParams {
     fn default() -> Self {
@@ -67,6 +85,9 @@ impl Default for ChannelLoudnessParams {
             low_gain: default_low_gain(),
             high_freq: default_high_freq(),
             high_gain: default_high_gain(),
+            mid_freq: default_mid_freq(),
+            mid_gain: default_mid_gain(),
+            mid_q: default_mid_q(),
         }
     }
 }
@@ -81,6 +102,14 @@ pub struct LoudnessCompensationPluginParams {
     pub high_freq: f32,
     #[serde(default = "default_high_gain")]
     pub high_gain: f32,
+    #[serde(default = "default_mid_enabled")]
+    pub mid_enabled: bool,
+    #[serde(default = "default_mid_freq")]
+    pub mid_freq: f32,
+    #[serde(default = "default_mid_gain")]
+    pub mid_gain: f32,
+    #[serde(default = "default_mid_q")]
+    pub mid_q: f32,
     #[serde(default)]
     pub channel_params: Vec<ChannelLoudnessParams>,
     #[serde(default)]
@@ -98,6 +127,10 @@ pub struct LoudnessCompensationPlugin {
     low_gain: f32,
     high_freq: f32,
     high_gain: f32,
+    mid_enabled: bool,
+    mid_freq: f32,
+    mid_gain: f32,
+    mid_q: f32,
     filters: Vec<Vec<Biquad>>,
     auto_gain: Option<AutoGain>,
     auto_gain_enabled: bool,
@@ -125,6 +158,10 @@ impl LoudnessCompensationPlugin {
             low_gain,
             high_freq,
             high_gain,
+            mid_enabled: default_mid_enabled(),
+            mid_freq: default_mid_freq(),
+            mid_gain: default_mid_gain(),
+            mid_q: default_mid_q(),
             filters: vec![Vec::new(); num_channels],
             auto_gain: None,
             auto_gain_enabled: false,
@@ -184,6 +221,36 @@ impl LoudnessCompensationPlugin {
             .with_description("High shelf center frequency (Hz)")
             .with_group("Frequency")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("mid_enabled", "Mid Enabled", self.mid_enabled)
+                .with_description("Enable midrange peak band")
+                .with_group("Mid"),
+            Parameter::new_float(
+                "mid_freq",
+                "Mid Frequency",
+                self.mid_freq,
+                pk(LC, "mid_freq").min_f64() as f32,
+                pk(LC, "mid_freq").max_f64() as f32,
+            )
+            .with_description("Midrange peak center frequency (Hz)")
+            .with_group("Mid"),
+            Parameter::new_float(
+                "mid_gain",
+                "Mid Gain",
+                self.mid_gain,
+                pk(LC, "mid_gain").min_f64() as f32,
+                pk(LC, "mid_gain").max_f64() as f32,
+            )
+            .with_description("Midrange peak gain (dB)")
+            .with_group("Mid"),
+            Parameter::new_float(
+                "mid_q",
+                "Mid Q",
+                self.mid_q,
+                pk(LC, "mid_q").min_f64() as f32,
+                pk(LC, "mid_q").max_f64() as f32,
+            )
+            .with_description("Midrange peak Q factor")
+            .with_group("Mid"),
             Parameter::new_bool("auto_gain_enabled", "Auto Gain", self.auto_gain_enabled)
                 .with_group("Auto Gain"),
             Parameter::new_float(
@@ -205,13 +272,22 @@ impl LoudnessCompensationPlugin {
         ];
     }
 
+    /// Expected filter count per channel: 2x lowshelf + 1x mid peak + 2x highshelf = 5
+    const FILTER_COUNT: usize = 5;
+
     fn rebuild_filters(&mut self) {
         let q = 0.707;
         let sr = self.sample_rate as f64;
         let lg = self.low_gain / 2.0;
         let hg = self.high_gain / 2.0;
+        // When midrange is disabled, set gain to 0 dB so the peak filter is a no-op
+        let mg = if self.mid_enabled {
+            self.mid_gain
+        } else {
+            0.0
+        };
         for ch in 0..self.num_channels {
-            if self.filters[ch].len() == 4 {
+            if self.filters[ch].len() == Self::FILTER_COUNT {
                 // Update coefficients in place — preserves filter delay state
                 // (x1/x2/y1/y2) so parameter changes are click-free.
                 self.filters[ch][0].update_params(
@@ -229,13 +305,20 @@ impl LoudnessCompensationPlugin {
                     lg as f64,
                 );
                 self.filters[ch][2].update_params(
+                    BiquadFilterType::Peak,
+                    self.mid_freq as f64,
+                    sr,
+                    self.mid_q as f64,
+                    mg as f64,
+                );
+                self.filters[ch][3].update_params(
                     BiquadFilterType::Highshelf,
                     self.high_freq as f64,
                     sr,
                     q,
                     hg as f64,
                 );
-                self.filters[ch][3].update_params(
+                self.filters[ch][4].update_params(
                     BiquadFilterType::Highshelf,
                     self.high_freq as f64,
                     sr,
@@ -260,6 +343,13 @@ impl LoudnessCompensationPlugin {
                         lg as f64,
                     ),
                     Biquad::new(
+                        BiquadFilterType::Peak,
+                        self.mid_freq as f64,
+                        sr,
+                        self.mid_q as f64,
+                        mg as f64,
+                    ),
+                    Biquad::new(
                         BiquadFilterType::Highshelf,
                         self.high_freq as f64,
                         sr,
@@ -275,7 +365,13 @@ impl LoudnessCompensationPlugin {
                     ),
                 ];
             }
-            let target = 10.0_f32.powf(-self.low_gain.max(self.high_gain) / 20.0);
+            // Compensation gain accounts for all active bands
+            let max_gain = if self.mid_enabled {
+                self.low_gain.max(self.high_gain).max(self.mid_gain)
+            } else {
+                self.low_gain.max(self.high_gain)
+            };
+            let target = 10.0_f32.powf(-max_gain / 20.0);
             self.comp_gain_smoother[ch].set_target(target);
         }
     }
@@ -291,6 +387,10 @@ impl LoudnessCompensationPlugin {
             params.high_freq,
             params.high_gain,
         );
+        p.mid_enabled = params.mid_enabled;
+        p.mid_freq = params.mid_freq;
+        p.mid_gain = params.mid_gain;
+        p.mid_q = params.mid_q;
         p.auto_gain_enabled = params.auto_gain_enabled;
         p.auto_gain_max_db = params.auto_gain_max_db;
         p.auto_gain_smoothing_ms = params.auto_gain_smoothing_ms;
@@ -306,6 +406,7 @@ impl LoudnessCompensationPlugin {
                 },
             )?);
         }
+        p.rebuild_filters();
         p.rebuild_cached_parameters();
         Ok(p)
     }
@@ -350,6 +451,30 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 .unwrap_or(pk(LC, "high_freq").default_f32());
             if v.is_finite() {
                 self.high_freq = v;
+                self.rebuild_filters();
+            }
+        } else if id.0 == "mid_enabled" {
+            let v = value
+                .as_bool()
+                .ok_or_else(|| "mid_enabled must be a boolean".to_string())?;
+            self.mid_enabled = v;
+            self.rebuild_filters();
+        } else if id.0 == "mid_freq" {
+            let v = value.as_float().unwrap_or(pk(LC, "mid_freq").default_f32());
+            if v.is_finite() {
+                self.mid_freq = v;
+                self.rebuild_filters();
+            }
+        } else if id.0 == "mid_gain" {
+            let v = value.as_float().unwrap_or(pk(LC, "mid_gain").default_f32());
+            if v.is_finite() {
+                self.mid_gain = v;
+                self.rebuild_filters();
+            }
+        } else if id.0 == "mid_q" {
+            let v = value.as_float().unwrap_or(pk(LC, "mid_q").default_f32());
+            if v.is_finite() {
+                self.mid_q = v;
                 self.rebuild_filters();
             }
         } else if id.0 == "auto_gain_enabled" {
@@ -406,6 +531,14 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             Some(ParameterValue::Float(self.low_freq))
         } else if id.0 == "high_freq" {
             Some(ParameterValue::Float(self.high_freq))
+        } else if id.0 == "mid_enabled" {
+            Some(ParameterValue::Bool(self.mid_enabled))
+        } else if id.0 == "mid_freq" {
+            Some(ParameterValue::Float(self.mid_freq))
+        } else if id.0 == "mid_gain" {
+            Some(ParameterValue::Float(self.mid_gain))
+        } else if id.0 == "mid_q" {
+            Some(ParameterValue::Float(self.mid_q))
         } else if id.0 == "auto_gain_enabled" {
             Some(ParameterValue::Bool(self.auto_gain_enabled))
         } else if id.0 == "auto_gain_max_db" {

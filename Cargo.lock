@@ -5312,7 +5312,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "approx",
  "clap",
@@ -9117,7 +9117,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.86"
+version = "0.5.87"
 dependencies = [
  "arc-swap",
  "bincode",
@@ -9189,6 +9189,7 @@ dependencies = [
 name = "sotf-plugin-ab-compare"
 version = "0.5.2"
 dependencies = [
+ "math-iir-fir",
  "serde",
  "serde_json",
  "sotf-host",
@@ -9202,7 +9203,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-aec"
-version = "0.5.4"
+version = "0.5.0"
 dependencies = [
  "rustfft 6.4.1",
  "serde",
@@ -9221,14 +9222,13 @@ dependencies = [
 name = "sotf-plugin-band-split"
 version = "0.5.1"
 dependencies = [
- "math-iir-fir",
  "serde",
  "sotf-host",
 ]
 
 [[package]]
 name = "sotf-plugin-beamformer"
-version = "0.5.4"
+version = "0.5.0"
 dependencies = [
  "math-dsp",
  "nalgebra",
@@ -9243,9 +9243,11 @@ name = "sotf-plugin-binaural"
 version = "0.5.17"
 dependencies = [
  "arc-swap",
+ "audioadapter-buffers",
  "criterion",
  "log",
  "realfft",
+ "rubato",
  "rustfft 6.4.1",
  "serde",
  "sofa-reader",
@@ -9268,6 +9270,7 @@ dependencies = [
  "criterion",
  "math-dsp",
  "serde",
+ "serde_json",
  "sotf-host",
 ]
 
@@ -9276,10 +9279,14 @@ name = "sotf-plugin-convolution"
 version = "0.5.6"
 dependencies = [
  "arc-swap",
+ "audioadapter-buffers",
+ "log",
+ "rubato",
  "rustfft 6.4.1",
  "serde",
  "sotf-host",
  "symphonia",
+ "symphonia-bundle-flac",
  "symphonia-codec-pcm",
  "symphonia-core",
  "symphonia-format-riff",
@@ -9299,7 +9306,6 @@ dependencies = [
 name = "sotf-plugin-crossover"
 version = "0.5.23"
 dependencies = [
- "math-iir-fir",
  "serde",
  "sotf-host",
 ]
@@ -9397,6 +9403,7 @@ name = "sotf-plugin-hal-output"
 version = "0.5.8"
 dependencies = [
  "driver-hal",
+ "log",
  "serde",
  "sotf-host",
 ]

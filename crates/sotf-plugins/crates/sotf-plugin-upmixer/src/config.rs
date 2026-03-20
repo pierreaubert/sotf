@@ -156,6 +156,10 @@ pub fn default_enable_hr_direct() -> bool {
     true
 }
 
+pub fn default_low_latency() -> bool {
+    false
+}
+
 pub fn default_dialogue_centroid_weight() -> f32 {
     0.3
 }
@@ -173,6 +177,12 @@ pub fn default_dialogue_coherence_weight() -> f32 {
 pub struct UpmixerPluginParams {
     #[serde(default = "default_fft_size")]
     pub fft_size: usize,
+
+    /// Low-latency mode: uses 1024-point FFT (21ms at 48kHz) instead of 2048 (43ms).
+    /// Halves analysis latency at the cost of lower frequency resolution in spatial analysis.
+    /// The hop size and window are adjusted accordingly.
+    #[serde(default = "default_low_latency")]
+    pub low_latency: bool,
 
     /// Speaker configuration ("5.1", "7.1", "5.1.4", etc.)
     #[serde(default = "default_speaker_config")]
@@ -337,6 +347,7 @@ impl Default for UpmixerPluginParams {
     fn default() -> Self {
         Self {
             fft_size: default_fft_size(),
+            low_latency: default_low_latency(),
             speaker_config: default_speaker_config(),
             gain_front_direct: default_gain_front_direct(),
             gain_front_ambient: default_gain_front_ambient(),

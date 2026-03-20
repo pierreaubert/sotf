@@ -121,6 +121,11 @@ impl UpmixerPlugin {
                     // Correctly power-balanced gain for the extracted center signal in the physical center speaker.
                     // If stereo_w=1.0, we need sqrt(2) to match the power of the original L+R phantom center.
                     // If stereo_w=0.5, we only need sqrt(1.5)=1.225 because 0.5 of the energy is still in L/R.
+                    //
+                    // Edge case: when stereo_width=0, center_power_scale evaluates to sqrt(0)=0.
+                    // This is intentional — width=0 means "keep all content in L/R with no center
+                    // extraction", so the physical center speaker should receive zero direct signal.
+                    // The audio is not lost; it remains in direct_left/direct_right via the L/R path.
                     let center_power_scale = (2.0 * (1.0 - (1.0 - sw).powi(2))).max(0.0).sqrt();
                     let p_direct_c = if is_f && is_c {
                         center_power_scale * (1.0 - cs) * dg

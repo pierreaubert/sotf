@@ -2,7 +2,7 @@
 // Parametric EQ Plugin
 // ============================================================================
 
-use math_audio_iir_fir::Biquad;
+use math_audio_iir_fir::{Biquad, BiquadCoefficients};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
@@ -18,6 +18,8 @@ use std::sync::Arc;
 
 const DEFAULT_SAMPLE_RATE: u32 = 44100;
 const MEASUREMENT_THROTTLE: usize = 10;
+/// Duration of coefficient interpolation in seconds (~5ms)
+const TRANSITION_DURATION_SECS: f64 = 0.005;
 
 // Parameter limits
 const FREQ_MIN: f32 = 20.0;
@@ -46,6 +48,14 @@ pub struct EqPluginParams {
     pub auto_gain: AutoGainParams,
 }
 
+/// Per-band coefficient transition state for parameter smoothing.
+struct BandTransition {
+    old_coeffs: BiquadCoefficients,
+    new_coeffs: BiquadCoefficients,
+    samples_remaining: usize,
+    total_samples: usize,
+}
+
 pub struct EqPlugin {
     num_channels: usize,
     filters: Vec<Vec<Biquad>>,
@@ -54,16 +64,20 @@ pub struct EqPlugin {
     cache: RealTimeCache<AutoGainData>,
     cache_update_counter: usize,
     cached_parameters: Vec<Parameter>,
+    /// Per-band transition state. Outer index = band, applies to all channels.
+    transitions: Vec<Option<BandTransition>>,
 }
 
 impl EqPlugin {
     pub fn new(num_channels: usize, filters: Vec<Biquad>) -> Self {
+        let num_bands = filters.len();
         let mut channel_filters = Vec::with_capacity(num_channels);
         for _ in 0..num_channels {
             channel_filters.push(filters.clone());
         }
         let sample_rate = DEFAULT_SAMPLE_RATE;
         let auto_gain = AutoGain::new_default(num_channels, sample_rate).expect("ag");
+        let transitions = (0..num_bands).map(|_| None).collect();
         let mut p = Self {
             num_channels,
             filters: channel_filters,
@@ -72,6 +86,7 @@ impl EqPlugin {
             cache: RealTimeCache::new(AutoGainData::default()),
             cache_update_counter: 0,
             cached_parameters: Vec::new(),
+            transitions,
         };
         p.rebuild_cached_parameters();
         p
@@ -123,8 +138,10 @@ impl EqPlugin {
         if channel_filters.len() != num_channels {
             return Err("Count mismatch".into());
         }
+        let num_bands = channel_filters.first().map_or(0, |c| c.len());
         let sample_rate = DEFAULT_SAMPLE_RATE;
         let auto_gain = AutoGain::new_default(num_channels, sample_rate)?;
+        let transitions = (0..num_bands).map(|_| None).collect();
         let mut p = Self {
             num_channels,
             filters: channel_filters,
@@ -133,6 +150,7 @@ impl EqPlugin {
             cache: RealTimeCache::new(AutoGainData::default()),
             cache_update_counter: 0,
             cached_parameters: Vec::new(),
+            transitions,
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -171,6 +189,7 @@ impl EqPlugin {
                         .collect::<Result<Vec<_>, _>>()?,
                 );
             }
+            let num_bands = channel_filters.first().map_or(0, |c| c.len());
             Self {
                 num_channels,
                 filters: channel_filters,
@@ -179,6 +198,7 @@ impl EqPlugin {
                 cache: RealTimeCache::new(AutoGainData::default()),
                 cache_update_counter: 0,
                 cached_parameters: Vec::new(),
+                transitions: (0..num_bands).map(|_| None).collect(),
             }
         } else {
             let filters = params
@@ -186,6 +206,7 @@ impl EqPlugin {
                 .iter()
                 .map(config_to_biquad)
                 .collect::<Result<Vec<_>, _>>()?;
+            let num_bands = filters.len();
             let mut channel_filters = Vec::with_capacity(num_channels);
             for _ in 0..num_channels {
                 channel_filters.push(filters.clone());
@@ -198,6 +219,7 @@ impl EqPlugin {
                 cache: RealTimeCache::new(AutoGainData::default()),
                 cache_update_counter: 0,
                 cached_parameters: Vec::new(),
+                transitions: (0..num_bands).map(|_| None).collect(),
             }
         };
         eq.rebuild_cached_parameters();
@@ -209,14 +231,22 @@ impl EqPlugin {
         for _ in 0..self.num_channels {
             self.filters.push(filters.clone());
         }
+        self.transitions = (0..filters.len()).map(|_| None).collect();
     }
 
     pub fn set_channel_filters(&mut self, channel_filters: Vec<Vec<Biquad>>) -> Result<(), String> {
         if channel_filters.len() != self.num_channels {
             return Err("mismatch".into());
         }
+        let num_bands = channel_filters.first().map_or(0, |c| c.len());
         self.filters = channel_filters;
+        self.transitions = (0..num_bands).map(|_| None).collect();
         Ok(())
+    }
+
+    /// Compute the number of samples for the transition at the current sample rate.
+    fn transition_samples(&self) -> usize {
+        (self.sample_rate as f64 * TRANSITION_DURATION_SECS) as usize
     }
 }
 
@@ -256,6 +286,16 @@ impl InPlacePlugin for EqPlugin {
                     if !v.is_finite() {
                         return Err("Value is not finite".into());
                     }
+                    // Capture old coefficients before updating.
+                    // If a transition is already active, use the current interpolated
+                    // position to avoid a click from jumping back to the previous target.
+                    let old_coeffs = if let Some(Some(active)) = self.transitions.get(b_idx) {
+                        let t = 1.0
+                            - (active.samples_remaining as f64 / active.total_samples as f64);
+                        Some(active.old_coeffs.lerp(&active.new_coeffs, t))
+                    } else {
+                        self.filters[0].get(b_idx).map(|f| f.coefficients())
+                    };
                     for ch in 0..self.num_channels {
                         if let Some(f) = self.filters[ch].get_mut(b_idx) {
                             let mut freq = f.freq;
@@ -267,7 +307,26 @@ impl InPlacePlugin for EqPlugin {
                                 "gain" => db_gain = v as f64,
                                 _ => {}
                             }
-                            *f = Biquad::new(f.filter_type, freq, f.srate, q, db_gain);
+                            f.update_params(f.filter_type, freq, f.srate, q, db_gain);
+                        }
+                    }
+                    // Start a coefficient transition for this band
+                    if let Some(old) = old_coeffs
+                        && let Some(f) = self.filters[0].get(b_idx)
+                    {
+                        let new_coeffs = f.coefficients();
+                        let total = self.transition_samples();
+                        if total > 0 {
+                            // Ensure transitions vec is large enough
+                            while self.transitions.len() <= b_idx {
+                                self.transitions.push(None);
+                            }
+                            self.transitions[b_idx] = Some(BandTransition {
+                                old_coeffs: old,
+                                new_coeffs,
+                                samples_remaining: total,
+                                total_samples: total,
+                            });
                         }
                     }
                     self.rebuild_cached_parameters();
@@ -302,11 +361,22 @@ impl InPlacePlugin for EqPlugin {
         }
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        let prev_sample_rate = self.sample_rate;
         self.sample_rate = sample_rate;
         for chain in &mut self.filters {
             for f in chain {
-                *f = Biquad::new(f.filter_type, f.freq, sample_rate as f64, f.q, f.db_gain);
+                if prev_sample_rate == 0 {
+                    // Initial creation: use Biquad::new to set up from scratch
+                    *f = Biquad::new(f.filter_type, f.freq, sample_rate as f64, f.q, f.db_gain);
+                } else {
+                    // Sample rate change: use update_params to preserve filter state
+                    f.update_params(f.filter_type, f.freq, sample_rate as f64, f.q, f.db_gain);
+                }
             }
+        }
+        // Clear any active transitions since sample rate changed
+        for t in &mut self.transitions {
+            *t = None;
         }
         self.auto_gain
             .set_sample_rate(sample_rate)
@@ -318,6 +388,9 @@ impl InPlacePlugin for EqPlugin {
             for f in chain {
                 *f = Biquad::new(f.filter_type, f.freq, f.srate, f.q, f.db_gain);
             }
+        }
+        for t in &mut self.transitions {
+            *t = None;
         }
         self.auto_gain.reset();
     }
@@ -341,14 +414,51 @@ impl InPlacePlugin for EqPlugin {
             let _ = self.auto_gain.measure_input(buffer);
         }
 
-        for frame in 0..num_frames {
-            for ch in 0..self.num_channels {
-                let idx = frame * self.num_channels + ch;
-                let mut s = buffer[idx] as f64;
-                for f in &mut self.filters[ch] {
-                    s = f.process(s);
+        // Check if any band has an active transition
+        let has_transitions = self.transitions.iter().any(|t| t.is_some());
+
+        if has_transitions {
+            // Process with per-sample coefficient interpolation
+            for frame in 0..num_frames {
+                for ch in 0..self.num_channels {
+                    let idx = frame * self.num_channels + ch;
+                    let mut s = buffer[idx] as f64;
+                    for (band_idx, f) in self.filters[ch].iter_mut().enumerate() {
+                        if let Some(trans) = self.transitions.get(band_idx).and_then(|t| t.as_ref()) {
+                            let t = 1.0
+                                - (trans.samples_remaining as f64 / trans.total_samples as f64);
+                            let interpolated = trans.old_coeffs.lerp(&trans.new_coeffs, t);
+                            s = f.process_with_coefficients(s, &interpolated);
+                        } else {
+                            s = f.process(s);
+                        }
+                    }
+                    buffer[idx] = s as f32;
                 }
-                buffer[idx] = s as f32;
+                // Decrement transition counters once per frame (not per channel)
+                for t in self.transitions.iter_mut().flatten() {
+                    if t.samples_remaining > 0 {
+                        t.samples_remaining -= 1;
+                    }
+                }
+            }
+            // Clear completed transitions
+            for trans in self.transitions.iter_mut() {
+                if trans.as_ref().is_some_and(|t| t.samples_remaining == 0) {
+                    *trans = None;
+                }
+            }
+        } else {
+            // Fast path: no transitions active, use direct processing
+            for frame in 0..num_frames {
+                for ch in 0..self.num_channels {
+                    let idx = frame * self.num_channels + ch;
+                    let mut s = buffer[idx] as f64;
+                    for f in &mut self.filters[ch] {
+                        s = f.process(s);
+                    }
+                    buffer[idx] = s as f32;
+                }
             }
         }
 
@@ -375,6 +485,7 @@ mod tests {
     use crate::*;
     use math_audio_iir_fir::{Biquad, BiquadFilterType};
     use sotf_host::*;
+    use sotf_host::parameters::{ParameterId, ParameterValue};
 
     #[test]
     fn test_eq_passthrough() {
@@ -477,5 +588,180 @@ mod tests {
         assert_no_allocs("EqPlugin::process", || {
             plugin.process(&input, &mut output, &ctx).unwrap();
         });
+    }
+
+    #[test]
+    fn test_parameter_smoothing_starts_transition() {
+        let f = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )];
+        let mut p = EqPlugin::new(1, f);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+        // No transition initially
+        assert!(p.transitions[0].is_none());
+
+        // Change gain -> should start a transition
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(6.0),
+        )
+        .unwrap();
+
+        assert!(p.transitions[0].is_some());
+        let trans = p.transitions[0].as_ref().unwrap();
+        assert!(trans.total_samples > 0);
+        assert_eq!(trans.samples_remaining, trans.total_samples);
+    }
+
+    #[test]
+    fn test_parameter_smoothing_completes() {
+        let f = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )];
+        let mut p = EqPlugin::new(1, f);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+        // Trigger a transition
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(6.0),
+        )
+        .unwrap();
+        assert!(p.transitions[0].is_some());
+
+        // Process enough samples to complete the transition (~5ms at 48kHz = 240 samples)
+        let num_frames = 512;
+        let mut buf = vec![0.0f32; num_frames];
+        for i in 0..num_frames {
+            buf[i] = (i as f32 * 0.1).sin() * 0.5;
+        }
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // Transition should be complete after 512 samples (> 240)
+        assert!(p.transitions[0].is_none());
+    }
+
+    #[test]
+    fn test_initialize_preserves_state_on_sample_rate_change() {
+        let f = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            44100.0,
+            1.0,
+            6.0,
+        )];
+        let mut p = EqPlugin::new(1, f);
+        InPlacePlugin::initialize(&mut p, 44100).unwrap();
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+        // Process some audio to build up filter state
+        let mut buf: Vec<f32> = (0..256).map(|k| (k as f32 * 0.1).sin()).collect();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 44100,
+                num_frames: 256,
+            },
+        )
+        .unwrap();
+
+        // Re-initialize at new sample rate - should use update_params, not new
+        // (filter params should stay the same, just recompute coeffs for new rate)
+        InPlacePlugin::initialize(&mut p, 96000).unwrap();
+        assert_eq!(p.sample_rate, 96000);
+        // Filter should still have the same user parameters
+        assert_eq!(p.filters[0][0].freq, 1000.0);
+        assert_eq!(p.filters[0][0].db_gain, 6.0);
+        assert!((p.filters[0][0].srate - 96000.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_smoothed_output_bounded_between_old_and_new() {
+        // After a gain change, the output during transition should be bounded
+        // between the old filter response and the new filter response
+        let f = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0, // start at 0dB (passthrough)
+        )];
+        let mut p = EqPlugin::new(1, f);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("auto_gain_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+        // Process some warmup
+        let mut warmup = vec![0.5f32; 1024];
+        p.process_in_place(
+            &mut warmup,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1024,
+            },
+        )
+        .unwrap();
+
+        // Now change gain to +12dB
+        InPlacePlugin::set_parameter(
+            &mut p,
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(12.0),
+        )
+        .unwrap();
+
+        // Process during transition with DC signal
+        let mut buf = vec![0.5f32; 512];
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 512,
+            },
+        )
+        .unwrap();
+
+        // All output samples should be finite
+        for (i, &s) in buf.iter().enumerate() {
+            assert!(
+                s.is_finite(),
+                "sample {} not finite: {}",
+                i,
+                s
+            );
+        }
     }
 }

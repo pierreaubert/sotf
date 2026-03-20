@@ -20,9 +20,9 @@ const EPSILON: f32 = 1e-10;
 /// Number of frames to average during the bootstrap phase.
 /// During bootstrap, gains are unity (pass-through) while the noise
 /// floor estimate converges from multiple frames.
-/// 20 frames (~213ms at 48kHz/2048-sample FFT) gives the noise floor
-/// enough time to converge before processing begins.
-const BOOTSTRAP_FRAMES: usize = 20;
+/// 5 frames (~53ms at 48kHz/2048-sample FFT) balances fast startup
+/// with stable noise estimation.
+const BOOTSTRAP_FRAMES: usize = 5;
 
 impl DenoiserPlugin {
     /// Orchestrate noise estimation: bootstrap phase then IMCRA.
@@ -56,8 +56,11 @@ impl DenoiserPlugin {
     /// all MCRA state from the averaged noise estimate.
     fn finalize_bootstrap(&mut self, channel: usize) {
         let n = self.frame_counter[channel] as f32;
+        // Minimum noise floor: -60 dB power. Prevents division-by-near-zero
+        // in Wiener gain when bootstrap captured mostly silence.
+        let min_noise_power = 1e-6_f32;
         for k in 0..self.spectrum_size {
-            let avg = self.noise_psd[channel][k] / n;
+            let avg = (self.noise_psd[channel][k] / n).max(min_noise_power);
             self.noise_psd[channel][k] = avg;
             self.smoothed_psd[channel][k] = avg;
             self.min_psd[channel][k] = avg;

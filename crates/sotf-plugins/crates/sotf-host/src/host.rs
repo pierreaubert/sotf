@@ -89,6 +89,7 @@ pub struct GraphNode {
     pub name: String,
     input_channels: usize,
     output_channels: usize,
+    bypassed: bool,
 }
 
 impl GraphNode {
@@ -98,6 +99,7 @@ impl GraphNode {
             name,
             input_channels,
             output_channels,
+            bypassed: false,
         }
     }
     pub fn input_channels(&self) -> usize {
@@ -179,6 +181,11 @@ pub struct DawHost {
     cached_output_frame_ratios: Vec<(NodeId, f64)>,
     /// Indices of plugins in chain_nodes that have analyzer data (get_data() returns Some)
     analyzer_indices: Vec<usize>,
+    /// Cached total latency in samples, computed during build() and invalidated on graph changes
+    cached_latency: Option<usize>,
+    /// Per-node bypass flags, indexed by NodeId. When true, the node's plugin is skipped
+    /// and input is passed directly to output during processing.
+    bypassed: Vec<bool>,
 }
 
 impl DawHost {
@@ -205,6 +212,8 @@ impl DawHost {
             cached_rate_identity: true,
             cached_output_frame_ratios: Vec::new(),
             analyzer_indices: Vec::new(),
+            cached_latency: None,
+            bypassed: Vec::new(),
         }
     }
     pub fn new_default(sr: u32) -> Self {
@@ -233,6 +242,7 @@ impl DawHost {
             self.plugins.resize_with(id + 1, || None);
         }
         self.plugins[id] = Some(plugin);
+        self.cached_latency = None;
         Ok(id)
     }
 
@@ -244,6 +254,7 @@ impl DawHost {
             return Err("Self-loop".into());
         }
         self.edges.push(edge);
+        self.cached_latency = None;
         Ok(())
     }
 
@@ -301,6 +312,13 @@ impl DawHost {
             let p = self.plugins[id].as_ref().unwrap();
             p.output_frames_for_input(100) != 100 || p.latency_samples() > 0
         });
+        // Cache per-node bypass flags for O(1) lookup during process()
+        self.bypassed = vec![false; num_slots];
+        for (&id, node) in &self.nodes {
+            self.bypassed[id] = node.bypassed;
+        }
+        // Cache total latency so total_latency_samples() is O(1)
+        self.cached_latency = Some(self.compute_latency());
         self.built = true;
         Ok(())
     }
@@ -338,6 +356,7 @@ impl DawHost {
         }
         self.nodes.remove(&id).unwrap();
         self.built = false;
+        self.cached_latency = None;
         Ok(self.plugins[id].take().unwrap())
     }
 
@@ -409,6 +428,60 @@ impl DawHost {
             .set_parameter(super::parameters::ParameterId(id.to_string()), val)
     }
 
+    /// Bypass a node so its plugin is skipped during processing.
+    /// When bypassed, input is passed directly to output.
+    /// Only works for nodes with matching input/output channel counts.
+    pub fn bypass_node(&mut self, id: NodeId) -> Result<(), String> {
+        let node = self.nodes.get_mut(&id).ok_or("Node not found")?;
+        if node.input_channels != node.output_channels {
+            return Err(format!(
+                "Cannot bypass node '{}': input channels ({}) != output channels ({})",
+                node.name, node.input_channels, node.output_channels
+            ));
+        }
+        node.bypassed = true;
+        if id < self.bypassed.len() {
+            self.bypassed[id] = true;
+        }
+        self.cached_latency = None;
+        Ok(())
+    }
+
+    /// Unbypass a node so its plugin resumes processing.
+    pub fn unbypass_node(&mut self, id: NodeId) -> Result<(), String> {
+        let node = self.nodes.get_mut(&id).ok_or("Node not found")?;
+        node.bypassed = false;
+        if id < self.bypassed.len() {
+            self.bypassed[id] = false;
+        }
+        self.cached_latency = None;
+        Ok(())
+    }
+
+    /// Returns true if the given node is bypassed.
+    pub fn is_node_bypassed(&self, id: NodeId) -> Result<bool, String> {
+        let node = self.nodes.get(&id).ok_or("Node not found")?;
+        Ok(node.bypassed)
+    }
+
+    /// Bypass a plugin by chain index (0-based index into the plugin chain).
+    pub fn bypass_plugin(&mut self, index: usize) -> Result<(), String> {
+        let &nid = self.chain_nodes.get(index).ok_or("oob")?;
+        self.bypass_node(nid)
+    }
+
+    /// Unbypass a plugin by chain index.
+    pub fn unbypass_plugin(&mut self, index: usize) -> Result<(), String> {
+        let &nid = self.chain_nodes.get(index).ok_or("oob")?;
+        self.unbypass_node(nid)
+    }
+
+    /// Returns true if the plugin at the given chain index is bypassed.
+    pub fn is_plugin_bypassed(&self, index: usize) -> Result<bool, String> {
+        let &nid = self.chain_nodes.get(index).ok_or("oob")?;
+        self.is_node_bypassed(nid)
+    }
+
     /// Returns indices of plugins that have analyzer data (get_data() returns Some).
     /// Computed during build() to avoid per-frame discovery.
     pub fn analyzer_indices(&self) -> &[usize] {
@@ -450,25 +523,35 @@ impl DawHost {
                     bufs.scratch_input[..il].copy_from_slice(&bufs.merge_buffer[..il]);
                     il
                 };
-                let p = self.plugins[nid].as_mut().unwrap();
-                let context = ProcessContext {
-                    sample_rate: self.sample_rate,
-                    num_frames: cf,
+                let aof = if self.bypassed[nid] {
+                    // Bypassed: pass input directly to output buffer
+                    bufs.node_buffers[nid]
+                        .as_mut()
+                        .unwrap()
+                        .write(&bufs.scratch_input[..in_len]);
+                    cf
+                } else {
+                    let p = self.plugins[nid].as_mut().unwrap();
+                    let context = ProcessContext {
+                        sample_rate: self.sample_rate,
+                        num_frames: cf,
+                    };
+                    let mof = p.output_frames_for_input(cf);
+                    let ol = mof * node.output_channels();
+                    if bufs.scratch_output.len() < ol {
+                        bufs.scratch_output.resize(ol, 0.0);
+                    }
+                    let out_frames = p.process(
+                        &bufs.scratch_input[..in_len],
+                        &mut bufs.scratch_output[..ol],
+                        &context,
+                    )?;
+                    bufs.node_buffers[nid]
+                        .as_mut()
+                        .unwrap()
+                        .write(&bufs.scratch_output[..out_frames * node.output_channels()]);
+                    out_frames
                 };
-                let mof = p.output_frames_for_input(cf);
-                let ol = mof * node.output_channels();
-                if bufs.scratch_output.len() < ol {
-                    bufs.scratch_output.resize(ol, 0.0);
-                }
-                let aof = p.process(
-                    &bufs.scratch_input[..in_len],
-                    &mut bufs.scratch_output[..ol],
-                    &context,
-                )?;
-                bufs.node_buffers[nid]
-                    .as_mut()
-                    .unwrap()
-                    .write(&bufs.scratch_output[..aof * node.output_channels()]);
                 stage_cf = Some(match stage_cf {
                     Some(prev) => prev.min(aof),
                     None => aof,
@@ -560,6 +643,12 @@ impl DawHost {
         }
     }
     pub fn total_latency_samples(&self) -> usize {
+        if let Some(cached) = self.cached_latency {
+            return cached;
+        }
+        self.compute_latency()
+    }
+    fn compute_latency(&self) -> usize {
         self.output_nodes
             .iter()
             .map(|&id| self.path_latency(id))
@@ -567,7 +656,12 @@ impl DawHost {
             .unwrap_or(0)
     }
     fn path_latency(&self, id: NodeId) -> usize {
-        let l = self.plugins[id].as_ref().unwrap().latency_samples();
+        // Bypassed nodes contribute zero latency
+        let l = if self.nodes.get(&id).is_some_and(|n| n.bypassed) {
+            0
+        } else {
+            self.plugins[id].as_ref().unwrap().latency_samples()
+        };
         let inc: Vec<NodeId> = self
             .edges
             .iter()
@@ -890,6 +984,264 @@ mod tests {
             "Downstream received cf={}, expected 100 (min of parallel outputs)",
             recorded_cf,
         );
+    }
+
+    /// Mock plugin that scales all samples by a factor. Used to detect bypass vs. active processing.
+    struct ScalerPlugin {
+        channels: usize,
+        factor: f32,
+        latency: usize,
+    }
+    impl ScalerPlugin {
+        fn new(channels: usize, factor: f32) -> Self {
+            Self {
+                channels,
+                factor,
+                latency: 0,
+            }
+        }
+        fn with_latency(channels: usize, factor: f32, latency: usize) -> Self {
+            Self {
+                channels,
+                factor,
+                latency,
+            }
+        }
+    }
+    impl Plugin for ScalerPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("Scaler", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            Err("none".into())
+        }
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            for (o, &i) in output.iter_mut().zip(input.iter()) {
+                *o = i * self.factor;
+            }
+            Ok(ctx.num_frames)
+        }
+        fn latency_samples(&self) -> usize {
+            self.latency
+        }
+    }
+
+    // ---- Cached latency tests ----
+
+    #[test]
+    fn test_cached_latency_empty_graph() {
+        let mut g = DawHost::new(2, 48000);
+        g.build().unwrap();
+        assert_eq!(g.total_latency_samples(), 0);
+    }
+
+    #[test]
+    fn test_cached_latency_single_plugin() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 42))).unwrap();
+        g.build().unwrap();
+        assert_eq!(g.total_latency_samples(), 42);
+    }
+
+    #[test]
+    fn test_cached_latency_chain_sums() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 30))).unwrap();
+        g.build().unwrap();
+        assert_eq!(g.total_latency_samples(), 60);
+    }
+
+    #[test]
+    fn test_cached_latency_invalidated_on_add_node() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
+        g.build().unwrap();
+        assert_eq!(g.total_latency_samples(), 10);
+        // Adding another plugin invalidates the cache
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20))).unwrap();
+        g.build().unwrap();
+        assert_eq!(g.total_latency_samples(), 30);
+    }
+
+    #[test]
+    fn test_cached_latency_invalidated_on_remove() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20))).unwrap();
+        g.build().unwrap();
+        assert_eq!(g.total_latency_samples(), 30);
+        g.remove_plugin(0).unwrap();
+        g.build().unwrap();
+        assert_eq!(g.total_latency_samples(), 20);
+    }
+
+    // ---- Bypass tests ----
+
+    #[test]
+    fn test_bypass_plugin_passes_input_through() {
+        let mut g = DawHost::new(2, 48000);
+        // Plugin that doubles all samples
+        g.add_plugin(Box::new(ScalerPlugin::new(2, 2.0))).unwrap();
+        g.build().unwrap();
+
+        let input = vec![1.0, 2.0, 3.0, 4.0]; // 2 frames, 2 channels
+        let mut output = vec![0.0; 4];
+
+        // Without bypass: output should be doubled
+        g.process(&input, &mut output).unwrap();
+        assert_eq!(output, vec![2.0, 4.0, 6.0, 8.0]);
+
+        // Bypass the plugin
+        g.bypass_plugin(0).unwrap();
+        g.process(&input, &mut output).unwrap();
+        assert_eq!(output, vec![1.0, 2.0, 3.0, 4.0]);
+
+        // Unbypass: should double again
+        g.unbypass_plugin(0).unwrap();
+        g.process(&input, &mut output).unwrap();
+        assert_eq!(output, vec![2.0, 4.0, 6.0, 8.0]);
+    }
+
+    #[test]
+    fn test_bypass_middle_of_chain() {
+        let mut g = DawHost::new(2, 48000);
+        // Chain: x2 -> x3 -> x5
+        g.add_plugin(Box::new(ScalerPlugin::new(2, 2.0))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::new(2, 3.0))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::new(2, 5.0))).unwrap();
+        g.build().unwrap();
+
+        let input = vec![1.0, 1.0]; // 1 frame, 2 channels
+        let mut output = vec![0.0; 2];
+
+        // All active: 1 * 2 * 3 * 5 = 30
+        g.process(&input, &mut output).unwrap();
+        assert_eq!(output, vec![30.0, 30.0]);
+
+        // Bypass middle (x3): 1 * 2 * 5 = 10
+        g.bypass_plugin(1).unwrap();
+        g.process(&input, &mut output).unwrap();
+        assert_eq!(output, vec![10.0, 10.0]);
+    }
+
+    #[test]
+    fn test_bypass_reduces_latency() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20))).unwrap();
+        g.build().unwrap();
+        assert_eq!(g.total_latency_samples(), 30);
+
+        // Bypass second plugin: latency drops to 10
+        g.bypass_plugin(1).unwrap();
+        // Cache was invalidated, need rebuild for latency recalc
+        g.build().unwrap();
+        assert_eq!(g.total_latency_samples(), 10);
+    }
+
+    #[test]
+    fn test_bypass_node_query() {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        g.build().unwrap();
+
+        assert!(!g.is_plugin_bypassed(0).unwrap());
+        g.bypass_plugin(0).unwrap();
+        assert!(g.is_plugin_bypassed(0).unwrap());
+        g.unbypass_plugin(0).unwrap();
+        assert!(!g.is_plugin_bypassed(0).unwrap());
+    }
+
+    #[test]
+    fn test_bypass_oob_returns_error() {
+        let mut g = DawHost::new(2, 48000);
+        assert!(g.bypass_plugin(0).is_err());
+        assert!(g.unbypass_plugin(0).is_err());
+        assert!(g.is_plugin_bypassed(0).is_err());
+    }
+
+    #[test]
+    fn test_bypass_channel_mismatch_rejected() {
+        let mut g = DawHost::new(2, 48000);
+        // Use VariableFramePlugin as it has same in/out channels, but let's
+        // create a channel-changing scenario using add_node directly
+        let id = g
+            .add_node(
+                "upmix".into(),
+                Box::new(ChannelChangingPlugin { in_ch: 2, out_ch: 5 }),
+            )
+            .unwrap();
+        let result = g.bypass_node(id);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Cannot bypass"));
+    }
+
+    /// Mock plugin with different input/output channel counts (e.g., upmixer).
+    struct ChannelChangingPlugin {
+        in_ch: usize,
+        out_ch: usize,
+    }
+    impl Plugin for ChannelChangingPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("ChannelChanger", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.in_ch
+        }
+        fn output_channels(&self) -> usize {
+            self.out_ch
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            Err("none".into())
+        }
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+        fn process(
+            &mut self,
+            _input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            output.fill(0.0);
+            Ok(ctx.num_frames)
+        }
     }
 
     #[test]

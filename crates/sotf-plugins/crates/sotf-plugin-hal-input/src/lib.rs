@@ -5,6 +5,8 @@
 use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalInputReader;
@@ -34,6 +36,9 @@ pub struct HalInputPlugin {
     /// Number of output channels
     channels: usize,
 
+    /// Counter for buffer overruns (read returned fewer samples than expected)
+    overrun_counter: Arc<AtomicU64>,
+
     #[cfg(all(target_os = "macos", feature = "hal"))]
     /// HAL input reader
     reader: Option<HalInputReader>,
@@ -60,7 +65,11 @@ impl HalInputPlugin {
                 );
             }
 
-            Ok(Self { channels, reader })
+            Ok(Self {
+                channels,
+                overrun_counter: Arc::new(AtomicU64::new(0)),
+                reader,
+            })
         }
 
         #[cfg(not(all(target_os = "macos", feature = "hal")))]
@@ -77,6 +86,16 @@ impl HalInputPlugin {
     /// Create from configuration parameters
     pub fn from_params(params: HalInputPluginParams) -> Result<Self, String> {
         Self::new(params.channels)
+    }
+
+    /// Get the shared overrun counter (can be read from any thread)
+    pub fn overrun_counter(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.overrun_counter)
+    }
+
+    /// Get the current overrun count
+    pub fn overrun_count(&self) -> u64 {
+        self.overrun_counter.load(Ordering::Relaxed)
     }
 }
 
@@ -100,6 +119,16 @@ impl Plugin for HalInputPlugin {
                 .with_description("Number of output channels")
                 .with_group("Configuration")
                 .with_importance(ParameterImportance::Critical),
+            Parameter::new_int(
+                "overrun_count",
+                "Overrun Count",
+                self.overrun_counter.load(Ordering::Relaxed) as i32,
+                0,
+                i32::MAX,
+            )
+            .with_description("Number of buffer overruns detected (read-only diagnostic)")
+            .with_group("Diagnostics")
+            .with_importance(ParameterImportance::FineTuning),
         ]
     }
 
@@ -123,9 +152,14 @@ impl Plugin for HalInputPlugin {
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         let param_channels = ParameterId::from("channels");
+        let param_overrun = ParameterId::from("overrun_count");
 
         if id == &param_channels {
             Some(ParameterValue::Int(self.channels as i32))
+        } else if id == &param_overrun {
+            Some(ParameterValue::Int(
+                self.overrun_counter.load(Ordering::Relaxed) as i32,
+            ))
         } else {
             None
         }
@@ -166,6 +200,12 @@ impl Plugin for HalInputPlugin {
 
                 // Zero-fill any remaining samples if we didn't read enough
                 if samples_read < output.len() {
+                    self.overrun_counter.fetch_add(1, Ordering::Relaxed);
+                    log::debug!(
+                        "[HAL Input] Buffer overrun: read {} samples, expected {}",
+                        samples_read,
+                        output.len()
+                    );
                     output[samples_read..].fill(0.0);
                 }
             } else {

@@ -529,6 +529,10 @@ impl PluginFuzzer for CompressorFuzzer {
             auto_makeup,
             link_channels,
             sidechain_hpf_hz,
+            detection_mode: "peak".to_string(),
+            lookahead_ms: 0.0,
+            program_dependent_release: false,
+            measured_auto_makeup: false,
         };
         let plugin = CompressorPlugin::from_params(channels, params);
 
@@ -566,6 +570,9 @@ impl PluginFuzzer for LimiterFuzzer {
             lookahead_ms,
             soft,
             mix,
+            true_peak: false,
+            dual_release: false,
+            feed_forward: false,
         };
         let plugin = LimiterPlugin::from_params(channels, params);
 
@@ -600,6 +607,10 @@ impl PluginFuzzer for GateFuzzer {
             mix,
             link_channels,
             sidechain_hpf_hz,
+            range_db: 80.0,
+            hysteresis_db: 0.0,
+            knee_db: 0.0,
+            lookahead_ms: 0.0,
         };
         let plugin = GatePlugin::from_params(channels, params);
 
@@ -631,6 +642,9 @@ impl PluginFuzzer for DelayFuzzer {
             delay_ms,
             feedback,
             mix,
+            lfo_rate_hz: 0.0,
+            lfo_depth_ms: 0.0,
+            allpass_feedback: false,
         };
 
         let desc = format!(
@@ -661,6 +675,10 @@ impl PluginFuzzer for LoudnessCompensationFuzzer {
             low_gain,
             high_freq,
             high_gain,
+            mid_enabled: true,
+            mid_freq: 3000.0,
+            mid_gain: 3.0,
+            mid_q: 0.707,
             channel_params: vec![],
             auto_gain_enabled: false,
             auto_gain_max_db: 12.0,
@@ -693,6 +711,7 @@ impl PluginFuzzer for CrossoverFuzzer {
             crossover_type: crossover_type.clone(),
             frequency,
             output: output.clone(),
+            extra_frequencies: vec![],
         };
         let plugin = CrossoverPlugin::from_params(channels, &params).unwrap();
 
@@ -701,7 +720,7 @@ impl PluginFuzzer for CrossoverFuzzer {
             crossover_type, frequency, output
         );
 
-        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+        (Box::new(plugin), desc)
     }
 }
 
@@ -734,6 +753,9 @@ impl PluginFuzzer for ExpanderFuzzer {
             link_channels,
             sidechain_hpf_hz,
             auto_makeup: rng.random_bool(0.5),
+            lookahead_ms: 0.0,
+            detection_mode: "peak".to_string(),
+            measured_auto_makeup: false,
         };
         let plugin = ExpanderPlugin::from_params(channels, params);
 
@@ -790,6 +812,7 @@ impl PluginFuzzer for MultibandCompressorFuzzer {
             knee_db,
             link_channels,
             mix,
+            per_band_lookahead_ms: 0.0,
             bands: vec![], // Use defaults for per-band params
         };
         let plugin = MultibandCompressorPlugin::from_params(channels, params);
@@ -851,6 +874,7 @@ impl PluginFuzzer for MultibandExpanderFuzzer {
             hold_ms,
             link_channels,
             mix,
+            detection_mode: "peak".to_string(),
             bands: vec![], // Use defaults for per-band params
         };
         let plugin = MultibandExpanderPlugin::from_params(channels, params);
@@ -947,6 +971,8 @@ impl PluginFuzzer for ChannelMuteSoloFuzzer {
         let params = ChannelMuteSoloParams {
             enabled,
             channel_states,
+            dim_gain_db: -20.0,
+            fade_ms: 5.0,
         };
         let plugin = ChannelMuteSoloPlugin::from_params(channels, params);
 
@@ -1083,6 +1109,7 @@ impl PluginFuzzer for UpmixerFuzzer {
             bypass_decorrelation: false,
             bypass_transient_detection: false,
             bypass_all_processing: false,
+            low_latency: false,
         };
 
         let desc = format!(
@@ -1289,6 +1316,8 @@ impl PluginFuzzer for BandSplitFuzzer {
         let crossover_type = if rng.random_bool(0.5) { "LR24" } else { "LR48" };
 
         let params = BandSplitPluginParams {
+            frequencies: vec![],
+            num_bands: 2,
             frequency,
             crossover_type: crossover_type.to_string(),
         };
@@ -1309,7 +1338,11 @@ impl PluginFuzzer for BandMergeFuzzer {
         let bands = rng.random_range(2..=4);
         let output_channels = 2; // Fixed stereo output for fuzzer
 
-        let params = BandMergePluginParams { bands };
+        let params = BandMergePluginParams {
+            bands,
+            band_gains_db: Vec::new(),
+            band_mutes: Vec::new(),
+        };
 
         let plugin = BandMergePlugin::from_params(output_channels, &params)
             .expect("Failed to create BandMergePlugin");
@@ -1333,6 +1366,8 @@ impl PluginFuzzer for DownmixFuzzer {
             phase_coherence: rng.random_bool(0.5),
             phase_blend_low_hz: 200.0,
             phase_blend_high_hz: 500.0,
+            itu_mode: rng.random_bool(0.3),
+            dolby_ltrt: false,
         };
 
         let plugin = DownmixPlugin::from_params(params.clone());
@@ -1391,14 +1426,14 @@ impl PluginFuzzer for MonoToStereoFuzzer {
         // MonoToStereo input is always 1 channel
         let params = MonoToStereoPluginParams {
             stereo_width: rng.random_range(0.0..1.0),
-            comp_eq_depth_db: rng.random_range(0.0..6.0),
+            freq_dependent: rng.random_bool(0.5),
         };
 
         let plugin = MonoToStereoPlugin::from_params(1, params.clone());
 
         let desc = format!(
-            "width={:.2} comp={:.1}dB",
-            params.stereo_width, params.comp_eq_depth_db
+            "width={:.2}",
+            params.stereo_width
         );
 
         (Box::new(plugin), desc)
@@ -1413,6 +1448,8 @@ impl PluginFuzzer for PndFuzzer {
             correction_strength: rng.random_range(0.0..1.0),
             analysis_window_ms: rng.random_range(20.0..100.0),
             drift_smoothing: rng.random_range(0.001..0.1),
+            multi_channel_analysis: true,
+            confidence_threshold: 0.5,
         };
 
         let plugin = PndPlugin::from_params(channels, params.clone());

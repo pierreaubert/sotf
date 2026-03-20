@@ -1058,7 +1058,7 @@ fn create_plugin(
                 .map_err(|e| format!("Failed to parse crossover plugin parameters: {}", e))?;
 
             let plugin = CrossoverPlugin::from_params(channels, &params)?;
-            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+            Ok(Box::new(plugin))
         }
 
         // HAL plugins (macOS only, requires 'hal' feature)

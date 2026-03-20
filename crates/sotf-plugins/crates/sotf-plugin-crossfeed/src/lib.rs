@@ -2,6 +2,7 @@
 // Crossfeed Plugin - Headphone crossfeed for speaker-like listening
 // ============================================================================
 
+use sotf_host::lr4_crossover::MultibandLr4Crossover;
 use sotf_host::param_specs::{crossfeed::PARAMS as CF, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
@@ -65,6 +66,10 @@ pub struct CrossfeedPluginParams {
     pub mb_mid_feed_db: f32,
     #[serde(default = "default_mb_high_feed")]
     pub mb_high_feed_db: f32,
+
+    // ITD delay
+    #[serde(default)]
+    pub itd_delay_ms: f32,
 
     // Auto gain
     #[serde(default)]
@@ -144,6 +149,7 @@ impl Default for CrossfeedPluginParams {
             mb_low_feed_db: pk(CF, "mb_low_feed_db").default_f64() as f32,
             mb_mid_feed_db: pk(CF, "mb_mid_feed_db").default_f64() as f32,
             mb_high_feed_db: pk(CF, "mb_high_feed_db").default_f64() as f32,
+            itd_delay_ms: 0.0,
             autogain_enabled: pk(CF, "autogain_enabled").default_bool(),
             autogain_target_lufs: pk(CF, "autogain_target_lufs").default_f64() as f32,
             autogain_max_gain_db: pk(CF, "autogain_max_gain_db").default_f64() as f32,
@@ -189,27 +195,80 @@ impl CrossfeedPluginParams {
     }
 }
 
+// ============================================================================
+// ITD Delay Line — simple fractional-sample delay for interaural time difference
+// ============================================================================
+
+/// A mono delay line supporting up to ~1ms of delay at any common sample rate.
+/// Max capacity: 48 samples (1ms at 48kHz).
+struct DelayLine {
+    buffer: [f32; 96], // 2ms at 48kHz — headroom for high sample rates
+    write_pos: usize,
+    delay_samples: usize,
+    capacity: usize,
+}
+
+impl DelayLine {
+    fn new(delay_ms: f32, sample_rate: u32) -> Self {
+        let capacity = 96;
+        let delay_samples = ((delay_ms / 1000.0) * sample_rate as f32)
+            .round()
+            .max(0.0)
+            .min(capacity as f32 - 1.0) as usize;
+        Self {
+            buffer: [0.0; 96],
+            write_pos: 0,
+            delay_samples,
+            capacity,
+        }
+    }
+
+    fn set_delay(&mut self, delay_ms: f32, sample_rate: u32) {
+        self.delay_samples = ((delay_ms / 1000.0) * sample_rate as f32)
+            .round()
+            .max(0.0)
+            .min(self.capacity as f32 - 1.0) as usize;
+    }
+
+    fn reset(&mut self) {
+        self.buffer = [0.0; 96];
+        self.write_pos = 0;
+    }
+
+    #[inline]
+    fn process(&mut self, sample: f32) -> f32 {
+        if self.delay_samples == 0 {
+            return sample;
+        }
+        self.buffer[self.write_pos] = sample;
+        let read_pos =
+            (self.write_pos + self.capacity - self.delay_samples) % self.capacity;
+        let out = self.buffer[read_pos];
+        self.write_pos = (self.write_pos + 1) % self.capacity;
+        out
+    }
+}
+
 pub struct CrossfeedPlugin {
     sample_rate: u32,
     params: CrossfeedPluginParams,
 
-    // Filter storage
-    bauer_hpf_l: Biquad,
-    bauer_hpf_r: Biquad,
+    // Bauer: LPF filters (crossfeed low frequencies per bs2b spec)
+    bauer_lpf_l: Biquad,
+    bauer_lpf_r: Biquad,
 
     meier_lpf_l: Biquad,
     meier_lpf_r: Biquad,
     meier_allpass_l: Biquad,
     meier_allpass_r: Biquad,
 
-    mb_lp1_l: Biquad,
-    mb_hp1_l: Biquad,
-    mb_lp2_l: Biquad,
-    mb_hp2_l: Biquad,
-    mb_lp1_r: Biquad,
-    mb_hp1_r: Biquad,
-    mb_lp2_r: Biquad,
-    mb_hp2_r: Biquad,
+    // Multiband: true LR4 crossover (3-band: low/mid/high)
+    mb_crossover_l: MultibandLr4Crossover,
+    mb_crossover_r: MultibandLr4Crossover,
+
+    // ITD delay lines (one per crossfeed path)
+    itd_delay_l: DelayLine,
+    itd_delay_r: DelayLine,
 
     // Pre-allocated flat buffers for deinterleaved processing
     dry_l: Vec<f32>,
@@ -217,13 +276,9 @@ pub struct CrossfeedPlugin {
     wet_l: Vec<f32>,
     wet_r: Vec<f32>,
 
-    // Multiband specific buffers
-    mb_low_l: Vec<f32>,
-    mb_low_r: Vec<f32>,
-    mb_mid_l: Vec<f32>,
-    mb_mid_r: Vec<f32>,
-    mb_high_l: Vec<f32>,
-    mb_high_r: Vec<f32>,
+    // Multiband specific buffers (3 bands per channel)
+    mb_bands_l: [Vec<f32>; 3],
+    mb_bands_r: [Vec<f32>; 3],
 
     // Auto gain helper
     auto_gain: Option<sotf_host::auto_gain::AutoGain>,
@@ -240,15 +295,16 @@ impl CrossfeedPlugin {
             sample_rate: sr,
             params: params.clone(),
 
-            bauer_hpf_l: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Highpass,
+            // Bauer: LPF (lowpass) per bs2b specification
+            bauer_lpf_l: Biquad::new(
+                math_audio_iir_fir::BiquadFilterType::Lowpass,
                 params.bauer_fcut_hz as f64,
                 sr as f64,
                 0.707,
                 0.0,
             ),
-            bauer_hpf_r: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Highpass,
+            bauer_lpf_r: Biquad::new(
+                math_audio_iir_fir::BiquadFilterType::Lowpass,
                 params.bauer_fcut_hz as f64,
                 sr as f64,
                 0.707,
@@ -284,73 +340,28 @@ impl CrossfeedPlugin {
                 0.0,
             ),
 
-            mb_lp1_l: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Lowpass,
-                params.mb_low_freq_hz as f64,
-                sr as f64,
-                0.707,
-                0.0,
+            // Multiband: true LR4 crossover with 2 crossover points → 3 bands
+            mb_crossover_l: MultibandLr4Crossover::new(
+                &[params.mb_low_freq_hz, params.mb_mid_high_freq_hz],
+                sr,
+                1,
             ),
-            mb_hp1_l: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Highpass,
-                params.mb_low_freq_hz as f64,
-                sr as f64,
-                0.707,
-                0.0,
+            mb_crossover_r: MultibandLr4Crossover::new(
+                &[params.mb_low_freq_hz, params.mb_mid_high_freq_hz],
+                sr,
+                1,
             ),
-            mb_lp2_l: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Lowpass,
-                params.mb_mid_high_freq_hz as f64,
-                sr as f64,
-                0.707,
-                0.0,
-            ),
-            mb_hp2_l: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Highpass,
-                params.mb_mid_high_freq_hz as f64,
-                sr as f64,
-                0.707,
-                0.0,
-            ),
-            mb_lp1_r: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Lowpass,
-                params.mb_low_freq_hz as f64,
-                sr as f64,
-                0.707,
-                0.0,
-            ),
-            mb_hp1_r: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Highpass,
-                params.mb_low_freq_hz as f64,
-                sr as f64,
-                0.707,
-                0.0,
-            ),
-            mb_lp2_r: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Lowpass,
-                params.mb_mid_high_freq_hz as f64,
-                sr as f64,
-                0.707,
-                0.0,
-            ),
-            mb_hp2_r: Biquad::new(
-                math_audio_iir_fir::BiquadFilterType::Highpass,
-                params.mb_mid_high_freq_hz as f64,
-                sr as f64,
-                0.707,
-                0.0,
-            ),
+
+            // ITD delay lines
+            itd_delay_l: DelayLine::new(params.itd_delay_ms, sr),
+            itd_delay_r: DelayLine::new(params.itd_delay_ms, sr),
 
             dry_l: vec![0.0; 4096],
             dry_r: vec![0.0; 4096],
             wet_l: vec![0.0; 4096],
             wet_r: vec![0.0; 4096],
-            mb_low_l: vec![0.0; 4096],
-            mb_low_r: vec![0.0; 4096],
-            mb_mid_l: vec![0.0; 4096],
-            mb_mid_r: vec![0.0; 4096],
-            mb_high_l: vec![0.0; 4096],
-            mb_high_r: vec![0.0; 4096],
+            mb_bands_l: [vec![0.0; 4096], vec![0.0; 4096], vec![0.0; 4096]],
+            mb_bands_r: [vec![0.0; 4096], vec![0.0; 4096], vec![0.0; 4096]],
 
             auto_gain: None,
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
@@ -449,6 +460,14 @@ impl CrossfeedPlugin {
                 pk(CF, "mb_high_feed_db").max_f64() as f32,
             )
             .with_group("Multiband"),
+            Parameter::new_float(
+                "itd_delay_ms",
+                "ITD Delay",
+                self.params.itd_delay_ms,
+                0.0,
+                1.0,
+            )
+            .with_group("General"),
             Parameter::new_bool(
                 "autogain_enabled",
                 "Auto Gain",
@@ -484,87 +503,51 @@ impl CrossfeedPlugin {
 
     fn update_filters(&mut self) {
         let sr = self.sample_rate as f64;
-        self.bauer_hpf_l = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Highpass,
+
+        // Bauer: LPF (lowpass) per bs2b specification
+        self.bauer_lpf_l = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Lowpass,
             self.params.bauer_fcut_hz as f64,
             sr,
             0.707,
             0.0,
         );
-        self.bauer_hpf_r = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Highpass,
+        self.bauer_lpf_r = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Lowpass,
             self.params.bauer_fcut_hz as f64,
             sr,
             0.707,
             0.0,
         );
 
-        self.mb_lp1_l = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Lowpass,
-            self.params.mb_low_freq_hz as f64,
-            sr,
-            0.707,
-            0.0,
+        // Multiband: true LR4 crossover
+        self.mb_crossover_l.reinit(
+            &[self.params.mb_low_freq_hz, self.params.mb_mid_high_freq_hz],
+            self.sample_rate,
+            1,
         );
-        self.mb_hp1_l = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Highpass,
-            self.params.mb_low_freq_hz as f64,
-            sr,
-            0.707,
-            0.0,
-        );
-        self.mb_lp2_l = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Lowpass,
-            self.params.mb_mid_high_freq_hz as f64,
-            sr,
-            0.707,
-            0.0,
-        );
-        self.mb_hp2_l = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Highpass,
-            self.params.mb_mid_high_freq_hz as f64,
-            sr,
-            0.707,
-            0.0,
-        );
-        self.mb_lp1_r = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Lowpass,
-            self.params.mb_low_freq_hz as f64,
-            sr,
-            0.707,
-            0.0,
-        );
-        self.mb_hp1_r = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Highpass,
-            self.params.mb_low_freq_hz as f64,
-            sr,
-            0.707,
-            0.0,
-        );
-        self.mb_lp2_r = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Lowpass,
-            self.params.mb_mid_high_freq_hz as f64,
-            sr,
-            0.707,
-            0.0,
-        );
-        self.mb_hp2_r = Biquad::new(
-            math_audio_iir_fir::BiquadFilterType::Highpass,
-            self.params.mb_mid_high_freq_hz as f64,
-            sr,
-            0.707,
-            0.0,
+        self.mb_crossover_r.reinit(
+            &[self.params.mb_low_freq_hz, self.params.mb_mid_high_freq_hz],
+            self.sample_rate,
+            1,
         );
     }
 
     #[inline(always)]
     fn process_bauer(&mut self, nf: usize) {
         let feed = fast_pow10(self.params.bauer_feed_db / 20.0);
+        let has_itd = self.params.itd_delay_ms > 0.0;
         for i in 0..nf {
             let x_l = self.dry_l[i];
             let x_r = self.dry_r[i];
-            let cross_r = self.bauer_hpf_r.process(x_r as f64) as f32;
-            let cross_l = self.bauer_hpf_l.process(x_l as f64) as f32;
+            // LPF crossfeed: extract low frequencies from opposite channel (bs2b spec)
+            let mut cross_r = self.bauer_lpf_r.process(x_r as f64) as f32;
+            let mut cross_l = self.bauer_lpf_l.process(x_l as f64) as f32;
+            // Apply ITD delay to the crossfeed path
+            if has_itd {
+                cross_r = self.itd_delay_r.process(cross_r);
+                cross_l = self.itd_delay_l.process(cross_l);
+            }
             self.wet_l[i] = x_l + feed * cross_r;
             self.wet_r[i] = x_r + feed * cross_l;
         }
@@ -573,13 +556,18 @@ impl CrossfeedPlugin {
     #[inline(always)]
     fn process_meier(&mut self, nf: usize) {
         let feed = self.params.meier_level / 100.0;
+        let has_itd = self.params.itd_delay_ms > 0.0;
         for i in 0..nf {
-            let cross_r =
+            let mut cross_r =
                 self.meier_allpass_r
                     .process(self.meier_lpf_r.process(self.dry_r[i] as f64)) as f32;
-            let cross_l =
+            let mut cross_l =
                 self.meier_allpass_l
                     .process(self.meier_lpf_l.process(self.dry_l[i] as f64)) as f32;
+            if has_itd {
+                cross_r = self.itd_delay_r.process(cross_r);
+                cross_l = self.itd_delay_l.process(cross_l);
+            }
             self.wet_l[i] = self.dry_l[i] + feed * cross_r;
             self.wet_r[i] = self.dry_r[i] + feed * cross_l;
         }
@@ -590,20 +578,52 @@ impl CrossfeedPlugin {
         let fl = fast_pow10(self.params.mb_low_feed_db / 20.0);
         let fm = fast_pow10(self.params.mb_mid_feed_db / 20.0);
         let fh = fast_pow10(self.params.mb_high_feed_db / 20.0);
+        let has_itd = self.params.itd_delay_ms > 0.0;
 
         for i in 0..nf {
-            let xl = self.dry_l[i] as f64;
-            let xr = self.dry_r[i] as f64;
+            let xl = self.dry_l[i];
+            let xr = self.dry_r[i];
 
-            let low_l = self.mb_lp1_l.process(self.mb_lp2_l.process(xl)) as f32;
-            let low_r = self.mb_lp1_r.process(self.mb_lp2_r.process(xr)) as f32;
-            let mid_l = self.mb_hp1_l.process(self.mb_lp2_l.process(xl)) as f32;
-            let mid_r = self.mb_hp1_r.process(self.mb_lp2_r.process(xr)) as f32;
-            let high_l = self.mb_hp1_l.process(self.mb_hp2_l.process(xl)) as f32;
-            let high_r = self.mb_hp1_r.process(self.mb_hp2_r.process(xr)) as f32;
+            // Split each channel into 3 bands using true LR4 crossover
+            let input_l = [xl];
+            let input_r = [xr];
 
-            self.wet_l[i] = (low_l + fl * low_r) + (mid_l + fm * mid_r) + (high_l + fh * high_r);
-            self.wet_r[i] = (low_r + fl * low_l) + (mid_r + fm * mid_l) + (high_r + fh * high_l);
+            let mut band0_l = [0.0f32];
+            let mut band1_l = [0.0f32];
+            let mut band2_l = [0.0f32];
+            let mut band0_r = [0.0f32];
+            let mut band1_r = [0.0f32];
+            let mut band2_r = [0.0f32];
+
+            self.mb_crossover_l.process_frame(
+                &input_l,
+                &mut [&mut band0_l[..], &mut band1_l[..], &mut band2_l[..]],
+            );
+            self.mb_crossover_r.process_frame(
+                &input_r,
+                &mut [&mut band0_r[..], &mut band1_r[..], &mut band2_r[..]],
+            );
+
+            let low_l = band0_l[0];
+            let mid_l = band1_l[0];
+            let high_l = band2_l[0];
+            let low_r = band0_r[0];
+            let mid_r = band1_r[0];
+            let high_r = band2_r[0];
+
+            // Compute crossfeed signal per band
+            let mut cross_l = fl * low_l + fm * mid_l + fh * high_l;
+            let mut cross_r = fl * low_r + fm * mid_r + fh * high_r;
+
+            // Apply ITD delay to the crossfeed path
+            if has_itd {
+                cross_l = self.itd_delay_l.process(cross_l);
+                cross_r = self.itd_delay_r.process(cross_r);
+            }
+
+            // Mix crossfeed from opposite channel
+            self.wet_l[i] = (low_l + mid_l + high_l) + cross_r;
+            self.wet_r[i] = (low_r + mid_r + high_r) + cross_l;
         }
     }
 }
@@ -616,7 +636,7 @@ impl InPlacePlugin for CrossfeedPlugin {
             CrossfeedMode::Meier => "Meier",
             CrossfeedMode::Mb => "Multiband",
         };
-        PluginInfo::new("Crossfeed", "2.0.0", "SotF")
+        PluginInfo::new("Crossfeed", "3.0.0", "SotF")
             .with_description(format!("Headphone crossfeed ({})", mode_str))
     }
 
@@ -714,6 +734,18 @@ impl InPlacePlugin for CrossfeedPlugin {
                     self.params.mb_high_feed_db = v;
                 }
             }
+            "itd_delay_ms" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "itd_delay_ms must be a float".to_string())?;
+                if v.is_finite() {
+                    self.params.itd_delay_ms = v.clamp(0.0, 1.0);
+                    self.itd_delay_l
+                        .set_delay(self.params.itd_delay_ms, self.sample_rate);
+                    self.itd_delay_r
+                        .set_delay(self.params.itd_delay_ms, self.sample_rate);
+                }
+            }
             "autogain_enabled" => {
                 let v = value
                     .as_bool()
@@ -782,6 +814,7 @@ impl InPlacePlugin for CrossfeedPlugin {
             "mb_low_feed_db" => Some(ParameterValue::Float(self.params.mb_low_feed_db)),
             "mb_mid_feed_db" => Some(ParameterValue::Float(self.params.mb_mid_feed_db)),
             "mb_high_feed_db" => Some(ParameterValue::Float(self.params.mb_high_feed_db)),
+            "itd_delay_ms" => Some(ParameterValue::Float(self.params.itd_delay_ms)),
             "autogain_enabled" => Some(ParameterValue::Bool(self.params.autogain_enabled)),
             "autogain_target_lufs" => Some(ParameterValue::Float(self.params.autogain_target_lufs)),
             "autogain_max_gain_db" => Some(ParameterValue::Float(self.params.autogain_max_gain_db)),
@@ -796,6 +829,8 @@ impl InPlacePlugin for CrossfeedPlugin {
         self.sample_rate = sr;
         self.update_filters();
         self.mix_smoother = Smoother::new(self.params.mix, 20.0, sr);
+        self.itd_delay_l = DelayLine::new(self.params.itd_delay_ms, sr);
+        self.itd_delay_r = DelayLine::new(self.params.itd_delay_ms, sr);
         if let Some(ag) = &mut self.auto_gain {
             ag.set_sample_rate(sr).map_err(|e| e.to_string())?;
         }
@@ -804,17 +839,21 @@ impl InPlacePlugin for CrossfeedPlugin {
         self.dry_r.resize(cap, 0.0);
         self.wet_l.resize(cap, 0.0);
         self.wet_r.resize(cap, 0.0);
-        self.mb_low_l.resize(cap, 0.0);
-        self.mb_low_r.resize(cap, 0.0);
-        self.mb_mid_l.resize(cap, 0.0);
-        self.mb_mid_r.resize(cap, 0.0);
-        self.mb_high_l.resize(cap, 0.0);
-        self.mb_high_r.resize(cap, 0.0);
+        for b in &mut self.mb_bands_l {
+            b.resize(cap, 0.0);
+        }
+        for b in &mut self.mb_bands_r {
+            b.resize(cap, 0.0);
+        }
         Ok(())
     }
 
     fn reset(&mut self) {
         self.mix_smoother.reset(self.params.mix);
+        self.itd_delay_l.reset();
+        self.itd_delay_r.reset();
+        self.mb_crossover_l.reset();
+        self.mb_crossover_r.reset();
         if let Some(ag) = &mut self.auto_gain {
             ag.reset();
         }
@@ -909,5 +948,172 @@ mod tests {
         .unwrap();
 
         assert!(buffer[1].abs() > 0.0);
+    }
+
+    #[test]
+    fn test_bauer_uses_lowpass() {
+        // Bauer mode should crossfeed low frequencies (LPF, per bs2b spec).
+        // A DC signal should produce significant crossfeed;
+        // a high-frequency signal should produce minimal crossfeed.
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+        params.mode = CrossfeedMode::Bauer;
+        params.bauer_feed_db = 6.0;
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(48000).unwrap();
+
+        // DC signal: all energy in left channel
+        let n = 4000;
+        let mut dc_buf: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0]).collect();
+        p.process_in_place(
+            &mut dc_buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+
+        // After settling, DC should bleed significantly into right channel via LPF crossfeed
+        let last_r = dc_buf[(n - 1) * 2 + 1];
+        assert!(
+            last_r.abs() > 0.1,
+            "Bauer LPF crossfeed: DC should bleed to right channel, got {}",
+            last_r
+        );
+    }
+
+    #[test]
+    fn test_meier_basic() {
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Meier);
+        params.mode = CrossfeedMode::Meier;
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(48000).unwrap();
+
+        let mut buffer = vec![1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 4,
+            },
+        )
+        .unwrap();
+        assert!(buffer[1].abs() > 0.0);
+    }
+
+    #[test]
+    fn test_mb_basic() {
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Mb);
+        params.mode = CrossfeedMode::Mb;
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(48000).unwrap();
+
+        let n = 100;
+        let mut buffer: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0]).collect();
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+        // Right channel should get some crossfeed
+        let last_r = buffer[(n - 1) * 2 + 1];
+        assert!(last_r.abs() > 0.0, "MB crossfeed should bleed, got {}", last_r);
+    }
+
+    #[test]
+    fn test_itd_delay() {
+        let mut params = CrossfeedPluginParams::default();
+        params.mode = CrossfeedMode::Bauer;
+        params.itd_delay_ms = 0.5; // 0.5ms = 24 samples at 48kHz
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(48000).unwrap();
+
+        // Impulse in left channel only
+        let n = 100;
+        let mut buffer = vec![0.0f32; n * 2];
+        buffer[0] = 1.0; // impulse at frame 0, left channel
+
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+
+        // The crossfeed to right channel should be delayed by ~24 samples
+        // Check that right channel has near-zero for the first few frames
+        // and nonzero later
+        let early_r: f32 = (0..10).map(|f| buffer[f * 2 + 1].abs()).sum();
+        let late_r: f32 = (25..50).map(|f| buffer[f * 2 + 1].abs()).sum();
+        assert!(
+            late_r > early_r,
+            "ITD delay: later right channel samples should exceed early ones. early={}, late={}",
+            early_r,
+            late_r
+        );
+    }
+
+    #[test]
+    fn test_itd_delay_zero() {
+        // With itd_delay_ms = 0, delay line should be transparent
+        let mut params = CrossfeedPluginParams::default();
+        params.mode = CrossfeedMode::Bauer;
+        params.itd_delay_ms = 0.0;
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(48000).unwrap();
+
+        let n = 100;
+        let mut buffer: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0]).collect();
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: n,
+            },
+        )
+        .unwrap();
+        // Should still work and produce crossfeed
+        assert!(buffer[1].is_finite());
+    }
+
+    #[test]
+    fn test_itd_parameter() {
+        let mut p = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
+        p.initialize(48000).unwrap();
+
+        // Set ITD delay
+        p.set_parameter(
+            ParameterId("itd_delay_ms".to_string()),
+            ParameterValue::Float(0.3),
+        )
+        .unwrap();
+
+        let val = p.get_parameter(&ParameterId("itd_delay_ms".to_string()));
+        assert_eq!(val, Some(ParameterValue::Float(0.3)));
+    }
+
+    #[test]
+    fn test_disabled_passthrough() {
+        let mut params = CrossfeedPluginParams::default();
+        params.enabled = false;
+        let mut p = CrossfeedPlugin::new(params).unwrap();
+        p.initialize(48000).unwrap();
+
+        let mut buffer = vec![1.0, 0.5, 0.3, 0.7];
+        let original = buffer.clone();
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(buffer, original, "Disabled crossfeed should pass through unchanged");
     }
 }

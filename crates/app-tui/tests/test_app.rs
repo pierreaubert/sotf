@@ -479,6 +479,7 @@ mod tests {
                 auto_makeup,
                 link_channels,
                 sidechain_hpf_hz,
+                ..
             } => (
                 *threshold_db,
                 *ratio,
@@ -512,6 +513,7 @@ mod tests {
             auto_makeup,
             link_channels,
             sidechain_hpf_hz,
+            ..
         } = &plugin.settings
         {
             assert_ne!(*threshold_db, orig_thresh);
@@ -538,10 +540,12 @@ mod tests {
                 lookahead_ms,
                 soft,
                 mix,
+                ..
             } => (*threshold_db, *release_ms, *lookahead_ms, *soft, *mix),
             _ => panic!("Expected Limiter plugin"),
         };
-        for idx in 0..5 {
+        // Limiter params: 0=threshold, 1=release, 2=lookahead, 3=soft, 4=true_peak, 5=dual_release, 6=mix
+        for idx in [0, 1, 2, 3, 6] {
             app.plugin_param_selection = idx;
             assert!(app.adjust_selected_param(-1.0));
         }
@@ -552,6 +556,7 @@ mod tests {
             lookahead_ms,
             soft,
             mix,
+            ..
         } = &plugin.settings
         {
             assert_ne!(*threshold_db, orig_thresh);
@@ -585,6 +590,7 @@ mod tests {
                 mix,
                 link_channels,
                 sidechain_hpf_hz,
+                ..
             } => (
                 *threshold_db,
                 *ratio,
@@ -613,6 +619,7 @@ mod tests {
             mix,
             link_channels,
             sidechain_hpf_hz,
+            ..
         } = &plugin.settings
         {
             assert_ne!(*threshold_db, orig_thresh);

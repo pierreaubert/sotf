@@ -143,8 +143,14 @@ impl DenoiserPlugin {
         (w0 / sum, w1 / sum, w2 / sum)
     }
 
-    /// Smooth gains across frequency bins using a 5-tap Gaussian kernel.
-    /// The `smoothing` parameter controls the kernel width (σ = smoothing × 2 bins).
+    /// Smooth gains across frequency bins using a 5-tap Gaussian kernel with
+    /// adaptive width based on local SNR.
+    ///
+    /// The base kernel is controlled by the `smoothing` parameter (sigma = smoothing * 2 bins).
+    /// When adaptive smoothing is active, a second wider pass is blended in for low-SNR bins:
+    /// - High SNR (clean signal): narrow smoothing preserves spectral detail
+    /// - Low SNR (noisy): wider smoothing reduces musical noise artifacts
+    ///
     /// Uses replicate boundary conditions at edges.
     pub(super) fn smooth_gains_across_frequency(&mut self, channel: usize) {
         let (c0, c1, c2) = self.freq_smooth_kernel;
@@ -191,6 +197,71 @@ impl DenoiserPlugin {
             let kp1 = (k + 1).min(n - 1);
             let kp2 = (k + 2).min(n - 1);
             dst[k] = c2 * src[km2] + c1 * src[km1] + c0 * src[k] + c1 * src[kp1] + c2 * src[kp2];
+        }
+
+        // Adaptive pass: blend toward wider smoothing at low-SNR bins.
+        // We run a second wider kernel (7-tap, double sigma) over the narrow-smoothed
+        // result, then per-bin blend based on local SNR.
+        // SNR threshold: bins with SNR < 6 dB (power ratio < 4) get more wide smoothing.
+        self.apply_adaptive_spectral_smoothing(channel);
+    }
+
+    /// Apply adaptive spectral smoothing: blend toward wider smoothing for low-SNR bins.
+    ///
+    /// Uses a 7-tap uniform average as the "wide" kernel over the already narrow-smoothed
+    /// gains. Per-bin blend factor is derived from local SNR:
+    /// - SNR >= snr_high: keep narrow result (blend = 0)
+    /// - SNR <= snr_low: use wide result (blend = 1)
+    /// - Between: linear interpolation
+    fn apply_adaptive_spectral_smoothing(&mut self, channel: usize) {
+        let n = self.spectrum_size;
+
+        // SNR thresholds for adaptive blend (in linear power ratio)
+        // 3 dB = power ratio ~2, 10 dB = power ratio ~10
+        let snr_low = 2.0_f32;   // Below this: maximum wide smoothing
+        let snr_high = 10.0_f32;  // Above this: no extra smoothing
+        let snr_range_inv = 1.0 / (snr_high - snr_low);
+
+        // Copy narrow-smoothed gains to scratch for wide smoothing input
+        self.freq_smooth_temp[..n].copy_from_slice(&self.gain[channel][..n]);
+
+        // Access freq_domain and noise_psd directly to avoid borrow conflicts
+        // with self.gain[channel].
+        let radius: usize = 3;
+        let use_captured = self.use_captured_profile && self.has_noise_profile;
+
+        for k in 0..n {
+            // Inline get_power_at_bin and get_effective_noise_power to avoid
+            // borrowing &self while gain[channel] is mutably borrowed.
+            let signal_power = self.freq_domain[channel][k].norm_sqr();
+            let noise_power = if use_captured {
+                self.noise_profile_storage[channel][k].max(EPSILON)
+            } else {
+                self.noise_psd[channel][k].max(EPSILON)
+            };
+            let local_snr = signal_power / noise_power;
+
+            // Compute blend factor: 1.0 at low SNR, 0.0 at high SNR
+            let blend = ((snr_high - local_snr) * snr_range_inv).clamp(0.0, 1.0);
+
+            if blend < 0.001 {
+                // High SNR: keep narrow-smoothed result as-is
+                continue;
+            }
+
+            // Compute wide-smoothed value (box filter, radius 3) from scratch buffer
+            let lo = k.saturating_sub(radius);
+            let hi = (k + radius).min(n - 1);
+            let count = (hi - lo + 1) as f32;
+            let mut sum = 0.0_f32;
+            for j in lo..=hi {
+                sum += self.freq_smooth_temp[j];
+            }
+            let wide_val = sum / count;
+            let narrow_val = self.freq_smooth_temp[k];
+
+            // Blend narrow toward wide based on local SNR
+            self.gain[channel][k] = narrow_val + blend * (wide_val - narrow_val);
         }
     }
 

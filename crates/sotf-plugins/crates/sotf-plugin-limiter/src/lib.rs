@@ -10,6 +10,7 @@ use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, Paramet
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
+use sotf_host::{DualRelease, TruePeakDetector};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -23,8 +24,14 @@ pub struct LimiterPluginParams {
     pub lookahead_ms: f32,
     #[serde(default = "default_soft")]
     pub soft: bool,
+    #[serde(default = "default_true_peak")]
+    pub true_peak: bool,
+    #[serde(default = "default_dual_release")]
+    pub dual_release: bool,
     #[serde(default = "default_mix")]
     pub mix: f32,
+    #[serde(default)]
+    pub feed_forward: bool,
 }
 
 fn default_threshold_db() -> f32 {
@@ -38,6 +45,12 @@ fn default_lookahead_ms() -> f32 {
 }
 fn default_soft() -> bool {
     pk(LM, "soft").default_bool()
+}
+fn default_true_peak() -> bool {
+    pk(LM, "true_peak").default_bool()
+}
+fn default_dual_release() -> bool {
+    pk(LM, "dual_release").default_bool()
 }
 fn default_mix() -> f32 {
     pk(LM, "mix").default_f64() as f32
@@ -67,8 +80,14 @@ pub struct LimiterPlugin {
     lookahead_ms: f32,
     param_soft: ParameterId,
     soft: bool,
+    param_true_peak: ParameterId,
+    true_peak: bool,
+    param_dual_release: ParameterId,
+    dual_release: bool,
     param_mix: ParameterId,
     mix: f32,
+    param_feed_forward: ParameterId,
+    feed_forward: bool,
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
     envelope: f32,
@@ -76,6 +95,8 @@ pub struct LimiterPlugin {
     lookahead_buffer: Vec<f32>,
     lookahead_pos: usize,
     lookahead_len: usize,
+    true_peak_detectors: Vec<TruePeakDetector>,
+    dual_release_env: DualRelease,
     cached_parameters: Vec<Parameter>,
     cache: RealTimeCache<LimiterData>,
     cache_update_counter: usize,
@@ -104,8 +125,14 @@ impl LimiterPlugin {
             lookahead_ms,
             param_soft: ParameterId::from("soft"),
             soft,
+            param_true_peak: ParameterId::from("true_peak"),
+            true_peak: false,
+            param_dual_release: ParameterId::from("dual_release"),
+            dual_release: false,
             param_mix: ParameterId::from("mix"),
             mix: 1.0,
+            param_feed_forward: ParameterId::from("feed_forward"),
+            feed_forward: false,
             threshold_smoother: Smoother::new(fast_pow10(threshold_db / 20.0), 5.0, sr),
             mix_smoother: Smoother::new(1.0, 5.0, sr),
             envelope: 0.0,
@@ -113,6 +140,8 @@ impl LimiterPlugin {
             lookahead_buffer: vec![0.0; lookahead_len * channels],
             lookahead_pos: 0,
             lookahead_len,
+            true_peak_detectors: (0..channels).map(|_| TruePeakDetector::new()).collect(),
+            dual_release_env: DualRelease::new(release_ms, release_ms * 5.0, sr),
             cached_parameters: Vec::new(),
             cache: RealTimeCache::new(LimiterData::default()),
             cache_update_counter: 0,
@@ -159,6 +188,14 @@ impl LimiterPlugin {
             .with_description("Lookahead time for peak detection (ms)")
             .with_group("Timing")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("true_peak", "True Peak", self.true_peak)
+                .with_description("Use 4x oversampled true peak detection")
+                .with_group("Detection")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("dual_release", "Dual Release", self.dual_release)
+                .with_description("Program-dependent fast/slow release")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "mix",
                 "Mix",
@@ -169,6 +206,10 @@ impl LimiterPlugin {
             .with_description("Dry/wet mix (0 = dry, 1 = limited)")
             .with_group("Output")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("feed_forward", "Feed Forward", self.feed_forward)
+                .with_description("Scan lookahead buffer for anticipatory gain reduction")
+                .with_group("Detection")
+                .with_importance(ParameterImportance::Useful),
         ];
     }
 
@@ -180,7 +221,11 @@ impl LimiterPlugin {
             params.lookahead_ms,
             params.soft,
         );
+        p.true_peak = params.true_peak;
+        p.dual_release = params.dual_release;
         p.mix = params.mix.clamp(0.0, 1.0);
+        p.feed_forward = params.feed_forward;
+        p.rebuild_cached_parameters();
         p
     }
 
@@ -192,12 +237,17 @@ impl LimiterPlugin {
             self.lookahead_buffer.resize(new_len * self.channels, 0.0);
             self.lookahead_pos = 0;
         }
+        self.dual_release_env.set_times(
+            self.release_ms,
+            self.release_ms * 5.0,
+            self.sample_rate,
+        );
     }
 }
 
 impl InPlacePlugin for LimiterPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Limiter", "1.1.0", "SotF")
+        PluginInfo::new("Limiter", "1.2.0", "SotF")
     }
     fn channels(&self) -> usize {
         self.channels
@@ -242,6 +292,14 @@ impl InPlacePlugin for LimiterPlugin {
             }
         } else if id == self.param_soft {
             self.soft = value.as_bool().unwrap_or(pk(LM, "soft").default_bool());
+        } else if id == self.param_true_peak {
+            self.true_peak = value
+                .as_bool()
+                .unwrap_or(pk(LM, "true_peak").default_bool());
+        } else if id == self.param_dual_release {
+            self.dual_release = value
+                .as_bool()
+                .unwrap_or(pk(LM, "dual_release").default_bool());
         } else if id == self.param_mix {
             let val = value
                 .as_float()
@@ -250,6 +308,8 @@ impl InPlacePlugin for LimiterPlugin {
                 self.mix = val.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);
             }
+        } else if id == self.param_feed_forward {
+            self.feed_forward = value.as_bool().unwrap_or(false);
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -264,8 +324,14 @@ impl InPlacePlugin for LimiterPlugin {
             Some(ParameterValue::Bool(self.soft))
         } else if id == &self.param_lookahead {
             Some(ParameterValue::Float(self.lookahead_ms))
+        } else if id == &self.param_true_peak {
+            Some(ParameterValue::Bool(self.true_peak))
+        } else if id == &self.param_dual_release {
+            Some(ParameterValue::Bool(self.dual_release))
         } else if id == &self.param_mix {
             Some(ParameterValue::Float(self.mix))
+        } else if id == &self.param_feed_forward {
+            Some(ParameterValue::Bool(self.feed_forward))
         } else {
             None
         }
@@ -276,12 +342,24 @@ impl InPlacePlugin for LimiterPlugin {
         self.update_coefficients();
         self.threshold_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
+        // Resize true peak detectors if channel count changed
+        self.true_peak_detectors
+            .resize_with(self.channels, TruePeakDetector::new);
+        self.dual_release_env = DualRelease::new(
+            self.release_ms,
+            self.release_ms * 5.0,
+            sample_rate,
+        );
         Ok(())
     }
 
     fn reset(&mut self) {
         self.envelope = 0.0;
         self.lookahead_buffer.fill(0.0);
+        for det in &mut self.true_peak_detectors {
+            det.reset();
+        }
+        self.dual_release_env.reset();
     }
 
     fn process_in_place(
@@ -294,19 +372,46 @@ impl InPlacePlugin for LimiterPlugin {
         let thresh = self.threshold_smoother.advance();
         let mix = self.mix_smoother.advance();
         let mut max_peak = 0.0f32;
+        let use_true_peak = self.true_peak;
+        let use_dual_release = self.dual_release;
+        let use_feed_forward = self.feed_forward && self.lookahead_len > 1;
 
         for frame in 0..num_frames {
             let mut frame_peak = 0.0f32;
-            for ch in 0..self.channels {
-                let idx = frame * self.channels + ch;
-                frame_peak = frame_peak.max(buffer[idx].abs());
+            if use_true_peak {
+                for ch in 0..self.channels {
+                    let idx = frame * self.channels + ch;
+                    let tp = self.true_peak_detectors[ch].process_linear(buffer[idx]);
+                    frame_peak = frame_peak.max(tp);
+                }
+            } else {
+                for ch in 0..self.channels {
+                    let idx = frame * self.channels + ch;
+                    frame_peak = frame_peak.max(buffer[idx].abs());
+                }
             }
 
             max_peak = max_peak.max(frame_peak);
 
-            // Predictive peak from input
-            let target_gr = if frame_peak > thresh {
-                20.0 * fast_log10(frame_peak / thresh)
+            // Feed-forward: scan the entire lookahead buffer for the maximum
+            // upcoming peak, then use that to compute gain reduction.
+            // This anticipates loud transients before they arrive at the output.
+            let effective_peak = if use_feed_forward {
+                let mut la_peak = frame_peak;
+                for pos in 0..self.lookahead_len {
+                    let base = pos * self.channels;
+                    for ch in 0..self.channels {
+                        la_peak = la_peak.max(self.lookahead_buffer[base + ch].abs());
+                    }
+                }
+                la_peak
+            } else {
+                frame_peak
+            };
+
+            // Predictive peak from input (or lookahead scan)
+            let target_gr = if effective_peak > thresh {
+                20.0 * fast_log10(effective_peak / thresh)
             } else {
                 0.0
             };
@@ -315,7 +420,12 @@ impl InPlacePlugin for LimiterPlugin {
             if target_gr > self.envelope {
                 self.envelope = target_gr;
             } else {
-                self.envelope = target_gr + self.release_coeff * (self.envelope - target_gr);
+                let rc = if use_dual_release {
+                    self.dual_release_env.process(self.envelope)
+                } else {
+                    self.release_coeff
+                };
+                self.envelope = target_gr + rc * (self.envelope - target_gr);
             }
 
             let gain = fast_pow10(-self.envelope / 20.0);
@@ -375,7 +485,11 @@ impl InPlacePlugin for LimiterPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        self.lookahead_len
+        if self.lookahead_ms > 0.0 {
+            self.lookahead_len
+        } else {
+            0
+        }
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
@@ -426,7 +540,7 @@ mod tests {
         p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-20.0))
             .unwrap();
 
-        // Process one small block (≈1ms = 48 samples)
+        // Process one small block (=1ms = 48 samples)
         // With proper 5ms smoothing, the threshold should NOT have fully
         // transitioned after just 1ms.
         let mut b2 = vec![1.0f32; 48];
@@ -440,11 +554,11 @@ mod tests {
         .unwrap();
         let output_after_1ms = b2[47];
 
-        // The new threshold (-20 dB ≈ 0.1) is much lower than old (-6 dB ≈ 0.5).
+        // The new threshold (-20 dB = 0.1) is much lower than old (-6 dB = 0.5).
         // After only 1ms of a 5ms transition, the output should still be
         // closer to the old threshold than the new one.
-        let old_thresh_lin = fast_pow10(-6.0 / 20.0); // ≈ 0.50
-        let new_thresh_lin = fast_pow10(-20.0 / 20.0); // ≈ 0.10
+        let old_thresh_lin = fast_pow10(-6.0 / 20.0); // = 0.50
+        let new_thresh_lin = fast_pow10(-20.0 / 20.0); // = 0.10
         let midpoint = (old_thresh_lin + new_thresh_lin) / 2.0;
 
         assert!(
@@ -474,7 +588,7 @@ mod tests {
         };
         p.process_in_place(&mut b, &ctx).unwrap();
 
-        // After lookahead fills (≈5ms = 240 samples), all output should be
+        // After lookahead fills (=5ms = 240 samples), all output should be
         // below threshold. Allow a small overshoot margin.
         let thresh_lin = fast_pow10(-6.0 / 20.0);
         for frame in 500..2048 {
@@ -486,5 +600,152 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Test that true peak detection catches inter-sample peaks.
+    #[test]
+    fn test_true_peak_detection() {
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        p.true_peak = true;
+        p.rebuild_cached_parameters();
+        p.initialize(48000).unwrap();
+
+        // Create a signal with inter-sample peaks: alternating +0.8/-0.8
+        // at Nyquist causes overshoots between samples
+        let frames = 2048;
+        let mut b = vec![0.0f32; frames];
+        for i in 0..frames {
+            b[i] = if i % 2 == 0 { 0.8 } else { -0.8 };
+        }
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: frames,
+        };
+        p.process_in_place(&mut b, &ctx).unwrap();
+
+        // With true peak, the limiter should detect the inter-sample overshoot
+        // and apply more gain reduction than sample-peak would.
+        // Verify the output is still limited.
+        let thresh_lin = fast_pow10(-6.0 / 20.0);
+        for &s in &b[500..] {
+            assert!(
+                s.abs() <= thresh_lin * 1.15,
+                "true peak: sample {s:.4} exceeds threshold {thresh_lin:.4}"
+            );
+        }
+    }
+
+    /// Test that true peak parameter can be set via set_parameter.
+    #[test]
+    fn test_true_peak_parameter() {
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        p.initialize(48000).unwrap();
+        assert!(!p.true_peak);
+
+        p.set_parameter(
+            ParameterId::from("true_peak"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+        assert!(p.true_peak);
+
+        let val = p.get_parameter(&ParameterId::from("true_peak"));
+        assert_eq!(val, Some(ParameterValue::Bool(true)));
+    }
+
+    /// Test that dual release parameter can be set via set_parameter.
+    #[test]
+    fn test_dual_release_parameter() {
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        p.initialize(48000).unwrap();
+        assert!(!p.dual_release);
+
+        p.set_parameter(
+            ParameterId::from("dual_release"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+        assert!(p.dual_release);
+
+        let val = p.get_parameter(&ParameterId::from("dual_release"));
+        assert_eq!(val, Some(ParameterValue::Bool(true)));
+    }
+
+    /// Test that dual release still limits correctly.
+    #[test]
+    fn test_dual_release_limits() {
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        p.dual_release = true;
+        p.rebuild_cached_parameters();
+        p.initialize(48000).unwrap();
+
+        let frames = 4096;
+        let mut b = vec![0.0f32; frames];
+        for i in 0..frames {
+            b[i] = 0.9 * (i as f32 * 0.1).sin();
+        }
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: frames,
+        };
+        p.process_in_place(&mut b, &ctx).unwrap();
+
+        let thresh_lin = fast_pow10(-6.0 / 20.0);
+        for &s in &b[500..] {
+            assert!(
+                s.abs() <= thresh_lin * 1.1,
+                "dual release: sample {s:.4} exceeds threshold {thresh_lin:.4}"
+            );
+        }
+    }
+
+    /// Test from_params wires true_peak and dual_release correctly.
+    #[test]
+    fn test_from_params_new_fields() {
+        let params = LimiterPluginParams {
+            threshold_db: -3.0,
+            release_ms: 100.0,
+            lookahead_ms: 10.0,
+            soft: true,
+            true_peak: true,
+            dual_release: true,
+            mix: 0.8,
+            feed_forward: true,
+        };
+        let p = LimiterPlugin::from_params(2, params);
+        assert!(p.true_peak);
+        assert!(p.dual_release);
+        assert!(p.feed_forward);
+        assert_eq!(p.mix, 0.8);
+
+        let tp_val = p.get_parameter(&ParameterId::from("true_peak"));
+        assert_eq!(tp_val, Some(ParameterValue::Bool(true)));
+        let dr_val = p.get_parameter(&ParameterId::from("dual_release"));
+        assert_eq!(dr_val, Some(ParameterValue::Bool(true)));
+    }
+
+    /// Test that reset clears true peak detectors and dual release state.
+    #[test]
+    fn test_reset_clears_new_state() {
+        let mut p = LimiterPlugin::new(2, -6.0, 50.0, 5.0, false);
+        p.true_peak = true;
+        p.dual_release = true;
+        p.initialize(48000).unwrap();
+
+        // Process some audio to build up state
+        let mut b = vec![0.9f32; 2 * 1024];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 1024,
+        };
+        p.process_in_place(&mut b, &ctx).unwrap();
+
+        p.reset();
+
+        // After reset, detectors should be zeroed
+        for det in &p.true_peak_detectors {
+            assert_eq!(det.peak_linear(), 0.0);
+        }
+        assert_eq!(p.envelope, 0.0);
     }
 }

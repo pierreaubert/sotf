@@ -224,6 +224,10 @@ pub struct UpmixerPlugin {
     #[cfg(feature = "onnx")]
     ml_inference_handle: Option<ml_inference::MlInferenceHandle>,
 
+    // Low-latency mode
+    param_low_latency: ParameterId,
+    low_latency: bool,
+
     // Diagnostic bypass parameters
     param_bypass_decorrelation: ParameterId,
     bypass_decorrelation: bool,
@@ -687,6 +691,10 @@ impl UpmixerPlugin {
             mfcc_extractor: None,
             #[cfg(feature = "onnx")]
             ml_inference_handle: None,
+
+            // Low-latency mode
+            param_low_latency: ParameterId::from("low_latency"),
+            low_latency: false,
 
             // Diagnostic bypass parameters
             param_bypass_decorrelation: ParameterId::from("bypass_decorrelation"),
@@ -1389,6 +1397,19 @@ and output shape [1, 1] (sigmoid probability).",
                 .with_group("Analysis")
                 .with_importance(ParameterImportance::FineTuning),
             Parameter::new_bool(
+                "low_latency",
+                "Low Latency",
+                self.low_latency,
+            )
+            .with_description(
+                "Low-latency mode: uses 1024-point FFT (~21ms at 48kHz) instead of 2048 (~43ms).
+Halves analysis latency at the cost of coarser frequency resolution in spatial analysis.
+Useful for live monitoring or real-time applications where latency matters.
+Note: changing this requires re-initialization (takes effect on next initialize()).",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
                 "bypass_decorrelation",
                 "Bypass Decorrelation",
                 self.bypass_decorrelation,
@@ -1414,8 +1435,11 @@ and output shape [1, 1] (sigmoid probability).",
 
     /// Create a new upmixer plugin from configuration parameters
     pub fn from_params(params: UpmixerPluginParams) -> Self {
+        // Low-latency mode halves the FFT size from 2048 to 1024 (21ms vs 43ms at 48kHz).
+        // If the user explicitly set a custom fft_size, low_latency overrides it.
+        let fft_size = if params.low_latency { 1024 } else { params.fft_size };
         let mut plugin = Self::new(
-            params.fft_size,
+            fft_size,
             &params.speaker_config,
             params.gain_front_direct,
             params.gain_front_ambient,
@@ -1496,6 +1520,9 @@ and output shape [1, 1] (sigmoid probability).",
         // ML vocal detection parameters
         plugin.enable_ml_detection = params.enable_ml_detection;
         plugin.ml_model_path = params.ml_model_path;
+
+        // Low-latency mode
+        plugin.low_latency = params.low_latency;
 
         // Diagnostic bypass parameters
         plugin.bypass_decorrelation = params.bypass_decorrelation;
@@ -1905,6 +1932,10 @@ impl Plugin for UpmixerPlugin {
             if self.enable_ml_detection {
                 self.try_start_ml_inference();
             }
+        } else if id == self.param_low_latency {
+            // low_latency changes the FFT size which requires full buffer reallocation.
+            // This is a construction-only parameter — set via from_params(), not at runtime.
+            return Err("low_latency is a construction-only parameter (requires plugin rebuild)".to_string());
         } else if id == self.param_bypass_decorrelation {
             let enable = value
                 .as_bool()
@@ -2048,6 +2079,8 @@ impl Plugin for UpmixerPlugin {
             Some(ParameterValue::Bool(self.enable_ml_detection))
         } else if id == &self.param_ml_model_path {
             Some(ParameterValue::String(self.ml_model_path.clone()))
+        } else if id == &self.param_low_latency {
+            Some(ParameterValue::Bool(self.low_latency))
         } else if id == &self.param_bypass_decorrelation {
             Some(ParameterValue::Bool(self.bypass_decorrelation))
         } else if id == &self.param_bypass_transient_detection {

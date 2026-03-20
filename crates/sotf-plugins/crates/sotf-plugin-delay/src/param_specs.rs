@@ -10,4 +10,14 @@ pub mod delay {
     pub const MIX_DEFAULT: f32 = 0.5;
     pub const MIX_MIN: f32 = 0.0;
     pub const MIX_MAX: f32 = 1.0;
+
+    pub const LFO_RATE_HZ_DEFAULT: f32 = 0.0;
+    pub const LFO_RATE_HZ_MIN: f32 = 0.0;
+    pub const LFO_RATE_HZ_MAX: f32 = 10.0;
+
+    pub const LFO_DEPTH_MS_DEFAULT: f32 = 0.0;
+    pub const LFO_DEPTH_MS_MIN: f32 = 0.0;
+    pub const LFO_DEPTH_MS_MAX: f32 = 5.0;
+
+    pub const ALLPASS_FEEDBACK_DEFAULT: bool = false;
 }

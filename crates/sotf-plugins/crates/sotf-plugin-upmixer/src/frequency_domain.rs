@@ -28,6 +28,13 @@ const ENERGY_CORRECTION_MIN: f32 = 0.85;
 /// Maximum energy correction ratio (prevents over-boost)
 const ENERGY_CORRECTION_MAX: f32 = 1.15;
 
+/// Base L-R bleed factor for ambient extraction.
+/// Scaled by (1 - coherence) so that highly correlated (centered/mono) content
+/// gets minimal Blumlein-like side bleed, while diffuse/wide stereo content
+/// gets up to this amount. This prevents hollow/phasey artifacts on near-mono
+/// material where L ~= R.
+const BASE_LR_BLEED: f32 = 0.3;
+
 /// 5-element median using 6 comparisons (optimal).
 /// After eliminating the global minimum via 3 compare-swaps on pairs,
 /// finds the 2nd-smallest of the remaining 4 elements (= median of 5).
@@ -221,6 +228,9 @@ impl UpmixerPlugin {
                 };
 
                 let stereo_w = self.stereo_width.current();
+                // Scale L-R bleed by (1 - coherence): mono/centered content gets near-zero
+                // bleed, while wide/diffuse content gets up to BASE_LR_BLEED.
+                let lr_bleed = BASE_LR_BLEED * (1.0 - coherence);
                 let upmix_start = transition_end.max(start_bin);
                 let mut in_e = 0.0f32;
                 let mut out_e = 0.0f32;
@@ -247,8 +257,10 @@ impl UpmixerPlugin {
                     };
                     let aligned_r = direct_r * phase_correction.conj();
                     let pca_center = (direct_l + aligned_r) * (eff_coh * 0.5);
-                    let pca_amb_l = (l - direct_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
-                    let pca_amb_r = (r - direct_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
+                    let pca_amb_l =
+                        (l - direct_l) * ambient_gain + (l - r) * (lr_bleed * ambient_gain);
+                    let pca_amb_r =
+                        (r - direct_r) * ambient_gain - (l - r) * (lr_bleed * ambient_gain);
                     let pca_dl = l - pca_center * stereo_w;
                     let pca_dr = r - pca_center * phase_correction * stereo_w;
 
@@ -284,9 +296,9 @@ impl UpmixerPlugin {
                     let aligned_r = direct_r * phase_correction.conj();
                     self.direct[i] = (direct_l + aligned_r) * (eff_coh * 0.5);
                     self.ambient_left[i] =
-                        (l - direct_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
+                        (l - direct_l) * ambient_gain + (l - r) * (lr_bleed * ambient_gain);
                     self.ambient_right[i] =
-                        (r - direct_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
+                        (r - direct_r) * ambient_gain - (l - r) * (lr_bleed * ambient_gain);
                     self.direct_left[i] = l - self.direct[i] * stereo_w;
                     self.direct_right[i] = r - self.direct[i] * phase_correction * stereo_w;
                     self.lfe[i] = Complex::new(0.0, 0.0);

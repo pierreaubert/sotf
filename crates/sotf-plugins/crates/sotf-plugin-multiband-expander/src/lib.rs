@@ -6,6 +6,8 @@ use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
+use sotf_host::auto_makeup::MeasuredMakeup;
+use sotf_host::detector::{DetectionMode, LevelDetector};
 use sotf_host::param_specs::{
     find_by_key as pk,
     multiband_expander::{BAND_TEMPLATE as MEB, GLOBAL_PARAMS as ME},
@@ -39,6 +41,8 @@ pub struct BandExpanderParams {
     pub hold_ms: Option<f32>,
     #[serde(default)]
     pub auto_makeup: bool,
+    #[serde(default)]
+    pub measured_auto_makeup: bool,
     #[serde(default = "default_true")]
     pub active: bool,
     pub solo: bool,
@@ -57,11 +61,16 @@ impl Default for BandExpanderParams {
             hysteresis_db: None,
             hold_ms: None,
             auto_makeup: false,
+            measured_auto_makeup: false,
             active: true,
             solo: false,
             bypass: false,
         }
     }
+}
+
+fn default_detection_mode() -> String {
+    "peak".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -79,6 +88,8 @@ pub struct MultibandExpanderPluginParams {
     pub hold_ms: f32,
     pub link_channels: bool,
     pub mix: f32,
+    #[serde(default = "default_detection_mode")]
+    pub detection_mode: String,
     pub bands: Vec<BandExpanderParams>,
 }
 
@@ -216,6 +227,7 @@ pub struct MultibandExpanderPlugin {
     hold_ms: f32,
     link_channels: bool,
     mix: f32,
+    detection_mode: String,
     band_params: Vec<BandExpanderParams>,
     crossover_points: Vec<CrossoverPoint>,
     band_expanders: Vec<BandExpander>,
@@ -226,12 +238,25 @@ pub struct MultibandExpanderPlugin {
     mix_smoother: Smoother,
     xover_smoothers: Vec<LogSmoother>,
 
+    /// Per-band measured auto-makeup gain trackers.
+    measured_makeups: Vec<MeasuredMakeup>,
+
+    /// Per-band, per-channel level detectors for RMS mode.
+    level_detectors: Vec<Vec<LevelDetector>>,
+
     // Internal flattened monitoring buffers
     attenuation_flattened: Vec<f32>,
     is_open_buffer: Vec<bool>,
     cache: RealTimeCache<MultibandExpanderData>,
     cache_update_counter: usize,
     cached_parameters: Vec<Parameter>,
+}
+
+fn parse_detection_mode(s: &str) -> DetectionMode {
+    match s {
+        "rms" => DetectionMode::Rms { window_ms: 10.0 },
+        _ => DetectionMode::Peak,
+    }
 }
 
 impl MultibandExpanderPlugin {
@@ -264,6 +289,24 @@ impl MultibandExpanderPlugin {
             band_params.push(BandExpanderParams::default());
         }
 
+        let measured_makeups = (0..nb)
+            .map(|_| MeasuredMakeup::new(1000.0, sr))
+            .collect();
+
+        let det_mode_str = if params.detection_mode.is_empty() {
+            "peak"
+        } else {
+            &params.detection_mode
+        };
+        let det_mode = parse_detection_mode(det_mode_str);
+        let level_detectors = (0..nb)
+            .map(|_| {
+                (0..channels)
+                    .map(|_| LevelDetector::new(det_mode, sr))
+                    .collect()
+            })
+            .collect();
+
         let mut p = Self {
             channels,
             sample_rate: sr,
@@ -280,6 +323,7 @@ impl MultibandExpanderPlugin {
             hold_ms: params.hold_ms,
             link_channels: params.link_channels,
             mix: params.mix,
+            detection_mode: det_mode_str.to_string(),
             band_params,
             crossover_points: Vec::new(),
             band_expanders: bexps,
@@ -289,6 +333,8 @@ impl MultibandExpanderPlugin {
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sr),
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
             xover_smoothers: xfs.iter().map(|&f| LogSmoother::new(f, 50.0, sr)).collect(),
+            measured_makeups,
+            level_detectors,
             attenuation_flattened: vec![0.0; nb * channels],
             is_open_buffer: vec![false; nb],
             cache: RealTimeCache::new(MultibandExpanderData::new(nb, channels)),
@@ -302,6 +348,7 @@ impl MultibandExpanderPlugin {
     }
 
     fn rebuild_cached_parameters(&mut self) {
+        let det_mode_idx = if self.detection_mode == "rms" { 1 } else { 0 };
         let mut params = vec![
             Parameter::new_int(
                 "num_bands",
@@ -324,6 +371,9 @@ impl MultibandExpanderPlugin {
             )
             .with_group("General")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_int("detection_mode", "Detection Mode", det_mode_idx, 0, 1)
+                .with_group("General")
+                .with_importance(ParameterImportance::Useful),
         ];
 
         // Crossover frequencies
@@ -466,6 +516,14 @@ impl MultibandExpanderPlugin {
                 .with_group(&group),
             );
             params.push(
+                Parameter::new_bool(
+                    &format!("band_{}_measured_auto_makeup", i),
+                    "Measured Auto Makeup",
+                    bp.measured_auto_makeup,
+                )
+                .with_group(&group),
+            );
+            params.push(
                 Parameter::new_bool(&format!("band_{}_active", i), "Active", bp.active)
                     .with_group(&group),
             );
@@ -571,6 +629,18 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         release_coeff: 0.0,
                     });
                 }
+                while self.measured_makeups.len() < self.num_bands {
+                    self.measured_makeups
+                        .push(MeasuredMakeup::new(1000.0, self.sample_rate));
+                }
+                let det_mode = parse_detection_mode(&self.detection_mode);
+                while self.level_detectors.len() < self.num_bands {
+                    self.level_detectors.push(
+                        (0..self.channels)
+                            .map(|_| LevelDetector::new(det_mode, self.sample_rate))
+                            .collect(),
+                    );
+                }
                 self.band_levels_db.resize(self.num_bands, -100.0);
                 self.attenuation_flattened
                     .resize(self.num_bands * self.channels, 0.0);
@@ -594,6 +664,20 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             if v.is_finite() {
                 self.mix = v.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);
+            }
+        } else if name == "detection_mode" {
+            let idx = value
+                .as_int()
+                .ok_or_else(|| "detection_mode must be an integer".to_string())?;
+            let mode_str = if idx == 1 { "rms" } else { "peak" };
+            if mode_str != self.detection_mode {
+                self.detection_mode = mode_str.to_string();
+                let det_mode = parse_detection_mode(mode_str);
+                for band_dets in &mut self.level_detectors {
+                    for det in band_dets {
+                        det.set_mode(det_mode);
+                    }
+                }
             }
         } else if name.starts_with("crossover_freq_") {
             let idx = name
@@ -726,6 +810,11 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                                 .as_bool()
                                 .ok_or_else(|| format!("{} must be a boolean", name))?
                         }
+                        "measured" => {
+                            bp.measured_auto_makeup = value
+                                .as_bool()
+                                .ok_or_else(|| format!("{} must be a boolean", name))?
+                        }
                         "active" => {
                             bp.active = value
                                 .as_bool()
@@ -796,6 +885,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             Some(ParameterValue::Bool(self.link_channels))
         } else if name == "mix" {
             Some(ParameterValue::Float(self.mix))
+        } else if name == "detection_mode" {
+            let idx = if self.detection_mode == "rms" { 1 } else { 0 };
+            Some(ParameterValue::Int(idx))
         } else if name == "threshold" {
             Some(ParameterValue::Float(self.threshold_db))
         } else if name == "ratio" {
@@ -840,6 +932,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         )),
                         "hold" => Some(ParameterValue::Float(bp.hold_ms.unwrap_or(self.hold_ms))),
                         "auto" => Some(ParameterValue::Bool(bp.auto_makeup)),
+                        "measured" => Some(ParameterValue::Bool(bp.measured_auto_makeup)),
                         "active" => Some(ParameterValue::Bool(bp.active)),
                         "solo" => Some(ParameterValue::Bool(bp.solo)),
                         "bypass" => Some(ParameterValue::Bool(bp.bypass)),
@@ -871,6 +964,19 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             *s = LogSmoother::new(s.target(), 50.0, sr);
         }
 
+        // Reinitialize measured makeup smoothing for new sample rate
+        for mm in &mut self.measured_makeups {
+            mm.set_smoothing(1000.0, sr);
+        }
+
+        // Reinitialize level detectors for new sample rate
+        let det_mode = parse_detection_mode(&self.detection_mode);
+        for band_dets in &mut self.level_detectors {
+            for det in band_dets {
+                *det = LevelDetector::new(det_mode, sr);
+            }
+        }
+
         // Pre-allocate buffers for real-time safety
         let max_frames = 4096; // Standard max block size
         let stride = max_frames * self.channels;
@@ -882,6 +988,14 @@ impl InPlacePlugin for MultibandExpanderPlugin {
     fn reset(&mut self) {
         for b in &mut self.band_expanders {
             b.reset();
+        }
+        for mm in &mut self.measured_makeups {
+            mm.reset();
+        }
+        for band_dets in &mut self.level_detectors {
+            for det in band_dets {
+                det.reset();
+            }
         }
         self.band_buffers.fill(0.0);
         self.dry_buffer.fill(0.0);
@@ -986,7 +1100,11 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             let hs = (bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms)
                 * 0.001
                 * self.sample_rate as f32) as usize;
-            let auto_makeup_gain = if bp.map(|p| p.auto_makeup).unwrap_or(false) {
+            let use_measured_makeup = bp.map(|p| p.measured_auto_makeup).unwrap_or(false);
+            let auto_makeup_gain = if use_measured_makeup {
+                // Measured makeup: will be computed per-frame below
+                1.0
+            } else if bp.map(|p| p.auto_makeup).unwrap_or(false) {
                 let slope = 1.0 - 1.0 / rat.max(1.0);
                 let avg_atten = rg.max(0.0) * slope * 0.5;
                 fast_pow10(avg_atten / 20.0)
@@ -994,23 +1112,32 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 1.0
             };
 
+            let use_rms = self.detection_mode == "rms";
             let bexp = &mut self.band_expanders[b];
             let off = b * stride;
             let mut band_max_abs = 0.0f32;
 
             for frame in 0..nf {
-                let mut det = 0.0f32;
+                let mut det_db = 0.0f32;
                 if self.link_channels {
-                    for ch in 0..self.channels {
-                        det = det.max(self.band_buffers[off + frame * self.channels + ch].abs());
+                    if use_rms {
+                        // For linked RMS: compute max RMS across channels
+                        let mut max_rms_db = -120.0f32;
+                        for ch in 0..self.channels {
+                            let s = self.band_buffers[off + frame * self.channels + ch];
+                            let ch_db = self.level_detectors[b][ch].process(s);
+                            max_rms_db = max_rms_db.max(ch_db);
+                        }
+                        det_db = max_rms_db;
+                    } else {
+                        let mut peak = 0.0f32;
+                        for ch in 0..self.channels {
+                            peak = peak
+                                .max(self.band_buffers[off + frame * self.channels + ch].abs());
+                        }
+                        det_db = 20.0 * fast_log10(peak.max(1e-10));
                     }
                 }
-
-                let idb = if self.link_channels {
-                    20.0 * fast_log10(det.max(1e-10))
-                } else {
-                    0.0 // Computed per-channel below
-                };
 
                 for ch in 0..self.channels {
                     let idx = off + frame * self.channels + ch;
@@ -1018,7 +1145,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     band_max_abs = band_max_abs.max(sample_abs);
 
                     let db = if self.link_channels {
-                        idb
+                        det_db
+                    } else if use_rms {
+                        self.level_detectors[b][ch].process(self.band_buffers[idx])
                     } else {
                         20.0 * fast_log10(sample_abs.max(1e-10))
                     };
@@ -1063,8 +1192,19 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         bexp.release_coeff
                     };
                     bexp.envelope[ch] = target + c * (bexp.envelope[ch] - target);
-                    self.band_buffers[idx] *=
-                        fast_pow10(-bexp.envelope[ch] / 20.0) * auto_makeup_gain;
+
+                    // Update measured makeup tracker if enabled
+                    if use_measured_makeup {
+                        self.measured_makeups[b].update(bexp.envelope[ch]);
+                    }
+
+                    let gain_linear = fast_pow10(-bexp.envelope[ch] / 20.0);
+                    let makeup = if use_measured_makeup {
+                        self.measured_makeups[b].makeup_linear()
+                    } else {
+                        auto_makeup_gain
+                    };
+                    self.band_buffers[idx] *= gain_linear * makeup;
                 }
             }
             self.band_levels_db[b] = 20.0 * fast_log10(band_max_abs.max(1e-10));

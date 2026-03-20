@@ -5,7 +5,9 @@
 use sotf_host::stft_common::{RealFftProcessor, RingAccumulator, generate_hann_window};
 
 /// Minimum number of matched partials required to record a drift measurement.
-const MIN_MATCHED_PARTIALS: usize = 3;
+/// Lowered from 3 to 2 to improve detection sensitivity on simpler signals
+/// (e.g. single-note or two-partial tones).
+const MIN_MATCHED_PARTIALS: usize = 2;
 
 /// Weight for log-amplitude distance in the combined matching cost.
 /// Frequency remains the primary discriminator; amplitude breaks ties.

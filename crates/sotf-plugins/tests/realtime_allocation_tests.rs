@@ -592,7 +592,8 @@ fn test_crossover_zero_alloc() {
     let mut plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
-    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
+    let input = generate_test_buffer(BUFFER_SIZE, 2);
+    let mut output = vec![0.0f32; input.len()];
     let ctx = ProcessContext {
         sample_rate: SAMPLE_RATE,
         num_frames: BUFFER_SIZE,
@@ -600,13 +601,13 @@ fn test_crossover_zero_alloc() {
 
     // Warm-up
     for _ in 0..20 {
-        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+        plugin.process(&input, &mut output, &ctx).unwrap();
         let _ = plugin.get_data();
     }
 
     assert_no_allocs("CrossoverPlugin", || {
         for _ in 0..1000 {
-            plugin.process_in_place(&mut buffer, &ctx).unwrap();
+            plugin.process(&input, &mut output, &ctx).unwrap();
             let _ = plugin.get_data();
         }
     });
@@ -624,6 +625,8 @@ fn test_downmix_zero_alloc() {
         phase_coherence: true,
         phase_blend_low_hz: 200.0,
         phase_blend_high_hz: 500.0,
+        itu_mode: false,
+        dolby_ltrt: false,
     };
     let mut plugin = DownmixPlugin::from_params(params);
     plugin.initialize(SAMPLE_RATE).unwrap();

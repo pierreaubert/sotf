@@ -1211,6 +1211,7 @@ impl PlayerView {
                 auto_makeup,
                 link_channels,
                 sidechain_hpf_hz,
+                ..
             } => render_compressor_plugin(
                 entity,
                 plugin_idx,
@@ -1239,6 +1240,7 @@ impl PlayerView {
                 lookahead_ms,
                 soft,
                 mix,
+                ..
             } => render_limiter_plugin(
                 entity,
                 plugin_idx,
@@ -1265,6 +1267,7 @@ impl PlayerView {
                 mix,
                 link_channels,
                 sidechain_hpf_hz,
+                ..
             } => render_gate_plugin(
                 entity,
                 plugin_idx,
@@ -1412,6 +1415,7 @@ impl PlayerView {
                 comp_eq_depth_db,
                 decor_low_hz,
                 decor_high_hz,
+                ..
             } => render_mono_to_stereo_plugin(
                 entity,
                 plugin_idx,

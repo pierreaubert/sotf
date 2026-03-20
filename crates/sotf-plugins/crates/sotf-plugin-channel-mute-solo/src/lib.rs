@@ -10,8 +10,11 @@ use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext}
 use sotf_host::simd::apply_per_channel_gain_simd;
 use sotf_host::smoothing::Smoother;
 
-/// Smoothing time in ms for mute/solo/dim transitions (~5ms fade to avoid clicks)
-const FADE_SMOOTH_MS: f32 = 5.0;
+/// Default smoothing time in ms for mute/solo/dim transitions (~5ms fade to avoid clicks)
+const DEFAULT_FADE_MS: f32 = 5.0;
+
+/// Default dim gain in dB (-20dB)
+const DEFAULT_DIM_GAIN_DB: f32 = -20.0;
 
 // ============================================================================
 // Configuration
@@ -33,6 +36,20 @@ pub struct ChannelMuteSoloParams {
     pub enabled: bool,
     #[serde(default)]
     pub channel_states: Vec<ChannelState>,
+    /// Dim gain in dB (default -20.0)
+    #[serde(default = "default_dim_gain_db")]
+    pub dim_gain_db: f32,
+    /// Fade time in ms for mute/solo/dim transitions (default 5.0)
+    #[serde(default = "default_fade_ms")]
+    pub fade_ms: f32,
+}
+
+fn default_dim_gain_db() -> f32 {
+    DEFAULT_DIM_GAIN_DB
+}
+
+fn default_fade_ms() -> f32 {
+    DEFAULT_FADE_MS
 }
 
 // ============================================================================
@@ -53,11 +70,23 @@ pub struct ChannelMuteSoloPlugin {
     channel_smoothers: Vec<Smoother>,
     /// Sample rate for smoother initialization
     sample_rate: u32,
+    /// Dim gain in dB (e.g. -20.0 means dimmed channels are attenuated by 20dB)
+    dim_gain_db: f32,
+    /// Dim gain as linear multiplier (cached from dim_gain_db)
+    dim_gain_linear: f32,
+    /// Fade time in ms for mute/solo/dim transitions
+    fade_ms: f32,
     /// Parameter ID for enabled flag
     param_enabled: ParameterId,
     /// Parameter ID for channel states (JSON)
     param_channel_states: ParameterId,
-    // Cache for SIMD optimization
+    /// Parameter ID for dim gain in dB
+    param_dim_gain_db: ParameterId,
+    /// Parameter ID for fade time in ms
+    param_fade_ms: ParameterId,
+    /// Cached parameter descriptors
+    cached_parameters: Vec<Parameter>,
+    /// Cache for SIMD optimization
     cached_gains: Vec<f32>,
 }
 
@@ -66,28 +95,42 @@ impl ChannelMuteSoloPlugin {
     pub fn new(channels: usize, enabled: bool) -> Self {
         let channel_states = vec![ChannelState::default(); channels];
         let sample_rate = 48000;
-        let channel_smoothers = vec![Smoother::new(1.0, FADE_SMOOTH_MS, sample_rate); channels];
-        Self {
+        let dim_gain_db = DEFAULT_DIM_GAIN_DB;
+        let fade_ms = DEFAULT_FADE_MS;
+        let channel_smoothers = vec![Smoother::new(1.0, fade_ms, sample_rate); channels];
+        let mut p = Self {
             channels,
             enabled,
             channel_states,
             channel_smoothers,
             sample_rate,
+            dim_gain_db,
+            dim_gain_linear: Self::db_to_linear(dim_gain_db),
+            fade_ms,
             param_enabled: ParameterId::from("enabled"),
             param_channel_states: ParameterId::from("channel_states"),
+            param_dim_gain_db: ParameterId::from("dim_gain_db"),
+            param_fade_ms: ParameterId::from("fade_ms"),
+            cached_parameters: Vec::new(),
             cached_gains: vec![1.0; channels],
-        }
+        };
+        p.rebuild_cached_parameters();
+        p
     }
 
     /// Create a new channel mute/solo plugin from configuration parameters
     pub fn from_params(channels: usize, params: ChannelMuteSoloParams) -> Self {
         let mut plugin = Self::new(channels, params.enabled);
 
+        plugin.set_dim_gain_db(params.dim_gain_db);
+        plugin.set_fade_ms(params.fade_ms);
+
         if params.channel_states.len() == channels {
             plugin.channel_states = params.channel_states;
         }
 
         plugin.reset_smoothers_to_current();
+        plugin.rebuild_cached_parameters();
         plugin
     }
 
@@ -127,6 +170,60 @@ impl ChannelMuteSoloPlugin {
         self.channel_states.get(channel)
     }
 
+    /// Set the dim gain in dB
+    pub fn set_dim_gain_db(&mut self, db: f32) {
+        self.dim_gain_db = db;
+        self.dim_gain_linear = Self::db_to_linear(db);
+        self.update_smoother_targets();
+    }
+
+    /// Get the dim gain in dB
+    pub fn dim_gain_db(&self) -> f32 {
+        self.dim_gain_db
+    }
+
+    /// Set the fade time in ms
+    pub fn set_fade_ms(&mut self, ms: f32) {
+        self.fade_ms = ms;
+        for smoother in &mut self.channel_smoothers {
+            smoother.set_time(ms, self.sample_rate);
+        }
+    }
+
+    /// Get the fade time in ms
+    pub fn fade_ms(&self) -> f32 {
+        self.fade_ms
+    }
+
+    /// Convert dB to linear gain
+    #[inline]
+    fn db_to_linear(db: f32) -> f32 {
+        10.0_f32.powf(db / 20.0)
+    }
+
+    /// Rebuild cached parameter descriptors
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_bool("enabled", "Enabled", self.enabled)
+                .with_description("Enable/disable the plugin")
+                .with_group("General")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_string(
+                "channel_states",
+                "Channel States",
+                serde_json::to_string(&self.channel_states).unwrap_or_default(),
+            )
+            .with_description("Per-channel mute/solo/dim states (JSON)")
+            .with_group("General"),
+            Parameter::new_float("dim_gain_db", "Dim Gain", self.dim_gain_db, -60.0, 0.0)
+                .with_description("Gain applied to dimmed channels (dB)")
+                .with_group("General"),
+            Parameter::new_float("fade_ms", "Fade Time", self.fade_ms, 0.0, 100.0)
+                .with_description("Transition fade time (ms)")
+                .with_group("General"),
+        ];
+    }
+
     /// Recompute smoother targets based on current channel states
     fn update_smoother_targets(&mut self) {
         let has_solo = self.channel_states.iter().any(|s| s.soloed);
@@ -134,7 +231,7 @@ impl ChannelMuteSoloPlugin {
             let target = if !self.enabled {
                 1.0
             } else {
-                Self::compute_channel_gain(state, has_solo)
+                self.compute_channel_gain(state, has_solo)
             };
             self.channel_smoothers[ch].set_target(target);
         }
@@ -147,20 +244,20 @@ impl ChannelMuteSoloPlugin {
             let target = if !self.enabled {
                 1.0
             } else {
-                Self::compute_channel_gain(state, has_solo)
+                self.compute_channel_gain(state, has_solo)
             };
             self.channel_smoothers[ch].reset(target);
         }
     }
 
     /// Compute the target gain for a channel given its state
-    fn compute_channel_gain(state: &ChannelState, has_solo: bool) -> f32 {
+    fn compute_channel_gain(&self, state: &ChannelState, has_solo: bool) -> f32 {
         if has_solo {
             if state.soloed { 1.0 } else { 0.0 }
         } else if state.muted {
             0.0
         } else if state.dimmed {
-            0.1 // -20dB
+            self.dim_gain_linear
         } else {
             1.0
         }
@@ -178,34 +275,40 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_bool("enabled", "Enabled", self.enabled)
-                .with_description("Enable/disable the plugin")
-                .with_group("General")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_string(
-                "channel_states",
-                "Channel States",
-                serde_json::to_string(&self.channel_states).unwrap_or_default(),
-            )
-            .with_description("Per-channel mute/solo/dim states (JSON)")
-            .with_group("General"),
-        ]
+        self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
         if id == self.param_enabled {
             self.set_enabled(value.as_bool().unwrap_or(true));
+            self.rebuild_cached_parameters();
             Ok(())
         } else if id == self.param_channel_states {
             if let Some(json_str) = value.as_string() {
                 let states: Vec<ChannelState> =
                     serde_json::from_str(json_str).map_err(|e| e.to_string())?;
                 self.set_channel_states(states);
+                self.rebuild_cached_parameters();
                 Ok(())
             } else {
                 Err("channel_states must be string".to_string())
+            }
+        } else if id == self.param_dim_gain_db {
+            if let Some(v) = value.as_float() {
+                self.set_dim_gain_db(v);
+                self.rebuild_cached_parameters();
+                Ok(())
+            } else {
+                Err("dim_gain_db must be float".to_string())
+            }
+        } else if id == self.param_fade_ms {
+            if let Some(v) = value.as_float() {
+                self.set_fade_ms(v);
+                self.rebuild_cached_parameters();
+                Ok(())
+            } else {
+                Err("fade_ms must be float".to_string())
             }
         } else {
             Err(format!("Unknown parameter: {}", id))
@@ -219,6 +322,10 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
             serde_json::to_string(&self.channel_states)
                 .ok()
                 .map(ParameterValue::String)
+        } else if id == &self.param_dim_gain_db {
+            Some(ParameterValue::Float(self.dim_gain_db))
+        } else if id == &self.param_fade_ms {
+            Some(ParameterValue::Float(self.fade_ms))
         } else {
             None
         }
@@ -227,7 +334,7 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         for smoother in &mut self.channel_smoothers {
-            smoother.set_time(FADE_SMOOTH_MS, sample_rate);
+            smoother.set_time(self.fade_ms, sample_rate);
         }
         self.update_smoother_targets();
         Ok(())
@@ -423,6 +530,8 @@ mod tests {
                     dimmed: false,
                 },
             ],
+            dim_gain_db: DEFAULT_DIM_GAIN_DB,
+            fade_ms: DEFAULT_FADE_MS,
         };
 
         let plugin = ChannelMuteSoloPlugin::from_params(2, params);
@@ -448,6 +557,8 @@ mod tests {
                     dimmed: false,
                 },
             ],
+            dim_gain_db: DEFAULT_DIM_GAIN_DB,
+            fade_ms: DEFAULT_FADE_MS,
         };
 
         let mut plugin = ChannelMuteSoloPlugin::from_params(2, params);
@@ -491,5 +602,159 @@ mod tests {
         // Should be less than 1.0 but not yet 0.0 (fading)
         assert!(buffer[0] < 1.0, "Should start fading");
         assert!(buffer[0] > 0.0, "Should not jump to 0.0 instantly");
+    }
+
+    #[test]
+    fn test_configurable_dim_gain() {
+        // Use -10dB dim instead of default -20dB
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        plugin.set_dim_gain_db(-10.0);
+        plugin.set_channel_state(0, false, false, true); // Dim channel 0
+
+        let expected_linear = 10.0_f32.powf(-10.0 / 20.0); // ~0.316
+
+        let last_frame = process_converged(&mut plugin, 2);
+        assert!(
+            (last_frame[0] - expected_linear).abs() < TOLERANCE,
+            "Ch0 should be dimmed to ~0.316 (-10dB), got {}",
+            last_frame[0]
+        );
+        assert!(
+            (last_frame[1] - 1.0).abs() < TOLERANCE,
+            "Ch1 should be unchanged"
+        );
+    }
+
+    #[test]
+    fn test_dim_gain_via_set_parameter() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        plugin
+            .set_parameter(
+                ParameterId::from("dim_gain_db"),
+                ParameterValue::Float(-6.0),
+            )
+            .unwrap();
+        plugin.set_channel_state(0, false, false, true); // Dim channel 0
+
+        let expected_linear = 10.0_f32.powf(-6.0 / 20.0); // ~0.501
+
+        let last_frame = process_converged(&mut plugin, 2);
+        assert!(
+            (last_frame[0] - expected_linear).abs() < TOLERANCE,
+            "Ch0 should be dimmed to ~0.501 (-6dB), got {}",
+            last_frame[0]
+        );
+    }
+
+    #[test]
+    fn test_get_dim_gain_parameter() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        plugin.set_dim_gain_db(-12.0);
+
+        let val = plugin.get_parameter(&ParameterId::from("dim_gain_db"));
+        assert_eq!(val, Some(ParameterValue::Float(-12.0)));
+    }
+
+    #[test]
+    fn test_fade_ms_via_set_parameter() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        plugin
+            .set_parameter(
+                ParameterId::from("fade_ms"),
+                ParameterValue::Float(50.0),
+            )
+            .unwrap();
+
+        assert!((plugin.fade_ms() - 50.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_get_fade_ms_parameter() {
+        let plugin = ChannelMuteSoloPlugin::new(2, true);
+        let val = plugin.get_parameter(&ParameterId::from("fade_ms"));
+        assert_eq!(val, Some(ParameterValue::Float(DEFAULT_FADE_MS)));
+    }
+
+    #[test]
+    fn test_from_params_with_custom_dim_and_fade() {
+        let params = ChannelMuteSoloParams {
+            enabled: true,
+            channel_states: vec![
+                ChannelState {
+                    muted: false,
+                    soloed: false,
+                    dimmed: true,
+                },
+                ChannelState {
+                    muted: false,
+                    soloed: false,
+                    dimmed: false,
+                },
+            ],
+            dim_gain_db: -6.0,
+            fade_ms: 10.0,
+        };
+
+        let mut plugin = ChannelMuteSoloPlugin::from_params(2, params);
+        assert!((plugin.dim_gain_db() - -6.0).abs() < f32::EPSILON);
+        assert!((plugin.fade_ms() - 10.0).abs() < f32::EPSILON);
+
+        // Verify the dim gain is applied correctly (from_params resets smoothers)
+        let mut buffer = vec![1.0, 1.0];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 1,
+        };
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        let expected_linear = 10.0_f32.powf(-6.0 / 20.0);
+        assert!(
+            (buffer[0] - expected_linear).abs() < TOLERANCE,
+            "Ch0 should be dimmed to ~0.501 (-6dB) immediately, got {}",
+            buffer[0]
+        );
+    }
+
+    #[test]
+    fn test_dim_gain_out_of_range_rejected() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        // Above max (0.0)
+        let result = plugin.set_parameter(
+            ParameterId::from("dim_gain_db"),
+            ParameterValue::Float(1.0),
+        );
+        assert!(result.is_err());
+        // Below min (-60.0)
+        let result = plugin.set_parameter(
+            ParameterId::from("dim_gain_db"),
+            ParameterValue::Float(-70.0),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fade_ms_out_of_range_rejected() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        // Below min (0.0)
+        let result = plugin.set_parameter(
+            ParameterId::from("fade_ms"),
+            ParameterValue::Float(-1.0),
+        );
+        assert!(result.is_err());
+        // Above max (100.0)
+        let result = plugin.set_parameter(
+            ParameterId::from("fade_ms"),
+            ParameterValue::Float(200.0),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_params_serde_defaults() {
+        // When deserializing JSON without dim_gain_db/fade_ms, defaults should apply
+        let json = r#"{"enabled": true, "channel_states": []}"#;
+        let params: ChannelMuteSoloParams = serde_json::from_str(json).unwrap();
+        assert!((params.dim_gain_db - DEFAULT_DIM_GAIN_DB).abs() < f32::EPSILON);
+        assert!((params.fade_ms - DEFAULT_FADE_MS).abs() < f32::EPSILON);
     }
 }

@@ -85,6 +85,17 @@ pub struct BinauralDecoderPlugin {
     reflection_delay_pos: usize,
     reflection_delay_mask: usize,
 
+    /// Crossfade state for smooth HRTF transitions.
+    /// When HRTF filters change, we blend from old to new over ~50ms.
+    /// `current_state_snapshot` tracks the last-seen Arc so we can detect changes.
+    current_state_snapshot: Arc<BinauralState>,
+    crossfade_prev_state: Option<Arc<BinauralState>>,
+    crossfade_remaining: usize,
+    crossfade_total: usize,
+    /// Temporary buffers for crossfade blending (old filter output)
+    crossfade_sum_left: Vec<Complex<f32>>,
+    crossfade_sum_right: Vec<Complex<f32>>,
+
     latency_filled: usize,
     cached_parameters: Vec<Parameter>,
 }
@@ -159,6 +170,12 @@ impl BinauralDecoderPlugin {
 
         let delay_size = 16384;
 
+        let initial_state = Arc::new(BinauralState {
+            hrtf_filters_freq,
+            diffuse_field_eq_filter: None,
+            _hrtf_data: None,
+        });
+
         let mut p = Self {
             input_channels,
             fft_size,
@@ -169,11 +186,7 @@ impl BinauralDecoderPlugin {
             fft_r2c,
             fft_c2r,
             freq_size,
-            state: Arc::new(ArcSwap::from_pointee(BinauralState {
-                hrtf_filters_freq,
-                diffuse_field_eq_filter: None,
-                _hrtf_data: None,
-            })),
+            state: Arc::new(ArcSwap::from(initial_state.clone())),
             lfe_lowpass_filter: vec![Complex::new(1.0, 0.0); freq_size],
             lfe_gain: 1.0,
             lfe_channels,
@@ -204,6 +217,12 @@ impl BinauralDecoderPlugin {
             reflection_delay_line: vec![0.0; delay_size * 2],
             reflection_delay_pos: 0,
             reflection_delay_mask: delay_size - 1,
+            current_state_snapshot: initial_state,
+            crossfade_prev_state: None,
+            crossfade_remaining: 0,
+            crossfade_total: 0,
+            crossfade_sum_left: vec![Complex::new(0.0, 0.0); freq_size],
+            crossfade_sum_right: vec![Complex::new(0.0, 0.0); freq_size],
             latency_filled: 0,
             cached_parameters: Vec::new(),
         };
@@ -243,7 +262,28 @@ impl BinauralDecoderPlugin {
     }
 
     fn process_audio_block(&mut self) {
-        let state = self.state.load();
+        // Detect state changes for crossfade
+        let new_state = self.state.load_full();
+        if !Arc::ptr_eq(&new_state, &self.current_state_snapshot) {
+            // State changed -- start crossfade from old to new
+            // ~50ms crossfade duration in samples, rounded up to hop_size boundary
+            let crossfade_samples = (self.sample_rate as f32 * 0.05) as usize;
+            let crossfade_hops = crossfade_samples.div_ceil(self.hop_size);
+            let total = crossfade_hops * self.hop_size;
+
+            log::debug!(
+                "[BinauralDecoder] HRTF state changed, crossfading over {} samples ({} hops)",
+                total,
+                crossfade_hops
+            );
+
+            self.crossfade_prev_state = Some(self.current_state_snapshot.clone());
+            self.crossfade_total = total;
+            self.crossfade_remaining = total;
+            self.current_state_snapshot = new_state.clone();
+        }
+
+        let state = &new_state;
         let filters = &state.hrtf_filters_freq;
         let df_eq = &state.diffuse_field_eq_filter;
         let n = self.fft_size;
@@ -251,38 +291,173 @@ impl BinauralDecoderPlugin {
         let mask = self.output_accumulator_mask;
         let scale = self.output_scale;
 
-        self.sum_left.fill(Complex::new(0.0, 0.0));
-        self.sum_right.fill(Complex::new(0.0, 0.0));
-        self.lfe_freq.fill(Complex::new(0.0, 0.0));
+        // Check if we need crossfade blending
+        let crossfading = self.crossfade_remaining > 0 && self.crossfade_prev_state.is_some();
 
-        for &ch in &self.main_channels {
-            let ch_offset = ch * n;
-            window_mul_simd(
-                &mut self.ifft_output_buf,
-                &self.input_buffer[ch_offset..ch_offset + n],
-                &self.analysis_window,
-            );
+        if crossfading {
+            let prev = self.crossfade_prev_state.as_ref().unwrap().clone();
+            let prev_filters = &prev.hrtf_filters_freq;
+            let prev_df_eq = &prev.diffuse_field_eq_filter;
 
-            self.fft_r2c
-                .process_with_scratch(
+            self.sum_left.fill(Complex::new(0.0, 0.0));
+            self.sum_right.fill(Complex::new(0.0, 0.0));
+            self.lfe_freq.fill(Complex::new(0.0, 0.0));
+
+            // We need the FFT of each channel's input. Since both old and new use the same input,
+            // we compute the FFT once per channel and apply both filter sets.
+            // But the FFT output is stored in temp_freq_buffer, so we need to process per-channel.
+
+            // Old state accumulators
+            self.crossfade_sum_left.fill(Complex::new(0.0, 0.0));
+            self.crossfade_sum_right.fill(Complex::new(0.0, 0.0));
+
+            for &ch in &self.main_channels {
+                let ch_offset = ch * n;
+                window_mul_simd(
                     &mut self.ifft_output_buf,
-                    &mut self.temp_freq_buffer,
-                    &mut self.temp_fft_scratch,
-                )
-                .unwrap();
-            let hrtf = &filters[ch];
-            complex_mul_add_simd(
-                &mut self.sum_left,
-                &self.temp_freq_buffer,
-                &hrtf[0..freq_size],
-            );
-            complex_mul_add_simd(
-                &mut self.sum_right,
-                &self.temp_freq_buffer,
-                &hrtf[freq_size..],
-            );
+                    &self.input_buffer[ch_offset..ch_offset + n],
+                    &self.analysis_window,
+                );
+
+                self.fft_r2c
+                    .process_with_scratch(
+                        &mut self.ifft_output_buf,
+                        &mut self.temp_freq_buffer,
+                        &mut self.temp_fft_scratch,
+                    )
+                    .unwrap();
+
+                // New filters
+                let hrtf_new = &filters[ch];
+                complex_mul_add_simd(
+                    &mut self.sum_left,
+                    &self.temp_freq_buffer,
+                    &hrtf_new[0..freq_size],
+                );
+                complex_mul_add_simd(
+                    &mut self.sum_right,
+                    &self.temp_freq_buffer,
+                    &hrtf_new[freq_size..],
+                );
+
+                // Old filters
+                let hrtf_old = &prev_filters[ch];
+                complex_mul_add_simd(
+                    &mut self.crossfade_sum_left,
+                    &self.temp_freq_buffer,
+                    &hrtf_old[0..freq_size],
+                );
+                complex_mul_add_simd(
+                    &mut self.crossfade_sum_right,
+                    &self.temp_freq_buffer,
+                    &hrtf_old[freq_size..],
+                );
+            }
+
+            // Apply diffuse field EQ to new output
+            if let Some(eq) = df_eq {
+                for (k, (sl, sr)) in self
+                    .sum_left
+                    .iter_mut()
+                    .zip(self.sum_right.iter_mut())
+                    .enumerate()
+                    .take(freq_size)
+                {
+                    *sl *= eq[0][k];
+                    *sr *= eq[1][k];
+                }
+            }
+
+            // Apply diffuse field EQ to old output
+            if let Some(eq) = prev_df_eq {
+                for (k, (sl, sr)) in self
+                    .crossfade_sum_left
+                    .iter_mut()
+                    .zip(self.crossfade_sum_right.iter_mut())
+                    .enumerate()
+                    .take(freq_size)
+                {
+                    *sl *= eq[0][k];
+                    *sr *= eq[1][k];
+                }
+            }
+
+            // Blend old and new in frequency domain using crossfade gain
+            // Linear crossfade: new_gain goes from 0.0 to 1.0 over the crossfade period
+            let new_gain = if self.crossfade_total > 0 {
+                1.0 - (self.crossfade_remaining as f32 / self.crossfade_total as f32)
+            } else {
+                1.0
+            };
+            let old_gain = 1.0 - new_gain;
+
+            for k in 0..freq_size {
+                self.sum_left[k] =
+                    self.sum_left[k] * new_gain + self.crossfade_sum_left[k] * old_gain;
+                self.sum_right[k] =
+                    self.sum_right[k] * new_gain + self.crossfade_sum_right[k] * old_gain;
+            }
+
+            // Advance crossfade
+            self.crossfade_remaining = self.crossfade_remaining.saturating_sub(self.hop_size);
+            if self.crossfade_remaining == 0 {
+                self.crossfade_prev_state = None;
+                log::debug!("[BinauralDecoder] HRTF crossfade complete");
+            }
+        } else {
+            // Normal path -- no crossfade
+            self.sum_left.fill(Complex::new(0.0, 0.0));
+            self.sum_right.fill(Complex::new(0.0, 0.0));
+            self.lfe_freq.fill(Complex::new(0.0, 0.0));
+
+            for &ch in &self.main_channels {
+                let ch_offset = ch * n;
+                window_mul_simd(
+                    &mut self.ifft_output_buf,
+                    &self.input_buffer[ch_offset..ch_offset + n],
+                    &self.analysis_window,
+                );
+
+                self.fft_r2c
+                    .process_with_scratch(
+                        &mut self.ifft_output_buf,
+                        &mut self.temp_freq_buffer,
+                        &mut self.temp_fft_scratch,
+                    )
+                    .unwrap();
+                let hrtf = &filters[ch];
+                complex_mul_add_simd(
+                    &mut self.sum_left,
+                    &self.temp_freq_buffer,
+                    &hrtf[0..freq_size],
+                );
+                complex_mul_add_simd(
+                    &mut self.sum_right,
+                    &self.temp_freq_buffer,
+                    &hrtf[freq_size..],
+                );
+            }
+
+            if let Some(eq) = df_eq {
+                for (k, (sl, sr)) in self
+                    .sum_left
+                    .iter_mut()
+                    .zip(self.sum_right.iter_mut())
+                    .enumerate()
+                    .take(freq_size)
+                {
+                    *sl *= eq[0][k];
+                    *sr *= eq[1][k];
+                }
+            }
         }
 
+        // LFE processing (same for both paths -- LFE doesn't use HRTF filters)
+        if !crossfading {
+            // lfe_freq already zeroed above in normal path
+        } else {
+            self.lfe_freq.fill(Complex::new(0.0, 0.0));
+        }
         for &ch in &self.lfe_channels {
             let ch_offset = ch * n;
             window_mul_simd(
@@ -305,20 +480,7 @@ impl BinauralDecoderPlugin {
             );
         }
 
-        if let Some(eq) = df_eq {
-            for (k, (sl, sr)) in self
-                .sum_left
-                .iter_mut()
-                .zip(self.sum_right.iter_mut())
-                .enumerate()
-                .take(freq_size)
-            {
-                *sl *= eq[0][k];
-                *sr *= eq[1][k];
-            }
-        }
-
-        // Left
+        // Left IFFT
         self.sum_left[0].im = 0.0;
         self.sum_left[freq_size - 1].im = 0.0;
         self.fft_c2r
@@ -333,7 +495,7 @@ impl BinauralDecoderPlugin {
             self.output_accumulator[idx * 2] += self.ifft_output_buf[i] * scale;
         }
 
-        // Right
+        // Right IFFT
         self.sum_right[0].im = 0.0;
         self.sum_right[freq_size - 1].im = 0.0;
         self.fft_c2r
@@ -348,7 +510,7 @@ impl BinauralDecoderPlugin {
             self.output_accumulator[idx * 2 + 1] += self.ifft_output_buf[i] * scale;
         }
 
-        // LFE
+        // LFE IFFT
         if !self.lfe_channels.is_empty() {
             self.lfe_freq[0].im = 0.0;
             self.lfe_freq[freq_size - 1].im = 0.0;
@@ -409,6 +571,9 @@ impl BinauralDecoderPlugin {
         self.latency_filled = 0;
         self.reflection_delay_line.fill(0.0);
         self.reflection_delay_pos = 0;
+        // Clear crossfade state on reset
+        self.crossfade_prev_state = None;
+        self.crossfade_remaining = 0;
     }
 }
 
@@ -468,7 +633,19 @@ impl Plugin for BinauralDecoderPlugin {
             }
         }
         if let Some(p) = &self.hrtf_path {
-            let sofa = SofaFile::load(p)?;
+            let mut sofa = SofaFile::load(p)?;
+
+            // Resample HRTF IRs if sample rate differs from engine rate
+            let sofa_rate = sofa.sample_rate.round() as u32;
+            if sofa_rate != sr {
+                log::info!(
+                    "[BinauralDecoder] HRTF sample rate ({} Hz) differs from engine ({} Hz), resampling",
+                    sofa_rate,
+                    sr
+                );
+                hrtf::resample_sofa(&mut sofa, sr)?;
+            }
+
             let mut filters =
                 vec![vec![Complex::new(0.0, 0.0); self.freq_size * 2]; self.input_channels];
             for spk in self.speaker_config.speakers {
@@ -507,11 +684,16 @@ impl Plugin for BinauralDecoderPlugin {
             } else {
                 None
             };
-            self.state.store(Arc::new(BinauralState {
+            let new_state = Arc::new(BinauralState {
                 hrtf_filters_freq: filters,
                 diffuse_field_eq_filter: eq,
                 _hrtf_data: Some(sofa),
-            }));
+            });
+            self.state.store(new_state.clone());
+            self.current_state_snapshot = new_state;
+            // Clear any in-progress crossfade on re-initialize
+            self.crossfade_prev_state = None;
+            self.crossfade_remaining = 0;
         }
         Ok(())
     }
@@ -585,6 +767,8 @@ impl Plugin for BinauralDecoderPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sotf_host::plugin::ProcessContext;
+    use sotf_host::sofa::{SofaFile, SourcePosition};
 
     #[test]
     fn test_binaural_decoder_creation() {
@@ -605,5 +789,279 @@ mod tests {
         assert_eq!(plugin.output_channels(), 2);
         assert_eq!(plugin.fft_size, 4096);
         assert_eq!(plugin.hop_size, 1024);
+    }
+
+    /// Create a minimal synthetic SofaFile for testing (no file I/O needed)
+    fn make_test_sofa(sample_rate: f32, ir_length: usize, num_measurements: usize) -> SofaFile {
+        let mut positions = Vec::with_capacity(num_measurements);
+        let mut impulse_responses = Vec::with_capacity(num_measurements * 2 * ir_length);
+
+        for i in 0..num_measurements {
+            let az = (i as f32 / num_measurements as f32) * 360.0 - 180.0;
+            positions.push(SourcePosition::new(az, 0.0, 1.0));
+
+            // Create a simple delta impulse for each ear
+            for _ear in 0..2 {
+                let mut ir = vec![0.0f32; ir_length];
+                ir[0] = 1.0; // delta impulse
+                impulse_responses.extend_from_slice(&ir);
+            }
+        }
+
+        SofaFile {
+            sample_rate,
+            num_measurements,
+            ir_length,
+            positions,
+            impulse_responses,
+            convention: "SimpleFreeFieldHRIR".to_string(),
+            data_sample_rate: Some(sample_rate),
+        }
+    }
+
+    #[test]
+    fn test_resample_sofa_same_rate() {
+        let mut sofa = make_test_sofa(48000.0, 128, 4);
+        // No-op when rates match
+        hrtf::resample_sofa(&mut sofa, 48000).unwrap();
+        assert_eq!(sofa.sample_rate, 48000.0);
+        assert_eq!(sofa.ir_length, 128);
+    }
+
+    #[test]
+    fn test_resample_sofa_upsample() {
+        // Use a longer IR with a wider pulse to survive resampler latency and filtering
+        let original_ir_length = 512;
+        let num_measurements = 4;
+        let mut sofa = make_test_sofa(44100.0, original_ir_length, num_measurements);
+
+        // Put a wider pulse (first 8 samples = 1.0) so energy survives sinc interpolation
+        for m in 0..num_measurements {
+            for ear in 0..2 {
+                let offset = m * 2 * original_ir_length + ear * original_ir_length;
+                for i in 0..8 {
+                    sofa.impulse_responses[offset + i] = 1.0;
+                }
+            }
+        }
+
+        hrtf::resample_sofa(&mut sofa, 48000).unwrap();
+
+        // After resampling 44100->48000, IR length should increase proportionally
+        let expected_length =
+            (original_ir_length as f64 * 48000.0 / 44100.0).ceil() as usize;
+        assert_eq!(sofa.sample_rate, 48000.0);
+        assert_eq!(sofa.ir_length, expected_length);
+        assert_eq!(
+            sofa.impulse_responses.len(),
+            num_measurements * 2 * expected_length
+        );
+
+        // Check that the resampled IR has non-zero energy
+        let ir_left = &sofa.impulse_responses[0..expected_length];
+        let energy: f32 = ir_left.iter().map(|x| x * x).sum();
+        assert!(
+            energy > 0.1,
+            "Resampled IR energy ({}) should be non-trivial",
+            energy
+        );
+    }
+
+    #[test]
+    fn test_resample_sofa_downsample() {
+        let original_ir_length = 256;
+        let mut sofa = make_test_sofa(96000.0, original_ir_length, 2);
+        hrtf::resample_sofa(&mut sofa, 48000).unwrap();
+
+        let expected_length =
+            (original_ir_length as f64 * 48000.0 / 96000.0).ceil() as usize;
+        assert_eq!(sofa.sample_rate, 48000.0);
+        assert_eq!(sofa.ir_length, expected_length);
+        assert_eq!(
+            sofa.impulse_responses.len(),
+            2 * 2 * expected_length
+        );
+    }
+
+    #[test]
+    fn test_crossfade_fields_initialized() {
+        let plugin = BinauralDecoderPlugin::new(
+            2,
+            2048,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+
+        assert!(plugin.crossfade_prev_state.is_none());
+        assert_eq!(plugin.crossfade_remaining, 0);
+        assert_eq!(plugin.crossfade_total, 0);
+        assert_eq!(plugin.crossfade_sum_left.len(), plugin.freq_size);
+        assert_eq!(plugin.crossfade_sum_right.len(), plugin.freq_size);
+    }
+
+    #[test]
+    fn test_crossfade_triggers_on_state_change() {
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Simulate state change by storing a new state
+        let freq_size = plugin.freq_size;
+        let new_state = Arc::new(BinauralState {
+            hrtf_filters_freq: vec![
+                vec![Complex::new(0.5, 0.0); freq_size * 2];
+                plugin.input_channels
+            ],
+            diffuse_field_eq_filter: None,
+            _hrtf_data: None,
+        });
+        plugin.state.store(new_state);
+
+        // Process a block -- this should detect the state change and start crossfade
+        // Fill input buffer to trigger a block
+        plugin.input_buffer.fill(0.0);
+        plugin.input_fill = plugin.fft_size;
+        plugin.process_audio_block();
+
+        // Crossfade should have been initiated and partially consumed
+        // After one hop, remaining should be total - hop_size
+        assert!(
+            plugin.crossfade_total > 0,
+            "Crossfade total should be > 0 after state change"
+        );
+    }
+
+    #[test]
+    fn test_crossfade_completes() {
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Trigger a state change
+        let freq_size = plugin.freq_size;
+        let new_state = Arc::new(BinauralState {
+            hrtf_filters_freq: vec![
+                vec![Complex::new(0.5, 0.0); freq_size * 2];
+                plugin.input_channels
+            ],
+            diffuse_field_eq_filter: None,
+            _hrtf_data: None,
+        });
+        plugin.state.store(new_state);
+
+        // Process enough blocks to complete the crossfade
+        // 50ms at 44100 Hz = 2205 samples; hop_size=256 => ~9 hops
+        for _ in 0..20 {
+            plugin.input_buffer.fill(0.0);
+            plugin.input_fill = plugin.fft_size;
+            plugin.process_audio_block();
+        }
+
+        // After enough blocks, crossfade should be complete
+        assert_eq!(plugin.crossfade_remaining, 0);
+        assert!(plugin.crossfade_prev_state.is_none());
+    }
+
+    #[test]
+    fn test_process_produces_output_without_hrtf() {
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        plugin.initialize(48000).unwrap();
+
+        let num_frames = 4096;
+        let input = vec![0.1f32; num_frames * 2]; // stereo
+        let mut output = vec![0.0f32; num_frames * 2];
+        let context = ProcessContext {
+            num_frames,
+            sample_rate: 48000,
+        };
+
+        let processed = plugin.process(&input, &mut output, &context).unwrap();
+        assert_eq!(processed, num_frames);
+
+        // Should produce some non-zero output (passthrough with default HRTF)
+        let has_signal = output.iter().any(|&s| s.abs() > 1e-6);
+        assert!(has_signal, "Output should contain signal with default passthrough HRTF");
+    }
+
+    #[test]
+    fn test_reset_clears_crossfade() {
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Trigger a state change
+        let freq_size = plugin.freq_size;
+        let new_state = Arc::new(BinauralState {
+            hrtf_filters_freq: vec![
+                vec![Complex::new(0.5, 0.0); freq_size * 2];
+                plugin.input_channels
+            ],
+            diffuse_field_eq_filter: None,
+            _hrtf_data: None,
+        });
+        plugin.state.store(new_state);
+
+        // Process one block to start crossfade
+        plugin.input_buffer.fill(0.0);
+        plugin.input_fill = plugin.fft_size;
+        plugin.process_audio_block();
+
+        // Now reset
+        plugin.reset();
+
+        assert!(plugin.crossfade_prev_state.is_none());
+        assert_eq!(plugin.crossfade_remaining, 0);
     }
 }

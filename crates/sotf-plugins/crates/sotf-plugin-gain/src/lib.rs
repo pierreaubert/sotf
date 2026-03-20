@@ -30,6 +30,7 @@ pub struct GainPlugin {
     channel_gains_db: Vec<f32>,
     channel_gains_smoothers: Vec<Smoother>,
     param_gain_db: ParameterId,
+    param_smoothing_ms: ParameterId,
     cached_gains: Vec<f32>,
     smoothing_ms: f32,
     cached_parameters: Vec<Parameter>,
@@ -41,7 +42,8 @@ impl GainPlugin {
     }
 
     pub fn with_smoothing(channels: usize, gain_db: f32, smoothing_ms: f32) -> Self {
-        let sr = 44100;
+        // Placeholder rate; real rate is set in initialize()
+        let sr = 48000;
         let gain_linear = Self::db_to_linear(gain_db);
         let mut p = Self {
             channels,
@@ -51,6 +53,7 @@ impl GainPlugin {
             channel_gains_db: Vec::with_capacity(channels),
             channel_gains_smoothers: Vec::with_capacity(channels),
             param_gain_db: ParameterId::from("gain_db"),
+            param_smoothing_ms: ParameterId::from("smoothing_ms"),
             cached_gains: vec![0.0; channels],
             smoothing_ms,
             cached_parameters: Vec::new(),
@@ -64,7 +67,8 @@ impl GainPlugin {
             return Err("Empty".into());
         }
         let channels = channel_gains.len();
-        let sr = 44100;
+        // Placeholder rate; real rate is set in initialize()
+        let sr = 48000;
         let cgs: Vec<Smoother> = channel_gains
             .iter()
             .map(|&db| Smoother::new(Self::db_to_linear(db), 20.0, sr))
@@ -77,6 +81,7 @@ impl GainPlugin {
             channel_gains_db: channel_gains,
             channel_gains_smoothers: cgs,
             param_gain_db: ParameterId::from("gain_db"),
+            param_smoothing_ms: ParameterId::from("smoothing_ms"),
             cached_gains: vec![0.0; channels],
             smoothing_ms: 20.0,
             cached_parameters: Vec::new(),
@@ -86,13 +91,16 @@ impl GainPlugin {
     }
 
     fn rebuild_cached_parameters(&mut self) {
-        let mut params = vec![Parameter::new_float(
-            "gain_db",
-            "Gain",
-            self.global_gain_db,
-            pk(GN, "gain_db").min_f64() as f32,
-            pk(GN, "gain_db").max_f64() as f32,
-        )];
+        let mut params = vec![
+            Parameter::new_float(
+                "gain_db",
+                "Gain",
+                self.global_gain_db,
+                pk(GN, "gain_db").min_f64() as f32,
+                pk(GN, "gain_db").max_f64() as f32,
+            ),
+            Parameter::new_float("smoothing_ms", "Smoothing", self.smoothing_ms, 0.0, 200.0),
+        ];
 
         if self.is_per_channel() {
             for ch in 0..self.channels {
@@ -213,6 +221,22 @@ impl InPlacePlugin for GainPlugin {
             }
         }
 
+        if id == self.param_smoothing_ms {
+            Parameter::new_float("smoothing_ms", "Smoothing", 20.0, 0.0, 200.0).validate(&val)?;
+            if let Some(v) = val.as_float()
+                && v.is_finite()
+            {
+                self.smoothing_ms = v.clamp(0.0, 200.0);
+                self.global_gain_smoother
+                    .set_time(self.smoothing_ms, self.sample_rate);
+                for s in &mut self.channel_gains_smoothers {
+                    s.set_time(self.smoothing_ms, self.sample_rate);
+                }
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+        }
+
         if let Some(s) = id.as_str().strip_prefix("gain_db_")
             && let Ok(ch) = s.parse::<usize>()
         {
@@ -230,6 +254,8 @@ impl InPlacePlugin for GainPlugin {
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id == &self.param_gain_db {
             Some(ParameterValue::Float(self.global_gain_db))
+        } else if id == &self.param_smoothing_ms {
+            Some(ParameterValue::Float(self.smoothing_ms))
         } else {
             id.as_str()
                 .strip_prefix("gain_db_")

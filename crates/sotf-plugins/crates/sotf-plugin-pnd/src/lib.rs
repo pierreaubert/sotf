@@ -50,8 +50,8 @@ pub struct PndPlugin {
     channels: usize,
     sample_rate: u32,
 
-    // Components
-    analyzer: Option<PndAnalyzer>,
+    // Components — one analyzer per channel for multi-channel analysis
+    analyzers: Vec<PndAnalyzer>,
     resampler: Option<Async<f32>>,
 
     // State
@@ -76,6 +76,9 @@ pub struct PndPlugin {
     // Temp buffer for wrapped chunks
     interleaved_chunk_buffer: Vec<f32>,
 
+    // Scratch buffer for median computation across channels
+    channel_drift_scratch: Vec<f32>,
+
     // Parameters
     param_correction_strength: ParameterId,
     correction_strength: f32,
@@ -87,6 +90,12 @@ pub struct PndPlugin {
     param_drift_smoothing: ParameterId,
     drift_smoothing: f32,
 
+    param_multi_channel_analysis: ParameterId,
+    multi_channel_analysis: bool,
+
+    param_confidence_threshold: ParameterId,
+    confidence_threshold: f32,
+
     cache: RealTimeCache<PndData>,
     cache_update_counter: usize,
     cached_parameters: Vec<Parameter>,
@@ -97,7 +106,7 @@ impl PndPlugin {
         let mut p = Self {
             channels,
             sample_rate: 44100, // Default, updated in initialize
-            analyzer: None,
+            analyzers: Vec::new(),
             resampler: None,
             current_ratio: 1.0,
             last_drift_ratio: 1.0,
@@ -112,6 +121,7 @@ impl PndPlugin {
             output_ring_read_pos: 0,
             output_ring_count: 0,
             interleaved_chunk_buffer: Vec::new(),
+            channel_drift_scratch: vec![0.0; channels],
 
             param_correction_strength: ParameterId::from("correction_strength"),
             correction_strength: pk(PD, "correction_strength").default_f64() as f32,
@@ -127,6 +137,13 @@ impl PndPlugin {
 
             param_drift_smoothing: ParameterId::from("drift_smoothing"),
             drift_smoothing: pk(PD, "drift_smoothing").default_f64() as f32,
+
+            param_multi_channel_analysis: ParameterId::from("multi_channel_analysis"),
+            multi_channel_analysis: pk(PD, "multi_channel_analysis").default_bool(),
+
+            param_confidence_threshold: ParameterId::from("confidence_threshold"),
+            confidence_threshold: pk(PD, "confidence_threshold").default_f64() as f32,
+
             cache: RealTimeCache::new(PndData::default()),
             cache_update_counter: 0,
             cached_parameters: Vec::new(),
@@ -164,6 +181,22 @@ impl PndPlugin {
             )
             .with_group("Correction")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "multi_channel_analysis",
+                "Multi-Channel Analysis",
+                self.multi_channel_analysis,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "confidence_threshold",
+                "Confidence Threshold",
+                self.confidence_threshold,
+                pk(PD, "confidence_threshold").min_f64() as f32,
+                pk(PD, "confidence_threshold").max_f64() as f32,
+            )
+            .with_group("Correction")
+            .with_importance(ParameterImportance::Useful),
         ];
     }
 
@@ -172,6 +205,8 @@ impl PndPlugin {
         plugin.correction_strength = params.correction_strength;
         plugin.analysis_window_ms = params.analysis_window_ms;
         plugin.drift_smoothing = params.drift_smoothing;
+        plugin.multi_channel_analysis = params.multi_channel_analysis;
+        plugin.confidence_threshold = params.confidence_threshold;
         plugin
     }
 
@@ -190,13 +225,23 @@ impl PndPlugin {
         Ok(())
     }
 
-    fn init_analyzer(&mut self) {
+    fn init_analyzers(&mut self) {
         let fft_size = 2048; // Good balance for freq resolution
-        self.analyzer = Some(PndAnalyzer::new(
-            fft_size,
-            self.sample_rate,
-            self.analysis_window_ms,
-        ));
+        let num_analyzers = if self.multi_channel_analysis {
+            self.channels
+        } else {
+            1
+        };
+        self.analyzers.clear();
+        for _ in 0..num_analyzers {
+            self.analyzers.push(PndAnalyzer::new(
+                fft_size,
+                self.sample_rate,
+                self.analysis_window_ms,
+            ));
+        }
+        self.channel_drift_scratch
+            .resize(num_analyzers.max(1), 0.0);
     }
 
     /// Process one resampler chunk from the input ring buffer.
@@ -239,18 +284,42 @@ impl PndPlugin {
             }
         }
 
-        // 3. Analyze first channel for drift
-        let drift_ratio = if let Some(analyzer) = &mut self.analyzer {
-            analyzer.analyze(&self.planar_input[0][..chunk_frames])
+        // 3. Analyze channels for drift
+        let (drift_ratio, confidence) = if self.analyzers.is_empty() {
+            (1.0_f32, 0.0_f32)
+        } else if self.multi_channel_analysis && self.analyzers.len() > 1 {
+            // Analyze each channel independently and take the median drift ratio
+            let n = self.analyzers.len().min(self.channels);
+            for (ch, analyzer) in self.analyzers.iter_mut().enumerate().take(n) {
+                self.channel_drift_scratch[ch] =
+                    analyzer.analyze(&self.planar_input[ch][..chunk_frames]);
+            }
+            let mid = n / 2;
+            self.channel_drift_scratch[..n].select_nth_unstable_by(mid, |a, b| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let median_drift = self.channel_drift_scratch[mid];
+            // Average confidence across all analyzers
+            let avg_confidence =
+                self.analyzers.iter().take(n).map(|a| a.confidence()).sum::<f32>() / n as f32;
+            (median_drift, avg_confidence)
         } else {
-            1.0
+            // Single-channel mode: analyze channel 0 only
+            let drift = self.analyzers[0].analyze(&self.planar_input[0][..chunk_frames]);
+            let conf = self.analyzers[0].confidence();
+            (drift, conf)
         };
         self.last_drift_ratio = drift_ratio as f64;
 
-        // 4. Calculate correction ratio
-        let target_correction = 1.0 / drift_ratio as f64;
-        let alpha = self.drift_smoothing as f64;
-        self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
+        // 4. Calculate correction ratio (with confidence-based bypass)
+        // When confidence is below threshold, freeze the current ratio
+        // instead of applying an unreliable correction.
+        if confidence >= self.confidence_threshold {
+            let target_correction = 1.0 / drift_ratio as f64;
+            let alpha = self.drift_smoothing as f64;
+            self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
+        }
+        // else: current_ratio stays frozen at its last reliable value
 
         let strength = self.correction_strength_smoother.advance() as f64;
         let final_ratio = 1.0 + (self.current_ratio - 1.0) * strength;
@@ -333,7 +402,7 @@ impl PndPlugin {
 
 impl Plugin for PndPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("PND Varispeed", "0.2.0", "SotF")
+        PluginInfo::new("Pitch Drift Corrector", "0.2.0", "SotF")
             .with_description("Polyphonic note detection and varispeed correction")
     }
 
@@ -366,7 +435,7 @@ impl Plugin for PndPlugin {
                 .unwrap_or(pk(PD, "analysis_window_ms").default_f64() as f32);
             if v.is_finite() {
                 self.analysis_window_ms = v;
-                if let Some(analyzer) = &mut self.analyzer {
+                for analyzer in &mut self.analyzers {
                     analyzer.update_analysis_window(self.analysis_window_ms);
                 }
             }
@@ -376,6 +445,20 @@ impl Plugin for PndPlugin {
                 .unwrap_or(pk(PD, "drift_smoothing").default_f64() as f32);
             if v.is_finite() {
                 self.drift_smoothing = v;
+            }
+        } else if id == self.param_multi_channel_analysis {
+            let v = value
+                .as_bool()
+                .unwrap_or(pk(PD, "multi_channel_analysis").default_bool());
+            self.multi_channel_analysis = v;
+            // Re-create analyzers with new channel count
+            self.init_analyzers();
+        } else if id == self.param_confidence_threshold {
+            let v = value
+                .as_float()
+                .unwrap_or(pk(PD, "confidence_threshold").default_f64() as f32);
+            if v.is_finite() {
+                self.confidence_threshold = v;
             }
         }
         self.rebuild_cached_parameters();
@@ -389,6 +472,10 @@ impl Plugin for PndPlugin {
             Some(ParameterValue::Float(self.analysis_window_ms))
         } else if id == &self.param_drift_smoothing {
             Some(ParameterValue::Float(self.drift_smoothing))
+        } else if id == &self.param_multi_channel_analysis {
+            Some(ParameterValue::Bool(self.multi_channel_analysis))
+        } else if id == &self.param_confidence_threshold {
+            Some(ParameterValue::Float(self.confidence_threshold))
         } else {
             None
         }
@@ -397,7 +484,7 @@ impl Plugin for PndPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.init_resampler()?;
-        self.init_analyzer();
+        self.init_analyzers();
 
         // Pre-allocate buffers sized for resampler chunk requirements
         self.planar_input = vec![vec![0.0; RESAMPLER_CHUNK_SIZE]; self.channels];
@@ -501,15 +588,16 @@ impl Plugin for PndPlugin {
         self.cache_update_counter += 1;
         if self.cache_update_counter >= 10 {
             self.cache_update_counter = 0;
-            let (confidence, matched_partials, total_peaks) = if let Some(analyzer) = &self.analyzer
-            {
-                (
-                    analyzer.confidence(),
-                    analyzer.matched_partials(),
-                    analyzer.total_peaks(),
-                )
-            } else {
+            let (confidence, matched_partials, total_peaks) = if self.analyzers.is_empty() {
                 (0.0, 0, 0)
+            } else {
+                // Aggregate: average confidence, sum matched/total across analyzers
+                let n = self.analyzers.len();
+                let avg_conf = self.analyzers.iter().map(|a| a.confidence()).sum::<f32>() / n as f32;
+                let total_matched: usize =
+                    self.analyzers.iter().map(|a| a.matched_partials()).sum();
+                let total_pk: usize = self.analyzers.iter().map(|a| a.total_peaks()).sum();
+                (avg_conf, total_matched, total_pk)
             };
 
             let drift = self.last_drift_ratio;
@@ -527,7 +615,7 @@ impl Plugin for PndPlugin {
     }
 
     fn reset(&mut self) {
-        if let Some(analyzer) = &mut self.analyzer {
+        for analyzer in &mut self.analyzers {
             analyzer.reset();
         }
         self.current_ratio = 1.0;

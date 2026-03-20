@@ -74,6 +74,20 @@ fn index_to_crossfeed_preset(index: f64) -> CrossfeedPreset {
     }
 }
 
+const DETECTION_MODES: &[&str] = &["Peak", "RMS"];
+
+fn detection_mode_to_index(mode: &str) -> f64 {
+    DETECTION_MODES
+        .iter()
+        .position(|&m| m == mode)
+        .unwrap_or(0) as f64
+}
+
+fn index_to_detection_mode(index: f64) -> String {
+    let idx = index as usize;
+    DETECTION_MODES.get(idx).unwrap_or(&"Peak").to_string()
+}
+
 const CROSSOVER_TYPES: &[&str] = &["LR24", "LR48"];
 
 fn crossover_type_to_index(ct: &str) -> f64 {
@@ -264,7 +278,7 @@ impl_param_accessors! {
     Gain {
         params: param_specs::gain::PARAMS,
         layout: Some(&param_specs::gain::LAYOUT),
-        fields: [gain_db: f64]
+        fields: [gain_db: f64, smoothing_ms: f64]
     },
     Compressor {
         params: param_specs::compressor::PARAMS,
@@ -273,6 +287,8 @@ impl_param_accessors! {
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             knee_db: f64, makeup_gain_db: f64, mix: f64,
             auto_makeup: bool, link_channels: bool, sidechain_hpf_hz: f64,
+            detection_mode: [str detection_mode_to_index, index_to_detection_mode],
+            lookahead_ms: f64, program_dependent_release: bool, measured_auto_makeup: bool,
         ]
     },
     Gate {
@@ -281,6 +297,7 @@ impl_param_accessors! {
         fields: [
             threshold_db: f64, ratio: f64, attack_ms: f64, hold_ms: f64,
             release_ms: f64, mix: f64, link_channels: bool, sidechain_hpf_hz: f64,
+            range_db: f64, hysteresis_db: f64, knee_db: f64, lookahead_ms: f64,
         ]
     },
     Expander {
@@ -290,18 +307,25 @@ impl_param_accessors! {
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             range_db: f64, knee_db: f64, hysteresis_db: f64, hold_ms: f64,
             mix: f64, auto_makeup: bool, link_channels: bool, sidechain_hpf_hz: f64,
+            lookahead_ms: f64,
+            detection_mode: [str detection_mode_to_index, index_to_detection_mode],
+            measured_auto_makeup: bool,
         ]
     },
     Limiter {
         params: param_specs::limiter::PARAMS,
         layout: Some(&param_specs::limiter::LAYOUT),
-        fields: [threshold_db: f64, release_ms: f64, lookahead_ms: f64, soft: bool, mix: f64]
+        fields: [
+            threshold_db: f64, release_ms: f64, lookahead_ms: f64, soft: bool,
+            true_peak: bool, dual_release: bool, mix: f64,
+        ]
     },
     LoudnessCompensation {
         params: param_specs::loudness_compensation::PARAMS,
         layout: Some(&param_specs::loudness_compensation::LAYOUT),
         fields: [
             low_freq: f64, low_gain: f64, high_freq: f64, high_gain: f64,
+            mid_enabled: bool, mid_freq: f64, mid_gain: f64, mid_q: f64,
             auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
         ]
     },
@@ -390,7 +414,10 @@ impl_param_accessors! {
     Pnd {
         params: param_specs::pnd::PARAMS,
         layout: Some(&param_specs::pnd::LAYOUT),
-        fields: [correction_strength: f64, analysis_window_ms: f64, drift_smoothing: f64]
+        fields: [
+            correction_strength: f64, analysis_window_ms: f64, drift_smoothing: f64,
+            multi_channel_analysis: bool, confidence_threshold: f64,
+        ]
     },
     ABCompare {
         params: param_specs::ab_compare::PARAMS,
@@ -399,6 +426,8 @@ impl_param_accessors! {
             mix: f64, mix_mode: i32, selected_path: i32, bypass: bool,
             auto_gain_enabled: bool, loudness_type: i32,
             max_auto_gain_db: f64, gain_smoothing_ms: f64, mix_transition_ms: f64,
+            path_a_config: skip, path_b_config: skip,
+            phase_invert_a: bool, phase_invert_b: bool, difference_mode: bool,
         ]
     },
     BandSplit {
@@ -417,6 +446,7 @@ impl_param_accessors! {
         fields: [
             center_gain_db: f64, surround_gain_db: f64, height_gain_db: f64, lfe_gain_db: f64,
             phase_coherence: bool, phase_blend_low_hz: f64, phase_blend_high_hz: f64,
+            itu_mode: bool,
         ]
     },
     MonoToStereo {
@@ -425,6 +455,7 @@ impl_param_accessors! {
         fields: [
             stereo_width: f64, haas_delay_ms: f64, enable_comp_eq: bool,
             comp_eq_depth_db: f64, decor_low_hz: f64, decor_high_hz: f64,
+            freq_dependent: bool,
         ]
     },
     Crossfeed {
@@ -437,6 +468,7 @@ impl_param_accessors! {
             bauer_fcut_hz: f64, bauer_feed_db: f64, meier_level: f64,
             mb_low_freq_hz: f64, mb_mid_high_freq_hz: f64,
             mb_low_feed_db: f64, mb_mid_feed_db: f64, mb_high_feed_db: f64,
+            itd_delay_ms: f64,
             autogain_enabled: bool, autogain_target_lufs: f64,
             autogain_max_gain_db: f64, autogain_smoothing_ms: f64,
         ]
@@ -444,7 +476,7 @@ impl_param_accessors! {
     Delay {
         params: param_specs::delay::PARAMS,
         layout: Some(&param_specs::delay::LAYOUT),
-        fields: [delay_ms: f64, feedback: f64, mix: f64]
+        fields: [delay_ms: f64, feedback: f64, mix: f64, lfo_rate_hz: f64, lfo_depth_ms: f64, allpass_feedback: bool]
     },
     Aec {
         params: param_specs::aec::PARAMS,
@@ -470,6 +502,7 @@ impl_param_accessors! {
             crossover_freq_3: f64, crossover_freq_4: f64,
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             knee_db: f64, mix: f64, link_channels: bool,
+            per_band_lookahead_ms: f64,
         ]
     },
     MultibandExpander {
@@ -482,11 +515,17 @@ impl_param_accessors! {
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             range_db: f64, knee_db: f64, hysteresis_db: f64, hold_ms: f64,
             mix: f64, link_channels: bool,
+            detection_mode: [str detection_mode_to_index, index_to_detection_mode],
         ]
+    },
+    ChannelMuteSolo {
+        params: param_specs::channel_mute_solo::PARAMS,
+        layout: None,
+        fields: [enabled: bool, dim_gain_db: f64, fade_ms: f64]
     }
     ;
     no_params_unit: [LoudnessMonitor];
-    no_params_struct: [SpectrumAnalyzer, ChannelMuteSolo, Matrix]
+    no_params_struct: [SpectrumAnalyzer, Matrix]
 }
 
 // ============================================================================
@@ -554,6 +593,15 @@ impl PluginSettings {
                         "{}",
                         serde_json::to_value(preset).unwrap_or_default()
                     )),
+                    Self::Compressor {
+                        detection_mode, ..
+                    } if index == 10 => Some(detection_mode.clone()),
+                    Self::Expander {
+                        detection_mode, ..
+                    } if index == 13 => Some(detection_mode.clone()),
+                    Self::MultibandExpander {
+                        detection_mode, ..
+                    } if index == 16 => Some(detection_mode.clone()),
                     _ => {
                         // Numeric choice: format as integer
                         self.param_value(index).map(|v| format!("{}", v as i64))

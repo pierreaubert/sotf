@@ -33,7 +33,10 @@ mod tests;
 pub mod validation;
 
 pub use config::*;
-use filters::{XtcFilters, compute_geometry_cache, compute_xtc_filters_full_with_cache};
+use filters::{
+    HrtfTransferFunctions, XtcFilters, compute_geometry_cache,
+    compute_xtc_filters_full_with_cache_and_hrtf,
+};
 use reflections::{
     RoomReflectionData, build_reflection_data_image_source, build_reflection_data_ir,
 };
@@ -72,6 +75,94 @@ impl Default for XtcData {
 }
 
 // ============================================================================
+// HRTF/SOFA file loading for XTC
+// ============================================================================
+
+use sotf_host::sofa::{SofaFile, SourcePosition};
+
+/// Load HRTF data from a SOFA file and compute frequency-domain transfer functions
+/// for the XTC plant matrix at the configured speaker angles.
+///
+/// For each speaker position (left at +angle, right at -angle), we extract the
+/// HRTF for both ears, giving us a full 2x2 plant matrix C(f).
+fn load_hrtf_for_xtc(
+    hrtf_path: &str,
+    params: &XtcPluginParams,
+    sample_rate: u32,
+    num_bins: usize,
+) -> Result<Option<HrtfTransferFunctions>, String> {
+    let path = std::path::Path::new(hrtf_path);
+    if !path.exists() {
+        return Err(format!("HRTF file not found: {}", hrtf_path));
+    }
+
+    let sofa = SofaFile::load(path)?;
+
+    // Reject SOFA files with mismatched sample rate — using unmatched
+    // HRTF data shifts all spectral features and corrupts the plant matrix.
+    if let Some(sofa_sr) = sofa.data_sample_rate
+        && (sofa_sr - sample_rate as f32).abs() > 1.0
+    {
+        return Err(format!(
+            "SOFA sample rate ({} Hz) differs from plugin sample rate ({} Hz). \
+             Resample the SOFA file or match sample rates.",
+            sofa_sr, sample_rate
+        ));
+    }
+
+    // Speaker positions: left speaker at +angle, right speaker at -angle
+    // (azimuth in SOFA convention, elevation 0, distance = speaker distance)
+    let left_speaker = SourcePosition::new(params.speaker_angle_deg, 0.0, params.distance_m);
+    let right_speaker = SourcePosition::new(-params.speaker_angle_deg, 0.0, params.distance_m);
+
+    // Get HRTF for left speaker position (contains left ear + right ear responses)
+    let hrtf_left_speaker = sofa
+        .get_hrtf_at_position(&left_speaker)
+        .ok_or_else(|| "No HRTF measurement found for left speaker angle".to_string())?;
+
+    // Get HRTF for right speaker position
+    let hrtf_right_speaker = sofa
+        .get_hrtf_at_position(&right_speaker)
+        .ok_or_else(|| "No HRTF measurement found for right speaker angle".to_string())?;
+
+    // FFT the impulse responses to get frequency-domain transfer functions
+    let fft_size = (num_bins - 1) * 2;
+    let mut planner = realfft::RealFftPlanner::new();
+    let fft_forward = planner.plan_fft_forward(fft_size);
+
+    // Helper: FFT an IR, zero-padding or truncating to fft_size
+    let fft_ir = |ir: &[f32]| -> Vec<Complex<f32>> {
+        let mut padded = vec![0.0_f32; fft_size];
+        let copy_len = ir.len().min(fft_size);
+        padded[..copy_len].copy_from_slice(&ir[..copy_len]);
+
+        let mut output = vec![Complex::new(0.0, 0.0); num_bins];
+        fft_forward
+            .process(&mut padded, &mut output)
+            .expect("FFT processing failed");
+        output
+    };
+
+    // Plant matrix:
+    //   C = [[h_ll, h_lr],    Speaker L->EarL, Speaker R->EarL
+    //        [h_rl, h_rr]]    Speaker L->EarR, Speaker R->EarR
+    //
+    // Left speaker HRTF: ir_left = L speaker -> L ear, ir_right = L speaker -> R ear
+    // Right speaker HRTF: ir_left = R speaker -> L ear, ir_right = R speaker -> R ear
+    let h_ll = fft_ir(&hrtf_left_speaker.ir_left); // Speaker L -> Left ear
+    let h_rl = fft_ir(&hrtf_left_speaker.ir_right); // Speaker L -> Right ear
+    let h_lr = fft_ir(&hrtf_right_speaker.ir_left); // Speaker R -> Left ear
+    let h_rr = fft_ir(&hrtf_right_speaker.ir_right); // Speaker R -> Right ear
+
+    Ok(Some(HrtfTransferFunctions {
+        h_ll,
+        h_lr,
+        h_rl,
+        h_rr,
+    }))
+}
+
+// ============================================================================
 // Helper functions for Optimization 4: Room reflection caching
 // ============================================================================
 
@@ -95,6 +186,10 @@ fn compute_room_params_hash(params: &XtcPluginParams) -> u64 {
     if let Some(ref ir_path) = params.room_ir_file {
         ir_path.hash(&mut hasher);
     }
+    if let Some(ref hrtf_path) = params.hrtf_file {
+        hrtf_path.hash(&mut hasher);
+    }
+    params.kappa_target.to_bits().hash(&mut hasher);
     hasher.finish()
 }
 
@@ -226,6 +321,11 @@ pub struct XtcPlugin {
     param_auto_gain_max_db: ParameterId,
     param_auto_gain_smoothing_ms: ParameterId,
     param_pinna_model_enabled: ParameterId,
+    param_kappa_target: ParameterId,
+    param_hrtf_file: ParameterId,
+
+    /// Loaded HRTF transfer functions (from SOFA file)
+    hrtf_transfer_functions: Option<HrtfTransferFunctions>,
 
     /// Cached room reflection data (Optimization 4)
     room_reflection_cache: Option<Arc<RoomReflectionData>>,
@@ -361,15 +461,23 @@ impl XtcPlugin {
             None
         };
 
+        // Load HRTF file if specified
+        let hrtf_transfer_functions = if let Some(ref hrtf_path) = params.hrtf_file {
+            load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)?
+        } else {
+            None
+        };
+
         // Compute geometry cache (Optimization 3)
         let cache = compute_geometry_cache(&params, sample_rate, num_bins);
 
-        let filters = compute_xtc_filters_full_with_cache(
+        let filters = compute_xtc_filters_full_with_cache_and_hrtf(
             &params,
             sample_rate,
             num_bins,
             &cache,
             room_reflection_cache.clone(),
+            hrtf_transfer_functions.as_ref(),
         );
         let cached_current_filters = Arc::new(filters);
         let filters = Arc::new(ArcSwap::from(Arc::clone(&cached_current_filters)));
@@ -438,6 +546,9 @@ impl XtcPlugin {
             param_auto_gain_max_db: ParameterId::from("auto_gain_max_db"),
             param_auto_gain_smoothing_ms: ParameterId::from("auto_gain_smoothing_ms"),
             param_pinna_model_enabled: ParameterId::from("pinna_model_enabled"),
+            param_kappa_target: ParameterId::from("kappa_target"),
+            param_hrtf_file: ParameterId::from("hrtf_file"),
+            hrtf_transfer_functions,
             room_reflection_cache,
             room_params_hash,
             auto_gain,
@@ -511,6 +622,22 @@ impl XtcPlugin {
                 "pinna_model_enabled",
                 "Pinna Model",
                 self.params.pinna_model_enabled,
+            )
+            .with_group("Advanced")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "kappa_target",
+                "Kappa Target",
+                self.params.kappa_target,
+                1.0,
+                1000.0,
+            )
+            .with_group("Advanced")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_string(
+                "hrtf_file",
+                "HRTF File",
+                self.params.hrtf_file.clone().unwrap_or_default(),
             )
             .with_group("Advanced")
             .with_importance(ParameterImportance::Useful),
@@ -618,26 +745,29 @@ impl XtcPlugin {
         let room_data = self.room_reflection_cache.clone();
 
         let shared_filters = self.filters.clone();
+        let hrtf_data = self.hrtf_transfer_functions.clone();
 
         if sync {
-            let new_filters = compute_xtc_filters_full_with_cache(
+            let new_filters = compute_xtc_filters_full_with_cache_and_hrtf(
                 &self.params,
                 sample_rate,
                 num_bins,
                 &cache,
                 room_data,
+                hrtf_data.as_ref(),
             );
             shared_filters.store(Arc::new(new_filters));
         } else {
             // Asynchronous update using rayon
             let params = self.params.clone();
             rayon::spawn(move || {
-                let new_filters = compute_xtc_filters_full_with_cache(
+                let new_filters = compute_xtc_filters_full_with_cache_and_hrtf(
                     &params,
                     sample_rate,
                     num_bins,
                     &cache,
                     room_data,
+                    hrtf_data.as_ref(),
                 );
                 shared_filters.store(Arc::new(new_filters));
             });
@@ -974,6 +1104,28 @@ impl Plugin for XtcPlugin {
                     ag.set_max_gain_db(self.params.auto_gain_max_db);
                 }
             }
+        } else if id == self.param_kappa_target {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "kappa_target must be a float".to_string())?;
+            if v.is_finite() {
+                self.params.kappa_target = v.clamp(1.0, 1000.0);
+                needs_filter_update = true;
+            }
+        } else if id == self.param_hrtf_file {
+            let v = value
+                .as_string()
+                .ok_or_else(|| "hrtf_file must be a string".to_string())?;
+            if v.is_empty() {
+                self.params.hrtf_file = None;
+                self.hrtf_transfer_functions = None;
+            } else {
+                let num_bins = self.fft_size / 2 + 1;
+                let hrtf = load_hrtf_for_xtc(v, &self.params, self.sample_rate, num_bins)?;
+                self.params.hrtf_file = Some(v.to_string());
+                self.hrtf_transfer_functions = hrtf;
+            }
+            needs_filter_update = true;
         } else if id == self.param_auto_gain_smoothing_ms {
             let v = value
                 .as_float()
@@ -1029,6 +1181,12 @@ impl Plugin for XtcPlugin {
             Some(ParameterValue::Float(self.params.auto_gain_max_db))
         } else if id == &self.param_auto_gain_smoothing_ms {
             Some(ParameterValue::Float(self.params.auto_gain_smoothing_ms))
+        } else if id == &self.param_kappa_target {
+            Some(ParameterValue::Float(self.params.kappa_target))
+        } else if id == &self.param_hrtf_file {
+            Some(ParameterValue::String(
+                self.params.hrtf_file.clone().unwrap_or_default(),
+            ))
         } else {
             None
         }

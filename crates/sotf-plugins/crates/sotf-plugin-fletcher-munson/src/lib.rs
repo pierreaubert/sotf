@@ -13,21 +13,45 @@ use math_audio_dsp::fast_math::fast_pow10;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum FletcherMunsonBandType {
+    Lowshelf,
+    Peak,
+    Highshelf,
+}
+
+impl FletcherMunsonBandType {
+    fn to_biquad_type(self) -> BiquadFilterType {
+        match self {
+            Self::Lowshelf => BiquadFilterType::Lowshelf,
+            Self::Peak => BiquadFilterType::Peak,
+            Self::Highshelf => BiquadFilterType::Highshelf,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FletcherMunsonBand {
     pub frequency: f64,
     pub q: f64,
     pub max_gain_db: f64,
     pub slope: f64,
+    #[serde(default = "default_band_filter_type")]
+    pub filter_type: FletcherMunsonBandType,
+}
+
+fn default_band_filter_type() -> FletcherMunsonBandType {
+    FletcherMunsonBandType::Peak
 }
 
 impl FletcherMunsonBand {
-    pub fn new(freq: f64, q: f64, max: f64, slp: f64) -> Self {
+    pub fn new(freq: f64, q: f64, max: f64, slp: f64, filter_type: FletcherMunsonBandType) -> Self {
         Self {
             frequency: freq,
             q,
             max_gain_db: max,
             slope: slp,
+            filter_type,
         }
     }
 }
@@ -64,30 +88,38 @@ pub struct FletcherMunsonPlugin {
 impl FletcherMunsonPlugin {
     pub fn new(num_channels: usize) -> Self {
         let sr = 44100;
+        // Band 1 (sub-bass ~60 Hz) and Band 2 (mid-bass ~250 Hz) use lowshelf
+        // filters for natural roll-off matching the equal-loudness contours.
+        // Band 3 (presence ~3.5 kHz) uses a peak filter for targeted boost.
+        // Band 4 (air ~12 kHz) uses a highshelf for natural treble compensation.
         let bands = [
             FletcherMunsonBand::new(
                 pk(FM, "band1_freq").default_f64(),
                 pk(FM, "band1_q").default_f64(),
                 pk(FM, "band1_max_gain").default_f64(),
                 pk(FM, "band1_slope").default_f64(),
+                FletcherMunsonBandType::Lowshelf,
             ),
             FletcherMunsonBand::new(
                 pk(FM, "band2_freq").default_f64(),
                 pk(FM, "band2_q").default_f64(),
                 pk(FM, "band2_max_gain").default_f64(),
                 pk(FM, "band2_slope").default_f64(),
+                FletcherMunsonBandType::Lowshelf,
             ),
             FletcherMunsonBand::new(
                 pk(FM, "band3_freq").default_f64(),
                 pk(FM, "band3_q").default_f64(),
                 pk(FM, "band3_max_gain").default_f64(),
                 pk(FM, "band3_slope").default_f64(),
+                FletcherMunsonBandType::Peak,
             ),
             FletcherMunsonBand::new(
                 pk(FM, "band4_freq").default_f64(),
                 pk(FM, "band4_q").default_f64(),
                 pk(FM, "band4_max_gain").default_f64(),
                 pk(FM, "band4_slope").default_f64(),
+                FletcherMunsonBandType::Highshelf,
             ),
         ];
 
@@ -133,7 +165,7 @@ impl FletcherMunsonPlugin {
             for i in 0..NUM_BANDS {
                 let b = &self.bands[i];
                 self.filters[ch].push(Biquad::new(
-                    BiquadFilterType::Peak,
+                    b.filter_type.to_biquad_type(),
                     b.frequency,
                     sr,
                     b.q,
@@ -450,8 +482,8 @@ impl InPlacePlugin for FletcherMunsonPlugin {
                     .zip(self.bands.iter().zip(gains.iter()))
                     .take(NUM_BANDS)
                 {
-                    *filter = Biquad::new(
-                        BiquadFilterType::Peak,
+                    filter.update_params(
+                        band.filter_type.to_biquad_type(),
                         band.frequency,
                         sr,
                         band.q,
@@ -476,11 +508,6 @@ impl InPlacePlugin for FletcherMunsonPlugin {
         if let Some(ag) = &mut self.auto_gain {
             let _ = ag.measure_output(buffer);
             ag.apply_compensation(buffer, nf);
-        }
-
-        self.compensation_smoother.next_n(nf); // Sync smoother
-        for s in &mut self.gain_smoothers {
-            s.next_n(nf);
         }
 
         flush_denormals_inplace(buffer);
