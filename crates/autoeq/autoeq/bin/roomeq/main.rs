@@ -23,8 +23,8 @@ use std::path::PathBuf;
 
 // Use the library types
 use autoeq::roomeq::{
-    CallbackAction, DspChainOutput, RoomOptimizationCallback, RoomOptimizationProgress,
-    load_config, optimize_room, save_dsp_chain,
+    CallbackAction, DspChainOutput, ExportFormat, RoomOptimizationCallback,
+    RoomOptimizationProgress, export_dsp_chain, load_config, optimize_room, save_dsp_chain,
 };
 
 /// Room EQ - Optimize multi-channel speaker systems
@@ -32,11 +32,11 @@ use autoeq::roomeq::{
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Path to room configuration JSON file
-    #[arg(short, long, required_unless_present = "schema")]
+    #[arg(short, long, required_unless_present_any = ["schema", "convert"])]
     config: Option<PathBuf>,
 
     /// Output DSP chain JSON file
-    #[arg(short, long, required_unless_present = "schema")]
+    #[arg(short, long, required_unless_present_any = ["schema", "convert"])]
     output: Option<PathBuf>,
 
     /// Sample rate for filter design (default: 48000 Hz)
@@ -54,6 +54,18 @@ struct Args {
     /// Path to override config JSON file (overrides any section: optimizer, speakers, crossovers, group_delay, etc.)
     #[arg(long, alias = "optim-config")]
     override_config: Option<PathBuf>,
+
+    /// Export DSP chain to external format (camilladsp, apo, easyeffects, wavelet, pipewire)
+    #[arg(long, value_enum)]
+    export_format: Option<ExportFormat>,
+
+    /// Export output file path (defaults to output path with format-appropriate extension)
+    #[arg(long)]
+    export_path: Option<PathBuf>,
+
+    /// Convert an existing DSP chain JSON to an export format (no optimization)
+    #[arg(long)]
+    convert: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -72,6 +84,27 @@ fn main() -> Result<()> {
         warn!("The --verbose flag is deprecated. Use RUST_LOG=debug instead.");
     }
 
+    // Convert mode: load existing DSP chain JSON and export
+    if let Some(convert_path) = &args.convert {
+        let format = args
+            .export_format
+            .ok_or_else(|| anyhow!("--export-format is required with --convert"))?;
+
+        let json_str = std::fs::read_to_string(convert_path)
+            .with_context(|| format!("Failed to read DSP chain from {:?}", convert_path))?;
+        let dsp_output: DspChainOutput = serde_json::from_str(&json_str)
+            .with_context(|| format!("Failed to parse DSP chain from {:?}", convert_path))?;
+
+        let export_path = args.export_path.unwrap_or_else(|| {
+            convert_path.with_extension(format.default_extension())
+        });
+
+        info!("Converting {:?} to {:?} format", convert_path, format);
+        export_dsp_chain(&dsp_output, format, &export_path, args.sample_rate)?;
+        info!("Exported to {:?}", export_path);
+        return Ok(());
+    }
+
     // Unwrap required args (safe because of required_unless_present)
     let config_path = args
         .config
@@ -85,6 +118,8 @@ fn main() -> Result<()> {
         config_path,
         output_path,
         args.override_config,
+        args.export_format,
+        args.export_path,
     )
 }
 
@@ -124,6 +159,8 @@ fn run(
     config_path: PathBuf,
     output_path: PathBuf,
     override_config_path: Option<PathBuf>,
+    export_format: Option<ExportFormat>,
+    export_path: Option<PathBuf>,
 ) -> Result<()> {
     // Load room configuration
     info!("Loading room configuration from {:?}", config_path);
@@ -152,6 +189,15 @@ fn run(
     save_dsp_chain(&dsp_output, &output_path)
         .map_err(|e| anyhow!("{}", e))
         .with_context(|| format!("Failed to save DSP chain to {:?}", output_path))?;
+
+    // Export to external format if requested
+    if let Some(format) = export_format {
+        let path = export_path
+            .unwrap_or_else(|| output_path.with_extension(format.default_extension()));
+        info!("Exporting DSP chain to {:?} ({:?})", path, format);
+        export_dsp_chain(&dsp_output, format, &path, sample_rate)?;
+        info!("Exported to {:?}", path);
+    }
 
     info!("Done!");
 

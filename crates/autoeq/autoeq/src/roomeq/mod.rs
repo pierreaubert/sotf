@@ -60,6 +60,10 @@ mod group_delay;
 mod multisub;
 pub mod workflows; // Make public to access from optimize.rs or tests
 
+// Export to external formats (CamillaDSP, APO, EasyEffects, Wavelet, PipeWire)
+mod export;
+pub use export::{ExportFormat, export_dsp_chain};
+
 // DSP chain building
 mod output;
 pub use output::{

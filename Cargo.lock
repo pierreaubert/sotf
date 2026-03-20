@@ -9018,6 +9018,8 @@ dependencies = [
  "serde_yaml",
  "signal-hook 0.4.3",
  "sofa-reader",
+ "sotf-iamf",
+ "sotf-plugin-ambisonics",
  "sotf-plugins",
  "symphonia",
  "symphonia-bundle-flac",
@@ -9121,6 +9123,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-iamf"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "log",
+ "sotf-host",
+ "sotf-plugin-ambisonics",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "sotf-player"
 version = "0.5.114"
 dependencies = [
@@ -9180,6 +9193,18 @@ dependencies = [
  "sotf-plugin-gain",
  "sotf-plugin-gate",
  "sotf-plugin-limiter",
+]
+
+[[package]]
+name = "sotf-plugin-ambisonics"
+version = "0.5.3"
+dependencies = [
+ "approx",
+ "criterion",
+ "log",
+ "serde",
+ "serde_json",
+ "sotf-host",
 ]
 
 [[package]]

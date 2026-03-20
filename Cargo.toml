@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/sotf-plugins/crates/sotf-host",
+    "crates/sotf-plugins/crates/sotf-plugin-ambisonics",
     "crates/sotf-plugins/crates/sotf-plugin-ab-compare",
     "crates/sotf-plugins/crates/sotf-plugin-band-merge",
     "crates/sotf-plugins/crates/sotf-plugin-band-split",
@@ -54,6 +55,7 @@ members = [
     "crates/autoeq/autoeq-roomsim",
     "crates/autoeq/autoeq-datagen",
     "crates/autoeq/autoeq",
+    "crates/sotf-iamf",
     "crates/3rdparties/sofa-reader",
 ]
 resolver = "3"
@@ -155,6 +157,7 @@ gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }
 sotf-plugin-ab-compare = { path = "crates/sotf-plugins/crates/sotf-plugin-ab-compare" }
+sotf-plugin-ambisonics = { path = "crates/sotf-plugins/crates/sotf-plugin-ambisonics" }
 sotf-plugin-band-merge = { path = "crates/sotf-plugins/crates/sotf-plugin-band-merge" }
 sotf-plugin-band-split = { path = "crates/sotf-plugins/crates/sotf-plugin-band-split" }
 sotf-plugin-binaural = { path = "crates/sotf-plugins/crates/sotf-plugin-binaural" }
@@ -183,6 +186,7 @@ sotf-plugin-pnd = { path = "crates/sotf-plugins/crates/sotf-plugin-pnd" }
 sotf-plugin-resampler = { path = "crates/sotf-plugins/crates/sotf-plugin-resampler" }
 sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer", default-features = false }
 sotf-plugin-xtc = { path = "crates/sotf-plugins/crates/sotf-plugin-xtc" }
+sotf-iamf = { path = "crates/sotf-iamf" }
 sotf-engine = { path = "crates/sotf-engine", default-features = false }
 sotf-player = { path = "crates/sotf-player" }
 player-midi = { path = "crates/midi" }
