@@ -19,6 +19,8 @@
 #   ./scripts/build-release.sh --skip-build    # Only generate release notes + update site
 #   ./scripts/build-release.sh --sign          # Build and sign all artifacts
 #   ./scripts/build-release.sh --platform linux # Build only Linux targets
+#   ./scripts/build-release.sh --arch arm      # Build only ARM64 targets
+#   ./scripts/build-release.sh --platform macos --arch x86  # macOS x86 only
 #
 # Prerequisites:
 #   - Docker (for Linux and Windows cross-compilation)
@@ -47,6 +49,7 @@ GITHUB_RELEASE_URL="https://github.com/pierreaubert/sotf/releases/download/v${VE
 SKIP_BUILD=false
 SIGN=false
 PLATFORM=""  # empty = all
+ARCH=""      # empty = all, "arm" or "x86"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -63,6 +66,14 @@ while [[ $# -gt 0 ]]; do
             PLATFORM="$2"
             shift 2
             ;;
+        --arch)
+            ARCH="$2"
+            if [[ "$ARCH" != "arm" && "$ARCH" != "x86" ]]; then
+                echo "ERROR: --arch must be 'arm' or 'x86', got '$ARCH'"
+                exit 1
+            fi
+            shift 2
+            ;;
         --help|-h)
             echo "Usage: $0 [options]"
             echo ""
@@ -70,6 +81,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --skip-build         Only generate release notes and update site"
             echo "  --sign               Sign all artifacts after building"
             echo "  --platform <name>    Build only one platform: macos, linux, windows"
+            echo "  --arch <name>        Build only one architecture: arm, x86"
             echo "  --help               Show this help message"
             exit 0
             ;;
@@ -113,6 +125,11 @@ should_build() {
     [ -z "$PLATFORM" ] || [ "$PLATFORM" = "$platform" ]
 }
 
+should_build_arch() {
+    local arch="$1"
+    [ -z "$ARCH" ] || [ "$ARCH" = "$arch" ]
+}
+
 # -----------------------------------------------------------------------
 # BUILD
 # -----------------------------------------------------------------------
@@ -121,24 +138,36 @@ build_all() {
     mkdir -p "$DIST_DIR"
 
     if should_build "macos"; then
-        log_info "=== macOS ARM64 ==="
-        just cross-macos-arm64
-        log_info "=== macOS x86_64 ==="
-        just cross-macos-x86
+        if should_build_arch "arm"; then
+            log_info "=== macOS ARM64 ==="
+            just cross-macos-arm64
+        fi
+        if should_build_arch "x86"; then
+            log_info "=== macOS x86_64 ==="
+            just cross-macos-x86
+        fi
     fi
 
     if should_build "linux"; then
-        log_info "=== Linux ARM64 ==="
-        just cross-linux-arm64
-        log_info "=== Linux x86_64 ==="
-        just cross-linux-x86
+        if should_build_arch "arm"; then
+            log_info "=== Linux ARM64 ==="
+            just cross-linux-arm64
+        fi
+        if should_build_arch "x86"; then
+            log_info "=== Linux x86_64 ==="
+            just cross-linux-x86
+        fi
     fi
 
     if should_build "windows"; then
-        log_info "=== Windows ARM64 ==="
-        just cross-windows-arm64
-        log_info "=== Windows x86_64 ==="
-        just cross-windows-x86
+        if should_build_arch "arm"; then
+            log_info "=== Windows ARM64 ==="
+            just cross-windows-arm64
+        fi
+        if should_build_arch "x86"; then
+            log_info "=== Windows x86_64 ==="
+            just cross-windows-x86
+        fi
     fi
 
     log_success "All builds complete. Artifacts in $DIST_DIR"
