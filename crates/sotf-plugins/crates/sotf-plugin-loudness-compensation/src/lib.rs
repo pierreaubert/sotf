@@ -1,6 +1,20 @@
 // ============================================================================
 // Loudness Compensation Plugin
 // ============================================================================
+//
+// Filter frequencies are derived from ISO 226:2003 equal-loudness contour data.
+// At the reference listening level (83 dB SPL), the equal-loudness contour shows:
+//   - Bass rise: perceived loudness drops below ~100 Hz, requiring a low shelf
+//     boost centered at ~100 Hz to compensate at lower playback levels.
+//   - Ear canal resonance dip: the ear is most sensitive around 3-4 kHz due to
+//     ear canal resonance, so a midrange peak at ~3.5 kHz compensates for
+//     reduced sensitivity at other frequencies relative to this reference point.
+//   - High-frequency roll-off: sensitivity drops above ~8 kHz, requiring a high
+//     shelf boost centered at ~8 kHz.
+//
+// These ISO 226-derived reference points (100 Hz, 3.5 kHz, 8 kHz) replace the
+// previous arbitrary defaults and provide perceptually-motivated compensation.
+// ============================================================================
 
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
@@ -14,6 +28,28 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
+
+// ============================================================================
+// ISO 226:2003 Equal-Loudness Contour Reference Frequencies
+// ============================================================================
+//
+// Default filter frequencies are derived from ISO 226:2003 equal-loudness
+// contour data (see param_specs::loudness_compensation). At 83 dB SPL
+// reference level, the contour shape dictates where compensation filters
+// should be placed:
+//
+//   - Low shelf at ~100 Hz: ISO 226 shows a steep rise in threshold below
+//     100 Hz. The 100-phon contour inflects here, making it the optimal
+//     center frequency for bass compensation.
+//
+//   - Midrange peak at ~3.5 kHz: The ear canal resonance creates maximum
+//     sensitivity near 3.5 kHz (ISO 226 shows the deepest dip in the
+//     equal-loudness contour at this frequency). A peak here compensates
+//     for the ear's natural sensitivity advantage.
+//
+//   - High shelf at ~8 kHz: ISO 226 shows sensitivity declining above
+//     ~8 kHz. The 80-phon contour begins rising steeply above 8 kHz,
+//     making this the optimal center for high-frequency compensation.
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LoudnessCompensation {

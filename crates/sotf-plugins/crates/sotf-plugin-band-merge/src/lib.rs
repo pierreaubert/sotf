@@ -3,7 +3,7 @@
 // ============================================================================
 
 use serde::{Deserialize, Serialize};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
+use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 
@@ -36,6 +36,9 @@ pub struct BandMergePlugin {
     band_gains_linear: [f32; MAX_BANDS],
     /// Per-band mute toggle.
     band_mutes: [bool; MAX_BANDS],
+    /// Reconstruction error in dB (diagnostic). Measures how much the output
+    /// deviates from perfect reconstruction. Updated each process() call.
+    reconstruction_error_db: f32,
     cached_parameters: Vec<Parameter>,
 }
 
@@ -54,6 +57,7 @@ impl BandMergePlugin {
             band_gains_db: [0.0; MAX_BANDS],
             band_gains_linear: [1.0; MAX_BANDS],
             band_mutes: [false; MAX_BANDS],
+            reconstruction_error_db: 0.0,
             cached_parameters: Vec::new(),
         };
         p.rebuild_cached_parameters();
@@ -98,6 +102,20 @@ impl BandMergePlugin {
             let mute_label = format!("Band {} Mute", i);
             params.push(Parameter::new_bool(&mute_id, &mute_label, self.band_mutes[i]));
         }
+        params.push(
+            Parameter::new_float(
+                "reconstruction_error_db",
+                "Reconstruction Error",
+                self.reconstruction_error_db,
+                -60.0,
+                60.0,
+            )
+            .with_description(
+                "Deviation from perfect reconstruction in dB (read-only diagnostic)",
+            )
+            .with_group("Diagnostics")
+            .with_importance(ParameterImportance::FineTuning),
+        );
         self.cached_parameters = params;
     }
 }
@@ -160,6 +178,9 @@ impl Plugin for BandMergePlugin {
         if id == &self.param_bands {
             return Some(ParameterValue::Int(self.num_bands as i32));
         }
+        if id.0 == "reconstruction_error_db" {
+            return Some(ParameterValue::Float(self.reconstruction_error_db));
+        }
         for i in 0..self.num_bands {
             if id.0 == format!("band_{}_gain_db", i) {
                 return Some(ParameterValue::Float(self.band_gains_db[i]));
@@ -186,19 +207,54 @@ impl Plugin for BandMergePlugin {
         let out_ch = self.output_channels;
         let in_ch = out_ch * self.num_bands;
 
+        // Accumulate RMS for reconstruction validation:
+        // - reference_rms: sum of all bands (unity gain, no mute) -- what perfect reconstruction would be
+        // - output_rms: actual summed output with gains and mutes applied
+        let mut reference_energy = 0.0_f64;
+        let mut output_energy = 0.0_f64;
+
         for frame in 0..num_frames {
             let in_off = frame * in_ch;
             let out_off = frame * out_ch;
             for ch in 0..out_ch {
                 let mut sum = 0.0f32;
+                let mut ref_sum = 0.0f32;
                 for band in 0..self.num_bands {
+                    let sample = input[in_off + band * out_ch + ch];
+                    ref_sum += sample;
                     if !self.band_mutes[band] {
-                        sum += input[in_off + band * out_ch + ch] * self.band_gains_linear[band];
+                        sum += sample * self.band_gains_linear[band];
                     }
                 }
                 output[out_off + ch] = sum;
+                reference_energy += (ref_sum as f64) * (ref_sum as f64);
+                output_energy += (sum as f64) * (sum as f64);
             }
         }
+
+        // Compute reconstruction error in dB
+        let total_samples = (num_frames * out_ch) as f64;
+        if total_samples > 0.0 {
+            let ref_rms = (reference_energy / total_samples).sqrt();
+            let out_rms = (output_energy / total_samples).sqrt();
+
+            if ref_rms > 1e-10 {
+                let ratio_db = 20.0 * (out_rms / ref_rms).log10();
+                self.reconstruction_error_db = ratio_db as f32;
+
+                if ratio_db.abs() > 3.0 {
+                    log::warn!(
+                        "[BandMerge] Reconstruction error: {:.1} dB deviation from unity-gain sum. \
+                         Check band gains and mute settings.",
+                        ratio_db
+                    );
+                }
+            } else {
+                // Reference is silence -- no meaningful error to report
+                self.reconstruction_error_db = 0.0;
+            }
+        }
+
         flush_denormals_inplace(output);
         Ok(num_frames)
     }
@@ -374,7 +430,7 @@ mod tests {
     fn test_band_merge_parameters_list() {
         let p = BandMergePlugin::new(2, 3).unwrap();
         let params = p.parameters();
-        // 1 (bands) + 3 * 2 (gain + mute per band) = 7
-        assert_eq!(params.len(), 7);
+        // 1 (bands) + 3 * 2 (gain + mute per band) + 1 (reconstruction_error_db) = 8
+        assert_eq!(params.len(), 8);
     }
 }

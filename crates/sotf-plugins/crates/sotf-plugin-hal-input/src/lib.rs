@@ -39,6 +39,9 @@ pub struct HalInputPlugin {
     /// Counter for buffer overruns (read returned fewer samples than expected)
     overrun_counter: Arc<AtomicU64>,
 
+    /// True if the HAL native sample rate differs from the engine sample rate
+    sample_rate_mismatch: bool,
+
     #[cfg(all(target_os = "macos", feature = "hal"))]
     /// HAL input reader
     reader: Option<HalInputReader>,
@@ -68,6 +71,7 @@ impl HalInputPlugin {
             Ok(Self {
                 channels,
                 overrun_counter: Arc::new(AtomicU64::new(0)),
+                sample_rate_mismatch: false,
                 reader,
             })
         }
@@ -129,7 +133,44 @@ impl Plugin for HalInputPlugin {
             .with_description("Number of buffer overruns detected (read-only diagnostic)")
             .with_group("Diagnostics")
             .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool(
+                "sample_rate_mismatch",
+                "Sample Rate Mismatch",
+                self.sample_rate_mismatch,
+            )
+            .with_description(
+                "True if HAL native sample rate differs from engine sample rate (read-only diagnostic)",
+            )
+            .with_group("Diagnostics")
+            .with_importance(ParameterImportance::FineTuning),
         ]
+    }
+
+    fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.sample_rate_mismatch = false;
+
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        {
+            if let Some(ref reader) = self.reader {
+                let hal_rate = reader.sample_rate();
+                if hal_rate != sample_rate {
+                    self.sample_rate_mismatch = true;
+                    log::warn!(
+                        "[HAL Input] Sample rate mismatch: HAL native rate {} Hz != engine rate {} Hz. \
+                         Audio quality may be degraded without resampling.",
+                        hal_rate,
+                        sample_rate
+                    );
+                }
+            }
+        }
+
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
+        {
+            let _ = sample_rate;
+        }
+
+        Ok(())
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
@@ -153,6 +194,7 @@ impl Plugin for HalInputPlugin {
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         let param_channels = ParameterId::from("channels");
         let param_overrun = ParameterId::from("overrun_count");
+        let param_sr_mismatch = ParameterId::from("sample_rate_mismatch");
 
         if id == &param_channels {
             Some(ParameterValue::Int(self.channels as i32))
@@ -160,6 +202,8 @@ impl Plugin for HalInputPlugin {
             Some(ParameterValue::Int(
                 self.overrun_counter.load(Ordering::Relaxed) as i32,
             ))
+        } else if id == &param_sr_mismatch {
+            Some(ParameterValue::Bool(self.sample_rate_mismatch))
         } else {
             None
         }

@@ -79,6 +79,8 @@ pub struct MultibandCompressorPluginParams {
     pub mix: f32,
     #[serde(default)]
     pub per_band_lookahead_ms: f32,
+    #[serde(default)]
+    pub ms_mode: bool,
     pub bands: Vec<BandCompressorParams>,
 }
 
@@ -212,6 +214,7 @@ pub struct MultibandCompressorPlugin {
     link_channels: bool,
     mix: f32,
     per_band_lookahead_ms: f32,
+    ms_mode: bool,
     band_params: Vec<BandCompressorParams>,
     crossover_points: Vec<CrossoverPoint>,
     band_compressors: Vec<BandCompressor>,
@@ -292,6 +295,7 @@ impl MultibandCompressorPlugin {
             link_channels: params.link_channels,
             mix: params.mix,
             per_band_lookahead_ms: la_ms,
+            ms_mode: params.ms_mode,
             band_params,
             crossover_points: Vec::new(),
             band_compressors: bcomps,
@@ -347,6 +351,9 @@ impl MultibandCompressorPlugin {
             )
             .with_group("General")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("ms_mode", "M/S Mode", self.ms_mode)
+                .with_group("General")
+                .with_importance(ParameterImportance::Useful),
         ];
 
         // Crossover frequencies
@@ -614,6 +621,10 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                     }
                 }
             }
+        } else if name == "ms_mode" {
+            self.ms_mode = value
+                .as_bool()
+                .ok_or_else(|| "ms_mode must be a boolean".to_string())?;
         } else if name.starts_with("crossover_freq_") {
             let idx = name
                 .replace("crossover_freq_", "")
@@ -773,6 +784,8 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             Some(ParameterValue::Float(self.mix))
         } else if name == "per_band_lookahead_ms" {
             Some(ParameterValue::Float(self.per_band_lookahead_ms))
+        } else if name == "ms_mode" {
+            Some(ParameterValue::Bool(self.ms_mode))
         } else if name == "threshold" {
             Some(ParameterValue::Float(self.threshold_db))
         } else if name == "ratio" {
@@ -897,6 +910,18 @@ impl InPlacePlugin for MultibandCompressorPlugin {
 
         self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
 
+        // M/S encode: convert L/R to Mid/Side before band splitting
+        let use_ms = self.ms_mode && self.channels == 2;
+        if use_ms {
+            for frame in 0..nf {
+                let idx = frame * 2;
+                let l = buffer[idx];
+                let r = buffer[idx + 1];
+                buffer[idx] = (l + r) * 0.5;     // Mid
+                buffer[idx + 1] = (l - r) * 0.5; // Side
+            }
+        }
+
         for i in 0..(self.num_bands - 1) {
             let freq = self.xover_smoothers[i].next_n(nf);
             if (freq - self.crossover_points[i].freq).abs() > 1.0 {
@@ -988,8 +1013,13 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 // Detect level from the current (non-delayed) band audio
                 let mut det = 0.0f32;
                 if self.link_channels {
-                    for ch in 0..self.channels {
-                        det = det.max(self.band_buffers[off + frame * self.channels + ch].abs());
+                    if use_ms {
+                        // M/S mode: use only Mid (channel 0) for detection
+                        det = self.band_buffers[off + frame * self.channels].abs();
+                    } else {
+                        for ch in 0..self.channels {
+                            det = det.max(self.band_buffers[off + frame * self.channels + ch].abs());
+                        }
                     }
                 }
 
@@ -1059,6 +1089,17 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                     s += self.band_buffers[b * stride + idx];
                 }
                 buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + s * g_mix;
+            }
+        }
+
+        // M/S decode: convert Mid/Side back to L/R
+        if use_ms {
+            for frame in 0..nf {
+                let idx = frame * 2;
+                let m = buffer[idx];
+                let s = buffer[idx + 1];
+                buffer[idx] = m + s;     // L = M + S
+                buffer[idx + 1] = m - s; // R = M - S
             }
         }
 

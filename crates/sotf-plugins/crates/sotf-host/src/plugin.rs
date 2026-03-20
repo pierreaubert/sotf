@@ -167,8 +167,16 @@ pub trait InPlacePlugin: Send {
     /// Get plugin information
     fn info(&self) -> PluginInfo;
 
-    /// Get the number of channels (same for input and output)
+    /// Get the number of output channels (same as input by default)
     fn channels(&self) -> usize;
+
+    /// Get the number of input channels this plugin expects.
+    /// Override this when the plugin needs more input channels than output channels,
+    /// e.g. for external sidechain support where extra channels carry the sidechain signal.
+    /// Default: same as `channels()`.
+    fn input_channels(&self) -> usize {
+        self.channels()
+    }
 
     /// Get the list of parameters this plugin supports
     fn parameters(&self) -> Vec<Parameter>;
@@ -244,7 +252,7 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
     }
 
     fn input_channels(&self) -> usize {
-        self.plugin.channels()
+        self.plugin.input_channels()
     }
 
     fn output_channels(&self) -> usize {
@@ -277,9 +285,20 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        // Copy input to output, then process in-place
-        output.copy_from_slice(input);
-        self.plugin.process_in_place(output, context)
+        let in_ch = self.plugin.input_channels();
+        let out_ch = self.plugin.channels();
+        if in_ch == out_ch {
+            // Standard in-place: copy input to output, then process
+            output.copy_from_slice(input);
+            self.plugin.process_in_place(output, context)
+        } else {
+            // Extended input (e.g. external sidechain): copy full input to output buffer
+            // which is sized for input_channels, then process in-place.
+            // The output buffer must be sized for input_channels * num_frames.
+            // After processing, only the first out_ch channels per frame are meaningful.
+            output[..input.len()].copy_from_slice(input);
+            self.plugin.process_in_place(output, context)
+        }
     }
 
     fn latency_samples(&self) -> usize {

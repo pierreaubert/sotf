@@ -533,6 +533,7 @@ impl PluginFuzzer for CompressorFuzzer {
             lookahead_ms: 0.0,
             program_dependent_release: false,
             measured_auto_makeup: false,
+            sidechain_external: false,
         };
         let plugin = CompressorPlugin::from_params(channels, params);
 
@@ -813,6 +814,7 @@ impl PluginFuzzer for MultibandCompressorFuzzer {
             link_channels,
             mix,
             per_band_lookahead_ms: 0.0,
+            ms_mode: false,
             bands: vec![], // Use defaults for per-band params
         };
         let plugin = MultibandCompressorPlugin::from_params(channels, params);
@@ -1427,6 +1429,7 @@ impl PluginFuzzer for MonoToStereoFuzzer {
         let params = MonoToStereoPluginParams {
             stereo_width: rng.random_range(0.0..1.0),
             freq_dependent: rng.random_bool(0.5),
+            haas_delay_ms: 0.0,
         };
 
         let plugin = MonoToStereoPlugin::from_params(1, params.clone());
@@ -1450,6 +1453,7 @@ impl PluginFuzzer for PndFuzzer {
             drift_smoothing: rng.random_range(0.001..0.1),
             multi_channel_analysis: true,
             confidence_threshold: 0.5,
+            phase_vocoder: false,
         };
 
         let plugin = PndPlugin::from_params(channels, params.clone());

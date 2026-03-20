@@ -426,6 +426,18 @@ pub struct UpmixerPlugin {
     /// Smoothed spectral flux for transient normalization
     spectral_flux_smooth: f32,
 
+    // --- Intensity-vector DOA state (per ERB band) ---
+    /// Smoothed DOA angle per ERB band (radians, from atan2 of active intensity)
+    doa_angle: Vec<f32>,
+
+    // --- Height channel spectral flux gating ---
+    /// Previous frame magnitude spectrum for height spectral flux (per bin)
+    height_prev_magnitude: Vec<f32>,
+    /// Smoothed spectral flux for height onset detection
+    height_spectral_flux_smooth: f32,
+    /// Per-bin height gate multiplier from spectral flux / coherence gating
+    height_flux_gate: Vec<f32>,
+
     // Smoothing state
     prev_hr_scale: f32,
 
@@ -837,6 +849,14 @@ impl UpmixerPlugin {
             hr_energy_smooth: 0.0,
             prev_magnitude_spectrum: vec![0.0; spectrum_size],
             spectral_flux_smooth: 0.0,
+
+            // Intensity-vector DOA state (will be resized in calculate_erb_bands)
+            doa_angle: Vec::new(),
+
+            // Height spectral flux gating
+            height_prev_magnitude: vec![0.0; spectrum_size],
+            height_spectral_flux_smooth: 0.0,
+            height_flux_gate: vec![0.0; spectrum_size],
 
             prev_hr_scale: 0.0,
 
@@ -2124,6 +2144,11 @@ impl Plugin for UpmixerPlugin {
         self.prev_magnitude_spectrum = vec![0.0; spectrum_size];
         self.spectral_flux_smooth = 0.0;
 
+        // Initialize height spectral flux gate buffers
+        self.height_prev_magnitude = vec![0.0; spectrum_size];
+        self.height_spectral_flux_smooth = 0.0;
+        self.height_flux_gate = vec![0.15; spectrum_size]; // Start at floor value
+
         // Generate decorrelation filters
         self.generate_decorrelation_filters();
 
@@ -2262,6 +2287,10 @@ impl Plugin for UpmixerPlugin {
         self.hr_energy_smooth = 0.0;
         self.prev_magnitude_spectrum.fill(0.0);
         self.spectral_flux_smooth = 0.0;
+        self.doa_angle.fill(0.0);
+        self.height_prev_magnitude.fill(0.0);
+        self.height_spectral_flux_smooth = 0.0;
+        self.height_flux_gate.fill(0.15);
         self.prev_hr_scale = 0.0;
         self.coherence_history_idx = 0;
         for h in &mut self.coherence_history {

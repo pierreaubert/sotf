@@ -39,6 +39,14 @@ pub struct HalOutputPlugin {
     /// Counter for buffer underruns (partial write detected)
     underrun_counter: Arc<AtomicU64>,
 
+    /// Buffer fill level as a percentage (0.0 to 100.0)
+    buffer_fill_level: f32,
+
+    /// Total buffer capacity in samples (for computing fill percentage).
+    /// Only used on macOS with the HAL feature enabled.
+    #[allow(dead_code)]
+    buffer_capacity: usize,
+
     #[cfg(all(target_os = "macos", feature = "hal"))]
     /// HAL output writer
     writer: Option<HalOutputWriter>,
@@ -68,6 +76,8 @@ impl HalOutputPlugin {
             Ok(Self {
                 channels,
                 underrun_counter: Arc::new(AtomicU64::new(0)),
+                buffer_fill_level: 0.0,
+                buffer_capacity: 0,
                 writer,
             })
         }
@@ -112,16 +122,28 @@ impl Plugin for HalOutputPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_int(
-            "underrun_count",
-            "Underrun Count",
-            self.underrun_counter.load(Ordering::Relaxed) as i32,
-            0,
-            i32::MAX,
-        )
-        .with_description("Number of buffer underruns detected (read-only diagnostic)")
-        .with_group("Diagnostics")
-        .with_importance(ParameterImportance::FineTuning)]
+        vec![
+            Parameter::new_int(
+                "underrun_count",
+                "Underrun Count",
+                self.underrun_counter.load(Ordering::Relaxed) as i32,
+                0,
+                i32::MAX,
+            )
+            .with_description("Number of buffer underruns detected (read-only diagnostic)")
+            .with_group("Diagnostics")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "buffer_fill_level",
+                "Buffer Fill",
+                self.buffer_fill_level,
+                0.0,
+                100.0,
+            )
+            .with_description("Current buffer fill level as percentage (read-only diagnostic)")
+            .with_group("Diagnostics")
+            .with_importance(ParameterImportance::FineTuning),
+        ]
     }
 
     fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
@@ -133,6 +155,8 @@ impl Plugin for HalOutputPlugin {
             Some(ParameterValue::Int(
                 self.underrun_counter.load(Ordering::Relaxed) as i32,
             ))
+        } else if id.0 == "buffer_fill_level" {
+            Some(ParameterValue::Float(self.buffer_fill_level))
         } else {
             None
         }
@@ -159,6 +183,14 @@ impl Plugin for HalOutputPlugin {
             // Try to write to HAL
             if let Some(ref mut writer) = self.writer {
                 let samples_written = writer.write(input);
+
+                // Update buffer fill level diagnostic
+                if self.buffer_capacity > 0 {
+                    let fill_samples = writer.available_samples();
+                    self.buffer_fill_level =
+                        (fill_samples as f32 / self.buffer_capacity as f32) * 100.0;
+                }
+
                 if samples_written < input.len() {
                     self.underrun_counter.fetch_add(1, Ordering::Relaxed);
                     log::warn!(

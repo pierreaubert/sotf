@@ -171,6 +171,9 @@ impl EqPlugin {
                 "highpass" | "Highpass" => BiquadFilterType::Highpass,
                 "notch" | "Notch" => BiquadFilterType::Notch,
                 "bandpass" | "Bandpass" => BiquadFilterType::Bandpass,
+                "lowshelf_orf" | "LowshelfOrf" => BiquadFilterType::LowshelfOrf,
+                "highshelf_orf" | "HighshelfOrf" => BiquadFilterType::HighshelfOrf,
+                "peak_matched" | "PeakMatched" => BiquadFilterType::PeakMatched,
                 other => return Err(format!("Type: {}", other)),
             };
             Biquad::try_new(filter_type, f.freq, sample_rate as f64, f.q, f.db_gain)

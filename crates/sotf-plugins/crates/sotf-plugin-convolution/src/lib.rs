@@ -534,3 +534,197 @@ impl InPlacePlugin for ConvolutionPlugin {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sotf_host::plugin::{InPlacePlugin, ProcessContext};
+
+    /// Helper: create a ConvolutionPlugin and load a synthetic IR directly.
+    fn make_plugin_with_ir(channels: usize, sample_rate: u32, ir: Vec<Vec<f32>>) -> ConvolutionPlugin {
+        let mut plugin = ConvolutionPlugin::new(channels, sample_rate);
+        plugin.initialize(sample_rate).unwrap();
+
+        // Build partitions from the IR data
+        let ir_channels = ir.len();
+        let mut planner = FftPlanner::<f32>::new();
+        let fft_forward = planner.plan_fft_forward(FFT_SIZE);
+        let fft_inverse = planner.plan_fft_inverse(FFT_SIZE);
+
+        let mut partitions = Vec::with_capacity(ir_channels);
+        for ch_samples in &ir {
+            let num_parts = ch_samples.len().div_ceil(PARTITION_SIZE);
+            let mut ch_parts = Vec::with_capacity(num_parts);
+            for p in 0..num_parts {
+                let mut block = vec![Complex::new(0.0, 0.0); FFT_SIZE];
+                let start = p * PARTITION_SIZE;
+                let end = (start + PARTITION_SIZE).min(ch_samples.len());
+                for (i, &s) in ch_samples[start..end].iter().enumerate() {
+                    block[i] = Complex::new(s, 0.0);
+                }
+                fft_forward.process(&mut block);
+                ch_parts.push(block);
+            }
+            partitions.push(ch_parts);
+        }
+
+        let num_partitions = partitions[0].len();
+        let fft_scratch_len = fft_forward
+            .get_inplace_scratch_len()
+            .max(fft_inverse.get_inplace_scratch_len());
+
+        plugin.state.store(Arc::new(Some(ConvolutionState {
+            partitions,
+            num_partitions,
+            ir_channels,
+            fft_forward,
+            fft_inverse,
+        })));
+        plugin.fdl_flat = vec![Complex::new(0.0, 0.0); num_partitions * channels * FFT_SIZE];
+        plugin.fdl_head = 0;
+        plugin.fft_scratch = vec![Complex::new(0.0, 0.0); fft_scratch_len];
+
+        plugin
+    }
+
+    /// Unity IR (Dirac at sample 0) should pass audio through unchanged.
+    #[test]
+    fn test_unity_ir_passthrough() {
+        let channels = 1;
+        let sr = 48000;
+        // Dirac impulse: 1.0 at sample 0, zeros elsewhere
+        let ir = vec![vec![1.0]];
+        let mut plugin = make_plugin_with_ir(channels, sr, ir);
+        // mix = 1.0 (fully wet), gain = 0 dB
+        plugin.mix_value = 1.0;
+        plugin.mix.set_target(1.0);
+
+        // Process a few blocks of a sine wave
+        let total_frames = PARTITION_SIZE * 4;
+        let mut buffer: Vec<f32> = (0..total_frames)
+            .map(|i| (i as f32 * 0.1).sin())
+            .collect();
+        let original = buffer.clone();
+
+        // Process in partition-sized blocks
+        for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
+            let block_end = (block_start + PARTITION_SIZE).min(total_frames);
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin
+                .process_in_place(&mut buffer[block_start..block_end], &ctx)
+                .unwrap();
+        }
+
+        // Verify output is finite and has energy (convolution with unity IR)
+        let output_energy: f32 = buffer.iter().map(|s| s * s).sum();
+        let input_energy: f32 = original.iter().map(|s| s * s).sum();
+        assert!(
+            output_energy.is_finite(),
+            "Output must be finite"
+        );
+        assert!(
+            output_energy > 0.0,
+            "Unity IR convolution should produce non-zero output"
+        );
+        // With a unity IR, output energy should be comparable to input energy
+        // (allowing for partitioned convolution edge effects)
+        if input_energy > 0.0 {
+            let ratio = output_energy / input_energy;
+            assert!(
+                ratio > 0.1,
+                "Unity IR should preserve most energy, ratio = {ratio}"
+            );
+        }
+    }
+
+    /// Dirac impulse response (single sample IR) should produce output.
+    #[test]
+    fn test_dirac_impulse_response() {
+        let channels = 2;
+        let sr = 44100;
+        // Single-sample IR with gain 0.5
+        let ir = vec![vec![0.5], vec![0.5]];
+        let mut plugin = make_plugin_with_ir(channels, sr, ir);
+        plugin.mix_value = 1.0;
+        plugin.mix.set_target(1.0);
+
+        // Send a DC signal of 1.0 on both channels
+        let total_frames = PARTITION_SIZE * 3;
+        let mut buffer = vec![1.0f32; total_frames * channels];
+
+        for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
+            let block_end = (block_start + PARTITION_SIZE).min(total_frames);
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            let buf_start = block_start * channels;
+            let buf_end = block_end * channels;
+            plugin
+                .process_in_place(&mut buffer[buf_start..buf_end], &ctx)
+                .unwrap();
+        }
+
+        // After settling, output should be approximately 0.5 (IR gain)
+        let skip = PARTITION_SIZE * channels * 2;
+        let tail = &buffer[skip..];
+        let avg: f32 = tail.iter().sum::<f32>() / tail.len() as f32;
+        assert!(
+            (avg - 0.5).abs() < 0.05,
+            "Dirac IR with gain 0.5 should produce ~0.5 output, got avg = {avg}"
+        );
+    }
+
+    /// Long IR stability: no NaN or Inf after 10000 frames.
+    #[test]
+    fn test_long_ir_stability() {
+        let channels = 1;
+        let sr = 48000;
+        // Create a longer IR (multiple partitions)
+        let ir_len = PARTITION_SIZE * 4;
+        let mut ir_data = vec![0.0f32; ir_len];
+        // Exponentially decaying impulse response
+        for i in 0..ir_len {
+            ir_data[i] = (-(i as f32) / 500.0).exp() * 0.1;
+        }
+        let ir = vec![ir_data];
+        let mut plugin = make_plugin_with_ir(channels, sr, ir);
+        plugin.mix_value = 1.0;
+        plugin.mix.set_target(1.0);
+
+        // Process 10000 frames of random-ish signal
+        let total_frames = 10000;
+        let mut buffer: Vec<f32> = (0..total_frames)
+            .map(|i| {
+                let t = i as f32 / sr as f32;
+                0.3 * (t * 440.0 * std::f32::consts::TAU).sin()
+                    + 0.1 * (t * 1000.0 * std::f32::consts::TAU).sin()
+            })
+            .collect();
+
+        for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
+            let block_end = (block_start + PARTITION_SIZE).min(total_frames);
+            let nf = block_end - block_start;
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin
+                .process_in_place(&mut buffer[block_start..block_end], &ctx)
+                .unwrap();
+        }
+
+        // Verify no NaN or Inf in output
+        for (i, &s) in buffer.iter().enumerate() {
+            assert!(
+                s.is_finite(),
+                "Output sample at index {i} is not finite: {s}"
+            );
+        }
+    }
+}

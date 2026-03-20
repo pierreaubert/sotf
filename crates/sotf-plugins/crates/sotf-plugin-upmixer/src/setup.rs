@@ -215,6 +215,10 @@ impl UpmixerPlugin {
         if *self.erb_bands.last().unwrap() < self.fft_size / 2 {
             self.erb_bands.push(self.fft_size / 2);
         }
+
+        // Resize per-band DOA state to match ERB band count
+        let num_bands = self.erb_bands.len();
+        self.doa_angle.resize(num_bands, 0.0);
     }
 
     /// Recompute all cached bin indices that depend on sample_rate, fft_size,

@@ -2,6 +2,7 @@
 // Plugin Host Trait - Common interface for plugin hosts
 // ============================================================================
 
+use crate::lookahead::LookaheadBuffer;
 use crate::plugin::{Plugin, ProcessContext};
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -56,6 +57,39 @@ struct ProcessBuffers {
     scratch_output: Vec<f32>,
     merge_buffer: Vec<f32>,
     channel_map_buffer: Vec<f32>,
+    /// Per-edge latency compensation delay buffers.
+    /// Keyed by (from_node, to_node). Only present for edges that need compensation.
+    compensation_delays: HashMap<(NodeId, NodeId), LookaheadBuffer>,
+    /// Scratch buffer for frame-by-frame delay processing (avoids per-frame allocation).
+    delay_scratch: Vec<f32>,
+}
+
+// ============================================================================
+// Buffer Safety Guard - ensures process_buffers are put back on early return
+// ============================================================================
+
+/// RAII guard that ensures `ProcessBuffers` are returned to the `DawHost`
+/// even if processing exits early (via `?` or error return).
+struct BufferGuard<'a> {
+    slot: &'a mut Option<ProcessBuffers>,
+    buffers: Option<ProcessBuffers>,
+}
+
+impl<'a> BufferGuard<'a> {
+    fn take(slot: &'a mut Option<ProcessBuffers>) -> Self {
+        let buffers = slot.take();
+        Self { slot, buffers }
+    }
+
+    fn get_mut(&mut self) -> &mut ProcessBuffers {
+        self.buffers.as_mut().expect("ProcessBuffers missing from guard")
+    }
+}
+
+impl<'a> Drop for BufferGuard<'a> {
+    fn drop(&mut self) {
+        *self.slot = self.buffers.take();
+    }
 }
 
 pub trait Host {
@@ -186,6 +220,9 @@ pub struct DawHost {
     /// Per-node bypass flags, indexed by NodeId. When true, the node's plugin is skipped
     /// and input is passed directly to output during processing.
     bypassed: Vec<bool>,
+    /// Per-node cumulative latency from graph inputs, computed during build().
+    /// Used to calculate compensation delays at merge points.
+    node_latency_from_input: Vec<usize>,
 }
 
 impl DawHost {
@@ -214,6 +251,7 @@ impl DawHost {
             analyzer_indices: Vec::new(),
             cached_latency: None,
             bypassed: Vec::new(),
+            node_latency_from_input: Vec::new(),
         }
     }
     pub fn new_default(sr: u32) -> Self {
@@ -282,12 +320,23 @@ impl DawHost {
         for (&id, node) in &self.nodes {
             node_buffers[id] = Some(NodeBuffer::new(4096, node.output_channels()));
         }
+        // Cache per-node bypass flags before computing compensation delays
+        // (compensation needs to know which nodes are bypassed for latency calculation)
+        self.bypassed = vec![false; num_slots];
+        for (&id, node) in &self.nodes {
+            self.bypassed[id] = node.bypassed;
+        }
+        // Compute per-node cumulative latency from inputs and compensation delays
+        let compensation_delays = self.compute_compensation_delays(num_slots);
+
         self.process_buffers = Some(ProcessBuffers {
             node_buffers,
             scratch_input: vec![0.0; 4096 * 32],
             scratch_output: vec![0.0; 4096 * 32],
             merge_buffer: vec![0.0; 4096 * 32],
             channel_map_buffer: vec![0.0; 4096 * 32],
+            compensation_delays,
+            delay_scratch: vec![0.0; 4096 * 32],
         });
         // Cache per-frame properties to avoid mutex locks during process()
         self.cached_frames_identity = true;
@@ -312,11 +361,6 @@ impl DawHost {
             let p = self.plugins[id].as_ref().unwrap();
             p.output_frames_for_input(100) != 100 || p.latency_samples() > 0
         });
-        // Cache per-node bypass flags for O(1) lookup during process()
-        self.bypassed = vec![false; num_slots];
-        for (&id, node) in &self.nodes {
-            self.bypassed[id] = node.bypassed;
-        }
         // Cache total latency so total_latency_samples() is O(1)
         self.cached_latency = Some(self.compute_latency());
         self.built = true;
@@ -444,6 +488,7 @@ impl DawHost {
             self.bypassed[id] = true;
         }
         self.cached_latency = None;
+        self.built = false;
         Ok(())
     }
 
@@ -455,6 +500,7 @@ impl DawHost {
             self.bypassed[id] = false;
         }
         self.cached_latency = None;
+        self.built = false;
         Ok(())
     }
 
@@ -498,7 +544,10 @@ impl DawHost {
         }
         let nf = input.len() / self.input_channels();
         let max_of = self.output_frames_for_input(nf);
-        let mut bufs = self.process_buffers.take().unwrap();
+        let out_ch = self.output_channels();
+        // Use BufferGuard to guarantee process_buffers are returned even on early ?-return
+        let mut guard = BufferGuard::take(&mut self.process_buffers);
+        let bufs = guard.get_mut();
         for nb in bufs.node_buffers.iter_mut().flatten() {
             nb.ensure_capacity(nf.max(max_of));
             nb.clear();
@@ -519,6 +568,8 @@ impl DawHost {
                         cf,
                         &mut bufs.merge_buffer,
                         &mut bufs.channel_map_buffer,
+                        &mut bufs.delay_scratch,
+                        &mut bufs.compensation_delays,
                     )?;
                     bufs.scratch_input[..il].copy_from_slice(&bufs.merge_buffer[..il]);
                     il
@@ -563,10 +614,11 @@ impl DawHost {
         }
         Self::collect_output_from_buffers(&self.output_nodes, &bufs.node_buffers, output, cf)?;
         if cf < nf && self.has_variable_frame_plugin {
-            output[cf * self.output_channels()..].fill(0.0);
+            output[cf * out_ch..].fill(0.0);
             cf = nf;
         }
-        self.process_buffers = Some(bufs);
+        // BufferGuard's Drop impl returns bufs to self.process_buffers
+        drop(guard);
         Ok(cf)
     }
 
@@ -577,6 +629,8 @@ impl DawHost {
         nf: usize,
         mb: &mut [f32],
         cmb: &mut [f32],
+        delay_scratch: &mut Vec<f32>,
+        compensation_delays: &mut HashMap<(NodeId, NodeId), LookaheadBuffer>,
     ) -> Result<usize, String> {
         let is = nf * n.input_channels();
         if mb.len() < is {
@@ -600,16 +654,68 @@ impl DawHost {
                         cmb[f * cm.len() + di] = sd[f * sb.num_channels + si];
                     }
                 }
-                for (d, &s) in mb[..is].iter_mut().zip(cmb[..ms].iter()) {
-                    *d += s;
-                }
+                // Apply compensation delay if needed, then sum into merge buffer
+                Self::apply_compensation_and_sum(
+                    e, cm.len(), nf, &cmb[..ms], mb, delay_scratch, compensation_delays,
+                );
             } else {
-                for (d, &s) in mb[..is].iter_mut().zip(sd[..is.min(sd.len())].iter()) {
-                    *d += s;
-                }
+                let len = is.min(sd.len());
+                // Apply compensation delay if needed, then sum into merge buffer
+                Self::apply_compensation_and_sum(
+                    e, n.input_channels(), nf, &sd[..len], mb, delay_scratch, compensation_delays,
+                );
             }
         }
         Ok(is)
+    }
+
+    /// Apply latency compensation delay (if any) to `src_data` for the given edge,
+    /// then sum the result into `dest`. If no compensation is needed, sums directly.
+    fn apply_compensation_and_sum(
+        edge: &GraphEdge,
+        channels: usize,
+        num_frames: usize,
+        src_data: &[f32],
+        dest: &mut [f32],
+        delay_scratch: &mut Vec<f32>,
+        compensation_delays: &mut HashMap<(NodeId, NodeId), LookaheadBuffer>,
+    ) {
+        let key = (edge.from_node, edge.to_node);
+        if let Some(delay_buf) = compensation_delays.get_mut(&key) {
+            // Process frame-by-frame through the compensation delay.
+            // delay_scratch is split: first `total` samples for output,
+            // next `channels` samples as a reusable silence frame.
+            let total = num_frames * channels;
+            let needed = total + channels;
+            if delay_scratch.len() < needed {
+                delay_scratch.resize(needed, 0.0);
+            }
+            // Zero the silence frame region
+            delay_scratch[total..total + channels].fill(0.0);
+            for f in 0..num_frames {
+                let start = f * channels;
+                let end = start + channels;
+                if end <= src_data.len() {
+                    // Split delay_scratch so we can read silence region while writing frame region
+                    let (frame_part, silence_part) = delay_scratch.split_at_mut(total);
+                    let _ = silence_part; // unused in this branch
+                    delay_buf.process_frame(&src_data[start..end], &mut frame_part[start..end]);
+                } else {
+                    // Partial/missing frame: feed silence from the tail of delay_scratch
+                    let (frame_part, silence_part) = delay_scratch.split_at_mut(total);
+                    delay_buf.process_frame(&silence_part[..channels], &mut frame_part[start..end]);
+                }
+            }
+            for (d, &s) in dest[..total].iter_mut().zip(delay_scratch[..total].iter()) {
+                *d += s;
+            }
+        } else {
+            // No compensation, sum directly
+            let len = src_data.len().min(dest.len());
+            for (d, &s) in dest[..len].iter_mut().zip(src_data[..len].iter()) {
+                *d += s;
+            }
+        }
     }
 
     fn collect_output_from_buffers(
@@ -678,6 +784,76 @@ impl DawHost {
                 .unwrap_or(0)
         }
     }
+    /// Compute the cumulative latency from graph inputs to each node, then create
+    /// compensation delay buffers for edges feeding into merge points where path
+    /// latencies differ. This ensures all paths through the DAG are time-aligned
+    /// at merge points.
+    fn compute_compensation_delays(&mut self, num_slots: usize) -> HashMap<(NodeId, NodeId), LookaheadBuffer> {
+        // Step 1: Compute cumulative latency from inputs to each node using topological order.
+        // For each node, the cumulative latency is:
+        //   node's own latency + max(cumulative latency of predecessors)
+        self.node_latency_from_input = vec![0; num_slots];
+
+        // Process in topological order (stages are already computed)
+        for stage in &self.stages {
+            for &nid in &stage.nodes {
+                let own_latency = if self.bypassed.get(nid).copied().unwrap_or(false) {
+                    0
+                } else {
+                    self.plugins[nid]
+                        .as_ref()
+                        .map(|p| p.latency_samples())
+                        .unwrap_or(0)
+                };
+
+                let max_pred_latency = self.predecessors[nid]
+                    .iter()
+                    .map(|e| self.node_latency_from_input[e.from_node])
+                    .max()
+                    .unwrap_or(0);
+
+                self.node_latency_from_input[nid] = own_latency + max_pred_latency;
+            }
+        }
+
+        // Step 2: For each merge point (node with multiple predecessors), compute
+        // compensation delays for shorter paths.
+        let mut delays = HashMap::new();
+
+        for stage in &self.stages {
+            for &nid in &stage.nodes {
+                let preds = &self.predecessors[nid];
+                if preds.len() < 2 {
+                    continue; // Not a merge point
+                }
+
+                // Find the max cumulative latency among all predecessors
+                let max_pred_latency = preds
+                    .iter()
+                    .map(|e| self.node_latency_from_input[e.from_node])
+                    .max()
+                    .unwrap_or(0);
+
+                // For each predecessor with lower latency, create a compensation delay
+                for edge in preds {
+                    let pred_latency = self.node_latency_from_input[edge.from_node];
+                    let compensation = max_pred_latency - pred_latency;
+                    if compensation > 0 {
+                        let pred_channels = self.nodes.get(&edge.from_node)
+                            .map(|n| n.output_channels())
+                            .unwrap_or(2);
+                        delays.insert(
+                            (edge.from_node, edge.to_node),
+                            LookaheadBuffer::new(compensation, pred_channels),
+                        );
+                    }
+                }
+            }
+        }
+
+        delays
+    }
+
     fn has_cycle(&self) -> bool {
         let mut v = HashSet::new();
         let mut r = HashSet::new();
@@ -1256,5 +1432,239 @@ mod tests {
             buf.read().is_empty(),
             "read() after clear() must return empty slice"
         );
+    }
+
+    // ---- Latency compensation tests ----
+
+    #[test]
+    fn test_latency_compensation_parallel_paths() {
+        // Graph: input -> [A (latency=10), B (latency=0)] -> output
+        // Path A has 10 samples of latency, path B has 0.
+        // Compensation should delay path B by 10 samples so they align at the merge.
+        let mut g = DawHost::new(1, 48000);
+
+        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 2.0, 10))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 3.0, 0))).unwrap();
+        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+
+        g.add_edge(GraphEdge::new(inp, a)).unwrap();
+        g.add_edge(GraphEdge::new(inp, b)).unwrap();
+        g.add_edge(GraphEdge::new(a, out)).unwrap();
+        g.add_edge(GraphEdge::new(b, out)).unwrap();
+        g.build().unwrap();
+
+        // Check that compensation delay was created for edge B->output
+        let bufs = g.process_buffers.as_ref().unwrap();
+        assert!(
+            bufs.compensation_delays.contains_key(&(b, out)),
+            "Should have compensation delay on shorter path (B->output)"
+        );
+        assert!(
+            !bufs.compensation_delays.contains_key(&(a, out)),
+            "Should NOT have compensation delay on longer path (A->output)"
+        );
+
+        // The compensation delay for B->output should be 10 samples
+        let delay = bufs.compensation_delays.get(&(b, out)).unwrap();
+        assert_eq!(delay.delay(), 10);
+    }
+
+    #[test]
+    fn test_latency_compensation_equal_paths_no_delay() {
+        // Graph: input -> [A (latency=5), B (latency=5)] -> output
+        // Both paths have equal latency, no compensation needed.
+        let mut g = DawHost::new(1, 48000);
+
+        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 5))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 5))).unwrap();
+        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+
+        g.add_edge(GraphEdge::new(inp, a)).unwrap();
+        g.add_edge(GraphEdge::new(inp, b)).unwrap();
+        g.add_edge(GraphEdge::new(a, out)).unwrap();
+        g.add_edge(GraphEdge::new(b, out)).unwrap();
+        g.build().unwrap();
+
+        let bufs = g.process_buffers.as_ref().unwrap();
+        assert!(
+            bufs.compensation_delays.is_empty(),
+            "No compensation needed when paths have equal latency"
+        );
+    }
+
+    #[test]
+    fn test_latency_compensation_chain_no_merge() {
+        // Simple chain: A -> B -> C, no parallel paths, no compensation needed.
+        let mut g = DawHost::new(1, 48000);
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 20))).unwrap();
+        g.build().unwrap();
+
+        let bufs = g.process_buffers.as_ref().unwrap();
+        assert!(
+            bufs.compensation_delays.is_empty(),
+            "No compensation needed in a simple chain"
+        );
+    }
+
+    #[test]
+    fn test_latency_compensation_delays_audio() {
+        // Verify that compensation actually delays the audio data.
+        // Graph: input -> [A (latency=2, factor=1.0), B (latency=0, factor=1.0)] -> output
+        // B should be delayed by 2 frames to align with A.
+        let mut g = DawHost::new(1, 48000);
+
+        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 2))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 0))).unwrap();
+        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+
+        g.add_edge(GraphEdge::new(inp, a)).unwrap();
+        g.add_edge(GraphEdge::new(inp, b)).unwrap();
+        g.add_edge(GraphEdge::new(a, out)).unwrap();
+        g.add_edge(GraphEdge::new(b, out)).unwrap();
+        g.build().unwrap();
+
+        // Process a block: first 2 frames of B's contribution should be silence (delay)
+        let nf = 8;
+        let input = vec![1.0f32; nf];
+        let mut output = vec![0.0f32; nf];
+        g.process(&input, &mut output).unwrap();
+
+        // Without compensation: B contributes immediately, A contributes immediately.
+        // With compensation: B's output is delayed by 2 samples (silence for first 2 frames).
+        // So at merge: frame 0-1 get only A's contribution (1.0 each).
+        // frame 2-7 get A + delayed B (1.0 + 1.0 = 2.0 each).
+        // A also contributes directly (ScalerPlugin doesn't actually delay internally,
+        // it just reports latency). So both contribute 1.0, but B is delayed by 2.
+        // Frames 0-1: A=1.0 + B_delayed=0.0 = 1.0
+        // Frames 2-7: A=1.0 + B_delayed=1.0 = 2.0
+        assert_eq!(output[0], 1.0, "Frame 0: only A contributes (B is compensated/delayed)");
+        assert_eq!(output[1], 1.0, "Frame 1: only A contributes (B is compensated/delayed)");
+        assert_eq!(output[2], 2.0, "Frame 2: both A and delayed B contribute");
+        assert_eq!(output[7], 2.0, "Frame 7: both A and delayed B contribute");
+    }
+
+    #[test]
+    fn test_latency_compensation_asymmetric_three_paths() {
+        // Graph: input -> [A (lat=20), B (lat=10), C (lat=0)] -> output
+        // Compensation: B delayed by 10, C delayed by 20
+        let mut g = DawHost::new(1, 48000);
+
+        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 20))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
+        let c = g.add_node("C".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 0))).unwrap();
+        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+
+        g.add_edge(GraphEdge::new(inp, a)).unwrap();
+        g.add_edge(GraphEdge::new(inp, b)).unwrap();
+        g.add_edge(GraphEdge::new(inp, c)).unwrap();
+        g.add_edge(GraphEdge::new(a, out)).unwrap();
+        g.add_edge(GraphEdge::new(b, out)).unwrap();
+        g.add_edge(GraphEdge::new(c, out)).unwrap();
+        g.build().unwrap();
+
+        let bufs = g.process_buffers.as_ref().unwrap();
+        // A has max latency (20), no compensation
+        assert!(!bufs.compensation_delays.contains_key(&(a, out)));
+        // B needs 10 samples of compensation (20 - 10)
+        assert_eq!(bufs.compensation_delays.get(&(b, out)).unwrap().delay(), 10);
+        // C needs 20 samples of compensation (20 - 0)
+        assert_eq!(bufs.compensation_delays.get(&(c, out)).unwrap().delay(), 20);
+    }
+
+    #[test]
+    fn test_latency_compensation_bypassed_node_zero_latency() {
+        // Bypassed nodes contribute zero latency, affecting compensation
+        let mut g = DawHost::new(1, 48000);
+
+        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
+        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+
+        g.add_edge(GraphEdge::new(inp, a)).unwrap();
+        g.add_edge(GraphEdge::new(inp, b)).unwrap();
+        g.add_edge(GraphEdge::new(a, out)).unwrap();
+        g.add_edge(GraphEdge::new(b, out)).unwrap();
+
+        // Bypass A: its latency drops to 0. B still has 10.
+        g.bypass_node(a).unwrap();
+        g.build().unwrap();
+
+        let bufs = g.process_buffers.as_ref().unwrap();
+        // A (bypassed, latency=0) needs 10 samples of compensation
+        assert_eq!(bufs.compensation_delays.get(&(a, out)).unwrap().delay(), 10);
+        // B (latency=10) is the longest path, no compensation
+        assert!(!bufs.compensation_delays.contains_key(&(b, out)));
+    }
+
+    // ---- Buffer safety guard tests ----
+
+    #[test]
+    fn test_buffer_guard_returns_buffers_on_drop() {
+        let mut slot: Option<ProcessBuffers> = Some(ProcessBuffers {
+            node_buffers: vec![],
+            scratch_input: vec![],
+            scratch_output: vec![],
+            merge_buffer: vec![],
+            channel_map_buffer: vec![],
+            compensation_delays: HashMap::new(),
+            delay_scratch: vec![],
+        });
+
+        {
+            let _guard = BufferGuard::take(&mut slot);
+            // guard holds &mut slot, so we can't check slot here,
+            // but on drop it must restore the buffers.
+        }
+        assert!(slot.is_some(), "Slot should be restored after guard dropped");
+    }
+
+    #[test]
+    fn test_buffer_guard_survives_simulated_early_return() {
+        let mut slot: Option<ProcessBuffers> = Some(ProcessBuffers {
+            node_buffers: vec![],
+            scratch_input: vec![],
+            scratch_output: vec![],
+            merge_buffer: vec![],
+            channel_map_buffer: vec![],
+            compensation_delays: HashMap::new(),
+            delay_scratch: vec![],
+        });
+
+        // Simulate early return inside a scope
+        let result: Result<(), String> = (|| {
+            let _guard = BufferGuard::take(&mut slot);
+            // Simulate error that would cause early return
+            Err("simulated error".into())
+        })();
+
+        assert!(result.is_err());
+        assert!(
+            slot.is_some(),
+            "Slot must be restored even after error return"
+        );
+    }
+
+    #[test]
+    fn test_node_latency_from_input_computed() {
+        // Chain: A(lat=5) -> B(lat=10) -> C(lat=3)
+        // Cumulative: A=5, B=15, C=18
+        let mut g = DawHost::new(1, 48000);
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 5))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 3))).unwrap();
+        g.build().unwrap();
+
+        let id_a = g.chain_nodes[0];
+        let id_b = g.chain_nodes[1];
+        let id_c = g.chain_nodes[2];
+        assert_eq!(g.node_latency_from_input[id_a], 5);
+        assert_eq!(g.node_latency_from_input[id_b], 15);
+        assert_eq!(g.node_latency_from_input[id_c], 18);
     }
 }

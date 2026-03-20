@@ -650,9 +650,9 @@ impl DownmixPlugin {
                             lt -= ATTEN * shifted;
                             rt += ATTEN * shifted;
                         } else {
-                            // Right surround: -0.707*j*Rs to Lt, +0.707*j*Rs to Rt
-                            lt -= ATTEN * shifted;
-                            rt += ATTEN * shifted;
+                            // Right surround: +0.707*j*Rs to Lt, -0.707*j*Rs to Rt
+                            lt += ATTEN * shifted;
+                            rt -= ATTEN * shifted;
                         }
                     }
                 } else if self.lfe_lpf_idx.get(ch).copied().flatten().is_some() {
@@ -731,10 +731,15 @@ impl DownmixPlugin {
                 };
 
                 if blend > 0.001 {
-                    let mut max_mag_l = -1.0f32;
-                    let mut max_mag_r = -1.0f32;
-                    let mut dominant_phase_l = 0.0f32;
-                    let mut dominant_phase_r = 0.0f32;
+                    // Energy-weighted phase average: compute the output phase
+                    // as the energy-weighted average of all input channels' phases
+                    // (instead of using only the dominant/loudest channel's phase).
+                    // We accumulate weighted unit-circle vectors (cos/sin of phase)
+                    // weighted by energy (magnitude squared * gain squared).
+                    let mut phase_vec_l_re = 0.0f32;
+                    let mut phase_vec_l_im = 0.0f32;
+                    let mut phase_vec_r_re = 0.0f32;
+                    let mut phase_vec_r_im = 0.0f32;
 
                     let mut mag_sum_l = 0.0f32;
                     let mut mag_sum_r = 0.0f32;
@@ -744,7 +749,6 @@ impl DownmixPlugin {
                         let gr = self.coeff_smoothers[ch * 2 + 1].current();
                         let val = self.fft_output[ch * num_bins + bin];
 
-                        // Optimized magnitude and phase using fast math
                         let mag_sq = val.norm_sqr();
                         let mag = if mag_sq > 1e-12 {
                             mag_sq * sotf_host::simd::fast_inv_sqrt(mag_sq)
@@ -758,23 +762,33 @@ impl DownmixPlugin {
                         mag_sum_l += mag_l;
                         mag_sum_r += mag_r;
 
-                        if mag_l > max_mag_l {
-                            max_mag_l = mag_l;
-                            dominant_phase_l = fast_atan2(val.im, val.re);
-                        }
-                        if mag_r > max_mag_r {
-                            max_mag_r = mag_r;
-                            dominant_phase_r = fast_atan2(val.im, val.re);
+                        // Energy weight = magnitude_squared * gain_squared
+                        let energy_l = mag_sq * gl * gl;
+                        let energy_r = mag_sq * gr * gr;
+
+                        if energy_l > 1e-20 || energy_r > 1e-20 {
+                            let phase = fast_atan2(val.im, val.re);
+                            let cos_p = fast_cos(phase);
+                            let sin_p = fast_sin(phase);
+
+                            phase_vec_l_re += energy_l * cos_p;
+                            phase_vec_l_im += energy_l * sin_p;
+                            phase_vec_r_re += energy_r * cos_p;
+                            phase_vec_r_im += energy_r * sin_p;
                         }
                     }
 
+                    // Compute the energy-weighted average phase from the accumulated vector
+                    let avg_phase_l = fast_atan2(phase_vec_l_im, phase_vec_l_re);
+                    let avg_phase_r = fast_atan2(phase_vec_r_im, phase_vec_r_re);
+
                     let aligned_l = Complex::new(
-                        mag_sum_l * fast_cos(dominant_phase_l),
-                        mag_sum_l * fast_sin(dominant_phase_l),
+                        mag_sum_l * fast_cos(avg_phase_l),
+                        mag_sum_l * fast_sin(avg_phase_l),
                     );
                     let aligned_r = Complex::new(
-                        mag_sum_r * fast_cos(dominant_phase_r),
-                        mag_sum_r * fast_sin(dominant_phase_r),
+                        mag_sum_r * fast_cos(avg_phase_r),
+                        mag_sum_r * fast_sin(avg_phase_r),
                     );
 
                     self.out_freq_l[bin] = self.out_freq_l[bin] * (1.0 - blend) + aligned_l * blend;

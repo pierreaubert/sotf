@@ -25,6 +25,10 @@ pub fn default_confidence_threshold() -> f32 {
     pk(PD, "confidence_threshold").default_f64() as f32
 }
 
+pub fn default_phase_vocoder() -> bool {
+    pk(PD, "phase_vocoder").default_bool()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PndPluginParams {
     #[serde(default = "default_correction_strength")]
@@ -41,6 +45,9 @@ pub struct PndPluginParams {
 
     #[serde(default = "default_confidence_threshold")]
     pub confidence_threshold: f32,
+
+    #[serde(default = "default_phase_vocoder")]
+    pub phase_vocoder: bool,
 }
 
 impl Default for PndPluginParams {
@@ -51,6 +58,7 @@ impl Default for PndPluginParams {
             drift_smoothing: default_drift_smoothing(),
             multi_channel_analysis: default_multi_channel_analysis(),
             confidence_threshold: default_confidence_threshold(),
+            phase_vocoder: default_phase_vocoder(),
         }
     }
 }

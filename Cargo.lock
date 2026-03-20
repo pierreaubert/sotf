@@ -9214,6 +9214,7 @@ dependencies = [
 name = "sotf-plugin-band-merge"
 version = "0.5.1"
 dependencies = [
+ "log",
  "serde",
  "sotf-host",
 ]
@@ -9475,6 +9476,7 @@ version = "0.5.1"
 dependencies = [
  "audioadapter-buffers",
  "rubato",
+ "rustfft 6.4.1",
  "serde",
  "sotf-host",
 ]

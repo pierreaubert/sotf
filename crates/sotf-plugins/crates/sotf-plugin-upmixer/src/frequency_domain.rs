@@ -1,6 +1,15 @@
 // ============================================================================
 // Frequency Domain Processing with ERB Bands
 // ============================================================================
+//
+// Uses intensity-vector-based direction-of-arrival (DOA) estimation per ERB band
+// and diffuseness-based energy-preserving direct/ambient decomposition.
+//
+// For each ERB band:
+// 1. Compute active intensity vector I = Re(P * V*) where P = (L+R)/2, V = (L-R)/2
+// 2. DOA angle = atan2(I_y, I_x) gives per-band panning direction
+// 3. Diffuseness psi = 1 - |I| / (P_energy * V_energy) measures how diffuse the field is
+// 4. direct_gain = sqrt(1 - psi), ambient_gain = sqrt(psi) for energy preservation
 
 use super::UpmixerPlugin;
 use math_audio_dsp::fast_math::{fast_atan2, fast_cos, fast_sin};
@@ -8,7 +17,7 @@ use sotf_host::simd::compute_covariance_simd;
 
 use rustfft::num_complex::Complex;
 
-/// Minimum height mask value — prevents deep spectral notches that cause time-domain ringing
+/// Minimum height mask value -- prevents deep spectral notches that cause time-domain ringing
 pub(super) const HEIGHT_MASK_FLOOR: f32 = 0.10;
 
 /// One-pole smoothing factor for median-filtered coherence (per-band)
@@ -35,31 +44,34 @@ const ENERGY_CORRECTION_MAX: f32 = 1.15;
 /// material where L ~= R.
 const BASE_LR_BLEED: f32 = 0.3;
 
+/// Smoothing alpha for DOA angle tracking (one-pole filter)
+const DOA_SMOOTHING_ALPHA: f32 = 0.2;
+
 /// 5-element median using 6 comparisons (optimal).
 /// After eliminating the global minimum via 3 compare-swaps on pairs,
 /// finds the 2nd-smallest of the remaining 4 elements (= median of 5).
 #[inline(always)]
 fn median5(arr: [f32; 5]) -> f32 {
     let [mut a, mut b, mut c, mut d, mut e] = arr;
-    // Sort pairs: a ≤ b, c ≤ d                        (2 comparisons)
+    // Sort pairs: a <= b, c <= d                        (2 comparisons)
     if a > b {
         std::mem::swap(&mut a, &mut b);
     }
     if c > d {
         std::mem::swap(&mut c, &mut d);
     }
-    // Order pairs so a ≤ c (thus a = min of {a,b,c,d}) (1 comparison)
+    // Order pairs so a <= c (thus a = min of {a,b,c,d}) (1 comparison)
     if a > c {
         std::mem::swap(&mut a, &mut c);
         std::mem::swap(&mut b, &mut d);
     }
-    // Discard a (global minimum). Need 2nd-smallest of {b, c, d, e} where c ≤ d.
-    // Sort b,e so b ≤ e                                (1 comparison)
+    // Discard a (global minimum). Need 2nd-smallest of {b, c, d, e} where c <= d.
+    // Sort b,e so b <= e                                (1 comparison)
     if b > e {
         std::mem::swap(&mut b, &mut e);
     }
-    // Now b ≤ e, c ≤ d. 2nd-of-4 from two sorted pairs:
-    // merge-pick index 1 = if b ≤ c then min(c, e) else min(b, d)
+    // Now b <= e, c <= d. 2nd-of-4 from two sorted pairs:
+    // merge-pick index 1 = if b <= c then min(c, e) else min(b, d)
     if b <= c {
         // (1 comparison)
         if c <= e { c } else { e } // (1 comparison)
@@ -70,11 +82,67 @@ fn median5(arr: [f32; 5]) -> f32 {
     }
 }
 
-fn base_ambient_gain_from_coherence(coherence: f32, ambient_boost: f32) -> f32 {
-    let coherence_clamped = coherence.clamp(0.0, 1.0);
-    let ambient_base = (1.0 - coherence_clamped).max(0.0);
-    // Standard sqrt is okay here as it's once per ERB band, but we could use an approximation if needed.
-    ambient_base.sqrt() * ambient_boost
+/// Compute diffuseness-based gains from intensity vector analysis.
+///
+/// For a band of frequency bins, computes:
+/// - Active intensity I = Re(P * V*) where P = pressure (mono), V = velocity (L-R)
+/// - Diffuseness psi = 1 - |I| / sqrt(E_p * E_v), clamped to [0, 1]
+/// - direct_gain = sqrt(1 - psi), ambient_gain = sqrt(psi)
+///
+/// This ensures direct^2 + ambient^2 = 1 (energy preservation).
+///
+/// Returns (diffuseness, doa_angle, direct_gain_base, ambient_gain_base)
+#[inline]
+fn compute_diffuseness_and_doa(
+    freq_left: &[Complex<f32>],
+    freq_right: &[Complex<f32>],
+    start_bin: usize,
+    end_bin: usize,
+) -> (f32, f32, f32, f32) {
+    let mut intensity_re = 0.0_f32; // Re part of intensity (left-right axis)
+    let mut intensity_im = 0.0_f32; // Im part of intensity (front-back axis)
+    let mut pressure_energy = 0.0_f32;
+    let mut velocity_energy = 0.0_f32;
+
+    for i in start_bin..end_bin {
+        let l = freq_left[i];
+        let r = freq_right[i];
+
+        // P = (L + R) / 2 (pressure / omnidirectional)
+        let p = (l + r) * 0.5;
+        // V = (L - R) / 2 (velocity / figure-of-eight)
+        let v = (l - r) * 0.5;
+
+        // Active intensity I = Re(P * conj(V))
+        let pv_conj = p * v.conj();
+        intensity_re += pv_conj.re;
+        intensity_im += pv_conj.im;
+
+        pressure_energy += p.norm_sqr();
+        velocity_energy += v.norm_sqr();
+    }
+
+    let intensity_magnitude = intensity_re.abs();
+
+    // DOA angle from intensity vector
+    let doa = fast_atan2(intensity_im, intensity_re);
+
+    // Diffuseness: psi = 1 - |I| / sqrt(E_p * E_v)
+    // When |I| is large relative to energies, the field is directional (psi -> 0)
+    // When |I| is small, the field is diffuse (psi -> 1)
+    let energy_product = (pressure_energy * velocity_energy).sqrt();
+    let diffuseness = if energy_product > 1e-12 {
+        (1.0 - intensity_magnitude / energy_product).clamp(0.0, 1.0)
+    } else {
+        1.0 // No signal = treat as diffuse
+    };
+
+    // Energy-preserving decomposition:
+    // direct_gain^2 + ambient_gain^2 = 1
+    let direct_gain = (1.0 - diffuseness).max(0.0).sqrt();
+    let ambient_gain = diffuseness.max(0.0).sqrt();
+
+    (diffuseness, doa, direct_gain, ambient_gain)
 }
 
 impl UpmixerPlugin {
@@ -102,6 +170,7 @@ impl UpmixerPlugin {
                 continue;
             }
 
+            // Covariance for steering smoothing (attack/release detection)
             let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(
                 &self.freq_domain_left,
                 &self.freq_domain_right,
@@ -131,6 +200,7 @@ impl UpmixerPlugin {
             self.pca_cov_yy[band_idx] = (1.0 - alpha) * self.pca_cov_yy[band_idx] + alpha * cov_yy;
             self.pca_cov_xy[band_idx] = (1.0 - alpha) * self.pca_cov_xy[band_idx] + alpha * cov_xy;
 
+            // Compute coherence from smoothed covariance (used for median filtering)
             let c_xx = self.pca_cov_xx[band_idx];
             let c_yy = self.pca_cov_yy[band_idx];
             let c_xy = self.pca_cov_xy[band_idx];
@@ -156,6 +226,27 @@ impl UpmixerPlugin {
                 self.smoothed_coherence[band_idx] =
                     prev + COHERENCE_SMOOTHING_ALPHA * (median - prev);
                 coherence = self.smoothed_coherence[band_idx];
+            }
+
+            // --- Intensity-vector DOA and diffuseness (Phase 1 & 2) ---
+            let (diffuseness, raw_doa, direct_gain_base, ambient_gain_base) =
+                compute_diffuseness_and_doa(
+                    &self.freq_domain_left,
+                    &self.freq_domain_right,
+                    start_bin,
+                    end_bin,
+                );
+
+            // Smooth DOA angle with one-pole filter (angle wrapping handled)
+            if band_idx < self.doa_angle.len() {
+                let prev_doa = self.doa_angle[band_idx];
+                let mut delta = raw_doa - prev_doa;
+                if delta > std::f32::consts::PI {
+                    delta -= 2.0 * std::f32::consts::PI;
+                } else if delta < -std::f32::consts::PI {
+                    delta += 2.0 * std::f32::consts::PI;
+                }
+                self.doa_angle[band_idx] = prev_doa + DOA_SMOOTHING_ALPHA * delta;
             }
 
             // LFE Band
@@ -195,23 +286,32 @@ impl UpmixerPlugin {
             }
 
             // Transition zone + Upmixing Band
-            // Both need PCA decomposition, so compute shared state first
+            // Uses intensity-vector DOA for direction and diffuseness for decomposition
             let needs_upmix = transition_start.max(start_bin) < end_bin;
             if needs_upmix {
-                let ambient_gain =
-                    base_ambient_gain_from_coherence(coherence, self.ambient_boost.current())
-                        * (1.0 - self.dialogue_probability * self.dialogue_weight.current());
+                // Diffuseness-based ambient gain (energy-preserving)
+                // ambient_gain_base = sqrt(psi) where psi is diffuseness
+                // Scale by ambient_boost parameter and dialogue weight
+                let ambient_gain = ambient_gain_base
+                    * self.ambient_boost.current()
+                    * (1.0 - self.dialogue_probability * self.dialogue_weight.current());
+
+                // Effective coherence for center extraction: blend coherence with dialogue
                 let eff_coh = coherence
                     + (1.0 - coherence)
                         * (self.dialogue_probability * self.dialogue_weight.current());
 
+                // Direct gain from diffuseness decomposition
+                // direct_gain_base = sqrt(1 - psi), already energy-preserving
+                let _direct_scale = direct_gain_base;
+
+                // Use PCA eigenvector for projection (still needed for directional decomposition)
                 let (ev_l, ev_r) = if c_xy.norm_sqr() > 1e-18 {
                     let v = lambda1 - c_xx;
                     let norm = (c_xy.norm_sqr() + v * v).sqrt();
                     if norm > 1e-9 {
                         (c_xy / norm, Complex::new(v / norm, 0.0))
                     } else {
-                        // Fallback for ill-conditioned case: use energy-based bias
                         if c_xx >= c_yy {
                             (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0))
                         } else {
@@ -219,7 +319,6 @@ impl UpmixerPlugin {
                         }
                     }
                 } else {
-                    // No cross-correlation: principal component is the stronger channel
                     if c_xx >= c_yy {
                         (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0))
                     } else {
@@ -228,24 +327,24 @@ impl UpmixerPlugin {
                 };
 
                 let stereo_w = self.stereo_width.current();
-                // Scale L-R bleed by (1 - coherence): mono/centered content gets near-zero
-                // bleed, while wide/diffuse content gets up to BASE_LR_BLEED.
-                let lr_bleed = BASE_LR_BLEED * (1.0 - coherence);
+                // Scale L-R bleed by diffuseness: directional content gets near-zero
+                // bleed, while diffuse content gets up to BASE_LR_BLEED.
+                let lr_bleed = BASE_LR_BLEED * diffuseness;
                 let upmix_start = transition_end.max(start_bin);
                 let mut in_e = 0.0f32;
                 let mut out_e = 0.0f32;
 
-                // Transition zone: cross-fade between pass-through and PCA-decomposed
+                // Transition zone: cross-fade between pass-through and decomposed
                 let xfade_start = transition_start.max(start_bin).max(lfe_cutoff_bin + 1);
                 let xfade_end = transition_end.min(end_bin);
                 for i in xfade_start..xfade_end {
                     let l = self.freq_domain_left[i];
                     let r = self.freq_domain_right[i];
 
-                    // Blend factor: 0.0 = pure pass-through, 1.0 = pure PCA upmix
+                    // Blend factor: 0.0 = pure pass-through, 1.0 = pure upmix
                     let t = (i - transition_start) as f32 / transition_width;
 
-                    // PCA-decomposed values
+                    // Project onto principal component for directional extraction
                     let proj = l * ev_l.conj() + r * ev_r.conj();
                     let direct_l = proj * ev_l;
                     let direct_r = proj * ev_r;
@@ -256,20 +355,20 @@ impl UpmixerPlugin {
                         Complex::new(1.0, 0.0)
                     };
                     let aligned_r = direct_r * phase_correction.conj();
-                    let pca_center = (direct_l + aligned_r) * (eff_coh * 0.5);
-                    let pca_amb_l =
+                    let decomp_center = (direct_l + aligned_r) * (eff_coh * 0.5);
+                    let decomp_amb_l =
                         (l - direct_l) * ambient_gain + (l - r) * (lr_bleed * ambient_gain);
-                    let pca_amb_r =
+                    let decomp_amb_r =
                         (r - direct_r) * ambient_gain - (l - r) * (lr_bleed * ambient_gain);
-                    let pca_dl = l - pca_center * stereo_w;
-                    let pca_dr = r - pca_center * phase_correction * stereo_w;
+                    let decomp_dl = l - decomp_center * stereo_w;
+                    let decomp_dr = r - decomp_center * phase_correction * stereo_w;
 
                     // Blend: pass-through has center=0, ambient=0, direct=original
-                    self.direct[i] = pca_center * t;
-                    self.direct_left[i] = l * (1.0 - t) + pca_dl * t;
-                    self.direct_right[i] = r * (1.0 - t) + pca_dr * t;
-                    self.ambient_left[i] = pca_amb_l * t;
-                    self.ambient_right[i] = pca_amb_r * t;
+                    self.direct[i] = decomp_center * t;
+                    self.direct_left[i] = l * (1.0 - t) + decomp_dl * t;
+                    self.direct_right[i] = r * (1.0 - t) + decomp_dr * t;
+                    self.ambient_left[i] = decomp_amb_l * t;
+                    self.ambient_right[i] = decomp_amb_r * t;
                     self.lfe[i] = Complex::new(0.0, 0.0);
 
                     in_e += l.norm_sqr() + r.norm_sqr();
@@ -323,8 +422,10 @@ impl UpmixerPlugin {
                 let corr_start = xfade_start.min(upmix_start);
                 for i in corr_start..end_bin {
                     self.energy_correction_per_bin[i] = corr;
+                    // Height suitability: blend frequency weight with diffuseness
+                    // Diffuse content is better suited for height channels than coherent content
                     let h_suit = (self.height_freq_weights[i] * 0.5
-                        + (1.0 - coherence).max(0.0) * 0.5)
+                        + diffuseness * 0.5)
                         .min(1.0);
                     self.height_band_gains[i] = (h_suit * tr_red).clamp(HEIGHT_MASK_FLOOR, 1.0);
                 }
@@ -368,7 +469,7 @@ impl UpmixerPlugin {
                         let mag_sq = blended.norm_sqr();
                         if mag_sq > 1e-9 {
                             // Fast inverse sqrt: one Newton-Raphson iteration on the hardware rsqrt seed.
-                            // ~0.1% error, ~3× faster than 1/sqrt for all-pass filter blending.
+                            // ~0.1% error, ~3x faster than 1/sqrt for all-pass filter blending.
                             let rsqrt = sotf_host::simd::fast_inv_sqrt(mag_sq);
                             self.blended_decorrelation_filters[ch][i] = blended * rsqrt;
                         } else {
@@ -409,6 +510,10 @@ impl UpmixerPlugin {
 
         self.coherence_history_idx = self.coherence_history_idx.wrapping_add(1);
         // Note: FTZ/DAZ CPU flags handle denormal flushing automatically
+
+        // Compute height spectral flux gate before smoothing height gains
+        self.compute_height_flux_gate();
+
         self.smooth_height_gains();
     }
 

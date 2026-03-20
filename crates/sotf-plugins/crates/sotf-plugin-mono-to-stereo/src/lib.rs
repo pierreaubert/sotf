@@ -21,6 +21,8 @@ pub struct MonoToStereoPluginParams {
     pub stereo_width: f32,
     #[serde(default = "default_freq_dependent")]
     pub freq_dependent: bool,
+    #[serde(default = "default_haas_delay_ms")]
+    pub haas_delay_ms: f32,
 }
 
 fn default_stereo_width() -> f32 {
@@ -29,6 +31,13 @@ fn default_stereo_width() -> f32 {
 fn default_freq_dependent() -> bool {
     pk(MS, "freq_dependent").default_bool()
 }
+fn default_haas_delay_ms() -> f32 {
+    pk(MS, "haas_delay_ms").default_f64() as f32
+}
+
+/// Maximum Haas delay in samples at 192kHz (30ms * 192000 / 1000 = 5760)
+/// Round up to next power of two for masking.
+const HAAS_DELAY_BUF_SIZE: usize = 8192;
 
 pub struct MonoToStereoPlugin {
     sample_rate: u32,
@@ -71,6 +80,19 @@ pub struct MonoToStereoPlugin {
 
     param_stereo_width: ParameterId,
     param_freq_dependent: ParameterId,
+    param_haas_delay_ms: ParameterId,
+
+    /// Haas delay: target delay in ms for the right channel
+    haas_delay_ms: f32,
+    /// Haas delay: delay in samples (computed from ms and sample rate)
+    haas_delay_samples: usize,
+    /// Haas delay: circular buffer for the right channel
+    haas_delay_buf: Vec<f32>,
+    /// Haas delay: write position in the circular buffer
+    haas_delay_write_pos: usize,
+    /// Haas delay: mask for circular buffer indexing (buffer_size - 1)
+    haas_delay_mask: usize,
+
     latency_filled: usize,
     cached_parameters: Vec<Parameter>,
 }
@@ -125,6 +147,12 @@ impl MonoToStereoPlugin {
             ifft_output_buf: vec![0.0; FFT_SIZE],
             param_stereo_width: ParameterId::from("stereo_width"),
             param_freq_dependent: ParameterId::from("freq_dependent"),
+            param_haas_delay_ms: ParameterId::from("haas_delay_ms"),
+            haas_delay_ms: default_haas_delay_ms(),
+            haas_delay_samples: 0,
+            haas_delay_buf: vec![0.0; HAAS_DELAY_BUF_SIZE],
+            haas_delay_write_pos: 0,
+            haas_delay_mask: HAAS_DELAY_BUF_SIZE - 1,
             latency_filled: 0,
             cached_parameters: Vec::new(),
         };
@@ -142,6 +170,13 @@ impl MonoToStereoPlugin {
                 1.0,
             ),
             Parameter::new_bool("freq_dependent", "Freq Dependent", self.freq_dependent),
+            Parameter::new_float(
+                "haas_delay_ms",
+                "Haas Delay",
+                self.haas_delay_ms,
+                pk(MS, "haas_delay_ms").min_f64() as f32,
+                pk(MS, "haas_delay_ms").max_f64() as f32,
+            ),
         ];
     }
 
@@ -149,7 +184,15 @@ impl MonoToStereoPlugin {
         let mut p = Self::new();
         p.stereo_width.set_target(params.stereo_width);
         p.freq_dependent = params.freq_dependent;
+        p.haas_delay_ms = params.haas_delay_ms;
         p
+    }
+
+    /// Recompute haas_delay_samples from haas_delay_ms and sample_rate
+    fn update_haas_delay_samples(&mut self) {
+        let computed =
+            ((self.haas_delay_ms / 1000.0) * self.sample_rate as f32).round() as usize;
+        self.haas_delay_samples = computed.min(HAAS_DELAY_BUF_SIZE - 1);
     }
 
     fn generate_decorrelation_filter(&mut self) {
@@ -299,6 +342,14 @@ impl Plugin for MonoToStereoPlugin {
             self.freq_dependent = value
                 .as_bool()
                 .unwrap_or(pk(MS, "freq_dependent").default_bool());
+        } else if id == self.param_haas_delay_ms {
+            let v = value
+                .as_float()
+                .unwrap_or(pk(MS, "haas_delay_ms").default_f64() as f32);
+            if v.is_finite() {
+                self.haas_delay_ms = v;
+                self.update_haas_delay_samples();
+            }
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -309,6 +360,8 @@ impl Plugin for MonoToStereoPlugin {
             Some(ParameterValue::Float(self.stereo_width.target()))
         } else if id == &self.param_freq_dependent {
             Some(ParameterValue::Bool(self.freq_dependent))
+        } else if id == &self.param_haas_delay_ms {
+            Some(ParameterValue::Float(self.haas_delay_ms))
         } else {
             None
         }
@@ -318,6 +371,9 @@ impl Plugin for MonoToStereoPlugin {
         self.sample_rate = sample_rate;
         self.stereo_width.set_time(PARAM_SMOOTH_MS, sample_rate);
         self.generate_decorrelation_filter();
+        self.update_haas_delay_samples();
+        self.haas_delay_buf.fill(0.0);
+        self.haas_delay_write_pos = 0;
         Ok(())
     }
 
@@ -330,6 +386,8 @@ impl Plugin for MonoToStereoPlugin {
         self.output_read_position = 0;
         self.latency_filled = 0;
         self.stereo_width.reset(self.stereo_width.target());
+        self.haas_delay_buf.fill(0.0);
+        self.haas_delay_write_pos = 0;
     }
 
     fn process(
@@ -375,14 +433,33 @@ impl Plugin for MonoToStereoPlugin {
                     (72.0_f32 / 35.0).sqrt()
                 };
 
+                let delay_samples = self.haas_delay_samples;
+                let delay_mask = self.haas_delay_mask;
+
                 for i in 0..to_drain {
                     let read_idx = (self.output_read_position + i) & mask;
                     let width = self.stereo_width.advance();
                     let orig = self.output_accumulator[read_idx * 2];
                     let decor = self.output_accumulator[read_idx * 2 + 1] * decor_gain;
 
+                    let right_sample = orig * (1.0 - width) + decor * width;
+
                     output[(output_pos + i) * 2] = orig;
-                    output[(output_pos + i) * 2 + 1] = orig * (1.0 - width) + decor * width;
+
+                    // Apply Haas delay to the right channel if enabled
+                    if delay_samples > 0 {
+                        // Write the current right sample into the delay buffer
+                        self.haas_delay_buf[self.haas_delay_write_pos] = right_sample;
+                        // Read from delay_samples behind the write position
+                        let read_pos = (self.haas_delay_write_pos + HAAS_DELAY_BUF_SIZE
+                            - delay_samples)
+                            & delay_mask;
+                        output[(output_pos + i) * 2 + 1] = self.haas_delay_buf[read_pos];
+                        self.haas_delay_write_pos =
+                            (self.haas_delay_write_pos + 1) & delay_mask;
+                    } else {
+                        output[(output_pos + i) * 2 + 1] = right_sample;
+                    }
 
                     self.output_accumulator[read_idx * 2] = 0.0;
                     self.output_accumulator[read_idx * 2 + 1] = 0.0;
@@ -432,6 +509,7 @@ mod tests {
     #[test]
     fn test_mono_to_stereo_width_zero_is_mono() {
         let mut p = MonoToStereoPlugin::new();
+        p.haas_delay_ms = 0.0;
         p.initialize(48000).unwrap();
         p.stereo_width.reset(0.0);
         let total_frames = FFT_SIZE * 10;
@@ -502,6 +580,7 @@ mod tests {
         fn lr_correlation(freq_hz: f32, freq_dep: bool) -> f64 {
             let mut p = MonoToStereoPlugin::new();
             p.freq_dependent = freq_dep;
+            p.haas_delay_ms = 0.0; // Disable Haas delay for this correlation test
             p.initialize(48000).unwrap();
             p.stereo_width.reset(1.0);
 

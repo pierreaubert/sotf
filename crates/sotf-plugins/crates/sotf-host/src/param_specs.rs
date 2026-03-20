@@ -658,6 +658,13 @@ pub mod compressor {
             "Output",
         )
         .output(),
+        ParamSpec::bool_param(
+            "External Sidechain",
+            "sidechain_external",
+            false,
+            "Sidechain",
+        )
+        .setup(),
     ];
     use crate::plugin_layout::*;
     pub const LAYOUT: PluginLayout = PluginLayout {
@@ -1085,10 +1092,11 @@ pub mod loudness_compensation {
     pub const PARAMS: &[ParamSpec] = &[
         ParamSpec::float("Low Freq", "low_freq", 100.0, 20.0, 500.0, 5.0, "Hz", "Low"),
         ParamSpec::float("Low Gain", "low_gain", 6.0, -20.0, 20.0, 0.5, "dB", "Low"),
+        // ISO 226:2003: sensitivity drops above ~8 kHz (80-phon contour rises steeply)
         ParamSpec::float(
             "High Freq",
             "high_freq",
-            10000.0,
+            8000.0,
             2000.0,
             20000.0,
             100.0,
@@ -1106,10 +1114,11 @@ pub mod loudness_compensation {
             "High",
         ),
         ParamSpec::bool_param("Mid Enabled", "mid_enabled", true, "Mid").structural(),
+        // ISO 226:2003: ear canal resonance creates max sensitivity at ~3.5 kHz
         ParamSpec::float(
             "Mid Freq",
             "mid_freq",
-            3000.0,
+            3500.0,
             500.0,
             8000.0,
             50.0,
@@ -2041,6 +2050,7 @@ pub mod multiband_compressor {
             "ms",
             "Global",
         ),
+        ParamSpec::bool_param("M/S Mode", "ms_mode", false, "Global").setup(),
     ];
     /// Template for each compressor band (repeated per band).
     pub const BAND_TEMPLATE: &[ParamSpec] = &[
@@ -2172,6 +2182,7 @@ pub mod pnd {
             "",
             "Correction",
         ),
+        ParamSpec::bool_param("Phase Vocoder", "phase_vocoder", false, "Correction"),
     ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[],
@@ -2734,6 +2745,7 @@ pub mod fletcher_munson {
             "",
             "Band 4",
         ),
+        ParamSpec::bool_param("ISO 226:2003", "iso_226", false, "Global").setup(),
     ];
     use crate::plugin_layout::*;
     pub const LAYOUT: PluginLayout = PluginLayout {

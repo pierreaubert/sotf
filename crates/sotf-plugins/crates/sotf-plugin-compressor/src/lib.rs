@@ -108,6 +108,10 @@ fn default_measured_auto_makeup() -> bool {
     pk(CP, "measured_auto_makeup").default_bool()
 }
 
+fn default_sidechain_external() -> bool {
+    pk(CP, "sidechain_external").default_bool()
+}
+
 /// Data exposed by the compressor for monitoring
 #[derive(Debug, Clone)]
 pub struct CompressorData {
@@ -173,6 +177,8 @@ pub struct CompressorPluginParams {
     pub program_dependent_release: bool,
     #[serde(default = "default_measured_auto_makeup")]
     pub measured_auto_makeup: bool,
+    #[serde(default = "default_sidechain_external")]
+    pub sidechain_external: bool,
 }
 
 // ============================================================================
@@ -228,6 +234,9 @@ pub struct CompressorPlugin {
 
     param_measured_auto_makeup: ParameterId,
     measured_auto_makeup: bool,
+
+    param_sidechain_external: ParameterId,
+    sidechain_external: bool,
 
     cached_parameters: Vec<Parameter>,
 
@@ -317,6 +326,9 @@ impl CompressorPlugin {
 
             param_measured_auto_makeup: ParameterId::from("measured_auto_makeup"),
             measured_auto_makeup: false,
+
+            param_sidechain_external: ParameterId::from("sidechain_external"),
+            sidechain_external: false,
 
             cached_parameters: Vec::new(),
 
@@ -500,6 +512,14 @@ impl CompressorPlugin {
             .with_description("Use measured gain reduction for auto makeup (requires auto_makeup)")
             .with_group("Output")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "sidechain_external",
+                "External Sidechain",
+                self.sidechain_external,
+            )
+            .with_description("Use external sidechain signal from extra input channels")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::Useful),
         ];
     }
 
@@ -545,6 +565,9 @@ impl CompressorPlugin {
 
         // Measured auto makeup
         plugin.measured_auto_makeup = params.measured_auto_makeup;
+
+        // External sidechain
+        plugin.sidechain_external = params.sidechain_external;
 
         plugin.rebuild_cached_parameters();
         plugin
@@ -690,6 +713,14 @@ impl InPlacePlugin for CompressorPlugin {
         self.channels
     }
 
+    fn input_channels(&self) -> usize {
+        if self.sidechain_external {
+            self.channels * 2
+        } else {
+            self.channels
+        }
+    }
+
     fn parameters(&self) -> Vec<Parameter> {
         self.cached_parameters.clone()
     }
@@ -808,6 +839,10 @@ impl InPlacePlugin for CompressorPlugin {
             self.measured_auto_makeup = value
                 .as_bool()
                 .unwrap_or(pk(CP, "measured_auto_makeup").default_bool());
+        } else if id == self.param_sidechain_external {
+            self.sidechain_external = value
+                .as_bool()
+                .unwrap_or(pk(CP, "sidechain_external").default_bool());
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -842,6 +877,8 @@ impl InPlacePlugin for CompressorPlugin {
             Some(ParameterValue::Bool(self.program_dependent_release))
         } else if id == &self.param_measured_auto_makeup {
             Some(ParameterValue::Bool(self.measured_auto_makeup))
+        } else if id == &self.param_sidechain_external {
+            Some(ParameterValue::Bool(self.sidechain_external))
         } else {
             None
         }
@@ -917,6 +954,14 @@ impl InPlacePlugin for CompressorPlugin {
 
         let num_frames = context.num_frames;
         let use_lookahead = self.lookahead_ms > 0.0;
+        let use_ext_sc = self.sidechain_external;
+        // When external sidechain is active, the buffer stride is channels*2
+        // (audio channels followed by sidechain channels per frame).
+        let stride = if use_ext_sc {
+            self.channels * 2
+        } else {
+            self.channels
+        };
 
         let thresh = self.threshold_smoother.next_n(num_frames);
         let makeup_gain = self.makeup_gain_smoother.next_n(num_frames);
@@ -943,12 +988,14 @@ impl InPlacePlugin for CompressorPlugin {
 
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
-                let frame_start = frame * self.channels;
+                let frame_start = frame * stride;
+                // Sidechain detection offset: use sidechain channels if external, else audio channels
+                let sc_offset = if use_ext_sc { self.channels } else { 0 };
 
-                // Detect level from non-delayed signal
+                // Detect level from sidechain signal (non-delayed)
                 let mut detection_level = 0.0_f32;
                 for ch in 0..self.channels {
-                    let sample_idx = frame_start + ch;
+                    let sample_idx = frame_start + sc_offset + ch;
                     let filtered = self.apply_sidechain_filter(ch, buffer[sample_idx]);
                     let level = self.detect_level(ch, filtered);
                     detection_level = detection_level.max(level);
@@ -958,7 +1005,7 @@ impl InPlacePlugin for CompressorPlugin {
                 let target_gr = self.calculate_gain_reduction(input_db, thresh);
 
                 if use_lookahead {
-                    // Push current frame into lookahead, get delayed frame
+                    // Push current audio frame into lookahead, get delayed frame
                     self.lookahead_buffer.process_frame(
                         &buffer[frame_start..frame_start + self.channels],
                         &mut self.lookahead_frame_buf,
@@ -992,18 +1039,16 @@ impl InPlacePlugin for CompressorPlugin {
             }
         } else {
             for frame in 0..num_frames {
-                let frame_start = frame * self.channels;
+                let frame_start = frame * stride;
+                let sc_offset = if use_ext_sc { self.channels } else { 0 };
 
                 if use_lookahead {
-                    // For non-linked mode with lookahead, we still need to process
-                    // the entire frame through the lookahead buffer
-                    // First detect levels from non-delayed signal per channel
-                    // Stack alloc for per-channel gain reduction, enough for typical channel counts
+                    // First detect levels from sidechain signal per channel
                     #[allow(clippy::needless_range_loop)]
                     let target_grs = {
                         let mut grs = [0.0_f32; 32];
                         for ch in 0..self.channels {
-                            let sample_idx = frame_start + ch;
+                            let sample_idx = frame_start + sc_offset + ch;
                             let filtered = self.apply_sidechain_filter(ch, buffer[sample_idx]);
                             let level = self.detect_level(ch, filtered);
                             let input_db =
@@ -1013,7 +1058,7 @@ impl InPlacePlugin for CompressorPlugin {
                         grs
                     };
 
-                    // Push frame through lookahead
+                    // Push audio frame through lookahead
                     self.lookahead_buffer.process_frame(
                         &buffer[frame_start..frame_start + self.channels],
                         &mut self.lookahead_frame_buf,
@@ -1036,7 +1081,8 @@ impl InPlacePlugin for CompressorPlugin {
                     for ch in 0..self.channels {
                         let sample_idx = frame_start + ch;
                         let input_sample = buffer[sample_idx];
-                        let filtered = self.apply_sidechain_filter(ch, input_sample);
+                        let sc_sample = buffer[frame_start + sc_offset + ch];
+                        let filtered = self.apply_sidechain_filter(ch, sc_sample);
                         let level = self.detect_level(ch, filtered);
                         let input_db = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
                         let target_gr = self.calculate_gain_reduction(input_db, thresh);
@@ -1462,6 +1508,7 @@ mod tests {
             lookahead_ms: 5.0,
             program_dependent_release: true,
             measured_auto_makeup: true,
+            sidechain_external: false,
         };
         let mut plugin = CompressorPlugin::from_params(2, params);
         plugin.initialize(48000).unwrap();

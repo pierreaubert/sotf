@@ -62,6 +62,7 @@ fn benchmark_compressor(c: &mut Criterion) {
         lookahead_ms: 0.0,
         program_dependent_release: false,
         measured_auto_makeup: false,
+        sidechain_external: false,
     };
     let mut inner_unlinked = CompressorPlugin::from_params(channels, params);
     inner_unlinked.initialize(sample_rate).unwrap();
