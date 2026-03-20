@@ -65,6 +65,8 @@ pub struct LimiterData {
     pub peak_db: f32,
     /// Whether the limiter is actively limiting
     pub is_limiting: bool,
+    /// Per-channel inter-sample true peak in dBTP (empty when true_peak is disabled)
+    pub isp_dbtp: Vec<f32>,
 }
 
 const CACHE_UPDATE_THROTTLE: usize = 10;
@@ -102,6 +104,8 @@ pub struct LimiterPlugin {
     cache_update_counter: usize,
     monitoring_peak_db: f32,
     monitoring_gr_db: f32,
+    /// Per-channel ISP (inter-sample true peak) in linear, tracked across blocks
+    monitoring_isp_linear: Vec<f32>,
 }
 
 impl LimiterPlugin {
@@ -147,6 +151,7 @@ impl LimiterPlugin {
             cache_update_counter: 0,
             monitoring_peak_db: -100.0,
             monitoring_gr_db: 0.0,
+            monitoring_isp_linear: vec![0.0; channels],
         };
         p.rebuild_cached_parameters();
         p
@@ -376,6 +381,13 @@ impl InPlacePlugin for LimiterPlugin {
         let use_dual_release = self.dual_release;
         let use_feed_forward = self.feed_forward && self.lookahead_len > 1;
 
+        // Reset per-block ISP tracking
+        if use_true_peak {
+            self.monitoring_isp_linear
+                .resize(self.channels, 0.0);
+            self.monitoring_isp_linear.fill(0.0);
+        }
+
         for frame in 0..num_frames {
             let mut frame_peak = 0.0f32;
             if use_true_peak {
@@ -383,6 +395,10 @@ impl InPlacePlugin for LimiterPlugin {
                     let idx = frame * self.channels + ch;
                     let tp = self.true_peak_detectors[ch].process_linear(buffer[idx]);
                     frame_peak = frame_peak.max(tp);
+                    // Track per-channel ISP
+                    if tp > self.monitoring_isp_linear[ch] {
+                        self.monitoring_isp_linear[ch] = tp;
+                    }
                 }
             } else {
                 for ch in 0..self.channels {
@@ -477,6 +493,18 @@ impl InPlacePlugin for LimiterPlugin {
                 d.gain_reduction_db = self.monitoring_gr_db;
                 d.peak_db = self.monitoring_peak_db;
                 d.is_limiting = self.monitoring_gr_db > 0.01;
+                if use_true_peak {
+                    d.isp_dbtp.resize(self.channels, -120.0);
+                    for (ch, &lin) in self.monitoring_isp_linear.iter().enumerate() {
+                        d.isp_dbtp[ch] = if lin < 1e-12 {
+                            -120.0
+                        } else {
+                            20.0 * lin.log10()
+                        };
+                    }
+                } else {
+                    d.isp_dbtp.clear();
+                }
             });
         }
 
@@ -813,6 +841,79 @@ mod tests {
                 i + 500
             );
         }
+    }
+
+    /// Verify ISP (inter-sample true peak) meter is exposed through LimiterData.
+    #[test]
+    fn test_isp_meter_exposure() {
+        let mut p = LimiterPlugin::new(2, -1.0, 50.0, 5.0, false);
+        p.true_peak = true;
+        p.rebuild_cached_parameters();
+        p.initialize(48000).unwrap();
+
+        // Create a signal with inter-sample peaks on both channels
+        let frames = 2048;
+        let mut b = vec![0.0f32; frames * 2];
+        for i in 0..frames {
+            let val = if i % 2 == 0 { 0.8 } else { -0.8 };
+            b[i * 2] = val;
+            b[i * 2 + 1] = val * 0.5;
+        }
+
+        // Process enough blocks to trigger cache update (>= CACHE_UPDATE_THROTTLE)
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: frames,
+        };
+        for _ in 0..CACHE_UPDATE_THROTTLE + 1 {
+            p.process_in_place(&mut b, &ctx).unwrap();
+        }
+
+        let data = p.cache.load();
+        let data = data.as_ref();
+        assert_eq!(data.isp_dbtp.len(), 2, "ISP should have 2 channels");
+        // Both channels should show non-trivial ISP values
+        assert!(
+            data.isp_dbtp[0] > -20.0,
+            "ch0 ISP {} dBTP should be above -20",
+            data.isp_dbtp[0]
+        );
+        assert!(
+            data.isp_dbtp[1] > -20.0,
+            "ch1 ISP {} dBTP should be above -20",
+            data.isp_dbtp[1]
+        );
+        // Channel 0 (full scale) should have higher ISP than channel 1 (half scale)
+        assert!(
+            data.isp_dbtp[0] > data.isp_dbtp[1],
+            "ch0 ISP {} should exceed ch1 ISP {}",
+            data.isp_dbtp[0],
+            data.isp_dbtp[1]
+        );
+    }
+
+    /// Verify ISP meter is empty when true_peak is disabled.
+    #[test]
+    fn test_isp_meter_empty_without_true_peak() {
+        let mut p = LimiterPlugin::new(1, -1.0, 50.0, 5.0, false);
+        p.initialize(48000).unwrap();
+        assert!(!p.true_peak);
+
+        let frames = 512;
+        let mut b = vec![0.5f32; frames];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: frames,
+        };
+        for _ in 0..CACHE_UPDATE_THROTTLE + 1 {
+            p.process_in_place(&mut b, &ctx).unwrap();
+        }
+
+        let data = p.cache.load();
+        assert!(
+            data.isp_dbtp.is_empty(),
+            "ISP should be empty when true_peak is disabled"
+        );
     }
 
     /// Test that reset clears true peak detectors and dual release state.

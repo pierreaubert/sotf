@@ -2,8 +2,12 @@
 // Plugin Host Trait - Common interface for plugin hosts
 // ============================================================================
 
+use crate::automation::{automation_utils, ParameterAutomation};
 use crate::lookahead::LookaheadBuffer;
+use crate::parameters::{ParameterId, ParameterValue};
 use crate::plugin::{Plugin, ProcessContext};
+#[allow(unused_imports)]
+use rayon::prelude::*;
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -62,6 +66,11 @@ struct ProcessBuffers {
     compensation_delays: HashMap<(NodeId, NodeId), LookaheadBuffer>,
     /// Scratch buffer for frame-by-frame delay processing (avoids per-frame allocation).
     delay_scratch: Vec<f32>,
+    /// Per-node scratch buffers for parallel stage processing.
+    /// Each entry: (scratch_input, scratch_output, merge_buffer).
+    /// Only allocated for nodes in stages with 2+ nodes.
+    #[allow(dead_code)]
+    parallel_scratch: Vec<(Vec<f32>, Vec<f32>, Vec<f32>)>,
 }
 
 // ============================================================================
@@ -118,6 +127,7 @@ pub trait Host {
 
 pub type NodeId = usize;
 
+#[derive(Clone)]
 pub struct GraphNode {
     pub id: NodeId,
     pub name: String,
@@ -144,11 +154,22 @@ impl GraphNode {
     }
 }
 
+/// Type of connection between nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EdgeType {
+    /// Normal audio connection (fills primary input channels).
+    #[default]
+    Audio,
+    /// Sidechain connection (fills extended input channels after primary audio).
+    Sidechain,
+}
+
 #[derive(Debug, Clone)]
 pub struct GraphEdge {
     pub from_node: NodeId,
     pub to_node: NodeId,
     pub channel_map: Option<Vec<usize>>,
+    pub edge_type: EdgeType,
 }
 
 impl GraphEdge {
@@ -157,6 +178,7 @@ impl GraphEdge {
             from_node: from,
             to_node: to,
             channel_map: None,
+            edge_type: EdgeType::Audio,
         }
     }
     pub fn with_channels(from: NodeId, to: NodeId, channels: Vec<usize>) -> Self {
@@ -164,13 +186,22 @@ impl GraphEdge {
             from_node: from,
             to_node: to,
             channel_map: Some(channels),
+            edge_type: EdgeType::Audio,
+        }
+    }
+    pub fn sidechain(from: NodeId, to: NodeId) -> Self {
+        Self {
+            from_node: from,
+            to_node: to,
+            channel_map: None,
+            edge_type: EdgeType::Sidechain,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-struct ProcessingStage {
-    nodes: Vec<NodeId>,
+pub struct ProcessingStage {
+    pub nodes: Vec<NodeId>,
 }
 
 impl ProcessingStage {
@@ -182,6 +213,36 @@ impl ProcessingStage {
     }
     fn is_empty(&self) -> bool {
         self.nodes.is_empty()
+    }
+}
+
+/// Immutable snapshot of graph topology for lock-free graph updates.
+/// The control thread builds a new `GraphTopology` and swaps it via `ArcSwap`.
+/// The audio thread loads the current snapshot atomically.
+#[derive(Clone)]
+pub struct GraphTopology {
+    pub nodes: HashMap<NodeId, GraphNode>,
+    pub edges: Vec<GraphEdge>,
+    pub stages: Vec<ProcessingStage>,
+    pub input_nodes: Vec<NodeId>,
+    pub output_nodes: Vec<NodeId>,
+    pub predecessors: Vec<Vec<GraphEdge>>,
+    pub is_input_node: Vec<bool>,
+    pub is_output_node: Vec<bool>,
+}
+
+impl GraphTopology {
+    pub fn empty() -> Self {
+        Self {
+            nodes: HashMap::new(),
+            edges: Vec::new(),
+            stages: Vec::new(),
+            input_nodes: Vec::new(),
+            output_nodes: Vec::new(),
+            predecessors: Vec::new(),
+            is_input_node: Vec::new(),
+            is_output_node: Vec::new(),
+        }
     }
 }
 
@@ -223,6 +284,11 @@ pub struct DawHost {
     /// Per-node cumulative latency from graph inputs, computed during build().
     /// Used to calculate compensation delays at merge points.
     node_latency_from_input: Vec<usize>,
+    /// Parameter automation state. Key = (NodeId, ParameterId).
+    /// Evaluated before each processing stage.
+    automation: HashMap<(NodeId, ParameterId), ParameterAutomation>,
+    /// Current playback position in samples, advanced each process() call.
+    playback_position: usize,
 }
 
 impl DawHost {
@@ -252,6 +318,8 @@ impl DawHost {
             cached_latency: None,
             bypassed: Vec::new(),
             node_latency_from_input: Vec::new(),
+            automation: HashMap::new(),
+            playback_position: 0,
         }
     }
     pub fn new_default(sr: u32) -> Self {
@@ -259,6 +327,58 @@ impl DawHost {
     }
     pub fn set_parallel_enabled(&mut self, e: bool) {
         self.parallel_enabled = e;
+    }
+
+    /// Set an automation curve for a parameter on a specific node.
+    /// The curve is evaluated during `process()` before each stage.
+    pub fn set_automation(
+        &mut self,
+        node_id: NodeId,
+        param_id: ParameterId,
+        curve: crate::automation::AutomationCurve,
+    ) {
+        let auto = ParameterAutomation {
+            param_id: param_id.clone(),
+            mode: crate::automation::AutomationMode::Host,
+            curve: Some(curve),
+            position: 0,
+            base_value: 0.0,
+            last_value: 0.0,
+        };
+        self.automation.insert((node_id, param_id), auto);
+    }
+
+    /// Remove automation for a specific parameter on a node.
+    pub fn clear_automation(&mut self, node_id: NodeId, param_id: &ParameterId) {
+        self.automation.remove(&(node_id, param_id.clone()));
+    }
+
+    /// Remove all automation.
+    pub fn clear_all_automation(&mut self) {
+        self.automation.clear();
+    }
+
+    /// Reset playback position to 0.
+    pub fn reset_playback_position(&mut self) {
+        self.playback_position = 0;
+        for auto in self.automation.values_mut() {
+            auto.position = 0;
+        }
+    }
+
+    /// Take a snapshot of the current graph topology.
+    /// Can be used with `ArcSwap` for lock-free graph updates from a control thread.
+    pub fn topology_snapshot(&self) -> GraphTopology {
+        GraphTopology {
+            nodes: self.nodes.clone(),
+            edges: self.edges.clone(),
+            stages: self.stages.clone(),
+            input_nodes: self.input_nodes.clone(),
+            output_nodes: self.output_nodes.clone(),
+            predecessors: self.predecessors.clone(),
+            is_input_node: self.is_input_node.clone(),
+            is_output_node: self.is_output_node.clone(),
+        }
     }
 
     pub fn add_node(
@@ -294,6 +414,13 @@ impl DawHost {
         self.edges.push(edge);
         self.cached_latency = None;
         Ok(())
+    }
+
+    /// Add a sidechain edge: the output of `from` is routed as sidechain input
+    /// to `to`. During processing, sidechain data is appended after the node's
+    /// primary audio input channels.
+    pub fn add_sidechain_edge(&mut self, from: NodeId, to: NodeId) -> Result<(), String> {
+        self.add_edge(GraphEdge::sidechain(from, to))
     }
 
     pub fn build(&mut self) -> Result<(), String> {
@@ -337,6 +464,7 @@ impl DawHost {
             channel_map_buffer: vec![0.0; 4096 * 32],
             compensation_delays,
             delay_scratch: vec![0.0; 4096 * 32],
+            parallel_scratch: Vec::new(),
         });
         // Cache per-frame properties to avoid mutex locks during process()
         self.cached_frames_identity = true;
@@ -553,6 +681,57 @@ impl DawHost {
             nb.clear();
         }
         let mut cf = nf;
+
+        // Apply automation: evaluate curves at current position and set parameters.
+        // `eval_curve` interprets (sample, num_frames) as a position within a window,
+        // so we use each automation's relative position and advance it by nf each call.
+        if !self.automation.is_empty() {
+            let updates: Vec<(NodeId, ParameterId, f32)> = self
+                .automation
+                .iter()
+                .filter_map(|((nid, _pid), auto)| {
+                    auto.curve.as_ref().map(|curve| {
+                        // Evaluate at the automation's own relative position.
+                        // total_frames = number of values * nf gives the curve its full
+                        // playback duration in samples.
+                        let total_frames = match curve {
+                            crate::automation::AutomationCurve::Step {
+                                values,
+                                samples_per_step,
+                            } => {
+                                if *samples_per_step > 0 {
+                                    values.len() * *samples_per_step
+                                } else {
+                                    values.len() * nf
+                                }
+                            }
+                            crate::automation::AutomationCurve::Linear { values } => {
+                                values.len().max(1) * nf
+                            }
+                            crate::automation::AutomationCurve::Bezier { points } => {
+                                points.last().map_or(nf, |p| p.position.max(nf))
+                            }
+                            crate::automation::AutomationCurve::Exponential { values, .. } => {
+                                values.len().max(1) * nf
+                            }
+                        };
+                        let pos = auto.position.min(total_frames.saturating_sub(1));
+                        let val = automation_utils::eval_curve(curve, pos, total_frames);
+                        (*nid, auto.param_id.clone(), val)
+                    })
+                })
+                .collect();
+            for (nid, pid, val) in updates {
+                if let Some(p) = self.plugins[nid].as_mut() {
+                    let _ = p.set_parameter(pid.clone(), ParameterValue::Float(val));
+                }
+                if let Some(auto) = self.automation.get_mut(&(nid, pid)) {
+                    auto.last_value = val;
+                    auto.position += nf;
+                }
+            }
+        }
+
         for stage in &self.stages {
             let mut stage_cf: Option<usize> = None;
             for &nid in &stage.nodes {
@@ -617,6 +796,9 @@ impl DawHost {
             output[cf * out_ch..].fill(0.0);
             cf = nf;
         }
+        // Advance playback position for automation
+        self.playback_position += nf;
+
         // BufferGuard's Drop impl returns bufs to self.process_buffers
         drop(guard);
         Ok(cf)
@@ -1614,6 +1796,7 @@ mod tests {
             channel_map_buffer: vec![],
             compensation_delays: HashMap::new(),
             delay_scratch: vec![],
+            parallel_scratch: Vec::new(),
         });
 
         {
@@ -1634,6 +1817,7 @@ mod tests {
             channel_map_buffer: vec![],
             compensation_delays: HashMap::new(),
             delay_scratch: vec![],
+            parallel_scratch: Vec::new(),
         });
 
         // Simulate early return inside a scope

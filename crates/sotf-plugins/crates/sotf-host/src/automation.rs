@@ -474,4 +474,44 @@ mod tests {
         smoother.reset(5.0);
         assert_eq!(smoother.value(), 5.0, "After reset, value should be 5.0");
     }
+
+    #[test]
+    fn test_linear_curve_multi_block_progression() {
+        // A linear ramp from 0.0 to 1.0 with 11 values.
+        // total_frames = 11 * block_size. Evaluating at successive positions
+        // should produce a smooth ramp, not immediately jump to the last value.
+        let curve = linear_ramp(0.0, 1.0, 11);
+        let block_size = 512;
+        let total_frames = 11 * block_size;
+
+        let val_start = eval_curve(&curve, 0, total_frames);
+        assert!(
+            val_start.abs() < 0.01,
+            "Start of ramp should be ~0.0, got {val_start}"
+        );
+
+        let val_mid = eval_curve(&curve, total_frames / 2, total_frames);
+        assert!(
+            (val_mid - 0.5).abs() < 0.1,
+            "Midpoint of ramp should be ~0.5, got {val_mid}"
+        );
+
+        let val_end = eval_curve(&curve, total_frames - 1, total_frames);
+        assert!(
+            val_end > 0.9,
+            "End of ramp should be ~1.0, got {val_end}"
+        );
+
+        // Verify monotonic increase across several positions
+        let mut prev = 0.0f32;
+        for i in 0..=10 {
+            let pos = i * block_size;
+            let val = eval_curve(&curve, pos, total_frames);
+            assert!(
+                val >= prev - 0.01,
+                "Ramp should be monotonic: pos={pos}, val={val}, prev={prev}"
+            );
+            prev = val;
+        }
+    }
 }

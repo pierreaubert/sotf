@@ -152,6 +152,10 @@ pub fn default_bypass_all_processing() -> bool {
     false
 }
 
+pub fn default_frequency_resolution() -> String {
+    "erb".to_string()
+}
+
 pub fn default_enable_hr_direct() -> bool {
     true
 }
@@ -341,6 +345,13 @@ pub struct UpmixerPluginParams {
     /// Use this to test if the FFT/IFFT or overlap-add is causing artifacts
     #[serde(default = "default_bypass_all_processing")]
     pub bypass_all_processing: bool,
+
+    /// Frequency resolution for ERB band analysis.
+    /// "erb" = standard ERB bands (~40-50 bands, default)
+    /// "fine_erb" = half-ERB width bands (~100 bands, finer spatial resolution)
+    /// "per_bin" = one band per FFT bin (~1025 bands at 2048-point FFT, maximum resolution)
+    #[serde(default = "default_frequency_resolution")]
+    pub frequency_resolution: String,
 }
 
 impl Default for UpmixerPluginParams {
@@ -388,6 +399,7 @@ impl Default for UpmixerPluginParams {
             bypass_decorrelation: default_bypass_decorrelation(),
             bypass_transient_detection: default_bypass_transient_detection(),
             bypass_all_processing: default_bypass_all_processing(),
+            frequency_resolution: default_frequency_resolution(),
         }
     }
 }

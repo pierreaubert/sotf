@@ -323,6 +323,7 @@ pub struct XtcPlugin {
     param_pinna_model_enabled: ParameterId,
     param_kappa_target: ParameterId,
     param_hrtf_file: ParameterId,
+    param_itd_modeling: ParameterId,
 
     /// Loaded HRTF transfer functions (from SOFA file)
     hrtf_transfer_functions: Option<HrtfTransferFunctions>,
@@ -548,6 +549,7 @@ impl XtcPlugin {
             param_pinna_model_enabled: ParameterId::from("pinna_model_enabled"),
             param_kappa_target: ParameterId::from("kappa_target"),
             param_hrtf_file: ParameterId::from("hrtf_file"),
+            param_itd_modeling: ParameterId::from("itd_modeling"),
             hrtf_transfer_functions,
             room_reflection_cache,
             room_params_hash,
@@ -638,6 +640,13 @@ impl XtcPlugin {
                 "hrtf_file",
                 "HRTF File",
                 self.params.hrtf_file.clone().unwrap_or_default(),
+            )
+            .with_group("Advanced")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_string(
+                "itd_modeling",
+                "ITD Mode",
+                self.params.itd_modeling.clone(),
             )
             .with_group("Advanced")
             .with_importance(ParameterImportance::Useful),
@@ -1136,6 +1145,18 @@ impl Plugin for XtcPlugin {
                     ag.set_smoothing_ms(self.params.auto_gain_smoothing_ms);
                 }
             }
+        } else if id == self.param_itd_modeling {
+            let v = value
+                .as_string()
+                .ok_or_else(|| "itd_modeling must be a string".to_string())?;
+            if v != "phase_only" && v != "explicit_delay" {
+                return Err(format!(
+                    "itd_modeling must be 'phase_only' or 'explicit_delay', got '{}'",
+                    v
+                ));
+            }
+            self.params.itd_modeling = v.to_string();
+            needs_filter_update = true;
         } else {
             return Err(format!("Unknown parameter: {:?}", id));
         }
@@ -1187,6 +1208,8 @@ impl Plugin for XtcPlugin {
             Some(ParameterValue::String(
                 self.params.hrtf_file.clone().unwrap_or_default(),
             ))
+        } else if id == &self.param_itd_modeling {
+            Some(ParameterValue::String(self.params.itd_modeling.clone()))
         } else {
             None
         }

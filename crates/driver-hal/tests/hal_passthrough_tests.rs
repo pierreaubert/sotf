@@ -180,30 +180,35 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
             freq: 100.0,
             q: 1.0,
             db_gain: 0.0, // Zero gain
+            order: 2,
         },
         BiquadFilterConfig {
             filter_type: "peak".to_string(),
             freq: 1000.0,
             q: 1.0,
             db_gain: 0.0, // Zero gain
+            order: 2,
         },
         BiquadFilterConfig {
             filter_type: "peak".to_string(),
             freq: 10000.0,
             q: 1.0,
             db_gain: 0.0, // Zero gain
+            order: 2,
         },
         BiquadFilterConfig {
             filter_type: "lowshelf".to_string(),
             freq: 80.0,
             q: 0.707,
             db_gain: 0.0, // Zero gain
+            order: 2,
         },
         BiquadFilterConfig {
             filter_type: "highshelf".to_string(),
             freq: 8000.0,
             q: 0.707,
             db_gain: 0.0, // Zero gain
+            order: 2,
         },
     ];
 
@@ -351,18 +356,21 @@ fn test_hal_with_eq_zero_gain_passthrough() {
             freq: 1000.0,
             q: 1.0,
             db_gain: 0.0,
+            order: 2,
         },
         BiquadFilterConfig {
             filter_type: "lowshelf".to_string(),
             freq: 100.0,
             q: 0.707,
             db_gain: 0.0,
+            order: 2,
         },
         BiquadFilterConfig {
             filter_type: "highshelf".to_string(),
             freq: 10000.0,
             q: 0.707,
             db_gain: 0.0,
+            order: 2,
         },
     ];
 
@@ -462,6 +470,7 @@ fn test_eq_zero_gain_with_silence() {
             freq: 1000.0,
             q: 1.0,
             db_gain: 0.0,
+            order: 2,
         }],
         channel_filters: None,
         auto_gain: Default::default(),
@@ -891,6 +900,7 @@ fn test_eq_zero_gain_preserves_full_scale() {
             freq: 1000.0,
             q: 1.0,
             db_gain: 0.0,
+            order: 2,
         }],
         channel_filters: None,
         auto_gain: Default::default(),

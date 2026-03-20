@@ -1586,6 +1586,15 @@ pub mod upmixer {
         // Analysis
         ParamSpec::bool_param("Low Latency", "low_latency", false, "Analysis")
             .secondary("Analysis"),
+        ParamSpec::choice(
+            "Freq Resolution",
+            "frequency_resolution",
+            0,
+            &["ERB", "Fine ERB", "Per Bin"],
+            "Analysis",
+        )
+        .secondary("Analysis")
+        .structural(),
         // Diagnostics
         ParamSpec::bool_param("Bypass Decor", "bypass_decorrelation", false, "Diagnostics")
             .diagnostic(),
@@ -1600,11 +1609,30 @@ pub mod upmixer {
             .diagnostic(),
         ParamSpec::bool_param("ML Detection", "enable_ml_detection", false, "Diagnostics")
             .diagnostic(),
+        // Multi-source extraction
+        ParamSpec::bool_param(
+            "Multi-Source Extraction",
+            "multi_source_extraction",
+            false,
+            "Enhancement",
+        )
+        .secondary("Enhancement"),
+        ParamSpec::float(
+            "Multi-Source Threshold",
+            "multi_source_threshold",
+            0.1,
+            0.05,
+            0.5,
+            0.01,
+            "",
+            "Enhancement",
+        )
+        .secondary("Enhancement"),
     ];
     use crate::plugin_layout::*;
     /// Upmixer: 0=speaker_config, 1-4=gains, 5-11=LFE, 12-14=spatial,
     /// 15-21=enhancement, 22-24=height, 25-27=surround, 28-33=dialogue,
-    /// 34=safety_cap, 35=low_latency, 36-39=diagnostics
+    /// 34=safety_cap, 35=low_latency, 36=frequency_resolution, 37-40=diagnostics
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
             ControlSpec::selector(0), // speaker_config
@@ -1686,10 +1714,10 @@ pub mod upmixer {
             TabSpec {
                 name: "Diagnostics",
                 controls: &[
-                    ControlSpec::toggle(35), // bypass_decorrelation
-                    ControlSpec::toggle(36), // bypass_transient_detection
-                    ControlSpec::toggle(37), // bypass_all
-                    ControlSpec::toggle(38), // ml_detection
+                    ControlSpec::toggle(37), // bypass_decorrelation
+                    ControlSpec::toggle(38), // bypass_transient_detection
+                    ControlSpec::toggle(39), // bypass_all
+                    ControlSpec::toggle(40), // ml_detection
                 ],
             },
         ],
@@ -2442,11 +2470,39 @@ pub mod denoiser {
             "General",
         )
         .structural(),
+        ParamSpec::bool_param(
+            "Formant Preserve",
+            "formant_preservation",
+            false,
+            "Formant",
+        )
+        .secondary("Formant"),
+        ParamSpec::float(
+            "Formant Strength",
+            "formant_strength",
+            0.5,
+            0.0,
+            1.0,
+            0.01,
+            "",
+            "Formant",
+        )
+        .scaled(100.0)
+        .secondary("Formant"),
+        ParamSpec::bool_param(
+            "Multi-Res",
+            "multi_resolution",
+            false,
+            "General",
+        )
+        .structural()
+        .secondary("General"),
     ];
     use crate::plugin_layout::*;
     /// Denoiser: 0=reduction, 1=floor, 2=smoothing, 3=attack, 4=release,
     /// 5=low_latency, 6=polyphonic, 7=crack_sens, 8-11=MCRA, 12=transparency,
-    /// 13-18=analysis toggles, 19-22=hiss, 23-25=spectral_sub, 26-28=noise_profile, 29=algorithm
+    /// 13-18=analysis toggles, 19-22=hiss, 23-25=spectral_sub, 26-28=noise_profile,
+    /// 29=algorithm, 30=formant_preservation, 31=formant_strength, 32=multi_resolution
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
             ControlSpec::toggle(5), // low_latency
@@ -2516,6 +2572,13 @@ pub mod denoiser {
                     ControlSpec::knob(9),  // alpha_p
                     ControlSpec::knob(10), // window (int)
                     ControlSpec::knob(11), // delta
+                ],
+            },
+            TabSpec {
+                name: "Formant",
+                controls: &[
+                    ControlSpec::toggle(30), // formant_preservation
+                    ControlSpec::knob(31),   // formant_strength
                 ],
             },
         ],

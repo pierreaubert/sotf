@@ -27,7 +27,40 @@ use sotf_host::smoothing::Smoother;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
+use std::fmt;
 use std::sync::Arc;
+
+/// Controls where auto-gain measurement and compensation are applied
+/// relative to the EQ filters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AutoGainPosition {
+    /// Measure input before filters, apply compensation after filters (current default)
+    Post,
+    /// Measure and apply compensation before filters (pre-filter gain matching)
+    Pre,
+    /// Auto-gain disabled
+    Disabled,
+}
+
+impl fmt::Display for AutoGainPosition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AutoGainPosition::Post => write!(f, "post"),
+            AutoGainPosition::Pre => write!(f, "pre"),
+            AutoGainPosition::Disabled => write!(f, "disabled"),
+        }
+    }
+}
+
+impl AutoGainPosition {
+    fn from_str_lossy(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "pre" => AutoGainPosition::Pre,
+            "disabled" | "off" => AutoGainPosition::Disabled,
+            _ => AutoGainPosition::Post,
+        }
+    }
+}
 
 // ============================================================================
 // ISO 226:2003 Equal-Loudness Contour Reference Frequencies
@@ -154,6 +187,13 @@ pub struct LoudnessCompensationPluginParams {
     pub auto_gain_max_db: f32,
     #[serde(default)]
     pub auto_gain_smoothing_ms: f32,
+    /// Auto-gain position: "pre", "post" (default), or "disabled"
+    #[serde(default = "default_auto_gain_position")]
+    pub auto_gain_position: String,
+}
+
+fn default_auto_gain_position() -> String {
+    "post".to_string()
 }
 
 pub struct LoudnessCompensationPlugin {
@@ -172,6 +212,7 @@ pub struct LoudnessCompensationPlugin {
     auto_gain_enabled: bool,
     auto_gain_max_db: f32,
     auto_gain_smoothing_ms: f32,
+    auto_gain_position: AutoGainPosition,
     comp_gain_smoother: Vec<Smoother>,
     cache: RealTimeCache<AutoGainData>,
     cache_update_counter: usize,
@@ -203,6 +244,7 @@ impl LoudnessCompensationPlugin {
             auto_gain_enabled: false,
             auto_gain_max_db: pk(LC, "auto_gain_max_db").default_f32(),
             auto_gain_smoothing_ms: pk(LC, "auto_gain_smoothing_ms").default_f32(),
+            auto_gain_position: AutoGainPosition::Post,
             comp_gain_smoother: (0..num_channels)
                 .map(|_| Smoother::new(1.0, 20.0, sr))
                 .collect(),
@@ -304,6 +346,13 @@ impl LoudnessCompensationPlugin {
                 pk(LC, "auto_gain_smoothing_ms").min_f64() as f32,
                 pk(LC, "auto_gain_smoothing_ms").max_f64() as f32,
             )
+            .with_group("Auto Gain"),
+            Parameter::new_string(
+                "auto_gain_position",
+                "AG Position",
+                self.auto_gain_position.to_string(),
+            )
+            .with_description("Auto-gain position: pre, post, or disabled")
             .with_group("Auto Gain"),
         ];
     }
@@ -427,10 +476,15 @@ impl LoudnessCompensationPlugin {
         p.mid_freq = params.mid_freq;
         p.mid_gain = params.mid_gain;
         p.mid_q = params.mid_q;
-        p.auto_gain_enabled = params.auto_gain_enabled;
+        p.auto_gain_position = AutoGainPosition::from_str_lossy(&params.auto_gain_position);
+        // auto_gain_enabled overrides position: if explicitly disabled, position becomes Disabled
+        if !params.auto_gain_enabled {
+            p.auto_gain_position = AutoGainPosition::Disabled;
+        }
+        p.auto_gain_enabled = p.auto_gain_position != AutoGainPosition::Disabled;
         p.auto_gain_max_db = params.auto_gain_max_db;
         p.auto_gain_smoothing_ms = params.auto_gain_smoothing_ms;
-        if params.auto_gain_enabled {
+        if p.auto_gain_enabled {
             p.auto_gain = Some(AutoGain::new(
                 num_channels,
                 p.sample_rate,
@@ -552,6 +606,28 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                     ag.set_smoothing_ms(v);
                 }
             }
+        } else if id.0 == "auto_gain_position" {
+            let s = value
+                .as_string()
+                .ok_or_else(|| "auto_gain_position must be a string".to_string())?;
+            let pos = AutoGainPosition::from_str_lossy(&s);
+            self.auto_gain_position = pos;
+            let want_enabled = pos != AutoGainPosition::Disabled;
+            if want_enabled && self.auto_gain.is_none() {
+                self.auto_gain = Some(AutoGain::new(
+                    self.num_channels,
+                    self.sample_rate,
+                    AutoGainParams {
+                        enabled: true,
+                        loudness_type: AutoGainLoudnessType::Momentary,
+                        max_gain_db: self.auto_gain_max_db,
+                        smoothing_ms: self.auto_gain_smoothing_ms,
+                    },
+                )?);
+            } else if !want_enabled {
+                self.auto_gain = None;
+            }
+            self.auto_gain_enabled = want_enabled;
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -581,6 +657,8 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             Some(ParameterValue::Float(self.auto_gain_max_db))
         } else if id.0 == "auto_gain_smoothing_ms" {
             Some(ParameterValue::Float(self.auto_gain_smoothing_ms))
+        } else if id.0 == "auto_gain_position" {
+            Some(ParameterValue::String(self.auto_gain_position.to_string()))
         } else {
             None
         }
@@ -613,33 +691,79 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             do_measure = true;
         }
 
-        if let Some(ag) = &mut self.auto_gain
-            && do_measure
-        {
-            let _ = ag.measure_input(buffer);
-        }
-
-        for frame in 0..nf {
-            for ch in 0..self.num_channels {
-                let idx = frame * self.num_channels + ch;
-                let mut s = buffer[idx] as f64;
-                for f in &mut self.filters[ch] {
-                    s = f.process(s);
+        match self.auto_gain_position {
+            AutoGainPosition::Pre => {
+                // Pre mode: measure input, apply gain compensation, then run filters
+                if let Some(ag) = &mut self.auto_gain {
+                    if do_measure {
+                        let _ = ag.measure_input(buffer);
+                    }
+                    // Apply compensation before filters
+                    ag.apply_compensation(buffer, nf);
+                    if do_measure {
+                        let _ = ag.measure_output(buffer);
+                        let data = ag.get_data();
+                        self.cache.update(|d| {
+                            *d = data;
+                        });
+                    }
                 }
-                buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].advance();
-            }
-        }
 
-        if let Some(ag) = &mut self.auto_gain {
-            if do_measure {
-                let _ = ag.measure_output(buffer);
-                // Update diagnostic cache
-                let data = ag.get_data();
-                self.cache.update(|d| {
-                    *d = data;
-                });
+                // Process through filters
+                for frame in 0..nf {
+                    for ch in 0..self.num_channels {
+                        let idx = frame * self.num_channels + ch;
+                        let mut s = buffer[idx] as f64;
+                        for f in &mut self.filters[ch] {
+                            s = f.process(s);
+                        }
+                        buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].advance();
+                    }
+                }
             }
-            ag.apply_compensation(buffer, nf);
+            AutoGainPosition::Post => {
+                // Post mode (default): measure input, run filters, then apply compensation
+                if let Some(ag) = &mut self.auto_gain
+                    && do_measure
+                {
+                    let _ = ag.measure_input(buffer);
+                }
+
+                for frame in 0..nf {
+                    for ch in 0..self.num_channels {
+                        let idx = frame * self.num_channels + ch;
+                        let mut s = buffer[idx] as f64;
+                        for f in &mut self.filters[ch] {
+                            s = f.process(s);
+                        }
+                        buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].advance();
+                    }
+                }
+
+                if let Some(ag) = &mut self.auto_gain {
+                    if do_measure {
+                        let _ = ag.measure_output(buffer);
+                        let data = ag.get_data();
+                        self.cache.update(|d| {
+                            *d = data;
+                        });
+                    }
+                    ag.apply_compensation(buffer, nf);
+                }
+            }
+            AutoGainPosition::Disabled => {
+                // No auto-gain, just filters
+                for frame in 0..nf {
+                    for ch in 0..self.num_channels {
+                        let idx = frame * self.num_channels + ch;
+                        let mut s = buffer[idx] as f64;
+                        for f in &mut self.filters[ch] {
+                            s = f.process(s);
+                        }
+                        buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].advance();
+                    }
+                }
+            }
         }
 
         flush_denormals_inplace(buffer);

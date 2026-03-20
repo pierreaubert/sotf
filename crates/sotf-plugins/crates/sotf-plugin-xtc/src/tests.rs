@@ -1228,6 +1228,203 @@ fn test_pinna_model_does_not_saturate() {
     );
 }
 
+// ============================================================================
+// ITD modeling mode tests (Feature 16)
+// ============================================================================
+
+/// Test that `itd_modeling` parameter can be set and read back.
+#[test]
+fn test_itd_modeling_parameter_set_get() {
+    let params = XtcPluginParams::default();
+    assert_eq!(
+        params.itd_modeling, "phase_only",
+        "default itd_modeling should be 'phase_only'"
+    );
+
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+
+    // Read back default via get_parameter
+    let val = plugin
+        .get_parameter(&ParameterId::from("itd_modeling"))
+        .expect("itd_modeling should be readable");
+    assert_eq!(
+        val,
+        ParameterValue::String("phase_only".to_string()),
+        "default itd_modeling should return 'phase_only'"
+    );
+
+    // Set to explicit_delay
+    plugin
+        .set_parameter(
+            ParameterId::from("itd_modeling"),
+            ParameterValue::String("explicit_delay".to_string()),
+        )
+        .expect("setting itd_modeling to 'explicit_delay' should succeed");
+    assert_eq!(plugin.params.itd_modeling, "explicit_delay");
+
+    let val2 = plugin
+        .get_parameter(&ParameterId::from("itd_modeling"))
+        .expect("itd_modeling should be readable after set");
+    assert_eq!(val2, ParameterValue::String("explicit_delay".to_string()));
+}
+
+/// Test that an invalid `itd_modeling` value is rejected.
+#[test]
+fn test_itd_modeling_invalid_value_rejected() {
+    let params = XtcPluginParams::default();
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    let result = plugin.set_parameter(
+        ParameterId::from("itd_modeling"),
+        ParameterValue::String("invalid_mode".to_string()),
+    );
+    assert!(
+        result.is_err(),
+        "Setting an invalid itd_modeling value should return an error"
+    );
+}
+
+/// Test that `explicit_delay` mode produces different low-frequency filter
+/// coefficients compared to `phase_only` mode (symmetric, no yaw).
+///
+/// At low frequencies the explicit delay phase shift diverges from the
+/// implicit Woodworth phase, so the plant matrix — and therefore the
+/// computed inverse filters — must differ.
+#[test]
+fn test_itd_explicit_delay_differs_from_phase_only_at_lf() {
+    let fft_size = 2048;
+    let sample_rate = 48000_u32;
+    let num_bins = fft_size / 2 + 1;
+
+    // Phase-only (default)
+    let mut params_po = XtcPluginParams::default();
+    params_po.fft_size = fft_size;
+    params_po.itd_modeling = "phase_only".to_string();
+    params_po.room_reflections_enabled = false;
+    let filters_po = compute_xtc_filters_full(&params_po, sample_rate, num_bins);
+
+    // Explicit-delay
+    let mut params_ed = XtcPluginParams::default();
+    params_ed.fft_size = fft_size;
+    params_ed.itd_modeling = "explicit_delay".to_string();
+    params_ed.room_reflections_enabled = false;
+    let filters_ed = compute_xtc_filters_full(&params_ed, sample_rate, num_bins);
+
+    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+
+    // Collect mean absolute difference of filter_lr at LF (<200 Hz) and HF (>1000 Hz)
+    let mut lf_diff = 0.0_f32;
+    let mut hf_diff = 0.0_f32;
+    let mut lf_count = 0_usize;
+    let mut hf_count = 0_usize;
+
+    for bin in 1..num_bins {
+        let freq = bin as f32 * freq_per_bin;
+        let d = (filters_ed.filter_lr[bin] - filters_po.filter_lr[bin]).norm();
+        if freq < 200.0 {
+            lf_diff += d;
+            lf_count += 1;
+        } else if freq > 1000.0 && freq < 4000.0 {
+            hf_diff += d;
+            hf_count += 1;
+        }
+    }
+
+    let lf_mean = if lf_count > 0 {
+        lf_diff / lf_count as f32
+    } else {
+        0.0
+    };
+    let hf_mean = if hf_count > 0 {
+        hf_diff / hf_count as f32
+    } else {
+        0.0
+    };
+
+    // Explicit delay must change LF filters relative to phase-only
+    assert!(
+        lf_mean > 1e-5,
+        "explicit_delay should produce different LF filters than phase_only; mean LF diff = {}",
+        lf_mean
+    );
+
+    // At high frequencies both modes converge (sigmoid blend → 0 at HF)
+    // The HF mean difference should be significantly smaller than the LF difference.
+    assert!(
+        hf_mean < lf_mean,
+        "HF filter difference ({}) should be smaller than LF difference ({}) \
+         because the sigmoid crossover fades out explicit_delay above 300 Hz",
+        hf_mean,
+        lf_mean
+    );
+}
+
+/// Test that `explicit_delay` mode still produces stable output (no NaN/Inf,
+/// bounded peak amplitude) during normal audio processing.
+#[test]
+fn test_itd_explicit_delay_stable_output() {
+    let mut params = XtcPluginParams::default();
+    params.itd_modeling = "explicit_delay".to_string();
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let num_frames = 8192;
+    let mut input = vec![0.0_f32; num_frames * 2];
+    for i in 0..num_frames {
+        let phase = 2.0 * std::f32::consts::PI * 100.0 * i as f32 / 48000.0; // 100 Hz LF tone
+        input[i * 2] = phase.sin() * 0.5;
+        input[i * 2 + 1] = phase.cos() * 0.5;
+    }
+    let mut output = vec![0.0_f32; num_frames * 2];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    // All output samples must be finite and within ±1.0 (limiter is active)
+    for (i, &s) in output.iter().enumerate() {
+        assert!(
+            s.is_finite(),
+            "output[{}] is not finite ({}) with explicit_delay mode",
+            i,
+            s
+        );
+        assert!(
+            s.abs() <= 1.001,
+            "output[{}] = {} exceeds ±1.0 with explicit_delay mode",
+            i,
+            s
+        );
+    }
+}
+
+/// Test that `itd_modeling` is included in the cached_parameters list.
+#[test]
+fn test_itd_modeling_in_parameters_list() {
+    let params = XtcPluginParams::default();
+    let plugin = XtcPlugin::new(params, 48000).unwrap();
+    let all_params = plugin.parameters();
+    let found = all_params.iter().any(|p| p.id.as_str() == "itd_modeling");
+    assert!(
+        found,
+        "itd_modeling should appear in the plugin's parameter list"
+    );
+}
+
+/// Test JSON deserialization of `itd_modeling` field.
+#[test]
+fn test_itd_modeling_serde() {
+    // Default (empty JSON) should give "phase_only"
+    let po: XtcPluginParams = serde_json::from_str("{}").unwrap();
+    assert_eq!(po.itd_modeling, "phase_only");
+
+    // Explicit value is preserved
+    let ed: XtcPluginParams =
+        serde_json::from_str(r#"{"itd_modeling": "explicit_delay"}"#).unwrap();
+    assert_eq!(ed.itd_modeling, "explicit_delay");
+}
+
 /// Bug 1: Asymmetric spectral normalization scales wrong columns (rows instead of columns).
 /// Left-ear normalization should scale column 0 (w_ll, w_rl) — the code scales row 0
 /// (w_ll, w_lr). This means w_ll and w_rl should receive the SAME scale factor.

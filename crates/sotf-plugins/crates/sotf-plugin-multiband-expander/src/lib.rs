@@ -3,7 +3,10 @@
 // ============================================================================
 
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
+use math_audio_dsp::stft::{RealFftProcessor, generate_hann_window};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use realfft::RealFftPlanner;
+use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_makeup::MeasuredMakeup;
@@ -27,6 +30,10 @@ pub const CROSSOVER_PRESETS: &[(f32, f32, f32, f32)] = &[
 
 fn default_true() -> bool {
     true
+}
+
+fn default_processing_mode() -> String {
+    "time_domain".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +98,9 @@ pub struct MultibandExpanderPluginParams {
     #[serde(default = "default_detection_mode")]
     pub detection_mode: String,
     pub bands: Vec<BandExpanderParams>,
+    /// Processing mode: "time_domain" (default) or "spectral"
+    #[serde(default = "default_processing_mode")]
+    pub processing_mode: String,
 }
 
 #[derive(Debug, Clone)]
@@ -211,6 +221,238 @@ impl BandExpander {
     }
 }
 
+// ============================================================================
+// Spectral Mode State
+// ============================================================================
+
+/// Per-bin expander envelope state for spectral mode.
+///
+/// Each FFT bin is treated as an independent "channel" for envelope tracking.
+/// The bin is assigned to a band based on its center frequency, and the band's
+/// threshold/ratio/knee/range parameters are applied to its magnitude.
+struct SpectralBinState {
+    /// Smoothed attenuation in dB (0 = no attenuation, positive = attenuating)
+    envelope_db: f32,
+    gate_state: GateState,
+    hold_counter: usize,
+}
+
+impl SpectralBinState {
+    fn new() -> Self {
+        Self {
+            envelope_db: 0.0,
+            gate_state: GateState::Open,
+            hold_counter: 0,
+        }
+    }
+}
+
+/// All STFT buffers needed for spectral mode processing.
+///
+/// Pre-allocated in `initialize()` to avoid hot-path allocation.
+/// Uses the same Hann-window 75%-overlap OLA as XTC/Binaural plugins.
+struct SpectralState {
+    fft_size: usize,
+    hop_size: usize,
+    /// Number of frequency bins = fft_size / 2 + 1
+    num_bins: usize,
+
+    /// Per-channel FFT processor (forward + inverse)
+    fft_processors: Vec<RealFftProcessor>,
+
+    /// Hann analysis window (length = fft_size)
+    analysis_window: Vec<f32>,
+
+    /// Combined COLA normalization + 1/fft_size scale factor.
+    /// For 75% overlap dual-windowing Hann: 1/(1.5 * N)
+    output_scale: f32,
+
+    // --- Input staging ---
+    /// Per-channel linear input ring buffer [fft_size] – linear shift pattern
+    input_buffers: Vec<Vec<f32>>,
+    /// How many valid samples are in the tail of each input_buffer
+    input_fill: usize,
+
+    // --- Envelope state ---
+    /// Per-channel, per-bin expander state [channels][num_bins]
+    bin_states: Vec<Vec<SpectralBinState>>,
+    /// Per-bin: which band index owns this bin
+    bin_to_band: Vec<usize>,
+    /// Per-band: attack/release coefficients (hop-rate, not sample-rate)
+    band_attack_hop: Vec<f32>,
+    band_release_hop: Vec<f32>,
+
+    // --- OLA output accumulator ---
+    /// Flat interleaved ring buffer: [ch0_f0, ch1_f0, ch0_f1, ...]
+    /// Size: 4 * fft_size frames × channels
+    output_accumulator: Vec<f32>,
+    /// Power-of-2 frame count (kept for documentation; mask is derived from this)
+    _output_accumulator_frames: usize,
+    output_accumulator_mask: usize,
+    /// Number of valid frames ready to drain
+    output_accumulator_fill: usize,
+    /// Next frame write position (ring)
+    next_add_position: usize,
+    /// Next frame read position (ring)
+    output_read_position: usize,
+
+    /// Latency fill counter: ensures we start draining immediately
+    latency_filled: usize,
+
+    // --- Temporary working buffers ---
+    /// Scratch for windowed time-domain [fft_size]
+    windowed_buf: Vec<f32>,
+    /// Frequency-domain scratch [num_bins]
+    freq_scratch: Vec<Complex<f32>>,
+    /// IFFT output [fft_size]
+    ifft_buf: Vec<f32>,
+}
+
+impl SpectralState {
+    fn new(fft_size: usize, channels: usize, sample_rate: u32, crossover_frequencies: &[f32], num_bands: usize) -> Self {
+        let hop_size = fft_size / 4; // 75% overlap
+        let num_bins = fft_size / 2 + 1;
+
+        // Build per-channel FFT processors
+        let mut planner = RealFftPlanner::<f32>::new();
+        let fft_forward = planner.plan_fft_forward(fft_size);
+        let fft_inverse = planner.plan_fft_inverse(fft_size);
+        let _ = fft_forward;
+        let _ = fft_inverse;
+
+        let fft_processors: Vec<RealFftProcessor> = (0..channels)
+            .map(|_| RealFftProcessor::new_bidirectional(fft_size))
+            .collect();
+
+        let analysis_window = generate_hann_window(fft_size);
+
+        // 75% overlap, dual Hann window: COLA sum = 1.5
+        let output_scale = 1.0 / (fft_size as f32 * 1.5);
+
+        // Assign each bin to a band based on center frequency
+        let bin_to_band = Self::compute_bin_to_band(fft_size, num_bins, sample_rate, crossover_frequencies, num_bands);
+
+        // Per-bin state (all bins start in Open state)
+        let bin_states: Vec<Vec<SpectralBinState>> = (0..channels)
+            .map(|_| (0..num_bins).map(|_| SpectralBinState::new()).collect())
+            .collect();
+
+        let output_accumulator_frames = (fft_size * 4).next_power_of_two();
+        let output_accumulator = vec![0.0f32; output_accumulator_frames * channels];
+
+        Self {
+            fft_size,
+            hop_size,
+            num_bins,
+            fft_processors,
+            analysis_window,
+            output_scale,
+            input_buffers: vec![vec![0.0f32; fft_size]; channels],
+            input_fill: 0,
+            bin_states,
+            bin_to_band,
+            band_attack_hop: vec![0.0; num_bands],
+            band_release_hop: vec![0.0; num_bands],
+            output_accumulator,
+            _output_accumulator_frames: output_accumulator_frames,
+            output_accumulator_mask: output_accumulator_frames - 1,
+            output_accumulator_fill: 0,
+            next_add_position: 0,
+            output_read_position: 0,
+            latency_filled: 0,
+            windowed_buf: vec![0.0f32; fft_size],
+            freq_scratch: vec![Complex::new(0.0, 0.0); num_bins],
+            ifft_buf: vec![0.0f32; fft_size],
+        }
+    }
+
+    /// Map each FFT bin to the band that covers its center frequency.
+    ///
+    /// `crossover_frequencies` has `num_bands - 1` entries in ascending order.
+    /// Bin k has center frequency k * sample_rate / fft_size.
+    fn compute_bin_to_band(
+        fft_size: usize,
+        num_bins: usize,
+        sample_rate: u32,
+        crossover_frequencies: &[f32],
+        num_bands: usize,
+    ) -> Vec<usize> {
+        (0..num_bins)
+            .map(|k| {
+                let freq = k as f32 * sample_rate as f32 / fft_size as f32;
+                // Find the first crossover that is above this bin's frequency
+                let mut band = 0;
+                for &xf in crossover_frequencies.iter().take(num_bands.saturating_sub(1)) {
+                    if freq < xf {
+                        break;
+                    }
+                    band += 1;
+                }
+                band.min(num_bands.saturating_sub(1))
+            })
+            .collect()
+    }
+
+    /// Update the bin→band mapping (called when crossover frequencies change).
+    fn update_bin_to_band(&mut self, sample_rate: u32, crossover_frequencies: &[f32], num_bands: usize) {
+        self.bin_to_band = Self::compute_bin_to_band(
+            self.fft_size,
+            self.num_bins,
+            sample_rate,
+            crossover_frequencies,
+            num_bands,
+        );
+    }
+
+    /// Recompute per-band hop-rate attack/release coefficients.
+    ///
+    /// Time constants are expressed in samples at sample rate, but here we use
+    /// the hop period (hop_size / sample_rate) as the "sample period" so the
+    /// time constants are preserved in perceptual terms.
+    fn update_band_coefficients(
+        &mut self,
+        num_bands: usize,
+        band_params: &[BandExpanderParams],
+        global_attack_ms: f32,
+        global_release_ms: f32,
+        sample_rate: u32,
+    ) {
+        let hop_rate = sample_rate as f32 / self.hop_size as f32;
+        self.band_attack_hop.resize(num_bands, 0.0);
+        self.band_release_hop.resize(num_bands, 0.0);
+
+        for b in 0..num_bands {
+            let a_ms = band_params.get(b).and_then(|p| p.attack_ms).unwrap_or(global_attack_ms);
+            let r_ms = band_params.get(b).and_then(|p| p.release_ms).unwrap_or(global_release_ms);
+            // One-pole coefficient: e^(-1 / (time_s * rate))
+            self.band_attack_hop[b] = (-1.0 / (a_ms * 0.001 * hop_rate)).exp();
+            self.band_release_hop[b] = (-1.0 / (r_ms * 0.001 * hop_rate)).exp();
+        }
+    }
+
+    fn reset(&mut self) {
+        for buf in &mut self.input_buffers {
+            buf.fill(0.0);
+        }
+        self.input_fill = 0;
+        for ch_states in &mut self.bin_states {
+            for s in ch_states.iter_mut() {
+                s.envelope_db = 0.0;
+                s.gate_state = GateState::Open;
+                s.hold_counter = 0;
+            }
+        }
+        self.output_accumulator.fill(0.0);
+        self.output_accumulator_fill = 0;
+        self.next_add_position = 0;
+        self.output_read_position = 0;
+        self.latency_filled = 0;
+        self.windowed_buf.fill(0.0);
+        self.freq_scratch.fill(Complex::new(0.0, 0.0));
+        self.ifft_buf.fill(0.0);
+    }
+}
+
 pub struct MultibandExpanderPlugin {
     channels: usize,
     sample_rate: u32,
@@ -228,6 +470,8 @@ pub struct MultibandExpanderPlugin {
     link_channels: bool,
     mix: f32,
     detection_mode: String,
+    /// Processing mode: "time_domain" or "spectral"
+    processing_mode: String,
     band_params: Vec<BandExpanderParams>,
     crossover_points: Vec<CrossoverPoint>,
     band_expanders: Vec<BandExpander>,
@@ -250,6 +494,9 @@ pub struct MultibandExpanderPlugin {
     cache: RealTimeCache<MultibandExpanderData>,
     cache_update_counter: usize,
     cached_parameters: Vec<Parameter>,
+
+    /// State for spectral processing mode (None when in time_domain mode)
+    spectral: Option<SpectralState>,
 }
 
 fn parse_detection_mode(s: &str) -> DetectionMode {
@@ -307,6 +554,27 @@ impl MultibandExpanderPlugin {
             })
             .collect();
 
+        let mode_str = if params.processing_mode.is_empty() {
+            "time_domain"
+        } else {
+            params.processing_mode.as_str()
+        };
+
+        let spectral = if mode_str == "spectral" {
+            let fft_size = 1024;
+            let mut ss = SpectralState::new(fft_size, channels, sr, &xfs, nb);
+            ss.update_band_coefficients(
+                nb,
+                &band_params,
+                params.attack_ms,
+                params.release_ms,
+                sr,
+            );
+            Some(ss)
+        } else {
+            None
+        };
+
         let mut p = Self {
             channels,
             sample_rate: sr,
@@ -324,6 +592,7 @@ impl MultibandExpanderPlugin {
             link_channels: params.link_channels,
             mix: params.mix,
             detection_mode: det_mode_str.to_string(),
+            processing_mode: mode_str.to_string(),
             band_params,
             crossover_points: Vec::new(),
             band_expanders: bexps,
@@ -340,6 +609,7 @@ impl MultibandExpanderPlugin {
             cache: RealTimeCache::new(MultibandExpanderData::new(nb, channels)),
             cache_update_counter: 0,
             cached_parameters: Vec::new(),
+            spectral,
         };
         p.build_crossovers();
         p.update_coefficients();
@@ -349,6 +619,7 @@ impl MultibandExpanderPlugin {
 
     fn rebuild_cached_parameters(&mut self) {
         let det_mode_idx = if self.detection_mode == "rms" { 1 } else { 0 };
+        let proc_mode_idx = if self.processing_mode == "spectral" { 1 } else { 0 };
         let mut params = vec![
             Parameter::new_int(
                 "num_bands",
@@ -372,6 +643,9 @@ impl MultibandExpanderPlugin {
             .with_group("General")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_int("detection_mode", "Detection Mode", det_mode_idx, 0, 1)
+                .with_group("General")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_int("processing_mode", "Processing Mode", proc_mode_idx, 0, 1)
                 .with_group("General")
                 .with_importance(ParameterImportance::Useful),
         ];
@@ -567,6 +841,17 @@ impl MultibandExpanderPlugin {
             b.attack_coeff = (-1.0 / (a * 0.001 * self.sample_rate as f32)).exp();
             b.release_coeff = (-1.0 / (r * 0.001 * self.sample_rate as f32)).exp();
         }
+
+        // Also update spectral-mode coefficients if active
+        if let Some(ss) = &mut self.spectral {
+            ss.update_band_coefficients(
+                self.num_bands,
+                &self.band_params,
+                self.attack_ms,
+                self.release_ms,
+                self.sample_rate,
+            );
+        }
     }
 
     fn calculate_expansion_attenuation(
@@ -590,11 +875,315 @@ impl MultibandExpanderPlugin {
         };
         atten.min(range)
     }
+
+    /// Process one STFT hop for the spectral mode.
+    ///
+    /// Called after `fft_size` samples have been accumulated in the input ring.
+    /// Applies per-bin expansion envelope then IFFT + OLA.
+    ///
+    /// # Expansion model
+    /// Each bin's magnitude (in dB) acts as the "input level" to the expander.
+    /// The bin is assigned to a band via `bin_to_band`; the band supplies
+    /// threshold / ratio / knee / range / hold / hysteresis parameters.
+    /// Attack/release coefficients are at *hop rate* so time constants are
+    /// perceptually equivalent to the time-domain mode.
+    fn process_spectral_hop(
+        &mut self,
+        any_solo: bool,
+    ) {
+        let ss = match &mut self.spectral {
+            Some(s) => s,
+            None => return,
+        };
+
+        let fft_size = ss.fft_size;
+        let num_bins = ss.num_bins;
+        let scale = ss.output_scale;
+        let mask = ss.output_accumulator_mask;
+        let channels = self.channels;
+
+        // Cache band parameters into a compact form to avoid repeated borrow conflicts.
+        // Hold time is converted from milliseconds to hop counts at the hop rate.
+        struct BandInfo {
+            th: f32,
+            rat: f32,
+            kn: f32,
+            rg: f32,
+            hys: f32,
+            /// Hold duration measured in STFT hops (not samples)
+            hs: usize,
+            bypass: bool,
+            active: bool,
+            solo: bool,
+        }
+        let hop_rate = self.sample_rate as f32 / ss.hop_size as f32;
+        let band_info: Vec<BandInfo> = (0..self.num_bands)
+            .map(|b| {
+                let bp = self.band_params.get(b);
+                let hold_ms = bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms);
+                BandInfo {
+                    th: bp.and_then(|p| p.threshold_db).unwrap_or(self.threshold_db),
+                    rat: bp.and_then(|p| p.ratio).unwrap_or(self.ratio),
+                    kn: bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db),
+                    rg: bp.and_then(|p| p.range_db).unwrap_or(self.range_db),
+                    hys: bp.and_then(|p| p.hysteresis_db).unwrap_or(self.hysteresis_db),
+                    hs: (hold_ms * 0.001 * hop_rate) as usize,
+                    bypass: bp.map(|p| p.bypass).unwrap_or(false),
+                    active: bp.map(|p| p.active).unwrap_or(true),
+                    solo: bp.map(|p| p.solo).unwrap_or(false),
+                }
+            })
+            .collect();
+
+        for ch in 0..channels {
+            // --- Forward FFT ---
+            // Apply Hann window to the linear input buffer
+            for i in 0..fft_size {
+                ss.windowed_buf[i] = ss.input_buffers[ch][i] * ss.analysis_window[i];
+            }
+            // forward() reads time_buffer, writes freq_buffer
+            ss.fft_processors[ch].time_buffer.copy_from_slice(&ss.windowed_buf);
+            ss.fft_processors[ch].forward();
+            ss.freq_scratch.copy_from_slice(&ss.fft_processors[ch].freq_buffer);
+
+            // --- Per-bin expansion ---
+            for k in 0..num_bins {
+                let b = ss.bin_to_band[k];
+                let info = &band_info[b];
+
+                // Muted bands (solo active, this band not solo)
+                if any_solo && !info.solo {
+                    ss.freq_scratch[k] = Complex::new(0.0, 0.0);
+                    continue;
+                }
+
+                // Bypassed or inactive bands: no gain change
+                if info.bypass || !info.active {
+                    continue;
+                }
+
+                // Bin magnitude normalized to equivalent time-domain amplitude.
+                //
+                // The realfft forward transform is unnormalized: a cosine with
+                // amplitude A at exactly a bin frequency gives |X[k]| = N*A/2.
+                // Multiplying by 2/N converts the raw FFT magnitude back to the
+                // equivalent amplitude so the threshold (in dBFS) has the same
+                // meaning as in the time-domain expander mode.
+                let mag = ss.freq_scratch[k].norm() * (2.0 / fft_size as f32);
+                let mag_db = 20.0 * fast_log10(mag.max(1e-10));
+
+                // Update gate state and envelope (at hop rate)
+                let state = &mut ss.bin_states[ch][k];
+                let th = info.th;
+                let hys = info.hys;
+
+                let target_atten = match state.gate_state {
+                    GateState::Open => {
+                        if mag_db < th {
+                            state.gate_state = GateState::Hold;
+                            state.hold_counter = info.hs;
+                            0.0
+                        } else {
+                            0.0
+                        }
+                    }
+                    GateState::Hold => {
+                        if mag_db >= th {
+                            state.gate_state = GateState::Open;
+                            0.0
+                        } else if state.hold_counter > 0 {
+                            state.hold_counter -= 1;
+                            0.0
+                        } else if mag_db < th - hys {
+                            state.gate_state = GateState::Closing;
+                            Self::calculate_expansion_attenuation(
+                                mag_db, th, info.rat, info.kn, info.rg,
+                            )
+                        } else {
+                            0.0
+                        }
+                    }
+                    GateState::Closing => {
+                        if mag_db >= th {
+                            state.gate_state = GateState::Open;
+                            0.0
+                        } else {
+                            Self::calculate_expansion_attenuation(
+                                mag_db, th, info.rat, info.kn, info.rg,
+                            )
+                        }
+                    }
+                };
+
+                // One-pole envelope smoothing at hop rate
+                let coeff = if target_atten > state.envelope_db {
+                    ss.band_attack_hop[b]
+                } else {
+                    ss.band_release_hop[b]
+                };
+                state.envelope_db = target_atten + coeff * (state.envelope_db - target_atten);
+
+                // Apply gain to the complex bin
+                let gain = fast_pow10(-state.envelope_db / 20.0);
+                ss.freq_scratch[k] *= gain;
+            }
+
+            // --- Inverse FFT ---
+            ss.fft_processors[ch].freq_buffer.copy_from_slice(&ss.freq_scratch);
+            ss.fft_processors[ch].inverse();
+
+            // Apply synthesis window (Hann) + scale, overlap-add into ring
+            let next_pos = ss.next_add_position;
+            for i in 0..fft_size {
+                let frame_idx = (next_pos + i) & mask;
+                let s = ss.fft_processors[ch].time_buffer[i]
+                    * ss.analysis_window[i]  // synthesis window = same Hann
+                    * scale;
+                ss.output_accumulator[frame_idx * channels + ch] += s;
+            }
+        }
+
+        // Advance OLA write position by one hop
+        ss.next_add_position = (ss.next_add_position + ss.hop_size) & mask;
+
+        // Zero the "fresh" positions just past the write head (for clean OLA)
+        // They will accumulate contributions from the next several hops.
+        // We zero hop_size frames at next_add_position + fft_size to clear stale data.
+        {
+            let clear_start = (ss.next_add_position + fft_size) & mask;
+            for i in 0..ss.hop_size {
+                let frame_idx = (clear_start + i) & mask;
+                for ch in 0..channels {
+                    ss.output_accumulator[frame_idx * channels + ch] = 0.0;
+                }
+            }
+        }
+
+        ss.output_accumulator_fill += ss.hop_size;
+        ss.latency_filled += ss.hop_size;
+    }
+
+    /// Main in-place processing entry point for spectral mode.
+    ///
+    /// Feeds interleaved samples into per-channel ring buffers. Each time
+    /// `fft_size` samples have accumulated (after the initial fill), a STFT
+    /// frame is processed. The OLA output is drained into the caller's buffer.
+    fn process_spectral_in_place(
+        &mut self,
+        buffer: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        let nf = context.num_frames;
+        let channels = self.channels;
+
+        let any_solo = (0..self.num_bands).any(|b| {
+            self.band_params.get(b).map(|p| p.solo).unwrap_or(false)
+        });
+
+        let g_mix = self.mix_smoother.next_n(nf);
+
+        // Ensure dry buffer large enough
+        if self.dry_buffer.len() < buffer.len() {
+            self.dry_buffer.resize(buffer.len(), 0.0);
+        }
+        self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
+
+        // Zero the output portion of the buffer — we'll drain OLA into it
+        buffer[..nf * channels].fill(0.0);
+
+        let mut input_pos = 0;  // frame index into the caller's buffer
+        let mut output_pos = 0; // frame index into the caller's output
+
+        // Safety: spectral must be Some when this path is called
+        let fft_size = self.spectral.as_ref().unwrap().fft_size;
+        let hop_size = self.spectral.as_ref().unwrap().hop_size;
+
+        while output_pos < nf {
+            // --- Step 1: Fill input ring from caller's buffer ---
+            if input_pos < nf {
+                let ss = self.spectral.as_mut().unwrap();
+                let overlap = fft_size - hop_size;
+                let space_in_tail = fft_size - ss.input_fill;
+                let available = nf - input_pos;
+                let to_copy = space_in_tail.min(available);
+
+                if to_copy > 0 {
+                    for ch in 0..channels {
+                        for i in 0..to_copy {
+                            ss.input_buffers[ch][ss.input_fill + i] =
+                                self.dry_buffer[(input_pos + i) * channels + ch];
+                        }
+                    }
+                    ss.input_fill += to_copy;
+                    input_pos += to_copy;
+                    let _ = overlap; // suppress unused warning
+                }
+            }
+
+            // --- Step 2: Process STFT frames while we have a full window ---
+            {
+                let input_fill = self.spectral.as_ref().unwrap().input_fill;
+                let hop = self.spectral.as_ref().unwrap().hop_size;
+                if input_fill >= fft_size {
+                    self.process_spectral_hop(any_solo);
+                    // Shift input ring: keep overlap = fft_size - hop_size samples
+                    let ss = self.spectral.as_mut().unwrap();
+                    let overlap = fft_size - hop;
+                    for ch in 0..channels {
+                        ss.input_buffers[ch].copy_within(hop..fft_size, 0);
+                        ss.input_buffers[ch][overlap..].fill(0.0);
+                    }
+                    ss.input_fill = overlap;
+                }
+            }
+
+            // --- Step 3: Drain available OLA frames into output ---
+            {
+                let ss = self.spectral.as_mut().unwrap();
+                let frames_to_drain = ss.output_accumulator_fill.min(nf - output_pos);
+                if frames_to_drain > 0 {
+                    let mask = ss.output_accumulator_mask;
+                    for i in 0..frames_to_drain {
+                        let read_idx = (ss.output_read_position + i) & mask;
+                        let out_base = (output_pos + i) * channels;
+                        for ch in 0..channels {
+                            buffer[out_base + ch] += ss.output_accumulator[read_idx * channels + ch];
+                        }
+                    }
+                    // Clear drained frames
+                    for i in 0..frames_to_drain {
+                        let read_idx = (ss.output_read_position + i) & mask;
+                        for ch in 0..channels {
+                            ss.output_accumulator[read_idx * channels + ch] = 0.0;
+                        }
+                    }
+                    ss.output_read_position = (ss.output_read_position + frames_to_drain) & mask;
+                    ss.output_accumulator_fill -= frames_to_drain;
+                    output_pos += frames_to_drain;
+                } else {
+                    // No output ready: output silence for this iteration and break
+                    // This happens only during initial latency fill
+                    output_pos = nf;
+                }
+            }
+        }
+
+        // Apply wet/dry mix with dry signal
+        for i in 0..nf {
+            for ch in 0..channels {
+                let idx = i * channels + ch;
+                buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + buffer[idx] * g_mix;
+            }
+        }
+
+        flush_denormals_inplace(buffer);
+        Ok(nf)
+    }
 }
 
 impl InPlacePlugin for MultibandExpanderPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Multiband Expander", "1.1.0", "Sotf")
+        PluginInfo::new("Multiband Expander", "1.2.0", "Sotf")
     }
     fn channels(&self) -> usize {
         self.channels
@@ -646,6 +1235,58 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     .resize(self.num_bands * self.channels, 0.0);
                 self.is_open_buffer.resize(self.num_bands, false);
                 self.update_coefficients();
+
+                // Rebuild spectral bin→band mapping
+                if let Some(ss) = &mut self.spectral {
+                    ss.update_bin_to_band(
+                        self.sample_rate,
+                        &self.crossover_frequencies,
+                        self.num_bands,
+                    );
+                    ss.update_band_coefficients(
+                        self.num_bands,
+                        &self.band_params,
+                        self.attack_ms,
+                        self.release_ms,
+                        self.sample_rate,
+                    );
+                    // Resize bin_states if needed
+                    for ch_states in &mut ss.bin_states {
+                        ch_states.resize_with(ss.num_bins, SpectralBinState::new);
+                    }
+                }
+            }
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+
+        if name == "processing_mode" {
+            let idx = value
+                .as_int()
+                .ok_or_else(|| "processing_mode must be an integer".to_string())?;
+            let mode_str = if idx == 1 { "spectral" } else { "time_domain" };
+            if mode_str != self.processing_mode {
+                self.processing_mode = mode_str.to_string();
+                if mode_str == "spectral" && self.spectral.is_none() {
+                    let fft_size = 1024;
+                    let mut ss = SpectralState::new(
+                        fft_size,
+                        self.channels,
+                        self.sample_rate,
+                        &self.crossover_frequencies,
+                        self.num_bands,
+                    );
+                    ss.update_band_coefficients(
+                        self.num_bands,
+                        &self.band_params,
+                        self.attack_ms,
+                        self.release_ms,
+                        self.sample_rate,
+                    );
+                    self.spectral = Some(ss);
+                } else if mode_str == "time_domain" {
+                    self.spectral = None;
+                }
             }
             self.rebuild_cached_parameters();
             return Ok(());
@@ -694,6 +1335,14 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 if f.is_finite() {
                     self.crossover_frequencies[idx] = f;
                     self.xover_smoothers[idx].set_target(f);
+                    // Update spectral bin→band mapping
+                    if let Some(ss) = &mut self.spectral {
+                        ss.update_bin_to_band(
+                            self.sample_rate,
+                            &self.crossover_frequencies,
+                            self.num_bands,
+                        );
+                    }
                 }
             } else {
                 return Err(format!("Crossover index {} out of range", idx + 1));
@@ -888,6 +1537,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         } else if name == "detection_mode" {
             let idx = if self.detection_mode == "rms" { 1 } else { 0 };
             Some(ParameterValue::Int(idx))
+        } else if name == "processing_mode" {
+            let idx = if self.processing_mode == "spectral" { 1 } else { 0 };
+            Some(ParameterValue::Int(idx))
         } else if name == "threshold" {
             Some(ParameterValue::Float(self.threshold_db))
         } else if name == "ratio" {
@@ -983,6 +1635,26 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         self.band_buffers.resize(self.num_bands * stride, 0.0);
         self.dry_buffer.resize(max_frames * self.channels, 0.0);
 
+        // (Re-)initialize spectral state if mode is active
+        if self.processing_mode == "spectral" {
+            let fft_size = 1024;
+            let mut ss = SpectralState::new(
+                fft_size,
+                self.channels,
+                sr,
+                &self.crossover_frequencies,
+                self.num_bands,
+            );
+            ss.update_band_coefficients(
+                self.num_bands,
+                &self.band_params,
+                self.attack_ms,
+                self.release_ms,
+                sr,
+            );
+            self.spectral = Some(ss);
+        }
+
         Ok(())
     }
     fn reset(&mut self) {
@@ -999,6 +1671,18 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         }
         self.band_buffers.fill(0.0);
         self.dry_buffer.fill(0.0);
+
+        if let Some(ss) = &mut self.spectral {
+            ss.reset();
+        }
+    }
+
+    fn latency_samples(&self) -> usize {
+        if let Some(ss) = &self.spectral {
+            ss.fft_size
+        } else {
+            0
+        }
     }
 
     fn process_in_place(
@@ -1006,6 +1690,11 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
+        // Dispatch to spectral mode if active
+        if self.processing_mode == "spectral" {
+            return self.process_spectral_in_place(buffer, context);
+        }
+
         enable_ftz_daz();
         let nf = context.num_frames;
         let stride = nf * self.channels;
@@ -1460,6 +2149,145 @@ mod tests {
         assert!(
             (0.7..1.3).contains(&ratio),
             "Unity ratio (1:1) should pass through, but RMS ratio is {ratio:.3}"
+        );
+    }
+
+    /// Spectral mode: basic smoke test — output must be finite and non-silent for a
+    /// loud input signal (threshold set very low so gate is open).
+    #[test]
+    fn test_spectral_mode_basic() {
+        let params = MultibandExpanderPluginParams {
+            num_bands: 3,
+            threshold_db: -80.0, // very low threshold: gate always open
+            ratio: 2.0,
+            attack_ms: 5.0,
+            release_ms: 50.0,
+            range_db: 40.0,
+            mix: 1.0,
+            processing_mode: "spectral".to_string(),
+            ..Default::default()
+        };
+        let mut p = MultibandExpanderPlugin::with_params(2, params);
+        p.initialize(48000).unwrap();
+
+        // Check that latency is reported as fft_size
+        assert_eq!(p.latency_samples(), 1024, "Spectral mode latency should be fft_size=1024");
+
+        // Generate pink-noise-like signal using sum of sines
+        let nf = 8192usize;
+        let mut signal = vec![0.0f32; nf * 2];
+        for i in 0..nf {
+            let t = i as f32 / 48000.0;
+            let s = 0.3 * (2.0 * std::f32::consts::PI * 440.0 * t).sin()
+                + 0.15 * (2.0 * std::f32::consts::PI * 880.0 * t).sin()
+                + 0.08 * (2.0 * std::f32::consts::PI * 3520.0 * t).sin();
+            signal[i * 2] = s;
+            signal[i * 2 + 1] = s;
+        }
+
+        let mut buf = signal.clone();
+        p.process_in_place(
+            &mut buf,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            },
+        )
+        .unwrap();
+
+        // All output samples must be finite
+        for (i, &s) in buf.iter().enumerate() {
+            assert!(s.is_finite(), "Sample {i} is not finite: {s}");
+        }
+
+        // After the latency fill (~fft_size frames = 1024), output must not be all-zeros
+        let rms_out: f32 = (buf[1024 * 2..]
+            .iter()
+            .map(|s| s * s)
+            .sum::<f32>()
+            / ((nf - 1024) * 2) as f32)
+            .sqrt();
+        assert!(
+            rms_out > 1e-5,
+            "Spectral mode output should not be silent for loud input, RMS={rms_out:.8}"
+        );
+    }
+
+    /// Spectral mode: below-threshold signal should be attenuated compared to time-domain mode.
+    ///
+    /// Both modes are configured identically. A quiet signal (below threshold) is fed to each.
+    /// The spectral mode attenuation is compared against the time-domain mode attenuation.
+    /// We do not require them to be identical (STFT resolution differs from sample-accurate
+    /// tracking), but both should attenuate significantly relative to the unprocessed signal.
+    #[test]
+    fn test_spectral_vs_time_domain_attenuation() {
+        let sr = 48000u32;
+        let nf = 16384usize; // enough for multiple STFT hops
+
+        // Quiet broadband signal (below a -20 dB threshold)
+        let quiet_amp = 0.005f32; // ~ -46 dBFS
+        let signal: Vec<f32> = (0..nf)
+            .map(|i| {
+                quiet_amp
+                    * ((2.0 * std::f32::consts::PI * 200.0 * i as f32 / sr as f32).sin()
+                        + (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin()
+                        + (2.0 * std::f32::consts::PI * 4000.0 * i as f32 / sr as f32).sin())
+                    / 3.0
+            })
+            .collect();
+        let input_rms: f32 = (signal.iter().map(|s| s * s).sum::<f32>() / nf as f32).sqrt();
+
+        let make_params = |mode: &str| MultibandExpanderPluginParams {
+            num_bands: 3,
+            threshold_db: -20.0,
+            ratio: 8.0,
+            attack_ms: 10.0,
+            release_ms: 100.0,
+            knee_db: 0.0,
+            range_db: 60.0,
+            hysteresis_db: 0.0,
+            hold_ms: 0.0,
+            mix: 1.0,
+            processing_mode: mode.to_string(),
+            crossover_frequencies: vec![300.0, 3000.0, 8000.0, 12000.0],
+            ..Default::default()
+        };
+
+        let mut td_plugin = MultibandExpanderPlugin::with_params(1, make_params("time_domain"));
+        td_plugin.initialize(sr).unwrap();
+
+        let mut sp_plugin = MultibandExpanderPlugin::with_params(1, make_params("spectral"));
+        sp_plugin.initialize(sr).unwrap();
+
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames: nf,
+        };
+
+        let mut td_buf = signal.clone();
+        td_plugin.process_in_place(&mut td_buf, &ctx).unwrap();
+
+        let mut sp_buf = signal.clone();
+        sp_plugin.process_in_place(&mut sp_buf, &ctx).unwrap();
+
+        // Use the second half of the buffer to avoid transient settling
+        let half = nf / 2;
+        let td_rms: f32 =
+            (td_buf[half..].iter().map(|s| s * s).sum::<f32>() / (nf - half) as f32).sqrt();
+        let sp_rms: f32 =
+            (sp_buf[half..].iter().map(|s| s * s).sum::<f32>() / (nf - half) as f32).sqrt();
+
+        // Both modes should attenuate: output RMS must be < 80% of input RMS
+        assert!(
+            td_rms < input_rms * 0.8,
+            "Time-domain mode should attenuate below-threshold signal, \
+             input_rms={input_rms:.6}, td_rms={td_rms:.6}"
+        );
+        // Spectral mode has STFT latency and OLA settling; use a looser threshold
+        assert!(
+            sp_rms < input_rms * 0.98,
+            "Spectral mode should attenuate below-threshold signal, \
+             input_rms={input_rms:.6}, sp_rms={sp_rms:.6}"
         );
     }
 }

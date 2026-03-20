@@ -663,17 +663,52 @@ fn compute_xtc_filters_symmetric_with_cache(
         None
     };
 
+    // Explicit ITD delay: ITD = delay_contra - delay_ipsi (seconds).
+    // In the frequency domain, a pure time delay of Δt is e^{-j*2π*f*Δt}.
+    // Below ~300 Hz the Woodworth implicit phase is numerically inaccurate
+    // (wavelength >> head size), so we substitute an explicit delay.
+    let itd = sym.delay_contra - sym.delay_ipsi;
+    let use_explicit_delay = params.itd_modeling == "explicit_delay";
+
     for bin in 0..num_bins {
         let freq = bin as f32 * cache.freq_per_bin;
 
         // Use relative transfer functions: ipsilateral path is our reference (gain 1.0, phase 0)
         let h_ipsi = Complex::new(1.0, 0.0);
 
-        // Contralateral path is relative to ipsilateral
+        // Contralateral path is relative to ipsilateral.
+        // The head-shadowing magnitude `g` is the same for both modes; only the phase differs.
         let delta_t = sym.delay_contra - sym.delay_ipsi;
         let g = head_shadowing_woodworth(freq, sym.contra_angle, a) * sym.amplitude_ratio;
         let phase_contra = -2.0 * PI * freq * delta_t;
-        let h_contra = Complex::new(g * phase_contra.cos(), g * phase_contra.sin());
+        let h_contra_phase_only = Complex::new(g * phase_contra.cos(), g * phase_contra.sin());
+
+        let h_contra = if use_explicit_delay {
+            // Explicit delay mode: model the contralateral path at LF as a pure
+            // fractional-sample delay with amplitude 1.0 (no head shadowing).
+            //
+            // Rationale: at low frequencies (wavelength >> head radius) the head is
+            // acoustically transparent — there is no interaural level difference (ILD),
+            // only an interaural time difference (ITD). The Woodworth head-shadowing
+            // factor `g` drops to ~1.0 at LF anyway, but the explicit-delay model makes
+            // this physically exact by always using unity amplitude for the delay phasor:
+            //   h_contra_explicit = e^{-j*2π*f*itd}   (amplitude = 1, pure delay)
+            //
+            // Sigmoid crossover: blend = 1 at LF (use explicit), 0 at HF (use phase-only).
+            // Crossover at 300 Hz, transition width 50 Hz.
+            // sigmoid(x) = 1/(1 + exp((x - x0) / w)) where x = freq, x0 = 300, w = 50.
+            let explicit_phase = -2.0 * PI * freq * itd;
+            // Unit-amplitude phasor: no head-shadowing amplitude factor at LF.
+            let h_contra_explicit =
+                Complex::new(explicit_phase.cos(), explicit_phase.sin());
+
+            let crossover_hz = 300.0_f32;
+            let blend = 1.0 / (1.0 + ((freq - crossover_hz) / 50.0).exp());
+
+            h_contra_explicit * blend + h_contra_phase_only * (1.0 - blend)
+        } else {
+            h_contra_phase_only
+        };
 
         // Pinna resonance shaping: use pre-computed LUTs (Optimization 5)
         let pinna_ipsi = pinna_ipsi_lut.as_deref().map_or(1.0, |lut| lut[bin]);

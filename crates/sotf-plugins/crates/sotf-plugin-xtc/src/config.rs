@@ -139,6 +139,21 @@ pub struct XtcPluginParams {
     /// Smoothing time for auto-gain transitions in ms (default: 100.0)
     #[serde(default = "default_auto_gain_smoothing_ms")]
     pub auto_gain_smoothing_ms: f32,
+
+    /// ITD modeling mode for low-frequency cancellation improvement.
+    ///
+    /// At low frequencies (<300 Hz) the Woodworth model's implicit phase from
+    /// path-length differences is numerically inaccurate because the wavelength
+    /// is much larger than the head. An explicit fractional-sample delay applied
+    /// in the frequency domain gives a more reliable LF phase relationship.
+    ///
+    /// - `"phase_only"` (default): use implicit phase from the path-length
+    ///   difference encoded in the plant matrix transfer functions.
+    /// - `"explicit_delay"`: apply an explicit time-delay phase shift
+    ///   `e^{-j*2*pi*f*itd}` to the contralateral path at low frequencies,
+    ///   blended out above 300 Hz via a sigmoid crossover.
+    #[serde(default = "default_itd_modeling")]
+    pub itd_modeling: String,
 }
 
 fn default_distance() -> f32 {
@@ -198,6 +213,9 @@ fn default_spectral_normalization() -> bool {
 fn default_auto_gain_smoothing_ms() -> f32 {
     100.0
 }
+fn default_itd_modeling() -> String {
+    "phase_only".to_string()
+}
 
 impl Default for XtcPluginParams {
     fn default() -> Self {
@@ -231,6 +249,7 @@ impl Default for XtcPluginParams {
             auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
             pinna_model_enabled: false,
             hrtf_file: None,
+            itd_modeling: default_itd_modeling(),
         }
     }
 }

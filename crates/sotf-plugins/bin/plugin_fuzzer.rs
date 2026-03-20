@@ -449,6 +449,7 @@ impl PluginFuzzer for EqFuzzer {
                 freq,
                 q,
                 db_gain,
+                order: 2,
             });
         }
 
@@ -684,6 +685,7 @@ impl PluginFuzzer for LoudnessCompensationFuzzer {
             auto_gain_enabled: false,
             auto_gain_max_db: 12.0,
             auto_gain_smoothing_ms: 100.0,
+            auto_gain_position: "post".to_string(),
         };
         let plugin = LoudnessCompensationPlugin::from_params(channels, params)
             .expect("Failed to create LoudnessCompensationPlugin");
@@ -878,6 +880,7 @@ impl PluginFuzzer for MultibandExpanderFuzzer {
             mix,
             detection_mode: "peak".to_string(),
             bands: vec![], // Use defaults for per-band params
+            processing_mode: "time_domain".to_string(),
         };
         let plugin = MultibandExpanderPlugin::from_params(channels, params);
 
@@ -1112,6 +1115,7 @@ impl PluginFuzzer for UpmixerFuzzer {
             bypass_transient_detection: false,
             bypass_all_processing: false,
             low_latency: false,
+            frequency_resolution: "erb".to_string(),
         };
 
         let desc = format!(

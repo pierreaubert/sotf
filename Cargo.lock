@@ -9128,6 +9128,7 @@ dependencies = [
  "math-dsp",
  "math-iir-fir",
  "rand 0.9.2",
+ "rayon",
  "realfft",
  "rtrb",
  "rusqlite",
@@ -9282,6 +9283,7 @@ dependencies = [
  "arc-swap",
  "audioadapter-buffers",
  "log",
+ "rayon",
  "rubato",
  "rustfft 6.4.1",
  "serde",
@@ -9348,7 +9350,9 @@ dependencies = [
 name = "sotf-plugin-eq"
 version = "0.5.65"
 dependencies = [
+ "audioadapter-buffers",
  "math-iir-fir",
+ "rubato",
  "serde",
  "sotf-host",
 ]
@@ -9466,6 +9470,8 @@ version = "0.5.20"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
+ "realfft",
+ "rustfft 6.4.1",
  "serde",
  "sotf-host",
 ]

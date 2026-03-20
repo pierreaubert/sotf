@@ -21,3 +21,4 @@ symphonia-bundle-flac = { workspace = true }
 symphonia-format-riff = { workspace = true }
 symphonia-codec-pcm = { workspace = true }
 serde = { workspace = true }
+rayon = { workspace = true }

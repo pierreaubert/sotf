@@ -236,6 +236,10 @@ pub struct UpmixerPlugin {
     param_bypass_all_processing: ParameterId,
     bypass_all_processing: bool,
 
+    // Frequency resolution for ERB band analysis
+    param_frequency_resolution: ParameterId,
+    frequency_resolution: String,
+
     // Decorrelation
     decorrelation_filter_left: Vec<Complex<f32>>,
     decorrelation_filter_right: Vec<Complex<f32>>,
@@ -470,6 +474,24 @@ pub struct UpmixerPlugin {
     decorrelation_crossfade_remaining: usize,
     /// Saved blended filters for cross-fading during decorrelation transitions
     prev_blended_filters_for_crossfade: Vec<Vec<Complex<f32>>>,
+
+    // Multi-source extraction (2nd eigenvector)
+    /// Enable secondary source extraction using the 2nd PCA eigenvector.
+    /// When a band contains two uncorrelated sources, the 2nd eigenvector captures
+    /// the direction perpendicular to the dominant source and routes it to surrounds.
+    param_multi_source_extraction: ParameterId,
+    multi_source_extraction: bool,
+    /// Threshold ratio lambda2/lambda1 above which the 2nd source is considered real.
+    /// Range: 0.05-0.5, default 0.1.
+    param_multi_source_threshold: ParameterId,
+    multi_source_threshold: f32,
+    /// Per-bin frequency-domain buffer for the secondary source (2nd eigenvector projection).
+    /// Only populated when multi_source_extraction is enabled.
+    direct2: Vec<rustfft::num_complex::Complex<f32>>,
+    /// Per-bin DOA angle (radians) for the secondary source.
+    /// Copied from the ERB band's DOA angle during frequency domain processing.
+    /// Used by panning.rs to steer direct2 to the correct surround speaker.
+    direct2_doa_per_bin: Vec<f32>,
 
     /// Initial latency counter to ensure OLA buffer is primed before output
     latency_filled: usize,
@@ -716,6 +738,10 @@ impl UpmixerPlugin {
             param_bypass_all_processing: ParameterId::from("bypass_all_processing"),
             bypass_all_processing: default_bypass_all_processing(),
 
+            // Frequency resolution for ERB band analysis
+            param_frequency_resolution: ParameterId::from("frequency_resolution"),
+            frequency_resolution: default_frequency_resolution(),
+
             subharmonic_phase: 0.0,
             subharmonic_envelope: 0.0,
             subharmonic_amp_envelope: 0.0,
@@ -880,6 +906,14 @@ impl UpmixerPlugin {
             prev_blended_filters_for_crossfade: Vec::new(),
 
             latency_filled: 0,
+
+            param_multi_source_extraction: ParameterId::from("multi_source_extraction"),
+            multi_source_extraction: false,
+            param_multi_source_threshold: ParameterId::from("multi_source_threshold"),
+            multi_source_threshold: 0.1,
+            direct2: vec![zero_complex; spectrum_size],
+            direct2_doa_per_bin: vec![0.0; spectrum_size],
+
             cached_parameters: Vec::new(),
         };
 
@@ -1429,6 +1463,20 @@ Note: changing this requires re-initialization (takes effect on next initialize(
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_string(
+                "frequency_resolution",
+                "Frequency Resolution",
+                self.frequency_resolution.clone(),
+            )
+            .with_description(
+                "ERB band frequency resolution for spatial analysis.
+\"erb\" = standard ERB bands (~40-50 bands, default).
+\"fine_erb\" = half-ERB width (~100 bands, finer spatial resolution).
+\"per_bin\" = one band per FFT bin (~1025 bands, maximum resolution).
+Note: changing this requires re-initialization (takes effect on next initialize()).",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_bool(
                 "bypass_decorrelation",
                 "Bypass Decorrelation",
@@ -1450,6 +1498,35 @@ Note: changing this requires re-initialization (takes effect on next initialize(
             )
             .with_group("Diagnostic")
             .with_importance(ParameterImportance::Useful),
+            // Multi-source extraction
+            Parameter::new_bool(
+                "multi_source_extraction",
+                "Multi-Source Extraction",
+                self.multi_source_extraction,
+            )
+            .with_description(
+                "Enable secondary source extraction using the 2nd PCA eigenvector.
+Default: off. When enabled and two uncorrelated sources are detected in a band
+(lambda2/lambda1 > multi_source_threshold), the secondary source is routed to
+L/R surround based on its direction of arrival.",
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "multi_source_threshold",
+                "Multi-Source Threshold",
+                self.multi_source_threshold,
+                pk(UP, "multi_source_threshold").min_f64() as f32,
+                pk(UP, "multi_source_threshold").max_f64() as f32,
+            )
+            .with_description(
+                "Lambda ratio threshold for 2nd eigenvector activation.
+Range: 0.05-0.5, default 0.1.
+The secondary source is extracted only when lambda2/lambda1 exceeds this value,
+ensuring the 2nd eigenvector captures a real source and not noise.",
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
         ];
     }
 
@@ -1548,6 +1625,9 @@ Note: changing this requires re-initialization (takes effect on next initialize(
         plugin.bypass_decorrelation = params.bypass_decorrelation;
         plugin.bypass_transient_detection = params.bypass_transient_detection;
         plugin.bypass_all_processing = params.bypass_all_processing;
+
+        // Frequency resolution (construction-only: stored and applied in initialize())
+        plugin.frequency_resolution = params.frequency_resolution;
 
         plugin.rebuild_cached_parameters();
         plugin
@@ -1987,6 +2067,21 @@ impl Plugin for UpmixerPlugin {
             self.bypass_all_processing = value
                 .as_bool()
                 .ok_or_else(|| "bypass_all_processing must be a boolean".to_string())?;
+        } else if id == self.param_frequency_resolution {
+            // frequency_resolution changes the ERB band count which resizes per-band state.
+            // This is a construction-time parameter — set via from_params(), not at runtime.
+            return Err("frequency_resolution is a construction-only parameter (requires plugin rebuild)".to_string());
+        } else if id == self.param_multi_source_extraction {
+            self.multi_source_extraction = value
+                .as_bool()
+                .ok_or_else(|| "multi_source_extraction must be a boolean".to_string())?;
+        } else if id == self.param_multi_source_threshold {
+            let val = value
+                .as_float()
+                .ok_or_else(|| "multi_source_threshold must be a float".to_string())?;
+            if val.is_finite() {
+                self.multi_source_threshold = val.clamp(0.05, 0.5);
+            }
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -2107,6 +2202,12 @@ impl Plugin for UpmixerPlugin {
             Some(ParameterValue::Bool(self.bypass_transient_detection))
         } else if id == &self.param_bypass_all_processing {
             Some(ParameterValue::Bool(self.bypass_all_processing))
+        } else if id == &self.param_frequency_resolution {
+            Some(ParameterValue::String(self.frequency_resolution.clone()))
+        } else if id == &self.param_multi_source_extraction {
+            Some(ParameterValue::Bool(self.multi_source_extraction))
+        } else if id == &self.param_multi_source_threshold {
+            Some(ParameterValue::Float(self.multi_source_threshold))
         } else {
             None
         }

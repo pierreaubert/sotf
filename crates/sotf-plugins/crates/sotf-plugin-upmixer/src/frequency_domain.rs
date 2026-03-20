@@ -155,6 +155,12 @@ impl UpmixerPlugin {
             self.update_lfo_decorrelation();
         }
 
+        // Zero direct2/direct2_doa_per_bin at frame start: ensures LFE/pass-through bins remain
+        // silent, and handles the case when multi_source_extraction is toggled off mid-stream.
+        let spec_size_pre = self.fft_size / 2 + 1;
+        self.direct2[..spec_size_pre].fill(Complex::new(0.0, 0.0));
+        self.direct2_doa_per_bin[..spec_size_pre].fill(0.0);
+
         let lfe_cutoff_bin = self.cached_lfe_cutoff_bin;
         let bandpass_bin = self.cached_bandpass_bin;
         let freq_per_bin = self.cached_freq_per_bin;
@@ -326,6 +332,30 @@ impl UpmixerPlugin {
                     }
                 };
 
+                // --- 2nd eigenvector (multi-source extraction) ---
+                // lambda2 = trace - lambda1 (already have trace and lambda1 from coherence computation)
+                // eigvec2 is perpendicular to eigvec1: rotate 90° → (-ev_r, ev_l) in the unitary sense.
+                // We gate on lambda2/lambda1 > threshold to avoid extracting noise as a 2nd source.
+                let extract_second = self.multi_source_extraction
+                    && lambda1 > 1e-9
+                    && (lambda2 / lambda1) > self.multi_source_threshold;
+
+                // eigvec2 components: perpendicular rotation of eigvec1.
+                // eigvec1 = (ev_l, ev_r) where both may have imaginary parts from c_xy being complex.
+                // For the perpendicular in the 2-channel (L,R) space: ev2_l = -conj(ev_r), ev2_r = conj(ev_l).
+                // This preserves the unitary property: <ev1, ev2> = 0.
+                let ev2_l = -ev_r.conj();
+                let ev2_r = ev_l.conj();
+
+                // DOA estimate for the secondary source: derive from the eigvec2 L/R imbalance.
+                // |ev2_l| = |ev_r| and |ev2_r| = |ev_l|.
+                // When dominant source is left-biased (|ev_l| large), secondary is right-biased.
+                // DOA angle: positive = right of center, negative = left of center.
+                // Use atan2 of (|ev2_l| - |ev2_r|, 1) to get a directional bias in [-π/2, π/2].
+                let ev2_l_mag = ev2_l.norm();
+                let ev2_r_mag = ev2_r.norm();
+                let doa2_band = fast_atan2(ev2_l_mag - ev2_r_mag, 1.0);
+
                 let stereo_w = self.stereo_width.current();
                 // Scale L-R bleed by diffuseness: directional content gets near-zero
                 // bleed, while diffuse content gets up to BASE_LR_BLEED.
@@ -371,6 +401,19 @@ impl UpmixerPlugin {
                     self.ambient_right[i] = decomp_amb_r * t;
                     self.lfe[i] = Complex::new(0.0, 0.0);
 
+                    // 2nd eigenvector projection for secondary source (multi-source extraction).
+                    // proj2 captures the component perpendicular to the dominant source direction.
+                    // Blended with t so it fades in across the transition zone.
+                    if extract_second {
+                        let proj2 = l * ev2_l.conj() + r * ev2_r.conj();
+                        // Scalar projection amplitude; route as mono secondary source
+                        self.direct2[i] = proj2 * t;
+                        self.direct2_doa_per_bin[i] = doa2_band;
+                    } else {
+                        self.direct2[i] = Complex::new(0.0, 0.0);
+                        self.direct2_doa_per_bin[i] = 0.0;
+                    }
+
                     in_e += l.norm_sqr() + r.norm_sqr();
                     out_e += self.direct[i].norm_sqr()
                         + self.direct_left[i].norm_sqr()
@@ -401,6 +444,17 @@ impl UpmixerPlugin {
                     self.direct_left[i] = l - self.direct[i] * stereo_w;
                     self.direct_right[i] = r - self.direct[i] * phase_correction * stereo_w;
                     self.lfe[i] = Complex::new(0.0, 0.0);
+
+                    // 2nd eigenvector projection for secondary source (full upmix zone).
+                    if extract_second {
+                        let proj2 = l * ev2_l.conj() + r * ev2_r.conj();
+                        self.direct2[i] = proj2;
+                        self.direct2_doa_per_bin[i] = doa2_band;
+                    } else {
+                        self.direct2[i] = Complex::new(0.0, 0.0);
+                        self.direct2_doa_per_bin[i] = 0.0;
+                    }
+
                     in_e += l.norm_sqr() + r.norm_sqr();
                     out_e += self.direct[i].norm_sqr()
                         + self.direct_left[i].norm_sqr()

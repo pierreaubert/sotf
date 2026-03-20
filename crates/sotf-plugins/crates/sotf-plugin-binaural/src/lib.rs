@@ -17,6 +17,7 @@ use std::sync::Arc;
 pub mod error;
 pub mod filter;
 pub mod hrtf;
+pub mod hrtf_database;
 pub mod params;
 pub mod room;
 
@@ -98,6 +99,31 @@ pub struct BinauralDecoderPlugin {
 
     latency_filled: usize,
     cached_parameters: Vec<Parameter>,
+
+    /// Crossfade duration in milliseconds (range: 10–500ms, default: 50ms).
+    crossfade_ms: f32,
+
+    /// Head tracking angles in degrees. Positive yaw = head turned left.
+    /// The inverse rotation is applied to speaker positions before VBAP lookup,
+    /// so a head turn left makes all virtual sources shift right (world-locked).
+    head_yaw_deg: Smoother,
+    head_pitch_deg: Smoother,
+    head_roll_deg: Smoother,
+
+    /// Last head angles used when computing the current HRTF state.
+    /// Used for the 0.5° change threshold to avoid unnecessary recomputes.
+    last_hrtf_yaw: f32,
+    last_hrtf_pitch: f32,
+    last_hrtf_roll: f32,
+
+    // ---- Personalized HRTF selection ----
+    /// Directory to scan for `.sofa` files.  When non-empty the plugin picks
+    /// the best-matching file based on the anthropometric parameters below.
+    hrtf_database_dir: String,
+    /// Target head width in centimetres (range: 10–25 cm, default: 15 cm).
+    head_width_cm: f32,
+    /// Target ear height in centimetres (range: 4–16 cm, default: 10 cm).
+    ear_height_cm: f32,
 }
 
 impl BinauralDecoderPlugin {
@@ -225,19 +251,85 @@ impl BinauralDecoderPlugin {
             crossfade_sum_right: vec![Complex::new(0.0, 0.0); freq_size],
             latency_filled: 0,
             cached_parameters: Vec::new(),
+            crossfade_ms: 50.0,
+            head_yaw_deg: Smoother::new(0.0, 10.0, sr),
+            head_pitch_deg: Smoother::new(0.0, 10.0, sr),
+            head_roll_deg: Smoother::new(0.0, 10.0, sr),
+            last_hrtf_yaw: 0.0,
+            last_hrtf_pitch: 0.0,
+            last_hrtf_roll: 0.0,
+            hrtf_database_dir: String::new(),
+            head_width_cm: 15.0,
+            ear_height_cm: 10.0,
         };
         p.rebuild_cached_parameters();
         p
     }
 
     fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![Parameter::new_float(
-            "externalization",
-            "Space",
-            self.externalization.target(),
-            0.0,
-            1.0,
-        )];
+        let hrtf_path_str = self
+            .hrtf_path
+            .as_ref()
+            .and_then(|p| p.to_str())
+            .unwrap_or("")
+            .to_string();
+        self.cached_parameters = vec![
+            Parameter::new_float(
+                "externalization",
+                "Space",
+                self.externalization.target(),
+                0.0,
+                1.0,
+            ),
+            Parameter::new_float(
+                "crossfade_ms",
+                "Crossfade (ms)",
+                self.crossfade_ms,
+                10.0,
+                500.0,
+            ),
+            Parameter::new_string("hrtf_file", "HRTF File", hrtf_path_str),
+            Parameter::new_float(
+                "head_yaw_deg",
+                "Head Yaw (deg)",
+                self.head_yaw_deg.target(),
+                -180.0,
+                180.0,
+            ),
+            Parameter::new_float(
+                "head_pitch_deg",
+                "Head Pitch (deg)",
+                self.head_pitch_deg.target(),
+                -180.0,
+                180.0,
+            ),
+            Parameter::new_float(
+                "head_roll_deg",
+                "Head Roll (deg)",
+                self.head_roll_deg.target(),
+                -180.0,
+                180.0,
+            ),
+            Parameter::new_string(
+                "hrtf_database_dir",
+                "HRTF Database Dir",
+                self.hrtf_database_dir.clone(),
+            ),
+            Parameter::new_float(
+                "head_width_cm",
+                "Head Width (cm)",
+                self.head_width_cm,
+                10.0,
+                25.0,
+            ),
+            Parameter::new_float(
+                "ear_height_cm",
+                "Ear Height (cm)",
+                self.ear_height_cm,
+                4.0,
+                16.0,
+            ),
+        ];
     }
 
     pub fn from_params(params: BinauralDecoderParams) -> Self {
@@ -246,7 +338,7 @@ impl BinauralDecoderPlugin {
         } else {
             Some(PathBuf::from(params.hrtf_file))
         };
-        Self::new(
+        let mut plugin = Self::new(
             params.input_channels,
             params.fft_size,
             hrtf_path,
@@ -258,7 +350,12 @@ impl BinauralDecoderPlugin {
             params.lfe_distance,
             params.lfe_level,
             params.room_model,
-        )
+        );
+        plugin.hrtf_database_dir = params.hrtf_database_dir;
+        plugin.head_width_cm = params.head_width_cm;
+        plugin.ear_height_cm = params.ear_height_cm;
+        plugin.rebuild_cached_parameters();
+        plugin
     }
 
     fn process_audio_block(&mut self) {
@@ -266,8 +363,9 @@ impl BinauralDecoderPlugin {
         let new_state = self.state.load_full();
         if !Arc::ptr_eq(&new_state, &self.current_state_snapshot) {
             // State changed -- start crossfade from old to new
-            // ~50ms crossfade duration in samples, rounded up to hop_size boundary
-            let crossfade_samples = (self.sample_rate as f32 * 0.05) as usize;
+            // Crossfade duration in samples, rounded up to hop_size boundary
+            let crossfade_samples =
+                (self.sample_rate as f32 * self.crossfade_ms * 0.001) as usize;
             let crossfade_hops = crossfade_samples.div_ceil(self.hop_size);
             let total = crossfade_hops * self.hop_size;
 
@@ -562,6 +660,153 @@ impl BinauralDecoderPlugin {
         }
     }
 
+    /// Apply the inverse of the head rotation to a speaker's (azimuth, elevation) pair.
+    ///
+    /// Head rotation convention:
+    ///   - Yaw (Z axis): positive = head turned left
+    ///   - Pitch (Y axis): positive = head tilted up
+    ///   - Roll (X axis): positive = head tilted right
+    ///
+    /// To make virtual sources appear world-locked (they stay fixed while the head moves),
+    /// we apply the *inverse* head rotation to the speaker positions before VBAP lookup.
+    /// The inverse rotation is R_roll^T * R_pitch^T * R_yaw^T.
+    fn rotate_speaker_position(azimuth: f32, elevation: f32, yaw: f32, pitch: f32, roll: f32) -> (f32, f32) {
+        if yaw == 0.0 && pitch == 0.0 && roll == 0.0 {
+            return (azimuth, elevation);
+        }
+
+        // Convert spherical -> Cartesian unit vector
+        // Coordinate system matches SourcePosition::to_cartesian_unit_vector:
+        //   x = cos(el)*cos(az), y = cos(el)*sin(az), z = sin(el)
+        let az = azimuth.to_radians();
+        let el = elevation.to_radians();
+        let x = el.cos() * az.cos();
+        let y = el.cos() * az.sin();
+        let z = el.sin();
+
+        // Apply inverse head rotation (transpose = inverse for orthogonal matrices).
+        // Forward rotation order is Rz(yaw) * Ry(pitch) * Rx(roll).
+        // Inverse is Rx(-roll) * Ry(-pitch) * Rz(-yaw).
+
+        let yaw_r = yaw.to_radians();
+        let pitch_r = pitch.to_radians();
+        let roll_r = roll.to_radians();
+
+        let (sy, cy) = yaw_r.sin_cos();
+        let (sp, cp) = pitch_r.sin_cos();
+        let (sr, cr) = roll_r.sin_cos();
+
+        // Rz(-yaw): rotate around Z by -yaw
+        let x1 =  cy * x + sy * y;
+        let y1 = -sy * x + cy * y;
+        let z1 = z;
+
+        // Ry(-pitch): rotate around Y by -pitch
+        let x2 = cp * x1 + sp * z1;
+        let y2 = y1;
+        let z2 = -sp * x1 + cp * z1;
+
+        // Rx(-roll): rotate around X by -roll
+        let x3 = x2;
+        let y3 =  cr * y2 + sr * z2;
+        let z3 = -sr * y2 + cr * z2;
+
+        // Convert back to spherical coordinates
+        let new_az = y3.atan2(x3).to_degrees();
+        let horiz = (x3 * x3 + y3 * y3).sqrt();
+        let new_el = z3.atan2(horiz).to_degrees();
+
+        (new_az, new_el)
+    }
+
+    /// Recompute HRTF filters with head-angle-rotated speaker positions and push a new state.
+    ///
+    /// This is called whenever head angles have changed by more than 0.5° since the last
+    /// recompute. It only does meaningful work when a SOFA file is loaded.
+    fn recompute_hrtf_for_head_angles(&mut self, yaw: f32, pitch: f32, roll: f32) -> PluginResult<()> {
+        self.last_hrtf_yaw = yaw;
+        self.last_hrtf_pitch = pitch;
+        self.last_hrtf_roll = roll;
+
+        // Without a SOFA file there are no measured HRTFs to re-query, so we leave
+        // the default (identity) filters in place.
+        let hrtf_path = match self.hrtf_path.clone() {
+            Some(p) => p,
+            None => return Ok(()),
+        };
+
+        if self.sample_rate == 0 {
+            return Ok(());
+        }
+
+        let mut sofa = SofaFile::load(&hrtf_path)
+            .map_err(|e| format!("Failed to load HRTF file for head tracking: {}", e))?;
+
+        let sofa_rate = sofa.sample_rate.round() as u32;
+        if sofa_rate != self.sample_rate {
+            hrtf::resample_sofa(&mut sofa, self.sample_rate)
+                .map_err(|e| format!("HRTF resample failed during head tracking: {}", e))?;
+        }
+
+        let mut filters =
+            vec![vec![Complex::new(0.0, 0.0); self.freq_size * 2]; self.input_channels];
+
+        for spk in self.speaker_config.speakers {
+            let ch = spk.channel;
+            if ch >= self.input_channels || self.lfe_channels.contains(&ch) {
+                continue;
+            }
+            // Apply inverse head rotation to the speaker's nominal position
+            let (rotated_az, rotated_el) =
+                Self::rotate_speaker_position(spk.azimuth, spk.elevation, yaw, pitch, roll);
+            let tgt = sotf_host::sofa::SourcePosition::new(rotated_az, rotated_el, 1.0);
+            let near = sofa.find_three_nearest(&tgt);
+            let gains = hrtf::calculate_vbap_gains(&tgt, &near, &sofa);
+            let (l_fft, r_fft) = hrtf::interpolate_hrtf_frequency_domain(
+                &near,
+                &gains,
+                &sofa,
+                self.fft_size,
+                self.sample_rate,
+                &self.fft_r2c,
+                self.near_field_strength,
+                tgt.azimuth,
+                tgt.elevation,
+            );
+            filters[ch][..self.freq_size].copy_from_slice(&l_fft[..self.freq_size]);
+            filters[ch][self.freq_size..].copy_from_slice(&r_fft[..self.freq_size]);
+        }
+
+        hrtf::normalize_hrtf_gains(
+            &mut filters,
+            &self.lfe_channels,
+            self.freq_size,
+            self.input_channels,
+        );
+
+        let eq = if self.diffuse_field_eq {
+            Some(
+                filter::compute_diffuse_field_eq(
+                    &sofa,
+                    self.fft_size,
+                    self.sample_rate,
+                    &self.fft_r2c,
+                )
+                .map_err(|e| format!("Diffuse field EQ calculation failed: {}", e))?,
+            )
+        } else {
+            None
+        };
+
+        let new_state = Arc::new(BinauralState {
+            hrtf_filters_freq: filters,
+            diffuse_field_eq_filter: eq,
+            _hrtf_data: Some(sofa),
+        });
+        self.state.store(new_state);
+        Ok(())
+    }
+
     fn reset_state(&mut self) {
         self.input_fill = 0;
         self.output_accumulator.fill(0.0);
@@ -601,6 +846,207 @@ impl Plugin for BinauralDecoderPlugin {
                 self.rebuild_cached_parameters();
             }
             Ok(())
+        } else if id.0 == "crossfade_ms" {
+            let v = val
+                .as_float()
+                .ok_or_else(|| "crossfade_ms must be a float".to_string())?;
+            if v.is_finite() && (10.0..=500.0).contains(&v) {
+                self.crossfade_ms = v;
+                self.rebuild_cached_parameters();
+            }
+            Ok(())
+        } else if id.0 == "hrtf_file" {
+            let path_str = val
+                .as_string()
+                .ok_or_else(|| "hrtf_file must be a string".to_string())?
+                .to_string();
+            let new_path = if path_str.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(&path_str))
+            };
+            self.hrtf_path = new_path;
+
+            // Reload SOFA if a path is set and sample_rate is known (> 0).
+            // The existing crossfade mechanism in process_audio_block() detects
+            // the state change via Arc pointer comparison and crossfades automatically.
+            if let Some(ref p) = self.hrtf_path.clone()
+                && self.sample_rate > 0
+            {
+                let mut sofa = SofaFile::load(p)
+                    .map_err(|e| format!("Failed to load HRTF file '{}': {}", path_str, e))?;
+
+                let sofa_rate = sofa.sample_rate.round() as u32;
+                if sofa_rate != self.sample_rate {
+                    hrtf::resample_sofa(&mut sofa, self.sample_rate)
+                        .map_err(|e| format!("HRTF resample failed: {}", e))?;
+                }
+
+                let mut filters = vec![
+                    vec![Complex::new(0.0, 0.0); self.freq_size * 2];
+                    self.input_channels
+                ];
+                for spk in self.speaker_config.speakers {
+                    let ch = spk.channel;
+                    if ch >= self.input_channels || self.lfe_channels.contains(&ch) {
+                        continue;
+                    }
+                    let tgt = room::speaker_to_source_position(spk);
+                    let near = sofa.find_three_nearest(&tgt);
+                    let gains = hrtf::calculate_vbap_gains(&tgt, &near, &sofa);
+                    let (l_fft, r_fft) = hrtf::interpolate_hrtf_frequency_domain(
+                        &near,
+                        &gains,
+                        &sofa,
+                        self.fft_size,
+                        self.sample_rate,
+                        &self.fft_r2c,
+                        self.near_field_strength,
+                        tgt.azimuth,
+                        tgt.elevation,
+                    );
+                    filters[ch][..self.freq_size].copy_from_slice(&l_fft[..self.freq_size]);
+                    filters[ch][self.freq_size..].copy_from_slice(&r_fft[..self.freq_size]);
+                }
+                hrtf::normalize_hrtf_gains(
+                    &mut filters,
+                    &self.lfe_channels,
+                    self.freq_size,
+                    self.input_channels,
+                );
+                let eq = if self.diffuse_field_eq {
+                    Some(
+                        filter::compute_diffuse_field_eq(
+                            &sofa,
+                            self.fft_size,
+                            self.sample_rate,
+                            &self.fft_r2c,
+                        )
+                        .map_err(|e| {
+                            format!("Diffuse field EQ calculation failed: {}", e)
+                        })?,
+                    )
+                } else {
+                    None
+                };
+                let new_state = Arc::new(BinauralState {
+                    hrtf_filters_freq: filters,
+                    diffuse_field_eq_filter: eq,
+                    _hrtf_data: Some(sofa),
+                });
+                // Store new state — process_audio_block() detects the pointer change
+                // and initiates a crossfade automatically.
+                self.state.store(new_state);
+            }
+
+            self.rebuild_cached_parameters();
+            Ok(())
+        } else if id.0 == "head_yaw_deg" {
+            let v = val
+                .as_float()
+                .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
+            if v.is_finite() {
+                self.head_yaw_deg.set_target(v.clamp(-180.0, 180.0));
+                self.rebuild_cached_parameters();
+            }
+            Ok(())
+        } else if id.0 == "head_pitch_deg" {
+            let v = val
+                .as_float()
+                .ok_or_else(|| "head_pitch_deg must be a float".to_string())?;
+            if v.is_finite() {
+                self.head_pitch_deg.set_target(v.clamp(-180.0, 180.0));
+                self.rebuild_cached_parameters();
+            }
+            Ok(())
+        } else if id.0 == "head_roll_deg" {
+            let v = val
+                .as_float()
+                .ok_or_else(|| "head_roll_deg must be a float".to_string())?;
+            if v.is_finite() {
+                self.head_roll_deg.set_target(v.clamp(-180.0, 180.0));
+                self.rebuild_cached_parameters();
+            }
+            Ok(())
+        } else if id.0 == "hrtf_database_dir" {
+            let dir = val
+                .as_string()
+                .ok_or_else(|| "hrtf_database_dir must be a string".to_string())?
+                .to_string();
+            self.hrtf_database_dir = dir.clone();
+            // If initialised, scan the new directory and load the best match.
+            if self.sample_rate > 0 && !dir.is_empty() {
+                if let Some(best) =
+                    hrtf_database::best_match(std::path::Path::new(&dir), self.head_width_cm, self.ear_height_cm)
+                {
+                    log::info!(
+                        "[BinauralDecoder] hrtf_database_dir scan: best match = {}",
+                        best.display()
+                    );
+                    self.hrtf_path = Some(best.clone());
+                    // Delegate actual SOFA load to hrtf_file handler to avoid duplicating code.
+                    let path_str = best.to_string_lossy().to_string();
+                    return self.set_parameter(
+                        ParameterId::from("hrtf_file"),
+                        ParameterValue::String(path_str),
+                    );
+                } else {
+                    log::warn!(
+                        "[BinauralDecoder] hrtf_database_dir '{}' contains no .sofa files",
+                        dir
+                    );
+                }
+            }
+            self.rebuild_cached_parameters();
+            Ok(())
+        } else if id.0 == "head_width_cm" {
+            let v = val
+                .as_float()
+                .ok_or_else(|| "head_width_cm must be a float".to_string())?;
+            if v.is_finite() && (10.0..=25.0).contains(&v) {
+                self.head_width_cm = v;
+                self.rebuild_cached_parameters();
+                // Re-score database if one is configured.
+                if self.sample_rate > 0 && !self.hrtf_database_dir.is_empty() {
+                    let dir = self.hrtf_database_dir.clone();
+                    if let Some(best) = hrtf_database::best_match(
+                        std::path::Path::new(&dir),
+                        self.head_width_cm,
+                        self.ear_height_cm,
+                    ) {
+                        let path_str = best.to_string_lossy().to_string();
+                        return self.set_parameter(
+                            ParameterId::from("hrtf_file"),
+                            ParameterValue::String(path_str),
+                        );
+                    }
+                }
+            }
+            Ok(())
+        } else if id.0 == "ear_height_cm" {
+            let v = val
+                .as_float()
+                .ok_or_else(|| "ear_height_cm must be a float".to_string())?;
+            if v.is_finite() && (4.0..=16.0).contains(&v) {
+                self.ear_height_cm = v;
+                self.rebuild_cached_parameters();
+                // Re-score database if one is configured.
+                if self.sample_rate > 0 && !self.hrtf_database_dir.is_empty() {
+                    let dir = self.hrtf_database_dir.clone();
+                    if let Some(best) = hrtf_database::best_match(
+                        std::path::Path::new(&dir),
+                        self.head_width_cm,
+                        self.ear_height_cm,
+                    ) {
+                        let path_str = best.to_string_lossy().to_string();
+                        return self.set_parameter(
+                            ParameterId::from("hrtf_file"),
+                            ParameterValue::String(path_str),
+                        );
+                    }
+                }
+            }
+            Ok(())
         } else {
             Err(format!("Unknown: {}", id))
         }
@@ -608,6 +1054,28 @@ impl Plugin for BinauralDecoderPlugin {
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id.0 == "externalization" {
             Some(ParameterValue::Float(self.externalization.target()))
+        } else if id.0 == "crossfade_ms" {
+            Some(ParameterValue::Float(self.crossfade_ms))
+        } else if id.0 == "hrtf_file" {
+            let path_str = self
+                .hrtf_path
+                .as_ref()
+                .and_then(|p| p.to_str())
+                .unwrap_or("")
+                .to_string();
+            Some(ParameterValue::String(path_str))
+        } else if id.0 == "head_yaw_deg" {
+            Some(ParameterValue::Float(self.head_yaw_deg.target()))
+        } else if id.0 == "head_pitch_deg" {
+            Some(ParameterValue::Float(self.head_pitch_deg.target()))
+        } else if id.0 == "head_roll_deg" {
+            Some(ParameterValue::Float(self.head_roll_deg.target()))
+        } else if id.0 == "hrtf_database_dir" {
+            Some(ParameterValue::String(self.hrtf_database_dir.clone()))
+        } else if id.0 == "head_width_cm" {
+            Some(ParameterValue::Float(self.head_width_cm))
+        } else if id.0 == "ear_height_cm" {
+            Some(ParameterValue::Float(self.ear_height_cm))
         } else {
             None
         }
@@ -616,6 +1084,9 @@ impl Plugin for BinauralDecoderPlugin {
         enable_ftz_daz();
         self.sample_rate = sr;
         self.externalization.set_time(50.0, sr);
+        self.head_yaw_deg.set_time(10.0, sr);
+        self.head_pitch_deg.set_time(10.0, sr);
+        self.head_roll_deg.set_time(10.0, sr);
         let (f, g) = filter::compute_lfe_filter(
             self.fft_size,
             sr,
@@ -632,6 +1103,29 @@ impl Plugin for BinauralDecoderPlugin {
                 self.cached_reflections.extend(cr);
             }
         }
+
+        // If a database directory is configured, scan it now and pick the best
+        // match.  This overrides any hrtf_path that was set individually.
+        if !self.hrtf_database_dir.is_empty() {
+            let dir = std::path::Path::new(&self.hrtf_database_dir);
+            match hrtf_database::best_match(dir, self.head_width_cm, self.ear_height_cm) {
+                Some(best) => {
+                    log::info!(
+                        "[BinauralDecoder] HRTF database scan: selected '{}'",
+                        best.display()
+                    );
+                    self.hrtf_path = Some(best);
+                }
+                None => {
+                    log::warn!(
+                        "[BinauralDecoder] HRTF database dir '{}' contains no .sofa files; \
+                         falling back to hrtf_path",
+                        self.hrtf_database_dir
+                    );
+                }
+            }
+        }
+
         if let Some(p) = &self.hrtf_path {
             let mut sofa = SofaFile::load(p)?;
 
@@ -707,6 +1201,26 @@ impl Plugin for BinauralDecoderPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let nf = context.num_frames;
+
+        // Advance head-angle smoothers and check whether the angles have changed
+        // enough (> 0.5°) to require an HRTF recompute.
+        let yaw = self.head_yaw_deg.next_n(nf);
+        let pitch = self.head_pitch_deg.next_n(nf);
+        let roll = self.head_roll_deg.next_n(nf);
+        let angle_changed = (yaw - self.last_hrtf_yaw).abs() > 0.5
+            || (pitch - self.last_hrtf_pitch).abs() > 0.5
+            || (roll - self.last_hrtf_roll).abs() > 0.5;
+        if angle_changed {
+            // Recompute is best-effort: log errors but continue with old filters.
+            if let Err(e) = self.recompute_hrtf_for_head_angles(yaw, pitch, roll) {
+                log::warn!("[BinauralDecoder] Head tracking HRTF recompute failed: {}", e);
+                // Still update the cached angles so we don't spam errors every frame.
+                self.last_hrtf_yaw = yaw;
+                self.last_hrtf_pitch = pitch;
+                self.last_hrtf_roll = roll;
+            }
+        }
+
         let mut ip = 0;
         let mut op = 0;
         let mask = self.output_accumulator_mask;
@@ -1138,5 +1652,359 @@ mod tests {
 
         assert!(plugin.crossfade_prev_state.is_none());
         assert_eq!(plugin.crossfade_remaining, 0);
+    }
+
+    /// Verify that the `crossfade_ms` parameter can be get/set and that the change
+    /// is reflected in the crossfade duration (measured in samples) when a state
+    /// transition is detected in `process_audio_block()`.
+    #[test]
+    fn test_crossfade_ms_parameter_set_get_and_affects_duration() {
+        use sotf_host::parameters::ParameterId;
+
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Default should be 50ms
+        let default_val = plugin
+            .get_parameter(&ParameterId::from("crossfade_ms"))
+            .expect("crossfade_ms parameter must exist");
+        assert_eq!(
+            default_val,
+            ParameterValue::Float(50.0),
+            "Default crossfade_ms should be 50.0"
+        );
+
+        // Set to 200ms and confirm the stored value changes
+        plugin
+            .set_parameter(
+                ParameterId::from("crossfade_ms"),
+                ParameterValue::Float(200.0),
+            )
+            .expect("set_parameter crossfade_ms should succeed");
+
+        let new_val = plugin
+            .get_parameter(&ParameterId::from("crossfade_ms"))
+            .expect("crossfade_ms must still exist after set");
+        assert_eq!(
+            new_val,
+            ParameterValue::Float(200.0),
+            "crossfade_ms should be updated to 200.0"
+        );
+
+        // Verify range rejection: value below minimum should not update the field
+        let _ = plugin.set_parameter(
+            ParameterId::from("crossfade_ms"),
+            ParameterValue::Float(5.0), // below the 10ms minimum -- validate_parameter should reject
+        );
+        let after_invalid = plugin
+            .get_parameter(&ParameterId::from("crossfade_ms"))
+            .unwrap();
+        // The value must still be 200.0 (the last valid value)
+        assert_eq!(
+            after_invalid,
+            ParameterValue::Float(200.0),
+            "crossfade_ms must not be updated to an out-of-range value"
+        );
+
+        // Now verify that the duration used in process_audio_block() reflects the
+        // new setting. Trigger a state change and measure crossfade_total.
+        let freq_size = plugin.freq_size;
+        let new_state = Arc::new(BinauralState {
+            hrtf_filters_freq: vec![
+                vec![Complex::new(0.5, 0.0); freq_size * 2];
+                plugin.input_channels
+            ],
+            diffuse_field_eq_filter: None,
+            _hrtf_data: None,
+        });
+        plugin.state.store(new_state);
+
+        plugin.input_buffer.fill(0.0);
+        plugin.input_fill = plugin.fft_size;
+        plugin.process_audio_block();
+
+        // At 44100 Hz and 200ms, crossfade_samples = 44100 * 0.200 = 8820.
+        // hop_size = 1024/4 = 256.
+        // crossfade_hops = ceil(8820 / 256) = 35.
+        // crossfade_total = 35 * 256 = 8960.
+        let expected_samples = (44100.0_f32 * 0.200) as usize; // 8820
+        let hop = plugin.hop_size;
+        let expected_hops = expected_samples.div_ceil(hop);
+        let expected_total = expected_hops * hop;
+
+        assert_eq!(
+            plugin.crossfade_total, expected_total,
+            "crossfade_total should reflect the 200ms setting"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Head tracking tests
+    // -------------------------------------------------------------------------
+
+    /// Verify head angle parameters can be set and retrieved.
+    #[test]
+    fn test_head_angle_parameters_set_get() {
+        use sotf_host::parameters::ParameterId;
+
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+
+        // Default values should all be 0.
+        for name in &["head_yaw_deg", "head_pitch_deg", "head_roll_deg"] {
+            let v = plugin
+                .get_parameter(&ParameterId::from(*name))
+                .expect("parameter must exist");
+            assert_eq!(
+                v,
+                ParameterValue::Float(0.0),
+                "{} default should be 0.0",
+                name
+            );
+        }
+
+        // Set each to a distinct value and verify.
+        plugin
+            .set_parameter(
+                ParameterId::from("head_yaw_deg"),
+                ParameterValue::Float(30.0),
+            )
+            .unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("head_pitch_deg"),
+                ParameterValue::Float(-15.0),
+            )
+            .unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("head_roll_deg"),
+                ParameterValue::Float(10.0),
+            )
+            .unwrap();
+
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("head_yaw_deg")),
+            Some(ParameterValue::Float(30.0))
+        );
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("head_pitch_deg")),
+            Some(ParameterValue::Float(-15.0))
+        );
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("head_roll_deg")),
+            Some(ParameterValue::Float(10.0))
+        );
+    }
+
+    /// Verify that head angles appear in the parameter list returned by `parameters()`.
+    #[test]
+    fn test_head_angle_parameters_listed() {
+        let plugin = BinauralDecoderPlugin::new(
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        let params = plugin.parameters();
+        let names: Vec<_> = params.iter().map(|p| p.id.0.as_str()).collect();
+        assert!(
+            names.contains(&"head_yaw_deg"),
+            "head_yaw_deg should be listed"
+        );
+        assert!(
+            names.contains(&"head_pitch_deg"),
+            "head_pitch_deg should be listed"
+        );
+        assert!(
+            names.contains(&"head_roll_deg"),
+            "head_roll_deg should be listed"
+        );
+    }
+
+    /// With a synthetic SOFA dataset, verify that yaw=30 produces different HRTF filters
+    /// than yaw=0. At yaw=30 the speaker positions are rotated by -30 degrees in azimuth,
+    /// so the VBAP lookup will select a different part of the SOFA dataset.
+    #[test]
+    fn test_yaw_changes_hrtf_filters() {
+        const NUM_MEAS: usize = 36;
+        const IR_LEN: usize = 64;
+        const SAMPLE_RATE: f32 = 44100.0;
+
+        let mut positions = Vec::with_capacity(NUM_MEAS);
+        let mut impulse_responses = Vec::with_capacity(NUM_MEAS * 2 * IR_LEN);
+
+        for i in 0..NUM_MEAS {
+            let az = -180.0 + (i as f32) * (360.0 / NUM_MEAS as f32);
+            positions.push(sotf_host::sofa::SourcePosition::new(az, 0.0, 1.0));
+
+            // Left-ear IR: amplitude encodes the azimuth index so filters differ per position.
+            let mut ir_l = vec![0.0f32; IR_LEN];
+            ir_l[0] = 1.0 + i as f32 * 0.01;
+            let ir_r = vec![0.0f32; IR_LEN];
+
+            impulse_responses.extend_from_slice(&ir_l);
+            impulse_responses.extend_from_slice(&ir_r);
+        }
+
+        let sofa = sotf_host::sofa::SofaFile {
+            sample_rate: SAMPLE_RATE,
+            num_measurements: NUM_MEAS,
+            ir_length: IR_LEN,
+            positions,
+            impulse_responses,
+            convention: "SimpleFreeFieldHRIR".to_string(),
+            data_sample_rate: Some(SAMPLE_RATE),
+        };
+
+        // Compute the left-ear HRTF frequency spectrum for the L stereo speaker
+        // (az=+30, el=0) with a given head yaw applied via inverse rotation.
+        let compute_left_filter = |yaw: f32| -> Vec<Complex<f32>> {
+            let (rot_az, rot_el) =
+                BinauralDecoderPlugin::rotate_speaker_position(30.0, 0.0, yaw, 0.0, 0.0);
+            let tgt = sotf_host::sofa::SourcePosition::new(rot_az, rot_el, 1.0);
+            let near = sofa.find_three_nearest(&tgt);
+            let gains = hrtf::calculate_vbap_gains(&tgt, &near, &sofa);
+
+            let fft_size = 512usize;
+            let mut planner = realfft::RealFftPlanner::<f32>::new();
+            let fft_r2c = planner.plan_fft_forward(fft_size);
+
+            let (l_fft, _) = hrtf::interpolate_hrtf_frequency_domain(
+                &near,
+                &gains,
+                &sofa,
+                fft_size,
+                44100,
+                &fft_r2c,
+                0.0,
+                tgt.azimuth,
+                tgt.elevation,
+            );
+            l_fft
+        };
+
+        let filters_yaw0 = compute_left_filter(0.0);
+        let filters_yaw30 = compute_left_filter(30.0);
+
+        let max_diff = filters_yaw0
+            .iter()
+            .zip(filters_yaw30.iter())
+            .map(|(a, b)| (a - b).norm())
+            .fold(0.0f32, f32::max);
+
+        assert!(
+            max_diff > 1e-4,
+            "HRTF filters with yaw=30 must differ from yaw=0 (max_diff={})",
+            max_diff
+        );
+    }
+
+    /// rotate_speaker_position must be identity when all angles are 0.
+    #[test]
+    fn test_rotate_speaker_position_identity() {
+        let (az, el) =
+            BinauralDecoderPlugin::rotate_speaker_position(45.0, 20.0, 0.0, 0.0, 0.0);
+        assert!(
+            (az - 45.0).abs() < 1e-3,
+            "azimuth should be unchanged: {}",
+            az
+        );
+        assert!(
+            (el - 20.0).abs() < 1e-3,
+            "elevation should be unchanged: {}",
+            el
+        );
+    }
+
+    /// For yaw-only rotation the rotated speaker azimuth should shift by -yaw.
+    #[test]
+    fn test_rotate_speaker_position_yaw_only() {
+        // Speaker at az=30, el=0. Head yaw=30 => inverse shift of -30 => az near 0.
+        let (az, el) =
+            BinauralDecoderPlugin::rotate_speaker_position(30.0, 0.0, 30.0, 0.0, 0.0);
+        assert!(
+            (az - 0.0).abs() < 1e-3,
+            "azimuth after yaw should be near 0, got {}",
+            az
+        );
+        assert!((el - 0.0).abs() < 1e-3, "elevation should stay 0, got {}", el);
+    }
+
+    /// Processing with non-zero head yaw must not produce NaN or Inf output.
+    #[test]
+    fn test_head_yaw_produces_finite_output() {
+        use sotf_host::parameters::ParameterId;
+
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Set yaw to 30. Without a SOFA file the default filters remain in place;
+        // the smoother must advance without causing NaN/Inf.
+        plugin
+            .set_parameter(
+                ParameterId::from("head_yaw_deg"),
+                ParameterValue::Float(30.0),
+            )
+            .unwrap();
+
+        let num_frames = 4096;
+        let input: Vec<f32> = (0..num_frames * 2)
+            .map(|i| (i as f32 * 0.01).sin() * 0.5)
+            .collect();
+        let mut output = vec![0.0f32; num_frames * 2];
+        let context = ProcessContext {
+            num_frames,
+            sample_rate: 44100,
+        };
+
+        let processed = plugin.process(&input, &mut output, &context).unwrap();
+        assert_eq!(processed, num_frames);
+        assert!(
+            output.iter().all(|s| s.is_finite()),
+            "All output samples must be finite with non-zero yaw"
+        );
     }
 }

@@ -71,6 +71,12 @@ pub struct CrossfeedPluginParams {
     #[serde(default)]
     pub itd_delay_ms: f32,
 
+    /// Head yaw angle in degrees (-90 to +90, 0 = centered).
+    /// Dynamically adjusts ITD based on head rotation.
+    /// ITD = head_radius * sin(yaw) / speed_of_sound * 1000 ms.
+    #[serde(default)]
+    pub head_yaw_deg: f32,
+
     // Auto gain
     #[serde(default)]
     pub autogain_enabled: bool,
@@ -150,6 +156,7 @@ impl Default for CrossfeedPluginParams {
             mb_mid_feed_db: pk(CF, "mb_mid_feed_db").default_f64() as f32,
             mb_high_feed_db: pk(CF, "mb_high_feed_db").default_f64() as f32,
             itd_delay_ms: 0.0,
+            head_yaw_deg: 0.0,
             autogain_enabled: pk(CF, "autogain_enabled").default_bool(),
             autogain_target_lufs: pk(CF, "autogain_target_lufs").default_f64() as f32,
             autogain_max_gain_db: pk(CF, "autogain_max_gain_db").default_f64() as f32,
@@ -285,7 +292,21 @@ pub struct CrossfeedPlugin {
 
     // Smoothing
     mix_smoother: Smoother,
+    yaw_smoother: Smoother,
     cached_parameters: Vec<Parameter>,
+}
+
+/// Head radius in meters (typical adult)
+const HEAD_RADIUS_M: f32 = 0.0875;
+/// Speed of sound in m/s
+const SPEED_OF_SOUND: f32 = 343.0;
+
+/// Compute ITD in ms from yaw angle (degrees) and static offset.
+/// Positive yaw = turned right = right ear closer to source = shorter right path.
+fn compute_dynamic_itd_ms(head_yaw_deg: f32, static_itd_ms: f32) -> f32 {
+    let yaw_rad = head_yaw_deg * std::f32::consts::PI / 180.0;
+    let dynamic_itd_ms = HEAD_RADIUS_M * yaw_rad.sin() / SPEED_OF_SOUND * 1000.0;
+    (static_itd_ms + dynamic_itd_ms).clamp(0.0, 1.0)
 }
 
 impl CrossfeedPlugin {
@@ -365,6 +386,7 @@ impl CrossfeedPlugin {
 
             auto_gain: None,
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
+            yaw_smoother: Smoother::new(params.head_yaw_deg, 10.0, sr),
             cached_parameters: Vec::new(),
         };
 
@@ -468,6 +490,15 @@ impl CrossfeedPlugin {
                 1.0,
             )
             .with_group("General"),
+            Parameter::new_float(
+                "head_yaw_deg",
+                "Head Yaw",
+                self.params.head_yaw_deg,
+                -90.0,
+                90.0,
+            )
+            .with_description("Head rotation in degrees, dynamically adjusts ITD")
+            .with_group("Head Tracking"),
             Parameter::new_bool(
                 "autogain_enabled",
                 "Auto Gain",
@@ -740,10 +771,27 @@ impl InPlacePlugin for CrossfeedPlugin {
                     .ok_or_else(|| "itd_delay_ms must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.itd_delay_ms = v.clamp(0.0, 1.0);
-                    self.itd_delay_l
-                        .set_delay(self.params.itd_delay_ms, self.sample_rate);
-                    self.itd_delay_r
-                        .set_delay(self.params.itd_delay_ms, self.sample_rate);
+                    let effective = compute_dynamic_itd_ms(
+                        self.params.head_yaw_deg,
+                        self.params.itd_delay_ms,
+                    );
+                    self.itd_delay_l.set_delay(effective, self.sample_rate);
+                    self.itd_delay_r.set_delay(effective, self.sample_rate);
+                }
+            }
+            "head_yaw_deg" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
+                if v.is_finite() {
+                    self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
+                    self.yaw_smoother.set_target(self.params.head_yaw_deg);
+                    let effective = compute_dynamic_itd_ms(
+                        self.params.head_yaw_deg,
+                        self.params.itd_delay_ms,
+                    );
+                    self.itd_delay_l.set_delay(effective, self.sample_rate);
+                    self.itd_delay_r.set_delay(effective, self.sample_rate);
                 }
             }
             "autogain_enabled" => {
@@ -815,6 +863,7 @@ impl InPlacePlugin for CrossfeedPlugin {
             "mb_mid_feed_db" => Some(ParameterValue::Float(self.params.mb_mid_feed_db)),
             "mb_high_feed_db" => Some(ParameterValue::Float(self.params.mb_high_feed_db)),
             "itd_delay_ms" => Some(ParameterValue::Float(self.params.itd_delay_ms)),
+            "head_yaw_deg" => Some(ParameterValue::Float(self.params.head_yaw_deg)),
             "autogain_enabled" => Some(ParameterValue::Bool(self.params.autogain_enabled)),
             "autogain_target_lufs" => Some(ParameterValue::Float(self.params.autogain_target_lufs)),
             "autogain_max_gain_db" => Some(ParameterValue::Float(self.params.autogain_max_gain_db)),
@@ -829,8 +878,10 @@ impl InPlacePlugin for CrossfeedPlugin {
         self.sample_rate = sr;
         self.update_filters();
         self.mix_smoother = Smoother::new(self.params.mix, 20.0, sr);
-        self.itd_delay_l = DelayLine::new(self.params.itd_delay_ms, sr);
-        self.itd_delay_r = DelayLine::new(self.params.itd_delay_ms, sr);
+        self.yaw_smoother = Smoother::new(self.params.head_yaw_deg, 10.0, sr);
+        let effective_itd = compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
+        self.itd_delay_l = DelayLine::new(effective_itd, sr);
+        self.itd_delay_r = DelayLine::new(effective_itd, sr);
         if let Some(ag) = &mut self.auto_gain {
             ag.set_sample_rate(sr).map_err(|e| e.to_string())?;
         }
@@ -878,6 +929,14 @@ impl InPlacePlugin for CrossfeedPlugin {
 
         if let Some(ag) = &mut self.auto_gain {
             let _ = ag.measure_input(buffer);
+        }
+
+        // Advance yaw smoother and update ITD delay per block
+        let smoothed_yaw = self.yaw_smoother.advance();
+        if smoothed_yaw.abs() > 0.01 || self.params.itd_delay_ms > 0.0 {
+            let effective = compute_dynamic_itd_ms(smoothed_yaw, self.params.itd_delay_ms);
+            self.itd_delay_l.set_delay(effective, self.sample_rate);
+            self.itd_delay_r.set_delay(effective, self.sample_rate);
         }
 
         deinterleave_stereo(buffer, &mut self.dry_l[..nf], &mut self.dry_r[..nf]);

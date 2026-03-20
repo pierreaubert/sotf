@@ -14,6 +14,30 @@ use math_audio_dsp::fast_math::fast_log10;
 
 use super::DenoiserPlugin;
 
+// ============================================================================
+// Formant Preserver
+// ============================================================================
+//
+// Preserves speech formant structure (spectral envelope peaks) during denoising
+// by flooring the Wiener gain at formant peaks.
+//
+// The spectral envelope is estimated with a moving-average smoother applied to
+// the log-magnitude spectrum — a computationally cheap approximation of the
+// real cepstrum low-pass lifter (IFT → keep N coefficients → FT). The smoother
+// window is `lifter_len * 2` bins wide, which corresponds to keeping roughly
+// the first `lifter_len` cepstral coefficients and thus captures slowly-varying
+// formant peaks while ignoring fine harmonic structure.
+//
+// At every bin where the smoothed envelope is more than 3 dB above the mean
+// envelope level (i.e., a formant peak), the Wiener gain is floored to:
+//   floor = formant_strength * 0.3
+// The 0.3 factor means full-strength preservation still applies 30% gain
+// (−10 dB) to formant peaks even under heavy noise reduction.
+
+/// Number of cepstral coefficients to keep (controls envelope smoothness).
+/// 30 coefficients is a classic choice that captures F1–F4 formants for speech.
+const LIFTER_LEN: usize = 30;
+
 /// Small constant to prevent division by zero
 const EPSILON: f32 = 1e-10;
 
@@ -75,6 +99,12 @@ impl DenoiserPlugin {
             // Pass 1c: Hiss removal (additional high-frequency attenuation)
             if self.hiss_enabled {
                 self.apply_hiss_removal(ch);
+            }
+
+            // Pass 1d: Formant preservation — floor gains at spectral envelope peaks
+            // so that speech formant structure survives noise reduction.
+            if self.formant_preserver.enabled {
+                self.apply_formant_preservation(ch);
             }
 
             // Pass 2: Smooth gains across frequency bins
@@ -316,6 +346,42 @@ impl DenoiserPlugin {
         }
     }
 
+    /// Apply formant preservation to Wiener gains for one channel.
+    ///
+    /// Must be called after the instantaneous Wiener gain is computed (Pass 1)
+    /// and before spectral/temporal smoothing (Pass 2/3) so that the floored
+    /// gains propagate through smoothing naturally.
+    pub(super) fn apply_formant_preservation(&mut self, channel: usize) {
+        if !self.formant_preserver.enabled {
+            return;
+        }
+
+        // Compute log-magnitude for the current frame
+        let n = self.spectrum_size;
+        for k in 0..n {
+            let power = self.freq_domain[channel][k].norm_sqr();
+            // log10(power + ε) → log-magnitude (×10 gives power-dB, but ratio is
+            // what matters here, so any consistent scaling works)
+            self.formant_preserver.log_mag_scratch[k] = fast_log10(power.max(EPSILON));
+        }
+
+        // Estimate the spectral envelope via moving average of log-magnitude
+        self.formant_preserver.estimate_envelope();
+
+        // Floor gains at formant peaks
+        let strength = self.formant_preserver.strength;
+        let envelope = &self.formant_preserver.envelope;
+        let mean_env: f32 = envelope.iter().sum::<f32>() / n as f32;
+        let floor_gain = strength * 0.3;
+
+        for (env_val, gain_val) in envelope.iter().zip(self.gain[channel].iter_mut()).take(n) {
+            if *env_val > mean_env + 0.13 {
+                // 0.13 in log10 units ≈ 3 dB above mean
+                *gain_val = gain_val.max(floor_gain);
+            }
+        }
+    }
+
     /// Compute current SNR estimate per band in dB (averaged across channels).
     /// Writes into `self.cached_snr_buf` to avoid allocations.
     pub(super) fn compute_snr_db(&mut self) {
@@ -345,6 +411,80 @@ impl DenoiserPlugin {
             } else {
                 0.0
             };
+        }
+    }
+}
+
+// ============================================================================
+// FormantPreserver
+// ============================================================================
+
+/// Preserves speech formant peaks by flooring Wiener gains at spectral envelope peaks.
+pub(super) struct FormantPreserver {
+    /// Pre-allocated scratch buffer for log-magnitude spectrum
+    pub log_mag_scratch: Vec<f32>,
+    /// Smoothed spectral envelope in log-magnitude domain
+    pub envelope: Vec<f32>,
+    /// Smoothing window half-width in bins (= lifter_len)
+    lifter_len: usize,
+    /// Whether formant preservation is active
+    pub enabled: bool,
+    /// Preservation strength [0.0, 1.0]
+    pub strength: f32,
+}
+
+impl FormantPreserver {
+    /// Allocate buffers for a given spectrum size.
+    pub fn new(spectrum_size: usize) -> Self {
+        Self {
+            log_mag_scratch: vec![0.0_f32; spectrum_size],
+            envelope: vec![0.0_f32; spectrum_size],
+            lifter_len: LIFTER_LEN,
+            enabled: false,
+            strength: 0.5,
+        }
+    }
+
+    /// Estimate the spectral envelope from `self.log_mag_scratch` using a
+    /// causal moving average with window width `lifter_len * 2`.
+    ///
+    /// The moving average over log-magnitude is equivalent to a smoothed
+    /// spectral envelope: wide windows suppress harmonics and retain only
+    /// slowly-varying peaks (formants), matching the effect of a low-pass
+    /// lifter in the cepstral domain.
+    ///
+    /// We use a two-pass (forward + backward) box filter to produce a
+    /// symmetric (zero-phase) result from the causal accumulators.
+    pub fn estimate_envelope(&mut self) {
+        let n = self.log_mag_scratch.len();
+        let win = (self.lifter_len * 2).min(n);
+
+        // Forward pass: running sum → forward-smoothed values stored in envelope
+        let mut running_sum = 0.0_f32;
+        let mut count = 0usize;
+        for k in 0..n {
+            running_sum += self.log_mag_scratch[k];
+            count += 1;
+            if k >= win {
+                running_sum -= self.log_mag_scratch[k - win];
+                count -= 1;
+            }
+            self.envelope[k] = running_sum / count as f32;
+        }
+
+        // Backward pass: average the forward-smoothed result with a mirrored pass
+        // to cancel the lag introduced by the causal forward accumulator.
+        running_sum = 0.0;
+        count = 0;
+        for k in (0..n).rev() {
+            running_sum += self.envelope[k];
+            count += 1;
+            if n - 1 - k >= win {
+                running_sum -= self.envelope[k + win];
+                count -= 1;
+            }
+            // Average forward and backward estimates
+            self.envelope[k] = (self.envelope[k] + running_sum / count as f32) * 0.5;
         }
     }
 }

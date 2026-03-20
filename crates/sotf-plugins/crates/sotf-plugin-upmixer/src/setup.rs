@@ -192,31 +192,64 @@ impl UpmixerPlugin {
         }
     }
 
-    /// Calculate ERB bands based on sample rate and FFT size
+    /// Calculate ERB bands based on sample rate, FFT size, and frequency_resolution setting.
+    ///
+    /// Three modes are supported:
+    /// - "erb": standard Glasberg & Moore (1990) ERB bands (~40-50 bands)
+    ///   `erb_width = 24.7 * (4.37 * f/1000 + 1)` — approximately one critical band wide
+    /// - "fine_erb": half-ERB width bands (~100 bands) for finer spatial resolution
+    ///   Uses `0.5 * erb_width` so each band covers half a critical band
+    /// - "per_bin": each FFT bin is its own band (freq_size bands)
+    ///   Maximum resolution — each band is exactly 1 bin wide
     pub(super) fn calculate_erb_bands(&mut self) {
         self.erb_bands.clear();
         let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+        let freq_size = self.fft_size / 2; // Positive-frequency bins (Nyquist exclusive)
 
-        // Glasberg and Moore (1990) ERB scale
-        // ERB(f) = 24.7 * (4.37 * f / 1000 + 1)
-        // We want bands to be roughly 1 ERB wide
-
-        let mut current_bin = 0;
-        while current_bin < self.fft_size / 2 {
-            self.erb_bands.push(current_bin);
-
-            let center_freq = current_bin as f32 * freq_per_bin;
-            let erb_width = 24.7 * (4.37 * center_freq / 1000.0 + 1.0);
-            let bins_width = (erb_width / freq_per_bin).max(1.0).round() as usize;
-
-            current_bin += bins_width;
+        match self.frequency_resolution.as_str() {
+            "per_bin" => {
+                // One band per FFT bin: band[k] starts at bin k
+                for bin in 0..=freq_size {
+                    self.erb_bands.push(bin);
+                }
+            }
+            "fine_erb" => {
+                // Half-ERB width: ERB(f) * 0.5 per step
+                // Glasberg & Moore (1990): ERB(f) = 24.7 * (4.37 * f/1000 + 1)
+                let mut current_bin = 0;
+                while current_bin < freq_size {
+                    self.erb_bands.push(current_bin);
+                    let center_freq = current_bin as f32 * freq_per_bin;
+                    let erb_width = 24.7 * (4.37 * center_freq / 1000.0 + 1.0);
+                    // Half-bandwidth step keeps at least 1 bin minimum
+                    let bins_width = (erb_width * 0.5 / freq_per_bin).max(1.0).round() as usize;
+                    current_bin += bins_width;
+                }
+                // Ensure we cover up to Nyquist
+                if *self.erb_bands.last().unwrap() < freq_size {
+                    self.erb_bands.push(freq_size);
+                }
+            }
+            // "erb" is the default; unknown values also fall through to standard ERB
+            _ => {
+                // Standard ERB: Glasberg & Moore (1990)
+                // ERB(f) = 24.7 * (4.37 * f/1000 + 1)
+                let mut current_bin = 0;
+                while current_bin < freq_size {
+                    self.erb_bands.push(current_bin);
+                    let center_freq = current_bin as f32 * freq_per_bin;
+                    let erb_width = 24.7 * (4.37 * center_freq / 1000.0 + 1.0);
+                    let bins_width = (erb_width / freq_per_bin).max(1.0).round() as usize;
+                    current_bin += bins_width;
+                }
+                // Ensure we cover up to Nyquist
+                if *self.erb_bands.last().unwrap() < freq_size {
+                    self.erb_bands.push(freq_size);
+                }
+            }
         }
-        // Ensure we cover the full spectrum up to Nyquist
-        if *self.erb_bands.last().unwrap() < self.fft_size / 2 {
-            self.erb_bands.push(self.fft_size / 2);
-        }
 
-        // Resize per-band DOA state to match ERB band count
+        // Resize per-band DOA state to match band count
         let num_bands = self.erb_bands.len();
         self.doa_angle.resize(num_bands, 0.0);
     }
