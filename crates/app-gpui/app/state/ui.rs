@@ -94,6 +94,8 @@ pub struct UIState {
     pub release_channel: ReleaseChannel,
     /// Number of scanner threads (None = auto-detect, capped at 4)
     pub scanner_threads: Option<u8>,
+    /// Maximum number of CPU cores SotF is allowed to use (None = all available)
+    pub max_cpu_cores: Option<u8>,
     /// Current tutorial screen index (0-6)
     pub tutorial_screen: usize,
     /// Whether "don't show again" checkbox is checked in tutorial dialog
@@ -127,6 +129,7 @@ impl Default for UIState {
             font_scale: 1.0,
             release_channel: ReleaseChannel::default(),
             scanner_threads: None,
+            max_cpu_cores: None,
             tutorial_screen: 0,
             tutorial_dont_show: false,
         }

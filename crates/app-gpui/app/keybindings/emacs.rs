@@ -25,7 +25,7 @@ pub(super) fn emacs_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-x v", actions::ToggleLibraryView, None),
         KeyBinding::new("ctrl-h", actions::ToggleHelp, Some("PlayerView")),
         KeyBinding::new("ctrl-shift-h", actions::ToggleHelpSupport, None),
-        KeyBinding::new("F1", actions::ToggleHelp, None),
+        KeyBinding::new("F1", actions::ToggleScreenGuide, None),
         // Sort and filter - Emacs style (alt combos are fine)
         KeyBinding::new("alt-s", actions::CycleSortOrder, None),
         KeyBinding::new("alt-c", actions::CycleChannelFilter, None),
@@ -235,8 +235,13 @@ pub(super) fn emacs_documented_keybindings() -> Vec<DocumentedKeybinding> {
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
-            key: "Ctrl+H / F1",
-            description: "Show help",
+            key: "Ctrl+H",
+            description: "Show keyboard shortcuts",
+            category: KeybindingCategory::System,
+        },
+        DocumentedKeybinding {
+            key: "F1",
+            description: "Screen guide",
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {

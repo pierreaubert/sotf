@@ -59,7 +59,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.5.12"
+version = "0.5.13"
 authors = ["Pierre F. Aubert pierre@spinorama.org"]
 description = "Optimise the sound of your speakers or your headphones"
 edition = "2024"

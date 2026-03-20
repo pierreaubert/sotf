@@ -241,7 +241,10 @@ impl PlayerView {
         Menu::new(
             "help-menu",
             vec![
+                MenuItem::new("screen-guide", "Screen Guide").with_shortcut("F1"),
                 MenuItem::new("shortcuts", translations.menu_keyboard_shortcuts).with_shortcut("?"),
+                MenuItem::separator(),
+                MenuItem::new("tutorial", "Show Tutorial"),
                 MenuItem::separator(),
                 MenuItem::new("about", translations.menu_about),
             ],
@@ -251,8 +254,15 @@ impl PlayerView {
             state.update(cx, |state, _cx| {
                 state.app.ui_state.active_menu = ActiveMenu::None;
                 match id.as_ref() {
+                    "screen-guide" => {
+                        state.app.ui_state.input_mode = crate::app::InputMode::ScreenGuide;
+                    }
                     "shortcuts" => {
                         state.app.ui_state.input_mode = crate::app::InputMode::KeyboardShortcuts;
+                    }
+                    "tutorial" => {
+                        state.app.ui_state.input_mode = crate::app::InputMode::Tutorial;
+                        state.app.ui_state.tutorial_screen = 0;
                     }
                     "about" => {
                         state.app.ui_state.input_mode = crate::app::InputMode::About;

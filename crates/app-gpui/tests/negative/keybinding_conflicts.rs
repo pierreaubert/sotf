@@ -38,6 +38,7 @@ enum InputMode {
     ChannelConflict,
     ContextMenu,
     Tutorial,
+    ScreenGuide,
 }
 
 impl InputMode {
@@ -76,6 +77,7 @@ const ALL_MODES: &[InputMode] = &[
     InputMode::ChannelConflict,
     InputMode::ContextMenu,
     InputMode::Tutorial,
+    InputMode::ScreenGuide,
 ];
 
 /// All modes where text input happens and shortcuts MUST be blocked.
@@ -102,6 +104,7 @@ const NON_TEXT_INPUT_MODES: &[InputMode] = &[
     InputMode::ChannelConflict,
     InputMode::ContextMenu,
     InputMode::Tutorial,
+    InputMode::ScreenGuide,
 ];
 
 /// Test: All text input modes are recognized by is_text_input()

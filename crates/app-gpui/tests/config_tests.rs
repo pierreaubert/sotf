@@ -124,6 +124,8 @@ fn test_config_serialization() {
         release_channel: ReleaseChannel::default(),
         scanner_threads: Some(2),
         tutorial_completed: false,
+        seen_hints: Vec::new(),
+        max_cpu_cores: None,
     };
     let json = serde_json::to_string(&config).unwrap();
     let deserialized: Config = serde_json::from_str(&json).unwrap();

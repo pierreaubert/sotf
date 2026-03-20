@@ -67,6 +67,8 @@ pub enum InputMode {
     ContextMenu,
     /// Tutorial dialog shown on first launch
     Tutorial,
+    /// Contextual help guide for the current screen
+    ScreenGuide,
 }
 
 impl InputMode {

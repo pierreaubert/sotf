@@ -530,6 +530,23 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn toggle_screen_guide(
+        &mut self,
+        _: &ToggleScreenGuide,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            use crate::app::InputMode;
+            if state.app.ui_state.input_mode == InputMode::ScreenGuide {
+                state.app.ui_state.input_mode = InputMode::Normal;
+            } else {
+                state.app.ui_state.input_mode = InputMode::ScreenGuide;
+            }
+        });
+        cx.notify();
+    }
+
     fn about(&mut self, _: &About, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             use crate::app::InputMode;

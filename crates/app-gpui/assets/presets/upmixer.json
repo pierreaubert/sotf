@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": 3,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    },
+    {
+      "id": 4,
+      "enabled": true,
+      "settings": {
+        "Gain": {
+          "channels": 2,
+          "gain_db": -3.875612003865566
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 0,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": false
+    },
+    {
+      "id": 2,
+      "enabled": true,
+      "settings": {
+        "Upmixer": {
+          "speaker_config": "5.1.4",
+          "gain_front_direct": 1.0,
+          "gain_front_ambient": 0.5,
+          "gain_rear_ambient": 1.0,
+          "height_gain": 1.0,
+          "stereo_width": 0.5,
+          "center_spread": 0.0,
+          "surround_direct_bleed": 0.5,
+          "rear_late_reflection": 0.1,
+          "lfe_cutoff_hz": 120.0,
+          "lfe_gain": 1.0,
+          "bandpass_hz": 250.0,
+          "enable_subharmonic_synth": false,
+          "subharmonic_gain": 0.5,
+          "subharmonic_freq_hz": 40.0,
+          "subharmonic_attack_ms": 10.0,
+          "subharmonic_release_ms": 50.0,
+          "decorrelation_mode": 0,
+          "decorrelation_lfo_rate_hz": 0.15,
+          "velvet_noise_duration_ms": 30.0,
+          "velvet_noise_density": 2000.0,
+          "enable_hr_direct": false,
+          "hr_sharpen": 1.0,
+          "height_hf_cap_hz": 16000.0,
+          "height_transient_reduction": 0.6,
+          "height_direct_leak": 0.15,
+          "ambient_boost": 1.2,
+          "safety_cap_db": 3.0,
+          "rear_ambient_boost": 1.5,
+          "dialogue_weight": 0.4,
+          "voice_freq_min_hz": 500.0,
+          "voice_freq_max_hz": 3000.0,
+          "dialogue_centroid_weight": 0.3,
+          "dialogue_variance_weight": 0.2,
+          "dialogue_coherence_weight": 0.5,
+          "bypass_decorrelation": false,
+          "bypass_transient_detection": false,
+          "bypass_all_processing": false,
+          "enable_ml_detection": false
+        }
+      },
+      "permanent": false
+    },
+    {
+      "id": 5,
+      "enabled": true,
+      "settings": {
+        "Matrix": {
+          "input_channels": 10,
+          "output_channels": 10,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "channel_states": [
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            }
+          ]
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 6,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    }
+  ]
+}

@@ -42,6 +42,7 @@ actions!(
         ToggleLibraryView,
         ToggleHelp,
         ToggleHelpSupport,
+        ToggleScreenGuide,
         About,
         CycleSortOrder,
         SetSortArtist,

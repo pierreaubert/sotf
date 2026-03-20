@@ -26,7 +26,7 @@ pub(super) fn vscode_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-shift-e", actions::ToggleLibraryView, None),
         KeyBinding::new("ctrl-shift-?", actions::ToggleHelp, None),
         KeyBinding::new("ctrl-alt-?", actions::ToggleHelpSupport, None),
-        KeyBinding::new("F1", actions::ToggleHelp, None),
+        KeyBinding::new("F1", actions::ToggleScreenGuide, None),
         // Sort and filter (ctrl combos stay global)
         KeyBinding::new("ctrl-shift-s", actions::CycleSortOrder, None),
         KeyBinding::new("ctrl-shift-c", actions::CycleChannelFilter, None),
@@ -244,7 +244,7 @@ pub(super) fn vscode_documented_keybindings() -> Vec<DocumentedKeybinding> {
         },
         DocumentedKeybinding {
             key: "F1",
-            description: "Show help",
+            description: "Screen guide",
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {

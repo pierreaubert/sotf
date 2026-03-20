@@ -26,7 +26,7 @@ impl PlayerView {
     fn switch_to_plugins(&mut self, _: &SwitchToPlugins, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.set_screen(Screen::Settings, "SwitchToPlugins");
-            state.app.ui_state.active_settings_tab = crate::app::SettingsTab::Plugins;
+            state.app.ui_state.active_settings_tab = crate::app::SettingsTab::Misc;
         });
         cx.notify();
     }

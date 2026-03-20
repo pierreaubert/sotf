@@ -225,6 +225,9 @@ pub struct Config {
     /// Number of scanner threads for waveform/bliss/replaygain (None = auto-detect)
     #[serde(default)]
     pub scanner_threads: Option<u8>,
+    /// Maximum number of CPU cores SotF is allowed to use (None = all available)
+    #[serde(default)]
+    pub max_cpu_cores: Option<u8>,
     /// Whether the tutorial has been completed/dismissed
     #[serde(default)]
     pub tutorial_completed: bool,
@@ -261,6 +264,7 @@ impl Config {
                 font_scale: default_font_scale(),
                 release_channel: ReleaseChannel::default(),
                 scanner_threads: None,
+                max_cpu_cores: None,
                 tutorial_completed: false,
                 seen_hints: Vec::new(),
             });

@@ -6,7 +6,7 @@ pub enum SettingsTab {
     Language,
     Keybindings,
     AudioDevice,
-    Plugins,
+    Misc,
     ReleaseChannel,
 }
 

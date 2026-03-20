@@ -220,6 +220,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_library_view))
             .on_action(cx.listener(Self::toggle_help))
             .on_action(cx.listener(Self::toggle_help_support))
+            .on_action(cx.listener(Self::toggle_screen_guide))
             .on_action(cx.listener(Self::about))
             .on_action(cx.listener(Self::cycle_sort_order))
             .on_action(cx.listener(Self::set_sort_artist))
@@ -383,6 +384,15 @@ impl Render for PlayerView {
                         cx.stop_propagation();
                         view.handle_tutorial_key(event, cx);
                     }
+                    crate::app::InputMode::ScreenGuide => {
+                        cx.stop_propagation();
+                        if matches!(event.keystroke.key.as_str(), "escape" | "f1") {
+                            view.state.update(cx, |state, _| {
+                                state.app.ui_state.input_mode =
+                                    crate::app::InputMode::Normal;
+                            });
+                        }
+                    }
                     crate::app::InputMode::ChannelConflict => {
                         cx.stop_propagation();
                         match event.keystroke.key.as_str() {
@@ -524,6 +534,10 @@ impl Render for PlayerView {
             .when(
                 input_mode == crate::app::InputMode::Tutorial,
                 |div| div.child(self.render_tutorial_dialog(cx)),
+            )
+            .when(
+                input_mode == crate::app::InputMode::ScreenGuide,
+                |div| div.child(self.render_screen_guide_dialog(cx)),
             )
             .when(
                 input_mode == crate::app::InputMode::EditingPluginNode,

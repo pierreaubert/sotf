@@ -1030,6 +1030,9 @@ impl App {
             self.scan_ctrl.set_num_threads(Some(threads as usize));
         }
 
+        // Restore max CPU cores
+        self.ui_state.max_cpu_cores = config.max_cpu_cores;
+
         Ok(layout_state)
     }
 
@@ -1110,6 +1113,7 @@ impl App {
             font_scale: self.ui_state.font_scale,
             release_channel: self.ui_state.release_channel,
             scanner_threads: self.ui_state.scanner_threads,
+            max_cpu_cores: self.ui_state.max_cpu_cores,
             tutorial_completed: self.tutorial_completed,
             seen_hints: self.seen_hints.clone(),
         };

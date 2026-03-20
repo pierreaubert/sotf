@@ -91,7 +91,7 @@ impl PlayerView {
             crate::app::SettingsTab::AudioDevice => self
                 .render_audio_device_settings_content(cx)
                 .into_any_element(),
-            crate::app::SettingsTab::Plugins => {
+            crate::app::SettingsTab::Misc => {
                 self.render_plugins_settings_content(cx).into_any_element()
             }
             crate::app::SettingsTab::ReleaseChannel => self
@@ -166,8 +166,8 @@ impl PlayerView {
                                 crate::app::SettingsTab::AudioDevice,
                             ),
                             (
-                                translations.settings_tab_plugins,
-                                crate::app::SettingsTab::Plugins,
+                                translations.settings_tab_misc,
+                                crate::app::SettingsTab::Misc,
                             ),
                             (
                                 translations.settings_tab_release_channel,

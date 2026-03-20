@@ -24,7 +24,7 @@ pub(super) fn vim_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("g v", actions::ToggleLibraryView, Some("PlayerView")),
         KeyBinding::new("?", actions::ToggleHelp, Some("PlayerView")),
         KeyBinding::new("shift-?", actions::ToggleHelpSupport, Some("PlayerView")),
-        KeyBinding::new("F1", actions::ToggleHelp, None),
+        KeyBinding::new("F1", actions::ToggleScreenGuide, None),
         // Sort and filter - multi-key sequences need PlayerView
         KeyBinding::new("o s", actions::CycleSortOrder, Some("PlayerView")),
         KeyBinding::new("o c", actions::CycleChannelFilter, Some("PlayerView")),
@@ -245,8 +245,13 @@ pub(super) fn vim_documented_keybindings() -> Vec<DocumentedKeybinding> {
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
-            key: "? / F1",
-            description: "Show help",
+            key: "?",
+            description: "Show keyboard shortcuts",
+            category: KeybindingCategory::System,
+        },
+        DocumentedKeybinding {
+            key: "F1",
+            description: "Screen guide",
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {

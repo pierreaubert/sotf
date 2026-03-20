@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": 3,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    },
+    {
+      "id": 11,
+      "enabled": true,
+      "settings": {
+        "Crossfeed": {
+          "mode": "Mb",
+          "preset": "Mb",
+          "enabled": true,
+          "mix": 1.0,
+          "bauer_fcut_hz": 700.0,
+          "bauer_feed_db": 4.5,
+          "meier_level": 30.0,
+          "mb_low_freq_hz": 150.0,
+          "mb_mid_high_freq_hz": 5700.0,
+          "mb_low_feed_db": 0.0,
+          "mb_mid_feed_db": 6.0,
+          "mb_high_feed_db": 3.0,
+          "autogain_enabled": true,
+          "autogain_target_lufs": -18.0,
+          "autogain_max_gain_db": 12.0,
+          "autogain_smoothing_ms": 100.0
+        }
+      },
+      "permanent": false
+    },
+    {
+      "id": 12,
+      "enabled": true,
+      "settings": {
+        "FletcherMunson": {
+          "playback_volume_db": 0.0,
+          "reference_level_db": -18.0,
+          "enabled": true,
+          "band1_freq": 60.0,
+          "band1_q": 0.5,
+          "band1_max_gain": 15.0,
+          "band1_slope": 0.6,
+          "band2_freq": 250.0,
+          "band2_q": 0.707,
+          "band2_max_gain": 8.0,
+          "band2_slope": 0.4,
+          "band3_freq": 3500.0,
+          "band3_q": 1.0,
+          "band3_max_gain": 4.0,
+          "band3_slope": 0.2,
+          "band4_freq": 12000.0,
+          "band4_q": 0.707,
+          "band4_max_gain": 6.0,
+          "band4_slope": 0.3,
+          "smoothing_ms": 30.0,
+          "auto_gain_enabled": true,
+          "auto_gain_max_db": 12.0,
+          "auto_gain_smoothing_ms": 100.0,
+          "auto_gain_loudness_type": 0
+        }
+      },
+      "permanent": false
+    },
+    {
+      "id": 4,
+      "enabled": true,
+      "settings": {
+        "Matrix": {
+          "input_channels": 2,
+          "output_channels": 2,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "channel_states": [
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            }
+          ]
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 5,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": 6,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    },
+    {
+      "id": 7,
+      "enabled": true,
+      "settings": {
+        "Gain": {
+          "channels": 2,
+          "gain_db": -1.7836322305086476
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 10,
+      "enabled": true,
+      "settings": {
+        "XTC": {
+          "distance_m": 2.0,
+          "speaker_angle_deg": 30.0,
+          "head_radius_m": 0.0875,
+          "beta_base": 0.0010000000000000022,
+          "beta_low_freq_boost": 10.0,
+          "beta_high_freq_boost": 10.0,
+          "head_shadow_cutoff_hz": 4000.0,
+          "head_shadow_slope_db_per_octave": 6.0,
+          "max_gain_db": 12.0,
+          "head_offset_x": 0.0,
+          "head_offset_z": 0.0,
+          "head_yaw_deg": 0.0,
+          "head_tracking_smooth_s": 0.1,
+          "spectral_normalization": true,
+          "room_reflections_enabled": false,
+          "room_ir_file": null,
+          "room_width_m": 4.199999999999999,
+          "room_depth_m": 4.200000000000003,
+          "wall_absorption": 2.6000000000000005,
+          "reflection_beta_boost": 0.6999999999999997,
+          "bypass_xtc_filters": true,
+          "bypass_spectral_normalization": false,
+          "bypass_neumann_refinement": false,
+          "auto_gain_enabled": false,
+          "auto_gain_max_db": 24.0,
+          "auto_gain_smoothing_ms": 100.0,
+          "pinna_model_enabled": true
+        }
+      },
+      "permanent": false
+    },
+    {
+      "id": 8,
+      "enabled": true,
+      "settings": {
+        "Matrix": {
+          "input_channels": 2,
+          "output_channels": 2,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "channel_states": [
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            },
+            {
+              "muted": false,
+              "soloed": false,
+              "dimmed": false
+            }
+          ]
+        }
+      },
+      "permanent": true
+    },
+    {
+      "id": 9,
+      "enabled": true,
+      "settings": "LoudnessMonitor",
+      "permanent": true
+    }
+  ]
+}

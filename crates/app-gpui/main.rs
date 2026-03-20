@@ -15,6 +15,7 @@ use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
 use sotf_audio_player_gpui::ui;
 use std::borrow::Cow;
 use std::fs::OpenOptions;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[global_allocator]
@@ -23,7 +24,11 @@ static GLOBAL: MiMalloc = MiMalloc;
 #[derive(Parser, Debug)]
 #[command(name = "SotF")]
 #[command(version, about = "SOTF GPUI Music Player", long_about = None)]
-struct Args {}
+struct Args {
+    /// Use a custom data directory (for QA testing)
+    #[arg(long)]
+    qa: Option<PathBuf>,
+}
 
 actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 
@@ -37,11 +42,18 @@ actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 #[include = "brands/*.png"]
 #[include = "brands/*.webp"]
 #[include = "sotf.jpg"]
+#[include = "presets/*.json"]
 struct Assets;
 
 fn main() {
     // Parse command line arguments (handles --version and --help)
-    let _args = Args::parse();
+    let args = Args::parse();
+
+    // Apply QA directory override before any config dir access
+    if let Some(qa_dir) = args.qa {
+        sotf_audio_player::config::set_config_dir_override(qa_dir);
+    }
+
     // Initialize logging to file
     if let Some(log_path) = sotf_audio_player::config::get_gpui_log_path() {
         // Initialize logging to file with restricted permissions (owner only)
@@ -79,6 +91,9 @@ fn main() {
     }
 
     log::info!("SOTF GPUI Player starting...");
+
+    // Install default presets (only copies files that don't already exist)
+    install_default_presets();
 
     // Install signal handlers for clean shutdown on Ctrl-C (SIGINT) and SIGTERM
     #[cfg(unix)]
@@ -194,10 +209,13 @@ fn main() {
                 },
                 Menu {
                     name: translations.menu_help.into(),
-                    items: vec![MenuItem::action(
-                        translations.menu_keyboard_shortcuts,
-                        ToggleHelp,
-                    )],
+                    items: vec![
+                        MenuItem::action("Screen Guide", ToggleScreenGuide),
+                        MenuItem::action(
+                            translations.menu_keyboard_shortcuts,
+                            ToggleHelp,
+                        ),
+                    ],
                 },
             ]);
 
@@ -280,6 +298,31 @@ fn main() {
 
             let _ = window;
         });
+}
+
+/// Copy bundled preset files to the user's plugin_presets directory.
+/// Skips any file that already exists (never overwrites user presets).
+fn install_default_presets() {
+    let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+        log::warn!("Could not determine plugin presets directory, skipping default preset installation");
+        return;
+    };
+
+    for path in Assets::iter() {
+        if let Some(filename) = path.strip_prefix("presets/") {
+            let dest = presets_dir.join(filename);
+            if dest.exists() {
+                log::debug!("Default preset already exists, skipping: {}", filename);
+                continue;
+            }
+            if let Some(file) = Assets::get(&path) {
+                match std::fs::write(&dest, &file.data) {
+                    Ok(()) => log::info!("Installed default preset: {}", filename),
+                    Err(e) => log::warn!("Failed to install default preset {}: {}", filename, e),
+                }
+            }
+        }
+    }
 }
 
 impl gpui::AssetSource for Assets {
