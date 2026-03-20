@@ -428,7 +428,7 @@ pub fn optimize_stereo_2_0(
             role, gain, pre_score
         );
 
-        let (filters, _loss) = eq::optimize_channel_eq(
+        let (filters, _loss) = super::optimize::optimize_eq_with_optional_schroeder(
             &aligned_curve,
             &config.optimizer,
             config.target_curve.as_ref(),
@@ -1248,7 +1248,7 @@ fn optimize_home_cinema_no_sub(
             role, gain, pre_score
         );
 
-        let (filters, _loss) = eq::optimize_channel_eq(
+        let (filters, _loss) = super::optimize::optimize_eq_with_optional_schroeder(
             &aligned_curve,
             &config.optimizer,
             config.target_curve.as_ref(),

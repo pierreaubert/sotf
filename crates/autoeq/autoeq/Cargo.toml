@@ -1,6 +1,6 @@
 [package]
 name = "autoeq"
-version = "0.4.9"
+version = "0.4.10"
 description = "Automatic equalization for speakers, headphones and rooms!"
 edition = { workspace = true }
 repository = { workspace = true }
@@ -95,6 +95,10 @@ path = "bin/roomeq_qa_coverage.rs"
 [[bin]]
 name = "roomeq-qa-features"
 path = "bin/roomeq_qa_features.rs"
+
+[[bin]]
+name = "roomeq-qa-synthetic"
+path = "bin/roomeq_qa_synthetic.rs"
 
 [[bin]]
 name = "convert-recording"

@@ -82,9 +82,14 @@ pub use spectral_align::{
     log_spectral_alignment,
 };
 
+// Voice of God (timbre matching between channels)
+mod voice_of_god;
+pub use voice_of_god::{VoGResult, compute_voice_of_god, create_vog_plugins};
+
 // Utility modules
 mod ir_waveform;
 mod phase_utils;
+pub mod synthetic;
 mod time_align;
 mod weighted_loss;
 

@@ -872,6 +872,48 @@ pub fn optimize_room(
     }
 
     // ========================================================================
+    // Voice of God (VoG) — Timbre-match satellites to a reference channel
+    // ========================================================================
+    if let Some(vog_config) = &config.optimizer.vog
+        && vog_config.enabled
+    {
+        info!(
+            "Running Voice of God alignment (reference: '{}')...",
+            vog_config.reference_channel
+        );
+
+        // Build corrected curves from the current channel results
+        let corrected_curves: HashMap<String, Curve> = channel_results
+            .iter()
+            .map(|(name, result)| (name.clone(), result.final_curve.clone()))
+            .collect();
+
+        match super::voice_of_god::compute_voice_of_god(
+            &corrected_curves,
+            &vog_config.reference_channel,
+            sample_rate,
+            config.optimizer.min_freq,
+            config.optimizer.max_freq,
+        ) {
+            Ok(vog_results) => {
+                for (channel_name, vog_result) in &vog_results {
+                    let plugins = super::voice_of_god::create_vog_plugins(vog_result, sample_rate);
+                    if !plugins.is_empty() {
+                        if let Some(chain) = channel_chains.get_mut(channel_name) {
+                            for plugin in plugins {
+                                chain.plugins.push(plugin);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Voice of God optimization failed: {}", e);
+            }
+        }
+    }
+
+    // ========================================================================
     // Phase Alignment Optimization (Scenario A: WITH Subwoofers)
     // ========================================================================
     // Phase alignment maximizes energy sum in the crossover region by optimizing
@@ -2229,6 +2271,49 @@ fn process_single_speaker(
     }
 }
 
+/// Optimize EQ with optional Schroeder frequency split.
+///
+/// If the optimizer config has an enabled Schroeder split, performs two-pass
+/// optimization with different Q constraints. Otherwise falls back to standard
+/// single-pass optimization.
+///
+/// This is the unified entry point for EQ optimization that both the generic
+/// pipeline and system-config workflows should use.
+pub(super) fn optimize_eq_with_optional_schroeder(
+    curve: &Curve,
+    optimizer: &OptimizerConfig,
+    target_config: Option<&super::types::TargetCurveConfig>,
+    sample_rate: f64,
+) -> std::result::Result<(Vec<Biquad>, f64), Box<dyn std::error::Error>> {
+    if let Some(schroeder_config) = &optimizer.schroeder_split
+        && schroeder_config.enabled
+    {
+        let schroeder_freq = if let Some(ref dims) = schroeder_config.room_dimensions {
+            dims.schroeder_frequency()
+        } else {
+            schroeder_config.schroeder_freq
+        };
+        info!(
+            "  Schroeder split: optimizing below {:.1} Hz with max_q={:.1}, above with max_q={:.1}",
+            schroeder_freq,
+            schroeder_config.low_freq_config.max_q,
+            schroeder_config.high_freq_config.max_q
+        );
+
+        let (low_filters, high_filters) = optimize_with_schroeder_split(
+            curve, optimizer, schroeder_config, sample_rate,
+        ).map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+
+        let mut combined = low_filters;
+        combined.extend(high_filters);
+        // Loss is approximate (sum of both passes) — not used for scoring
+        let loss = 0.0;
+        Ok((combined, loss))
+    } else {
+        eq::optimize_channel_eq(curve, optimizer, target_config, sample_rate)
+    }
+}
+
 /// Optimize EQ with Schroeder frequency split
 ///
 /// Performs two-pass optimization with different Q constraints:
@@ -2265,7 +2350,9 @@ fn optimize_with_schroeder_split(
         low_filters, schroeder_freq, high_filters
     );
 
-    // Low frequency optimization (below Schroeder)
+    // Each sub-pass gets the full maxeval budget. With fewer filters (lower
+    // dimensionality) the optimizer converges faster, so the same budget is
+    // adequate for each pass independently.
     let low_optimizer = OptimizerConfig {
         num_filters: low_filters,
         min_freq: optimizer.min_freq,
@@ -2277,7 +2364,7 @@ fn optimize_with_schroeder_split(
             optimizer.max_db
         } else {
             0.0
-        }, // Cuts only if !allow_boost
+        },
         ..optimizer.clone()
     };
 
@@ -2316,7 +2403,36 @@ fn optimize_with_schroeder_split(
         message: format!("High-frequency EQ optimization failed: {}", e),
     })?;
 
+    // Post-optimization Q clamping: NLopt COBYLA can violate bounds slightly (or
+    // significantly with low maxeval). Enforce the configured Q constraints on the
+    // returned filters to guarantee the Schroeder split invariant.
+    let low_eq_filters = clamp_filter_q(low_eq_filters, low_config.min_q, low_config.max_q);
+    let high_eq_filters = clamp_filter_q(
+        high_eq_filters,
+        optimizer.min_q.max(0.3),
+        high_config.max_q,
+    );
+
     Ok((low_eq_filters, high_eq_filters))
+}
+
+/// Clamp Q values of filters to [min_q, max_q], recomputing biquad coefficients.
+fn clamp_filter_q(filters: Vec<Biquad>, min_q: f64, max_q: f64) -> Vec<Biquad> {
+    filters
+        .into_iter()
+        .map(|f| {
+            let clamped_q = f.q.clamp(min_q, max_q);
+            if (clamped_q - f.q).abs() > 1e-6 {
+                debug!(
+                    "  Clamping filter Q at {:.0} Hz: {:.2} -> {:.2}",
+                    f.freq, f.q, clamped_q
+                );
+                Biquad::new(f.filter_type, f.freq, f.srate, clamped_q, f.db_gain)
+            } else {
+                f
+            }
+        })
+        .collect()
 }
 
 /// Determine optimization frequency bands for each driver

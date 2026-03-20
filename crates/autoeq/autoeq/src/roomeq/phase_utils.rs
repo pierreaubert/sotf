@@ -308,4 +308,108 @@ mod tests {
         assert_approx_eq(excess[1], -30.0, 0.01);
         assert_approx_eq(excess[2], -45.0, 0.01);
     }
+
+    #[test]
+    fn test_reconstruct_minimum_phase_lowpass() {
+        // 1st-order lowpass: magnitude rolls off at 6dB/octave above cutoff.
+        // Minimum phase for a lowpass should be non-zero and show a transition
+        // around the cutoff frequency. Due to FFT edge effects and the discrete
+        // Hilbert transform, we only check that the phase is non-trivial
+        // (not all zeros) and that the phase changes significantly across the spectrum.
+        let n = 256;
+        let freq = Array1::linspace(20.0, 20000.0, n);
+        let fc = 1000.0;
+        let spl: Array1<f64> = freq.map(|&f| {
+            let ratio: f64 = f / fc;
+            -10.0 * (1.0 + ratio.powi(2)).log10()
+        });
+
+        let phase = reconstruct_minimum_phase(&freq, &spl);
+
+        // Phase should be non-trivial (not all zeros for a lowpass rolloff)
+        let phase_range = phase.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+            - phase.iter().cloned().fold(f64::INFINITY, f64::min);
+        assert!(
+            phase_range > 10.0,
+            "Phase should have significant variation for lowpass, got range {:.1}°",
+            phase_range
+        );
+
+        // The mid-band phase (around cutoff) should differ from both ends
+        let mid_idx = n / 2;
+        let mid_phase = phase[mid_idx];
+        let edge_avg = (phase[5] + phase[n - 5]) / 2.0;
+        assert!(
+            (mid_phase - edge_avg).abs() > 1.0,
+            "Phase near cutoff ({:.1}°) should differ from edge average ({:.1}°)",
+            mid_phase,
+            edge_avg
+        );
+    }
+
+    #[test]
+    fn test_excess_phase_pure_delay() {
+        // Total phase = min_phase + linear delay
+        // Excess phase should be approximately linear (the delay component)
+        let n = 100;
+        let freq = Array1::linspace(100.0, 5000.0, n);
+        let delay_ms = 2.0;
+        let delay_s = delay_ms / 1000.0;
+
+        // Flat magnitude → min phase ≈ 0
+        let spl = Array1::from_elem(n, 85.0);
+        let min_phase = reconstruct_minimum_phase(&freq, &spl);
+
+        // Total phase = min_phase + linear delay phase
+        let delay_phase: Array1<f64> = freq.map(|&f| -360.0 * f * delay_s);
+        let total_phase = &min_phase + &delay_phase;
+
+        let excess = compute_excess_phase(&total_phase, &min_phase);
+
+        // Excess phase should be approximately linear (matching the delay)
+        // Check via linear regression - the delay component should dominate
+        let (estimated_delay, residual) = estimate_delay_from_excess_phase(&freq, &excess);
+        assert!(
+            (estimated_delay - delay_ms).abs() < 0.2,
+            "Estimated delay {:.3}ms should be close to {:.1}ms",
+            estimated_delay,
+            delay_ms
+        );
+
+        // Residual should be small
+        let max_residual = residual.iter().map(|&r| r.abs()).fold(0.0_f64, f64::max);
+        assert!(
+            max_residual < 5.0,
+            "Residual should be small, got max {:.1}°",
+            max_residual
+        );
+    }
+
+    #[test]
+    fn test_estimate_delay_accuracy() {
+        // Synthetic linear phase at 3ms, verify extraction within 0.1ms
+        let n = 200;
+        let freq = Array1::linspace(100.0, 8000.0, n);
+        let delay_ms = 3.0;
+        let delay_s = delay_ms / 1000.0;
+
+        let phase: Array1<f64> = freq.map(|&f| -360.0 * f * delay_s);
+
+        let (estimated, residual) = estimate_delay_from_excess_phase(&freq, &phase);
+        assert!(
+            (estimated - delay_ms).abs() < 0.1,
+            "Expected {:.1}ms, got {:.3}ms (error {:.4}ms)",
+            delay_ms,
+            estimated,
+            (estimated - delay_ms).abs()
+        );
+
+        // Pure linear phase → near-zero residual
+        let max_residual = residual.iter().map(|&r| r.abs()).fold(0.0_f64, f64::max);
+        assert!(
+            max_residual < 1.0,
+            "Residual should be < 1°, got {:.3}°",
+            max_residual
+        );
+    }
 }

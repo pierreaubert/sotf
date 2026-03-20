@@ -268,4 +268,45 @@ mod tests {
         let delays = calculate_alignment_delays(&arrivals);
         assert!(delays.is_empty());
     }
+
+    #[test]
+    fn test_alignment_delays_three_speakers() {
+        // Arrivals: [0, 2, 5] ms → delays: [5, 3, 0] ms
+        let mut arrivals = std::collections::HashMap::new();
+        arrivals.insert("A".to_string(), 0.0);
+        arrivals.insert("B".to_string(), 2.0);
+        arrivals.insert("C".to_string(), 5.0);
+
+        let delays = calculate_alignment_delays(&arrivals);
+
+        assert!((delays["A"] - 5.0).abs() < 0.001, "A should get 5ms delay, got {}", delays["A"]);
+        assert!((delays["B"] - 3.0).abs() < 0.001, "B should get 3ms delay, got {}", delays["B"]);
+        assert!((delays["C"] - 0.0).abs() < 0.001, "C should get 0ms delay, got {}", delays["C"]);
+    }
+
+    #[test]
+    fn test_estimate_arrival_linear_phase() {
+        use ndarray::Array1;
+
+        // Construct a curve with linear phase corresponding to 3ms delay
+        let tau_ms = 3.0;
+        let tau_s = tau_ms / 1000.0;
+        let freqs: Vec<f64> = (100..=5000).step_by(20).map(|f| f as f64).collect();
+        let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
+
+        let curve = crate::Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::zeros(phase_deg.len()),
+            phase: Some(Array1::from_vec(phase_deg)),
+        };
+
+        let estimated = estimate_arrival_from_phase(&curve, 200.0, 4000.0);
+        assert!(estimated.is_some(), "Should recover arrival time from linear phase");
+        let estimated = estimated.unwrap();
+        assert!(
+            (estimated - tau_ms).abs() < 0.1,
+            "Expected ~{} ms, got {} ms (error {:.3} ms)",
+            tau_ms, estimated, (estimated - tau_ms).abs()
+        );
+    }
 }

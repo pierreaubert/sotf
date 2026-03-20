@@ -337,4 +337,58 @@ mod tests {
         assert_approx_eq(weights[1], 2.0, 0.01);
         assert_approx_eq(weights[2], 1.0, 0.01);
     }
+
+    #[test]
+    fn test_a_weighting_at_100hz() {
+        // A-weighting at 100 Hz should be approximately -19.1 dB
+        let db = a_weighting_db(100.0);
+        assert_approx_eq(db, -19.1, 0.5);
+    }
+
+    #[test]
+    fn test_weighted_combined_loss_peak_dominance() {
+        // With high peak_weight, a single large error should dominate
+        let error = Array1::from_vec(vec![1.0, 1.0, 10.0, 1.0]);
+        let weights = Array1::from_vec(vec![1.0, 1.0, 1.0, 1.0]);
+
+        let loss_low_peak = weighted_combined_loss(&error, &weights, 0.0);
+        let loss_high_peak = weighted_combined_loss(&error, &weights, 0.9);
+
+        // With peak_weight=0.9, the peak (10.0) should push the loss much higher
+        // than pure RMS
+        assert!(
+            loss_high_peak > loss_low_peak,
+            "High peak_weight loss ({:.2}) should exceed low peak_weight loss ({:.2})",
+            loss_high_peak,
+            loss_low_peak
+        );
+
+        // The high-peak loss should be dominated by the peak value
+        // peak = 10.0 * sqrt(1.0) = 10.0, so 0.9 * 10.0 = 9.0 contribution
+        assert!(
+            loss_high_peak > 8.0,
+            "With peak_weight=0.9 and peak=10, combined loss should be > 8.0, got {:.2}",
+            loss_high_peak
+        );
+    }
+
+    #[test]
+    fn test_custom_bands_overlap() {
+        // Overlapping custom bands: frequency falls in multiple bands
+        // Implementation uses first match, so we verify that behavior
+        let config = WeightedLossConfig {
+            weighting: FrequencyWeighting::Custom,
+            custom_bands: vec![
+                (50.0, 500.0, 3.0),
+                (100.0, 1000.0, 5.0), // overlaps with first band
+            ],
+            ..Default::default()
+        };
+
+        let freq = Array1::from_vec(vec![200.0]); // falls in both bands
+        let weights = compute_weights(&freq, &config);
+
+        // First matching band wins (3.0, not 5.0)
+        assert_approx_eq(weights[0], 3.0, 0.01);
+    }
 }

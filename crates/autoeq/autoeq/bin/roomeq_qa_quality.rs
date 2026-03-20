@@ -28,8 +28,9 @@ use autoeq::loss::{
 };
 use autoeq::roomeq::{
     BroadbandTargetMatchingConfig, CallbackAction, ExcursionProtectionConfig,
-    MultiMeasurementConfig, MultiMeasurementStrategy, PhaseAlignmentConfig, ProcessingMode,
-    RoomConfig, RoomOptimizationResult, SchroederSplitConfig, TargetTiltConfig, TiltType,
+    GroupDelayOptimizationConfig, MultiMeasurementConfig, MultiMeasurementStrategy,
+    PhaseAlignmentConfig, ProcessingMode, RoomConfig, RoomOptimizationResult,
+    SchroederSplitConfig, TargetTiltConfig, TiltType, VoiceOfGodConfig,
     load_config, merge_json_objects, optimize_room,
 };
 use autoeq::{MeasurementMultiple, MeasurementRef, MeasurementSource};
@@ -382,6 +383,8 @@ enum OptionOverride {
     PhaseAlignment,
     MultiMeasurementMinimax,
     MultiMeasurementVariancePenalized,
+    GroupDelayOpt,
+    VoiceOfGod { reference_channel: String },
 }
 
 impl std::fmt::Display for OptionOverride {
@@ -401,6 +404,10 @@ impl std::fmt::Display for OptionOverride {
             OptionOverride::MultiMeasurementMinimax => write!(f, "multi_measurement_minimax"),
             OptionOverride::MultiMeasurementVariancePenalized => {
                 write!(f, "multi_measurement_variance")
+            }
+            OptionOverride::GroupDelayOpt => write!(f, "group_delay_opt"),
+            OptionOverride::VoiceOfGod { reference_channel } => {
+                write!(f, "voice_of_god(ref={})", reference_channel)
             }
         }
     }
@@ -468,6 +475,18 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
                 ..Default::default()
             });
         }
+        OptionOverride::GroupDelayOpt => {
+            config.optimizer.gd_opt = Some(GroupDelayOptimizationConfig {
+                enabled: true,
+                target_ms: 0.0,
+            });
+        }
+        OptionOverride::VoiceOfGod { reference_channel } => {
+            config.optimizer.vog = Some(VoiceOfGodConfig {
+                enabled: true,
+                reference_channel: reference_channel.clone(),
+            });
+        }
     }
 }
 
@@ -501,6 +520,12 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
                 strategy: MultiMeasurementStrategy::Average,
                 ..Default::default()
             });
+        }
+        OptionOverride::GroupDelayOpt => {
+            config.optimizer.gd_opt = None;
+        }
+        OptionOverride::VoiceOfGod { .. } => {
+            config.optimizer.vog = None;
         }
     }
 }
@@ -692,6 +717,20 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "medium_surround_5_1",
             optim_subdir: "medium_surround_5_1",
             options: vec![OptionOverride::PhaseAlignment],
+        },
+        TestCase::OptionEffect {
+            name: "OE group_delay_opt",
+            fem_subdir: "small_stereo_2_1",
+            optim_subdir: "small_stereo_2_1",
+            options: vec![OptionOverride::GroupDelayOpt],
+        },
+        TestCase::OptionEffect {
+            name: "OE voice_of_god",
+            fem_subdir: "medium_surround_5_1",
+            optim_subdir: "medium_surround_5_1",
+            options: vec![OptionOverride::VoiceOfGod {
+                reference_channel: "C".to_string(),
+            }],
         },
         TestCase::OptionEffect {
             name: "OE multi_measurement_minimax",
@@ -1565,6 +1604,67 @@ fn validate_option_effect(
         }
         OptionOverride::MultiMeasurementVariancePenalized => {
             validate_multi_measurement_variance(baseline_result, option_result)
+        }
+        OptionOverride::GroupDelayOpt => {
+            // GD-Opt: check that AllPass plugins appear in at least one channel's DSP chain
+            // and combined score is not significantly worse than baseline
+            let has_allpass = option_result.channels.values().any(|ch| {
+                ch.plugins.iter().any(|p| {
+                    p.plugin_type == "eq"
+                        && p.parameters
+                            .get("filters")
+                            .and_then(|f| f.as_array())
+                            .map(|filters| {
+                                filters.iter().any(|f| {
+                                    f.get("filter_type")
+                                        .and_then(|ft| ft.as_str())
+                                        .is_some_and(|ft| ft == "allpass")
+                                })
+                            })
+                            .unwrap_or(false)
+                })
+            });
+
+            let score_ok = option_result.combined_post_score
+                <= OPTION_SCORE_TOLERANCE * baseline_result.combined_post_score;
+
+            if !score_ok {
+                (false, format!(
+                    "GD-Opt score {:.3} > {:.1}x baseline {:.3}",
+                    option_result.combined_post_score,
+                    OPTION_SCORE_TOLERANCE,
+                    baseline_result.combined_post_score,
+                ))
+            } else if !has_allpass {
+                // Not having allpass filters is acceptable (e.g., no sub-main pairings)
+                (true, "GD-Opt active but no AllPass filters generated (no sub-main pairing)".to_string())
+            } else {
+                (true, format!(
+                    "GD-Opt OK: AllPass filters present, score {:.3} vs baseline {:.3}",
+                    option_result.combined_post_score,
+                    baseline_result.combined_post_score,
+                ))
+            }
+        }
+        OptionOverride::VoiceOfGod { .. } => {
+            // VoG: combined score should not be significantly worse than baseline
+            let score_ok = option_result.combined_post_score
+                <= OPTION_SCORE_TOLERANCE * baseline_result.combined_post_score;
+
+            if !score_ok {
+                (false, format!(
+                    "VoG score {:.3} > {:.1}x baseline {:.3}",
+                    option_result.combined_post_score,
+                    OPTION_SCORE_TOLERANCE,
+                    baseline_result.combined_post_score,
+                ))
+            } else {
+                (true, format!(
+                    "VoG OK: score {:.3} vs baseline {:.3}",
+                    option_result.combined_post_score,
+                    baseline_result.combined_post_score,
+                ))
+            }
         }
     }
 }

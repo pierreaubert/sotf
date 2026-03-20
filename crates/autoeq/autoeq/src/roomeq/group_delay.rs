@@ -613,6 +613,193 @@ mod tests {
         );
     }
 
+    /// Helper: build a synthetic Curve with phase from a constant delay.
+    fn make_synthetic_curve_with_phase(
+        freqs: &Array1<f64>,
+        spl_fn: impl Fn(f64) -> f64,
+        delay_ms: f64,
+        _sample_rate: f64,
+    ) -> Curve {
+        let spl = freqs.map(|&f| spl_fn(f));
+        let delay_s = delay_ms / 1000.0;
+        let phase = freqs.map(|&f| (-2.0 * PI * f * delay_s).to_degrees());
+        Curve {
+            freq: freqs.clone(),
+            spl,
+            phase: Some(phase),
+        }
+    }
+
+    #[test]
+    fn test_optimize_gd_iir_basic() {
+        // Sub with steep GD slope at 80Hz, speaker with shallow slope
+        let n = 200;
+        let freqs = Array1::linspace(20.0, 500.0, n);
+        let sub = make_synthetic_curve_with_phase(&freqs, |_| 85.0, 10.0, 48000.0);
+        let speaker = make_synthetic_curve_with_phase(&freqs, |_| 85.0, 5.0, 48000.0);
+
+        let result = optimize_gd_iir(&sub, &speaker, 30.0, 200.0, 48000.0);
+        assert!(result.is_ok(), "optimize_gd_iir should succeed");
+
+        let filters = result.unwrap();
+        assert!(!filters.is_empty(), "Should produce at least 1 AP filter");
+        assert!(filters.len() <= 2, "Should produce at most 2 AP filters");
+
+        for f in &filters {
+            assert!(f.freq >= 20.0 && f.freq <= 500.0, "Filter freq {} out of range", f.freq);
+            assert!(f.q >= 0.3 && f.q <= 4.0, "Filter Q {} out of range", f.q);
+        }
+    }
+
+    #[test]
+    fn test_optimize_gd_iir_identical_curves() {
+        let freqs = Array1::linspace(20.0, 500.0, 200);
+        let curve = make_synthetic_curve_with_phase(&freqs, |_| 85.0, 5.0, 48000.0);
+
+        let result = optimize_gd_iir(&curve, &curve, 30.0, 200.0, 48000.0);
+        assert!(result.is_ok());
+
+        let filters = result.unwrap();
+        // Identical curves → AP filters should have small GD contribution.
+        // The optimizer may still produce filters (it always tries at least 1),
+        // but the resulting AP group delay should be modest.
+        let mut max_ap_gd_ms = 0.0_f64;
+        for &f in freqs.iter().filter(|&&f| f >= 30.0 && f <= 200.0) {
+            let mut total = 0.0;
+            for filter in &filters {
+                total += compute_ap_gd_analytic(filter, f);
+            }
+            max_ap_gd_ms = max_ap_gd_ms.max(total.abs());
+        }
+        // With identical curves the target GD mismatch is ~0, so AP contribution
+        // should be small (optimizer found a low-impact filter). Allow up to 5ms.
+        assert!(
+            max_ap_gd_ms < 5.0,
+            "AP GD contribution should be modest for identical curves, got {:.2}ms",
+            max_ap_gd_ms
+        );
+    }
+
+    #[test]
+    fn test_optimize_gd_iir_max_filters_1() {
+        let freqs = Array1::linspace(20.0, 500.0, 200);
+        let sub = make_synthetic_curve_with_phase(&freqs, |_| 85.0, 10.0, 48000.0);
+        let speaker = make_synthetic_curve_with_phase(&freqs, |_| 85.0, 5.0, 48000.0);
+
+        let config = ApOptimizerConfig {
+            max_filters: 1,
+            ..Default::default()
+        };
+        let result = optimize_gd_iir_with_config(&sub, &speaker, 30.0, 200.0, 48000.0, config);
+        assert!(result.is_ok());
+        assert!(result.unwrap().len() <= 1, "Should use at most 1 filter");
+    }
+
+    #[test]
+    fn test_optimize_gd_iir_max_filters_3() {
+        let freqs = Array1::linspace(20.0, 500.0, 200);
+        let sub = make_synthetic_curve_with_phase(&freqs, |_| 85.0, 10.0, 48000.0);
+        let speaker = make_synthetic_curve_with_phase(&freqs, |_| 85.0, 5.0, 48000.0);
+
+        // Test with max_filters=3
+        let config3 = ApOptimizerConfig {
+            max_filters: 3,
+            ..Default::default()
+        };
+        let result3 = optimize_gd_iir_with_config(&sub, &speaker, 30.0, 200.0, 48000.0, config3);
+        assert!(result3.is_ok());
+        let filters3 = result3.unwrap();
+        assert!(filters3.len() <= 3, "Should use at most 3 filters");
+
+        // Test with max_filters=1 for comparison
+        let config1 = ApOptimizerConfig {
+            max_filters: 1,
+            ..Default::default()
+        };
+        let result1 = optimize_gd_iir_with_config(&sub, &speaker, 30.0, 200.0, 48000.0, config1);
+        assert!(result1.is_ok());
+        let filters1 = result1.unwrap();
+
+        // More filters should give equal or better error
+        let range_indices: Vec<usize> = freqs
+            .iter()
+            .enumerate()
+            .filter(|&(_, &f)| f >= 30.0 && f <= 200.0)
+            .map(|(i, _)| i)
+            .collect();
+
+        let sub_complex = curve_to_complex(&sub);
+        let spk_complex = curve_to_complex(&speaker);
+        let sub_gd = calculate_group_delay(&freqs, sub_complex.as_slice().unwrap());
+        let spk_gd = calculate_group_delay(&freqs, spk_complex.as_slice().unwrap());
+
+        let err1 = evaluate_ap_filters(&filters1, &freqs, &spk_gd, &sub_gd, &range_indices, 48000.0);
+        let err3 = evaluate_ap_filters(&filters3, &freqs, &spk_gd, &sub_gd, &range_indices, 48000.0);
+        assert!(err3 <= err1 * 1.01, "3 filters error ({}) should be <= 1 filter error ({})", err3, err1);
+    }
+
+    #[test]
+    fn test_compute_ap_gd_analytic_known_values() {
+        // AllPass at f0=100Hz, Q=0.707, sr=48000
+        // At resonance, theoretical GD = 2*Q/(2*pi*f0) seconds = Q/(pi*f0)
+        let f0 = 100.0;
+        let q = 0.707;
+        let filter = Biquad::new(BiquadFilterType::AllPass, f0, 48000.0, q, 0.0);
+
+        let gd_at_resonance = compute_ap_gd_analytic(&filter, f0);
+        // Theoretical: at resonance w=w0, GD = 2*Q/(pi*f0) * 1000 ms
+        let theoretical_ms = 2.0 * q / (PI * f0) * 1000.0;
+        let rel_error = (gd_at_resonance - theoretical_ms).abs() / theoretical_ms;
+        assert!(
+            rel_error < 0.05,
+            "GD at resonance should be ~{:.4}ms (Q/(pi*f0)), got {:.4}ms (error {:.1}%)",
+            theoretical_ms, gd_at_resonance, rel_error * 100.0
+        );
+    }
+
+    #[test]
+    fn test_interpolate_curve_identity() {
+        // Interpolate a curve onto its own frequency grid → should be identity
+        let freqs = Array1::linspace(20.0, 20000.0, 100);
+        let spl = freqs.map(|&f| 85.0 - 10.0 * (f / 1000.0_f64).log10());
+        let phase = freqs.map(|&f| -180.0 * f / 10000.0);
+        let curve = Curve {
+            freq: freqs.clone(),
+            spl: spl.clone(),
+            phase: Some(phase.clone()),
+        };
+
+        let interpolated = interpolate_curve(&curve, &freqs);
+
+        for i in 0..freqs.len() {
+            assert!(
+                (interpolated.spl[i] - curve.spl[i]).abs() < 0.01,
+                "SPL mismatch at index {}: {} vs {}",
+                i, interpolated.spl[i], curve.spl[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_evaluate_ap_filters_empty() {
+        // Empty filter list should return raw GD mismatch error
+        let freqs = Array1::linspace(20.0, 500.0, 100);
+        let sub = make_synthetic_curve_with_phase(&freqs, |_| 85.0, 10.0, 48000.0);
+        let speaker = make_synthetic_curve_with_phase(&freqs, |_| 85.0, 5.0, 48000.0);
+
+        let sub_complex = curve_to_complex(&sub);
+        let spk_complex = curve_to_complex(&speaker);
+        let sub_gd = calculate_group_delay(&freqs, sub_complex.as_slice().unwrap());
+        let spk_gd = calculate_group_delay(&freqs, spk_complex.as_slice().unwrap());
+
+        let range_indices: Vec<usize> = (0..freqs.len()).collect();
+        let empty_filters: Vec<Biquad> = vec![];
+
+        let error = evaluate_ap_filters(&empty_filters, &freqs, &spk_gd, &sub_gd, &range_indices, 48000.0);
+        assert!(error > 0.0, "Empty filters should give non-zero error for mismatched curves");
+        assert!(error < f64::INFINITY, "Error should be finite");
+    }
+
     #[test]
     fn test_multi_ap_optimization() {
         // Create a complex GD curve that requires multiple AP filters
