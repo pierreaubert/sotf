@@ -255,12 +255,14 @@ build_binary() {
 
     cd "$PROJECT_ROOT"
 
+    # onnx disabled: ort prebuilt binaries require glibc 2.38+ (__isoc23_strtol)
+    # which is newer than the Docker build containers provide
     if $CROSS_COMPILE; then
         log_info "Cross-compiling for $TARGET..."
-        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$PACKAGE_NAME" --target "$TARGET" --features onnx
+        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$PACKAGE_NAME" --target "$TARGET"
     else
         log_info "Building native Linux binary..."
-        cargo build --release --package "$PACKAGE_NAME" --features onnx
+        cargo build --release --package "$PACKAGE_NAME"
     fi
 
     if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then
@@ -273,9 +275,9 @@ build_binary() {
     # Build TUI binary
     log_info "Building TUI binary..."
     if $CROSS_COMPILE; then
-        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$TUI_PACKAGE_NAME" --target "$TARGET" --features onnx
+        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$TUI_PACKAGE_NAME" --target "$TARGET"
     else
-        cargo build --release --package "$TUI_PACKAGE_NAME" --features onnx
+        cargo build --release --package "$TUI_PACKAGE_NAME"
     fi
 
     if [ ! -f "$BUILD_DIR/$TUI_BINARY_NAME" ]; then

@@ -137,19 +137,28 @@ build_binary() {
         rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
         # Build for both architectures
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features hal,onnx --target x86_64-apple-darwin --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features hal --target x86_64-apple-darwin --target-dir ./target-static
         RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features hal,onnx --target aarch64-apple-darwin --target-dir ./target-static
 
         # Create universal binary
         mkdir -p "$BUILD_DIR"
         lipo -create \
-            "$PROJECT_ROOT/target/x86_64-apple-darwin/release/$BINARY_NAME" \
-            "$PROJECT_ROOT/target/aarch64-apple-darwin/release/$BINARY_NAME" \
+            "$PROJECT_ROOT/target-static/x86_64-apple-darwin/release/$BINARY_NAME" \
+            "$PROJECT_ROOT/target-static/aarch64-apple-darwin/release/$BINARY_NAME" \
             -output "$BUILD_DIR/$BINARY_NAME"
 
         log_success "Universal binary created"
     else
-        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features hal,onnx --target-dir ./target-static
+        # Enable onnx on ARM64, skip on x86_64 (no prebuilt binaries available)
+        local effective_arch="$ARCH"
+        if [ -z "$effective_arch" ]; then
+            effective_arch=$(uname -m)
+        fi
+        local features="hal"
+        if [ "$effective_arch" != "x86_64" ]; then
+            features="hal,onnx"
+        fi
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --features "$features" --target-dir ./target-static
     fi
 
     if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then

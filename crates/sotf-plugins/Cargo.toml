@@ -43,7 +43,7 @@ sotf-plugin-multiband-compressor = { workspace = true }
 sotf-plugin-multiband-expander = { workspace = true }
 sotf-plugin-pnd = { workspace = true }
 sotf-plugin-resampler = { workspace = true }
-sotf-plugin-upmixer = { workspace = true }
+sotf-plugin-upmixer = { workspace = true, default-features = false }
 sotf-plugin-xtc = { workspace = true }
 tokio = { workspace = true }
 ndarray = { workspace = true }

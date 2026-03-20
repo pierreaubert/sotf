@@ -107,6 +107,7 @@ cross-debug-linux-x86: cross-base-linux-x86-gnu
 cross-windows-arm64: cross-base-win-arm64
 	#!/usr/bin/env bash
 	set -euo pipefail
+	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 	echo "Building Docker image..."
 	docker build -t sotf-win-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-pc-windows-gnullvm .
 	echo "Building in Docker container..."
@@ -119,8 +120,8 @@ cross-windows-arm64: cross-base-win-arm64
 	fi
 	docker run --rm -v "$(pwd)":/project -w /project "${docker_env[@]}" sotf-win-arm64 \
 		bash -c 'cargo build --release --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir .docker-target/aarch64-pc-windows-gnullvm/release --arch arm64'
-	cp .docker-target/aarch64-pc-windows-gnullvm/release/sotf-tui.exe dist/sotf-tui-windows-arm64.exe
-	echo "Done! dist/sotf-tui-windows-arm64.exe + MSIX in dist/"
+	cp .docker-target/aarch64-pc-windows-gnullvm/release/sotf-tui.exe "dist/sotf-tui-windows-arm64-${VERSION}.exe"
+	echo "Done! dist/sotf-tui-windows-arm64-${VERSION}.exe + MSIX in dist/"
 
 # Windows x86_64: sotf-tui.exe + signed MSIX → dist/
 # Set WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD to use a CA cert; otherwise self-signed is auto-generated
@@ -128,6 +129,7 @@ cross-windows-arm64: cross-base-win-arm64
 cross-windows-x86: cross-base-win-x86
 	#!/usr/bin/env bash
 	set -euo pipefail
+	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 	echo "Building Docker image..."
 	docker build -t sotf-win-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-pc-windows-gnullvm .
 	echo "Building in Docker container..."
@@ -140,8 +142,8 @@ cross-windows-x86: cross-base-win-x86
 	fi
 	docker run --rm -v "$(pwd)":/project -w /project "${docker_env[@]}" sotf-win-x86 \
 		bash -c 'cargo build --release --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui && ./scripts/build-msix.sh --sign --build-dir .docker-target/x86_64-pc-windows-gnullvm/release --arch x64'
-	cp .docker-target/x86_64-pc-windows-gnullvm/release/sotf-tui.exe dist/sotf-tui-windows-x86_64.exe
-	echo "Done! dist/sotf-tui-windows-x86_64.exe + MSIX in dist/"
+	cp .docker-target/x86_64-pc-windows-gnullvm/release/sotf-tui.exe "dist/sotf-tui-windows-x86_64-${VERSION}.exe"
+	echo "Done! dist/sotf-tui-windows-x86_64-${VERSION}.exe + MSIX in dist/"
 
 # ----------------------------------------------------------------------
 # MACOS (native build, outputs to dist/)
@@ -150,29 +152,36 @@ cross-windows-x86: cross-base-win-x86
 # macOS ARM64: SotF DMG + sotf-tui → dist/
 [group('cross')]
 cross-macos-arm64:
-	@echo "Building macOS ARM64 binaries..."
-	cargo build --release --target aarch64-apple-darwin --bin sotf-tui --features hal,onnx
-	cargo build --release --target aarch64-apple-darwin --bin SotF -p sotf-gpui --features hal,onnx
+	#!/usr/bin/env bash
+	set -euo pipefail
+	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+	echo "Building macOS ARM64 binaries..."
+	rustup target add aarch64-apple-darwin 2>/dev/null || true
+	cargo build --release --target aarch64-apple-darwin -p sotf-tui --features hal,onnx
+	cargo build --release --target aarch64-apple-darwin -p sotf-gpui --features hal,onnx
 	mkdir -p dist
-	cp target/aarch64-apple-darwin/release/sotf-tui dist/sotf-tui-macos-arm64
-	cp target/aarch64-apple-darwin/release/SotF dist/SotF-macos-arm64
-	@echo "Building DMG..."
+	cp target/aarch64-apple-darwin/release/sotf-tui "dist/sotf-tui-macos-arm64-${VERSION}"
+	cp target/aarch64-apple-darwin/release/SotF "dist/SotF-macos-arm64-${VERSION}"
+	echo "Building DMG..."
 	./scripts/build-dmg-sotf.sh --arch arm64
-	@echo "Done! Binaries and DMG copied to dist/"
+	echo "Done! Binaries and DMG copied to dist/"
 
 # macOS x86_64: SotF DMG + sotf-tui → dist/
 [group('cross')]
 cross-macos-x86:
-	@echo "Building macOS x86_64 binaries..."
+	#!/usr/bin/env bash
+	set -euo pipefail
+	VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+	echo "Building macOS x86_64 binaries..."
 	rustup target add x86_64-apple-darwin 2>/dev/null || true
-	cargo build --release --target x86_64-apple-darwin --bin sotf-tui --features hal,onnx
-	cargo build --release --target x86_64-apple-darwin --bin SotF -p sotf-gpui --features hal,onnx
+	cargo build --release --target x86_64-apple-darwin -p sotf-tui --features hal
+	cargo build --release --target x86_64-apple-darwin -p sotf-gpui --features hal
 	mkdir -p dist
-	cp target/x86_64-apple-darwin/release/sotf-tui dist/sotf-tui-macos-x86_64
-	cp target/x86_64-apple-darwin/release/SotF dist/SotF-macos-x86_64
-	@echo "Building DMG..."
+	cp target/x86_64-apple-darwin/release/sotf-tui "dist/sotf-tui-macos-x86_64-${VERSION}"
+	cp target/x86_64-apple-darwin/release/SotF "dist/SotF-macos-x86_64-${VERSION}"
+	echo "Building DMG..."
 	./scripts/build-dmg-sotf.sh --arch x86_64
-	@echo "Done! Binaries and DMG copied to dist/"
+	echo "Done! Binaries and DMG copied to dist/"
 
 # macOS DMG (build only, sign separately with sign-macos.sh)
 [group('cross')]

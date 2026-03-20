@@ -112,33 +112,55 @@ doc:
 # Run the GPUI player (debug mode with ad-hoc signing for macOS file dialogs)
 [group('run')]
 run-gpui:
-	cargo build --bin SotF
+	cargo build --bin SotF --features onnx
 	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/SotF
 	./target/debug/SotF
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-release:
-	cargo build --release --bin SotF
+	cargo build --release --bin SotF --features onnx
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
 	./target/release/SotF
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin SotF
+	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin SotF --features onnx
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
 	./target/release/SotF
 
 # Run the TUI player
 [group('run')]
+[macos]
 run-tui:
-	cargo run --release --bin sotf-tui
+	cargo run --release --bin sotf-tui --features onnx,hal
 
-# Run the TUI player
 [group('run')]
+[linux]
+run-tui:
+	cargo run --release --bin sotf-tui --features onnx
+
+[group('run')]
+[windows]
+run-tui:
+	cargo run --release --bin sotf-tui --features onnx
+
+# Run the TUI player (with debug info for leak detection)
+[group('run')]
+[macos]
 run-tui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features onnx,hal
+
+[group('run')]
+[linux]
+run-tui-leaks:
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features onnx
+
+[group('run')]
+[windows]
+run-tui-leaks:
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui --features onnx
 
 # ----------------------------------------------------------------------
 # FORMAT
@@ -166,11 +188,11 @@ prod-sotf-player: prod-sotf-tui prod-sotf-gpui
 
 [group('build')]
 prod-sotf-gpui:
-	cargo build --release --bin SotF -p sotf-gpui
+	cargo build --release --bin SotF -p sotf-gpui --features onnx
 
 [group('build')]
 prod-sotf-tui:
-	cargo build --release --bin sotf-tui -p sotf-tui
+	cargo build --release --bin sotf-tui -p sotf-tui --features onnx
 
 [group('build')]
 prod-sotf-recorder:
@@ -199,7 +221,7 @@ tui:
 
 [group('build')]
 gpui:
-	cargo run --release --bin SotF -p sotf-gpui
+	cargo run --release --bin SotF -p sotf-gpui --features onnx
 
 # ----------------------------------------------------------------------
 # CLEAN

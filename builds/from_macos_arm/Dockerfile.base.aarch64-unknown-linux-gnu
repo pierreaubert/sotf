@@ -22,10 +22,10 @@ RUN apt-get update && \
     gnome-browser-connector \
     && rm -rf /var/lib/apt/lists/*
 
-RUN dpkg --add-architecture aarch64 && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y \
-    libopenssl-dev:aarch64
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Rust 1.90 (pinned version for compatibility)
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.90.0 --profile minimal
