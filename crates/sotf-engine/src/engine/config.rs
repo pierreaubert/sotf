@@ -49,9 +49,10 @@ pub struct EngineConfig {
     #[serde(skip)]
     pub watch_config: bool,
 
-    /// HAL mode: audio comes from shared memory instead of file decoder
-    #[serde(default)]
-    pub hal_mode: bool,
+    /// Driver mode: audio comes from a platform audio driver (HAL, PipeWire, APO)
+    /// instead of file decoder. When true, decoder thread reads from the AudioDriver.
+    #[serde(default, alias = "hal_mode")]
+    pub driver_mode: bool,
 
     /// Allow output to virtual devices (BlackHole, loopback, etc.)
     /// Normally these are blocked to prevent feedback loops, but tests need them.
@@ -72,7 +73,7 @@ impl Default for EngineConfig {
             output_sample_rate: 48000,
             input_channels: 2,
             output_channels: 2,
-            hal_mode: false,
+            driver_mode: false,
             allow_virtual_output: false,
             output_device: None,
             plugins: Vec::new(),

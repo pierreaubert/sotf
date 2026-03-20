@@ -575,9 +575,9 @@ fn run_manager_thread(
     playback_thread.send_command(PlaybackCommand::SetVolume(config.volume))?;
     playback_thread.send_command(PlaybackCommand::Mute(config.muted))?;
 
-    // Start silent source mode (HAL playback: audio from shared memory, not file)
-    if config.hal_mode {
-        log::info!("[Manager Thread] Starting silent source mode for HAL input");
+    // Start silent source mode (driver playback: audio from driver, not file)
+    if config.driver_mode {
+        log::info!("[Manager Thread] Starting silent source mode for driver input");
         decoder_thread.send_command(super::DecoderCommand::StartSilentSource)?;
     }
 

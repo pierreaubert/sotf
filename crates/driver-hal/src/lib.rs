@@ -44,6 +44,8 @@
 //! See the `volume` module for details.
 
 #[cfg(target_os = "macos")]
+pub mod driver;
+#[cfg(target_os = "macos")]
 pub mod encryption;
 #[cfg(target_os = "macos")]
 pub mod shared_memory;
@@ -59,6 +61,8 @@ pub use encryption::{
 pub use shared_memory::{
     HalInputReader, HalOutputWriter, SharedAudioBuffer, get_shared_memory_path,
 };
+#[cfg(target_os = "macos")]
+pub use driver::HalDriver;
 #[cfg(target_os = "macos")]
 pub use volume::{
     AtomicChannelVolumes, AtomicVolume, SharedChannelVolumes, SharedVolume, VolumeConfig,

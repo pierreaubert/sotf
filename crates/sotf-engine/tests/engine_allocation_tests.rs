@@ -47,9 +47,9 @@ fn get_alloc_count() -> usize {
 
 #[test]
 fn test_engine_hotpath_allocations() {
-    // Start engine with hal_mode to force continuous processing of silence
+    // Start engine with driver_mode to force continuous processing of silence
     let mut config = EngineConfig::default();
-    config.hal_mode = true;
+    config.driver_mode = true;
     config.plugins = vec![PluginConfig::new(
         "gain",
         serde_json::json!({"gain_db": -3.0}),

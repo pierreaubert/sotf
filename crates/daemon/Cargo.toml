@@ -7,13 +7,14 @@ edition.workspace = true
 [features]
 default = []
 hal = ["driver-hal", "sotf-plugins/hal", "sotf-engine/hal"]
+asio = ["sotf-engine/asio"]
 
 [[bin]]
 name = "sotf-daemon"
 path = "bin/sotf_daemon.rs"
-required-features = ["hal"]
 
 [dependencies]
+driver-common = { workspace = true }
 parking_lot = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }

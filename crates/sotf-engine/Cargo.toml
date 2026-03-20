@@ -11,8 +11,10 @@ path = "src/lib.rs"
 [features]
 default = []
 hal = ["driver-hal", "sotf-plugins/hal"]
+asio = ["cpal/asio"]
 
 [dependencies]
+driver-common = { workspace = true }
 tokio = { workspace = true }
 ndarray = { workspace = true }
 notify = { workspace = true }

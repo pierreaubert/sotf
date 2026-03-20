@@ -321,7 +321,7 @@ impl AudioEngineManager {
             muted,
             config_path: None,
             watch_config: self.watch_signals, // Enable signal watching if requested
-            hal_mode: false,
+            driver_mode: false,
             allow_virtual_output: self.allow_virtual_output,
         };
 
@@ -366,19 +366,22 @@ impl AudioEngineManager {
         Ok(())
     }
 
-    /// Start HAL playback without a file source
-    pub fn start_hal_playback(
+    /// Start driver playback without a file source
+    ///
+    /// In driver mode, audio comes from a platform driver (macOS HAL, PipeWire, APO)
+    /// instead of a file decoder. The decoder thread reads silence while the driver
+    /// provides audio to the processing chain.
+    pub fn start_driver_playback(
         &mut self,
         output_device: Option<String>,
         plugins: Vec<PluginConfig>,
         output_channels: usize,
     ) -> AudioDecoderResult<()> {
-        // Use default sample rate
-        self.start_hal_playback_with_config(output_device, plugins, output_channels, 48000)
+        self.start_driver_playback_with_config(output_device, plugins, output_channels, 48000)
     }
 
-    /// Start HAL playback with custom sample rate
-    pub fn start_hal_playback_with_config(
+    /// Start driver playback with custom sample rate
+    pub fn start_driver_playback_with_config(
         &mut self,
         output_device: Option<String>,
         plugins: Vec<PluginConfig>,
@@ -388,11 +391,11 @@ impl AudioEngineManager {
         let _guard = self.cmd_mutex.lock().unwrap();
 
         log::debug!(
-            "[AudioEngineManager] Starting HAL playback at {}Hz",
+            "[AudioEngineManager] Starting driver playback at {}Hz",
             sample_rate
         );
 
-        // Create engine config for HAL (no file source) with preserved volume
+        // Create engine config for driver mode (no file source) with preserved volume
         let volume = f32::from_bits(self.current_volume.load(Ordering::Relaxed));
         let muted = self.current_muted.load(Ordering::Relaxed);
         let config = EngineConfig {
@@ -400,7 +403,7 @@ impl AudioEngineManager {
             frame_size: 1024,
             buffer_ms: 200, // 200ms latency
             output_sample_rate: sample_rate,
-            input_channels: 2, // HAL always provides stereo
+            input_channels: 2, // Driver typically provides stereo
             output_channels,
             output_device,
             plugins,
@@ -408,19 +411,19 @@ impl AudioEngineManager {
             muted,
             config_path: None,
             watch_config: self.watch_signals,
-            hal_mode: true,
+            driver_mode: true,
             allow_virtual_output: false,
         };
 
         log::info!(
-            "[AudioEngineManager] Creating HAL engine: {}Hz, {}ch output",
+            "[AudioEngineManager] Creating driver engine: {}Hz, {}ch output",
             config.output_sample_rate,
             config.output_channels
         );
 
         // Create engine
         let engine = AudioEngine::new(config).map_err(|e| {
-            AudioDecoderError::ConfigError(format!("Failed to create HAL engine: {}", e))
+            AudioDecoderError::ConfigError(format!("Failed to create driver engine: {}", e))
         })?;
 
         // Store engine handle lock-free
@@ -429,9 +432,30 @@ impl AudioEngineManager {
         self.engine.store(Some(Arc::new(engine)));
         self.set_state(StreamingState::Playing);
 
-        log::debug!("[AudioEngineManager] HAL playback started");
+        log::debug!("[AudioEngineManager] Driver playback started");
 
         Ok(())
+    }
+
+    /// Start HAL playback without a file source (legacy alias for `start_driver_playback`)
+    pub fn start_hal_playback(
+        &mut self,
+        output_device: Option<String>,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+    ) -> AudioDecoderResult<()> {
+        self.start_driver_playback(output_device, plugins, output_channels)
+    }
+
+    /// Start HAL playback with custom sample rate (legacy alias for `start_driver_playback_with_config`)
+    pub fn start_hal_playback_with_config(
+        &mut self,
+        output_device: Option<String>,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        sample_rate: u32,
+    ) -> AudioDecoderResult<()> {
+        self.start_driver_playback_with_config(output_device, plugins, output_channels, sample_rate)
     }
 
     /// Pause streaming

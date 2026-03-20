@@ -39,6 +39,7 @@ members = [
     "crates/app-tui",
     "crates/midi",
     "crates/plugins-ffi",
+    "crates/driver-common",
     "crates/driver-hal",
     "crates/daemon",
     "crates/math-audio/math-optimisation",
@@ -186,6 +187,7 @@ sotf-engine = { path = "crates/sotf-engine", default-features = false }
 sotf-player = { path = "crates/sotf-player" }
 player-midi = { path = "crates/midi" }
 sotf-plugins = { path = "crates/sotf-plugins", default-features = false }
+driver-common = { path = "crates/driver-common" }
 driver-hal = { path = "crates/driver-hal" }  # macOS only
 
 # audio
