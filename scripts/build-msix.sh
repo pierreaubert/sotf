@@ -313,9 +313,14 @@ build_msix() {
         exit 1
     fi
 
-    # Sign the MSIX package itself
+    # Note: MSIX package-level signing requires SignTool.exe (Windows only).
+    # osslsigncode cannot sign .msix files. The individual .exe files inside
+    # the package are already signed above. To sign the MSIX itself, use
+    # sign-windows.ps1 on a Windows machine with SignTool.exe.
     if $SIGN; then
-        sign_file "$output" "SotF Player MSIX"
+        log_warning "MSIX package signing skipped (osslsigncode does not support .msix)"
+        log_info "Executables inside the MSIX are signed."
+        log_info "To sign the .msix itself, use SignTool.exe on Windows."
     fi
 
     log_success "MSIX created: $output"

@@ -10,12 +10,12 @@ need to work cleanly.
 
 ## QA
 
-Full qa is very slow.
+Full qa is very slow (hours).
 ```
 just qa
 
 ```
- You can run a minial subset:
+ You can run a minial subset (minutes):
 ```
 just qa-autoeq
 just qa-roomeq-quick
@@ -76,9 +76,3 @@ Cosign
 ### Windows
 
 Generate a msix
-
-
-
-
-
-

@@ -9,6 +9,11 @@ repository.workspace = true
 # Disable auto-discovery: unit test files in tests/ are included via #[path] in lib modules.
 autotests = false
 
+[features]
+default = []
+hal = ["sotf-engine/hal", "sotf-player/hal"]
+onnx = ["sotf-plugins/onnx"]
+
 [dependencies]
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-player = { workspace = true }
@@ -81,11 +86,6 @@ core-foundation-sys = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-
-[features]
-default = []
-onnx = ["sotf-plugins/onnx"]
-hal = ["sotf-player/hal"]
 
 [lib]
 name = "sotf_audio_player_tui"

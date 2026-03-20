@@ -14,6 +14,7 @@
 use crate::Curve;
 use log::info;
 use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
+use math_audio_optimisation::{levenberg_marquardt, LMConfigBuilder};
 use ndarray::Array1;
 use std::collections::HashMap;
 
@@ -28,6 +29,9 @@ pub const HIGHSHELF_FREQ: f64 = 4000.0;
 
 /// Maximum allowed shelf gain magnitude (dB)
 const MAX_SHELF_GAIN_DB: f64 = 6.0;
+
+/// Maximum allowed flat gain magnitude (dB) — prevents solver divergence on narrow-band data
+const MAX_FLAT_GAIN_DB: f64 = 12.0;
 
 /// Minimum correction magnitude to bother applying (dB)
 const MIN_CORRECTION_DB: f64 = 0.3;
@@ -118,10 +122,10 @@ pub fn compute_spectral_alignment(
         let (ls_fit, hs_fit, flat_fit, residual_rms) =
             fit_shelf_gain_iterative(&diff, &active_freq, sample_rate, &weights);
 
-        // Negate to get corrections, then clamp shelf gains
+        // Negate to get corrections, then clamp gains
         let ls_gain = (-ls_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
         let hs_gain = (-hs_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
-        let flat_gain = -flat_fit;
+        let flat_gain = (-flat_fit).clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB);
 
         results.insert(
             name.clone(),
@@ -276,7 +280,7 @@ pub fn compute_target_alignment(
     // Determine corrections (negative of fit)
     let ls_gain = (-ls_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
     let hs_gain = (-hs_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
-    let flat_gain = -flat_fit;
+    let flat_gain = (-flat_fit).clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB);
 
     // If corrections are negligible, return None
     if ls_gain.abs() < MIN_CORRECTION_DB
@@ -373,16 +377,6 @@ fn compute_octave_weights(freq: &Array1<f64>) -> Array1<f64> {
     weights
 }
 
-/// Number of Gauss-Newton iterations for shelf fitting.
-///
-/// 3 iterations are sufficient: the shelf nonlinearity is mild (smooth, monotonic)
-/// so the linear initial guess is already close, and each iteration roughly squares
-/// the error.
-const SHELF_FIT_ITERATIONS: usize = 3;
-
-/// Finite-difference step for Jacobian approximation (dB).
-const JACOBIAN_EPSILON_DB: f64 = 0.1;
-
 /// Evaluate the actual dB response of low-shelf + high-shelf + flat gain.
 fn evaluate_shelf_response(
     freq: &Array1<f64>,
@@ -419,59 +413,12 @@ fn evaluate_shelf_response(
     response
 }
 
-/// Build finite-difference Jacobian columns ∂response/∂ls_gain and ∂response/∂hs_gain
-/// at the current operating point.
-fn build_jacobian_basis(
-    freq: &Array1<f64>,
-    sample_rate: f64,
-    ls_gain: f64,
-    hs_gain: f64,
-) -> (Array1<f64>, Array1<f64>) {
-    let eps = JACOBIAN_EPSILON_DB;
-
-    // ∂/∂ls_gain via central differences
-    let ls_plus = Biquad::new(
-        BiquadFilterType::Lowshelf,
-        LOWSHELF_FREQ,
-        sample_rate,
-        DEFAULT_Q_HIGH_LOW_SHELF,
-        ls_gain + eps,
-    );
-    let ls_minus = Biquad::new(
-        BiquadFilterType::Lowshelf,
-        LOWSHELF_FREQ,
-        sample_rate,
-        DEFAULT_Q_HIGH_LOW_SHELF,
-        ls_gain - eps,
-    );
-    let j_ls = (&ls_plus.np_log_result(freq) - &ls_minus.np_log_result(freq)) / (2.0 * eps);
-
-    // ∂/∂hs_gain via central differences
-    let hs_plus = Biquad::new(
-        BiquadFilterType::Highshelf,
-        HIGHSHELF_FREQ,
-        sample_rate,
-        DEFAULT_Q_HIGH_LOW_SHELF,
-        hs_gain + eps,
-    );
-    let hs_minus = Biquad::new(
-        BiquadFilterType::Highshelf,
-        HIGHSHELF_FREQ,
-        sample_rate,
-        DEFAULT_Q_HIGH_LOW_SHELF,
-        hs_gain - eps,
-    );
-    let j_hs = (&hs_plus.np_log_result(freq) - &hs_minus.np_log_result(freq)) / (2.0 * eps);
-
-    (j_ls, j_hs)
-}
-
-/// Iteratively fit low-shelf + high-shelf + flat gain to a target difference curve.
+/// Fit low-shelf + high-shelf + flat gain to a target difference curve using
+/// Levenberg-Marquardt bounded nonlinear least squares.
 ///
-/// Uses Gauss-Newton iteration to handle the nonlinear relationship between
-/// shelf gain (dB) and shelf frequency response shape. The linear solve (1 dB
-/// basis) provides the initial estimate; each iteration evaluates the actual
-/// shelf response, computes the residual, and solves a linearized correction.
+/// The LM solver handles the nonlinear relationship between shelf gain (dB) and
+/// shelf frequency response shape, with damping to prevent divergence when basis
+/// vectors become nearly collinear (e.g., narrow-band data).
 fn fit_shelf_gain_iterative(
     diff: &Array1<f64>,
     freq: &Array1<f64>,
@@ -481,31 +428,78 @@ fn fit_shelf_gain_iterative(
     let n = freq.len();
     let flat_basis = Array1::ones(n);
 
-    // Initial linear estimate using 1 dB basis
+    // Initial linear estimate using 1 dB basis (provides a good starting point)
     let (ls_basis, hs_basis) = build_basis_vectors(freq, sample_rate);
-    let (mut ls_gain, mut hs_gain, mut flat_gain, _) =
+    let (ls_init, hs_init, flat_init, _) =
         solve_3x3_wls(diff, &ls_basis, &hs_basis, &flat_basis, weights);
 
-    // Gauss-Newton refinement
-    for _ in 0..SHELF_FIT_ITERATIONS {
-        // Evaluate actual nonlinear shelf response at current gains
-        let actual = evaluate_shelf_response(freq, sample_rate, ls_gain, hs_gain, flat_gain);
-        let residual = diff - &actual;
+    // NaN guard on initial solve (ill-conditioned matrix)
+    let x0 = if ls_init.is_finite() && hs_init.is_finite() && flat_init.is_finite() {
+        ndarray::array![ls_init, hs_init, flat_init]
+    } else {
+        ndarray::array![0.0, 0.0, 0.0]
+    };
 
-        // Build Jacobian at current operating point
-        let (j_ls, j_hs) = build_jacobian_basis(freq, sample_rate, ls_gain, hs_gain);
+    // Capture references for the residual closure
+    let diff = diff.clone();
+    let freq = freq.clone();
+    let weights = weights.clone();
 
-        // Solve for corrections (flat basis Jacobian is trivially 1.0)
-        let (d_ls, d_hs, d_flat, _) = solve_3x3_wls(&residual, &j_ls, &j_hs, &flat_basis, weights);
+    let residual_fn = |x: &Array1<f64>| -> Array1<f64> {
+        let response = evaluate_shelf_response(&freq, sample_rate, x[0], x[1], x[2]);
+        let r = &diff - &response;
+        // Bake sqrt(weights) into residuals so LM minimizes sum(w_i * r_i^2)
+        &r * &weights.mapv(f64::sqrt)
+    };
 
-        ls_gain += d_ls;
-        hs_gain += d_hs;
-        flat_gain += d_flat;
-    }
+    let bounds = [
+        (-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0), // ls_gain
+        (-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0), // hs_gain
+        (-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB),                // flat_gain
+    ];
 
-    // Final residual RMS
-    let actual = evaluate_shelf_response(freq, sample_rate, ls_gain, hs_gain, flat_gain);
-    let residual = diff - &actual;
+    let config = LMConfigBuilder::new()
+        .x0(x0)
+        .maxiter(10)
+        .tol(1e-10)
+        .jacobian_epsilon(0.1)
+        .build();
+
+    let report = match levenberg_marquardt(&residual_fn, &bounds, config) {
+        Ok(r) => r,
+        Err(_) => {
+            // Fallback to the linear estimate (clamped); guard NaN (clamp(NaN) = NaN)
+            let ls = if ls_init.is_finite() {
+                ls_init.clamp(-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0)
+            } else {
+                0.0
+            };
+            let hs = if hs_init.is_finite() {
+                hs_init.clamp(-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0)
+            } else {
+                0.0
+            };
+            let flat = if flat_init.is_finite() {
+                flat_init.clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB)
+            } else {
+                0.0
+            };
+            let actual = evaluate_shelf_response(&freq, sample_rate, ls, hs, flat);
+            let residual = &diff - &actual;
+            let rms = (residual
+                .iter()
+                .zip(weights.iter())
+                .map(|(&r, &w)| w * r * r)
+                .sum::<f64>()
+                / n as f64)
+                .sqrt();
+            return (ls, hs, flat, rms);
+        }
+    };
+
+    // Compute final residual RMS (in unweighted dB space)
+    let actual = evaluate_shelf_response(&freq, sample_rate, report.x[0], report.x[1], report.x[2]);
+    let residual = &diff - &actual;
     let weighted_sq: f64 = residual
         .iter()
         .zip(weights.iter())
@@ -513,7 +507,7 @@ fn fit_shelf_gain_iterative(
         .sum();
     let residual_rms = (weighted_sq / n as f64).sqrt();
 
-    (ls_gain, hs_gain, flat_gain, residual_rms)
+    (report.x[0], report.x[1], report.x[2], residual_rms)
 }
 
 /// Solve the 3×3 weighted least squares problem:
@@ -638,6 +632,22 @@ mod tests {
         let n = 200;
         let log_start = 20f64.log10();
         let log_end = 20000f64.log10();
+        let freq: Vec<f64> = (0..n)
+            .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
+            .collect();
+        let spl: Vec<f64> = freq.iter().map(|&f| spl_fn(f)).collect();
+        Curve {
+            freq: Array1::from(freq),
+            spl: Array1::from(spl),
+            phase: None,
+        }
+    }
+
+    /// Build a narrow-band Curve at log-spaced frequencies within [min_freq, max_freq]
+    fn make_narrow_curve(spl_fn: impl Fn(f64) -> f64, min_freq: f64, max_freq: f64) -> Curve {
+        let n = 50;
+        let log_start = min_freq.log10();
+        let log_end = max_freq.log10();
         let freq: Vec<f64> = (0..n)
             .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
             .collect();
@@ -974,5 +984,267 @@ mod tests {
             "flat gains should sum to ~0, got {}",
             flat_sum
         );
+    }
+
+    #[test]
+    fn test_narrow_band_no_divergence() {
+        // Narrow frequency range 100-400 Hz: lowshelf (200 Hz) and flat basis
+        // become nearly collinear. The old Gauss-Newton solver diverged here
+        // with flat_gain exploding to ±60+ dB. LM damping prevents this.
+        let mut curves = HashMap::new();
+        curves.insert(
+            "L".to_string(),
+            make_narrow_curve(|_| -30.0, 100.0, 400.0),
+        );
+        curves.insert(
+            "R".to_string(),
+            make_narrow_curve(|_| -32.0, 100.0, 400.0),
+        );
+
+        let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 100.0, 400.0);
+
+        for (name, r) in &results {
+            assert!(
+                r.flat_gain_db.abs() <= MAX_FLAT_GAIN_DB + 0.01,
+                "Channel '{}' flat_gain {:.2} dB exceeds ±{} dB",
+                name,
+                r.flat_gain_db,
+                MAX_FLAT_GAIN_DB
+            );
+            assert!(
+                r.flat_gain_db.is_finite(),
+                "Channel '{}' flat_gain is not finite",
+                name
+            );
+            assert!(
+                r.lowshelf_gain_db.is_finite(),
+                "Channel '{}' lowshelf_gain is not finite",
+                name
+            );
+            assert!(
+                r.highshelf_gain_db.is_finite(),
+                "Channel '{}' highshelf_gain is not finite",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_identical_channels_zero_correction() {
+        // Two identical channels should produce zero corrections
+        let mut curves = HashMap::new();
+        curves.insert("L".to_string(), make_curve(|_| 0.0));
+        curves.insert("R".to_string(), make_curve(|_| 0.0));
+
+        let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
+
+        for (name, r) in &results {
+            assert!(
+                r.flat_gain_db.abs() < MIN_CORRECTION_DB,
+                "Channel '{}' flat_gain should be ~0, got {:.4}",
+                name,
+                r.flat_gain_db
+            );
+            assert!(
+                r.lowshelf_gain_db.abs() < MIN_CORRECTION_DB,
+                "Channel '{}' lowshelf should be ~0, got {:.4}",
+                name,
+                r.lowshelf_gain_db
+            );
+            assert!(
+                r.highshelf_gain_db.abs() < MIN_CORRECTION_DB,
+                "Channel '{}' highshelf should be ~0, got {:.4}",
+                name,
+                r.highshelf_gain_db
+            );
+        }
+    }
+
+    /// Regression test: broadband target matching must not produce large corrections
+    /// when the measurement is level-shifted relative to the target.
+    ///
+    /// Before the fix, `compute_target_alignment` compared a measurement at +5dB mean
+    /// against a 0dB-centered target, producing a catastrophic -5dB flat_gain that
+    /// cascaded into +20dB EQ boosts. The caller must level-align the target to the
+    /// measurement's mean before calling this function.
+    #[test]
+    fn test_target_alignment_level_offset_must_not_cause_large_correction() {
+        // Simulate a measurement at ~5 dB mean (typical room measurement)
+        let measurement = make_curve(|_| 5.0);
+        // Target: level-aligned to measurement mean (5.0) + small tilt (-0.8 dB/oct)
+        let target = make_curve(|f| 5.0 + (-0.8) * (f / 1000.0).log2());
+
+        let result = compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
+
+        // With a level-aligned target, the flat gain should be small (only tilt mismatch)
+        if let Some(r) = &result {
+            assert!(
+                r.flat_gain_db.abs() < 3.0,
+                "flat_gain should be small when target is level-aligned, got {:.2}dB",
+                r.flat_gain_db
+            );
+        }
+
+        // Now test the BAD case: target NOT level-aligned (centered at 0dB).
+        // This is what caused the catastrophic bug. The correction should be large.
+        let bad_target = make_curve(|f| (-0.8) * (f / 1000.0).log2());
+        let bad_result =
+            compute_target_alignment(&measurement, &bad_target, 20.0, 20000.0, SAMPLE_RATE);
+
+        if let Some(r) = &bad_result {
+            // The flat_gain will be clamped to MAX_FLAT_GAIN_DB, but it's still large
+            assert!(
+                r.flat_gain_db.abs() > 3.0,
+                "un-aligned target should produce large flat_gain, got {:.2}dB",
+                r.flat_gain_db
+            );
+        }
+    }
+
+    /// Test that target alignment with a flat measurement and flat target at same level
+    /// produces negligible corrections.
+    #[test]
+    fn test_target_alignment_same_level_flat() {
+        let mean_level = 7.0; // arbitrary absolute SPL
+        let measurement = make_curve(|_| mean_level);
+        let target = make_curve(|_| mean_level);
+
+        let result = compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
+
+        // Should be None (negligible corrections) or have very small values
+        if let Some(r) = &result {
+            assert!(
+                r.flat_gain_db.abs() < MIN_CORRECTION_DB,
+                "flat_gain should be negligible, got {:.4}dB",
+                r.flat_gain_db
+            );
+            assert!(
+                r.lowshelf_gain_db.abs() < MIN_CORRECTION_DB,
+                "lowshelf should be negligible, got {:.4}dB",
+                r.lowshelf_gain_db
+            );
+            assert!(
+                r.highshelf_gain_db.abs() < MIN_CORRECTION_DB,
+                "highshelf should be negligible, got {:.4}dB",
+                r.highshelf_gain_db
+            );
+        }
+    }
+
+    /// Test that target alignment with tilt produces shelf corrections, not flat gain.
+    #[test]
+    fn test_target_alignment_tilt_produces_shelf_not_flat() {
+        let mean_level = 5.0;
+        // Flat measurement
+        let measurement = make_curve(|_| mean_level);
+        // Tilted target at same mean level
+        let target = make_curve(|f| mean_level + (-0.8) * (f / 1000.0).log2());
+
+        let result = compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
+
+        if let Some(r) = result {
+            // Should have shelf corrections (the tilt shape) but small flat gain
+            assert!(
+                r.flat_gain_db.abs() < 2.0,
+                "flat_gain should be small for pure tilt, got {:.2}dB",
+                r.flat_gain_db
+            );
+            // At least one shelf should be non-trivial to correct the tilt
+            let has_shelf = r.lowshelf_gain_db.abs() > MIN_CORRECTION_DB
+                || r.highshelf_gain_db.abs() > MIN_CORRECTION_DB;
+            assert!(has_shelf, "tilt should produce shelf corrections");
+        }
+    }
+
+    /// Regression test: broadband target matching must use a FLAT target
+    /// (at the measurement's mean level), NOT a tilted target.
+    ///
+    /// If the target includes the tilt, the broadband shelves push the measurement
+    /// toward the tilt, and then the EQ optimizer subtracts the tilt again — double-
+    /// applying it. The correct pattern is:
+    ///   broadband target = flat at mean_spl  (only corrects broadband shape)
+    ///   EQ optimizer target = measurement - tilt_curve  (handles tilt)
+    ///
+    /// With a tilted target, the broadband shelves add the tilt shape.
+    /// Then `optimization_curve = curve_for_optim - tilt_curve` subtracts it
+    /// again, but the shelf approximation doesn't perfectly cancel, leaving
+    /// artifacts that the EQ fights against. We verify the flat target
+    /// does NOT include tilt-shaped shelves.
+    #[test]
+    fn test_broadband_must_use_flat_target_not_tilted() {
+        // Flat measurement at uniform level
+        let measurement = make_curve(|_| 5.0);
+
+        // CORRECT: flat target at measurement level → negligible corrections
+        let flat_target = make_curve(|_| 5.0);
+        let flat_result =
+            compute_target_alignment(&measurement, &flat_target, 20.0, 20000.0, SAMPLE_RATE);
+
+        // BAD: tilted target → shelves try to impose the tilt shape
+        let tilted_target = make_curve(|f| 5.0 + (-0.8) * (f / 1000.0).log2());
+        let tilted_result =
+            compute_target_alignment(&measurement, &tilted_target, 20.0, 20000.0, SAMPLE_RATE);
+
+        // With flat measurement + flat target: corrections should be negligible
+        let flat_total = flat_result
+            .as_ref()
+            .map(|r| r.flat_gain_db.abs() + r.lowshelf_gain_db.abs() + r.highshelf_gain_db.abs())
+            .unwrap_or(0.0);
+        assert!(
+            flat_total < 1.0,
+            "flat measurement + flat target should need negligible correction, got {:.2}dB",
+            flat_total
+        );
+
+        // With flat measurement + tilted target: shelves must be non-trivial
+        // (the alignment tries to impose a tilt that doesn't exist in the data)
+        if let Some(r) = &tilted_result {
+            let tilted_total =
+                r.flat_gain_db.abs() + r.lowshelf_gain_db.abs() + r.highshelf_gain_db.abs();
+            assert!(
+                tilted_total > 1.0,
+                "flat measurement + tilted target should produce shelf corrections, got {:.2}dB",
+                tilted_total
+            );
+        }
+    }
+
+    /// Test that broadband alignment only produces low-Q (gentle) corrections.
+    /// The shelf filters have fixed frequencies (200Hz, 4000Hz) and the
+    /// gains are clamped to MAX_SHELF_GAIN_DB (6dB). This ensures the
+    /// broadband stage never produces aggressive narrow corrections.
+    #[test]
+    fn test_broadband_corrections_are_gentle() {
+        // Measurement with a 10dB peak at 300Hz (aggressive room mode)
+        let measurement = make_curve(|f| {
+            let peak = 10.0 * (-((f.log2() - 300.0_f64.log2()).powi(2)) / 0.5).exp();
+            5.0 + peak
+        });
+        let target = make_curve(|_| 5.0);
+
+        let result =
+            compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
+
+        if let Some(r) = result {
+            // Shelf gains must be within the clamped limits
+            assert!(
+                r.lowshelf_gain_db.abs() <= MAX_SHELF_GAIN_DB + 0.01,
+                "lowshelf {:.2}dB exceeds limit {:.1}dB",
+                r.lowshelf_gain_db,
+                MAX_SHELF_GAIN_DB
+            );
+            assert!(
+                r.highshelf_gain_db.abs() <= MAX_SHELF_GAIN_DB + 0.01,
+                "highshelf {:.2}dB exceeds limit {:.1}dB",
+                r.highshelf_gain_db,
+                MAX_SHELF_GAIN_DB
+            );
+            assert!(
+                r.flat_gain_db.abs() <= MAX_FLAT_GAIN_DB + 0.01,
+                "flat_gain {:.2}dB exceeds limit {:.1}dB",
+                r.flat_gain_db,
+                MAX_FLAT_GAIN_DB
+            );
+        }
     }
 }

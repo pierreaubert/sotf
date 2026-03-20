@@ -1,9 +1,11 @@
 //! Dialog and modal rendering components
 
-mod tutorial;
+pub mod tutorial;
 
 use crate::app::Screen;
+use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::editing::PluginEditingManager;
+use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -258,111 +260,32 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Md)
                     .align(StackAlign::Center)
-                    // Links section
+                    // Links section — uses render_external_link for consistency
                     .child(
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .align(StackAlign::Start)
-                            .child(
-                                div()
-                                    .id("link-new-features")
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .p_3()
-                                    .w_full()
-                                    .rounded_md()
-                                    .bg(theme.surface_hover)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.accent_muted))
-                                    .child(Text::new("🚀").size(TextSize::Lg))
-                                    .child(
-                                        VStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Text::new("Request New Features")
-                                                    .size(TextSize::Sm)
-                                                    .weight(TextWeight::Semibold)
-                                                    .color(theme.text_primary),
-                                            )
-                                            .child(
-                                                Text::new("Share your ideas for new features")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.text_secondary),
-                                            ),
-                                    )
-                                    .on_mouse_up(MouseButton::Left, |_, _window, cx| {
-                                        cx.open_url(
-                                            "https://github.com/pierreaubert/sotf/discussions/117",
-                                        );
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id("link-report-bugs")
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .p_3()
-                                    .w_full()
-                                    .rounded_md()
-                                    .bg(theme.surface_hover)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.accent_muted))
-                                    .child(Text::new("🐛").size(TextSize::Lg))
-                                    .child(
-                                        VStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Text::new("Report Bugs")
-                                                    .size(TextSize::Sm)
-                                                    .weight(TextWeight::Semibold)
-                                                    .color(theme.text_primary),
-                                            )
-                                            .child(
-                                                Text::new("Help us fix issues you encounter")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.text_secondary),
-                                            ),
-                                    )
-                                    .on_mouse_up(MouseButton::Left, |_, _window, cx| {
-                                        cx.open_url(
-                                            "https://github.com/pierreaubert/sotf/discussions/116",
-                                        );
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id("link-github")
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .p_3()
-                                    .w_full()
-                                    .rounded_md()
-                                    .bg(theme.surface_hover)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(theme.accent_muted))
-                                    .child(Text::new("📦").size(TextSize::Lg))
-                                    .child(
-                                        VStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Text::new("GitHub Repository")
-                                                    .size(TextSize::Sm)
-                                                    .weight(TextWeight::Semibold)
-                                                    .color(theme.text_primary),
-                                            )
-                                            .child(
-                                                Text::new("View source code and documentation")
-                                                    .size(TextSize::Xs)
-                                                    .color(theme.text_secondary),
-                                            ),
-                                    )
-                                    .on_mouse_up(MouseButton::Left, |_, _window, cx| {
-                                        cx.open_url("https://github.com/pierreaubert/sotf");
-                                    }),
-                            ),
+                            .child(self.render_external_link(
+                                "🚀",
+                                "Request New Features",
+                                "Share your ideas for new features",
+                                "https://github.com/pierreaubert/sotf/discussions/117",
+                                &theme,
+                            ))
+                            .child(self.render_external_link(
+                                "🐛",
+                                "Report Bugs",
+                                "Help us fix issues you encounter",
+                                "https://github.com/pierreaubert/sotf/discussions/116",
+                                &theme,
+                            ))
+                            .child(self.render_external_link(
+                                "📦",
+                                "GitHub Repository",
+                                "View source code and documentation",
+                                "https://github.com/pierreaubert/sotf",
+                                &theme,
+                            )),
                     ),
             )
             .footer(
@@ -538,10 +461,10 @@ impl PlayerView {
                 crate::app::ToastType::Info => ToastVariant::Info,
                 crate::app::ToastType::Warning => ToastVariant::Warning,
             };
-            (t.message.clone(), variant)
+            (t.message.clone(), variant, t.action.as_ref().map(|a| a.label.clone()))
         });
 
-        if let Some((message, variant)) = toast_data {
+        if let Some((message, variant, action_label)) = toast_data {
             let (bg_color, border_color, text_color) = match variant {
                 ToastVariant::Success => (theme.toast_success_bg, theme.success, theme.success),
                 ToastVariant::Error => (theme.toast_error_bg, theme.error, theme.error),
@@ -566,10 +489,83 @@ impl PlayerView {
                         .border_1()
                         .border_color(border_color)
                         .p_3()
+                        .flex()
+                        .items_start()
+                        .gap_2()
                         .child(
-                            Text::new(message.clone())
-                                .size(TextSize::Sm)
-                                .color(text_color),
+                            div()
+                                .flex_1()
+                                .child(
+                                    Text::new(message.clone())
+                                        .size(TextSize::Sm)
+                                        .color(text_color),
+                                ),
+                        )
+                        .when_some(action_label, |d, label| {
+                            d.child(
+                                div()
+                                    .id("toast-action")
+                                    .cursor_pointer()
+                                    .px_2()
+                                    .py_1()
+                                    .rounded_md()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(text_color)
+                                    .border_1()
+                                    .border_color(text_color)
+                                    .hover(move |s| s.bg(Theme::with_opacity(text_color, 0.15)))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                            let action_id = view
+                                                .state
+                                                .read(cx)
+                                                .app
+                                                .ui_state
+                                                .toast_message
+                                                .as_ref()
+                                                .and_then(|t| t.action.as_ref())
+                                                .map(|a| a.action_id.clone());
+                                            if let Some(id) = action_id {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.ui_state.toast_message = None;
+                                                    state.app.handle_toast_action(&id);
+                                                });
+                                                cx.notify();
+                                            }
+                                        }),
+                                    )
+                                    .child(label),
+                            )
+                        })
+                        .child(
+                            div()
+                                .id("toast-dismiss")
+                                .cursor_pointer()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .w(px(24.0))
+                                .h(px(24.0))
+                                .rounded_md()
+                                .hover(move |s| {
+                                    s.bg(Theme::with_opacity(text_color, 0.15))
+                                })
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.ui_state.toast_message = None;
+                                        });
+                                        cx.notify();
+                                    }),
+                                )
+                                .child(
+                                    Icon::new(IconName::X)
+                                        .color(text_color)
+                                        .size(crate::components::icons::IconSize::Sm),
+                                ),
                         ),
                 )
         } else {
@@ -585,23 +581,25 @@ impl PlayerView {
             let menu_type = menu.menu_type.clone();
             let item_idx = menu.item_index;
 
-            let menu_items: Vec<(&str, &str)> = match menu.menu_type {
-                crate::app::ContextMenuType::Album => {
-                    vec![("add-to-queue", "Add to Queue"), ("play-now", "Play Now")]
-                }
+            let items = match menu.menu_type {
+                crate::app::ContextMenuType::Album => vec![
+                    gpui_ui_kit::MenuItem::new("add-to-queue", "Add to Queue"),
+                    gpui_ui_kit::MenuItem::new("play-now", "Play Now"),
+                ],
                 crate::app::ContextMenuType::QueueItem => vec![
-                    ("remove-from-queue", "Remove from Queue"),
-                    ("play-from-here", "Play from Here"),
+                    gpui_ui_kit::MenuItem::new("remove-from-queue", "Remove from Queue"),
+                    gpui_ui_kit::MenuItem::new("play-from-here", "Play from Here"),
                 ],
                 crate::app::ContextMenuType::Plugin => vec![
-                    ("toggle-enabled", "Toggle Enabled"),
-                    ("move-up", "Move Up"),
-                    ("move-down", "Move Down"),
-                    ("remove-plugin", "Remove Plugin"),
+                    gpui_ui_kit::MenuItem::new("toggle-enabled", "Toggle Enabled"),
+                    gpui_ui_kit::MenuItem::new("move-up", "Move Up"),
+                    gpui_ui_kit::MenuItem::new("move-down", "Move Down"),
+                    gpui_ui_kit::MenuItem::separator(),
+                    gpui_ui_kit::MenuItem::new("remove-plugin", "Remove Plugin").danger(),
                 ],
                 crate::app::ContextMenuType::Directory => vec![
-                    ("remove-directory", "Remove Directory"),
-                    ("rescan-library", "Rescan Library"),
+                    gpui_ui_kit::MenuItem::new("remove-directory", "Remove Directory").danger(),
+                    gpui_ui_kit::MenuItem::new("rescan-library", "Rescan Library"),
                 ],
             };
 
@@ -611,84 +609,55 @@ impl PlayerView {
                 .absolute()
                 .left(px(menu.position_x))
                 .top(px(menu.position_y))
-                .bg(theme.surface)
-                .border_1()
-                .border_color(theme.border)
-                .rounded_md()
-                .shadow_lg()
-                .children(menu_items.iter().map(|(id, label)| {
-                    let item_id = *id;
-                    let item_label = *label;
-                    let menu_type_clone = menu_type.clone();
-                    let state_clone = state_entity.clone();
-
-                    let item_id_str = SharedString::from(format!("context-menu-{}", item_id));
-
-                    div()
-                        .id(item_id_str)
-                        .w_40()
-                        .px_3()
-                        .py_2()
-                        .cursor_pointer()
-                        .when(true, |d| d.hover(|d| d.bg(theme.surface_hover)))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |_view, _event, _window, cx| {
-                                state_clone.update(cx, |state, _cx| {
-                                    state.app.ui_state.context_menu = None;
-                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                                    match (menu_type_clone.clone(), item_id) {
-                                        (crate::app::ContextMenuType::Album, "add-to-queue") => {
-                                            if let Some(path) = state.app.add_album_to_queue() {
-                                                Self::play_track(state, path);
-                                            }
+                .child(
+                    gpui_ui_kit::Menu::new("context-menu", items)
+                        .theme(theme.to_menu_theme())
+                        .on_select(move |id, _window, cx| {
+                            let id = id.clone();
+                            let menu_type = menu_type.clone();
+                            state_entity.update(cx, |state, _cx| {
+                                state.app.ui_state.context_menu = None;
+                                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                                match (menu_type, id.as_ref()) {
+                                    (crate::app::ContextMenuType::Album, "add-to-queue") => {
+                                        if let Some(path) = state.app.add_album_to_queue() {
+                                            Self::play_track(state, path);
                                         }
-                                        (crate::app::ContextMenuType::Album, "play-now") => {
-                                            if let Some(path) = state.app.play_album_now() {
-                                                Self::play_track(state, path);
-                                            }
-                                        }
-                                        (
-                                            crate::app::ContextMenuType::QueueItem,
-                                            "remove-from-queue",
-                                        ) => {
-                                            state.app.remove_from_queue(item_idx);
-                                        }
-                                        (
-                                            crate::app::ContextMenuType::QueueItem,
-                                            "play-from-here",
-                                        ) => {
-                                            state.app.playback.current_queue_index = Some(item_idx);
-                                            if let Some(queue_item) = state.app.queue.get(item_idx)
-                                                && let Some(first_track) =
-                                                    queue_item.album.tracks.first()
-                                            {
-                                                Self::play_track(state, first_track.path.clone());
-                                            }
-                                        }
-                                        (crate::app::ContextMenuType::Plugin, "toggle-enabled") => {
-                                            state.app.toggle_plugin(item_idx);
-                                        }
-                                        (crate::app::ContextMenuType::Plugin, "move-up") => {
-                                            state.app.move_plugin_up(item_idx);
-                                        }
-                                        (crate::app::ContextMenuType::Plugin, "move-down") => {
-                                            state.app.move_plugin_down(item_idx);
-                                        }
-                                        (crate::app::ContextMenuType::Plugin, "remove-plugin") => {
-                                            state.app.remove_plugin(item_idx);
-                                        }
-                                        _ => {}
                                     }
-                                });
-                            }),
-                        )
-                        .child(
-                            Text::new(item_label)
-                                .size(TextSize::Sm)
-                                .color(theme.text_primary),
-                        )
-                }))
+                                    (crate::app::ContextMenuType::Album, "play-now") => {
+                                        if let Some(path) = state.app.play_album_now() {
+                                            Self::play_track(state, path);
+                                        }
+                                    }
+                                    (crate::app::ContextMenuType::QueueItem, "remove-from-queue") => {
+                                        state.app.remove_from_queue(item_idx);
+                                    }
+                                    (crate::app::ContextMenuType::QueueItem, "play-from-here") => {
+                                        state.app.playback.current_queue_index = Some(item_idx);
+                                        if let Some(queue_item) = state.app.queue.get(item_idx)
+                                            && let Some(first_track) =
+                                                queue_item.album.tracks.first()
+                                        {
+                                            Self::play_track(state, first_track.path.clone());
+                                        }
+                                    }
+                                    (crate::app::ContextMenuType::Plugin, "toggle-enabled") => {
+                                        state.app.toggle_plugin(item_idx);
+                                    }
+                                    (crate::app::ContextMenuType::Plugin, "move-up") => {
+                                        state.app.move_plugin_up(item_idx);
+                                    }
+                                    (crate::app::ContextMenuType::Plugin, "move-down") => {
+                                        state.app.move_plugin_down(item_idx);
+                                    }
+                                    (crate::app::ContextMenuType::Plugin, "remove-plugin") => {
+                                        state.app.remove_plugin(item_idx);
+                                    }
+                                    _ => {}
+                                }
+                            });
+                        }),
+                )
         } else {
             div()
         }

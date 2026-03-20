@@ -86,17 +86,20 @@ impl PluginEditingManager for App {
     }
 
     fn toggle_plugin(&mut self, index: usize) {
+        self.plugin_state.clear_confirmations();
         let effect = self.plugin_state.toggle_plugin(index);
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
         self.sync_spectrum_visible();
     }
 
     fn move_plugin_up(&mut self, index: usize) {
+        self.plugin_state.clear_confirmations();
         let effect = self.plugin_state.move_plugin_up(index);
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
     fn move_plugin_down(&mut self, index: usize) {
+        self.plugin_state.clear_confirmations();
         let effect = self.plugin_state.move_plugin_down(index);
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }

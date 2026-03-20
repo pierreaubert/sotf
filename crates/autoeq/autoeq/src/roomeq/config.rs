@@ -137,19 +137,13 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         result.add_warning("max_iter is 0, optimization will not run".to_string());
     }
 
-    // Validate algorithm choice
-    let valid_algorithms = [
-        "cobyla",
-        "de",
-        "nlopt:cobyla",
-        "nlopt:bobyqa",
-        "nlopt:sbplx",
-        "autoeq:de",
-    ];
-    if !valid_algorithms
-        .iter()
-        .any(|&a| opt.algorithm.starts_with(a))
-    {
+    // Validate algorithm choice — accept known library prefixes and bare names
+    let valid_prefixes = ["nlopt:", "mh:", "autoeq:"];
+    let valid_bare = ["cobyla", "de"];
+    let algo = opt.algorithm.as_str();
+    let is_known = valid_prefixes.iter().any(|p| algo.starts_with(p))
+        || valid_bare.contains(&algo);
+    if !is_known {
         result.add_warning(format!(
             "Unknown algorithm '{}', may not be supported",
             opt.algorithm
@@ -605,6 +599,79 @@ mod tests {
                 .errors
                 .iter()
                 .any(|e| e.contains("invalid speaker_name"))
+        );
+    }
+
+    // ========================================================================
+    // Group 4: Algorithm validation
+    // ========================================================================
+
+    /// Helper to create a minimal valid RoomConfig with a given algorithm
+    fn config_with_algorithm(algo: &str) -> RoomConfig {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "left".to_string(),
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
+                measurement: MeasurementRef::Path(PathBuf::from("test.csv")),
+                speaker_name: None,
+            })),
+        );
+        let mut optimizer = OptimizerConfig::default();
+        optimizer.algorithm = algo.to_string();
+        RoomConfig {
+            version: default_config_version(),
+            system: None,
+            speakers,
+            crossovers: None,
+            target_curve: None,
+            optimizer,
+            recording_config: None,
+        }
+    }
+
+    #[test]
+    fn test_all_algorithm_prefixes_accepted() {
+        // Bug #7: mh:firefly was flagged as unknown. All prefixed algorithms
+        // (mh:*, nlopt:*, autoeq:*) and bare names (cobyla, de) must be valid.
+        let valid_algos = [
+            "mh:firefly",
+            "mh:pso",
+            "nlopt:cobyla",
+            "nlopt:isres",
+            "autoeq:de",
+            "cobyla",
+            "de",
+        ];
+        for algo in &valid_algos {
+            let config = config_with_algorithm(algo);
+            let result = validate_room_config(&config);
+            let has_algo_warning = result
+                .warnings
+                .iter()
+                .any(|w| w.contains("Unknown algorithm"));
+            assert!(
+                !has_algo_warning,
+                "Algorithm '{}' should be accepted without warning, but got: {:?}",
+                algo, result.warnings
+            );
+        }
+    }
+
+    #[test]
+    fn test_unknown_algorithm_warns_not_errors() {
+        // An unrecognized algorithm should produce a warning, not an error.
+        // The config should still be valid (algo might be a plugin).
+        let config = config_with_algorithm("bogus_algo");
+        let result = validate_room_config(&config);
+        assert!(
+            result.is_valid,
+            "Unknown algorithm should warn, not error. Errors: {:?}",
+            result.errors
+        );
+        assert!(
+            result.warnings.iter().any(|w| w.contains("Unknown algorithm")),
+            "Unknown algorithm should produce a warning, but warnings: {:?}",
+            result.warnings
         );
     }
 }

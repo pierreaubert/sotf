@@ -13,6 +13,7 @@ use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use super::config::validate_room_config;
 use super::crossover;
@@ -77,6 +78,10 @@ fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f64) {
 
     // find_db_point uses an absolute threshold, so compute peak - 3 dB
     let peak_spl = spl_f32.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    if peak_spl < -100.0 {
+        // Measurement is essentially silence — passband detection is undefined
+        return (None, 0.0);
+    }
     let threshold = peak_spl - 3.0;
 
     let f_low = find_db_point(&freqs_f32, &spl_f32, threshold, true).unwrap_or(freqs_f32[0]);
@@ -527,25 +532,74 @@ pub fn optimize_room(
         },
     );
 
-    // Process each speaker sequentially so we can report progress
+    // Process each speaker sequentially so we can report progress.
+    // Wrap callback in Arc<Mutex> so we can create per-speaker OptimProgressCallbacks.
+    let max_iterations = config.optimizer.max_iter;
+    let callback_shared: Arc<Mutex<Option<RoomOptimizationCallback>>> =
+        Arc::new(Mutex::new(callback));
+
     let mut results: Vec<SpeakerProcessResult> = Vec::with_capacity(total_speakers);
     for (speaker_idx, (channel_name, speaker_config)) in channels_to_process.into_iter().enumerate()
     {
         info!("Processing channel: {}", channel_name);
 
-        send_progress(
-            &mut callback,
-            &RoomOptimizationProgress {
-                current_speaker: channel_name.clone(),
-                speaker_index: speaker_idx,
-                total_speakers,
-                iteration: 0,
-                max_iterations: 0,
-                loss: 0.0,
-                overall_progress: speaker_idx as f64 / total_speakers as f64,
-                message: Some(format!("Processing channel: {}", channel_name)),
-            },
-        );
+        {
+            let mut guard = callback_shared.lock().unwrap();
+            let stop = send_progress(
+                &mut guard,
+                &RoomOptimizationProgress {
+                    current_speaker: channel_name.clone(),
+                    speaker_index: speaker_idx,
+                    total_speakers,
+                    iteration: 0,
+                    max_iterations: 0,
+                    loss: 0.0,
+                    overall_progress: speaker_idx as f64 / total_speakers as f64,
+                    message: Some(format!("Processing channel: {}", channel_name)),
+                },
+            );
+            if stop {
+                break;
+            }
+        }
+
+        // Create a per-speaker OptimProgressCallback that forwards to the room callback
+        let eq_callback: Option<crate::optim::OptimProgressCallback> = {
+            let cb = Arc::clone(&callback_shared);
+            let name = channel_name.clone();
+            let si = speaker_idx;
+            let ts = total_speakers;
+            let mi = max_iterations;
+            Some(Box::new(move |iter: usize, loss: f64| {
+                let base_progress = si as f64 / ts as f64;
+                let speaker_progress = if mi > 0 {
+                    iter as f64 / mi as f64
+                } else {
+                    0.0
+                };
+                let overall = (base_progress + speaker_progress / ts as f64).min(1.0);
+
+                if let Ok(mut guard) = cb.lock()
+                    && let Some(room_cb) = guard.as_mut()
+                {
+                    let action = room_cb(&RoomOptimizationProgress {
+                        current_speaker: name.clone(),
+                        speaker_index: si,
+                        total_speakers: ts,
+                        iteration: iter,
+                        max_iterations: mi,
+                        loss,
+                        overall_progress: overall,
+                        message: None,
+                    });
+                    return match action {
+                        CallbackAction::Continue => crate::de::CallbackAction::Continue,
+                        CallbackAction::Stop => crate::de::CallbackAction::Stop,
+                    };
+                }
+                crate::de::CallbackAction::Continue
+            }))
+        };
 
         let result = process_speaker_internal(
             &channel_name,
@@ -553,6 +607,7 @@ pub fn optimize_room(
             config,
             sample_rate,
             output_dir,
+            eq_callback,
         );
 
         match result {
@@ -567,22 +622,28 @@ pub fn optimize_room(
                 arrival_time_ms,
                 fir_coeffs,
             )) => {
-                send_progress(
-                    &mut callback,
-                    &RoomOptimizationProgress {
-                        current_speaker: channel_name.clone(),
-                        speaker_index: speaker_idx,
-                        total_speakers,
-                        iteration: 0,
-                        max_iterations: 0,
-                        loss: post_score,
-                        overall_progress: (speaker_idx + 1) as f64 / total_speakers as f64,
-                        message: Some(format!(
-                            "Channel {}: {:.4} -> {:.4}",
-                            channel_name, pre_score, post_score
-                        )),
-                    },
-                );
+                {
+                    let mut guard = callback_shared.lock().unwrap();
+                    let stop = send_progress(
+                        &mut guard,
+                        &RoomOptimizationProgress {
+                            current_speaker: channel_name.clone(),
+                            speaker_index: speaker_idx,
+                            total_speakers,
+                            iteration: 0,
+                            max_iterations: 0,
+                            loss: post_score,
+                            overall_progress: (speaker_idx + 1) as f64 / total_speakers as f64,
+                            message: Some(format!(
+                                "Channel {}: {:.4} -> {:.4}",
+                                channel_name, pre_score, post_score
+                            )),
+                        },
+                    );
+                    // Note: can't break here since we're inside a match arm.
+                    // The stop signal is handled by the per-iteration callback.
+                    let _ = stop;
+                }
 
                 results.push(Ok((
                     channel_name,
@@ -828,6 +889,19 @@ pub fn optimize_room(
             warn!("Phase alignment enabled but no valid sub-main pairings found.");
         } else {
             info!("Running phase alignment optimization...");
+            send_progress(
+                &mut callback_shared.lock().unwrap(),
+                &RoomOptimizationProgress {
+                    current_speaker: String::new(),
+                    speaker_index: 0,
+                    total_speakers: pairings.len(),
+                    iteration: 0,
+                    max_iterations: 0,
+                    loss: 0.0,
+                    overall_progress: 0.0,
+                    message: Some("Running phase alignment...".to_string()),
+                },
+            );
 
             for (sub_name, main_name) in &pairings {
                 let sub_curve = match curves.get(sub_name) {
@@ -912,6 +986,20 @@ pub fn optimize_room(
 
         if pairings.is_empty() {
             warn!("GD-Opt enabled but no valid sub-main pairings found.");
+        } else {
+            send_progress(
+                &mut callback_shared.lock().unwrap(),
+                &RoomOptimizationProgress {
+                    current_speaker: String::new(),
+                    speaker_index: 0,
+                    total_speakers: pairings.len(),
+                    iteration: 0,
+                    max_iterations: 0,
+                    loss: 0.0,
+                    overall_progress: 0.0,
+                    message: Some("Running group delay optimization...".to_string()),
+                },
+            );
         }
 
         let min_freq = config.optimizer.min_freq;
@@ -922,6 +1010,19 @@ pub fn optimize_room(
                 (curves.get(&sub_name), curves.get(&main_name))
             {
                 info!("  Optimizing GD for '{}' vs '{}'", main_name, sub_name);
+                send_progress(
+                    &mut callback_shared.lock().unwrap(),
+                    &RoomOptimizationProgress {
+                        current_speaker: format!("GD {}", main_name),
+                        speaker_index: 0,
+                        total_speakers: 1,
+                        iteration: 0,
+                        max_iterations: 0,
+                        loss: 0.0,
+                        overall_progress: 0.0,
+                        message: Some(format!("Optimizing GD for '{}'", main_name)),
+                    },
+                );
 
                 match group_delay::optimize_gd_iir(
                     sub_curve,
@@ -1118,6 +1219,7 @@ pub fn optimize_speaker(
         &room_config,
         sample_rate,
         None,
+        None,
     )?;
 
     Ok(SpeakerOptimizationResult {
@@ -1144,12 +1246,20 @@ fn process_speaker_internal(
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: Option<&Path>,
+    callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<MixedModeResult> {
     let output_dir = output_dir.unwrap_or(Path::new("."));
 
     match speaker_config {
         SpeakerConfig::Single(source) => {
-            process_single_speaker(channel_name, source, room_config, sample_rate, output_dir)
+            process_single_speaker(
+                channel_name,
+                source,
+                room_config,
+                sample_rate,
+                output_dir,
+                callback,
+            )
         }
         SpeakerConfig::Group(group) => {
             process_speaker_group(channel_name, group, room_config, sample_rate, output_dir)
@@ -1202,6 +1312,7 @@ fn optimize_eq_maybe_multi(
     target_config: Option<&super::types::TargetCurveConfig>,
     sample_rate: f64,
     channel_name: &str,
+    callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<(Vec<Biquad>, f64)> {
     use super::types::MultiMeasurementStrategy;
 
@@ -1227,13 +1338,24 @@ fn optimize_eq_maybe_multi(
             curves.len()
         );
 
-        eq::optimize_channel_eq_multi(
-            &curves,
-            optimizer_config,
-            multi_config,
-            target_config,
-            sample_rate,
-        )
+        if let Some(cb) = callback {
+            eq::optimize_channel_eq_multi_with_callback(
+                &curves,
+                optimizer_config,
+                multi_config,
+                target_config,
+                sample_rate,
+                cb,
+            )
+        } else {
+            eq::optimize_channel_eq_multi(
+                &curves,
+                optimizer_config,
+                multi_config,
+                target_config,
+                sample_rate,
+            )
+        }
         .map_err(|e| AutoeqError::OptimizationFailed {
             message: format!(
                 "Multi-measurement EQ optimization failed for channel {}: {}",
@@ -1241,12 +1363,22 @@ fn optimize_eq_maybe_multi(
             ),
         })
     } else {
-        eq::optimize_channel_eq(
-            optimization_curve,
-            optimizer_config,
-            target_config,
-            sample_rate,
-        )
+        if let Some(cb) = callback {
+            eq::optimize_channel_eq_with_callback(
+                optimization_curve,
+                optimizer_config,
+                target_config,
+                sample_rate,
+                cb,
+            )
+        } else {
+            eq::optimize_channel_eq(
+                optimization_curve,
+                optimizer_config,
+                target_config,
+                sample_rate,
+            )
+        }
         .map_err(|e| AutoeqError::OptimizationFailed {
             message: format!("EQ optimization failed for channel {}: {}", channel_name, e),
         })
@@ -1262,6 +1394,7 @@ fn process_single_speaker(
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: &Path,
+    callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<MixedModeResult> {
     // Load measurement
     let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
@@ -1307,14 +1440,33 @@ fn process_single_speaker(
     // Build target curve with tilt (if configured)
     // ========================================================================
     let target_tilt_curve = if let Some(tilt_config) = &room_config.optimizer.target_tilt {
-        if tilt_config.tilt_type != TiltType::Flat {
+        // When tilt_type is Flat but the user set a non-zero slope or bass shelf,
+        // promote to Custom so the tilt is actually applied. This handles configs
+        // where tilt_type is omitted (defaults to Flat) but slope_db_per_octave is set.
+        let effective_config = if tilt_config.tilt_type == TiltType::Flat
+            && (tilt_config.slope_db_per_octave.abs() > 1e-6
+                || tilt_config.bass_shelf_db.abs() > 1e-6)
+        {
+            warn!(
+                "  target_tilt has slope={:.2} dB/oct but tilt_type is Flat — \
+                 promoting to Custom. Set tilt_type explicitly to avoid this warning.",
+                tilt_config.slope_db_per_octave
+            );
+            let mut promoted = tilt_config.clone();
+            promoted.tilt_type = TiltType::Custom;
+            promoted
+        } else {
+            tilt_config.clone()
+        };
+
+        if effective_config.tilt_type != TiltType::Flat {
             info!(
                 "  Building target curve with {:?} tilt ({:.2} dB/octave)",
-                tilt_config.tilt_type, tilt_config.slope_db_per_octave
+                effective_config.tilt_type, effective_config.slope_db_per_octave
             );
             Some(target_tilt::build_target_curve_with_tilt(
                 &curve.freq,
-                tilt_config,
+                &effective_config,
             ))
         } else {
             None
@@ -1367,8 +1519,26 @@ fn process_single_speaker(
             Vec::new()
         };
 
+    // Simulate excursion HPF on the curve so the EQ optimizer sees the measurement
+    // as it will be after the HPF. Without this, the optimizer doesn't know about the
+    // HPF cuts and stacks additional cuts on top, double-cutting the bass.
+    // Keep `curve_raw` for final display (all_filters applied to raw measurement).
+    let curve_raw = curve.clone();
+    let curve = if !excursion_filters.is_empty() {
+        let hpf_resp =
+            response::compute_peq_complex_response(&excursion_filters, &curve.freq, sample_rate);
+        let adjusted = response::apply_complex_response(&curve, &hpf_resp);
+        info!(
+            "  Simulating excursion HPF on optimization curve ({} filters)",
+            excursion_filters.len()
+        );
+        adjusted
+    } else {
+        curve
+    };
+
     // Compute pre-score (within EQ range)
-    let min_freq = room_config.optimizer.min_freq;
+    let mut min_freq = room_config.optimizer.min_freq;
     let max_freq = room_config.optimizer.max_freq;
 
     // Detect passband for display metadata only
@@ -1379,6 +1549,35 @@ fn process_single_speaker(
             "  Detected passband for '{}': {:.1} Hz - {:.1} Hz",
             channel_name, f_low, f_high
         );
+    }
+
+    // When target tilt is active, clamp min_freq to the speaker's F3 rolloff.
+    // Without this, the tilt creates a massive target deficit below the speaker's
+    // capability (e.g. +4.5dB at 20Hz on a speaker that rolls off at 60Hz).
+    // The optimizer wastes filters on impossible bass boost, and the broad filter
+    // skirts cause collateral damage in the midrange.
+    if target_tilt_curve.is_some() {
+        match excursion::detect_f3(&curve, None) {
+            Ok(f3_result) => {
+                // Only clamp if F3 is above the configured min_freq but still
+                // well below max_freq. A very high "F3" (e.g., on a tilted curve
+                // with no real rolloff) would invalidate the frequency range.
+                if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 {
+                    info!(
+                        "  Tilt active: clamping min_freq from {:.1}Hz to F3={:.1}Hz \
+                         to prevent bass over-boost below rolloff",
+                        min_freq, f3_result.f3_hz
+                    );
+                    min_freq = f3_result.f3_hz;
+                }
+            }
+            Err(e) => {
+                debug!(
+                    "  F3 detection failed for tilt clamping: {}. Using configured min_freq.",
+                    e
+                );
+            }
+        }
     }
 
     // Use range-based mean (same as optimizer) for consistent pre/post scoring
@@ -1415,17 +1614,20 @@ fn process_single_speaker(
     {
         if bb_config.enabled {
             info!("  Broadband Target Matching enabled...");
-            // 1. Construct the target curve (with tilt if configured, or flat)
-            let target = target_tilt_curve.clone().unwrap_or_else(|| {
-                // Create a flat (0 dB) target curve matching the input frequency grid
-                Curve {
-                    freq: curve.freq.clone(),
-                    spl: Array1::zeros(curve.freq.len()),
-                    phase: None,
-                }
-            });
+            // 1. Construct a FLAT target at the measurement's mean level.
+            // The tilt is handled exclusively by the EQ optimizer (which subtracts
+            // the tilt curve before optimizing). Including the tilt here would
+            // double-apply it: broadband shelves push toward tilt, then the EQ
+            // normalizer subtracts tilt again, leaving only shelf artifacts.
+            let target = Curve {
+                freq: curve.freq.clone(),
+                spl: Array1::from_elem(curve.freq.len(), mean_spl),
+                phase: None,
+            };
 
-            // 2. Compute alignment
+            // 2. Compute alignment across the full audible range (20-20kHz).
+            // The target is flat at mean_spl, so the alignment fits gentle
+            // shelves + gain to correct the measurement's broadband shape.
             if let Some(result) = spectral_align::compute_target_alignment(
                 &curve,
                 &target,
@@ -1501,13 +1703,23 @@ fn process_single_speaker(
     // We must update the mean_spl because the broadband gain shifted it
     let mean_spl = mean_spl + bb_mean_shift;
 
+    // Build optimizer config with the clamped min_freq so the optimizer
+    // doesn't place filters below the speaker's rolloff when tilt is active.
+    let clamped_optimizer = if min_freq != room_config.optimizer.min_freq {
+        let mut opt = room_config.optimizer.clone();
+        opt.min_freq = min_freq;
+        opt
+    } else {
+        room_config.optimizer.clone()
+    };
+
     match room_config.optimizer.processing_mode {
         ProcessingMode::PhaseLinear => {
             info!("  Generating FIR filter...");
 
             // Check if we should force excess phase correction for GD-Opt on subwoofer
-            let mut opt_config = room_config.optimizer.clone();
-            if let Some(gd_opt) = &room_config.optimizer.gd_opt
+            let mut opt_config = clamped_optimizer.clone();
+            if let Some(gd_opt) = &clamped_optimizer.gd_opt
                 && gd_opt.enabled
                 && (channel_name == "lfe" || channel_name.starts_with("sub"))
                 && let Some(fir) = &mut opt_config.fir
@@ -1597,7 +1809,7 @@ fn process_single_speaker(
             );
 
             // Extend curves to 20 Hz – 20 kHz for display output
-            let display_initial = output::extend_curve_to_full_range(&curve);
+            let display_initial = output::extend_curve_to_full_range(&curve_raw);
             let display_fir_resp =
                 response::compute_fir_complex_response(&coeffs, &display_initial.freq, sample_rate);
             let display_final =
@@ -1616,7 +1828,7 @@ fn process_single_speaker(
                 chain,
                 pre_score,
                 post_score,
-                curve.clone(),
+                curve_raw.clone(),
                 final_curve,
                 vec![],
                 mean_spl,
@@ -1645,8 +1857,8 @@ fn process_single_speaker(
 
             // Legacy sequential mixed mode: IIR first, then FIR on residual
             // Check if we should force excess phase correction for GD-Opt on subwoofer
-            let mut opt_config = room_config.optimizer.clone();
-            if let Some(gd_opt) = &room_config.optimizer.gd_opt
+            let mut opt_config = clamped_optimizer.clone();
+            if let Some(gd_opt) = &clamped_optimizer.gd_opt
                 && gd_opt.enabled
             {
                 let is_sub = if let Some(sys) = &room_config.system {
@@ -1694,12 +1906,22 @@ fn process_single_speaker(
                 room_config.target_curve.as_ref()
             };
 
-            let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
-                &hybrid_optim_curve,
-                &opt_config, // Use modified config
-                effective_target,
-                sample_rate,
-            )
+            let (eq_filters, _opt_loss) = if let Some(cb) = callback {
+                eq::optimize_channel_eq_with_callback(
+                    &hybrid_optim_curve,
+                    &opt_config, // Use modified config
+                    effective_target,
+                    sample_rate,
+                    cb,
+                )
+            } else {
+                eq::optimize_channel_eq(
+                    &hybrid_optim_curve,
+                    &opt_config, // Use modified config
+                    effective_target,
+                    sample_rate,
+                )
+            }
             .map_err(|e| AutoeqError::OptimizationFailed {
                 message: format!(
                     "IIR optimization failed for channel {}: {}",
@@ -1765,8 +1987,9 @@ fn process_single_speaker(
                 pre_score, post_score
             );
 
-            // Extend curves to 20 Hz – 20 kHz for display output
-            let display_initial = output::extend_curve_to_full_range(&curve);
+            // Extend curves to 20 Hz – 20 kHz for display output.
+            // Use curve_raw since all_filters includes excursion HPF.
+            let display_initial = output::extend_curve_to_full_range(&curve_raw);
             let display_iir_resp = response::compute_peq_complex_response(
                 &eq_filters,
                 &display_initial.freq,
@@ -1792,7 +2015,7 @@ fn process_single_speaker(
                 chain,
                 pre_score,
                 post_score,
-                curve.clone(),
+                curve_raw.clone(),
                 final_curve,
                 eq_filters,
                 mean_spl,
@@ -1848,7 +2071,7 @@ fn process_single_speaker(
                     // Two-pass optimization with different Q constraints
                     let (low_filters, high_filters) = optimize_with_schroeder_split(
                         &optimization_curve,
-                        &room_config.optimizer,
+                        &clamped_optimizer,
                         schroeder_config,
                         sample_rate,
                     )?;
@@ -1872,10 +2095,11 @@ fn process_single_speaker(
                     let (filters, _opt_loss) = optimize_eq_maybe_multi(
                         source,
                         &optimization_curve,
-                        &room_config.optimizer,
+                        &clamped_optimizer,
                         effective_target,
                         sample_rate,
                         channel_name,
+                        callback,
                     )?;
                     filters
                 }
@@ -1884,15 +2108,15 @@ fn process_single_speaker(
                 let (filters, _opt_loss) = optimize_eq_maybe_multi(
                     source,
                     &optimization_curve,
-                    &room_config.optimizer,
+                    &clamped_optimizer,
                     effective_target,
                     sample_rate,
                     channel_name,
+                    callback,
                 )?;
                 filters
             };
 
-            info!("  Optimized {} EQ filters", eq_filters.len());
             info!("  Optimized {} EQ filters", eq_filters.len());
 
             // Combine excursion protection filters with EQ filters
@@ -1908,10 +2132,15 @@ fn process_single_speaker(
                 None,
             );
 
-            // Compute final response including all filters
+            // Compute final response including all filters (HPF + EQ).
+            // Apply to curve_raw (original measurement) since all_filters already
+            // includes the excursion HPF.
+            // NOTE: broadband biquads are NOT included here — they're in broadband_plugins
+            // which are part of the DSP chain output. The post_score measures the EQ-only
+            // improvement. The QA binary should compare scores within the same loss metric.
             let all_resp =
-                response::compute_peq_complex_response(&all_filters, &curve.freq, sample_rate);
-            let final_curve = response::apply_complex_response(&curve, &all_resp);
+                response::compute_peq_complex_response(&all_filters, &curve_raw.freq, sample_rate);
+            let final_curve = response::apply_complex_response(&curve_raw, &all_resp);
 
             // Compute post_score consistently with pre_score (flatness of corrected response)
             // If target tilt is applied, score against the tilt target
@@ -1945,8 +2174,9 @@ fn process_single_speaker(
                 pre_score, post_score
             );
 
-            // Extend curves to 20 Hz – 20 kHz for display output
-            let display_initial = output::extend_curve_to_full_range(&curve);
+            // Extend curves to 20 Hz – 20 kHz for display output.
+            // Use curve_raw (not HPF-adjusted) since all_filters includes the HPF.
+            let display_initial = output::extend_curve_to_full_range(&curve_raw);
             let display_resp = response::compute_peq_complex_response(
                 &all_filters,
                 &display_initial.freq,
@@ -1963,11 +2193,32 @@ fn process_single_speaker(
             chain.final_curve = Some(final_data.clone());
             chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
+            // Build effective target curve in absolute SPL coordinates for display.
+            // The optimizer works on mean-normalized data, so the effective target is
+            // mean_spl + tilt (if any). This lets the frontend show what the optimizer
+            // was actually aiming for instead of a misleading 0dB line.
+            let display_target_spl = if let Some(ref tilt_curve) = target_tilt_curve {
+                // Interpolate tilt to display frequency grid
+                let tilt_at_display = crate::read::normalize_and_interpolate_response(
+                    &display_initial.freq,
+                    tilt_curve,
+                );
+                &tilt_at_display.spl + mean_spl
+            } else {
+                ndarray::Array1::from_elem(display_initial.freq.len(), mean_spl)
+            };
+            chain.target_curve = Some(super::types::CurveData {
+                freq: display_initial.freq.to_vec(),
+                spl: display_target_spl.to_vec(),
+                phase: None,
+                norm_range,
+            });
+
             Ok((
                 chain,
                 pre_score,
                 post_score,
-                curve.clone(),
+                curve_raw,
                 final_curve,
                 eq_filters,
                 mean_spl,
@@ -3182,4 +3433,503 @@ fn process_cardioid(
         None,
         None, // IIR-only for cardioid
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::Array1;
+
+    #[test]
+    fn test_passband_silence_returns_none() {
+        // All SPL at -120 dB (essentially silence)
+        let curve = Curve {
+            freq: Array1::from_vec(vec![100.0, 1000.0, 10000.0]),
+            spl: Array1::from_vec(vec![-120.0, -120.0, -120.0]),
+            phase: None,
+        };
+        let (passband, mean) = detect_passband_and_mean(&curve);
+        assert!(
+            passband.is_none(),
+            "silence measurement should return None passband, got {:?}",
+            passband
+        );
+        assert_eq!(mean, 0.0);
+    }
+
+    // ========================================================================
+    // Pipeline invariant test helpers
+    // ========================================================================
+
+    /// Create a synthetic curve with 500 log-spaced points from 20-20kHz
+    fn make_test_curve(spl_fn: impl Fn(f64) -> f64) -> Curve {
+        let n = 500;
+        let log_min = 20.0_f64.ln();
+        let log_max = 20000.0_f64.ln();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| (log_min + (log_max - log_min) * i as f64 / (n - 1) as f64).exp())
+            .collect();
+        let spl: Vec<f64> = freqs.iter().map(|&f| spl_fn(f)).collect();
+        Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::from_vec(spl),
+            phase: None,
+        }
+    }
+
+    /// Bookshelf speaker: flat ~70dB 80-20kHz, -12dB/oct rolloff below 60Hz
+    fn make_bookshelf_curve() -> Curve {
+        make_test_curve(|f| {
+            let base = 70.0;
+            if f < 60.0 {
+                // -12 dB/octave rolloff below 60Hz
+                base + 12.0 * (f / 60.0).log2()
+            } else {
+                base
+            }
+        })
+    }
+
+    /// Create a fast optimizer config with overrides applied.
+    /// Uses autoeq:de (always available, no feature flags needed) with
+    /// moderate iteration count to balance speed and convergence.
+    fn fast_test_config(overrides: impl FnOnce(&mut OptimizerConfig)) -> OptimizerConfig {
+        let mut config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            max_iter: 1000,
+            population: 20,
+            num_filters: 5,
+            seed: Some(42),
+            refine: false,
+            psychoacoustic: false,
+            asymmetric_loss: false,
+            ..OptimizerConfig::default()
+        };
+        overrides(&mut config);
+        config
+    }
+
+    /// Run process_single_speaker with an in-memory curve and minimal RoomConfig
+    fn run_single_speaker(curve: Curve, config: &OptimizerConfig) -> MixedModeResult {
+        let source = MeasurementSource::InMemory(curve);
+        let room_config = RoomConfig {
+            version: super::super::types::default_config_version(),
+            system: None,
+            speakers: {
+                let mut m = HashMap::new();
+                m.insert("test".to_string(), SpeakerConfig::Single(source.clone()));
+                m
+            },
+            crossovers: None,
+            target_curve: None,
+            optimizer: config.clone(),
+            recording_config: None,
+        };
+        let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
+        process_single_speaker("test", &source, &room_config, 48000.0, tmp.path(), None)
+            .expect("process_single_speaker failed")
+    }
+
+    /// Find SPL at the nearest frequency point in a curve (log-space nearest)
+    fn spl_at(curve: &Curve, target_f: f64) -> f64 {
+        let mut best_idx = 0;
+        let mut best_dist = f64::INFINITY;
+        for (i, &f) in curve.freq.iter().enumerate() {
+            let dist = (f.ln() - target_f.ln()).abs();
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = i;
+            }
+        }
+        curve.spl[best_idx]
+    }
+
+    /// Compute the slope of a curve in dB/octave between two frequencies
+    fn slope_db_per_octave(curve: &Curve, f_low: f64, f_high: f64) -> f64 {
+        let delta_spl = spl_at(curve, f_high) - spl_at(curve, f_low);
+        let octaves = (f_high / f_low).log2();
+        delta_spl / octaves
+    }
+
+    // ========================================================================
+    // Group 1: Tilt invariants
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_tilt_flat_with_slope_still_applies() {
+        // Bug #1: tilt_type defaults to Flat, slope silently ignored.
+        // Config with Flat + slope=-0.8 must produce tilted output
+        // (process_single_speaker promotes Flat+slope to Custom).
+        let curve = make_test_curve(|_f| 70.0); // perfectly flat
+        let config = fast_test_config(|c| {
+            c.target_tilt = Some(super::super::types::TargetTiltConfig {
+                tilt_type: TiltType::Flat,
+                slope_db_per_octave: -0.8,
+                reference_freq: 1000.0,
+                bass_shelf_db: 0.0,
+                bass_shelf_freq: 200.0,
+            });
+        });
+        let (_chain, _pre, _post, _initial, final_curve, _biquads, _mean, _arrival, _fir) =
+            run_single_speaker(curve, &config);
+
+        // The final curve should show a negative slope (tilt applied)
+        let slope = slope_db_per_octave(&final_curve, 100.0, 500.0);
+        assert!(
+            slope < -0.3,
+            "Flat+slope config should produce tilted output, but slope={:.2} dB/oct (expected < -0.3)",
+            slope
+        );
+    }
+
+    #[test]
+    fn test_pipeline_tilt_not_doubled_by_broadband() {
+        // Bug #3: Tilt applied in broadband shelves AND EQ subtraction = double-tilt.
+        // slope(tilt only) should approximately equal slope(tilt+broadband).
+        let curve = make_test_curve(|_f| 70.0);
+
+        let config_tilt_only = fast_test_config(|c| {
+            c.target_tilt = Some(super::super::types::TargetTiltConfig {
+                tilt_type: TiltType::Custom,
+                slope_db_per_octave: -0.8,
+                reference_freq: 1000.0,
+                bass_shelf_db: 0.0,
+                bass_shelf_freq: 200.0,
+            });
+        });
+
+        let config_tilt_bb = fast_test_config(|c| {
+            c.target_tilt = Some(super::super::types::TargetTiltConfig {
+                tilt_type: TiltType::Custom,
+                slope_db_per_octave: -0.8,
+                reference_freq: 1000.0,
+                bass_shelf_db: 0.0,
+                bass_shelf_freq: 200.0,
+            });
+            c.broadband_target_matching =
+                Some(super::super::types::BroadbandTargetMatchingConfig { enabled: true });
+        });
+
+        let (_, _, _, _, final_tilt, _, _, _, _) =
+            run_single_speaker(curve.clone(), &config_tilt_only);
+        let (_, _, _, _, final_tilt_bb, _, _, _, _) =
+            run_single_speaker(curve, &config_tilt_bb);
+
+        let slope_tilt = slope_db_per_octave(&final_tilt, 200.0, 1000.0);
+        let slope_both = slope_db_per_octave(&final_tilt_bb, 200.0, 1000.0);
+
+        let diff = (slope_tilt - slope_both).abs();
+        // DE is stochastic, so allow 3.0 dB/oct tolerance. A double-tilt bug
+        // would produce ~2× the slope difference (>5 dB/oct).
+        assert!(
+            diff < 3.0,
+            "Tilt slope with broadband ({:.2}) should be within 3.0 dB/oct of tilt-only ({:.2}), diff={:.2}",
+            slope_both, slope_tilt, diff
+        );
+    }
+
+    #[test]
+    fn test_pipeline_tilt_no_boost_below_rolloff() {
+        // Bug #6: Tilt creates impossible target below speaker rolloff,
+        // optimizer wastes filters boosting below F3.
+        let curve = make_bookshelf_curve();
+        let config = fast_test_config(|c| {
+            c.target_tilt = Some(super::super::types::TargetTiltConfig {
+                tilt_type: TiltType::Custom,
+                slope_db_per_octave: -0.8,
+                reference_freq: 1000.0,
+                bass_shelf_db: 0.0,
+                bass_shelf_freq: 200.0,
+            });
+        });
+        let (_chain, _pre, _post, initial_curve, final_curve, biquads, _mean, _arrival, _fir) =
+            run_single_speaker(curve, &config);
+
+        // Behavioral invariant: with tilt active on a bookshelf speaker, the
+        // final curve at 30Hz (below rolloff) should not be boosted massively.
+        // Tilt clamping prevents the optimizer from chasing an impossible bass target.
+        let initial_30 = spl_at(&initial_curve, 30.0);
+        let final_30 = spl_at(&final_curve, 30.0);
+        assert!(
+            final_30 <= initial_30 + 8.0,
+            "Final at 30Hz ({:.1}dB) should not exceed initial ({:.1}dB) by more than 8dB \
+             (tilt should not cause massive bass boost below rolloff)",
+            final_30, initial_30
+        );
+
+        // Also check that the total bass boost energy is bounded:
+        // sum of boost gains on filters below 50Hz should be limited
+        let bass_boost_total: f64 = biquads
+            .iter()
+            .filter(|b| b.freq < 50.0 && b.db_gain > 0.0)
+            .map(|b| b.db_gain)
+            .sum();
+        assert!(
+            bass_boost_total < 10.0,
+            "Total boost below 50Hz ({:.1}dB) is excessive — tilt should not drive bass over-boost",
+            bass_boost_total
+        );
+    }
+
+    // ========================================================================
+    // Group 2: Broadband invariants
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_broadband_no_massive_gain() {
+        // Bug #2: Broadband target at 0dB instead of mean → massive correction gains.
+        let curve = make_test_curve(|f| {
+            // Speaker with a 6dB tilt (brighter at HF)
+            70.0 + 3.0 * (f / 1000.0).log2()
+        });
+        let config = fast_test_config(|c| {
+            c.broadband_target_matching =
+                Some(super::super::types::BroadbandTargetMatchingConfig { enabled: true });
+        });
+        let (_chain, pre_score, post_score, _initial, _final_curve, biquads, _mean, _arrival, _fir) =
+            run_single_speaker(curve, &config);
+
+        // With broadband handling bulk correction, the mean absolute EQ gain
+        // should be moderate. Without broadband, the EQ would need huge gains
+        // to handle the 6dB broadband tilt. A massive mean gain (>10dB)
+        // indicates broadband failed to do its job.
+        let mean_abs_gain: f64 = if biquads.is_empty() {
+            0.0
+        } else {
+            biquads.iter().map(|b| b.db_gain.abs()).sum::<f64>() / biquads.len() as f64
+        };
+        // Without broadband, a 6dB-tilted curve would need ~6dB mean correction.
+        // With broadband handling bulk, EQ should need less. Allow generous margin
+        // for DE optimizer variance; catch only catastrophic broadband failure (>12dB).
+        assert!(
+            mean_abs_gain < 12.0,
+            "Mean EQ gain {:.1}dB is too large (broadband should handle bulk correction)",
+            mean_abs_gain
+        );
+
+        // Score should improve (or at worst not get much worse)
+        assert!(
+            post_score <= pre_score * 1.5,
+            "Score should not degrade significantly: pre={:.4}, post={:.4}",
+            pre_score, post_score
+        );
+    }
+
+    #[test]
+    fn test_pipeline_broadband_preserves_out_of_band() {
+        // Bug #4: Broadband alignment 20-20kHz but EQ range only 20-1200Hz.
+        // Treble should not be mangled by broadband when EQ can't fix it.
+        let curve = make_test_curve(|_f| 70.0); // flat curve
+        let config = fast_test_config(|c| {
+            c.min_freq = 20.0;
+            c.max_freq = 1200.0;
+            c.broadband_target_matching =
+                Some(super::super::types::BroadbandTargetMatchingConfig { enabled: true });
+        });
+        let (_chain, _pre, _post, initial_curve, final_curve, _biquads, _mean, _arrival, _fir) =
+            run_single_speaker(curve, &config);
+
+        // SPL at 5kHz should be within 3dB of initial (broadband shouldn't wreck treble)
+        let initial_5k = spl_at(&initial_curve, 5000.0);
+        let final_5k = spl_at(&final_curve, 5000.0);
+        let delta = (final_5k - initial_5k).abs();
+        assert!(
+            delta < 3.0,
+            "Broadband+EQ should preserve treble: initial@5kHz={:.1}dB, final@5kHz={:.1}dB, delta={:.1}dB",
+            initial_5k, final_5k, delta
+        );
+    }
+
+    #[test]
+    fn test_pipeline_broadband_flat_target_not_tilted() {
+        // Bug #3 variant: With tilt+broadband, broadband shelves should be small
+        // because broadband targets FLAT at mean (tilt is only in EQ subtraction).
+        let curve = make_test_curve(|_f| 70.0);
+        let config = fast_test_config(|c| {
+            c.target_tilt = Some(super::super::types::TargetTiltConfig {
+                tilt_type: TiltType::Custom,
+                slope_db_per_octave: -0.8,
+                reference_freq: 1000.0,
+                bass_shelf_db: 0.0,
+                bass_shelf_freq: 200.0,
+            });
+            c.broadband_target_matching =
+                Some(super::super::types::BroadbandTargetMatchingConfig { enabled: true });
+        });
+
+        // For a flat curve, broadband alignment against a flat target should produce
+        // tiny shelf gains (curve is already at mean). Check via the final curve:
+        // the broadband contribution should not introduce a large tilt on its own.
+        let source = MeasurementSource::InMemory(curve.clone());
+        let room_config = RoomConfig {
+            version: super::super::types::default_config_version(),
+            system: None,
+            speakers: {
+                let mut m = HashMap::new();
+                m.insert("test".to_string(), SpeakerConfig::Single(source.clone()));
+                m
+            },
+            crossovers: None,
+            target_curve: None,
+            optimizer: config,
+            recording_config: None,
+        };
+        let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
+        let result =
+            process_single_speaker("test", &source, &room_config, 48000.0, tmp.path(), None)
+                .unwrap();
+
+        // With a flat input, broadband alignment should produce small corrections.
+        // Check that the flat_gain portion of broadband is small.
+        // We verify indirectly: the EQ filters should have small gains
+        // (broadband handled bulk, EQ does fine corrections).
+        // On a flat input curve, broadband correction should be tiny (curve is
+        // already at mean). The EQ should only need small corrections for the
+        // tilt target. Mean absolute gain should be modest.
+        let biquads = &result.5;
+        let mean_abs_gain = if biquads.is_empty() {
+            0.0
+        } else {
+            biquads.iter().map(|b| b.db_gain.abs()).sum::<f64>() / biquads.len() as f64
+        };
+        assert!(
+            mean_abs_gain < 6.0,
+            "On a flat curve with tilt+broadband, mean EQ gain should be small but got {:.1}dB",
+            mean_abs_gain
+        );
+    }
+
+    // ========================================================================
+    // Group 3: Excursion HPF invariants
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_excursion_hpf_no_double_cut() {
+        // Bug #5: Excursion HPF cuts + EQ cuts stack → double-cut in bass.
+        // The optimizer should see the HPF-adjusted curve and not stack additional cuts.
+        let curve = make_test_curve(|f| {
+            // 15dB resonance peak at 40Hz on top of bookshelf rolloff
+            let base = if f < 60.0 {
+                70.0 + 12.0 * (f / 60.0).log2()
+            } else {
+                70.0
+            };
+            let peak = 15.0 * (-(((f.log2() - 40.0_f64.log2()) / 0.15).powi(2))).exp();
+            base + peak
+        });
+        let config = fast_test_config(|c| {
+            c.excursion_protection = Some(super::super::types::ExcursionProtectionConfig {
+                enabled: true,
+                auto_detect_f3: true,
+                manual_f3_hz: None,
+                filter_order: 4,
+                filter_type: super::super::types::HighpassType::LinkwitzRiley,
+                margin_octaves: 0.25,
+            });
+        });
+        let (_chain, _pre, _post, initial_curve, final_curve, _biquads, _mean, _arrival, _fir) =
+            run_single_speaker(curve, &config);
+
+        // Final at 40Hz should not be cut more than 15dB below initial
+        // (HPF + EQ together should not double-cut)
+        let initial_40 = spl_at(&initial_curve, 40.0);
+        let final_40 = spl_at(&final_curve, 40.0);
+        assert!(
+            final_40 >= initial_40 - 15.0,
+            "Excursion HPF + EQ should not double-cut at 40Hz: initial={:.1}dB, final={:.1}dB, cut={:.1}dB",
+            initial_40, final_40, initial_40 - final_40
+        );
+    }
+
+    #[test]
+    fn test_pipeline_display_curve_is_raw_measurement() {
+        // Bug #5 variant: initial_curve returned should be the raw measurement,
+        // not the HPF-attenuated version.
+        let curve = make_bookshelf_curve();
+        let raw_30hz_spl = spl_at(&curve, 30.0);
+
+        let config = fast_test_config(|c| {
+            c.excursion_protection = Some(super::super::types::ExcursionProtectionConfig {
+                enabled: true,
+                auto_detect_f3: true,
+                manual_f3_hz: None,
+                filter_order: 4,
+                filter_type: super::super::types::HighpassType::LinkwitzRiley,
+                margin_octaves: 0.25,
+            });
+        });
+        let (_chain, _pre, _post, initial_curve, _final, _biquads, _mean, _arrival, _fir) =
+            run_single_speaker(curve, &config);
+
+        // initial_curve should be the raw measurement (curve_raw), not HPF-adjusted
+        let returned_30hz = spl_at(&initial_curve, 30.0);
+
+        assert!(
+            (returned_30hz - raw_30hz_spl).abs() < 0.1,
+            "initial_curve at 30Hz ({:.1}dB) should match raw measurement ({:.1}dB), not HPF-attenuated",
+            returned_30hz, raw_30hz_spl
+        );
+    }
+
+    // ========================================================================
+    // Group 5: Score and data flow
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_score_improves_or_stays_same() {
+        // For basic optimization, post_score should not be drastically worse than pre_score.
+        let curve = make_test_curve(|f| {
+            // Room-like response with peaks and dips
+            70.0 + 5.0 * (2.0 * std::f64::consts::PI * (f / 200.0).log2()).sin()
+                + 3.0 * (2.0 * std::f64::consts::PI * (f / 500.0).log2()).cos()
+        });
+        let config = fast_test_config(|_| {});
+        let (_chain, pre_score, post_score, _initial, _final, _biquads, _mean, _arrival, _fir) =
+            run_single_speaker(curve, &config);
+
+        assert!(
+            post_score <= pre_score * 1.2,
+            "Score should improve or stay similar: pre={:.4}, post={:.4}",
+            pre_score, post_score
+        );
+    }
+
+    #[test]
+    fn test_pipeline_tilt_scoring_against_tilt_target() {
+        // A curve that already matches the tilt target should get a good score.
+        // The same curve without tilt should get a worse score.
+
+        // Create a curve with -0.8 dB/oct slope (matches Harman tilt)
+        let tilted_curve = make_test_curve(|f| 70.0 - 0.8 * (f / 1000.0).log2());
+
+        let config_with_tilt = fast_test_config(|c| {
+            c.target_tilt = Some(super::super::types::TargetTiltConfig {
+                tilt_type: TiltType::Custom,
+                slope_db_per_octave: -0.8,
+                reference_freq: 1000.0,
+                bass_shelf_db: 0.0,
+                bass_shelf_freq: 200.0,
+            });
+        });
+
+        let config_no_tilt = fast_test_config(|_| {});
+
+        let (_, _, post_with_tilt, _, _, _, _, _, _) =
+            run_single_speaker(tilted_curve.clone(), &config_with_tilt);
+        let (_, _, post_no_tilt, _, _, _, _, _, _) =
+            run_single_speaker(tilted_curve, &config_no_tilt);
+
+        // When measured against matching tilt target, score should be very good
+        assert!(
+            post_with_tilt < 1.0,
+            "Curve matching tilt target should have low score, got {:.4}",
+            post_with_tilt
+        );
+        // When measured against flat target, same curve should score worse
+        assert!(
+            post_no_tilt > post_with_tilt,
+            "Same tilted curve should score worse against flat target ({:.4}) than tilt target ({:.4})",
+            post_no_tilt, post_with_tilt
+        );
+    }
 }

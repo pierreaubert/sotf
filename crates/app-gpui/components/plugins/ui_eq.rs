@@ -246,7 +246,8 @@ pub fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
 
 /// Chart layout constants for control point positioning
 /// These MUST match gpui-px line chart margins (see gpui-px/src/line.rs)
-pub const CHART_LEFT_MARGIN: f32 = 50.0; // gpui-px margin_left
+/// Left margin = Y-axis total_size() = 60 (base) + 20 (title: font_size 12 + padding 8)
+pub const CHART_LEFT_MARGIN: f32 = 80.0; // Y-axis rendered width when y_label is set
 pub const CHART_RIGHT_MARGIN: f32 = 20.0; // gpui-px margin_right (no secondary axis)
 // gpui-px plot area starts at y=0 (no top padding), so no top margin offset needed.
 pub const CHART_TOP_MARGIN: f32 = 0.0;

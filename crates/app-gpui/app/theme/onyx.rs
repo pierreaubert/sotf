@@ -19,10 +19,10 @@ impl Theme {
             text_primary: rgb(0xfafaf9),
             text_secondary: rgb(0xd6d3d1),
             text_muted: rgb(0xa8a29e),
-            text_disabled: rgb(0x57534e),
+            text_disabled: rgb(0x78716c), // ~4.5:1 contrast on #0c0c0e (WCAG AA)
 
             // Border colors
-            border: rgb(0x2a2a2e),
+            border: rgb(0x3a3a3e), // Increased from 0x2a2a2e for visibility
             border_focused: rgb(0xf59e0b),
 
             // Accent colors

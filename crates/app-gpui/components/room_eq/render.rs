@@ -256,6 +256,17 @@ pub(crate) fn render_channel_result_card(
                 target_curve,
             ))
         })
+        // Group delay graph (if phase data available)
+        .when(
+            result.group_delay_before.is_some() || result.group_delay_after.is_some(),
+            |div| {
+                div.child(render_group_delay_graph(
+                    result.group_delay_before.as_deref(),
+                    result.group_delay_after.as_deref(),
+                    theme,
+                ))
+            },
+        )
         // EQ Filter details
         .child(
             VStack::new()
@@ -416,12 +427,8 @@ fn render_response_comparison_graph(
             max_val = max_val.max(v);
         }
 
-        if let Some(target) = target_curve {
-            for &(_, db) in target {
-                min_val = min_val.min(db);
-                max_val = max_val.max(db);
-            }
-        }
+        // Target curve is now rendered on Y2 (EQ axis), so don't include
+        // its absolute SPL values in the Y1 (SPL axis) auto-range.
 
         // Round to nearest multiple of 5
         let max = if max_val.is_finite() {
@@ -575,22 +582,17 @@ fn render_response_comparison_graph(
         .add_series(&corrected_values, Some("Corrected"), ORANGE, 2.0, 1.0)
         .add_series_y2(&eq_response, Some("EQ"), GREEN, 2.0, 0.8);
 
-    // Add target curve if available
+    // Add target curve on the right (EQ) axis.
+    // The backend provides the target in absolute SPL (mean_spl + tilt).
+    // Subtract mean_spl so it shows the tilt shape relative to 0dB on the EQ axis,
+    // making it clear what correction profile the optimizer aims for.
     if let Some(target) = target_curve {
-        // Interpolate target curve to match frequencies if needed, but line chart handles different x points?
-        // gpui_px line chart expects x and y arrays. `add_series` takes y array and assumes same x array as primary.
-        // `line` builder uses the primary series x array.
-        // So we need to interpolate target curve to `frequencies`.
-
         let target_values: Vec<f64> = frequencies
             .iter()
             .map(|&f| {
-                // Linear interpolation of target curve
-                // Find surrounding points in target
                 let mut lower = (20.0, 0.0);
                 let mut upper = (20000.0, 0.0);
 
-                // Assume target is sorted by freq
                 if let Some(first) = target.first()
                     && f < first.0
                 {
@@ -621,7 +623,16 @@ fn render_response_comparison_graph(
             })
             .collect();
 
-        chart_builder = chart_builder.add_series(&target_values, Some("Target"), RED, 2.0, 0.8);
+        // Subtract mean to get the relative target shape (tilt only, centered at 0dB)
+        let mean_target = if !target_values.is_empty() {
+            target_values.iter().sum::<f64>() / target_values.len() as f64
+        } else {
+            0.0
+        };
+        let relative_target: Vec<f64> = target_values.iter().map(|v| v - mean_target).collect();
+
+        chart_builder =
+            chart_builder.add_series_y2(&relative_target, Some("Target"), RED, 2.0, 0.8);
     }
 
     // Add trend lines if calculated
@@ -818,5 +829,135 @@ fn render_filter_table(
                         ),
                 )
         }))
+        .into_any_element()
+}
+
+/// Render group delay comparison graph (before vs after optimization)
+fn render_group_delay_graph(
+    gd_before: Option<&[(f64, f64)]>,
+    gd_after: Option<&[(f64, f64)]>,
+    theme: &crate::theme::Theme,
+) -> AnyElement {
+    use crate::components::graphs::common::theme_to_chart_theme;
+    use gpui_px::{LegendPosition, ScaleType, line};
+
+    const GRAPH_WIDTH: f32 = 1200.0;
+    const GRAPH_HEIGHT: f32 = 200.0;
+    const BLUE: u32 = 0x1f77b4;
+    const ORANGE: u32 = 0xff7f0e;
+
+    let chart_theme = theme_to_chart_theme(theme);
+
+    // Use the before curve for the x-axis, or after if before is missing
+    let reference = gd_before.or(gd_after).unwrap();
+    let frequencies: Vec<f64> = reference.iter().map(|(f, _)| *f).collect();
+
+    // Filter to 20Hz-20kHz and compute y range
+    let in_range = |f: f64| (20.0..=20000.0).contains(&f);
+
+    let before_values: Option<Vec<f64>> =
+        gd_before.map(|b| b.iter().map(|(_, d)| *d).collect());
+
+    let after_values: Option<Vec<f64>> = gd_after.map(|after| {
+        // Interpolate after to match the reference frequency grid
+        frequencies
+            .iter()
+            .map(|&f| {
+                if let Some(pos) = after.windows(2).position(|w| w[0].0 <= f && f <= w[1].0) {
+                    let (f0, d0) = after[pos];
+                    let (f1, d1) = after[pos + 1];
+                    let t = if (f1 - f0).abs() > 1e-12 {
+                        (f - f0) / (f1 - f0)
+                    } else {
+                        0.0
+                    };
+                    d0 + t * (d1 - d0)
+                } else {
+                    after.last().map(|(_, d)| *d).unwrap_or(0.0)
+                }
+            })
+            .collect()
+    });
+
+    // Compute y range from whichever datasets are present
+    let mut y_min = f64::INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    for (i, &f) in frequencies.iter().enumerate() {
+        if in_range(f) {
+            for vals in [&before_values, &after_values].into_iter().flatten() {
+                if let Some(&v) = vals.get(i)
+                    && v.is_finite()
+                {
+                    y_min = y_min.min(v);
+                    y_max = y_max.max(v);
+                }
+            }
+        }
+    }
+    // Fallback if no valid data found in range
+    if !y_min.is_finite() || !y_max.is_finite() || y_min >= y_max {
+        y_min = -5.0;
+        y_max = 50.0;
+    }
+    // Round to nice bounds with some padding
+    let margin = (y_max - y_min).max(1.0) * 0.1;
+    y_min = (y_min - margin).floor();
+    y_max = (y_max + margin).ceil();
+
+    // Build chart: use whichever series is available as primary.
+    // Only show "Before" when the measurement actually had phase data —
+    // don't draw a misleading flat line at 0ms.
+    let (primary_values, primary_label, primary_color) = if let Some(ref bv) = before_values {
+        (bv.as_slice(), "Before", BLUE)
+    } else if let Some(ref av) = after_values {
+        (av.as_slice(), "After", ORANGE)
+    } else {
+        // Should not happen due to .when() guard, but handle gracefully
+        return div().into_any_element();
+    };
+
+    let mut chart_builder = line(&frequencies, primary_values)
+        .x_scale(ScaleType::Log)
+        .x_range(20.0, 20000.0)
+        .y_range(y_min, y_max)
+        .y_label("GD (ms)")
+        .label(primary_label)
+        .legend_position(LegendPosition::Bottom)
+        .color(primary_color)
+        .stroke_width(1.5)
+        .opacity(0.7)
+        .theme(chart_theme)
+        .size(GRAPH_WIDTH, GRAPH_HEIGHT);
+
+    // Add the secondary series only if it's different from the primary
+    if before_values.is_some()
+        && let Some(ref av) = after_values
+    {
+        chart_builder =
+            chart_builder.add_series(av, Some("After"), ORANGE, 1.5, 0.9);
+    }
+
+    let chart = match chart_builder.build() {
+        Ok(c) => c,
+        Err(_) => {
+            return div()
+                .child(
+                    Text::new("Group Delay: chart error")
+                        .size(TextSize::Xs)
+                        .color(theme.text_muted),
+                )
+                .into_any_element();
+        }
+    };
+
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            Text::new("Group Delay")
+                .weight(TextWeight::Semibold)
+                .size(TextSize::Xs)
+                .color(theme.text_primary),
+        )
+        .child(chart)
         .into_any_element()
 }

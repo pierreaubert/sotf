@@ -13,8 +13,13 @@ mutants.out
 # signing certificates (NEVER commit private keys)
 /certs/
 
+# marketing/product/insights ...
+/product
+
 # python
 __pycache__
+/venv
+/.venv
 
 # generated data
 /data

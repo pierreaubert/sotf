@@ -21,6 +21,7 @@ use crate::app::Screen;
 use crate::app::types::PluginUpdateType;
 use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::editing::PluginEditingManager;
+use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -28,6 +29,43 @@ use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
     TextWeight, VStack,
 };
+
+/// Themed tooltip view for GPUI's native tooltip system.
+/// Used by rack buttons, footer controls, and other interactive elements.
+pub(crate) struct ThemedTooltip {
+    text: SharedString,
+    bg: Rgba,
+    border: Rgba,
+    text_color: Rgba,
+}
+
+impl Render for ThemedTooltip {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .bg(self.bg)
+            .border_1()
+            .border_color(self.border)
+            .rounded(px(4.0))
+            .shadow_md()
+            .text_xs()
+            .text_color(self.text_color)
+            .whitespace_nowrap()
+            .child(self.text.clone())
+    }
+}
+
+/// Create a themed tooltip AnyView for GPUI's native `.tooltip()` method.
+pub(crate) fn themed_tooltip(text: &'static str, theme: &Theme, cx: &mut App) -> AnyView {
+    cx.new(|_| ThemedTooltip {
+        text: text.into(),
+        bg: theme.surface,
+        border: theme.border,
+        text_color: theme.text_primary,
+    })
+    .into()
+}
 
 impl PlayerView {
     pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {

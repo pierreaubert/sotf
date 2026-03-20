@@ -13,7 +13,10 @@ pub use sotf_audio_player::param_index_to_engine_param;
 use sotf_audio_player_midi::PhysicalControlKind;
 use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 
-/// Render a parameter row with name and value
+/// Render a parameter row with name, value, and optional range hint.
+///
+/// When `range_hint` is `Some("0.0 — 100.0")` and the row is selected,
+/// the range is displayed as muted text beneath the value.
 pub fn render_param_row(
     name: &str,
     value: &str,
@@ -21,6 +24,7 @@ pub fn render_param_row(
     selected_param: usize,
     is_editing: bool,
     theme: &Theme,
+    range_hint: Option<&str>,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
 
@@ -58,22 +62,37 @@ pub fn render_param_row(
                 })
                 .child(name.to_string()),
         )
-        // Value
+        // Value + optional range hint
         .child(
             div()
-                .min_w(rems(5.0))
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .bg(if is_selected {
-                    theme.background
-                } else {
-                    theme.background_secondary
-                })
-                .text_sm()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_primary)
-                .child(value.to_string()),
+                .flex()
+                .flex_col()
+                .items_end()
+                .child(
+                    div()
+                        .min_w(rems(5.0))
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .bg(if is_selected {
+                            theme.background
+                        } else {
+                            theme.background_secondary
+                        })
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_primary)
+                        .child(value.to_string()),
+                )
+                .when(is_selected && range_hint.is_some(), |d| {
+                    d.child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .px_2()
+                            .child(range_hint.unwrap_or("").to_string()),
+                    )
+                }),
         )
 }
 

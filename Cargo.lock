@@ -757,7 +757,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.5"
+version = "0.4.9"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -5408,7 +5408,7 @@ dependencies = [
 
 [[package]]
 name = "math-optimisation"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clap",
  "directories",
@@ -6549,9 +6549,9 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
 name = "oxiblas-blas"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89966ff29b23d8cb75bf5841a0bc74c740d364d0de0e812be6eb45fd1f555593"
+checksum = "5b20733edf8bd497233628af75afdb7c5f29157d8dc82e9fdc6c0e862e6e6957"
 dependencies = [
  "bytemuck",
  "num-complex",
@@ -6562,9 +6562,9 @@ dependencies = [
 
 [[package]]
 name = "oxiblas-core"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32a5cbf55bac31493f3d1607801b59ffbeaf0b468e47388a75541eae73edccec"
+checksum = "a2d36abb8c720acdb430c810434582b558f0dfdfcc34b73b64e7cd4f641b1ea1"
 dependencies = [
  "bytemuck",
  "libc",
@@ -6574,9 +6574,9 @@ dependencies = [
 
 [[package]]
 name = "oxiblas-lapack"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbd2f73e5832fa199ba0b46c81bd737acbc74c0989c09f899aa7d30bf625175c"
+checksum = "3d69ba187daaf0d0e38d331c6fba35f5584296160e78d832b8e39c8e6c93b46f"
 dependencies = [
  "bytemuck",
  "num-complex",
@@ -6588,9 +6588,9 @@ dependencies = [
 
 [[package]]
 name = "oxiblas-matrix"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1025ee056681229f7eaff4ebe1db10a183be6d65514af36c4b85dc65b3d0f2"
+checksum = "75bf5ed8ca26065e07b83f98009447302cd01926c88e829d7b5bc50e97d0ff19"
 dependencies = [
  "bytemuck",
  "num-complex",
@@ -6600,9 +6600,9 @@ dependencies = [
 
 [[package]]
 name = "oxiblas-ndarray"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdaecead39a7a05abafc5ee1d72125250f58a08a89033ff3ea2e73a731526be2"
+checksum = "ee20cc93be5eefffa6ee2ba283047cf0558ee1fdf5c73507859a9a6dc36df70f"
 dependencies = [
  "bytemuck",
  "ndarray",

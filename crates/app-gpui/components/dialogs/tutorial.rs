@@ -1,4 +1,6 @@
 //! Tutorial dialog shown on first launch to introduce the app's features.
+//!
+//! Also provides a contextual hint system for first-time feature encounters.
 
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -7,6 +9,10 @@ use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Checkbox, CheckboxSize, Dialog, DialogSize, HStack,
     StackAlign, StackJustify, StackSize, StackSpacing, Text, TextSize, VStack,
 };
+
+// ============================================================================
+// Tutorial Dialog (7-screen walkthrough)
+// ============================================================================
 
 const TUTORIAL_SCREEN_COUNT: usize = 7;
 
@@ -81,6 +87,119 @@ const TUTORIAL_SCREENS: [TutorialScreen; TUTORIAL_SCREEN_COUNT] = [
         ],
     },
 ];
+
+// ============================================================================
+// Contextual Hints (shown once per feature encounter)
+// ============================================================================
+
+/// Unique identifiers for contextual hints shown once per feature encounter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HintId {
+    /// First time opening the Studio screen
+    StudioFirstVisit,
+    /// First plugin added to the rack
+    FirstPluginAdded,
+    /// First time on the Room EQ screen
+    RoomEqFirstVisit,
+    /// Empty queue shown in library
+    EmptyQueue,
+}
+
+impl HintId {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HintId::StudioFirstVisit => "studio_first_visit",
+            HintId::FirstPluginAdded => "first_plugin_added",
+            HintId::RoomEqFirstVisit => "roomeq_first_visit",
+            HintId::EmptyQueue => "empty_queue",
+        }
+    }
+
+    pub fn title(&self) -> &'static str {
+        match self {
+            HintId::StudioFirstVisit => "Plugin Rack",
+            HintId::FirstPluginAdded => "Plugin Added",
+            HintId::RoomEqFirstVisit => "Room EQ",
+            HintId::EmptyQueue => "Build Your Queue",
+        }
+    }
+
+    pub fn message(&self) -> &'static str {
+        match self {
+            HintId::StudioFirstVisit => {
+                "Click the + button to add audio plugins. Drag to reorder, click to edit parameters."
+            }
+            HintId::FirstPluginAdded => {
+                "Click a plugin card to edit its parameters. Use = / - keys to adjust values."
+            }
+            HintId::RoomEqFirstVisit => {
+                "Start by loading measurement data, then configure and run the optimizer."
+            }
+            HintId::EmptyQueue => {
+                "Click an album in the library to add it to your playback queue."
+            }
+        }
+    }
+}
+
+/// Contextual hint state — shown as a dismissible banner at the top of the relevant screen.
+#[derive(Debug, Clone)]
+pub struct ContextualHint {
+    pub hint_id: HintId,
+}
+
+/// Render a contextual hint banner (dismissible callout).
+pub fn render_hint_banner(
+    hint: &ContextualHint,
+    theme: &crate::theme::Theme,
+) -> impl IntoElement {
+    let title = hint.hint_id.title();
+    let message = hint.hint_id.message();
+
+    div()
+        .flex()
+        .items_start()
+        .gap_3()
+        .px_4()
+        .py_3()
+        .mx_4()
+        .mt_2()
+        .rounded_lg()
+        .bg(theme.toast_info_bg)
+        .border_1()
+        .border_color(theme.info)
+        .child(
+            div()
+                .text_sm()
+                .text_color(theme.info)
+                .font_weight(FontWeight::BOLD)
+                .child("\u{1f4a1}"),
+        )
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_primary)
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.text_secondary)
+                        .child(message),
+                ),
+        )
+}
+
+// ============================================================================
+// Tutorial Dialog Rendering (original 7-screen walkthrough, unchanged)
+// ============================================================================
 
 impl PlayerView {
     pub(crate) fn render_tutorial_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {

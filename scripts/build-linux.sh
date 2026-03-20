@@ -255,6 +255,8 @@ build_binary() {
 
     cd "$PROJECT_ROOT"
 
+    # onnx disabled: ort prebuilt binaries require glibc 2.38+ (__isoc23_strtol)
+    # which is newer than the Docker build containers provide
     if $CROSS_COMPILE; then
         log_info "Cross-compiling for $TARGET..."
         CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$PACKAGE_NAME" --target "$TARGET"

@@ -74,9 +74,9 @@ fn interpolate_log_space_vals(
 pub fn interpolate_log_space(freq_out: &Array1<f64>, curve: &Curve) -> Curve {
     let freq_in = &curve.freq;
 
-    // Convert to log space for interpolation
-    let log_freq_in: Vec<f64> = freq_in.iter().map(|f| f.ln()).collect();
-    let log_freq_out: Vec<f64> = freq_out.iter().map(|f| f.ln()).collect();
+    // Convert to log space for interpolation (clamp to 1e-6 to avoid ln(0) = -inf)
+    let log_freq_in: Vec<f64> = freq_in.iter().map(|&f| f.max(1e-6).ln()).collect();
+    let log_freq_out: Vec<f64> = freq_out.iter().map(|&f| f.max(1e-6).ln()).collect();
 
     let spl_out = interpolate_log_space_vals(&log_freq_out, &log_freq_in, &curve.spl);
 
@@ -107,6 +107,10 @@ pub fn create_log_frequency_grid(n_points: usize, f_min: f64, f_max: f64) -> Arr
 /// # Returns
 /// * Interpolated SPL values at target frequencies
 pub fn interpolate(freqs: &Array1<f64>, curve: &Curve) -> Curve {
+    debug_assert!(
+        curve.freq.as_slice().unwrap().windows(2).all(|w| w[0] <= w[1]),
+        "interpolate() requires sorted frequencies"
+    );
     let mut result_spl = Array1::zeros(freqs.len());
     let mut result_phase = curve.phase.as_ref().map(|_| Array1::zeros(freqs.len()));
 
@@ -159,5 +163,25 @@ pub fn interpolate(freqs: &Array1<f64>, curve: &Curve) -> Curve {
         freq: freqs.clone(),
         spl: result_spl,
         phase: result_phase,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_interpolate_log_space_zero_freq() {
+        let curve = Curve {
+            freq: Array1::from_vec(vec![0.0, 100.0, 1000.0, 10000.0]),
+            spl: Array1::from_vec(vec![80.0, 85.0, 90.0, 88.0]),
+            phase: None,
+        };
+        let freq_out = Array1::from_vec(vec![50.0, 500.0, 5000.0]);
+        let result = interpolate_log_space(&freq_out, &curve);
+        // No NaN or Inf in output
+        for &v in result.spl.iter() {
+            assert!(v.is_finite(), "interpolate_log_space produced non-finite value: {}", v);
+        }
     }
 }

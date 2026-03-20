@@ -133,13 +133,16 @@ pub fn optimize_crossover(
             .map(|(idx, curve)| {
                 let mut new_curve = curve.clone();
                 if inversions[idx] {
-                    if let Some(ref p) = new_curve.phase {
-                        new_curve.phase = Some(p.mapv(|x| x + 180.0));
-                    } else {
-                        // Create phase array of 180s if missing
-                        new_curve.phase =
-                            Some(ndarray::Array1::from_elem(new_curve.freq.len(), 180.0));
-                    }
+                    // Use minimum-phase reconstruction when phase data is missing,
+                    // rather than synthetic 180 deg (which assumes physically impossible
+                    // perfect all-pass behavior and produces wrong crossover optimization)
+                    let phase = new_curve.phase.clone().unwrap_or_else(|| {
+                        super::phase_utils::reconstruct_minimum_phase(
+                            &new_curve.freq,
+                            &new_curve.spl,
+                        )
+                    });
+                    new_curve.phase = Some(phase.mapv(|x| x + 180.0));
                 }
 
                 DriverMeasurement {

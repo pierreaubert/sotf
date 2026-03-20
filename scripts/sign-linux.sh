@@ -2,11 +2,11 @@
 #
 # Sign Linux artifacts in dist/ using cosign (keyless or key-based)
 #
-# Creates detached signatures (.sig) and certificates (.cert) for each artifact.
-# Users verify with: cosign verify-blob --signature file.sig --certificate file.cert file
+# Creates a cosign bundle (.bundle) for each artifact.
+# Users verify with: cosign verify-blob --bundle file.bundle file
 #
 # Usage:
-#   ./sign-linux.sh                          # Sign all Linux artifacts in dist/ (keyless via OIDC)
+#   ./sign-linux.sh                          # Sign current-version Linux artifacts in dist/ (keyless via OIDC)
 #   ./sign-linux.sh --key cosign.key         # Sign with a local key
 #   ./sign-linux.sh dist/SotF-*.tar.gz       # Sign specific files
 #
@@ -32,6 +32,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$PROJECT_ROOT/dist"
 
+# Extract version from root Cargo.toml
+VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+if [ -z "$VERSION" ]; then
+    echo "ERROR: Could not extract version from Cargo.toml"
+    exit 1
+fi
+
 COSIGN_KEY_PATH=""
 SPECIFIC_FILES=()
 
@@ -46,23 +53,24 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [--key <cosign.key>] [file ...]"
             echo ""
             echo "Signs Linux artifacts using cosign (Sigstore)."
+            echo "Only signs artifacts matching the current version ($VERSION) from Cargo.toml."
             echo ""
             echo "Options:"
             echo "  --key <path>  Sign with a local cosign private key"
             echo "                Without --key, uses keyless OIDC signing"
             echo ""
             echo "Examples:"
-            echo "  $0                              # Keyless sign all Linux artifacts in dist/"
-            echo "  $0 --key cosign.key             # Key-based sign all Linux artifacts"
-            echo "  $0 dist/SotF-0.5.11-linux-arm64.tar.gz  # Sign a specific file"
+            echo "  $0                              # Keyless sign current-version Linux artifacts in dist/"
+            echo "  $0 --key cosign.key             # Key-based sign current-version Linux artifacts"
+            echo "  $0 dist/SotF-${VERSION}-linux-arm64.tar.gz  # Sign a specific file"
             echo ""
             echo "Verification:"
             echo "  # Keyless:"
-            echo "  cosign verify-blob --signature file.sig --certificate file.cert \\"
+            echo "  cosign verify-blob --bundle file.bundle \\"
             echo "    --certificate-identity=<email> --certificate-oidc-issuer=https://accounts.google.com file"
             echo ""
             echo "  # Key-based:"
-            echo "  cosign verify-blob --signature file.sig --key cosign.pub file"
+            echo "  cosign verify-blob --bundle file.bundle --key cosign.pub file"
             exit 0
             ;;
         *)
@@ -102,8 +110,7 @@ check_prerequisites() {
 # Sign a single file
 sign_file() {
     local file_path="$1"
-    local sig_path="${file_path}.sig"
-    local cert_path="${file_path}.cert"
+    local bundle_path="${file_path}.bundle"
 
     if [ ! -f "$file_path" ]; then
         log_warning "File not found: $file_path"
@@ -116,29 +123,33 @@ sign_file() {
         # Key-based signing
         cosign sign-blob \
             --key "$COSIGN_KEY_PATH" \
-            --output-signature "$sig_path" \
+            --bundle "$bundle_path" \
             "$file_path"
         log_success "Signed (key): $(basename "$file_path")"
-        log_info "  Signature: $(basename "$sig_path")"
     else
         # Keyless signing via OIDC (Sigstore)
         cosign sign-blob \
-            --output-signature "$sig_path" \
-            --output-certificate "$cert_path" \
+            --bundle "$bundle_path" \
             "$file_path"
         log_success "Signed (keyless): $(basename "$file_path")"
-        log_info "  Signature:   $(basename "$sig_path")"
-        log_info "  Certificate: $(basename "$cert_path")"
     fi
+    log_info "  Bundle: $(basename "$bundle_path")"
 }
 
-# Check if a file is a Linux artifact
-is_linux_artifact() {
+# Check if a file is a Linux artifact for the current version
+is_current_linux_artifact() {
     local f="$1"
     local name
     name=$(basename "$f")
+
+    # Skip signature bundles
     case "$name" in
-        *linux*|*.AppImage|*.deb)
+        *.bundle|*.sig|*.cert) return 1 ;;
+    esac
+
+    # Must contain the current version AND be a Linux artifact
+    case "$name" in
+        *"$VERSION"*linux*|*"$VERSION"*.AppImage|*"$VERSION"*.deb)
             return 0
             ;;
     esac
@@ -147,7 +158,7 @@ is_linux_artifact() {
 
 main() {
     log_info "=========================================="
-    log_info "Linux Artifact Signing (cosign)"
+    log_info "Linux Artifact Signing (cosign) v${VERSION}"
     log_info "=========================================="
 
     if [ -n "$COSIGN_KEY_PATH" ]; then
@@ -165,18 +176,14 @@ main() {
     else
         local found=false
         for f in "$DIST_DIR"/*; do
-            if [ -f "$f" ] && is_linux_artifact "$f"; then
-                # Skip existing signatures
-                case "$f" in
-                    *.sig|*.cert) continue ;;
-                esac
+            if [ -f "$f" ] && is_current_linux_artifact "$f"; then
                 sign_file "$f"
                 found=true
             fi
         done
 
         if ! $found; then
-            log_warning "No Linux artifacts found in $DIST_DIR"
+            log_warning "No Linux artifacts for v${VERSION} found in $DIST_DIR"
             log_info "Run 'just cross-linux-arm64' or 'just cross-linux-x86' first"
             exit 1
         fi

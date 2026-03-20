@@ -368,7 +368,12 @@ fn weighted_mse(freqs: &Array1<f64>, error: &Array1<f64>, min_freq: f64, max_fre
     } else {
         0.0
     };
-    err1 + err2 / 3.0
+    match (n1 > 0, n2 > 0) {
+        (true, true) => err1 + err2 / 3.0,
+        (true, false) => err1,
+        (false, true) => err2,
+        (false, false) => f64::INFINITY,
+    }
 }
 
 /// Configuration for asymmetric loss weighting
@@ -467,7 +472,12 @@ pub fn weighted_mse_asymmetric(
     } else {
         0.0
     };
-    err1 + err2 / 3.0
+    match (n1 > 0, n2 > 0) {
+        (true, true) => err1 + err2 / 3.0,
+        (true, false) => err1,
+        (false, true) => err2,
+        (false, false) => f64::INFINITY,
+    }
 }
 
 /// Compute flat loss with asymmetric weighting (peaks penalized more than dips)
@@ -540,7 +550,7 @@ pub fn regression_slope_per_octave_in_range(
     let n_f = n as f64;
     let cov_xy = sum_xy - (sum_x * sum_y) / n_f;
     let var_x = sum_x2 - (sum_x * sum_x) / n_f;
-    if var_x == 0.0 {
+    if var_x.abs() < 1e-10 {
         return None;
     }
     Some(cov_xy / var_x)
@@ -894,7 +904,7 @@ pub fn multisub_flat_loss(
 ///
 /// # Notes
 /// Used as part of the Olive et al. headphone preference prediction model.
-fn calculate_standard_deviation_in_range(
+pub fn calculate_standard_deviation_in_range(
     freq: &Array1<f64>,
     deviation: &Array1<f64>,
     fmin: f64,
@@ -1587,5 +1597,45 @@ mod tests {
             "Perfect score should be 114.49, got {}",
             perfect_score
         );
+    }
+
+    #[test]
+    fn test_weighted_mse_treble_only() {
+        // All frequencies above 3kHz — bass band is empty
+        let freqs = Array1::from_vec(vec![4000.0, 8000.0, 16000.0]);
+        let error = Array1::from_vec(vec![2.0, 2.0, 2.0]);
+        let result = weighted_mse(&freqs, &error, 4000.0, 16000.0);
+        // With all treble, should return err2 (not err2/3)
+        assert!((result - 2.0).abs() < 1e-10, "treble-only loss should be full RMS, got {}", result);
+    }
+
+    #[test]
+    fn test_weighted_mse_bass_only() {
+        // All frequencies below 3kHz — treble band is empty
+        let freqs = Array1::from_vec(vec![100.0, 500.0, 2000.0]);
+        let error = Array1::from_vec(vec![3.0, 3.0, 3.0]);
+        let result = weighted_mse(&freqs, &error, 100.0, 2000.0);
+        // With all bass, should return err1
+        assert!((result - 3.0).abs() < 1e-10, "bass-only loss should be full RMS, got {}", result);
+    }
+
+    #[test]
+    fn test_weighted_mse_both_bands() {
+        // Mix of bass and treble
+        let freqs = Array1::from_vec(vec![100.0, 1000.0, 5000.0, 10000.0]);
+        let error = Array1::from_vec(vec![3.0, 3.0, 6.0, 6.0]);
+        let result = weighted_mse(&freqs, &error, 100.0, 10000.0);
+        // err1 (bass RMS) = 3.0, err2 (treble RMS) = 6.0
+        // result = 3.0 + 6.0/3.0 = 5.0
+        assert!((result - 5.0).abs() < 1e-10, "two-band loss incorrect, got {}", result);
+    }
+
+    #[test]
+    fn test_regression_slope_identical_freqs() {
+        // All frequencies identical — var_x should be ~0, return None
+        let freq = Array1::from_vec(vec![1000.0, 1000.0, 1000.0]);
+        let y = Array1::from_vec(vec![80.0, 85.0, 90.0]);
+        let result = regression_slope_per_octave_in_range(&freq, &y, 999.0, 1001.0);
+        assert!(result.is_none(), "identical frequencies should return None, got {:?}", result);
     }
 }

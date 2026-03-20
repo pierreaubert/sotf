@@ -129,18 +129,33 @@ qa-edifierw830nb-mhfirefly:
 # QA ROOMEQ
 # ----------------------------------------------------------------------
 
+# Ensure Python venv exists and has dependencies installed
+[group('setup')]
+ensure-venv:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ ! -f ./venv/bin/python3 ]; then
+		echo "Creating Python venv..."
+		python3 -m venv ./venv
+	fi
+	if ! ./venv/bin/python3 -c "import plotly" 2>/dev/null; then
+		echo "Installing Python dependencies..."
+		./venv/bin/pip install -r ./scripts/requirements.txt
+	fi
+
 [group('qa-roomeq')]
 qa-roomeq: qa-roomeq-small-stereo-20 \
 	qa-roomeq-small-stereo-21 \
 	qa-roomeq-small-stereo-22 \
-	qa-roomeq-convergence
+	qa-roomeq-convergence \
+	qa-roomeq-coverage
 
 [group('qa-roomeq')]
 qa-roomeq-convergence:
 	cargo run --bin roomeq-qa-quality --release
 
 [group('qa-roomeq')]
-qa-roomeq-small-stereo-20:
+qa-roomeq-small-stereo-20: ensure-venv
 	@for method in iir fir mixed; do \
 	  for algo in bem fem; do \
 	      mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_0; \
@@ -148,14 +163,14 @@ qa-roomeq-small-stereo-20:
 	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
 		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_0/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
-		  python3 ./scripts/display-roomeq.py \
+		  ./venv/bin/python3 ./scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
 	  done \
 	done
 
 
 [group('qa-roomeq')]
-qa-roomeq-small-stereo-21:
+qa-roomeq-small-stereo-21: ensure-venv
 	@for method in iir fir mixed; do \
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_1; \
@@ -163,14 +178,14 @@ qa-roomeq-small-stereo-21:
 	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
 		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_1/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
-		python3 ./scripts/display-roomeq.py \
+		./venv/bin/python3 ./scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
 	  done \
 	done
 
 
 [group('qa-roomeq')]
-qa-roomeq-small-stereo-22:
+qa-roomeq-small-stereo-22: ensure-venv
 	@for method in iir fir mixed; do \
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_2; \
@@ -178,13 +193,13 @@ qa-roomeq-small-stereo-22:
 	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_2/config.json \
 		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_2/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
-		python3 ./scripts/display-roomeq.py \
+		./venv/bin/python3 ./scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
 	  done \
 	done
 
 [group('qa-roomeq')]
-qa-roomeq-small-stereo-51:
+qa-roomeq-small-stereo-51: ensure-venv
 	@for method in iir fir mixed; do \
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/medium_surround_5_1; \
@@ -192,7 +207,7 @@ qa-roomeq-small-stereo-51:
 	        --config       ./data_tests/roomeq/generated/$algo/medium_surround_5_1/config.json \
 		    --override-config ./data_tests/roomeq/generated/optimiser-config/medium_surround_5_1/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/medium_surround_5_1/dsp_$method.json; \
-		python3 ./scripts/display-roomeq.py \
+		./venv/bin/python3 ./scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/medium_surround_5_1/dsp_$method.json; \
 	  done \
 	done
@@ -226,7 +241,7 @@ qa-roomeq-multi-measurement: \
 	qa-roomeq-multi-small-stereo-22-mso
 
 [group('qa-roomeq-multi')]
-qa-roomeq-multi-small-stereo-20:
+qa-roomeq-multi-small-stereo-20: ensure-venv
 	@for strategy in minimax weighted_sum variance_penalized; do \
 	  for algo in bem fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_0; \
@@ -235,13 +250,13 @@ qa-roomeq-multi-small-stereo-20:
 	      --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
 	      --override-config ./data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
 	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_iir_multi_$strategy.json; \
-	    python3 ./scripts/display-roomeq.py \
+	    ./venv/bin/python3 ./scripts/display-roomeq.py \
 	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_iir_multi_$strategy.json; \
 	  done \
 	done
 
 [group('qa-roomeq-multi')]
-qa-roomeq-multi-small-stereo-21:
+qa-roomeq-multi-small-stereo-21: ensure-venv
 	@for strategy in minimax weighted_sum variance_penalized; do \
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_1; \
@@ -250,13 +265,13 @@ qa-roomeq-multi-small-stereo-21:
 	      --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
 	      --override-config ./data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
 	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_iir_multi_$strategy.json; \
-	    python3 ./scripts/display-roomeq.py \
+	    ./venv/bin/python3 ./scripts/display-roomeq.py \
 	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_iir_multi_$strategy.json; \
 	  done \
 	done
 
 [group('qa-roomeq-multi')]
-qa-roomeq-multi-small-stereo-22-mso:
+qa-roomeq-multi-small-stereo-22-mso: ensure-venv
 	@for strategy in minimax weighted_sum variance_penalized; do \
 	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso; \
@@ -265,7 +280,7 @@ qa-roomeq-multi-small-stereo-22-mso:
 	      --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_2_mso/config.json \
 	      --override-config ./data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
 	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso/dsp_iir_multi_$strategy.json; \
-	    python3 ./scripts/display-roomeq.py \
+	    ./venv/bin/python3 ./scripts/display-roomeq.py \
 	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso/dsp_iir_multi_$strategy.json; \
 	  done \
 	done

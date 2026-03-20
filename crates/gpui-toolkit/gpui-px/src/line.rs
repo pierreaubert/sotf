@@ -674,8 +674,16 @@ impl LineChart {
         // Check if we have secondary axis series
         let has_secondary_axis = self.series.iter().any(|s| s.use_secondary_axis);
 
-        // Define margins - increase right margin if secondary axis is needed
-        let margin_left = 50.0;
+        // Define margins - must match the rendered axis sizes
+        // Left margin must match the Y-axis total_size() so control point overlays align
+        let margin_left = {
+            let mut axis = d3rs::axis::AxisConfig::left().with_label_font_size(8.0);
+            if self.y_label.is_some() {
+                // title_font_size(12) + title_padding(8) = 20 added to base 60
+                axis = axis.with_title(String::new());
+            }
+            axis.total_size() as f64
+        };
         let margin_bottom = 30.0;
         let margin_top = 10.0;
         let margin_right = if has_secondary_axis { 60.0 } else { 20.0 };

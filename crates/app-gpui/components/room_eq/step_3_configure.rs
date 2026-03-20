@@ -156,23 +156,25 @@ impl PlayerView {
         };
 
         let window_width = state.app.ui_state.window_width;
+        let show_advanced = room_eq.show_advanced_config;
 
         // Build the AutoEQ form with handlers
+        // In Basic mode, hide most params so users only see mode + algorithm + num_filters + target_curve
         let autoeq_form = AutoEqForm::new("room-eq-optimizer-form")
             .layout_mode(AutoEqLayoutMode::RoomEq)
             .available_width(window_width)
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
             .show_goals(false) // Goals hidden: loss is always flat, system type is auto-detected
-            .show_optimization_tuning(true)
-            .hide_de_params(true)
-            .hide_smoothing(true)
-            .hide_spacing(true)
-            .hide_tolerance(false)
-            .hide_sample_rate(true)
-            .hide_phase_alignment(is_iir_mode) // Phase alignment only for non-IIR modes
+            .show_optimization_tuning(show_advanced) // Only in advanced mode
+            .hide_de_params(true) // Always hidden (internal to DE algorithm)
+            .hide_smoothing(true) // Always hidden (uses psychoacoustic instead)
+            .hide_spacing(true)   // Always hidden (internal)
+            .hide_tolerance(!show_advanced) // Only in advanced mode
+            .hide_sample_rate(true) // Always hidden (auto-detected)
+            .hide_phase_alignment(is_iir_mode || !show_advanced)
             .hide_scenario_a_text(true) // Remove "Scenario A" subtitle
-            .hide_multi_measurement(!room_eq.has_multiple_measurements())
+            .hide_multi_measurement(!room_eq.has_multiple_measurements() || !show_advanced)
             .allowed_opt_modes(available_modes)
             .on_opt_mode_change({
                 let state = self.state.clone();
@@ -1435,17 +1437,50 @@ impl PlayerView {
                 }))
         };
 
+        // Basic/Advanced toggle
+        let toggle_state = self.state.clone();
+        let toggle_label = if show_advanced {
+            "Basic"
+        } else {
+            "Advanced"
+        };
+
         let mut content = VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Configure Optimization")
-                    .weight(TextWeight::Bold)
-                    .size(TextSize::Md),
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(
+                        Text::new("Configure Optimization")
+                            .weight(TextWeight::Bold)
+                            .size(TextSize::Md),
+                    )
+                    .child(
+                        Button::new("toggle-advanced", toggle_label)
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_click(move |_event: &ClickEvent, _window, cx| {
+                                toggle_state.update(cx, |state, _cx| {
+                                    let adv = &mut state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .show_advanced_config;
+                                    *adv = !*adv;
+                                });
+                            }),
+                    ),
             )
             .child(
-                Text::new("Configure per-channel settings and optimizer parameters.")
-                    .size(TextSize::Xs)
-                    .color(theme.text_secondary),
+                Text::new(if show_advanced {
+                    "All optimizer parameters are shown."
+                } else {
+                    "Showing basic settings. Click Advanced for full control."
+                })
+                .size(TextSize::Xs)
+                .color(theme.text_secondary),
             )
             // Mode selector inline
             .child(mode_selector)

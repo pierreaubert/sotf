@@ -47,6 +47,10 @@ pub struct PluginState {
     pub plugin_preset_save_mode: bool,   // True when in save mode (text input)
     pub plugin_preset_input: String,     // Save preset name input
 
+    /// Pending confirmation for destructive actions
+    pub confirm_remove_plugin: Option<usize>,          // Some(plugin_idx) awaiting confirmation
+    pub confirm_delete_preset: Option<(usize, String)>, // Some((plugin_idx, preset_name)) awaiting confirmation
+
     // Chain-level state
     /// When true, all plugins are bypassed (audio passes through unchanged)
     pub chain_bypass: bool,
@@ -149,6 +153,8 @@ impl Default for PluginState {
             plugin_preset_list: Vec::new(),
             plugin_preset_save_mode: false,
             plugin_preset_input: String::new(),
+            confirm_remove_plugin: None,
+            confirm_delete_preset: None,
             chain_bypass: false,
             chain_autogain: false,
             soloed_plugin_index: None,
@@ -160,5 +166,13 @@ impl Default for PluginState {
 impl PluginState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Clear pending destructive-action confirmations.
+    /// Called on any structural change (toggle, reorder, screen switch)
+    /// to prevent stale confirmation state from persisting.
+    pub fn clear_confirmations(&mut self) {
+        self.confirm_remove_plugin = None;
+        self.confirm_delete_preset = None;
     }
 }

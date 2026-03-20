@@ -190,14 +190,12 @@ function Sign-File {
     } else {
         $ext = [System.IO.Path]::GetExtension($FilePath).ToLower()
         switch ($ext) {
-            ".exe" { Sign-WithAuthenticode $FilePath }
-            ".msi" { Sign-WithAuthenticode $FilePath }
+            ".exe"  { Sign-WithAuthenticode $FilePath }
+            ".msi"  { Sign-WithAuthenticode $FilePath }
+            ".msix" { Sign-WithAuthenticode $FilePath }
+            ".appx" { Sign-WithAuthenticode $FilePath }
             ".zip" {
-                if ($UseCosign) {
-                    Sign-WithCosign $FilePath
-                } else {
-                    Write-Warn "Authenticode cannot sign .zip files, use -UseCosign: $(Split-Path -Leaf $FilePath)"
-                }
+                Write-Warn "Authenticode cannot sign .zip files, use -UseCosign: $(Split-Path -Leaf $FilePath)"
             }
             default {
                 Write-Warn "Unsupported file type for Authenticode: $ext (use -UseCosign)"

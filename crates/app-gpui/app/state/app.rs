@@ -200,6 +200,12 @@ pub struct App {
 
     /// Whether the tutorial has been completed/dismissed (persisted to config)
     pub tutorial_completed: bool,
+
+    /// Hint IDs that have been shown and dismissed (persisted to config).
+    /// Uses string IDs so new hints can be added without migration.
+    pub seen_hints: Vec<String>,
+    /// Currently displayed contextual hint (None if no hint active).
+    pub current_hint: Option<crate::components::dialogs::tutorial::ContextualHint>,
 }
 
 /// GPUI-compatible state wrapper
@@ -297,6 +303,8 @@ impl App {
             channel_conflicts: Vec::new(),
             channel_conflict_track_channels: 2,
             tutorial_completed: false,
+            seen_hints: Vec::new(),
+            current_hint: None,
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
@@ -358,6 +366,10 @@ impl App {
                 screen.maturity(),
                 self.ui_state.release_channel
             );
+            self.ui_state.toast_message = Some(crate::app::ToastMessage::info(format!(
+                "{:?} is not available on the {:?} release channel",
+                screen, self.ui_state.release_channel
+            )));
             crate::app::Screen::Library
         };
         let old_screen = self.ui_state.current_screen;
@@ -371,7 +383,52 @@ impl App {
                 format!("screen: {}", trigger),
             );
             self.ui_state.current_screen = target;
+            self.plugin_state.clear_confirmations();
+
+            // Trigger contextual hints for first-time screen visits
+            use crate::components::dialogs::tutorial::HintId;
+            match target {
+                crate::app::Screen::Studio => self.try_show_hint(HintId::StudioFirstVisit),
+                crate::app::Screen::RoomEq => self.try_show_hint(HintId::RoomEqFirstVisit),
+                _ => {}
+            }
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Contextual hints
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Try to show a contextual hint. Only shows if the hint hasn't been seen before.
+    pub fn try_show_hint(&mut self, hint_id: crate::components::dialogs::tutorial::HintId) {
+        let id_str = hint_id.as_str();
+        if !self.seen_hints.iter().any(|s| s == id_str) && self.current_hint.is_none() {
+            self.current_hint =
+                Some(crate::components::dialogs::tutorial::ContextualHint { hint_id });
+        }
+    }
+
+    /// Dismiss the current hint and mark it as seen.
+    pub fn dismiss_hint(&mut self) {
+        if let Some(hint) = self.current_hint.take() {
+            let id_str = hint.hint_id.as_str().to_string();
+            if !self.seen_hints.contains(&id_str) {
+                self.seen_hints.push(id_str);
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Toast action handling
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Handle a toast action button click.
+    /// Override this to add custom action_id handlers for different toast actions.
+    pub fn handle_toast_action(&mut self, action_id: &str) {
+        log::info!("Toast action triggered: {}", action_id);
+        // Add domain-specific action handlers here as needed, e.g.:
+        // "retry-plugin-update" => self.retry_last_plugin_update(),
+        log::warn!("Unhandled toast action: {}", action_id);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -965,6 +1022,7 @@ impl App {
 
         // Restore tutorial completed state
         self.tutorial_completed = config.tutorial_completed;
+        self.seen_hints = config.seen_hints.clone();
 
         // Restore scanner thread count
         self.ui_state.scanner_threads = config.scanner_threads;
@@ -1053,6 +1111,7 @@ impl App {
             release_channel: self.ui_state.release_channel,
             scanner_threads: self.ui_state.scanner_threads,
             tutorial_completed: self.tutorial_completed,
+            seen_hints: self.seen_hints.clone(),
         };
         config.save()?;
         Ok(())

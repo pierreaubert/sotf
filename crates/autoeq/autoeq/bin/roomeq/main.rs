@@ -91,7 +91,17 @@ fn main() -> Result<()> {
 /// Progress callback that logs to stderr
 fn create_progress_callback() -> RoomOptimizationCallback {
     Box::new(|progress: &RoomOptimizationProgress| {
-        let pct = (progress.iteration as f64 / progress.max_iterations as f64) * 100.0;
+        // Status messages (no real iteration data) — log the message directly
+        if let Some(msg) = &progress.message {
+            info!("  {}", msg);
+            return CallbackAction::Continue;
+        }
+
+        let pct = if progress.max_iterations > 0 {
+            (progress.iteration as f64 / progress.max_iterations as f64) * 100.0
+        } else {
+            0.0
+        };
         // Log every 100 iterations
         if progress.iteration.is_multiple_of(100) {
             info!(

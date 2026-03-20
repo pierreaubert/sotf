@@ -9,7 +9,7 @@ name = "sotf_plugin_upmixer"
 path = "src/lib.rs"
 
 [features]
-default = ["onnx"]
+default = []
 onnx = ["dep:ort"]
 qa = ["sotf-host/qa"]
 

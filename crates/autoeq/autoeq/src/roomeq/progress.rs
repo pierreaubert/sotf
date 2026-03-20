@@ -77,7 +77,11 @@ impl ProgressReporter {
 
         if now.duration_since(self.last_report) >= self.report_interval {
             let elapsed = now.duration_since(self.start_time);
-            let progress = current_iter as f64 / self.total_iterations as f64;
+            let progress = if self.total_iterations > 0 {
+                current_iter as f64 / self.total_iterations as f64
+            } else {
+                0.0
+            };
 
             let eta = if progress > 0.01 && current_iter > 0 {
                 let per_iter = elapsed.as_secs_f64() / current_iter as f64;
@@ -115,7 +119,11 @@ impl ProgressReporter {
         }
 
         let elapsed = self.start_time.elapsed();
-        let progress = current_iter as f64 / self.total_iterations as f64;
+        let progress = if self.total_iterations > 0 {
+            current_iter as f64 / self.total_iterations as f64
+        } else {
+            0.0
+        };
 
         let eta = if progress > 0.01 && current_iter > 0 {
             let per_iter = elapsed.as_secs_f64() / current_iter as f64;
