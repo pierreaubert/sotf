@@ -3,6 +3,7 @@
 //! This module provides functionality to generate test signals, play them back,
 //! record the output, and analyze the results.
 
+#[cfg(not(target_os = "ios"))]
 use crate::signal_analysis::{analyze_recording, write_analysis_csv};
 use crate::signals::*;
 use hound::{SampleFormat, WavSpec, WavWriter};
@@ -236,6 +237,7 @@ pub fn generate_output_filenames(
 ///
 /// Plays back a signal to a specific output channel while simultaneously
 /// recording from a specific input channel, then analyzes the result.
+#[cfg(not(target_os = "ios"))]
 #[allow(clippy::too_many_arguments)]
 pub fn record_and_analyze(
     temp_wav_path: &Path,
@@ -702,6 +704,7 @@ pub fn record_and_analyze(
 /// Each channel's WAV and CSV are written to `recorded_wav_paths` / `csv_paths`.
 ///
 /// `mic_calibrations` must be the same length as `input_channels` (use `None` for uncalibrated).
+#[cfg(not(target_os = "ios"))]
 #[allow(clippy::too_many_arguments)]
 pub fn record_and_analyze_multi(
     temp_wav_path: &Path,

@@ -1,0 +1,44 @@
+[package]
+name = "gpui-ios"
+version = "0.6.0"
+edition = "2024"
+description = "iOS platform backend for GPUI (vendored from gpui-mobile)"
+license = "ISC"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+anyhow = "1"
+log = { version = "0.4", features = ["kv_unstable_serde", "serde"] }
+parking_lot = "0.12"
+futures = "0.3"
+raw-window-handle = "0.6"
+
+# GPUI core (from workspace — same Zed rev as desktop)
+gpui = { workspace = true }
+
+# wgpu renderer from Zed (Metal backend on iOS)
+gpui_wgpu = { git = "https://github.com/zed-industries/zed.git", rev = "dd9efd9cbe73af15fae92d9d34137d253c16d12f" }
+wgpu = { workspace = true }
+
+# Objective-C runtime
+objc = { workspace = true }
+
+# Apple frameworks
+core-foundation = { workspace = true }
+core-foundation-sys = { workspace = true }
+# Must match font-kit's core-graphics version (0.24) for type compatibility
+core-graphics = "0.24"
+core-text = "=21.0.0"
+block = { workspace = true }
+
+# Text / font stack
+pathfinder_geometry = "0.5"
+smallvec = { version = "1.6", features = ["union", "const_new"] }
+
+# font-kit (same pin as gpui upstream)
+font-kit = { git = "https://github.com/zed-industries/font-kit", rev = "110523127440aefb11ce0cf280ae7c5071337ec5", package = "zed-font-kit", version = "0.14.1-zed" }
+
+# UUID for display identification
+uuid = { workspace = true, features = ["v5"] }

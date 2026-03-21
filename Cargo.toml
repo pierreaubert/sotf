@@ -57,6 +57,9 @@ members = [
     "crates/autoeq/autoeq",
     "crates/sotf-iamf",
     "crates/3rdparties/sofa-reader",
+    "crates/gpui-toolkit/gpui-ios",
+    "crates/gpui-toolkit/gpui-ui-kit/ios",
+    "crates/app-ios",
 ]
 resolver = "3"
 
@@ -153,6 +156,7 @@ gpui-px = { version = "0.6", path = "crates/gpui-toolkit/gpui-px" }
 gpui-autoeq = { version = "0.6", path = "crates/gpui-toolkit/gpui-autoeq" }
 gpui-ui-kit = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
+gpui-ios = { version = "0.6", path = "crates/gpui-toolkit/gpui-ios" }
 
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }

@@ -479,50 +479,53 @@ impl PlayerView {
 
     /// Open directory dialog to select recording output directory
     pub(crate) fn browse_recording_directory(&mut self, cx: &mut Context<Self>) {
-        let state_entity = self.state.clone();
+        #[cfg(not(target_os = "ios"))]
+        {
+            let state_entity = self.state.clone();
 
-        cx.spawn(async move |_, cx| {
-            // Open directory dialog
-            let folder = rfd::AsyncFileDialog::new()
-                .set_title("Select Recording Output Directory")
-                .pick_folder()
-                .await;
+            cx.spawn(async move |_, cx| {
+                // Open directory dialog
+                let folder = rfd::AsyncFileDialog::new()
+                    .set_title("Select Recording Output Directory")
+                    .pick_folder()
+                    .await;
 
-            if let Some(folder) = folder {
-                let base_path = folder.path().to_string_lossy().to_string();
-                log::info!("Selected recording directory: {}", base_path);
+                if let Some(folder) = folder {
+                    let base_path = folder.path().to_string_lossy().to_string();
+                    log::info!("Selected recording directory: {}", base_path);
 
-                // Create timestamped subdirectory name
-                let now = chrono::Local::now();
-                let timestamp_dir = format!("recording-{}", now.format("%Y%m%d-%H%M%S"));
-                let full_path = std::path::Path::new(&base_path)
-                    .join(&timestamp_dir)
-                    .to_string_lossy()
-                    .to_string();
+                    // Create timestamped subdirectory name
+                    let now = chrono::Local::now();
+                    let timestamp_dir = format!("recording-{}", now.format("%Y%m%d-%H%M%S"));
+                    let full_path = std::path::Path::new(&base_path)
+                        .join(&timestamp_dir)
+                        .to_string_lossy()
+                        .to_string();
 
-                // Create the directory
-                if let Err(e) = std::fs::create_dir_all(&full_path) {
-                    log::error!("Failed to create recording directory: {}", e);
-                    return;
+                    // Create the directory
+                    if let Err(e) = std::fs::create_dir_all(&full_path) {
+                        log::error!("Failed to create recording directory: {}", e);
+                        return;
+                    }
+
+                    log::info!("Created recording directory: {}", full_path);
+
+                    state_entity.update(&mut cx.clone(), |state, _| {
+                        state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .recording_base_directory = Some(base_path);
+                        state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .recording_directory = Some(full_path);
+                    });
                 }
-
-                log::info!("Created recording directory: {}", full_path);
-
-                state_entity.update(&mut cx.clone(), |state, _| {
-                    state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .recording_base_directory = Some(base_path);
-                    state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .recording_directory = Some(full_path);
-                });
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 
     /// Render playback device dropdown
@@ -1808,64 +1811,68 @@ impl PlayerView {
 
     /// Open file dialog to browse for calibration file for a specific channel
     fn browse_calibration_file_for_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
-        let state_entity = self.state.clone();
+        #[cfg(not(target_os = "ios"))]
+        {
+            let state_entity = self.state.clone();
 
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("CSV", &["csv", "txt"])
-                .add_filter("All files", &["*"])
-                .set_title("Select Microphone Calibration File")
-                .pick_file()
-                .await;
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("CSV", &["csv", "txt"])
+                    .add_filter("All files", &["*"])
+                    .set_title("Select Microphone Calibration File")
+                    .pick_file()
+                    .await;
 
-            if let Some(file) = file {
-                let path = file.path().to_string_lossy().to_string();
-                log::info!(
-                    "Selected calibration file for channel {}: {}",
-                    channel_idx,
-                    path
-                );
-
-                let calibration_data = match std::fs::read_to_string(&path) {
-                    Ok(content) => CalibrationData::parse(&content),
-                    Err(e) => {
-                        log::error!("Failed to read calibration file: {}", e);
-                        None
-                    }
-                };
-
-                if let Some(ref data) = calibration_data {
+                if let Some(file) = file {
+                    let path = file.path().to_string_lossy().to_string();
                     log::info!(
-                        "Parsed calibration data: {} points, freq range {:.0}-{:.0} Hz",
-                        data.frequencies.len(),
-                        data.frequencies.first().unwrap_or(&0.0),
-                        data.frequencies.last().unwrap_or(&0.0)
+                        "Selected calibration file for channel {}: {}",
+                        channel_idx,
+                        path
                     );
+
+                    let calibration_data = match std::fs::read_to_string(&path) {
+                        Ok(content) => CalibrationData::parse(&content),
+                        Err(e) => {
+                            log::error!("Failed to read calibration file: {}", e);
+                            None
+                        }
+                    };
+
+                    if let Some(ref data) = calibration_data {
+                        log::info!(
+                            "Parsed calibration data: {} points, freq range {:.0}-{:.0} Hz",
+                            data.frequencies.len(),
+                            data.frequencies.first().unwrap_or(&0.0),
+                            data.frequencies.last().unwrap_or(&0.0)
+                        );
+                    }
+
+                    state_entity.update(&mut cx.clone(), |state, _| {
+                        let rs = &mut state.app.measurement_state.recording_state;
+
+                        // Grow vecs if needed
+                        while rs.mic_calibration_paths.len() <= channel_idx {
+                            rs.mic_calibration_paths.push(None);
+                        }
+                        while rs.mic_calibration_data_per_channel.len() <= channel_idx {
+                            rs.mic_calibration_data_per_channel.push(None);
+                        }
+
+                        rs.mic_calibration_paths[channel_idx] = Some(path.clone());
+                        rs.mic_calibration_data_per_channel[channel_idx] =
+                            calibration_data.clone();
+
+                        // Sync legacy fields from channel 0
+                        if channel_idx == 0 {
+                            rs.mic_calibration_path = Some(path);
+                            rs.mic_calibration_data = calibration_data;
+                        }
+                    });
                 }
-
-                state_entity.update(&mut cx.clone(), |state, _| {
-                    let rs = &mut state.app.measurement_state.recording_state;
-
-                    // Grow vecs if needed
-                    while rs.mic_calibration_paths.len() <= channel_idx {
-                        rs.mic_calibration_paths.push(None);
-                    }
-                    while rs.mic_calibration_data_per_channel.len() <= channel_idx {
-                        rs.mic_calibration_data_per_channel.push(None);
-                    }
-
-                    rs.mic_calibration_paths[channel_idx] = Some(path.clone());
-                    rs.mic_calibration_data_per_channel[channel_idx] = calibration_data.clone();
-
-                    // Sync legacy fields from channel 0
-                    if channel_idx == 0 {
-                        rs.mic_calibration_path = Some(path);
-                        rs.mic_calibration_data = calibration_data;
-                    }
-                });
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 }
 

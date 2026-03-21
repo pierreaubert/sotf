@@ -46,6 +46,10 @@ fn current_platform() -> Rc<dyn gpui::Platform> {
             gpui_windows::WindowsPlatform::new(false).expect("failed to create Windows platform"),
         )
     }
+    #[cfg(target_os = "ios")]
+    {
+        gpui_ios::current_platform(false)
+    }
 }
 
 /// Configuration for a MiniApp instance

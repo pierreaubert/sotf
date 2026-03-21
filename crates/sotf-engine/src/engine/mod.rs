@@ -13,8 +13,15 @@
 mod types;
 pub use types::*;
 
+#[cfg(not(target_os = "ios"))]
 mod playback_thread;
+#[cfg(not(target_os = "ios"))]
 pub use playback_thread::PlaybackThread;
+
+#[cfg(target_os = "ios")]
+mod playback_thread_stub;
+#[cfg(target_os = "ios")]
+pub use playback_thread_stub::PlaybackThread;
 
 mod decoder_thread;
 pub use decoder_thread::DecoderThread;
@@ -31,8 +38,15 @@ pub use audio_engine::AudioEngine;
 mod config;
 pub use config::EngineConfig;
 
+#[cfg(not(target_os = "ios"))]
 mod config_watcher;
+#[cfg(not(target_os = "ios"))]
 pub use config_watcher::{ConfigEvent, ConfigWatcher};
+
+#[cfg(target_os = "ios")]
+mod config_watcher_stub;
+#[cfg(target_os = "ios")]
+pub use config_watcher_stub::{ConfigEvent, ConfigWatcher};
 
 mod gc_thread;
 pub use gc_thread::{GcSender, GcThread};

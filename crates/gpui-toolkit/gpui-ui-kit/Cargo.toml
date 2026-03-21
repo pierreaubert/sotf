@@ -36,10 +36,15 @@ gpui_linux = { workspace = true }
 [target.'cfg(target_os = "windows")'.dependencies]
 gpui_windows = { workspace = true }
 
+[target.'cfg(target_os = "ios")'.dependencies]
+gpui-ios = { workspace = true }
+
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
-nokhwa = { workspace = true, features = ["input-native"] }
 rqrr = { workspace = true }
+
+[target.'cfg(not(target_os = "ios"))'.dev-dependencies]
+nokhwa = { workspace = true, features = ["input-native"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 block = { workspace = true }

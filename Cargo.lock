@@ -2399,6 +2399,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if 1.0.4",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "dasp_sample"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3757,6 +3770,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-ios"
+version = "0.6.0"
+dependencies = [
+ "anyhow",
+ "block",
+ "core-foundation 0.10.0",
+ "core-foundation-sys 0.8.7",
+ "core-graphics 0.24.0",
+ "core-text",
+ "futures",
+ "gpui",
+ "gpui_wgpu",
+ "log",
+ "objc",
+ "parking_lot",
+ "pathfinder_geometry",
+ "raw-window-handle",
+ "smallvec",
+ "uuid",
+ "wgpu",
+ "zed-font-kit",
+]
+
+[[package]]
 name = "gpui-px"
 version = "0.6.1"
 dependencies = [
@@ -3776,6 +3813,7 @@ version = "0.6.13"
 dependencies = [
  "block",
  "gpui",
+ "gpui-ios",
  "gpui-ui-kit-macros",
  "gpui_linux",
  "gpui_macos",
@@ -3788,6 +3826,17 @@ dependencies = [
  "serde_json",
  "smol",
  "uuid",
+]
+
+[[package]]
+name = "gpui-ui-kit-ios-showcase"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-ios",
+ "gpui-ui-kit",
+ "log",
+ "oslog",
 ]
 
 [[package]]
@@ -6542,6 +6591,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oslog"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80d2043d1f61d77cb2f4b1f7b7b2295f40507f5f8e9d1c8bf10a1ca5f97a3969"
+dependencies = [
+ "cc",
+ "dashmap",
+ "log",
+]
+
+[[package]]
 name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9052,6 +9112,7 @@ dependencies = [
  "env_logger",
  "gpui",
  "gpui-autoeq",
+ "gpui-ios",
  "gpui-px",
  "gpui-ui-kit",
  "gpui_linux",
@@ -9133,6 +9194,24 @@ dependencies = [
  "sotf-host",
  "sotf-plugin-ambisonics",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sotf-ios"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "gpui-ios",
+ "gpui-ui-kit",
+ "log",
+ "oslog",
+ "parking_lot",
+ "rust-embed",
+ "serde_json",
+ "sotf-engine",
+ "sotf-gpui",
+ "sotf-player",
 ]
 
 [[package]]

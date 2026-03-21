@@ -162,74 +162,80 @@ fn y_to_level(y: f32) -> f64 {
 impl PlayerView {
     /// Load a custom target curve from a JSON file
     fn load_custom_target_curve(&mut self, cx: &mut Context<Self>) {
-        let state_entity = self.state.clone();
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("JSON", &["json"])
-                .set_title("Load Target Curve")
-                .pick_file()
-                .await;
+        #[cfg(not(target_os = "ios"))]
+        {
+            let state_entity = self.state.clone();
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_title("Load Target Curve")
+                    .pick_file()
+                    .await;
 
-            if let Some(file) = file {
-                let path = file.path().to_path_buf();
-                match std::fs::read_to_string(&path) {
-                    Ok(json) => match serde_json::from_str::<CustomTargetCurve>(&json) {
-                        Ok(curve) => {
-                            state_entity.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .room_eq_state
-                                    .custom_target_curve = curve;
-                                cx.notify();
-                            });
-                        }
+                if let Some(file) = file {
+                    let path = file.path().to_path_buf();
+                    match std::fs::read_to_string(&path) {
+                        Ok(json) => match serde_json::from_str::<CustomTargetCurve>(&json) {
+                            Ok(curve) => {
+                                state_entity.update(cx, |state, cx| {
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .custom_target_curve = curve;
+                                    cx.notify();
+                                });
+                            }
+                            Err(e) => {
+                                log::error!("Failed to parse target curve: {}", e);
+                            }
+                        },
                         Err(e) => {
-                            log::error!("Failed to parse target curve: {}", e);
+                            log::error!("Failed to read file: {}", e);
                         }
-                    },
-                    Err(e) => {
-                        log::error!("Failed to read file: {}", e);
                     }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 
     /// Save the current custom target curve to a JSON file
     fn save_custom_target_curve(&mut self, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        let curve = state
-            .app
-            .measurement_state
-            .room_eq_state
-            .custom_target_curve
-            .clone();
+        #[cfg(not(target_os = "ios"))]
+        {
+            let state = self.state.read(cx);
+            let curve = state
+                .app
+                .measurement_state
+                .room_eq_state
+                .custom_target_curve
+                .clone();
 
-        cx.spawn(async move |_, _cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("JSON", &["json"])
-                .set_title("Save Target Curve")
-                .set_file_name("target_curve.json")
-                .save_file()
-                .await;
+            cx.spawn(async move |_, _cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_title("Save Target Curve")
+                    .set_file_name("target_curve.json")
+                    .save_file()
+                    .await;
 
-            if let Some(file) = file {
-                let path = file.path().to_path_buf();
-                match serde_json::to_string_pretty(&curve) {
-                    Ok(json) => {
-                        if let Err(e) = std::fs::write(&path, json) {
-                            log::error!("Failed to write file: {}", e);
+                if let Some(file) = file {
+                    let path = file.path().to_path_buf();
+                    match serde_json::to_string_pretty(&curve) {
+                        Ok(json) => {
+                            if let Err(e) = std::fs::write(&path, json) {
+                                log::error!("Failed to write file: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to serialize target curve: {}", e);
                         }
                     }
-                    Err(e) => {
-                        log::error!("Failed to serialize target curve: {}", e);
-                    }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 
     /// Render the custom target curve editor modal

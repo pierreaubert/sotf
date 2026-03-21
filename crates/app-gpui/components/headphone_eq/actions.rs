@@ -9,49 +9,55 @@ impl PlayerView {
     // ========================================================================
 
     pub(crate) fn browse_headphone_eq_measurement(&mut self, cx: &mut Context<Self>) {
-        let state_entity = self.state.clone();
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("CSV Files", &["csv", "txt"])
-                .set_title("Select Headphone Measurement")
-                .pick_file()
-                .await;
+        #[cfg(not(target_os = "ios"))]
+        {
+            let state_entity = self.state.clone();
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("CSV Files", &["csv", "txt"])
+                    .set_title("Select Headphone Measurement")
+                    .pick_file()
+                    .await;
 
-            if let Some(file) = file {
-                let path = file.path().to_string_lossy().to_string();
-                state_entity.update(&mut cx.clone(), |state, _| {
-                    state
-                        .app
-                        .measurement_state
-                        .headphone_eq_state
-                        .measurement_path = Some(path);
-                });
-            }
-        })
-        .detach();
+                if let Some(file) = file {
+                    let path = file.path().to_string_lossy().to_string();
+                    state_entity.update(&mut cx.clone(), |state, _| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .measurement_path = Some(path);
+                    });
+                }
+            })
+            .detach();
+        }
     }
 
     pub(crate) fn browse_headphone_eq_target(&mut self, cx: &mut Context<Self>) {
-        let state_entity = self.state.clone();
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("CSV Files", &["csv", "txt"])
-                .set_title("Select Headphone Target Curve")
-                .pick_file()
-                .await;
+        #[cfg(not(target_os = "ios"))]
+        {
+            let state_entity = self.state.clone();
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("CSV Files", &["csv", "txt"])
+                    .set_title("Select Headphone Target Curve")
+                    .pick_file()
+                    .await;
 
-            if let Some(file) = file {
-                let path = file.path().to_string_lossy().to_string();
-                state_entity.update(&mut cx.clone(), |state, _| {
-                    state
-                        .app
-                        .measurement_state
-                        .headphone_eq_state
-                        .custom_target_path = Some(path);
-                });
-            }
-        })
-        .detach();
+                if let Some(file) = file {
+                    let path = file.path().to_string_lossy().to_string();
+                    state_entity.update(&mut cx.clone(), |state, _| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .custom_target_path = Some(path);
+                    });
+                }
+            })
+            .detach();
+        }
     }
 
     pub(crate) fn start_headphone_eq_optimization(&mut self, cx: &mut Context<Self>) {
@@ -312,67 +318,71 @@ impl PlayerView {
     }
 
     pub(crate) fn save_headphone_eq_result(&mut self, cx: &mut Context<Self>) {
-        let state = self.state.read(cx);
-        if let Some(result) = &state.app.measurement_state.headphone_eq_state.result {
-            // Clone data needed for async task
-            let result_json = serde_json::to_string_pretty(result).unwrap_or_default();
-            let save_name = state
-                .app
-                .measurement_state
-                .headphone_eq_state
-                .save_name
-                .clone();
+        #[cfg(not(target_os = "ios"))]
+        {
+            let state = self.state.read(cx);
+            if let Some(result) = &state.app.measurement_state.headphone_eq_state.result {
+                // Clone data needed for async task
+                let result_json = serde_json::to_string_pretty(result).unwrap_or_default();
+                let save_name = state
+                    .app
+                    .measurement_state
+                    .headphone_eq_state
+                    .save_name
+                    .clone();
 
-            let default_name = if save_name.is_empty() {
-                "headphone_eq.json".to_string()
+                let default_name = if save_name.is_empty() {
+                    "headphone_eq.json".to_string()
+                } else {
+                    format!("{}.json", save_name)
+                };
+
+                let state_entity = self.state.clone();
+
+                cx.spawn(async move |_, cx| {
+                    let file = rfd::AsyncFileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .set_file_name(&default_name)
+                        .set_title("Save Headphone EQ Result")
+                        .save_file()
+                        .await;
+
+                    if let Some(file) = file {
+                        let path = file.path().to_path_buf();
+                        // Write to file
+                        let write_res = std::fs::write(&path, result_json);
+
+                        state_entity.update(&mut cx.clone(), |state, cx| {
+                            match write_res {
+                                Ok(_) => {
+                                    state.app.ui_state.toast_message =
+                                        Some(crate::app::types::ToastMessage::success(format!(
+                                            "Saved EQ to {}",
+                                            path.display()
+                                        )));
+                                }
+                                Err(e) => {
+                                    state.app.ui_state.toast_message =
+                                        Some(crate::app::types::ToastMessage::error(format!(
+                                            "Failed to save: {}",
+                                            e
+                                        )));
+                                }
+                            }
+                            cx.notify();
+                        });
+                    }
+                })
+                .detach();
             } else {
-                format!("{}.json", save_name)
-            };
-
-            let state_entity = self.state.clone();
-
-            cx.spawn(async move |_, cx| {
-                let file = rfd::AsyncFileDialog::new()
-                    .add_filter("JSON", &["json"])
-                    .set_file_name(&default_name)
-                    .set_title("Save Headphone EQ Result")
-                    .save_file()
-                    .await;
-
-                if let Some(file) = file {
-                    let path = file.path().to_path_buf();
-                    // Write to file
-                    let write_res = std::fs::write(&path, result_json);
-
-                    state_entity.update(&mut cx.clone(), |state, cx| {
-                        match write_res {
-                            Ok(_) => {
-                                state.app.ui_state.toast_message =
-                                    Some(crate::app::types::ToastMessage::success(format!(
-                                        "Saved EQ to {}",
-                                        path.display()
-                                    )));
-                            }
-                            Err(e) => {
-                                state.app.ui_state.toast_message =
-                                    Some(crate::app::types::ToastMessage::error(format!(
-                                        "Failed to save: {}",
-                                        e
-                                    )));
-                            }
-                        }
-                        cx.notify();
-                    });
-                }
-            })
-            .detach();
-        } else {
-            self.state.update(cx, |state, cx| {
-                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::warning(
-                    "No optimization result to save",
-                ));
-                cx.notify();
-            });
+                self.state.update(cx, |state, cx| {
+                    state.app.ui_state.toast_message =
+                        Some(crate::app::types::ToastMessage::warning(
+                            "No optimization result to save",
+                        ));
+                    cx.notify();
+                });
+            }
         }
     }
 }

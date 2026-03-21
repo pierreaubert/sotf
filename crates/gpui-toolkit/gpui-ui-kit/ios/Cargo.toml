@@ -1,0 +1,16 @@
+[package]
+name = "gpui-ui-kit-ios-showcase"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "showcase_ios"
+crate-type = ["staticlib"]
+
+[dependencies]
+gpui = { workspace = true }
+gpui-ios = { workspace = true }
+gpui-ui-kit = { workspace = true }
+log = "0.4"
+oslog = "0.2"

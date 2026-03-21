@@ -129,103 +129,109 @@ impl PlayerView {
             return;
         };
 
-        let state_entity = self.state.clone();
+        #[cfg(not(target_os = "ios"))]
+        {
+            let state_entity = self.state.clone();
 
-        cx.spawn(async move |_, cx| {
-            // Open save file dialog
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("JSON", &["json"])
-                .set_title("Export Room EQ Configuration")
-                .set_file_name("room_eq.json")
-                .save_file()
-                .await;
+            cx.spawn(async move |_, cx| {
+                // Open save file dialog
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_title("Export Room EQ Configuration")
+                    .set_file_name("room_eq.json")
+                    .save_file()
+                    .await;
 
-            if let Some(file) = file {
-                // Serialize DSP output
-                match serde_json::to_string_pretty(&dsp_output) {
-                    Ok(json) => {
-                        // Write to file
-                        match std::fs::write(file.path(), &json) {
-                            Ok(()) => {
-                                log::info!("Exported room EQ config to {:?}", file.path());
-                                state_entity.update(cx, |state, _| {
-                                    state.app.measurement_state.room_eq_state.status_message =
-                                        format!("Saved to {}", file.path().display());
-                                });
-                            }
-                            Err(e) => {
-                                log::error!("Failed to write room EQ file: {}", e);
-                                state_entity.update(cx, |state, _| {
-                                    state.app.measurement_state.room_eq_state.error_message =
-                                        Some(format!("Failed to write: {}", e));
-                                });
+                if let Some(file) = file {
+                    // Serialize DSP output
+                    match serde_json::to_string_pretty(&dsp_output) {
+                        Ok(json) => {
+                            // Write to file
+                            match std::fs::write(file.path(), &json) {
+                                Ok(()) => {
+                                    log::info!("Exported room EQ config to {:?}", file.path());
+                                    state_entity.update(cx, |state, _| {
+                                        state.app.measurement_state.room_eq_state.status_message =
+                                            format!("Saved to {}", file.path().display());
+                                    });
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to write room EQ file: {}", e);
+                                    state_entity.update(cx, |state, _| {
+                                        state.app.measurement_state.room_eq_state.error_message =
+                                            Some(format!("Failed to write: {}", e));
+                                    });
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to serialize room EQ JSON: {}", e);
-                        state_entity.update(cx, |state, _| {
-                            state.app.measurement_state.room_eq_state.error_message =
-                                Some(format!("Failed to serialize: {}", e));
-                        });
+                        Err(e) => {
+                            log::error!("Failed to serialize room EQ JSON: {}", e);
+                            state_entity.update(cx, |state, _| {
+                                state.app.measurement_state.room_eq_state.error_message =
+                                    Some(format!("Failed to serialize: {}", e));
+                            });
+                        }
                     }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 
     fn save_rack_backup(&mut self, cx: &mut Context<Self>) {
-        // Get the current plugin chain
-        let plugin_chain = {
-            let state = self.state.read(cx);
-            state.app.plugin_state.chain.clone()
-        };
+        #[cfg(not(target_os = "ios"))]
+        {
+            // Get the current plugin chain
+            let plugin_chain = {
+                let state = self.state.read(cx);
+                state.app.plugin_state.chain.clone()
+            };
 
-        let state_entity = self.state.clone();
+            let state_entity = self.state.clone();
 
-        cx.spawn(async move |_, cx| {
-            // Generate default filename with timestamp
-            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-            let default_name = format!("rack_backup_{}.json", timestamp);
+            cx.spawn(async move |_, cx| {
+                // Generate default filename with timestamp
+                let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                let default_name = format!("rack_backup_{}.json", timestamp);
 
-            // Open save file dialog
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("JSON", &["json"])
-                .set_title("Save Rack Backup")
-                .set_file_name(&default_name)
-                .save_file()
-                .await;
+                // Open save file dialog
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_title("Save Rack Backup")
+                    .set_file_name(&default_name)
+                    .save_file()
+                    .await;
 
-            if let Some(file) = file {
-                let file_path = file.path().to_path_buf();
-                let parent_dir = file_path.parent().unwrap_or(std::path::Path::new("."));
-                let filename = file_path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("backup.json");
+                if let Some(file) = file {
+                    let file_path = file.path().to_path_buf();
+                    let parent_dir = file_path.parent().unwrap_or(std::path::Path::new("."));
+                    let filename = file_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("backup.json");
 
-                match plugin_chain.save_to_file(parent_dir, filename) {
-                    Ok(()) => {
-                        log::info!("Saved rack backup to {:?}", file_path);
-                        state_entity.update(cx, |state, _| {
-                            state.app.measurement_state.room_eq_state.status_message =
-                                format!("Backup saved to {}", file_path.display());
-                            state.app.ui_state.toast_message =
-                                Some(crate::app::ToastMessage::success("Rack backup saved"));
-                        });
-                    }
-                    Err(e) => {
-                        log::error!("Failed to save rack backup: {}", e);
-                        state_entity.update(cx, |state, _| {
-                            state.app.measurement_state.room_eq_state.error_message =
-                                Some(format!("Failed to save backup: {}", e));
-                        });
+                    match plugin_chain.save_to_file(parent_dir, filename) {
+                        Ok(()) => {
+                            log::info!("Saved rack backup to {:?}", file_path);
+                            state_entity.update(cx, |state, _| {
+                                state.app.measurement_state.room_eq_state.status_message =
+                                    format!("Backup saved to {}", file_path.display());
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::success("Rack backup saved"));
+                            });
+                        }
+                        Err(e) => {
+                            log::error!("Failed to save rack backup: {}", e);
+                            state_entity.update(cx, |state, _| {
+                                state.app.measurement_state.room_eq_state.error_message =
+                                    Some(format!("Failed to save backup: {}", e));
+                            });
+                        }
                     }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 
     fn apply_room_eq_to_player(&mut self, cx: &mut Context<Self>) {

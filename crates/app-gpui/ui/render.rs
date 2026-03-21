@@ -490,7 +490,17 @@ impl Render for PlayerView {
             .font_family(theme.font_family.clone())
             .bg(theme.background)
             .text_color(theme.text_primary)
-            .when(!cfg!(target_os = "macos"), |div| {
+            // Apply safe area insets on iOS to avoid the notch and home indicator
+            .map(|div| {
+                #[cfg(target_os = "ios")]
+                {
+                    let (top, _left, bottom, _right) = gpui_ios::safe_area_insets();
+                    div.pt(px(top)).pb(px(bottom))
+                }
+                #[cfg(not(target_os = "ios"))]
+                { div }
+            })
+            .when(!cfg!(target_os = "macos") && !cfg!(target_os = "ios"), |div| {
                 div.child(self.render_menu_bar(cx))
             })
             .child(self.render_header(cx))

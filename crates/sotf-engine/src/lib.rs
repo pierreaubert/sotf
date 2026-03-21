@@ -1,5 +1,14 @@
+#[cfg(not(target_os = "ios"))]
 pub mod devices;
+#[cfg(not(target_os = "ios"))]
 pub use devices::SharedAudioState;
+
+#[cfg(target_os = "ios")]
+pub mod devices_stub;
+#[cfg(target_os = "ios")]
+pub use devices_stub as devices;
+#[cfg(target_os = "ios")]
+pub use devices_stub::SharedAudioState;
 
 pub mod decoder;
 pub use decoder::{

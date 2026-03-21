@@ -100,20 +100,22 @@ impl PlayerView {
     }
 
     pub(crate) fn load_room_eq_from_file(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::{
-            ChannelMeasurement, RecordingResult, RoomEqDataSource, RoomEqMeasurementsFile,
-            RoomEqSpeakerConfig, SpeakerConfigType,
-        };
+        #[cfg(not(target_os = "ios"))]
+        {
+            use crate::app::types::{
+                ChannelMeasurement, RecordingResult, RoomEqDataSource, RoomEqMeasurementsFile,
+                RoomEqSpeakerConfig, SpeakerConfigType,
+            };
 
-        let state_entity = self.state.clone();
+            let state_entity = self.state.clone();
 
-        cx.spawn(async move |_, cx| {
-            // Open file dialog
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("JSON", &["json"])
-                .set_title("Load Room EQ Measurements")
-                .pick_file()
-                .await;
+            cx.spawn(async move |_, cx| {
+                // Open file dialog
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .set_title("Load Room EQ Measurements")
+                    .pick_file()
+                    .await;
 
             if let Some(file) = file {
                 let file_path = file.path().to_path_buf();
@@ -538,8 +540,9 @@ impl PlayerView {
                     }
                 }
             }
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 
     /// Check if a legacy JSON file needs migration (large file with inline data)

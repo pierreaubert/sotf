@@ -1596,61 +1596,67 @@ impl PlayerView {
         let safe_speaker_name = speaker_name.replace([' ', '/', '\\'], "_");
         let default_filename = format!("spinorama_eq_{}.{}", safe_speaker_name, extension);
 
-        let state_entity = self.state.clone();
-        cx.spawn(async move |_, cx| {
-            // Open save file dialog
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter(extension.to_uppercase(), &[extension])
-                .set_title("Save Spinorama EQ")
-                .set_file_name(&default_filename)
-                .save_file()
-                .await;
+        #[cfg(not(target_os = "ios"))]
+        {
+            let state_entity = self.state.clone();
+            cx.spawn(async move |_, cx| {
+                // Open save file dialog
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter(extension.to_uppercase(), &[extension])
+                    .set_title("Save Spinorama EQ")
+                    .set_file_name(&default_filename)
+                    .save_file()
+                    .await;
 
-            if let Some(file) = file {
-                // Export using the appropriate format function
-                let comment = format!(
-                    "# Spinorama EQ for {}\n# Generated: {}",
-                    speaker_name,
-                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-                );
-                let content = match export_format.as_str() {
-                    "apo" => math_audio_iir_fir::peq_format_apo(&comment, &peq),
-                    "rme-channel" => math_audio_iir_fir::peq_format_rme_channel(&peq),
-                    "rme-room" => math_audio_iir_fir::peq_format_rme_room(&peq, &peq),
-                    "aupreset" => math_audio_iir_fir::peq_format_aupreset(
-                        &peq,
-                        &format!("Spinorama EQ {}", speaker_name),
-                    ),
-                    _ => {
-                        // JSON format - serialize the biquads directly
-                        serde_json::to_string_pretty(&result.biquads).unwrap_or_default()
-                    }
-                };
+                if let Some(file) = file {
+                    // Export using the appropriate format function
+                    let comment = format!(
+                        "# Spinorama EQ for {}\n# Generated: {}",
+                        speaker_name,
+                        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+                    );
+                    let content = match export_format.as_str() {
+                        "apo" => math_audio_iir_fir::peq_format_apo(&comment, &peq),
+                        "rme-channel" => math_audio_iir_fir::peq_format_rme_channel(&peq),
+                        "rme-room" => math_audio_iir_fir::peq_format_rme_room(&peq, &peq),
+                        "aupreset" => math_audio_iir_fir::peq_format_aupreset(
+                            &peq,
+                            &format!("Spinorama EQ {}", speaker_name),
+                        ),
+                        _ => {
+                            // JSON format - serialize the biquads directly
+                            serde_json::to_string_pretty(&result.biquads).unwrap_or_default()
+                        }
+                    };
 
-                match std::fs::write(file.path(), content) {
-                    Ok(()) => {
-                        log::info!("Saved Spinorama EQ to {:?}", file.path());
-                        state_entity.update(cx, |state, cx| {
-                            state.app.ui_state.toast_message =
-                                Some(crate::app::ToastMessage::success(format!(
-                                    "Saved to {}",
-                                    file.path().display()
-                                )));
-                            cx.notify();
-                        });
-                    }
-                    Err(e) => {
-                        log::error!("Failed to save Spinorama EQ: {}", e);
-                        state_entity.update(cx, |state, cx| {
-                            state.app.ui_state.toast_message = Some(
-                                crate::app::ToastMessage::error(format!("Failed to save: {}", e)),
-                            );
-                            cx.notify();
-                        });
+                    match std::fs::write(file.path(), content) {
+                        Ok(()) => {
+                            log::info!("Saved Spinorama EQ to {:?}", file.path());
+                            state_entity.update(cx, |state, cx| {
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::success(format!(
+                                        "Saved to {}",
+                                        file.path().display()
+                                    )));
+                                cx.notify();
+                            });
+                        }
+                        Err(e) => {
+                            log::error!("Failed to save Spinorama EQ: {}", e);
+                            state_entity.update(cx, |state, cx| {
+                                state.app.ui_state.toast_message = Some(
+                                    crate::app::ToastMessage::error(format!(
+                                        "Failed to save: {}",
+                                        e
+                                    )),
+                                );
+                                cx.notify();
+                            });
+                        }
                     }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 }

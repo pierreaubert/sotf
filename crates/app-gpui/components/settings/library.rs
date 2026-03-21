@@ -118,20 +118,23 @@ impl PlayerView {
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|_view, _: &MouseUpEvent, _window, cx| {
-                                    cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
-                                        if let Some(handle) =
-                                            rfd::AsyncFileDialog::new().pick_folder().await
-                                        {
-                                            let path = handle.path().to_path_buf();
-                                            let _ = view.update(cx, |view, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.add_directory(path);
+                                    #[cfg(not(target_os = "ios"))]
+                                    {
+                                        cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
+                                            if let Some(handle) =
+                                                rfd::AsyncFileDialog::new().pick_folder().await
+                                            {
+                                                let path = handle.path().to_path_buf();
+                                                let _ = view.update(cx, |view, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.add_directory(path);
+                                                    });
+                                                    cx.notify();
                                                 });
-                                                cx.notify();
-                                            });
-                                        }
-                                    })
-                                    .detach();
+                                            }
+                                        })
+                                        .detach();
+                                    }
                                 }),
                             ),
                     ),

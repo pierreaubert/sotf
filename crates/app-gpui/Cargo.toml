@@ -46,7 +46,6 @@ thiserror = { workspace = true }
 
 # File system and utilities
 walkdir = { workspace = true }
-rfd = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
 
@@ -84,8 +83,6 @@ urlencoding = { workspace = true }
 ndarray = { workspace = true }
 num-complex = { workspace = true }
 
-# Signal handling for clean Ctrl-C shutdown
-signal-hook = { workspace = true }
 
 # OS media controls (MPRIS on Linux, MediaPlayer on macOS/Windows)
 souvlaki = { workspace = true }
@@ -102,6 +99,13 @@ mimalloc = { workspace = true }
 
 rustfft = { workspace = true }
 
+# Desktop-only dependencies (not available on iOS)
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+rfd = { workspace = true }
+
+[target.'cfg(all(unix, not(target_os = "ios")))'.dependencies]
+signal-hook = { workspace = true }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 gpui_macos = { workspace = true }
 driver-hal = { workspace = true, optional = true }
@@ -114,6 +118,9 @@ gpui_windows = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+gpui-ios = { workspace = true }
 
 [lib]
 name = "sotf_audio_player_gpui"

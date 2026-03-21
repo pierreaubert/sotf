@@ -1284,6 +1284,7 @@ impl PlayerView {
             );
 
             // Use multi-channel recording when multiple mics, single-channel otherwise
+            #[cfg(not(target_os = "ios"))]
             let results: Result<Vec<_>, String> = if num_mics <= 1 {
                 use sotf_audio_player::signal_recorder::record_and_analyze;
                 record_and_analyze(
@@ -1316,6 +1317,10 @@ impl PlayerView {
                     sweep_range,
                 )
             };
+
+            #[cfg(target_os = "ios")]
+            let results: Result<Vec<sotf_audio::AnalysisResult>, String> =
+                Err("Recording not available on iOS".to_string());
 
             // Update state with results
             let (should_auto_continue, next_channel_idx) =
@@ -1758,77 +1763,84 @@ impl PlayerView {
     ///
     /// Detects legacy format (large inline data) and prompts for migration.
     pub(crate) fn load_recordings_from_file(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::RoomEqMeasurementsFile;
+        #[cfg(not(target_os = "ios"))]
+        {
+            use crate::app::types::RoomEqMeasurementsFile;
 
-        let state_entity = self.state.clone();
+            let state_entity = self.state.clone();
 
-        cx.spawn(async move |_, cx| {
-            // Open file dialog
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("JSON", &["json"])
-                .pick_file()
-                .await;
+            cx.spawn(async move |_, cx| {
+                // Open file dialog
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .pick_file()
+                    .await;
 
-            if let Some(file) = file {
-                let file_path = file.path().to_path_buf();
-                let file_dir = file_path.parent().map(|p| p.to_path_buf());
+                if let Some(file) = file {
+                    let file_path = file.path().to_path_buf();
+                    let file_dir = file_path.parent().map(|p| p.to_path_buf());
 
-                // Get file size
-                let file_size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+                    // Get file size
+                    let file_size =
+                        std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
 
-                // Read file content
-                match std::fs::read_to_string(&file_path) {
-                    Ok(json) => {
-                        // Check if this is a legacy format (large file with inline data)
-                        let needs_migration = Self::check_needs_migration(&json, file_size);
+                    // Read file content
+                    match std::fs::read_to_string(&file_path) {
+                        Ok(json) => {
+                            // Check if this is a legacy format (large file with inline data)
+                            let needs_migration =
+                                Self::check_needs_migration(&json, file_size);
 
-                        if needs_migration {
-                            // Show migration modal instead of loading directly
-                            log::info!(
-                                "Detected legacy format ({:.2} MB), showing migration modal",
-                                file_size as f64 / 1_000_000.0
-                            );
+                            if needs_migration {
+                                // Show migration modal instead of loading directly
+                                log::info!(
+                                    "Detected legacy format ({:.2} MB), showing migration modal",
+                                    file_size as f64 / 1_000_000.0
+                                );
 
-                            // Count channels for display
-                            let channel_count = RoomEqMeasurementsFile::from_json_str(&json)
-                                .map(|m| m.channels.len())
-                                .unwrap_or(0);
+                                // Count channels for display
+                                let channel_count =
+                                    RoomEqMeasurementsFile::from_json_str(&json)
+                                        .map(|m| m.channels.len())
+                                        .unwrap_or(0);
 
+                                state_entity.update(&mut cx.clone(), |state, _| {
+                                    let rec_state =
+                                        &mut state.app.measurement_state.recording_state;
+                                    rec_state.migration_modal_open = true;
+                                    rec_state.migration_file_path =
+                                        Some(file_path.to_string_lossy().to_string());
+                                    rec_state.migration_file_dir =
+                                        file_dir.map(|d| d.to_string_lossy().to_string());
+                                    rec_state.migration_file_size = Some(file_size);
+                                    rec_state.migration_channel_count = channel_count;
+                                    rec_state.migration_pending_json = Some(json);
+                                });
+                            } else {
+                                // Load normally for new format or small files
+                                Self::load_recordings_internal(
+                                    state_entity,
+                                    &mut cx.clone(),
+                                    &json,
+                                    &file_path,
+                                    file_dir,
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to read recordings file: {}", e);
                             state_entity.update(&mut cx.clone(), |state, _| {
-                                let rec_state = &mut state.app.measurement_state.recording_state;
-                                rec_state.migration_modal_open = true;
-                                rec_state.migration_file_path =
-                                    Some(file_path.to_string_lossy().to_string());
-                                rec_state.migration_file_dir =
-                                    file_dir.map(|d| d.to_string_lossy().to_string());
-                                rec_state.migration_file_size = Some(file_size);
-                                rec_state.migration_channel_count = channel_count;
-                                rec_state.migration_pending_json = Some(json);
+                                state.app.measurement_state.recording_state.status_message =
+                                    format!("Failed to read: {}", e);
                             });
-                        } else {
-                            // Load normally for new format or small files
-                            Self::load_recordings_internal(
-                                state_entity,
-                                &mut cx.clone(),
-                                &json,
-                                &file_path,
-                                file_dir,
-                            );
                         }
                     }
-                    Err(e) => {
-                        log::error!("Failed to read recordings file: {}", e);
-                        state_entity.update(&mut cx.clone(), |state, _| {
-                            state.app.measurement_state.recording_state.status_message =
-                                format!("Failed to read: {}", e);
-                        });
-                    }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
 
-        log::info!("Load recordings from file initiated");
+            log::info!("Load recordings from file initiated");
+        }
     }
 
     /// Check if a JSON file needs migration (legacy format with large inline data)

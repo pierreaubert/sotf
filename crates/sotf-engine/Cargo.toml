@@ -18,15 +18,12 @@ iamf = ["dep:sotf-iamf", "dep:sotf-plugin-ambisonics"]
 driver-common = { workspace = true }
 tokio = { workspace = true }
 ndarray = { workspace = true }
-notify = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-cpal = { workspace = true }
 tempfile = { workspace = true }
 serde_yaml = { workspace = true }
 which = { workspace = true }
 clap = { workspace = true }
-ctrlc = { workspace = true }
 chrono = { workspace = true }
 libc = { workspace = true }
 arc-swap = { workspace = true }
@@ -69,7 +66,13 @@ id3 = { workspace = true }
 metaflac = { workspace = true }
 rtrb = { workspace = true }
 
-[target.'cfg(unix)'.dependencies]
+# Platform-specific: not available on iOS
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+cpal = { workspace = true }
+notify = { workspace = true }
+ctrlc = { workspace = true }
+
+[target.'cfg(all(unix, not(target_os = "ios")))'.dependencies]
 signal-hook = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

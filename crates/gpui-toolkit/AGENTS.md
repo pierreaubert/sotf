@@ -13,6 +13,7 @@ The `gpui-toolkit` workspace contains several related crates for building GPUI a
 | `gpui-themes` | Theme editor and management infrastructure | [AGENTS.md](gpui-themes/AGENTS.md) |
 | `gpui-ui-kit` | Reusable UI components (buttons, forms, layout) | [lib.rs](gpui-ui-kit/src/lib.rs) |
 | `gpui-ui-kit-macros` | Procedural macros for theme derivation | [README](gpui-ui-kit-macros/README.md) |
+| `gpui-ios` | iOS platform backend (Metal rendering, touch, text) | [README](gpui-ios/README.md), [AGENTS.md](gpui-ios/AGENTS.md) |
 
 **Key Principle**: All crates use GPUI's native `div()`-based rendering, not HTML/SVG. Components return `impl IntoElement`.
 

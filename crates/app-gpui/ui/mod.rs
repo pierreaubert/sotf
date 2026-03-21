@@ -423,18 +423,29 @@ impl PlayerView {
             }
         });
 
-        log::info!("Services stopped, requesting GPUI quit...");
+        // On iOS, apps don't quit — save state and let iOS manage lifecycle.
+        // Audio continues in background via UIBackgroundModes=audio.
+        #[cfg(target_os = "ios")]
+        {
+            log::info!("iOS: state saved, returning to background");
+            return;
+        }
 
-        // Request GPUI to quit
-        cx.quit();
+        #[cfg(not(target_os = "ios"))]
+        {
+            log::info!("Services stopped, requesting GPUI quit...");
 
-        // Give GPUI and background threads a very short time to clean up
-        // before forcing exit (to ensure we don't hang indefinitely)
-        std::thread::spawn(|| {
-            std::thread::sleep(Duration::from_millis(500));
-            log::info!("Cleanup timeout reached, forcing exit");
-            std::process::exit(0);
-        });
+            // Request GPUI to quit
+            cx.quit();
+
+            // Give GPUI and background threads a very short time to clean up
+            // before forcing exit (to ensure we don't hang indefinitely)
+            std::thread::spawn(|| {
+                std::thread::sleep(Duration::from_millis(500));
+                log::info!("Cleanup timeout reached, forcing exit");
+                std::process::exit(0);
+            });
+        }
     }
 
     fn cycle_theme(&mut self, _: &CycleTheme, _: &mut Window, cx: &mut Context<Self>) {
@@ -663,14 +674,27 @@ impl PlayerView {
     }
 
     fn add_directory(&mut self, _: &AddDirectory, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            use crate::app::InputMode;
-            // Enter add directory mode
-            state.app.ui_state.input_mode = InputMode::AddDirectory;
-            state.app.input_state.directory_input.clear();
-            state.app.clear_autocomplete();
-        });
-        cx.notify();
+        // On iOS, present the native document picker instead of text input
+        #[cfg(target_os = "ios")]
+        {
+            unsafe extern "C" {
+                fn sotf_ios_show_document_picker();
+            }
+            unsafe { sotf_ios_show_document_picker() };
+            return;
+        }
+
+        #[cfg(not(target_os = "ios"))]
+        {
+            self.state.update(cx, |state, _cx| {
+                use crate::app::InputMode;
+                // Enter add directory mode
+                state.app.ui_state.input_mode = InputMode::AddDirectory;
+                state.app.input_state.directory_input.clear();
+                state.app.clear_autocomplete();
+            });
+            cx.notify();
+        }
     }
 
     fn scan_library(&mut self, _: &ScanLibrary, _: &mut Window, cx: &mut Context<Self>) {
@@ -965,24 +989,27 @@ impl PlayerView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let plugin_idx = action.plugin_idx;
-        let state_entity = self.state.clone();
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("SOFA Files", &["sofa"])
-                .set_title("Select SOFA File")
-                .pick_file()
-                .await;
+        #[cfg(not(target_os = "ios"))]
+        {
+            let plugin_idx = action.plugin_idx;
+            let state_entity = self.state.clone();
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("SOFA Files", &["sofa"])
+                    .set_title("Select SOFA File")
+                    .pick_file()
+                    .await;
 
-            if let Some(file) = file {
-                let path = file.path().to_string_lossy().to_string();
-                state_entity.update(&mut cx.clone(), |state, cx| {
-                    state.app.set_plugin_param_string(plugin_idx, 0, path);
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
+                if let Some(file) = file {
+                    let path = file.path().to_string_lossy().to_string();
+                    state_entity.update(&mut cx.clone(), |state, cx| {
+                        state.app.set_plugin_param_string(plugin_idx, 0, path);
+                        cx.notify();
+                    });
+                }
+            })
+            .detach();
+        }
     }
 
     pub(crate) fn on_open_ir_file(
@@ -991,24 +1018,27 @@ impl PlayerView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let plugin_idx = action.plugin_idx;
-        let state_entity = self.state.clone();
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("Audio Files", &["wav", "flac", "aif", "aiff"])
-                .set_title("Select IR File")
-                .pick_file()
-                .await;
+        #[cfg(not(target_os = "ios"))]
+        {
+            let plugin_idx = action.plugin_idx;
+            let state_entity = self.state.clone();
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("Audio Files", &["wav", "flac", "aif", "aiff"])
+                    .set_title("Select IR File")
+                    .pick_file()
+                    .await;
 
-            if let Some(file) = file {
-                let path = file.path().to_string_lossy().to_string();
-                state_entity.update(&mut cx.clone(), |state, cx| {
-                    state.app.set_plugin_param_string(plugin_idx, 0, path);
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
+                if let Some(file) = file {
+                    let path = file.path().to_string_lossy().to_string();
+                    state_entity.update(&mut cx.clone(), |state, cx| {
+                        state.app.set_plugin_param_string(plugin_idx, 0, path);
+                        cx.notify();
+                    });
+                }
+            })
+            .detach();
+        }
     }
 
     pub(crate) fn on_open_ab_config_file(
@@ -1017,15 +1047,17 @@ impl PlayerView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let plugin_idx = action.plugin_idx;
-        let path_id = action.path_id.clone();
-        let state_entity = self.state.clone();
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("JSON Config Files", &["json"])
-                .set_title("Select Config File")
-                .pick_file()
-                .await;
+        #[cfg(not(target_os = "ios"))]
+        {
+            let plugin_idx = action.plugin_idx;
+            let path_id = action.path_id.clone();
+            let state_entity = self.state.clone();
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter("JSON Config Files", &["json"])
+                    .set_title("Select Config File")
+                    .pick_file()
+                    .await;
 
             if let Some(file) = file {
                 let file_path = file.path().to_string_lossy().to_string();
@@ -1057,8 +1089,9 @@ impl PlayerView {
                     }
                 }
             }
-        })
-        .detach();
+            })
+            .detach();
+        }
     }
 
     /// Recalculate library pagination based on current layout.
