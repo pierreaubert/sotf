@@ -112,6 +112,9 @@ gpui_linux = { workspace = true }
 [target.'cfg(target_os = "windows")'.dependencies]
 gpui_windows = { workspace = true }
 
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winresource = "0.1"
+
 [lib]
 name = "sotf_audio_player_gpui"
 path = "lib.rs"

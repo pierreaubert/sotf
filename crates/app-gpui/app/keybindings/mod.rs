@@ -418,27 +418,42 @@ fn default_documented_keybindings() -> Vec<DocumentedKeybinding> {
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
+            #[cfg(target_os = "macos")]
             key: "Cmd+,",
+            #[cfg(not(target_os = "macos"))]
+            key: "Ctrl+,",
             description: "Settings",
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
+            #[cfg(target_os = "macos")]
             key: "Cmd+Q",
+            #[cfg(not(target_os = "macos"))]
+            key: "Ctrl+Q",
             description: "Quit",
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
+            #[cfg(target_os = "macos")]
             key: "Cmd++",
+            #[cfg(not(target_os = "macos"))]
+            key: "Ctrl++",
             description: "Increase font size",
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
+            #[cfg(target_os = "macos")]
             key: "Cmd+-",
+            #[cfg(not(target_os = "macos"))]
+            key: "Ctrl+-",
             description: "Decrease font size",
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
+            #[cfg(target_os = "macos")]
             key: "Cmd+Shift+0",
+            #[cfg(not(target_os = "macos"))]
+            key: "Ctrl+Shift+0",
             description: "Reset font size",
             category: KeybindingCategory::System,
         },

@@ -250,7 +250,10 @@ pub(super) fn emacs_documented_keybindings() -> Vec<DocumentedKeybinding> {
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
+            #[cfg(target_os = "macos")]
             key: "Cmd+Q",
+            #[cfg(not(target_os = "macos"))]
+            key: "Ctrl+Q",
             description: "Quit",
             category: KeybindingCategory::System,
         },

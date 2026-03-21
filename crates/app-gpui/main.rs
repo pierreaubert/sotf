@@ -203,18 +203,24 @@ fn main() {
                 SwitchToSpinorama,
             ));
 
+            let mut app_menu_items = vec![
+                MenuItem::action(translations.menu_about, About),
+                MenuItem::separator(),
+                MenuItem::action(translations.menu_open_config, OpenConfig),
+                MenuItem::separator(),
+            ];
+            // Services submenu is macOS-only (no equivalent on Windows/Linux)
+            #[cfg(target_os = "macos")]
+            {
+                app_menu_items.push(MenuItem::os_submenu("Services", SystemMenuType::Services));
+                app_menu_items.push(MenuItem::separator());
+            }
+            app_menu_items.push(MenuItem::action(translations.menu_quit, QuitApp));
+
             cx.set_menus(vec![
                 Menu {
                     name: format!("SotF-v{}", env!("CARGO_PKG_VERSION")).into(),
-                    items: vec![
-                        MenuItem::action(translations.menu_about, About),
-                        MenuItem::separator(),
-                        MenuItem::action(translations.menu_open_config, OpenConfig),
-                        MenuItem::separator(),
-                        MenuItem::os_submenu("Services", SystemMenuType::Services),
-                        MenuItem::separator(),
-                        MenuItem::action(translations.menu_quit, QuitApp),
-                    ],
+                    items: app_menu_items,
                 },
                 Menu {
                     name: translations.menu_view.into(),

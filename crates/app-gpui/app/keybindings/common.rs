@@ -4,23 +4,23 @@ use gpui::KeyBinding;
 /// Bindings common to all presets (playback, screen switching, etc.)
 pub(super) fn common_bindings() -> Vec<KeyBinding> {
     vec![
-        // Font size controls (global) - cmd-+ (or cmd-=), cmd--, cmd-0 to reset
-        KeyBinding::new("cmd-=", actions::IncreaseFontSize, None),
-        KeyBinding::new("cmd-+", actions::IncreaseFontSize, None),
-        KeyBinding::new("cmd--", actions::DecreaseFontSize, None),
-        KeyBinding::new("cmd-shift-0", actions::ResetFontSize, None),
-        // Screen navigation with Cmd + number (Show menu shortcuts) - keep global
-        KeyBinding::new("cmd-0", actions::SwitchToLibrary, None),
-        KeyBinding::new("cmd-`", actions::SwitchToLibrary, None), // cmd-§ on macOS
-        KeyBinding::new("cmd-1", actions::SwitchToStudio, None),
-        KeyBinding::new("cmd-2", actions::SwitchToPluginGraph, None),
-        KeyBinding::new("cmd-3", actions::SwitchToRecording, None),
-        KeyBinding::new("cmd-4", actions::SwitchToRoomEQ, None),
-        KeyBinding::new("cmd-5", actions::SwitchToHeadphoneEQ, None),
-        KeyBinding::new("cmd-6", actions::SwitchToSpinorama, None),
+        // Font size controls (global) - Cmd/Ctrl + (or =), -, Shift+0 to reset
+        KeyBinding::new("secondary-=", actions::IncreaseFontSize, None),
+        KeyBinding::new("secondary-+", actions::IncreaseFontSize, None),
+        KeyBinding::new("secondary--", actions::DecreaseFontSize, None),
+        KeyBinding::new("secondary-shift-0", actions::ResetFontSize, None),
+        // Screen navigation with Cmd/Ctrl + number (Show menu shortcuts) - keep global
+        KeyBinding::new("secondary-0", actions::SwitchToLibrary, None),
+        KeyBinding::new("secondary-`", actions::SwitchToLibrary, None), // cmd-§ on macOS
+        KeyBinding::new("secondary-1", actions::SwitchToStudio, None),
+        KeyBinding::new("secondary-2", actions::SwitchToPluginGraph, None),
+        KeyBinding::new("secondary-3", actions::SwitchToRecording, None),
+        KeyBinding::new("secondary-4", actions::SwitchToRoomEQ, None),
+        KeyBinding::new("secondary-5", actions::SwitchToHeadphoneEQ, None),
+        KeyBinding::new("secondary-6", actions::SwitchToSpinorama, None),
         // Menu bar actions (platform convention) - keep global
-        KeyBinding::new("cmd-,", actions::OpenConfig, None),
-        KeyBinding::new("cmd-q", actions::QuitApp, None),
+        KeyBinding::new("secondary-,", actions::OpenConfig, None),
+        KeyBinding::new("secondary-q", actions::QuitApp, None),
         // Cancel/Escape is universal - keep global
         KeyBinding::new("escape", actions::Cancel, None),
         // Media keys - global scope (work from anywhere)
@@ -69,8 +69,8 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("left", actions::SelectLeft, Some("PluginRack")),
         KeyBinding::new("right", actions::SelectRight, Some("PluginRack")),
         // Plugin reordering
-        KeyBinding::new("cmd-up", actions::MovePluginUp, Some("PluginRack")),
-        KeyBinding::new("cmd-down", actions::MovePluginDown, Some("PluginRack")),
+        KeyBinding::new("secondary-up", actions::MovePluginUp, Some("PluginRack")),
+        KeyBinding::new("secondary-down", actions::MovePluginDown, Some("PluginRack")),
         // Plugin enable/disable
         KeyBinding::new("enter", actions::TogglePlugin, Some("PluginRack")),
         // Plugin removal

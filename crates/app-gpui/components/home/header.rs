@@ -10,6 +10,12 @@ use gpui_ui_kit::{
     HStack, LoadingDots, Menu, MenuItem, StackSpacing, TabItem, TabVariant, Tabs, menu_bar_button,
 };
 
+/// Platform-appropriate modifier prefix for menu shortcut display.
+#[cfg(target_os = "macos")]
+const MOD_PREFIX: &str = "⌘";
+#[cfg(not(target_os = "macos"))]
+const MOD_PREFIX: &str = "Ctrl+";
+
 impl PlayerView {
     /// Render the application menu bar with dropdown menus
     pub(crate) fn render_menu_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -155,10 +161,11 @@ impl PlayerView {
         Menu::new(
             "file-menu",
             vec![
-                MenuItem::new("settings", translations.screen_settings).with_shortcut("⌘,"),
+                MenuItem::new("settings", translations.screen_settings)
+                    .with_shortcut(format!("{MOD_PREFIX},")),
                 MenuItem::separator(),
                 MenuItem::new("quit", translations.menu_quit)
-                    .with_shortcut("⌘Q")
+                    .with_shortcut(format!("{MOD_PREFIX}Q"))
                     .danger(),
             ],
         )
@@ -199,16 +206,20 @@ impl PlayerView {
             "view-menu",
             vec![
                 MenuItem::new("studio", translations.screen_studio)
-                    .with_shortcut("⌘1")
+                    .with_shortcut(format!("{MOD_PREFIX}1"))
                     .disabled(!channel.allows(Screen::Studio.maturity())),
-                MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘2"),
+                MenuItem::new("recording", translations.screen_recording)
+                    .with_shortcut(format!("{MOD_PREFIX}2")),
                 MenuItem::new("roomeq", translations.screen_room_eq)
-                    .with_shortcut("⌘3")
+                    .with_shortcut(format!("{MOD_PREFIX}3"))
                     .disabled(!channel.allows(Screen::RoomEq.maturity())),
-                MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘4"),
-                MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘5"),
+                MenuItem::new("headphoneeq", translations.screen_headphone_eq)
+                    .with_shortcut(format!("{MOD_PREFIX}4")),
+                MenuItem::new("spinorama", translations.screen_spinorama)
+                    .with_shortcut(format!("{MOD_PREFIX}5")),
                 MenuItem::separator(),
-                MenuItem::new("library", translations.screen_library).with_shortcut("⌘0"),
+                MenuItem::new("library", translations.screen_library)
+                    .with_shortcut(format!("{MOD_PREFIX}0")),
                 MenuItem::separator(),
                 MenuItem::new("queue", translations.screen_queue),
                 MenuItem::new("settings", translations.screen_settings),

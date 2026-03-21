@@ -21,7 +21,7 @@ pub(super) fn vscode_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-shift-l", actions::CycleLanguage, None),
         // Search - VSCode style (/ needs PlayerView, ctrl-f/cmd-f stay global)
         KeyBinding::new("ctrl-f", actions::ToggleSearch, None),
-        KeyBinding::new("cmd-f", actions::ToggleSearch, None),
+        KeyBinding::new("secondary-f", actions::ToggleSearch, None),
         KeyBinding::new("/", actions::ToggleSearch, Some("PlayerView")),
         KeyBinding::new("ctrl-shift-e", actions::ToggleLibraryView, None),
         KeyBinding::new("ctrl-shift-?", actions::ToggleHelp, None),
@@ -159,7 +159,7 @@ pub(super) fn vscode_documented_keybindings() -> Vec<DocumentedKeybinding> {
         },
         // Library
         DocumentedKeybinding {
-            key: "Ctrl+F / Cmd+F",
+            key: "Ctrl+F",
             description: "Search",
             category: KeybindingCategory::Library,
         },
@@ -253,12 +253,18 @@ pub(super) fn vscode_documented_keybindings() -> Vec<DocumentedKeybinding> {
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
+            #[cfg(target_os = "macos")]
             key: "Cmd+,",
+            #[cfg(not(target_os = "macos"))]
+            key: "Ctrl+,",
             description: "Settings",
             category: KeybindingCategory::System,
         },
         DocumentedKeybinding {
+            #[cfg(target_os = "macos")]
             key: "Cmd+Q",
+            #[cfg(not(target_os = "macos"))]
+            key: "Ctrl+Q",
             description: "Quit",
             category: KeybindingCategory::System,
         },
