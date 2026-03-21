@@ -333,6 +333,66 @@ create_tarball() {
         find "$staging_dir/assets" -name '*.sketch' -delete 2>/dev/null || true
     fi
 
+    # Include desktop integration files
+    cp "$PROJECT_ROOT/dist/org.spinorama.sotf.desktop" "$staging_dir/"
+    if [ -f "$PROJECT_ROOT/dist/sotf.png" ]; then
+        cp "$PROJECT_ROOT/dist/sotf.png" "$staging_dir/org.spinorama.sotf.png"
+    fi
+
+    # Create install script for desktop integration
+    cat > "$staging_dir/install-desktop.sh" << 'INSTALL_EOF'
+#!/bin/sh
+# Install SotF desktop integration (icon + .desktop file)
+# Run as: ./install-desktop.sh [--uninstall]
+set -e
+
+PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}"
+BIN_DIR="$HOME/.local/bin"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [ "$1" = "--uninstall" ]; then
+    rm -f "$PREFIX/applications/org.spinorama.sotf.desktop"
+    rm -f "$PREFIX/icons/hicolor/256x256/apps/org.spinorama.sotf.png"
+    rm -f "$BIN_DIR/SotF"
+    rm -f "$BIN_DIR/sotf-tui"
+    echo "SotF desktop integration removed."
+    exit 0
+fi
+
+mkdir -p "$PREFIX/applications"
+mkdir -p "$PREFIX/icons/hicolor/256x256/apps"
+mkdir -p "$BIN_DIR"
+
+# Install binaries
+cp "$SCRIPT_DIR/SotF" "$BIN_DIR/SotF"
+chmod +x "$BIN_DIR/SotF"
+if [ -f "$SCRIPT_DIR/sotf-tui" ]; then
+    cp "$SCRIPT_DIR/sotf-tui" "$BIN_DIR/sotf-tui"
+    chmod +x "$BIN_DIR/sotf-tui"
+fi
+
+# Install desktop file — patch Exec to use installed path
+sed "s|Exec=SotF|Exec=$BIN_DIR/SotF|" "$SCRIPT_DIR/org.spinorama.sotf.desktop" \
+    > "$PREFIX/applications/org.spinorama.sotf.desktop"
+
+# Install icon
+if [ -f "$SCRIPT_DIR/org.spinorama.sotf.png" ]; then
+    cp "$SCRIPT_DIR/org.spinorama.sotf.png" "$PREFIX/icons/hicolor/256x256/apps/org.spinorama.sotf.png"
+fi
+
+# Update caches
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t "$PREFIX/icons/hicolor" 2>/dev/null || true
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$PREFIX/applications" 2>/dev/null || true
+fi
+
+echo "SotF installed to $BIN_DIR/SotF"
+echo "Desktop integration installed. You may need to log out and back in for the icon to appear."
+INSTALL_EOF
+    chmod +x "$staging_dir/install-desktop.sh"
+
     # Create a simple README
     cat > "$staging_dir/README.txt" << EOF
 SotF Player v${VERSION}
@@ -343,6 +403,18 @@ A high-quality audio player with advanced EQ and upmixing capabilities.
 Running
 -------
 ./SotF
+
+Desktop Integration (KDE/GNOME)
+--------------------------------
+Run the install script to integrate with your desktop environment:
+
+    ./install-desktop.sh
+
+This installs the binary, icon, and .desktop file so SotF appears in
+your application menu and taskbar with proper icon and name.
+
+To uninstall:
+    ./install-desktop.sh --uninstall
 
 Requirements
 ------------
@@ -372,23 +444,30 @@ create_appimage() {
     local appdir="$DIST_DIR/${APP_NAME}.AppDir"
     rm -rf "$appdir"
 
-    # Prepare desktop file
-    local desktop_file="$DIST_DIR/${APP_NAME}.desktop"
-    cat > "$desktop_file" << EOF
-[Desktop Entry]
-Type=Application
-Name=SotF Player
-Comment=High-quality audio player with advanced EQ
-Exec=SotF
-Icon=sotf
-Categories=Audio;AudioVideo;Player;
-Terminal=false
-EOF
+    # Use the canonical desktop file from dist/
+    local desktop_file="$DIST_DIR/org.spinorama.sotf.desktop"
+    if [ ! -f "$desktop_file" ]; then
+        log_error "Desktop file not found: $desktop_file"
+        exit 1
+    fi
 
-    # Prepare icon (linuxdeploy requires standard icon sizes, max 512x512)
+    # Prepare icon — use org.spinorama.sotf name to match app_id and desktop file
     local icon_file=""
-    if [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" ]; then
-        local resized_icon="$DIST_DIR/sotf.png"
+    if [ -f "$PROJECT_ROOT/dist/sotf.png" ]; then
+        local resized_icon="$DIST_DIR/org.spinorama.sotf.png"
+        if command -v convert &> /dev/null; then
+            convert "$PROJECT_ROOT/dist/sotf.png" -resize 256x256 "$resized_icon"
+            icon_file="$resized_icon"
+        elif command -v ffmpeg &> /dev/null; then
+            ffmpeg -y -i "$PROJECT_ROOT/dist/sotf.png" -vf scale=256:256 "$resized_icon" 2>/dev/null
+            icon_file="$resized_icon"
+        else
+            # Use the dist icon as-is
+            cp "$PROJECT_ROOT/dist/sotf.png" "$resized_icon"
+            icon_file="$resized_icon"
+        fi
+    elif [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" ]; then
+        local resized_icon="$DIST_DIR/org.spinorama.sotf.png"
         if command -v convert &> /dev/null; then
             convert "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" -resize 256x256 "$resized_icon"
             icon_file="$resized_icon"
@@ -425,7 +504,8 @@ EOF
     # Rebuild AppImage with both binaries
     "$LINUXDEPLOY_BIN" "${deploy_args[@]}"
 
-    rm -rf "$appdir" "$desktop_file"
+    rm -rf "$appdir"
+    # Don't delete the canonical desktop file — it's a repo asset, not a temp file
     log_success "AppImage created: $OUTPUT"
 }
 
@@ -472,6 +552,7 @@ create_deb() {
     mkdir -p "$deb_dir/usr/bin"
     mkdir -p "$deb_dir/usr/share/applications"
     mkdir -p "$deb_dir/usr/share/icons/hicolor/256x256/apps"
+    mkdir -p "$deb_dir/usr/share/metainfo"
     mkdir -p "$deb_dir/usr/share/doc/sotf"
 
     # Copy binaries
@@ -480,27 +561,19 @@ create_deb() {
     cp "$BUILD_DIR/$TUI_BINARY_NAME" "$deb_dir/usr/bin/$TUI_BINARY_NAME"
     chmod 755 "$deb_dir/usr/bin/$TUI_BINARY_NAME"
 
-    # Create desktop file
-    cat > "$deb_dir/usr/share/applications/sotf.desktop" << EOF
-[Desktop Entry]
-Type=Application
-Name=SotF Player
-GenericName=Audio Player
-Comment=High-quality audio player with advanced EQ and upmixing
-Exec=sotf %F
-Icon=sotf
-Categories=Audio;AudioVideo;Player;Music;
-Terminal=false
-MimeType=audio/flac;audio/mpeg;audio/ogg;audio/wav;audio/x-wav;audio/mp4;audio/aac;
-Keywords=audio;music;player;eq;equalizer;
-EOF
+    # Install desktop file — filename must match app_id for WM integration
+    # Patch Exec to use the deb binary name (sotf, lowercase)
+    sed 's|Exec=SotF|Exec=sotf|' "$PROJECT_ROOT/dist/org.spinorama.sotf.desktop" \
+        > "$deb_dir/usr/share/applications/org.spinorama.sotf.desktop"
 
-    # Copy icon if it exists
-    if [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" ]; then
-        cp "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" "$deb_dir/usr/share/icons/hicolor/256x256/apps/sotf.png"
-    elif [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.jpg" ]; then
+    # Install icon — name must match Icon= field in desktop file
+    if [ -f "$PROJECT_ROOT/dist/sotf.png" ]; then
+        cp "$PROJECT_ROOT/dist/sotf.png" "$deb_dir/usr/share/icons/hicolor/256x256/apps/org.spinorama.sotf.png"
+    elif [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" ]; then
         if command -v convert &> /dev/null; then
-            convert "$PROJECT_ROOT/crates/app-gpui/assets/sotf.jpg" "$deb_dir/usr/share/icons/hicolor/256x256/apps/sotf.png"
+            convert "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" -resize 256x256 "$deb_dir/usr/share/icons/hicolor/256x256/apps/org.spinorama.sotf.png"
+        else
+            cp "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" "$deb_dir/usr/share/icons/hicolor/256x256/apps/org.spinorama.sotf.png"
         fi
     fi
 
