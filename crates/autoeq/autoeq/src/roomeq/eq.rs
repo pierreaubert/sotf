@@ -298,8 +298,8 @@ fn optimize_channel_eq_inner(
         .filter(|b| b.db_gain.abs() >= 0.05)
         .collect();
 
-    eprintln!(
-        "  EQ optimization: {} filters, final loss={:.6}",
+    log::info!(
+        "EQ optimization: {} filters, final loss={:.6}",
         filters.len(),
         final_loss
     );
@@ -559,8 +559,8 @@ fn optimize_channel_eq_multi_inner(
         .filter(|b| b.db_gain.abs() >= 0.05)
         .collect();
 
-    eprintln!(
-        "  Multi-measurement EQ optimization ({:?}): {} filters, final loss={:.6}",
+    log::info!(
+        "Multi-measurement EQ optimization ({:?}): {} filters, final loss={:.6}",
         multi_config.strategy,
         filters.len(),
         final_loss
