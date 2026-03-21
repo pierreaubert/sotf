@@ -310,6 +310,37 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
             } else {
                 Err("fade_ms must be float".to_string())
             }
+        } else if let Some(rest) = id.0.strip_prefix("mute_") {
+            // Per-channel mute: mute_0, mute_1, ...
+            if let Ok(ch) = rest.parse::<usize>() {
+                if ch < self.channels {
+                    self.channel_states[ch].muted = value.as_bool().unwrap_or(false);
+                    self.update_smoother_targets();
+                    self.rebuild_cached_parameters();
+                    return Ok(());
+                }
+            }
+            Err(format!("Invalid channel index in {}", id))
+        } else if let Some(rest) = id.0.strip_prefix("solo_") {
+            if let Ok(ch) = rest.parse::<usize>() {
+                if ch < self.channels {
+                    self.channel_states[ch].soloed = value.as_bool().unwrap_or(false);
+                    self.update_smoother_targets();
+                    self.rebuild_cached_parameters();
+                    return Ok(());
+                }
+            }
+            Err(format!("Invalid channel index in {}", id))
+        } else if let Some(rest) = id.0.strip_prefix("dim_") {
+            if let Ok(ch) = rest.parse::<usize>() {
+                if ch < self.channels {
+                    self.channel_states[ch].dimmed = value.as_bool().unwrap_or(false);
+                    self.update_smoother_targets();
+                    self.rebuild_cached_parameters();
+                    return Ok(());
+                }
+            }
+            Err(format!("Invalid channel index in {}", id))
         } else {
             Err(format!("Unknown parameter: {}", id))
         }
@@ -326,6 +357,21 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
             Some(ParameterValue::Float(self.dim_gain_db))
         } else if id == &self.param_fade_ms {
             Some(ParameterValue::Float(self.fade_ms))
+        } else if let Some(rest) = id.0.strip_prefix("mute_") {
+            rest.parse::<usize>()
+                .ok()
+                .filter(|&ch| ch < self.channels)
+                .map(|ch| ParameterValue::Bool(self.channel_states[ch].muted))
+        } else if let Some(rest) = id.0.strip_prefix("solo_") {
+            rest.parse::<usize>()
+                .ok()
+                .filter(|&ch| ch < self.channels)
+                .map(|ch| ParameterValue::Bool(self.channel_states[ch].soloed))
+        } else if let Some(rest) = id.0.strip_prefix("dim_") {
+            rest.parse::<usize>()
+                .ok()
+                .filter(|&ch| ch < self.channels)
+                .map(|ch| ParameterValue::Bool(self.channel_states[ch].dimmed))
         } else {
             None
         }

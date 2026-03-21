@@ -419,10 +419,17 @@ impl Plugin for ResamplerPlugin {
         }
     }
 
-    fn initialize(&mut self, _sample_rate: u32) -> PluginResult<()> {
-        // Recreate resampler with potentially new settings
-        // Note: For now, we keep the original input/output sample rates
-        // The sample_rate parameter refers to the host's processing rate
+    fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        // The resampler has its own fixed input/output rates. If the host's
+        // processing rate differs from our input rate, log a warning since the
+        // resampling ratio may not produce the expected output rate.
+        if sample_rate != self.input_sample_rate && self.input_sample_rate > 0 {
+            log::warn!(
+                "[Resampler] Host sample rate ({} Hz) differs from configured input rate ({} Hz)",
+                sample_rate,
+                self.input_sample_rate
+            );
+        }
         Ok(())
     }
 

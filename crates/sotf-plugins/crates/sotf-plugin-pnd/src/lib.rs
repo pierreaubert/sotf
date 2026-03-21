@@ -409,20 +409,37 @@ impl PndPlugin {
 
         let vocoder = self.vocoder.as_mut().ok_or("Phase vocoder not initialized")?;
 
-        // Analyze drift from first channel (use planar_input[0] as scratch)
-        if self.planar_input[0].len() < num_frames {
-            self.planar_input[0].resize(num_frames, 0.0);
-        }
-        for i in 0..num_frames {
-            self.planar_input[0][i] = input[i * self.channels];
+        // Deinterleave input into planar buffers for analysis
+        for c in 0..self.channels {
+            if self.planar_input[c].len() < num_frames {
+                self.planar_input[c].resize(num_frames, 0.0);
+            }
+            for i in 0..num_frames {
+                self.planar_input[c][i] = input[i * self.channels + c];
+            }
         }
 
-        let (drift_ratio, confidence) = if !self.analyzers.is_empty() {
+        // Analyze drift — use multi-channel median when enabled (same logic as resampler path)
+        let (drift_ratio, confidence) = if self.analyzers.is_empty() {
+            (1.0, 0.0)
+        } else if self.multi_channel_analysis && self.analyzers.len() > 1 {
+            let n = self.analyzers.len().min(self.channels);
+            for (ch, analyzer) in self.analyzers.iter_mut().enumerate().take(n) {
+                self.channel_drift_scratch[ch] =
+                    analyzer.analyze(&self.planar_input[ch][..num_frames]);
+            }
+            let mid = n / 2;
+            self.channel_drift_scratch[..n].select_nth_unstable_by(mid, |a, b| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let median_drift = self.channel_drift_scratch[mid];
+            let avg_confidence =
+                self.analyzers.iter().take(n).map(|a| a.confidence()).sum::<f32>() / n as f32;
+            (median_drift, avg_confidence)
+        } else {
             let drift = self.analyzers[0].analyze(&self.planar_input[0][..num_frames]);
             let conf = self.analyzers[0].confidence();
             (drift, conf)
-        } else {
-            (1.0, 0.0)
         };
         self.last_drift_ratio = drift_ratio as f64;
 

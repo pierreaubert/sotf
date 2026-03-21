@@ -333,8 +333,12 @@ fn handle_processing_command(
 
             state.channels = output_channels;
 
+            let latency_samples = state.host.total_latency_samples();
             response_tx
-                .send(ProcessingResponse::PluginChainUpdated { output_channels })
+                .send(ProcessingResponse::PluginChainUpdated {
+                    output_channels,
+                    latency_samples,
+                })
                 .ok();
         }
         ProcessingCommand::SetParameter {

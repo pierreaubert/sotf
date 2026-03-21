@@ -494,13 +494,19 @@ fn run_manager_thread(
                         match response {
                             super::ProcessingResponse::PluginChainUpdated {
                                 output_channels: ch,
+                                latency_samples,
                             } => {
                                 log::info!(
-                                    "[Manager Thread] Initial plugin chain loaded in {:?}, output channels: {}",
+                                    "[Manager Thread] Initial plugin chain loaded in {:?}, output channels: {}, latency: {} samples",
                                     start.elapsed(),
-                                    ch
+                                    ch,
+                                    latency_samples
                                 );
                                 output_channels_confirmed = Some(ch);
+                                // Update latency in engine state for position compensation
+                                let mut new_state = (**state.load()).clone();
+                                new_state.plugin_latency_samples = latency_samples;
+                                state.store(Arc::new(new_state));
                                 break;
                             }
                             super::ProcessingResponse::Error(e) => {
@@ -744,9 +750,21 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             let current = state.load();
             if current.playback_state != PlaybackState::Stopped && !current.seeking {
                 let mut new_state = (**current).clone();
-                new_state.position = position;
+                // Compensate for plugin chain latency: the decoder position
+                // is ahead of actual playback by the total pipeline latency.
+                let latency_sec = if new_state.sample_rate > 0 {
+                    new_state.plugin_latency_samples as f64 / new_state.sample_rate as f64
+                } else {
+                    0.0
+                };
+                new_state.position = (position - latency_sec).max(0.0);
                 state.store(Arc::new(new_state));
             }
+        }
+        ThreadEvent::PluginLatencyUpdate(latency_samples) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.plugin_latency_samples = latency_samples;
+            state.store(Arc::new(new_state));
         }
         ThreadEvent::SeekComplete => {
             log::debug!("[Manager Thread] Seek complete");
@@ -1023,10 +1041,14 @@ fn apply_plugin_update(
             }
 
             match response {
-                super::ProcessingResponse::PluginChainUpdated { output_channels } => {
+                super::ProcessingResponse::PluginChainUpdated {
+                    output_channels,
+                    latency_samples,
+                } => {
                     log::debug!(
-                        "[Manager Thread] ACK received: Plugin chain updated, output_channels={}",
-                        output_channels
+                        "[Manager Thread] ACK received: Plugin chain updated, output_channels={}, latency={}",
+                        output_channels,
+                        latency_samples
                     );
 
                     let old_channels = state.load().num_channels;
@@ -1034,6 +1056,7 @@ fn apply_plugin_update(
                     {
                         let mut new_state = (**state.load()).clone();
                         new_state.num_channels = output_channels;
+                        new_state.plugin_latency_samples = latency_samples;
                         state.store(Arc::new(new_state));
                     }
 

@@ -176,8 +176,11 @@ impl std::fmt::Debug for ProcessingCommand {
 pub enum ProcessingResponse {
     /// Ok response
     Ok,
-    /// Plugin chain updated with new output channel count
-    PluginChainUpdated { output_channels: usize },
+    /// Plugin chain updated with new output channel count and latency
+    PluginChainUpdated {
+        output_channels: usize,
+        latency_samples: usize,
+    },
     /// Plugin data
     PluginData(Arc<dyn Any + Send + Sync>),
     /// Error
@@ -282,6 +285,8 @@ pub struct AudioEngineState {
     pub processing_bypassed: bool,
     /// Number of buffer underruns
     pub underruns: u64,
+    /// Total plugin chain latency in samples (for position compensation)
+    pub plugin_latency_samples: usize,
     /// Last error message, if any
     pub last_error: Option<String>,
     /// Seek in progress flag
@@ -301,6 +306,7 @@ impl Default for AudioEngineState {
             muted: false,
             processing_bypassed: false,
             underruns: 0,
+            plugin_latency_samples: 0,
             last_error: None,
             seeking: false,
         }
@@ -331,6 +337,8 @@ pub enum ThreadEvent {
     PositionUpdate(f64),
     /// Seek completed
     SeekComplete,
+    /// Plugin chain total latency changed (in samples at the processing sample rate)
+    PluginLatencyUpdate(usize),
 }
 
 // ============================================================================

@@ -187,8 +187,10 @@ impl Plugin for HalOutputPlugin {
                 // Update buffer fill level diagnostic.
                 // Approximate fill level from write success ratio since the
                 // HalOutputWriter doesn't expose capacity/available_samples yet.
-                self.buffer_fill_level =
-                    (samples_written as f32 / input.len() as f32) * 100.0;
+                if !input.is_empty() {
+                    self.buffer_fill_level =
+                        (samples_written as f32 / input.len() as f32) * 100.0;
+                }
 
                 if samples_written < input.len() {
                     self.underrun_counter.fetch_add(1, Ordering::Relaxed);
