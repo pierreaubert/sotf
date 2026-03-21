@@ -10,5 +10,4 @@ path = "src/lib.rs"
 
 [dependencies]
 sotf-host = { workspace = true }
-math-iir-fir = { workspace = true }
 serde = { workspace = true }

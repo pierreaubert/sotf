@@ -1,5 +1,7 @@
 use super::filter::ir_to_freq;
+use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use realfft::RealToComplex;
+use rubato::{Fft, FixedSync, Resampler};
 use rustfft::num_complex::Complex;
 use sotf_host::sofa::{SofaFile, SourcePosition};
 use std::sync::Arc;
@@ -412,6 +414,134 @@ pub fn interpolate_hrtf_frequency_domain(
     }
 
     (left_fft, right_fft)
+}
+
+/// Resample all HRTF impulse responses in a SOFA file to the target sample rate.
+///
+/// When the SOFA file's sample rate differs from the engine sample rate, this function
+/// resamples every IR (left and right for each measurement) using rubato's FFT-based
+/// sinc resampler. The SofaFile is modified in place with updated IRs, sample rate,
+/// and ir_length.
+///
+/// Returns `Ok(())` if rates already match or resampling succeeds.
+pub fn resample_sofa(sofa: &mut SofaFile, target_rate: u32) -> Result<(), String> {
+    let source_rate = sofa.sample_rate.round() as u32;
+    if source_rate == target_rate {
+        return Ok(());
+    }
+
+    log::info!(
+        "[BinauralDecoder] Resampling HRTF IRs from {} Hz to {} Hz",
+        source_rate,
+        target_rate
+    );
+
+    let num_measurements = sofa.num_measurements;
+    let ir_length = sofa.ir_length;
+    let chunk_size = ir_length.next_power_of_two().max(64);
+
+    // Create resampler for 2 channels (left + right ear)
+    let mut resampler = Fft::<f32>::new(
+        source_rate as usize,
+        target_rate as usize,
+        chunk_size,
+        2,
+        2,
+        FixedSync::Input,
+    )
+    .map_err(|e| format!("Failed to create HRTF resampler: {e}"))?;
+
+    let new_ir_length =
+        (ir_length as f64 * target_rate as f64 / source_rate as f64).ceil() as usize;
+    let mut new_impulse_responses = Vec::with_capacity(num_measurements * 2 * new_ir_length);
+
+    for m in 0..num_measurements {
+        let offset = m * 2 * ir_length;
+        let ir_left = &sofa.impulse_responses[offset..offset + ir_length];
+        let ir_right = &sofa.impulse_responses[offset + ir_length..offset + 2 * ir_length];
+
+        let resampled = resample_stereo_ir(
+            ir_left,
+            ir_right,
+            &mut resampler,
+            chunk_size,
+            new_ir_length,
+        )?;
+
+        new_impulse_responses.extend_from_slice(&resampled[0]);
+        new_impulse_responses.extend_from_slice(&resampled[1]);
+    }
+
+    sofa.impulse_responses = new_impulse_responses;
+    sofa.ir_length = new_ir_length;
+    sofa.sample_rate = target_rate as f32;
+    sofa.data_sample_rate = Some(target_rate as f32);
+
+    log::info!(
+        "[BinauralDecoder] HRTF resampling complete: {} measurements, new IR length = {} samples",
+        num_measurements,
+        new_ir_length
+    );
+
+    Ok(())
+}
+
+/// Resample a stereo IR pair (left + right ear) using a pre-created rubato resampler.
+///
+/// The resampler is reset before each use so it can be reused across measurements.
+fn resample_stereo_ir(
+    ir_left: &[f32],
+    ir_right: &[f32],
+    resampler: &mut Fft<f32>,
+    chunk_size: usize,
+    target_length: usize,
+) -> Result<[Vec<f32>; 2], String> {
+    resampler.reset();
+
+    let source_len = ir_left.len();
+    let mut output_left = Vec::with_capacity(target_length + chunk_size);
+    let mut output_right = Vec::with_capacity(target_length + chunk_size);
+
+    let mut pos = 0;
+    while pos < source_len {
+        let input_frames_needed = resampler.input_frames_next();
+        let output_frames = resampler.output_frames_next();
+
+        let end = (pos + input_frames_needed).min(source_len);
+        let mut chunk_l = ir_left[pos..end].to_vec();
+        let mut chunk_r = ir_right[pos..end].to_vec();
+        chunk_l.resize(input_frames_needed, 0.0);
+        chunk_r.resize(input_frames_needed, 0.0);
+
+        let input_chunk = vec![chunk_l, chunk_r];
+        let mut output_chunk = vec![vec![0.0f32; output_frames], vec![0.0f32; output_frames]];
+
+        let input_adapter =
+            SequentialSliceOfVecs::new(&input_chunk, 2, input_frames_needed)
+                .map_err(|e| format!("Input adapter error: {e}"))?;
+        let mut output_adapter =
+            SequentialSliceOfVecs::new_mut(&mut output_chunk, 2, output_frames)
+                .map_err(|e| format!("Output adapter error: {e}"))?;
+
+        match resampler.process_into_buffer(&input_adapter, &mut output_adapter, None) {
+            Ok((_, written)) => {
+                output_left.extend_from_slice(&output_chunk[0][..written]);
+                output_right.extend_from_slice(&output_chunk[1][..written]);
+            }
+            Err(e) => return Err(format!("HRTF resampling error: {e}")),
+        }
+
+        pos += input_frames_needed;
+    }
+
+    // Truncate to exact target length
+    output_left.truncate(target_length);
+    output_right.truncate(target_length);
+    // Pad if shorter (shouldn't happen normally)
+    output_left.resize(target_length, 0.0);
+    output_right.resize(target_length, 0.0);
+
+    Ok([output_left, output_right])
 }
 
 /// Normalize HRTF gains to prevent clipping

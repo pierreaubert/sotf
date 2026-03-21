@@ -144,6 +144,9 @@ impl PlayerView {
     quick_add_plugin_handler!(quick_add_band_split, QuickAddBandSplit, sotf_audio_player::PluginType::BandSplit);
     quick_add_plugin_handler!(quick_add_band_merge, QuickAddBandMerge, sotf_audio_player::PluginType::BandMerge);
     quick_add_plugin_handler!(quick_add_crossfeed, QuickAddCrossfeed, sotf_audio_player::PluginType::Crossfeed);
+    quick_add_plugin_handler!(quick_add_delay, QuickAddDelay, sotf_audio_player::PluginType::Delay);
+    quick_add_plugin_handler!(quick_add_aec, QuickAddAec, sotf_audio_player::PluginType::Aec);
+    quick_add_plugin_handler!(quick_add_beamformer, QuickAddBeamformer, sotf_audio_player::PluginType::Beamformer);
 
     fn increment_plugin_param(&mut self, _: &IncrementPluginParam, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {

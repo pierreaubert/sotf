@@ -15,7 +15,7 @@ Labels:
     NO_SPEECH           -> non_vocal
 
 Usage:
-    python3 scripts/prepare_ava_speech.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_ava_speech.py \\
         --csv /path/to/ava_speech_labels_v1.csv \\
         --output-dir /path/to/ava_wavs \\
         --output ava_speech_manifest.tsv

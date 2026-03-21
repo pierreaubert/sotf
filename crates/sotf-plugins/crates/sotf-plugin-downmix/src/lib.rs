@@ -40,6 +40,12 @@ fn default_phase_blend_low_hz() -> f32 {
 fn default_phase_blend_high_hz() -> f32 {
     pk(DM, "phase_blend_high_hz").default_f64() as f32
 }
+fn default_itu_mode() -> bool {
+    pk(DM, "itu_mode").default_bool()
+}
+fn default_dolby_ltrt() -> bool {
+    false
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownmixPluginParams {
@@ -58,6 +64,12 @@ pub struct DownmixPluginParams {
     pub phase_blend_low_hz: f32,
     #[serde(default = "default_phase_blend_high_hz")]
     pub phase_blend_high_hz: f32,
+    /// When true, use ITU-R BS.775 standard downmix coefficients for 5.1→stereo
+    #[serde(default = "default_itu_mode")]
+    pub itu_mode: bool,
+    /// When true, use Dolby Pro Logic Lt/Rt encoding for surround channels
+    #[serde(default = "default_dolby_ltrt")]
+    pub dolby_ltrt: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -113,13 +125,69 @@ pub struct DownmixPlugin {
     phase_coherence: bool,
     phase_blend_low_hz: f32,
     phase_blend_high_hz: f32,
+    itu_mode: bool,
+    dolby_ltrt: bool,
+
+    /// Per-surround-channel first-order allpass filters for ~90° phase shift.
+    /// Used only when dolby_ltrt is enabled.
+    /// Each surround channel gets one allpass filter.
+    ltrt_allpass: Vec<LtRtAllpass>,
 
     param_center_gain_db: ParameterId,
     param_surround_gain_db: ParameterId,
     param_height_gain_db: ParameterId,
     param_lfe_gain_db: ParameterId,
     param_phase_coherence: ParameterId,
+    param_itu_mode: ParameterId,
+    param_dolby_ltrt: ParameterId,
     cached_parameters: Vec<Parameter>,
+}
+
+/// First-order allpass filter state for 90° phase shift approximation.
+///
+/// Uses a first-order allpass: y[n] = -a*x[n] + x[n-1] + a*y[n-1]
+/// where a = (tan(pi*fc/fs) - 1) / (tan(pi*fc/fs) + 1).
+/// At frequencies >> fc, the phase approaches -180°; at fc, it's -90°.
+/// For Dolby Lt/Rt, fc is tuned to ~300 Hz so surround content (primarily
+/// 300 Hz+) gets approximately 90° shift relative to the direct path.
+struct LtRtAllpass {
+    coeff_a: f32,
+    x_prev: f32,
+    y_prev: f32,
+}
+
+impl LtRtAllpass {
+    fn new(sample_rate: u32) -> Self {
+        let fc = 300.0_f32; // Crossover frequency for 90° at ~300 Hz
+        let coeff_a = Self::compute_coeff(fc, sample_rate);
+        Self {
+            coeff_a,
+            x_prev: 0.0,
+            y_prev: 0.0,
+        }
+    }
+
+    fn compute_coeff(fc: f32, sample_rate: u32) -> f32 {
+        let t = (std::f32::consts::PI * fc / sample_rate as f32).tan();
+        (t - 1.0) / (t + 1.0)
+    }
+
+    fn update_sample_rate(&mut self, sample_rate: u32) {
+        self.coeff_a = Self::compute_coeff(300.0, sample_rate);
+    }
+
+    #[inline]
+    fn process(&mut self, x: f32) -> f32 {
+        let y = -self.coeff_a * x + self.x_prev + self.coeff_a * self.y_prev;
+        self.x_prev = x;
+        self.y_prev = y;
+        y
+    }
+
+    fn reset(&mut self) {
+        self.x_prev = 0.0;
+        self.y_prev = 0.0;
+    }
 }
 
 impl DownmixPlugin {
@@ -172,11 +240,16 @@ impl DownmixPlugin {
             phase_coherence: pk(DM, "phase_coherence").default_bool(),
             phase_blend_low_hz: pk(DM, "phase_blend_low_hz").default_f64() as f32,
             phase_blend_high_hz: pk(DM, "phase_blend_high_hz").default_f64() as f32,
+            itu_mode: pk(DM, "itu_mode").default_bool(),
+            dolby_ltrt: false,
+            ltrt_allpass: Vec::new(),
             param_center_gain_db: ParameterId::from("center_gain_db"),
             param_surround_gain_db: ParameterId::from("surround_gain_db"),
             param_height_gain_db: ParameterId::from("height_gain_db"),
             param_lfe_gain_db: ParameterId::from("lfe_gain_db"),
             param_phase_coherence: ParameterId::from("phase_coherence"),
+            param_itu_mode: ParameterId::from("itu_mode"),
+            param_dolby_ltrt: ParameterId::from("dolby_ltrt"),
             cached_parameters: Vec::new(),
         };
         p.compute_coefficients(true);
@@ -215,6 +288,8 @@ impl DownmixPlugin {
                 pk(DM, "lfe_gain_db").max_f64() as f32,
             ),
             Parameter::new_bool("phase_coherence", "Phase Coherence", self.phase_coherence),
+            Parameter::new_bool("itu_mode", "ITU-R BS.775 Mode", self.itu_mode),
+            Parameter::new_bool("dolby_ltrt", "Dolby Lt/Rt", self.dolby_ltrt),
         ];
     }
 
@@ -227,12 +302,150 @@ impl DownmixPlugin {
         plugin.phase_coherence = params.phase_coherence;
         plugin.phase_blend_low_hz = params.phase_blend_low_hz;
         plugin.phase_blend_high_hz = params.phase_blend_high_hz;
+        plugin.itu_mode = params.itu_mode;
+        plugin.dolby_ltrt = params.dolby_ltrt;
         plugin.compute_coefficients(true);
         plugin.rebuild_cached_parameters();
         plugin
     }
 
+    /// Compute ITU-R BS.775 standard coefficients for 5.1 → stereo downmix.
+    /// L_out = L + 0.707*C + 0.707*Ls
+    /// R_out = R + 0.707*C + 0.707*Rs
+    /// LFE is discarded (standard practice for ITU-R BS.775).
+    ///
+    /// For non-5.1 layouts, the ITU mode extends the same principle:
+    /// - Front L/R pass through at unity
+    /// - Center at -3 dB (0.707) to both
+    /// - All surround channels at -3 dB (0.707) panned L/R by azimuth
+    /// - Height channels at -6 dB (0.5) panned L/R by azimuth
+    /// - LFE discarded
+    fn compute_itu_coefficients(&mut self) -> Vec<DownmixCoeffs> {
+        let mut new_coeffs = Vec::with_capacity(self.input_ch);
+        self.lfe_channels.clear();
+
+        const ITU_ATTEN: f32 = 0.707; // -3 dB
+
+        if let Some(config) = self.speaker_config {
+            for s in config.speakers {
+                if s.is_lfe {
+                    self.lfe_channels.push(s.channel);
+                    // ITU-R BS.775: LFE is discarded
+                    new_coeffs.push(DownmixCoeffs {
+                        left_gain: 0.0,
+                        right_gain: 0.0,
+                    });
+                } else {
+                    let azimuth = s.azimuth.abs();
+                    let elevation = s.elevation.abs();
+
+                    if elevation > 10.0 {
+                        // Height channels: -6 dB panned by azimuth
+                        let leftness = s.azimuth.to_radians().sin();
+                        let pan_angle = (1.0 - leftness) * std::f32::consts::FRAC_PI_4;
+                        new_coeffs.push(DownmixCoeffs {
+                            left_gain: 0.5 * pan_angle.cos(),
+                            right_gain: 0.5 * pan_angle.sin(),
+                        });
+                    } else if azimuth < 1.0 {
+                        // Center: -3 dB to both L and R
+                        new_coeffs.push(DownmixCoeffs {
+                            left_gain: ITU_ATTEN,
+                            right_gain: ITU_ATTEN,
+                        });
+                    } else if azimuth < 45.0 {
+                        // Front L/R: unity pass-through
+                        if s.azimuth > 0.0 {
+                            new_coeffs.push(DownmixCoeffs {
+                                left_gain: 1.0,
+                                right_gain: 0.0,
+                            });
+                        } else {
+                            new_coeffs.push(DownmixCoeffs {
+                                left_gain: 0.0,
+                                right_gain: 1.0,
+                            });
+                        }
+                    } else {
+                        // Surround: -3 dB panned by azimuth
+                        if s.azimuth > 0.0 {
+                            new_coeffs.push(DownmixCoeffs {
+                                left_gain: ITU_ATTEN,
+                                right_gain: 0.0,
+                            });
+                        } else {
+                            new_coeffs.push(DownmixCoeffs {
+                                left_gain: 0.0,
+                                right_gain: ITU_ATTEN,
+                            });
+                        }
+                    }
+                }
+            }
+        } else {
+            // Fallback for unknown layouts: linear pan
+            for ch in 0..self.input_ch {
+                if self.input_ch == 1 {
+                    new_coeffs.push(DownmixCoeffs {
+                        left_gain: 0.707,
+                        right_gain: 0.707,
+                    });
+                } else {
+                    let t = ch as f32 / (self.input_ch - 1).max(1) as f32;
+                    new_coeffs.push(DownmixCoeffs {
+                        left_gain: 1.0 - t,
+                        right_gain: t,
+                    });
+                }
+            }
+        }
+
+        new_coeffs
+    }
+
     fn compute_coefficients(&mut self, reset: bool) {
+        let new_coeffs = if self.itu_mode {
+            self.compute_itu_coefficients()
+        } else {
+            self.compute_standard_coefficients()
+        };
+
+        self.lfe_lpf_idx.clear();
+        self.lfe_lpf_idx.resize(self.input_ch, None);
+        for (slot, &ch) in self.lfe_channels.iter().enumerate() {
+            if ch < self.input_ch {
+                self.lfe_lpf_idx[ch] = Some(slot);
+            }
+        }
+
+        self.target_coeffs = new_coeffs;
+        if self.coeff_smoothers.is_empty() {
+            for c in &self.target_coeffs {
+                self.coeff_smoothers.push(Smoother::new(
+                    c.left_gain,
+                    PARAM_SMOOTH_MS,
+                    self.sample_rate,
+                ));
+                self.coeff_smoothers.push(Smoother::new(
+                    c.right_gain,
+                    PARAM_SMOOTH_MS,
+                    self.sample_rate,
+                ));
+            }
+        } else {
+            for (i, c) in self.target_coeffs.iter().enumerate() {
+                if reset {
+                    self.coeff_smoothers[i * 2].reset(c.left_gain);
+                    self.coeff_smoothers[i * 2 + 1].reset(c.right_gain);
+                } else {
+                    self.coeff_smoothers[i * 2].set_target(c.left_gain);
+                    self.coeff_smoothers[i * 2 + 1].set_target(c.right_gain);
+                }
+            }
+        }
+    }
+
+    fn compute_standard_coefficients(&mut self) -> Vec<DownmixCoeffs> {
         let mut new_coeffs = Vec::with_capacity(self.input_ch);
         self.lfe_channels.clear();
 
@@ -335,42 +548,51 @@ impl DownmixPlugin {
             }
         }
 
-        self.lfe_lpf_idx.clear();
-        self.lfe_lpf_idx.resize(self.input_ch, None);
-        for (slot, &ch) in self.lfe_channels.iter().enumerate() {
-            if ch < self.input_ch {
-                self.lfe_lpf_idx[ch] = Some(slot);
-            }
-        }
+        new_coeffs
+    }
 
-        self.target_coeffs = new_coeffs;
-        if self.coeff_smoothers.is_empty() {
-            for c in &self.target_coeffs {
-                self.coeff_smoothers.push(Smoother::new(
-                    c.left_gain,
-                    PARAM_SMOOTH_MS,
-                    self.sample_rate,
-                ));
-                self.coeff_smoothers.push(Smoother::new(
-                    c.right_gain,
-                    PARAM_SMOOTH_MS,
-                    self.sample_rate,
-                ));
-            }
+    /// Count surround channels (|azimuth| >= 45°, not LFE, not height).
+    fn count_surround_channels(&self) -> usize {
+        if let Some(config) = self.speaker_config {
+            config
+                .speakers
+                .iter()
+                .filter(|s| !s.is_lfe && s.azimuth.abs() >= 45.0 && s.elevation.abs() <= 10.0)
+                .count()
         } else {
-            for (i, c) in self.target_coeffs.iter().enumerate() {
-                if reset {
-                    self.coeff_smoothers[i * 2].reset(c.left_gain);
-                    self.coeff_smoothers[i * 2 + 1].reset(c.right_gain);
-                } else {
-                    self.coeff_smoothers[i * 2].set_target(c.left_gain);
-                    self.coeff_smoothers[i * 2 + 1].set_target(c.right_gain);
-                }
-            }
+            0
         }
     }
 
+    /// Check if a speaker channel index is a surround channel.
+    fn is_surround_channel(&self, ch: usize) -> Option<usize> {
+        if let Some(config) = self.speaker_config {
+            let mut surround_idx = 0;
+            for s in config.speakers {
+                if !s.is_lfe && s.azimuth.abs() >= 45.0 && s.elevation.abs() <= 10.0 {
+                    if s.channel == ch {
+                        return Some(surround_idx);
+                    }
+                    surround_idx += 1;
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if a speaker channel is a center channel (|azimuth| < 1°).
+    fn is_center_channel(&self, ch: usize) -> bool {
+        self.speaker_config
+            .and_then(|cfg| cfg.speakers.get(ch))
+            .map(|s| !s.is_lfe && s.azimuth.abs() < 1.0 && s.elevation.abs() <= 10.0)
+            .unwrap_or(false)
+    }
+
     fn process_simple(&mut self, input: &[f32], output: &mut [f32], num_frames: usize) {
+        if self.dolby_ltrt {
+            self.process_dolby_ltrt(input, output, num_frames);
+            return;
+        }
         for frame in 0..num_frames {
             let mut l = 0.0;
             let mut r = 0.0;
@@ -389,6 +611,66 @@ impl DownmixPlugin {
             output[frame * 2] = l;
             output[frame * 2 + 1] = r;
         }
+    }
+
+    /// Dolby Pro Logic Lt/Rt stereo encoding.
+    ///
+    /// Lt = L + 0.707*C - 0.707*j*Ls - 0.707*j*Rs
+    /// Rt = R + 0.707*C + 0.707*j*Ls + 0.707*j*Rs
+    ///
+    /// where j = 90° phase shift, approximated by a first-order allpass filter.
+    /// For speaker configurations without standard 5.1 layout, we identify
+    /// center/surround channels by azimuth.
+    fn process_dolby_ltrt(&mut self, input: &[f32], output: &mut [f32], num_frames: usize) {
+        const ATTEN: f32 = 0.707; // -3 dB
+
+        for frame in 0..num_frames {
+            let mut lt = 0.0f32;
+            let mut rt = 0.0f32;
+
+            for ch in 0..self.input_ch {
+                let s = input[frame * self.input_ch + ch];
+
+                if self.is_center_channel(ch) {
+                    // Center: 0.707 * C to both Lt and Rt
+                    lt += ATTEN * s;
+                    rt += ATTEN * s;
+                } else if let Some(surr_idx) = self.is_surround_channel(ch) {
+                    // Surround: apply 90° phase shift via allpass
+                    if surr_idx < self.ltrt_allpass.len() {
+                        let shifted = self.ltrt_allpass[surr_idx].process(s);
+                        // Determine if left-side or right-side surround from speaker config
+                        let is_left = self
+                            .speaker_config
+                            .and_then(|cfg| cfg.speakers.iter().find(|sp| sp.channel == ch))
+                            .map(|sp| sp.azimuth > 0.0)
+                            .unwrap_or(false);
+                        if is_left {
+                            // Left surround: -0.707*j*Ls to Lt, +0.707*j*Ls to Rt
+                            lt -= ATTEN * shifted;
+                            rt += ATTEN * shifted;
+                        } else {
+                            // Right surround: +0.707*j*Rs to Lt, -0.707*j*Rs to Rt
+                            lt += ATTEN * shifted;
+                            rt -= ATTEN * shifted;
+                        }
+                    }
+                } else if self.lfe_lpf_idx.get(ch).copied().flatten().is_some() {
+                    // LFE: discard in standard Lt/Rt encoding
+                } else {
+                    // Front L/R: pass through directly using smoother gains
+                    lt += s * self.coeff_smoothers[ch * 2].advance();
+                    rt += s * self.coeff_smoothers[ch * 2 + 1].advance();
+                    continue;
+                }
+            }
+
+            output[frame * 2] = lt;
+            output[frame * 2 + 1] = rt;
+        }
+
+        // Advance smoothers for non-front channels that weren't advanced above
+        // (smoothers are used only for coefficient interpolation in non-ltrt mode)
     }
 
     fn process_fft_block(&mut self) {
@@ -449,10 +731,15 @@ impl DownmixPlugin {
                 };
 
                 if blend > 0.001 {
-                    let mut max_mag_l = -1.0f32;
-                    let mut max_mag_r = -1.0f32;
-                    let mut dominant_phase_l = 0.0f32;
-                    let mut dominant_phase_r = 0.0f32;
+                    // Energy-weighted phase average: compute the output phase
+                    // as the energy-weighted average of all input channels' phases
+                    // (instead of using only the dominant/loudest channel's phase).
+                    // We accumulate weighted unit-circle vectors (cos/sin of phase)
+                    // weighted by energy (magnitude squared * gain squared).
+                    let mut phase_vec_l_re = 0.0f32;
+                    let mut phase_vec_l_im = 0.0f32;
+                    let mut phase_vec_r_re = 0.0f32;
+                    let mut phase_vec_r_im = 0.0f32;
 
                     let mut mag_sum_l = 0.0f32;
                     let mut mag_sum_r = 0.0f32;
@@ -462,7 +749,6 @@ impl DownmixPlugin {
                         let gr = self.coeff_smoothers[ch * 2 + 1].current();
                         let val = self.fft_output[ch * num_bins + bin];
 
-                        // Optimized magnitude and phase using fast math
                         let mag_sq = val.norm_sqr();
                         let mag = if mag_sq > 1e-12 {
                             mag_sq * sotf_host::simd::fast_inv_sqrt(mag_sq)
@@ -476,23 +762,33 @@ impl DownmixPlugin {
                         mag_sum_l += mag_l;
                         mag_sum_r += mag_r;
 
-                        if mag_l > max_mag_l {
-                            max_mag_l = mag_l;
-                            dominant_phase_l = fast_atan2(val.im, val.re);
-                        }
-                        if mag_r > max_mag_r {
-                            max_mag_r = mag_r;
-                            dominant_phase_r = fast_atan2(val.im, val.re);
+                        // Energy weight = magnitude_squared * gain_squared
+                        let energy_l = mag_sq * gl * gl;
+                        let energy_r = mag_sq * gr * gr;
+
+                        if energy_l > 1e-20 || energy_r > 1e-20 {
+                            let phase = fast_atan2(val.im, val.re);
+                            let cos_p = fast_cos(phase);
+                            let sin_p = fast_sin(phase);
+
+                            phase_vec_l_re += energy_l * cos_p;
+                            phase_vec_l_im += energy_l * sin_p;
+                            phase_vec_r_re += energy_r * cos_p;
+                            phase_vec_r_im += energy_r * sin_p;
                         }
                     }
 
+                    // Compute the energy-weighted average phase from the accumulated vector
+                    let avg_phase_l = fast_atan2(phase_vec_l_im, phase_vec_l_re);
+                    let avg_phase_r = fast_atan2(phase_vec_r_im, phase_vec_r_re);
+
                     let aligned_l = Complex::new(
-                        mag_sum_l * fast_cos(dominant_phase_l),
-                        mag_sum_l * fast_sin(dominant_phase_l),
+                        mag_sum_l * fast_cos(avg_phase_l),
+                        mag_sum_l * fast_sin(avg_phase_l),
                     );
                     let aligned_r = Complex::new(
-                        mag_sum_r * fast_cos(dominant_phase_r),
-                        mag_sum_r * fast_sin(dominant_phase_r),
+                        mag_sum_r * fast_cos(avg_phase_r),
+                        mag_sum_r * fast_sin(avg_phase_r),
                     );
 
                     self.out_freq_l[bin] = self.out_freq_l[bin] * (1.0 - blend) + aligned_l * blend;
@@ -587,6 +883,12 @@ impl Plugin for DownmixPlugin {
             self.phase_coherence = value
                 .as_bool()
                 .unwrap_or(pk(DM, "phase_coherence").default_bool());
+        } else if id == self.param_itu_mode {
+            self.itu_mode = value
+                .as_bool()
+                .unwrap_or(pk(DM, "itu_mode").default_bool());
+        } else if id == self.param_dolby_ltrt {
+            self.dolby_ltrt = value.as_bool().unwrap_or(false);
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -605,6 +907,10 @@ impl Plugin for DownmixPlugin {
             Some(ParameterValue::Float(self.lfe_gain_db))
         } else if id == &self.param_phase_coherence {
             Some(ParameterValue::Bool(self.phase_coherence))
+        } else if id == &self.param_itu_mode {
+            Some(ParameterValue::Bool(self.itu_mode))
+        } else if id == &self.param_dolby_ltrt {
+            Some(ParameterValue::Bool(self.dolby_ltrt))
         } else {
             None
         }
@@ -633,6 +939,18 @@ impl Plugin for DownmixPlugin {
                 ]
             })
             .collect();
+        // Initialize Lt/Rt allpass filters: one per surround channel.
+        // Surround channels are those with |azimuth| >= 45° and not LFE.
+        let surround_count = self.count_surround_channels();
+        if self.ltrt_allpass.len() == surround_count {
+            for ap in &mut self.ltrt_allpass {
+                ap.update_sample_rate(sample_rate);
+            }
+        } else {
+            self.ltrt_allpass = (0..surround_count)
+                .map(|_| LtRtAllpass::new(sample_rate))
+                .collect();
+        }
         for s in &mut self.coeff_smoothers {
             s.set_time(PARAM_SMOOTH_MS, sample_rate);
         }
@@ -725,6 +1043,9 @@ impl Plugin for DownmixPlugin {
         self.output_accumulator_fill = 0;
         self.next_add_position = 0;
         self.output_read_position = 0;
+        for ap in &mut self.ltrt_allpass {
+            ap.reset();
+        }
         self.lfe_lpf = self
             .lfe_channels
             .iter()
@@ -817,6 +1138,8 @@ mod tests {
             phase_coherence: false,
             phase_blend_low_hz: 200.0,
             phase_blend_high_hz: 5000.0,
+            itu_mode: false,
+            dolby_ltrt: false,
         });
         p.initialize(48000).unwrap();
 
@@ -878,6 +1201,8 @@ mod tests {
             phase_coherence: false,
             phase_blend_low_hz: 200.0,
             phase_blend_high_hz: 5000.0,
+            itu_mode: false,
+            dolby_ltrt: false,
         });
 
         // Sum the absolute values of all left gains — should be <= 2.0 after normalization
@@ -907,6 +1232,8 @@ mod tests {
             phase_coherence: false,
             phase_blend_low_hz: 200.0,
             phase_blend_high_hz: 5000.0,
+            itu_mode: false,
+            dolby_ltrt: false,
         });
 
         // In 7.1: ch4=SL(90°), ch5=SR(-90°), ch6=BL(150°), ch7=BR(-150°)
@@ -933,6 +1260,56 @@ mod tests {
         );
     }
 
+    /// Phase coherence alignment: 5.1 signal with strong center channel should
+    /// produce coherent stereo output where L ≈ R for center-only content.
+    #[test]
+    fn test_downmix_center_channel_coherence() {
+        let mut p = DownmixPlugin::new(6);
+        p.phase_coherence = false; // simple mode first
+        p.initialize(48000).unwrap();
+
+        let num_frames = 2048;
+        let mut input = vec![0.0f32; num_frames * 6];
+        // Put a sine wave only in the center channel (ch 2 for 5.1)
+        for k in 0..num_frames {
+            let sample = (k as f32 * 2.0 * std::f32::consts::PI * 440.0 / 48000.0).sin() * 0.5;
+            input[k * 6 + 2] = sample; // Center channel only
+        }
+
+        let mut output = vec![0.0f32; num_frames * 2];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // For center-only content, L and R should be approximately equal
+        // (center is mixed equally to both channels).
+        // Check last 1024 frames after smoother settles.
+        let mut max_diff = 0.0f32;
+        let mut has_signal = false;
+        for k in 1024..num_frames {
+            let l = output[k * 2];
+            let r = output[k * 2 + 1];
+            let diff = (l - r).abs();
+            let mag = l.abs().max(r.abs());
+            if mag > 0.01 {
+                has_signal = true;
+                max_diff = max_diff.max(diff / mag);
+            }
+        }
+
+        assert!(has_signal, "Center channel should produce output");
+        assert!(
+            max_diff < 0.05,
+            "Center-only content should have L ≈ R (max relative diff: {max_diff})"
+        );
+    }
+
     /// Verify all speaker configs produce valid coefficients:
     /// - No negative gains
     /// - All height speakers at the same gain have equal power (constant-power)
@@ -955,6 +1332,8 @@ mod tests {
                 phase_coherence: false,
                 phase_blend_low_hz: 200.0,
                 phase_blend_high_hz: 5000.0,
+                itu_mode: false,
+                dolby_ltrt: false,
             });
 
             assert_eq!(

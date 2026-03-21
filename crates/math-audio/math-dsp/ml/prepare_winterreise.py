@@ -18,12 +18,12 @@ Audio: 22050 Hz mono WAV files in 01_RawData/audio_wav/
 Only performers with matching audio files are processed (HU33, SC06).
 
 Usage:
-    python3 scripts/prepare_winterreise.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_winterreise.py \\
         --winterreise-dir /Volumes/data/Shared/ML/schubert_winterreise_dataseta \\
         --output /Volumes/data/Shared/ML/winterreise_manifest.tsv
 
     # Use Silero VAD for finer segmentation within sung sections:
-    python3 scripts/prepare_winterreise.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_winterreise.py \\
         --winterreise-dir /Volumes/data/Shared/ML/schubert_winterreise_dataseta \\
         --output /Volumes/data/Shared/ML/winterreise_segments_manifest.tsv \\
         --refine-with-silero

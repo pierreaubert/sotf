@@ -37,6 +37,18 @@ fn default_lfe_level() -> f32 {
     0.0 // dB - no additional boost/cut by default
 }
 
+fn default_hrtf_database_dir() -> String {
+    "".to_string()
+}
+
+fn default_head_width_cm() -> f32 {
+    15.0 // cm - typical adult head width
+}
+
+fn default_ear_height_cm() -> f32 {
+    10.0 // cm - typical adult ear height
+}
+
 /// Configuration parameters for BinauralDecoderPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinauralDecoderParams {
@@ -72,4 +84,18 @@ pub struct BinauralDecoderParams {
     /// Room model for externalization (optional, uses defaults if not specified)
     #[serde(default)]
     pub room_model: RoomModel,
+
+    // ---- Personalized HRTF selection ----
+    /// Directory containing multiple SOFA files to scan for best anthropometric match.
+    /// When set, overrides hrtf_file with the best-matching SOFA from the directory.
+    #[serde(default = "default_hrtf_database_dir")]
+    pub hrtf_database_dir: String,
+    /// Measured head width in centimetres (used for HRTF database matching).
+    /// Typical adult range: 13–18 cm.  Default: 15.0 cm.
+    #[serde(default = "default_head_width_cm")]
+    pub head_width_cm: f32,
+    /// Measured ear height in centimetres (used for HRTF database matching).
+    /// Typical adult range: 6–14 cm.  Default: 10.0 cm.
+    #[serde(default = "default_ear_height_cm")]
+    pub ear_height_cm: f32,
 }

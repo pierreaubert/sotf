@@ -20,6 +20,12 @@ pub struct DelayPluginParams {
     pub feedback: f32,
     #[serde(default = "default_mix")]
     pub mix: f32,
+    #[serde(default)]
+    pub lfo_rate_hz: f32,
+    #[serde(default)]
+    pub lfo_depth_ms: f32,
+    #[serde(default)]
+    pub allpass_feedback: bool,
 }
 
 fn default_delay_ms() -> f32 {
@@ -32,6 +38,42 @@ fn default_mix() -> f32 {
     0.5
 }
 
+/// First-order allpass filter state for one channel.
+/// Transfer function: H(z) = (coeff + z^-1) / (1 + coeff * z^-1)
+#[derive(Debug, Clone)]
+struct AllpassState {
+    /// Filter coefficient (controls the allpass frequency)
+    coeff: f32,
+    /// Previous input sample
+    x1: f32,
+    /// Previous output sample
+    y1: f32,
+}
+
+impl AllpassState {
+    fn new(coeff: f32) -> Self {
+        Self {
+            coeff,
+            x1: 0.0,
+            y1: 0.0,
+        }
+    }
+
+    /// Process one sample through the first-order allpass filter
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        let output = self.coeff * input + self.x1 - self.coeff * self.y1;
+        self.x1 = input;
+        self.y1 = output;
+        output
+    }
+
+    fn reset(&mut self) {
+        self.x1 = 0.0;
+        self.y1 = 0.0;
+    }
+}
+
 pub struct DelayPlugin {
     channels: usize,
     sample_rate: u32,
@@ -41,19 +83,30 @@ pub struct DelayPlugin {
     feedback: f32,
     param_mix: ParameterId,
     mix: f32,
+    param_lfo_rate_hz: ParameterId,
+    lfo_rate_hz: f32,
+    param_lfo_depth_ms: ParameterId,
+    lfo_depth_ms: f32,
+    param_allpass_feedback: ParameterId,
+    allpass_feedback: bool,
     delay_smoother: Smoother,
     feedback_smoother: Smoother,
     mix_smoother: Smoother,
     buffer: Vec<f32>,
     write_pos: usize,
     max_samples: usize,
+    /// LFO phase accumulator (0..1)
+    lfo_phase: f32,
+    /// Per-channel allpass filter states for the feedback path
+    allpass_states: Vec<AllpassState>,
     cached_parameters: Vec<Parameter>,
 }
 
 impl DelayPlugin {
     pub fn new(channels: usize, delay_ms: f32, feedback: f32, mix: f32) -> Self {
         let sr = 44100;
-        let max_samples = (MAX_DELAY_MS * 0.001 * sr as f32) as usize + 2;
+        // Extra headroom for LFO modulation and interpolation guard samples
+        let max_samples = (MAX_DELAY_MS * 0.001 * sr as f32) as usize + 4;
         let mut p = Self {
             channels,
             sample_rate: sr,
@@ -63,12 +116,20 @@ impl DelayPlugin {
             feedback,
             param_mix: ParameterId::from("mix"),
             mix,
+            param_lfo_rate_hz: ParameterId::from("lfo_rate_hz"),
+            lfo_rate_hz: 0.0,
+            param_lfo_depth_ms: ParameterId::from("lfo_depth_ms"),
+            lfo_depth_ms: 0.0,
+            param_allpass_feedback: ParameterId::from("allpass_feedback"),
+            allpass_feedback: false,
             delay_smoother: Smoother::new(delay_ms * sr as f32 / 1000.0, 50.0, sr),
             feedback_smoother: Smoother::new(feedback, 5.0, sr),
             mix_smoother: Smoother::new(mix, 5.0, sr),
             buffer: vec![0.0; max_samples * channels],
             write_pos: 0,
             max_samples,
+            lfo_phase: 0.0,
+            allpass_states: vec![AllpassState::new(0.5); channels],
             cached_parameters: Vec::new(),
         };
         p.rebuild_cached_parameters();
@@ -80,17 +141,60 @@ impl DelayPlugin {
             Parameter::new_float("delay_ms", "Delay Time", self.delay_ms, 0.1, MAX_DELAY_MS),
             Parameter::new_float("feedback", "Feedback", self.feedback, 0.0, 0.95),
             Parameter::new_float("mix", "Mix", self.mix, 0.0, 1.0),
+            Parameter::new_float("lfo_rate_hz", "LFO Rate", self.lfo_rate_hz, 0.0, 10.0)
+                .with_unit("Hz"),
+            Parameter::new_float("lfo_depth_ms", "LFO Depth", self.lfo_depth_ms, 0.0, 5.0)
+                .with_unit("ms"),
+            Parameter::new_bool("allpass_feedback", "Allpass Feedback", self.allpass_feedback),
         ];
     }
 
     pub fn from_params(channels: usize, params: DelayPluginParams) -> Self {
-        Self::new(channels, params.delay_ms, params.feedback, params.mix)
+        let mut p = Self::new(channels, params.delay_ms, params.feedback, params.mix);
+        p.lfo_rate_hz = params.lfo_rate_hz;
+        p.lfo_depth_ms = params.lfo_depth_ms;
+        p.allpass_feedback = params.allpass_feedback;
+        p.rebuild_cached_parameters();
+        p
+    }
+
+    /// 4-point Lagrange interpolation for fractional delay.
+    ///
+    /// Given 4 samples y[-1], y[0], y[1], y[2] around the desired read position,
+    /// and a fractional part `frac` in [0, 1), interpolates between y[0] and y[1].
+    #[inline]
+    fn lagrange4(y_m1: f32, y_0: f32, y_1: f32, y_2: f32, frac: f32) -> f32 {
+        let d = frac;
+        let dm1 = d - 1.0;
+        let dm2 = d - 2.0;
+        let dp1 = d + 1.0;
+
+        let c0 = -dm1 * dm2 * d / 6.0;
+        let c1 = dp1 * dm1 * dm2 / 2.0;
+        let c2 = -dp1 * d * dm2 / 2.0;
+        let c3 = dp1 * d * dm1 / 6.0;
+
+        c0 * y_m1 + c1 * y_0 + c2 * y_1 + c3 * y_2
+    }
+
+    /// Read a sample from the delay buffer at a given position and channel.
+    #[inline]
+    fn read_buffer(&self, pos: usize, ch: usize) -> f32 {
+        self.buffer[pos * self.channels + ch]
+    }
+
+    /// Compute the effective delay in samples for a given frame, including LFO modulation.
+    #[inline]
+    fn effective_delay_samples(&self, base_delay_samples: f32, lfo_val: f32) -> f32 {
+        let lfo_offset = lfo_val * self.lfo_depth_ms * self.sample_rate as f32 / 1000.0;
+        // Clamp to valid range: at least 1 sample (for interpolation guard), at most max_samples-3
+        (base_delay_samples + lfo_offset).clamp(1.0, (self.max_samples - 3) as f32)
     }
 }
 
 impl InPlacePlugin for DelayPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Delay", "1.1.0", "SotF")
+        PluginInfo::new("Delay", "2.0.0", "SotF")
     }
     fn channels(&self) -> usize {
         self.channels
@@ -127,6 +231,31 @@ impl InPlacePlugin for DelayPlugin {
                 self.mix = v;
                 self.mix_smoother.set_target(self.mix);
             }
+        } else if id == self.param_lfo_rate_hz {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "lfo_rate_hz must be a float".to_string())?;
+            if v.is_finite() {
+                self.lfo_rate_hz = v;
+            }
+        } else if id == self.param_lfo_depth_ms {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "lfo_depth_ms must be a float".to_string())?;
+            if v.is_finite() {
+                self.lfo_depth_ms = v;
+            }
+        } else if id == self.param_allpass_feedback {
+            let v = value
+                .as_bool()
+                .ok_or_else(|| "allpass_feedback must be a bool".to_string())?;
+            self.allpass_feedback = v;
+            if !v {
+                // Reset allpass states when disabling
+                for ap in &mut self.allpass_states {
+                    ap.reset();
+                }
+            }
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -139,6 +268,12 @@ impl InPlacePlugin for DelayPlugin {
             Some(ParameterValue::Float(self.feedback))
         } else if id == &self.param_mix {
             Some(ParameterValue::Float(self.mix))
+        } else if id == &self.param_lfo_rate_hz {
+            Some(ParameterValue::Float(self.lfo_rate_hz))
+        } else if id == &self.param_lfo_depth_ms {
+            Some(ParameterValue::Float(self.lfo_depth_ms))
+        } else if id == &self.param_allpass_feedback {
+            Some(ParameterValue::Bool(self.allpass_feedback))
         } else {
             None
         }
@@ -146,7 +281,8 @@ impl InPlacePlugin for DelayPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        self.max_samples = (MAX_DELAY_MS * 0.001 * sample_rate as f32) as usize + 2;
+        // Extra headroom for LFO modulation and interpolation guard samples
+        self.max_samples = (MAX_DELAY_MS * 0.001 * sample_rate as f32) as usize + 4;
         self.buffer.resize(self.max_samples * self.channels, 0.0);
         self.delay_smoother = Smoother::new(
             self.delay_ms * sample_rate as f32 / 1000.0,
@@ -155,12 +291,18 @@ impl InPlacePlugin for DelayPlugin {
         );
         self.feedback_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
+        self.lfo_phase = 0.0;
+        self.allpass_states = vec![AllpassState::new(0.5); self.channels];
         Ok(())
     }
 
     fn reset(&mut self) {
         self.buffer.fill(0.0);
         self.write_pos = 0;
+        self.lfo_phase = 0.0;
+        for ap in &mut self.allpass_states {
+            ap.reset();
+        }
     }
 
     fn process_in_place(
@@ -171,27 +313,62 @@ impl InPlacePlugin for DelayPlugin {
         enable_ftz_daz();
         let num_frames = context.num_frames;
 
-        let delay_samples = self.delay_smoother.next_n(num_frames);
+        let base_delay_samples = self.delay_smoother.next_n(num_frames);
         let fb = self.feedback_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
 
-        let int_delay = delay_samples.floor() as usize;
-        let frac_delay = delay_samples - int_delay as f32;
+        let lfo_active = self.lfo_rate_hz > 0.0 && self.lfo_depth_ms > 0.0;
+        let lfo_phase_inc = if lfo_active {
+            self.lfo_rate_hz / self.sample_rate as f32
+        } else {
+            0.0
+        };
 
         for frame in 0..num_frames {
+            // Compute per-sample LFO value (sine, range -1..+1)
+            let lfo_val = if lfo_active {
+                let val = (self.lfo_phase * std::f32::consts::TAU).sin();
+                self.lfo_phase += lfo_phase_inc;
+                if self.lfo_phase >= 1.0 {
+                    self.lfo_phase -= 1.0;
+                }
+                val
+            } else {
+                0.0
+            };
+
+            let delay_samples = self.effective_delay_samples(base_delay_samples, lfo_val);
+            let int_delay = delay_samples.floor() as usize;
+            let frac = delay_samples - int_delay as f32;
+
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let input = buffer[idx];
 
-                // Fractional delay read (linear interpolation)
-                let r1 = (self.write_pos + self.max_samples - int_delay) % self.max_samples;
+                // 4-point Lagrange interpolation read positions:
+                // We want samples at positions: int_delay-1, int_delay, int_delay+1, int_delay+2
+                // relative to write_pos (going backwards in time)
+                let r0 =
+                    (self.write_pos + self.max_samples - int_delay) % self.max_samples;
+                let r_m1 = (r0 + 1) % self.max_samples;
+                let r1 = (r0 + self.max_samples - 1) % self.max_samples;
                 let r2 = (r1 + self.max_samples - 1) % self.max_samples;
 
-                let s1 = self.buffer[r1 * self.channels + ch];
-                let s2 = self.buffer[r2 * self.channels + ch];
-                let delayed = s1 + frac_delay * (s2 - s1);
+                let y_m1 = self.read_buffer(r_m1, ch);
+                let y_0 = self.read_buffer(r0, ch);
+                let y_1 = self.read_buffer(r1, ch);
+                let y_2 = self.read_buffer(r2, ch);
 
-                self.buffer[self.write_pos * self.channels + ch] = input + delayed * fb;
+                let delayed = Self::lagrange4(y_m1, y_0, y_1, y_2, frac);
+
+                // Feedback signal, optionally through allpass filter
+                let feedback_signal = if self.allpass_feedback {
+                    self.allpass_states[ch].process(delayed * fb)
+                } else {
+                    delayed * fb
+                };
+
+                self.buffer[self.write_pos * self.channels + ch] = input + feedback_signal;
                 buffer[idx] = input * (1.0 - mix) + delayed * mix;
             }
             self.write_pos = (self.write_pos + 1) % self.max_samples;
@@ -205,6 +382,7 @@ impl InPlacePlugin for DelayPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
+
     #[test]
     fn test_delay_basic() {
         let mut p = DelayPlugin::new(1, 10.0, 0.5, 0.5);
@@ -219,5 +397,297 @@ mod tests {
         )
         .unwrap();
         assert!(b[999] != 1.0);
+    }
+
+    #[test]
+    fn test_lagrange4_exact_samples() {
+        // When frac=0, Lagrange should return y_0 exactly
+        let result = DelayPlugin::lagrange4(0.0, 1.0, 0.0, 0.0, 0.0);
+        assert!((result - 1.0).abs() < 1e-6, "frac=0 should return y_0");
+
+        // When frac=1, Lagrange should return y_1 exactly
+        let result = DelayPlugin::lagrange4(0.0, 0.0, 1.0, 0.0, 1.0);
+        assert!((result - 1.0).abs() < 1e-6, "frac=1 should return y_1");
+    }
+
+    #[test]
+    fn test_lagrange4_linear_signal() {
+        // For a linear signal, any interpolation should be exact
+        // y = [1, 2, 3, 4] at frac=0.5 should give 2.5
+        let result = DelayPlugin::lagrange4(1.0, 2.0, 3.0, 4.0, 0.5);
+        assert!(
+            (result - 2.5).abs() < 1e-6,
+            "Linear signal interpolation should be exact, got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_lagrange4_quadratic_signal() {
+        // For a quadratic signal y = x^2: at x=-1,0,1,2 => y=1,0,1,4
+        // At x=0.5: y = 0.25
+        let result = DelayPlugin::lagrange4(1.0, 0.0, 1.0, 4.0, 0.5);
+        assert!(
+            (result - 0.25).abs() < 1e-5,
+            "Quadratic signal interpolation should be exact, got {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_lfo_modulation() {
+        let mut p = DelayPlugin::new(1, 10.0, 0.0, 1.0);
+        p.initialize(48000).unwrap();
+
+        // Enable LFO
+        p.set_parameter(
+            ParameterId::from("lfo_rate_hz"),
+            ParameterValue::Float(5.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("lfo_depth_ms"),
+            ParameterValue::Float(2.0),
+        )
+        .unwrap();
+
+        // Process an impulse and collect output
+        let mut b = vec![0.0; 48000];
+        b[0] = 1.0;
+        p.process_in_place(
+            &mut b,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 48000,
+            },
+        )
+        .unwrap();
+
+        // The delayed impulse should appear with time-varying position due to LFO
+        // Find the peak in the output (after the initial impulse at sample 0)
+        let delay_region_start = 300; // 10ms at 48kHz ~ 480 samples, look around there
+        let delay_region_end = 700;
+        let peak_val = b[delay_region_start..delay_region_end]
+            .iter()
+            .fold(0.0_f32, |a, &x| a.max(x.abs()));
+        assert!(
+            peak_val > 0.1,
+            "Should have delayed signal in expected region"
+        );
+    }
+
+    #[test]
+    fn test_allpass_feedback() {
+        let mut p = DelayPlugin::new(1, 10.0, 0.5, 0.5);
+        p.initialize(48000).unwrap();
+
+        // Enable allpass feedback
+        p.set_parameter(
+            ParameterId::from("allpass_feedback"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+
+        let mut b = vec![0.0; 2000];
+        b[0] = 1.0;
+        p.process_in_place(
+            &mut b,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 2000,
+            },
+        )
+        .unwrap();
+
+        // With feedback and allpass, we should see repeated taps with spectral coloring
+        // Check that there is signal beyond the first delay tap
+        let late_energy: f32 = b[960..2000].iter().map(|x| x * x).sum();
+        assert!(
+            late_energy > 1e-6,
+            "Allpass feedback should produce signal in later taps"
+        );
+    }
+
+    #[test]
+    fn test_allpass_state() {
+        let mut ap = AllpassState::new(0.5);
+        // Process a unit impulse
+        let y0 = ap.process(1.0);
+        let y1 = ap.process(0.0);
+        let y2 = ap.process(0.0);
+
+        // First-order allpass with coeff=0.5:
+        // y[0] = 0.5*1 + 0 - 0.5*0 = 0.5
+        assert!((y0 - 0.5).abs() < 1e-6, "y0={}", y0);
+        // y[1] = 0.5*0 + 1 - 0.5*0.5 = 0.75
+        assert!((y1 - 0.75).abs() < 1e-6, "y1={}", y1);
+        // y[2] = 0.5*0 + 0 - 0.5*0.75 = -0.375
+        assert!((y2 - (-0.375)).abs() < 1e-6, "y2={}", y2);
+    }
+
+    #[test]
+    fn test_from_params() {
+        let params = DelayPluginParams {
+            delay_ms: 50.0,
+            feedback: 0.4,
+            mix: 0.6,
+            lfo_rate_hz: 3.0,
+            lfo_depth_ms: 1.5,
+            allpass_feedback: true,
+        };
+        let p = DelayPlugin::from_params(2, params);
+        assert_eq!(p.delay_ms, 50.0);
+        assert_eq!(p.lfo_rate_hz, 3.0);
+        assert_eq!(p.lfo_depth_ms, 1.5);
+        assert!(p.allpass_feedback);
+    }
+
+    #[test]
+    fn test_parameter_getset() {
+        let mut p = DelayPlugin::new(1, 100.0, 0.3, 0.5);
+        p.initialize(48000).unwrap();
+
+        // Set and get lfo_rate_hz
+        p.set_parameter(
+            ParameterId::from("lfo_rate_hz"),
+            ParameterValue::Float(7.5),
+        )
+        .unwrap();
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("lfo_rate_hz")),
+            Some(ParameterValue::Float(7.5))
+        );
+
+        // Set and get lfo_depth_ms
+        p.set_parameter(
+            ParameterId::from("lfo_depth_ms"),
+            ParameterValue::Float(3.0),
+        )
+        .unwrap();
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("lfo_depth_ms")),
+            Some(ParameterValue::Float(3.0))
+        );
+
+        // Set and get allpass_feedback
+        p.set_parameter(
+            ParameterId::from("allpass_feedback"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("allpass_feedback")),
+            Some(ParameterValue::Bool(true))
+        );
+    }
+
+    #[test]
+    fn test_mix_zero_equals_dry() {
+        // mix=0.0 -> output equals input (dry only, no delayed signal)
+        let mut p = DelayPlugin::new(1, 10.0, 0.0, 0.0); // mix=0
+        p.initialize(48000).unwrap();
+
+        let num_frames = 1000;
+        let original: Vec<f32> = (0..num_frames)
+            .map(|i| (i as f32 * 0.1).sin())
+            .collect();
+        let mut buffer = original.clone();
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // With mix=0, output = input * (1-0) + delayed * 0 = input
+        for (i, (&out, &inp)) in buffer.iter().zip(original.iter()).enumerate() {
+            assert!(
+                (out - inp).abs() < 1e-6,
+                "mix=0 should equal dry input at frame {}: out={}, in={}",
+                i,
+                out,
+                inp
+            );
+        }
+    }
+
+    #[test]
+    fn test_mix_one_equals_delayed() {
+        // mix=1.0 -> output equals delayed signal only (no dry signal)
+        let sr = 48000;
+        let delay_ms = 10.0;
+        let delay_samples = (delay_ms / 1000.0 * sr as f32).round() as usize;
+        let mut p = DelayPlugin::new(1, delay_ms, 0.0, 1.0); // mix=1, feedback=0
+        p.initialize(sr).unwrap();
+
+        // Create an impulse
+        let num_frames = delay_samples + 200;
+        let mut buffer = vec![0.0f32; num_frames];
+        buffer[0] = 1.0; // impulse
+
+        p.process_in_place(
+            &mut buffer,
+            &ProcessContext {
+                sample_rate: sr,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // With mix=1 and feedback=0:
+        // output = input * (1-1) + delayed * 1 = delayed only
+        // Frame 0: no delay history, so delayed=0, output=0 (not the impulse!)
+        assert!(
+            buffer[0].abs() < 0.01,
+            "mix=1 frame 0 should be ~0 (delayed only), got {}",
+            buffer[0]
+        );
+
+        // The impulse should appear at the delay offset
+        // Find the peak in output (should be at delay_samples)
+        let peak_idx = buffer
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+            .unwrap()
+            .0;
+        assert!(
+            (peak_idx as i32 - delay_samples as i32).unsigned_abs() <= 1,
+            "mix=1 peak should be at delay offset {}, found at {}",
+            delay_samples,
+            peak_idx
+        );
+    }
+
+    #[test]
+    fn test_parameter_validation() {
+        let mut p = DelayPlugin::new(1, 100.0, 0.3, 0.5);
+        p.initialize(48000).unwrap();
+
+        // LFO rate out of range should fail
+        assert!(p
+            .set_parameter(
+                ParameterId::from("lfo_rate_hz"),
+                ParameterValue::Float(15.0)
+            )
+            .is_err());
+
+        // LFO depth out of range should fail
+        assert!(p
+            .set_parameter(
+                ParameterId::from("lfo_depth_ms"),
+                ParameterValue::Float(10.0)
+            )
+            .is_err());
+
+        // Wrong type should fail
+        assert!(p
+            .set_parameter(
+                ParameterId::from("allpass_feedback"),
+                ParameterValue::Float(1.0)
+            )
+            .is_err());
     }
 }

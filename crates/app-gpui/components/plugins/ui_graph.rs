@@ -518,6 +518,8 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::MonoToStereo => theme.accent,
         PluginType::Crossfeed => theme.accent,
         PluginType::Delay => theme.info,
+        PluginType::Aec => theme.info,
+        PluginType::Beamformer => theme.accent,
     }
 }
 
@@ -562,6 +564,10 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         // Crossfeed: stereo in/out
         PluginType::Crossfeed => (2, 2),
         PluginType::Delay => (2, 2),
+        // AEC: 2 in (mic + ref), 1 out
+        PluginType::Aec => (2, 1),
+        // Beamformer: M in, 1 out (default 2 mics)
+        PluginType::Beamformer => (2, 1),
     }
 }
 
@@ -1205,6 +1211,7 @@ impl PlayerView {
                 auto_makeup,
                 link_channels,
                 sidechain_hpf_hz,
+                ..
             } => render_compressor_plugin(
                 entity,
                 plugin_idx,
@@ -1233,6 +1240,7 @@ impl PlayerView {
                 lookahead_ms,
                 soft,
                 mix,
+                ..
             } => render_limiter_plugin(
                 entity,
                 plugin_idx,
@@ -1259,6 +1267,7 @@ impl PlayerView {
                 mix,
                 link_channels,
                 sidechain_hpf_hz,
+                ..
             } => render_gate_plugin(
                 entity,
                 plugin_idx,
@@ -1406,6 +1415,7 @@ impl PlayerView {
                 comp_eq_depth_db,
                 decor_low_hz,
                 decor_high_hz,
+                ..
             } => render_mono_to_stereo_plugin(
                 entity,
                 plugin_idx,

@@ -15,13 +15,13 @@ Usage:
     # First, download DALI_v1.0.zip from https://zenodo.org/record/2577915
     # and extract it to get the annotation .gz files.
 
-    python3 scripts/prepare_dali.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_dali.py \\
         --annotations-dir /path/to/DALI_v1.0/ \\
         --output-dir /path/to/dali_wavs \\
         --output dali_manifest.tsv
 
     # Limit number of songs (for testing):
-    python3 scripts/prepare_dali.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_dali.py \\
         --annotations-dir /path/to/DALI_v1.0/ \\
         --output-dir /path/to/dali_wavs \\
         --output dali_manifest.tsv \\

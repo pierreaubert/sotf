@@ -147,45 +147,70 @@ pub fn calculate_reflections(
             ([spk_pos[0], spk_pos[1], 2.0 * bounds[2] - spk_pos[2]], 5),
         ];
 
-        for (img_pos, wall_idx) in images.iter() {
-            // Calculate distance from image to listener
-            let dx = img_pos[0] - listener[0];
-            let dy = img_pos[1] - listener[1];
-            let dz = img_pos[2] - listener[2];
-            let img_dist = (dx * dx + dy * dy + dz * dz).sqrt();
+        // Compute 1st-order image sources and optionally 2nd-order
+        add_image_reflections(
+            &images,
+            &listener,
+            direct_dist,
+            room,
+            sample_rate,
+            &mut channel_reflections,
+        );
 
-            // Path difference
-            let path_diff = img_dist - direct_dist;
+        // 2nd-order reflections: mirror each 1st-order image across the other 5 walls
+        if room.max_order >= 2 {
+            let mut second_order_images: Vec<([f32; 3], usize, usize)> = Vec::new();
+            for &(img_pos, wall_idx) in &images {
+                // Mirror this 1st-order image across each wall except the one it was reflected from
+                let second_images = [
+                    // Front wall (y = bounds[1])
+                    (0, [img_pos[0], 2.0 * bounds[1] - img_pos[1], img_pos[2]]),
+                    // Back wall (y = 0)
+                    (1, [img_pos[0], -img_pos[1], img_pos[2]]),
+                    // Left wall (x = 0)
+                    (2, [-img_pos[0], img_pos[1], img_pos[2]]),
+                    // Right wall (x = bounds[0])
+                    (3, [2.0 * bounds[0] - img_pos[0], img_pos[1], img_pos[2]]),
+                    // Floor (z = 0)
+                    (4, [img_pos[0], img_pos[1], -img_pos[2]]),
+                    // Ceiling (z = bounds[2])
+                    (5, [img_pos[0], img_pos[1], 2.0 * bounds[2] - img_pos[2]]),
+                ];
+                for (wall2_idx, pos) in second_images {
+                    if wall2_idx != wall_idx {
+                        second_order_images.push((pos, wall_idx, wall2_idx));
+                    }
+                }
+            }
 
-            if path_diff > 0.0 {
-                // Delay
-                let delay_sec = path_diff / room.speed_of_sound;
-                let delay_samples = (delay_sec * sample_rate as f32).round() as usize;
+            for (img_pos, wall1_idx, wall2_idx) in &second_order_images {
+                let dx = img_pos[0] - listener[0];
+                let dy = img_pos[1] - listener[1];
+                let dz = img_pos[2] - listener[2];
+                let img_dist = (dx * dx + dy * dy + dz * dz).sqrt();
 
-                // Attenuation
-                // 1. Distance attenuation (1/r law)
-                let dist_att = direct_dist / img_dist;
+                let path_diff = img_dist - direct_dist;
+                if path_diff > 0.0 {
+                    let delay_sec = path_diff / room.speed_of_sound;
+                    let delay_samples = (delay_sec * sample_rate as f32).round() as usize;
 
-                // 2. Wall absorption
-                let wall_att = 1.0 - room.absorption[*wall_idx];
+                    let dist_att = direct_dist / img_dist;
+                    let wall_att1 = 1.0 - room.absorption[*wall1_idx];
+                    let wall_att2 = 1.0 - room.absorption[*wall2_idx];
+                    let gain = dist_att * wall_att1 * wall_att2;
 
-                let gain = dist_att * wall_att;
+                    let az = dx.atan2(dy);
+                    let p = (az + std::f32::consts::PI / 4.0) * 0.5;
+                    let left = p.cos().abs();
+                    let right = p.sin().abs();
 
-                // Simple panning for reflections based on direction
-                // Calculate azimuth of reflection
-                let az = dx.atan2(dy); // -pi to pi
-
-                // Pan law (constant power)
-                let p = (az + std::f32::consts::PI / 4.0) * 0.5; // Shifted for simple panning
-                let left = p.cos().abs();
-                let right = p.sin().abs();
-
-                channel_reflections.push(Reflection {
-                    delay_samples,
-                    gain,
-                    left_gain: left,
-                    right_gain: right,
-                });
+                    channel_reflections.push(Reflection {
+                        delay_samples,
+                        gain,
+                        left_gain: left,
+                        right_gain: right,
+                    });
+                }
             }
         }
 
@@ -193,4 +218,44 @@ pub fn calculate_reflections(
     }
 
     reflections
+}
+
+/// Add reflections from image sources to the channel reflection list
+fn add_image_reflections(
+    images: &[([f32; 3], usize)],
+    listener: &[f32; 3],
+    direct_dist: f32,
+    room: &RoomModel,
+    sample_rate: u32,
+    channel_reflections: &mut Vec<Reflection>,
+) {
+    for (img_pos, wall_idx) in images.iter() {
+        let dx = img_pos[0] - listener[0];
+        let dy = img_pos[1] - listener[1];
+        let dz = img_pos[2] - listener[2];
+        let img_dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+        let path_diff = img_dist - direct_dist;
+
+        if path_diff > 0.0 {
+            let delay_sec = path_diff / room.speed_of_sound;
+            let delay_samples = (delay_sec * sample_rate as f32).round() as usize;
+
+            let dist_att = direct_dist / img_dist;
+            let wall_att = 1.0 - room.absorption[*wall_idx];
+            let gain = dist_att * wall_att;
+
+            let az = dx.atan2(dy);
+            let p = (az + std::f32::consts::PI / 4.0) * 0.5;
+            let left = p.cos().abs();
+            let right = p.sin().abs();
+
+            channel_reflections.push(Reflection {
+                delay_samples,
+                gain,
+                left_gain: left,
+                right_gain: right,
+            });
+        }
+    }
 }

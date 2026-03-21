@@ -41,6 +41,8 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::MonoToStereo => theme.plugin_colors.binaural,
         PluginType::Crossfeed => theme.plugin_colors.binaural,
         PluginType::Delay => theme.plugin_colors.eq,
+        PluginType::Aec => theme.plugin_colors.eq,
+        PluginType::Beamformer => theme.plugin_colors.binaural,
     }
 }
 
@@ -89,6 +91,8 @@ pub fn plugin_icon(
         PluginType::MonoToStereo => "⊕",
         PluginType::Crossfeed => "⊞",
         PluginType::Delay => "⏱",
+        PluginType::Aec => "⊘",
+        PluginType::Beamformer => "⊙",
     }
 }
 

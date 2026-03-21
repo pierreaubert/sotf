@@ -17,7 +17,9 @@ qa = ["sotf-host/qa", "dep:criterion"]
 [dependencies]
 sotf-host = { workspace = true }
 sotf-plugin-ab-compare = { workspace = true }
+sotf-plugin-aec = { workspace = true }
 sotf-plugin-band-merge = { workspace = true }
+sotf-plugin-beamformer = { workspace = true }
 sotf-plugin-band-split = { workspace = true }
 sotf-plugin-binaural = { workspace = true }
 sotf-plugin-channel-mute-solo = { workspace = true }

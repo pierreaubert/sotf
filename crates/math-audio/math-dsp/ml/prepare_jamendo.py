@@ -18,12 +18,12 @@ Labels:
 The corpus comes pre-split into train/validation/test sets (61/16/16 files).
 
 Usage:
-    python3 scripts/prepare_jamendo.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_jamendo.py \\
         --output-dir /path/to/jamendo \\
         --output jamendo_manifest.tsv
 
     # Only convert to eval manifest (test set), skip train/val:
-    python3 scripts/prepare_jamendo.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_jamendo.py \\
         --output-dir /path/to/jamendo \\
         --output jamendo_test_manifest.tsv \\
         --split test

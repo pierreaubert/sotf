@@ -15,6 +15,7 @@ fn main() {
             freq: 1000.0,
             q: 1.0,
             db_gain: 6.0,
+            order: 2,
         }],
         channel_filters: None,
         auto_gain: Default::default(),

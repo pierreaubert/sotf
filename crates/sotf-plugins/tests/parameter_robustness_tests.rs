@@ -61,9 +61,9 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     )));
 
     // 8. Crossover
-    plugins.push(Box::new(InPlacePluginAdapter::new(
+    plugins.push(Box::new(
         CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap(),
-    )));
+    ));
 
     // 9. Upmixer
     plugins.push(Box::new(UpmixerPlugin::new(

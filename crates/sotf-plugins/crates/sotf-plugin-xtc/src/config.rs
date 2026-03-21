@@ -26,13 +26,12 @@ pub struct XtcPluginParams {
     #[serde(default = "default_beta_base")]
     pub beta_base: f32,
 
-    /// Regularization boost at low frequencies (<100Hz) (default: 10.0)
-    #[serde(default = "default_beta_low_freq_boost")]
-    pub beta_low_freq_boost: f32,
-
-    /// Regularization boost at high frequencies (>12kHz) (default: 10.0)
-    #[serde(default = "default_beta_high_freq_boost")]
-    pub beta_high_freq_boost: f32,
+    /// Condition number target for regularization (default: 100.0).
+    /// Controls how aggressively the inverse is regularized at ill-conditioned
+    /// frequency bins. Lower values = more regularization = less cancellation.
+    /// Range: 1-1000.
+    #[serde(default = "default_kappa_target")]
+    pub kappa_target: f32,
 
     /// Maximum filter gain in dB (default: 6.0)
     /// Limits how much the cancellation filter can boost any frequency bin.
@@ -64,10 +63,10 @@ pub struct XtcPluginParams {
     #[serde(default = "default_head_tracking_smooth")]
     pub head_tracking_smooth_s: f32,
 
-    /// Enable spectral energy normalization (default: false).
+    /// Enable spectral energy normalization (default: true).
     /// When enabled, normalizes per-bin energy to reduce tonal coloration,
     /// but can degrade cancellation depth.
-    #[serde(default)]
+    #[serde(default = "default_spectral_normalization")]
     pub spectral_normalization: bool,
 
     /// Enable plugin (default: true)
@@ -131,9 +130,30 @@ pub struct XtcPluginParams {
     #[serde(default)]
     pub pinna_model_enabled: bool,
 
+    /// Path to HRTF/SOFA file. When set, uses measured HRTF data as the
+    /// plant matrix C(f) instead of the Woodworth analytical model.
+    /// Supports .sofa and .hrtfdb (SQLite) formats.
+    #[serde(default)]
+    pub hrtf_file: Option<String>,
+
     /// Smoothing time for auto-gain transitions in ms (default: 100.0)
     #[serde(default = "default_auto_gain_smoothing_ms")]
     pub auto_gain_smoothing_ms: f32,
+
+    /// ITD modeling mode for low-frequency cancellation improvement.
+    ///
+    /// At low frequencies (<300 Hz) the Woodworth model's implicit phase from
+    /// path-length differences is numerically inaccurate because the wavelength
+    /// is much larger than the head. An explicit fractional-sample delay applied
+    /// in the frequency domain gives a more reliable LF phase relationship.
+    ///
+    /// - `"phase_only"` (default): use implicit phase from the path-length
+    ///   difference encoded in the plant matrix transfer functions.
+    /// - `"explicit_delay"`: apply an explicit time-delay phase shift
+    ///   `e^{-j*2*pi*f*itd}` to the contralateral path at low frequencies,
+    ///   blended out above 300 Hz via a sigmoid crossover.
+    #[serde(default = "default_itd_modeling")]
+    pub itd_modeling: String,
 }
 
 fn default_distance() -> f32 {
@@ -154,11 +174,8 @@ fn default_beta_base() -> f32 {
 fn default_max_gain_db() -> f32 {
     12.0 // Increased from 6.0 for better cancellation depth
 }
-fn default_beta_low_freq_boost() -> f32 {
-    10.0
-}
-fn default_beta_high_freq_boost() -> f32 {
-    10.0
+fn default_kappa_target() -> f32 {
+    100.0
 }
 fn default_head_shadow_cutoff() -> f32 {
     4000.0
@@ -190,8 +207,14 @@ fn default_auto_gain_enabled() -> bool {
 fn default_auto_gain_max_db() -> f32 {
     24.0 // Increased from 6.0 to prevent saturation
 }
+fn default_spectral_normalization() -> bool {
+    true
+}
 fn default_auto_gain_smoothing_ms() -> f32 {
     100.0
+}
+fn default_itd_modeling() -> String {
+    "phase_only".to_string()
 }
 
 impl Default for XtcPluginParams {
@@ -202,8 +225,7 @@ impl Default for XtcPluginParams {
             head_radius_m: default_head_radius(),
             fft_size: default_fft_size(),
             beta_base: default_beta_base(),
-            beta_low_freq_boost: default_beta_low_freq_boost(),
-            beta_high_freq_boost: default_beta_high_freq_boost(),
+            kappa_target: default_kappa_target(),
             max_gain_db: default_max_gain_db(),
             head_shadow_cutoff_hz: default_head_shadow_cutoff(),
             head_shadow_slope_db_per_octave: default_head_shadow_slope(),
@@ -226,6 +248,53 @@ impl Default for XtcPluginParams {
             auto_gain_max_db: default_auto_gain_max_db(),
             auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
             pinna_model_enabled: false,
+            hrtf_file: None,
+            itd_modeling: default_itd_modeling(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_spectral_normalization_is_true() {
+        let params = XtcPluginParams::default();
+        assert!(
+            params.spectral_normalization,
+            "Default spectral_normalization should be true"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_empty_json_spectral_normalization_true() {
+        let json = "{}";
+        let params: XtcPluginParams = serde_json::from_str(json).unwrap();
+        assert!(
+            params.spectral_normalization,
+            "Deserializing empty JSON should default spectral_normalization to true"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_explicit_false_spectral_normalization() {
+        let json = r#"{"spectral_normalization": false}"#;
+        let params: XtcPluginParams = serde_json::from_str(json).unwrap();
+        assert!(
+            !params.spectral_normalization,
+            "Explicitly setting spectral_normalization=false should be respected"
+        );
+    }
+
+    #[test]
+    fn test_default_values_are_sensible() {
+        let params = XtcPluginParams::default();
+        assert!((params.distance_m - 2.0).abs() < f32::EPSILON);
+        assert!((params.speaker_angle_deg - 30.0).abs() < f32::EPSILON);
+        assert!(params.enabled);
+        assert!(params.auto_gain_enabled);
+        assert!(!params.room_reflections_enabled);
+        assert!(!params.pinna_model_enabled);
     }
 }

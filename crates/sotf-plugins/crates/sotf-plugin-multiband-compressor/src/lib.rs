@@ -6,6 +6,8 @@ use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
+use sotf_host::lookahead::LookaheadBuffer;
+use sotf_host::auto_makeup::MeasuredMakeup;
 use sotf_host::param_specs::{
     find_by_key as pk,
     multiband_compressor::{BAND_TEMPLATE as MCB, GLOBAL_PARAMS as MC},
@@ -37,6 +39,8 @@ pub struct BandCompressorParams {
     pub makeup_gain_db: f32,
     #[serde(default)]
     pub auto_makeup: bool,
+    #[serde(default)]
+    pub measured_auto_makeup: bool,
     #[serde(default = "default_true")]
     pub active: bool,
     pub solo: bool,
@@ -53,6 +57,7 @@ impl Default for BandCompressorParams {
             knee_db: None,
             makeup_gain_db: 0.0,
             auto_makeup: false,
+            measured_auto_makeup: false,
             active: true,
             solo: false,
             bypass: false,
@@ -72,6 +77,10 @@ pub struct MultibandCompressorPluginParams {
     pub knee_db: f32,
     pub link_channels: bool,
     pub mix: f32,
+    #[serde(default)]
+    pub per_band_lookahead_ms: f32,
+    #[serde(default)]
+    pub ms_mode: bool,
     pub bands: Vec<BandCompressorParams>,
 }
 
@@ -204,6 +213,8 @@ pub struct MultibandCompressorPlugin {
     knee_db: f32,
     link_channels: bool,
     mix: f32,
+    per_band_lookahead_ms: f32,
+    ms_mode: bool,
     band_params: Vec<BandCompressorParams>,
     crossover_points: Vec<CrossoverPoint>,
     band_compressors: Vec<BandCompressor>,
@@ -213,6 +224,13 @@ pub struct MultibandCompressorPlugin {
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
     xover_smoothers: Vec<LogSmoother>,
+
+    /// Per-band lookahead delay buffers (one per band, each with `channels` interleaved).
+    lookahead_buffers: Vec<LookaheadBuffer>,
+    /// Per-band measured auto-makeup gain trackers.
+    measured_makeups: Vec<MeasuredMakeup>,
+    /// Temporary frame buffer for lookahead processing.
+    lookahead_frame_tmp: Vec<f32>,
 
     // Internal flattened monitoring buffer
     gain_reduction_flattened: Vec<f32>,
@@ -249,6 +267,20 @@ impl MultibandCompressorPlugin {
             band_params.push(BandCompressorParams::default());
         }
 
+        let la_ms = params.per_band_lookahead_ms.clamp(0.0, 10.0);
+        let lookahead_buffers = (0..nb)
+            .map(|_| {
+                if la_ms > 0.0 {
+                    LookaheadBuffer::from_ms(la_ms, sr, channels)
+                } else {
+                    LookaheadBuffer::new(1, channels)
+                }
+            })
+            .collect();
+        let measured_makeups = (0..nb)
+            .map(|_| MeasuredMakeup::new(1000.0, sr))
+            .collect();
+
         let mut p = Self {
             channels,
             sample_rate: sr,
@@ -262,6 +294,8 @@ impl MultibandCompressorPlugin {
             knee_db: params.knee_db,
             link_channels: params.link_channels,
             mix: params.mix,
+            per_band_lookahead_ms: la_ms,
+            ms_mode: params.ms_mode,
             band_params,
             crossover_points: Vec::new(),
             band_compressors: bcomps,
@@ -271,6 +305,9 @@ impl MultibandCompressorPlugin {
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sr),
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
             xover_smoothers: xfs.iter().map(|&f| LogSmoother::new(f, 50.0, sr)).collect(),
+            lookahead_buffers,
+            measured_makeups,
+            lookahead_frame_tmp: vec![0.0; channels],
             gain_reduction_flattened: vec![0.0; nb * channels],
             cache: RealTimeCache::new(MultibandCompressorData::new(nb, channels)),
             cache_update_counter: 0,
@@ -305,6 +342,18 @@ impl MultibandCompressorPlugin {
             )
             .with_group("General")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "per_band_lookahead_ms",
+                "Band Lookahead (ms)",
+                self.per_band_lookahead_ms,
+                0.0,
+                10.0,
+            )
+            .with_group("General")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("ms_mode", "M/S Mode", self.ms_mode)
+                .with_group("General")
+                .with_importance(ParameterImportance::Useful),
         ];
 
         // Crossover frequencies
@@ -417,6 +466,14 @@ impl MultibandCompressorPlugin {
                 .with_group(&group),
             );
             params.push(
+                Parameter::new_bool(
+                    &format!("band_{}_measured_auto_makeup", i),
+                    "Measured Auto Makeup",
+                    bp.measured_auto_makeup,
+                )
+                .with_group(&group),
+            );
+            params.push(
                 Parameter::new_bool(&format!("band_{}_active", i), "Active", bp.active)
                     .with_group(&group),
             );
@@ -514,6 +571,21 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         release_coeff: 0.0,
                     });
                 }
+                while self.lookahead_buffers.len() < self.num_bands {
+                    self.lookahead_buffers.push(if self.per_band_lookahead_ms > 0.0 {
+                        LookaheadBuffer::from_ms(
+                            self.per_band_lookahead_ms,
+                            self.sample_rate,
+                            self.channels,
+                        )
+                    } else {
+                        LookaheadBuffer::new(1, self.channels)
+                    });
+                }
+                while self.measured_makeups.len() < self.num_bands {
+                    self.measured_makeups
+                        .push(MeasuredMakeup::new(1000.0, self.sample_rate));
+                }
                 self.band_levels_db.resize(self.num_bands, -100.0);
                 self.gain_reduction_flattened
                     .resize(self.num_bands * self.channels, 0.0);
@@ -537,6 +609,22 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 self.mix = v.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);
             }
+        } else if name == "per_band_lookahead_ms" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "per_band_lookahead_ms must be a float".to_string())?;
+            if v.is_finite() {
+                self.per_band_lookahead_ms = v.clamp(0.0, 10.0);
+                for buf in &mut self.lookahead_buffers {
+                    if self.per_band_lookahead_ms > 0.0 {
+                        buf.set_delay_ms(self.per_band_lookahead_ms, self.sample_rate);
+                    }
+                }
+            }
+        } else if name == "ms_mode" {
+            self.ms_mode = value
+                .as_bool()
+                .ok_or_else(|| "ms_mode must be a boolean".to_string())?;
         } else if name.starts_with("crossover_freq_") {
             let idx = name
                 .replace("crossover_freq_", "")
@@ -644,6 +732,11 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                                 .as_bool()
                                 .ok_or_else(|| format!("{} must be a boolean", name))?
                         }
+                        "measured" => {
+                            bp.measured_auto_makeup = value
+                                .as_bool()
+                                .ok_or_else(|| format!("{} must be a boolean", name))?
+                        }
                         "active" => {
                             bp.active = value
                                 .as_bool()
@@ -689,6 +782,10 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             Some(ParameterValue::Bool(self.link_channels))
         } else if name == "mix" {
             Some(ParameterValue::Float(self.mix))
+        } else if name == "per_band_lookahead_ms" {
+            Some(ParameterValue::Float(self.per_band_lookahead_ms))
+        } else if name == "ms_mode" {
+            Some(ParameterValue::Bool(self.ms_mode))
         } else if name == "threshold" {
             Some(ParameterValue::Float(self.threshold_db))
         } else if name == "ratio" {
@@ -726,6 +823,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         )),
                         "makeup" => Some(ParameterValue::Float(bp.makeup_gain_db)),
                         "auto" => Some(ParameterValue::Bool(bp.auto_makeup)),
+                        "measured" => Some(ParameterValue::Bool(bp.measured_auto_makeup)),
                         "active" => Some(ParameterValue::Bool(bp.active)),
                         "solo" => Some(ParameterValue::Bool(bp.solo)),
                         "bypass" => Some(ParameterValue::Bool(bp.bypass)),
@@ -754,11 +852,26 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             *s = LogSmoother::new(s.target(), 50.0, sr);
         }
 
+        // Reinitialize lookahead buffers for new sample rate
+        let la_ms = self.per_band_lookahead_ms;
+        for buf in &mut self.lookahead_buffers {
+            if la_ms > 0.0 {
+                let max_samples = (10.0 * 0.001 * sr as f32).round() as usize;
+                buf.resize(max_samples, self.channels);
+                buf.set_delay_ms(la_ms, sr);
+            }
+        }
+        // Reinitialize measured makeup smoothing for new sample rate
+        for mm in &mut self.measured_makeups {
+            mm.set_smoothing(1000.0, sr);
+        }
+
         // Pre-allocate buffers for real-time safety
         let max_frames = 4096;
         let stride = max_frames * self.channels;
         self.band_buffers.resize(self.num_bands * stride, 0.0);
         self.dry_buffer.resize(max_frames * self.channels, 0.0);
+        self.lookahead_frame_tmp.resize(self.channels, 0.0);
 
         Ok(())
     }
@@ -768,6 +881,12 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         }
         for b in &mut self.band_compressors {
             b.envelope.fill(0.0);
+        }
+        for buf in &mut self.lookahead_buffers {
+            buf.reset();
+        }
+        for mm in &mut self.measured_makeups {
+            mm.reset();
         }
         self.band_buffers.fill(0.0);
         self.dry_buffer.fill(0.0);
@@ -790,6 +909,18 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         }
 
         self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
+
+        // M/S encode: convert L/R to Mid/Side before band splitting
+        let use_ms = self.ms_mode && self.channels == 2;
+        if use_ms {
+            for frame in 0..nf {
+                let idx = frame * 2;
+                let l = buffer[idx];
+                let r = buffer[idx + 1];
+                buffer[idx] = (l + r) * 0.5;     // Mid
+                buffer[idx + 1] = (l - r) * 0.5; // Side
+            }
+        }
 
         for i in 0..(self.num_bands - 1) {
             let freq = self.xover_smoothers[i].next_n(nf);
@@ -860,7 +991,11 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             let th = bp.and_then(|p| p.threshold_db).unwrap_or(g_th);
             let rat = bp.and_then(|p| p.ratio).unwrap_or(self.ratio);
             let kn = bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db);
-            let mk = if bp.map(|p| p.auto_makeup).unwrap_or(false) {
+            let use_measured_makeup = bp.map(|p| p.measured_auto_makeup).unwrap_or(false);
+            let mk = if use_measured_makeup {
+                // Measured makeup: will be computed per-frame below
+                1.0
+            } else if bp.map(|p| p.auto_makeup).unwrap_or(false) {
                 let ratio = rat.max(1.0);
                 let slope = 1.0 - 1.0 / ratio;
                 let overshoot = (-th).max(0.0) * 0.5;
@@ -869,15 +1004,22 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 fast_pow10(bp.map(|p| p.makeup_gain_db).unwrap_or(0.0) / 20.0)
             };
 
+            let use_lookahead = self.per_band_lookahead_ms > 0.0;
             let bcomp = &mut self.band_compressors[b];
             let off = b * stride;
             let mut band_max_abs = 0.0f32;
 
             for frame in 0..nf {
+                // Detect level from the current (non-delayed) band audio
                 let mut det = 0.0f32;
                 if self.link_channels {
-                    for ch in 0..self.channels {
-                        det = det.max(self.band_buffers[off + frame * self.channels + ch].abs());
+                    if use_ms {
+                        // M/S mode: use only Mid (channel 0) for detection
+                        det = self.band_buffers[off + frame * self.channels].abs();
+                    } else {
+                        for ch in 0..self.channels {
+                            det = det.max(self.band_buffers[off + frame * self.channels + ch].abs());
+                        }
                     }
                 }
 
@@ -887,15 +1029,31 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                     0.0
                 };
 
+                // Apply lookahead delay: push current frame, get delayed frame
+                if use_lookahead {
+                    let f_off = off + frame * self.channels;
+                    let input = &self.band_buffers[f_off..f_off + self.channels];
+                    // Copy input into temp since process_frame borrows both
+                    self.lookahead_frame_tmp.copy_from_slice(input);
+                    self.lookahead_buffers[b]
+                        .process_frame(&self.lookahead_frame_tmp, &mut self.band_buffers[f_off..f_off + self.channels]);
+                }
+
                 for ch in 0..self.channels {
                     let idx = off + frame * self.channels + ch;
-                    let sample_abs = self.band_buffers[idx].abs();
-                    band_max_abs = band_max_abs.max(sample_abs);
+                    let detect_abs = if use_lookahead {
+                        // Detection used the pre-delay signal (via det/idb_shared above)
+                        // For per-channel mode, use the original sample abs from lookahead_frame_tmp
+                        self.lookahead_frame_tmp[ch].abs()
+                    } else {
+                        self.band_buffers[idx].abs()
+                    };
+                    band_max_abs = band_max_abs.max(self.band_buffers[idx].abs());
 
                     let idb = if self.link_channels {
                         idb_shared
                     } else {
-                        20.0 * fast_log10(sample_abs.max(1e-10))
+                        20.0 * fast_log10(detect_abs.max(1e-10))
                     };
                     let tgr = Self::calculate_gain_reduction(idb, th, rat, kn);
 
@@ -905,7 +1063,19 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         bcomp.release_coeff
                     };
                     bcomp.envelope[ch] = tgr + c * (bcomp.envelope[ch] - tgr);
-                    self.band_buffers[idx] *= fast_pow10(-bcomp.envelope[ch] / 20.0) * mk;
+
+                    // Update measured makeup tracker if enabled
+                    if use_measured_makeup {
+                        self.measured_makeups[b].update(bcomp.envelope[ch]);
+                    }
+
+                    let gain_linear = fast_pow10(-bcomp.envelope[ch] / 20.0);
+                    let makeup = if use_measured_makeup {
+                        self.measured_makeups[b].makeup_linear()
+                    } else {
+                        mk
+                    };
+                    self.band_buffers[idx] *= gain_linear * makeup;
                 }
             }
             self.band_levels_db[b] = 20.0 * fast_log10(band_max_abs.max(1e-10));
@@ -919,6 +1089,17 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                     s += self.band_buffers[b * stride + idx];
                 }
                 buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + s * g_mix;
+            }
+        }
+
+        // M/S decode: convert Mid/Side back to L/R
+        if use_ms {
+            for frame in 0..nf {
+                let idx = frame * 2;
+                let m = buffer[idx];
+                let s = buffer[idx + 1];
+                buffer[idx] = m + s;     // L = M + S
+                buffer[idx + 1] = m - s; // R = M - S
             }
         }
 
@@ -1004,9 +1185,60 @@ mod tests {
             (output[half..].iter().map(|s| s * s).sum::<f32>() / (nf - half) as f32).sqrt();
         let ratio = rms_out / rms_in;
         assert!(
-            (0.7..1.3).contains(&ratio),
+            (0.85..1.15).contains(&ratio),
             "With ratio=1 (no compression), crossover should reconstruct signal. \
              RMS ratio={ratio:.3} (in={rms_in:.4}, out={rms_out:.4})"
+        );
+    }
+
+    /// Changing a crossover frequency mid-stream should not produce clicks or
+    /// non-finite values. The output must remain bounded.
+    #[test]
+    fn test_crossover_frequency_change_no_discontinuity() {
+        let mut p = MultibandCompressorPlugin::new(1);
+        p.initialize(48000).unwrap();
+
+        let nf = 2400;
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
+
+        // Process a block with default crossover
+        let mut b1: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (i as f32 * 0.1).sin())
+            .collect();
+        p.process_in_place(&mut b1, &ctx).unwrap();
+        let last_before = b1[nf - 1];
+
+        // Change crossover frequency mid-stream
+        p.set_parameter(
+            ParameterId::from("crossover_freq_1"),
+            ParameterValue::Float(800.0),
+        )
+        .unwrap();
+
+        // Process another block
+        let mut b2: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * ((nf + i) as f32 * 0.1).sin())
+            .collect();
+        p.process_in_place(&mut b2, &ctx).unwrap();
+
+        // All output must be finite and bounded
+        for (i, &s) in b2.iter().enumerate() {
+            assert!(
+                s.is_finite() && s.abs() < 10.0,
+                "Sample {} after crossover change is non-finite or unbounded: {}",
+                i,
+                s
+            );
+        }
+
+        // The transition should not produce a large jump
+        let jump = (b2[0] - last_before).abs();
+        assert!(
+            jump < 1.0,
+            "Crossover frequency change caused discontinuity: jump={jump:.4}"
         );
     }
 

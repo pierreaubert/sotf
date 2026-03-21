@@ -82,6 +82,8 @@ pub enum PluginType {
     MonoToStereo,
     Crossfeed,
     Delay,
+    Aec,
+    Beamformer,
 }
 
 impl PluginType {
@@ -114,6 +116,8 @@ impl PluginType {
             Self::MonoToStereo => "Mono to Stereo",
             Self::Crossfeed => "Crossfeed",
             Self::Delay => "Delay",
+            Self::Aec => "AEC",
+            Self::Beamformer => "Beamformer",
         }
     }
 
@@ -146,6 +150,8 @@ impl PluginType {
             Self::MonoToStereo => "Convert mono signal to pseudo-stereo",
             Self::Crossfeed => "Headphone crossfeed for speaker-like listening",
             Self::Delay => "Simple delay effect with feedback",
+            Self::Aec => "Acoustic Echo Cancellation (PBFDAF + Two-Path + Post-Filter)",
+            Self::Beamformer => "Microphone array beamformer (MVDR / Superdirective / GSC)",
         }
     }
 
@@ -178,6 +184,8 @@ impl PluginType {
             Self::MonoToStereo,
             Self::Crossfeed,
             Self::Delay,
+            Self::Aec,
+            Self::Beamformer,
         ]
     }
 
@@ -217,9 +225,12 @@ impl PluginType {
             | Self::LoudnessCompensation
             | Self::MonoToStereo => ReleaseChannel::Beta,
 
-            Self::BinauralDecoder | Self::Convolution | Self::Pnd | Self::Denoiser => {
-                ReleaseChannel::Alpha
-            }
+            Self::BinauralDecoder
+            | Self::Convolution
+            | Self::Pnd
+            | Self::Denoiser
+            | Self::Aec
+            | Self::Beamformer => ReleaseChannel::Alpha,
         }
     }
 }
@@ -364,6 +375,8 @@ use sotf_plugins::param_specs::band_merge as band_merge_specs;
 use sotf_plugins::param_specs::band_split as band_split_specs;
 use sotf_plugins::param_specs::binaural as binaural_specs;
 use sotf_plugins::param_specs::channel_mute_solo as cms_specs;
+use sotf_plugins::param_specs::aec as aec_specs;
+use sotf_plugins::param_specs::beamformer as beamformer_specs;
 use sotf_plugins::param_specs::compressor as compressor_specs;
 use sotf_plugins::param_specs::convolution as convolution_specs;
 use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
@@ -415,9 +428,18 @@ sotf_plugins::serde_param_default! {
 }
 
 sotf_plugins::serde_param_default! {
+    gain_specs::PARAMS;
+    fn default_gain_smoothing_ms() -> f64 = "smoothing_ms";
+}
+
+sotf_plugins::serde_param_default! {
     compressor_specs::PARAMS;
     fn default_compressor_link_channels() -> bool = "link_channels";
     fn default_compressor_sidechain_hpf_hz() -> f64 = "sidechain_hpf_hz";
+}
+
+fn default_compressor_detection_mode() -> String {
+    "Peak".to_string()
 }
 
 sotf_plugins::serde_param_default! {
@@ -429,6 +451,10 @@ sotf_plugins::serde_param_default! {
     lc_specs::PARAMS;
     fn default_auto_gain_max_db() -> f64 = "auto_gain_max_db";
     fn default_auto_gain_smoothing_ms() -> f64 = "auto_gain_smoothing_ms";
+    fn default_lc_mid_enabled() -> bool = "mid_enabled";
+    fn default_lc_mid_freq() -> f64 = "mid_freq";
+    fn default_lc_mid_gain() -> f64 = "mid_gain";
+    fn default_lc_mid_q() -> f64 = "mid_q";
 }
 
 sotf_plugins::serde_param_default! {
@@ -468,6 +494,7 @@ sotf_plugins::serde_param_default! {
     fn default_gate_hold_ms() -> f64 = "hold";
     fn default_gate_mix() -> f64 = "mix";
     fn default_gate_link_channels() -> bool = "link_channels";
+    fn default_gate_range_db() -> f64 = "range_db";
 }
 
 sotf_plugins::serde_param_default! {
@@ -483,6 +510,10 @@ sotf_plugins::serde_param_default! {
     fn default_expander_mix() -> f64 = "mix";
     fn default_expander_link_channels() -> bool = "link_channels";
     fn default_expander_sidechain_hpf_hz() -> f64 = "sidechain_hpf_hz";
+}
+
+fn default_expander_detection_mode() -> String {
+    "Peak".to_string()
 }
 
 sotf_plugins::serde_param_default! {
@@ -520,6 +551,10 @@ sotf_plugins::serde_param_default! {
     fn default_mb_expander_hold_ms() -> f64 = "hold";
     fn default_mb_expander_mix() -> f64 = "mix";
     fn default_mb_expander_link_channels() -> bool = "link_channels";
+}
+
+fn default_mb_expander_detection_mode() -> String {
+    "Peak".to_string()
 }
 
 sotf_plugins::serde_param_default! {
@@ -578,6 +613,11 @@ sotf_plugins::serde_param_default! {
     fn default_denoiser_spectral_sub_enabled() -> bool = "spectral_sub_enabled";
     fn default_denoiser_spectral_sub_alpha() -> f64 = "spectral_sub_alpha";
     fn default_denoiser_spectral_sub_beta() -> f64 = "spectral_sub_beta";
+    fn default_denoiser_algorithm() -> usize = "algorithm";
+}
+
+fn default_use_nupc() -> bool {
+    true
 }
 
 sotf_plugins::serde_param_default! {
@@ -585,6 +625,8 @@ sotf_plugins::serde_param_default! {
     fn default_pnd_correction_strength() -> f64 = "correction_strength";
     fn default_pnd_analysis_window_ms() -> f64 = "analysis_window_ms";
     fn default_pnd_drift_smoothing() -> f64 = "drift_smoothing";
+    fn default_pnd_multi_channel_analysis() -> bool = "multi_channel_analysis";
+    fn default_pnd_confidence_threshold() -> f64 = "confidence_threshold";
 }
 
 sotf_plugins::serde_param_default! {
@@ -633,6 +675,7 @@ sotf_plugins::serde_param_default! {
     fn default_mono_to_stereo_comp_eq_depth_db() -> f64 = "comp_eq_depth_db";
     fn default_mono_to_stereo_decor_low_hz() -> f64 = "decor_low_hz";
     fn default_mono_to_stereo_decor_high_hz() -> f64 = "decor_high_hz";
+    fn default_mono_to_stereo_freq_dependent() -> bool = "freq_dependent";
 }
 
 sotf_plugins::serde_param_default! {
@@ -652,6 +695,27 @@ sotf_plugins::serde_param_default! {
     fn default_delay_ms() -> f64 = "delay_ms";
     fn default_delay_feedback() -> f64 = "feedback";
     fn default_delay_mix() -> f64 = "mix";
+}
+
+sotf_plugins::serde_param_default! {
+    aec_specs::PARAMS;
+    fn default_aec_echo_tail_ms() -> f64 = "echo_tail_ms";
+    fn default_aec_step_size() -> f64 = "step_size";
+    fn default_aec_post_filter_enabled() -> bool = "post_filter_enabled";
+}
+
+sotf_plugins::serde_param_default! {
+    beamformer_specs::PARAMS;
+    fn default_beamformer_num_mics() -> usize = "num_mics";
+    fn default_beamformer_mic_spacing_cm() -> f64 = "mic_spacing_cm";
+    fn default_beamformer_steer_angle_deg() -> f64 = "steer_angle_deg";
+    fn default_beamformer_type() -> usize = "beamformer_type";
+}
+
+sotf_plugins::serde_param_default! {
+    cms_specs::PARAMS;
+    fn default_cms_dim_gain_db() -> f64 = "dim_gain_db";
+    fn default_cms_fade_ms() -> f64 = "fade_ms";
 }
 
 fn default_spectrum_num_bins() -> usize {
@@ -703,6 +767,8 @@ pub enum PluginSettings {
         #[serde(default = "default_channels")]
         channels: usize,
         gain_db: f64,
+        #[serde(default = "default_gain_smoothing_ms")]
+        smoothing_ms: f64,
     },
     Upmixer {
         speaker_config: String,
@@ -798,6 +864,14 @@ pub enum PluginSettings {
         link_channels: bool,
         #[serde(default = "default_compressor_sidechain_hpf_hz")]
         sidechain_hpf_hz: f64,
+        #[serde(default = "default_compressor_detection_mode")]
+        detection_mode: String,
+        #[serde(default)]
+        lookahead_ms: f64,
+        #[serde(default)]
+        program_dependent_release: bool,
+        #[serde(default)]
+        measured_auto_makeup: bool,
     },
     Limiter {
         threshold_db: f64,
@@ -806,6 +880,10 @@ pub enum PluginSettings {
         lookahead_ms: f64,
         #[serde(default = "default_limiter_soft")]
         soft: bool,
+        #[serde(default)]
+        true_peak: bool,
+        #[serde(default)]
+        dual_release: bool,
         #[serde(default = "default_limiter_mix")]
         mix: f64,
     },
@@ -822,6 +900,14 @@ pub enum PluginSettings {
         link_channels: bool,
         #[serde(default)] // 0.0
         sidechain_hpf_hz: f64,
+        #[serde(default = "default_gate_range_db")]
+        range_db: f64,
+        #[serde(default)]
+        hysteresis_db: f64,
+        #[serde(default)]
+        knee_db: f64,
+        #[serde(default)]
+        lookahead_ms: f64,
     },
     Expander {
         #[serde(default = "default_expander_threshold_db")]
@@ -848,6 +934,12 @@ pub enum PluginSettings {
         sidechain_hpf_hz: f64,
         #[serde(default)]
         auto_makeup: bool,
+        #[serde(default)]
+        lookahead_ms: f64,
+        #[serde(default = "default_expander_detection_mode")]
+        detection_mode: String,
+        #[serde(default)]
+        measured_auto_makeup: bool,
     },
     MultibandCompressor {
         #[serde(default = "default_mb_compressor_num_bands")]
@@ -876,6 +968,8 @@ pub enum PluginSettings {
         mix: f64,
         #[serde(default = "default_mb_compressor_link_channels")]
         link_channels: bool,
+        #[serde(default)]
+        per_band_lookahead_ms: f64,
         #[serde(default)]
         bands: Vec<BandCompressorParams>,
     },
@@ -912,6 +1006,8 @@ pub enum PluginSettings {
         mix: f64,
         #[serde(default = "default_mb_expander_link_channels")]
         link_channels: bool,
+        #[serde(default = "default_mb_expander_detection_mode")]
+        detection_mode: String,
         #[serde(default)]
         bands: Vec<BandExpanderParams>,
     },
@@ -920,6 +1016,14 @@ pub enum PluginSettings {
         low_gain: f64,
         high_freq: f64,
         high_gain: f64,
+        #[serde(default = "default_lc_mid_enabled")]
+        mid_enabled: bool,
+        #[serde(default = "default_lc_mid_freq")]
+        mid_freq: f64,
+        #[serde(default = "default_lc_mid_gain")]
+        mid_gain: f64,
+        #[serde(default = "default_lc_mid_q")]
+        mid_q: f64,
         #[serde(default)]
         auto_gain_enabled: bool,
         #[serde(default = "default_auto_gain_max_db")]
@@ -1003,6 +1107,8 @@ pub enum PluginSettings {
         ir_file: String,
         mix: f64,
         gain_db: f64,
+        #[serde(default = "default_use_nupc")]
+        use_nupc: bool,
     },
     LoudnessMonitor,
     SpectrumAnalyzer {
@@ -1021,6 +1127,10 @@ pub enum PluginSettings {
     },
     ChannelMuteSolo {
         enabled: bool,
+        #[serde(default = "default_cms_dim_gain_db")]
+        dim_gain_db: f64,
+        #[serde(default = "default_cms_fade_ms")]
+        fade_ms: f64,
         channel_states: Vec<sotf_plugins::ChannelState>,
     },
     Matrix {
@@ -1145,6 +1255,8 @@ pub enum PluginSettings {
         use_captured_profile: bool,
         #[serde(default)]
         clear_profile: bool,
+        #[serde(default = "default_denoiser_algorithm")]
+        algorithm: usize,
     },
     Pnd {
         #[serde(default = "default_pnd_correction_strength")]
@@ -1153,6 +1265,10 @@ pub enum PluginSettings {
         analysis_window_ms: f64,
         #[serde(default = "default_pnd_drift_smoothing")]
         drift_smoothing: f64,
+        #[serde(default = "default_pnd_multi_channel_analysis")]
+        multi_channel_analysis: bool,
+        #[serde(default = "default_pnd_confidence_threshold")]
+        confidence_threshold: f64,
     },
     ABCompare {
         /// A/B mix: -1.0 = A only, 0.0 = 50/50, 1.0 = B only
@@ -1194,6 +1310,12 @@ pub enum PluginSettings {
         /// Path B config source file (for display only)
         #[serde(default)]
         path_b_file: String,
+        #[serde(default)]
+        phase_invert_a: bool,
+        #[serde(default)]
+        phase_invert_b: bool,
+        #[serde(default)]
+        difference_mode: bool,
     },
     BandSplit {
         /// Number of input channels
@@ -1231,6 +1353,8 @@ pub enum PluginSettings {
         phase_blend_low_hz: f64,
         #[serde(default = "default_downmix_phase_blend_high_hz")]
         phase_blend_high_hz: f64,
+        #[serde(default)]
+        itu_mode: bool,
     },
     MonoToStereo {
         #[serde(default = "default_mono_to_stereo_width")]
@@ -1245,6 +1369,8 @@ pub enum PluginSettings {
         decor_low_hz: f64,
         #[serde(default = "default_mono_to_stereo_decor_high_hz")]
         decor_high_hz: f64,
+        #[serde(default = "default_mono_to_stereo_freq_dependent")]
+        freq_dependent: bool,
     },
     Crossfeed {
         #[serde(default)]
@@ -1274,6 +1400,9 @@ pub enum PluginSettings {
         mb_mid_feed_db: f64,
         #[serde(default = "default_crossfeed_mb_high_feed_db")]
         mb_high_feed_db: f64,
+        // ITD
+        #[serde(default)]
+        itd_delay_ms: f64,
         // Auto gain
         #[serde(default)]
         autogain_enabled: bool,
@@ -1291,6 +1420,30 @@ pub enum PluginSettings {
         feedback: f64,
         #[serde(default = "default_delay_mix")]
         mix: f64,
+        #[serde(default)]
+        lfo_rate_hz: f64,
+        #[serde(default)]
+        lfo_depth_ms: f64,
+        #[serde(default)]
+        allpass_feedback: bool,
+    },
+    Aec {
+        #[serde(default = "default_aec_echo_tail_ms")]
+        echo_tail_ms: f64,
+        #[serde(default = "default_aec_step_size")]
+        step_size: f64,
+        #[serde(default = "default_aec_post_filter_enabled")]
+        post_filter_enabled: bool,
+    },
+    Beamformer {
+        #[serde(default = "default_beamformer_num_mics")]
+        num_mics: usize,
+        #[serde(default = "default_beamformer_mic_spacing_cm")]
+        mic_spacing_cm: f64,
+        #[serde(default = "default_beamformer_steer_angle_deg")]
+        steer_angle_deg: f64,
+        #[serde(default = "default_beamformer_type")]
+        beamformer_type: usize,
     },
 }
 
@@ -1324,6 +1477,8 @@ impl PluginSettings {
             Self::MonoToStereo { .. } => PluginType::MonoToStereo,
             Self::Crossfeed { .. } => PluginType::Crossfeed,
             Self::Delay { .. } => PluginType::Delay,
+            Self::Aec { .. } => PluginType::Aec,
+            Self::Beamformer { .. } => PluginType::Beamformer,
         }
     }
 
@@ -1334,6 +1489,8 @@ impl PluginSettings {
             Self::XTC { .. } => Some(2),
             Self::Crossfeed { .. } => Some(2),
             Self::MonoToStereo { .. } => Some(1),
+            Self::Aec { .. } => Some(2),
+            Self::Beamformer { num_mics, .. } => Some(*num_mics),
             _ => None,
         }
     }
@@ -1353,6 +1510,7 @@ impl PluginSettings {
                 mb_low_feed_db,
                 mb_mid_feed_db,
                 mb_high_feed_db,
+                itd_delay_ms,
                 autogain_enabled,
                 autogain_target_lufs,
                 autogain_max_gain_db,
@@ -1372,6 +1530,7 @@ impl PluginSettings {
                     "mb_low_feed_db": mb_low_feed_db,
                     "mb_mid_feed_db": mb_mid_feed_db,
                     "mb_high_feed_db": mb_high_feed_db,
+                    "itd_delay_ms": itd_delay_ms,
                     "autogain_enabled": autogain_enabled,
                     "autogain_target_lufs": autogain_target_lufs,
                     "autogain_max_gain_db": autogain_max_gain_db,
@@ -1382,12 +1541,44 @@ impl PluginSettings {
                 delay_ms,
                 feedback,
                 mix,
+                lfo_rate_hz,
+                lfo_depth_ms,
+                allpass_feedback,
             } => PluginConfig::new(
                 "delay",
                 json!({
                     "delay_ms": delay_ms,
                     "feedback": feedback,
                     "mix": mix,
+                    "lfo_rate_hz": lfo_rate_hz,
+                    "lfo_depth_ms": lfo_depth_ms,
+                    "allpass_feedback": allpass_feedback,
+                }),
+            ),
+            Self::Aec {
+                echo_tail_ms,
+                step_size,
+                post_filter_enabled,
+            } => PluginConfig::new(
+                "aec",
+                json!({
+                    "echo_tail_ms": *echo_tail_ms as f32,
+                    "step_size": *step_size as f32,
+                    "post_filter_enabled": post_filter_enabled,
+                }),
+            ),
+            Self::Beamformer {
+                num_mics,
+                mic_spacing_cm,
+                steer_angle_deg,
+                beamformer_type,
+            } => PluginConfig::new(
+                "beamformer",
+                json!({
+                    "num_mics": num_mics,
+                    "mic_spacing_cm": *mic_spacing_cm as f32,
+                    "steer_angle_deg": *steer_angle_deg as f32,
+                    "beamformer_type": beamformer_type,
                 }),
             ),
             Self::EQ {
@@ -1459,11 +1650,16 @@ impl PluginSettings {
                     )
                 }
             }
-            Self::Gain { channels, gain_db } => PluginConfig::new(
+            Self::Gain {
+                channels,
+                gain_db,
+                smoothing_ms,
+            } => PluginConfig::new(
                 "gain",
                 json!({
                     "channels": channels,
                     "gain_db": gain_db,
+                    "smoothing_ms": smoothing_ms,
                 }),
             ),
             Self::Upmixer {
@@ -1561,6 +1757,10 @@ impl PluginSettings {
                 auto_makeup,
                 link_channels,
                 sidechain_hpf_hz,
+                detection_mode,
+                lookahead_ms,
+                program_dependent_release,
+                measured_auto_makeup,
             } => PluginConfig::new(
                 "compressor",
                 json!({
@@ -1574,6 +1774,10 @@ impl PluginSettings {
                     "auto_makeup": auto_makeup,
                     "link_channels": link_channels,
                     "sidechain_hpf_hz": sidechain_hpf_hz,
+                    "detection_mode": detection_mode,
+                    "lookahead_ms": lookahead_ms,
+                    "program_dependent_release": program_dependent_release,
+                    "measured_auto_makeup": measured_auto_makeup,
                 }),
             ),
             Self::Limiter {
@@ -1581,6 +1785,8 @@ impl PluginSettings {
                 release_ms,
                 lookahead_ms,
                 soft,
+                true_peak,
+                dual_release,
                 mix,
             } => PluginConfig::new(
                 "limiter",
@@ -1589,6 +1795,8 @@ impl PluginSettings {
                     "release_ms": release_ms,
                     "lookahead_ms": lookahead_ms,
                     "soft": soft,
+                    "true_peak": true_peak,
+                    "dual_release": dual_release,
                     "mix": mix,
                 }),
             ),
@@ -1601,6 +1809,10 @@ impl PluginSettings {
                 mix,
                 link_channels,
                 sidechain_hpf_hz,
+                range_db,
+                hysteresis_db,
+                knee_db,
+                lookahead_ms,
             } => PluginConfig::new(
                 "gate",
                 json!({
@@ -1612,6 +1824,10 @@ impl PluginSettings {
                     "mix": mix,
                     "link_channels": link_channels,
                     "sidechain_hpf_hz": sidechain_hpf_hz,
+                    "range_db": range_db,
+                    "hysteresis_db": hysteresis_db,
+                    "knee_db": knee_db,
+                    "lookahead_ms": lookahead_ms,
                 }),
             ),
             Self::Expander {
@@ -1627,6 +1843,9 @@ impl PluginSettings {
                 link_channels,
                 sidechain_hpf_hz,
                 auto_makeup,
+                lookahead_ms,
+                detection_mode,
+                measured_auto_makeup,
             } => PluginConfig::new(
                 "expander",
                 json!({
@@ -1642,6 +1861,9 @@ impl PluginSettings {
                     "link_channels": link_channels,
                     "sidechain_hpf_hz": sidechain_hpf_hz,
                     "auto_makeup": auto_makeup,
+                    "lookahead_ms": lookahead_ms,
+                    "detection_mode": detection_mode,
+                    "measured_auto_makeup": measured_auto_makeup,
                 }),
             ),
             Self::MultibandCompressor {
@@ -1658,6 +1880,7 @@ impl PluginSettings {
                 knee_db,
                 mix,
                 link_channels,
+                per_band_lookahead_ms,
                 bands,
             } => PluginConfig::new(
                 "multiband_compressor",
@@ -1676,6 +1899,7 @@ impl PluginSettings {
                     "knee_db": knee_db,
                     "mix": mix,
                     "link_channels": link_channels,
+                    "per_band_lookahead_ms": per_band_lookahead_ms,
                     "bands": bands,
                 }),
             ),
@@ -1696,6 +1920,7 @@ impl PluginSettings {
                 hold_ms,
                 mix,
                 link_channels,
+                detection_mode,
                 bands,
             } => PluginConfig::new(
                 "multiband_expander",
@@ -1717,6 +1942,7 @@ impl PluginSettings {
                     "hold_ms": hold_ms,
                     "mix": mix,
                     "link_channels": link_channels,
+                    "detection_mode": detection_mode,
                     "bands": bands,
                 }),
             ),
@@ -1725,6 +1951,10 @@ impl PluginSettings {
                 low_gain,
                 high_freq,
                 high_gain,
+                mid_enabled,
+                mid_freq,
+                mid_gain,
+                mid_q,
                 auto_gain_enabled,
                 auto_gain_max_db,
                 auto_gain_smoothing_ms,
@@ -1735,6 +1965,10 @@ impl PluginSettings {
                     "low_gain": low_gain,
                     "high_freq": high_freq,
                     "high_gain": high_gain,
+                    "mid_enabled": mid_enabled,
+                    "mid_freq": mid_freq,
+                    "mid_gain": mid_gain,
+                    "mid_q": mid_q,
                     "auto_gain_enabled": auto_gain_enabled,
                     "auto_gain_max_db": auto_gain_max_db,
                     "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
@@ -1822,12 +2056,14 @@ impl PluginSettings {
                 ir_file,
                 mix,
                 gain_db,
+                use_nupc,
             } => PluginConfig::new(
                 "convolution",
                 json!({
                     "ir_file": ir_file,
                     "mix": mix,
                     "gain_db": gain_db,
+                    "use_nupc": use_nupc,
                 }),
             ),
             Self::LoudnessMonitor => PluginConfig::new("loudness_monitor", json!({})),
@@ -1851,11 +2087,15 @@ impl PluginSettings {
             ),
             Self::ChannelMuteSolo {
                 enabled,
+                dim_gain_db,
+                fade_ms,
                 channel_states,
             } => PluginConfig::new(
                 "channel_mute_solo",
                 json!({
                     "enabled": enabled,
+                    "dim_gain_db": dim_gain_db,
+                    "fade_ms": fade_ms,
                     "channel_states": channel_states,
                 }),
             ),
@@ -1997,6 +2237,7 @@ impl PluginSettings {
                 learn_noise,
                 use_captured_profile,
                 clear_profile,
+                algorithm,
             } => PluginConfig::new(
                 "denoiser",
                 json!({
@@ -2029,18 +2270,23 @@ impl PluginSettings {
                     "learn_noise": learn_noise,
                     "use_captured_profile": use_captured_profile,
                     "clear_profile": clear_profile,
+                    "algorithm": algorithm,
                 }),
             ),
             Self::Pnd {
                 correction_strength,
                 analysis_window_ms,
                 drift_smoothing,
+                multi_channel_analysis,
+                confidence_threshold,
             } => PluginConfig::new(
                 "pnd",
                 json!({
                     "correction_strength": correction_strength,
                     "analysis_window_ms": analysis_window_ms,
                     "drift_smoothing": drift_smoothing,
+                    "multi_channel_analysis": multi_channel_analysis,
+                    "confidence_threshold": confidence_threshold,
                 }),
             ),
             Self::ABCompare {
@@ -2055,6 +2301,9 @@ impl PluginSettings {
                 mix_transition_ms,
                 path_a_config,
                 path_b_config,
+                phase_invert_a,
+                phase_invert_b,
+                difference_mode,
                 ..
             } => {
                 let loudness_type_str = match loudness_type {
@@ -2083,6 +2332,9 @@ impl PluginSettings {
                         "mix_transition_ms": mix_transition_ms,
                         "path_a": path_a_val,
                         "path_b": path_b_val,
+                        "phase_invert_a": phase_invert_a,
+                        "phase_invert_b": phase_invert_b,
+                        "difference_mode": difference_mode,
                     }),
                 )
             }
@@ -2114,6 +2366,7 @@ impl PluginSettings {
                 phase_coherence,
                 phase_blend_low_hz,
                 phase_blend_high_hz,
+                itu_mode,
             } => PluginConfig::new(
                 "downmix",
                 json!({
@@ -2125,6 +2378,7 @@ impl PluginSettings {
                     "phase_coherence": phase_coherence,
                     "phase_blend_low_hz": phase_blend_low_hz,
                     "phase_blend_high_hz": phase_blend_high_hz,
+                    "itu_mode": itu_mode,
                 }),
             ),
             Self::MonoToStereo {
@@ -2134,6 +2388,7 @@ impl PluginSettings {
                 comp_eq_depth_db,
                 decor_low_hz,
                 decor_high_hz,
+                freq_dependent,
             } => PluginConfig::new(
                 "mono_to_stereo",
                 json!({
@@ -2143,6 +2398,7 @@ impl PluginSettings {
                     "comp_eq_depth_db": comp_eq_depth_db,
                     "decor_low_hz": decor_low_hz,
                     "decor_high_hz": decor_high_hz,
+                    "freq_dependent": freq_dependent,
                 }),
             ),
         }
@@ -2170,6 +2426,7 @@ impl PluginSettings {
             PluginType::Gain => Self::Gain {
                 channels: default_channels(),
                 gain_db: p(gain_specs::PARAMS, "gain_db").default_f64(),
+                smoothing_ms: p(gain_specs::PARAMS, "smoothing_ms").default_f64(),
             },
             PluginType::Upmixer => {
                 let u = upmixer_specs::PARAMS;
@@ -2228,6 +2485,10 @@ impl PluginSettings {
                     auto_makeup: p(c, "auto_makeup").default_bool(),
                     link_channels: p(c, "link_channels").default_bool(),
                     sidechain_hpf_hz: p(c, "sidechain_hpf_hz").default_f64(),
+                    detection_mode: default_compressor_detection_mode(),
+                    lookahead_ms: p(c, "lookahead_ms").default_f64(),
+                    program_dependent_release: p(c, "program_dependent_release").default_bool(),
+                    measured_auto_makeup: p(c, "measured_auto_makeup").default_bool(),
                 }
             }
             PluginType::Limiter => {
@@ -2237,6 +2498,8 @@ impl PluginSettings {
                     release_ms: p(l, "release").default_f64(),
                     lookahead_ms: p(l, "lookahead").default_f64(),
                     soft: p(l, "soft").default_bool(),
+                    true_peak: p(l, "true_peak").default_bool(),
+                    dual_release: p(l, "dual_release").default_bool(),
                     mix: p(l, "mix").default_f64(),
                 }
             }
@@ -2251,6 +2514,10 @@ impl PluginSettings {
                     mix: p(g, "mix").default_f64(),
                     link_channels: p(g, "link_channels").default_bool(),
                     sidechain_hpf_hz: p(g, "sidechain_hpf_hz").default_f64(),
+                    range_db: p(g, "range_db").default_f64(),
+                    hysteresis_db: p(g, "hysteresis_db").default_f64(),
+                    knee_db: p(g, "knee_db").default_f64(),
+                    lookahead_ms: p(g, "lookahead_ms").default_f64(),
                 }
             }
             PluginType::Expander => {
@@ -2265,9 +2532,12 @@ impl PluginSettings {
                     hysteresis_db: p(e, "hysteresis").default_f64(),
                     hold_ms: p(e, "hold").default_f64(),
                     mix: p(e, "mix").default_f64(),
+                    auto_makeup: p(e, "auto_makeup").default_bool(),
                     link_channels: p(e, "link_channels").default_bool(),
                     sidechain_hpf_hz: p(e, "sidechain_hpf_hz").default_f64(),
-                    auto_makeup: p(e, "auto_makeup").default_bool(),
+                    lookahead_ms: p(e, "lookahead_ms").default_f64(),
+                    detection_mode: default_expander_detection_mode(),
+                    measured_auto_makeup: p(e, "measured_auto_makeup").default_bool(),
                 }
             }
             PluginType::MultibandCompressor => {
@@ -2286,6 +2556,7 @@ impl PluginSettings {
                     knee_db: p(mc, "knee").default_f64(),
                     mix: p(mc, "mix").default_f64(),
                     link_channels: p(mc, "link_channels").default_bool(),
+                    per_band_lookahead_ms: p(mc, "per_band_lookahead_ms").default_f64(),
                     bands: Vec::new(),
                 }
             }
@@ -2308,6 +2579,7 @@ impl PluginSettings {
                     hold_ms: p(me, "hold").default_f64(),
                     mix: p(me, "mix").default_f64(),
                     link_channels: p(me, "link_channels").default_bool(),
+                    detection_mode: default_mb_expander_detection_mode(),
                     bands: Vec::new(),
                 }
             }
@@ -2318,6 +2590,10 @@ impl PluginSettings {
                     low_gain: p(lc, "low_gain").default_f64(),
                     high_freq: p(lc, "high_freq").default_f64(),
                     high_gain: p(lc, "high_gain").default_f64(),
+                    mid_enabled: p(lc, "mid_enabled").default_bool(),
+                    mid_freq: p(lc, "mid_freq").default_f64(),
+                    mid_gain: p(lc, "mid_gain").default_f64(),
+                    mid_q: p(lc, "mid_q").default_f64(),
                     auto_gain_enabled: p(lc, "auto_gain_enabled").default_bool(),
                     auto_gain_max_db: p(lc, "auto_gain_max_db").default_f64(),
                     auto_gain_smoothing_ms: p(lc, "auto_gain_smoothing_ms").default_f64(),
@@ -2369,6 +2645,7 @@ impl PluginSettings {
                     ir_file: String::new(),
                     mix: p(cv, "mix").default_f64(),
                     gain_db: p(cv, "gain_db").default_f64(),
+                    use_nupc: p(cv, "use_nupc").default_bool(),
                 }
             }
             PluginType::LoudnessMonitor => Self::LoudnessMonitor,
@@ -2382,6 +2659,8 @@ impl PluginSettings {
             },
             PluginType::ChannelMuteSolo => Self::ChannelMuteSolo {
                 enabled: pk(cms_specs::PARAMS, "enabled").default_bool(),
+                dim_gain_db: pk(cms_specs::PARAMS, "dim_gain_db").default_f64(),
+                fade_ms: pk(cms_specs::PARAMS, "fade_ms").default_f64(),
                 channel_states: vec![],
             },
             PluginType::Matrix => Self::Matrix {
@@ -2462,6 +2741,7 @@ impl PluginSettings {
                     learn_noise: p(d, "learn_noise").default_bool(),
                     use_captured_profile: p(d, "use_captured_profile").default_bool(),
                     clear_profile: p(d, "clear_profile").default_bool(),
+                    algorithm: p(d, "algorithm").default_usize(),
                 }
             }
             PluginType::Pnd => {
@@ -2470,6 +2750,8 @@ impl PluginSettings {
                     correction_strength: p(pn, "correction_strength").default_f64(),
                     analysis_window_ms: p(pn, "analysis_window_ms").default_f64(),
                     drift_smoothing: p(pn, "drift_smoothing").default_f64(),
+                    multi_channel_analysis: p(pn, "multi_channel_analysis").default_bool(),
+                    confidence_threshold: p(pn, "confidence_threshold").default_f64(),
                 }
             }
             PluginType::ABCompare => {
@@ -2488,6 +2770,9 @@ impl PluginSettings {
                     path_b_config: default_ab_path_config(),
                     path_a_file: String::new(),
                     path_b_file: String::new(),
+                    phase_invert_a: p(ab, "phase_invert_a").default_bool(),
+                    phase_invert_b: p(ab, "phase_invert_b").default_bool(),
+                    difference_mode: p(ab, "difference_mode").default_bool(),
                 }
             }
             PluginType::BandSplit => Self::BandSplit {
@@ -2510,6 +2795,7 @@ impl PluginSettings {
                     phase_coherence: p(dw, "phase_coherence").default_bool(),
                     phase_blend_low_hz: p(dw, "phase_blend_low_hz").default_f64(),
                     phase_blend_high_hz: p(dw, "phase_blend_high_hz").default_f64(),
+                    itu_mode: p(dw, "itu_mode").default_bool(),
                 }
             }
             PluginType::MonoToStereo => {
@@ -2521,6 +2807,7 @@ impl PluginSettings {
                     comp_eq_depth_db: p(ms, "comp_eq_depth_db").default_f64(),
                     decor_low_hz: p(ms, "decor_low_hz").default_f64(),
                     decor_high_hz: p(ms, "decor_high_hz").default_f64(),
+                    freq_dependent: p(ms, "freq_dependent").default_bool(),
                 }
             }
             PluginType::Crossfeed => {
@@ -2538,6 +2825,7 @@ impl PluginSettings {
                     mb_low_feed_db: p(cf, "mb_low_feed_db").default_f64(),
                     mb_mid_feed_db: p(cf, "mb_mid_feed_db").default_f64(),
                     mb_high_feed_db: p(cf, "mb_high_feed_db").default_f64(),
+                    itd_delay_ms: p(cf, "itd_delay_ms").default_f64(),
                     autogain_enabled: p(cf, "autogain_enabled").default_bool(),
                     autogain_target_lufs: p(cf, "autogain_target_lufs").default_f64(),
                     autogain_max_gain_db: p(cf, "autogain_max_gain_db").default_f64(),
@@ -2550,6 +2838,26 @@ impl PluginSettings {
                     delay_ms: p(d, "delay_ms").default_f64(),
                     feedback: p(d, "feedback").default_f64(),
                     mix: p(d, "mix").default_f64(),
+                    lfo_rate_hz: p(d, "lfo_rate_hz").default_f64(),
+                    lfo_depth_ms: p(d, "lfo_depth_ms").default_f64(),
+                    allpass_feedback: p(d, "allpass_feedback").default_bool(),
+                }
+            }
+            PluginType::Aec => {
+                let a = aec_specs::PARAMS;
+                Self::Aec {
+                    echo_tail_ms: p(a, "echo_tail_ms").default_f64(),
+                    step_size: p(a, "step_size").default_f64(),
+                    post_filter_enabled: p(a, "post_filter_enabled").default_bool(),
+                }
+            }
+            PluginType::Beamformer => {
+                let b = beamformer_specs::PARAMS;
+                Self::Beamformer {
+                    num_mics: p(b, "num_mics").default_usize(),
+                    mic_spacing_cm: p(b, "mic_spacing_cm").default_f64(),
+                    steer_angle_deg: p(b, "steer_angle_deg").default_f64(),
+                    beamformer_type: p(b, "beamformer_type").default_usize(),
                 }
             }
         }
@@ -3135,6 +3443,10 @@ impl PluginChain {
                             _ => 2,
                         },
                         gain_db: db,
+                        smoothing_ms: match &plugin.settings {
+                            PluginSettings::Gain { smoothing_ms, .. } => *smoothing_ms,
+                            _ => default_gain_smoothing_ms(),
+                        },
                     };
                 }
                 None => {
@@ -3921,11 +4233,12 @@ impl PluginChain {
                         });
                     }
                 }
-                PluginSettings::Gain { channels, gain_db } => {
+                PluginSettings::Gain { channels, gain_db, smoothing_ms } => {
                     if *channels != current_channels {
                         updated_settings = Some(PluginSettings::Gain {
                             channels: current_channels,
                             gain_db: *gain_db,
+                            smoothing_ms: *smoothing_ms,
                         });
                     }
                 }
@@ -3981,6 +4294,7 @@ impl PluginChain {
                     phase_coherence,
                     phase_blend_low_hz,
                     phase_blend_high_hz,
+                    itu_mode,
                 } => {
                     if *input_channels != current_channels {
                         updated_settings = Some(PluginSettings::Downmix {
@@ -3992,6 +4306,7 @@ impl PluginChain {
                             phase_coherence: *phase_coherence,
                             phase_blend_low_hz: *phase_blend_low_hz,
                             phase_blend_high_hz: *phase_blend_high_hz,
+                            itu_mode: *itu_mode,
                         });
                     }
                 }

@@ -23,18 +23,18 @@ Directory structure:
                 ...
 
 Usage:
-    python3 scripts/prepare_musdb18.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_musdb18.py \\
         --musdb-dir /Volumes/data/Shared/ML/musdb18 \\
         --output /Volumes/data/Shared/ML/musdb18_manifest.tsv
 
     # Use Silero VAD on vocals stem for finer segmentation:
-    python3 scripts/prepare_musdb18.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_musdb18.py \\
         --musdb-dir /Volumes/data/Shared/ML/musdb18 \\
         --output /Volumes/data/Shared/ML/musdb18_segments_manifest.tsv \\
         --method silero
 
     # Only include test split:
-    python3 scripts/prepare_musdb18.py \\
+    python3 crates/math-audio/math-dsp/ml/prepare_musdb18.py \\
         --musdb-dir /Volumes/data/Shared/ML/musdb18 \\
         --split test \\
         --output /Volumes/data/Shared/ML/musdb18_test_manifest.tsv

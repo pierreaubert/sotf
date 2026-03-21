@@ -179,6 +179,9 @@ pub fn encode_filter_type(filter_type: BiquadFilterType) -> f64 {
         BiquadFilterType::Bandpass => 6.0,
         BiquadFilterType::Notch => 7.0,
         BiquadFilterType::AllPass => 8.0,
+        BiquadFilterType::LowshelfOrf => 9.0,
+        BiquadFilterType::HighshelfOrf => 10.0,
+        BiquadFilterType::PeakMatched => 11.0,
     }
 }
 

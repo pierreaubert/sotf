@@ -24,5 +24,6 @@ sotf-plugin-eq = { workspace = true }
 sotf-plugin-gain = { workspace = true }
 sotf-plugin-gate = { workspace = true }
 sotf-plugin-limiter = { workspace = true }
+math-iir-fir = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

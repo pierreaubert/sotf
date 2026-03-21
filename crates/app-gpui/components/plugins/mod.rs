@@ -187,6 +187,7 @@ pub fn render_plugin_content(
         PluginSettings::ChannelMuteSolo {
             enabled,
             channel_states,
+            ..
         } => render_mute_solo_plugin(
             entity.clone(),
             plugin_idx,

@@ -29,11 +29,14 @@ use std::sync::Arc;
 
 use sotf_host::analyzer::RealTimeCache;
 
+pub mod backend;
+pub mod backend_rnnoise;
 mod config;
 mod fft;
 mod hiss;
 mod masking;
 mod mcra;
+mod multi_resolution;
 mod noise_profile;
 mod polyphonic;
 mod spectral_sub;
@@ -282,6 +285,18 @@ pub struct DenoiserPlugin {
     // PND Analyzers for polyphonic detection
     pnd_analyzers: Vec<PndAnalyzer>,
 
+    // Formant preservation
+    param_formant_preservation: ParameterId,
+    param_formant_strength: ParameterId,
+    formant_preserver: wiener::FormantPreserver,
+
+    // Multi-resolution dual-STFT processing
+    param_multi_resolution: ParameterId,
+    multi_resolution: bool,
+    /// `Some(state)` when multi_resolution is enabled, `None` otherwise.
+    /// Stored as an Option so that when disabled the extra RAM is not held.
+    multi_res_state: Option<multi_resolution::MultiResState>,
+
     // Data exposure for UI — cached to avoid allocations in get_data()
     avg_reduction_db: f32,
     learning_active: bool,
@@ -468,6 +483,14 @@ impl DenoiserPlugin {
 
             transient_suppressor: transient::TransientSuppressor::new(channels),
             pnd_analyzers,
+
+            param_formant_preservation: ParameterId::from("formant_preservation"),
+            param_formant_strength: ParameterId::from("formant_strength"),
+            formant_preserver: wiener::FormantPreserver::new(spectrum_size),
+
+            param_multi_resolution: ParameterId::from("multi_resolution"),
+            multi_resolution: pk(DN, "multi_resolution").default_bool(),
+            multi_res_state: None, // allocated on first enable
 
             avg_reduction_db: 0.0,
             learning_active: true,
@@ -661,6 +684,29 @@ impl DenoiserPlugin {
             )
             .with_group("Profile"),
             Parameter::new_bool("clear_profile", "Clear Profile", false).with_group("Profile"),
+            Parameter::new_bool(
+                "formant_preservation",
+                "Formant Preservation",
+                self.formant_preserver.enabled,
+            )
+            .with_group("Formant")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "formant_strength",
+                "Formant Strength",
+                self.formant_preserver.strength,
+                pk(DN, "formant_strength").min_f64() as f32,
+                pk(DN, "formant_strength").max_f64() as f32,
+            )
+            .with_group("Formant")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool(
+                "multi_resolution",
+                "Multi-Resolution",
+                self.multi_resolution,
+            )
+            .with_group("General")
+            .with_importance(ParameterImportance::Useful),
         ];
     }
 
@@ -739,6 +785,23 @@ impl DenoiserPlugin {
         plugin.floor_linear = 10.0_f32.powf(plugin.floor_db / 20.0);
         plugin.freq_smooth_kernel = Self::compute_smoothing_kernel(plugin.smoothing);
 
+        plugin.formant_preserver.enabled = params.formant_preservation;
+        plugin.formant_preserver.strength = params.formant_strength.clamp(
+            pk(DN, "formant_strength").min_f64() as f32,
+            pk(DN, "formant_strength").max_f64() as f32,
+        );
+
+        plugin.multi_resolution = params.multi_resolution;
+        if plugin.multi_resolution {
+            plugin.multi_res_state = Some(multi_resolution::MultiResState::new(
+                channels,
+                plugin.mcra_alpha_s,
+                plugin.mcra_alpha_p,
+                plugin.mcra_l,
+                plugin.mcra_delta,
+            ));
+        }
+
         plugin
     }
 
@@ -775,6 +838,13 @@ impl DenoiserPlugin {
             } else {
                 self.calculate_wiener_gains();
             }
+        }
+
+        // Phase 3b: Multi-resolution gain combination.
+        // The small-FFT path has already been fed samples and computed its own
+        // gains.  Blend them into `self.smoothed_gain` based on spectral flux.
+        if let Some(ref mrs) = self.multi_res_state {
+            mrs.combine_gains(&mut self.smoothed_gain, self.channels, self.spectrum_size);
         }
 
         // Phase 4: Apply gains and inverse FFT
@@ -1077,6 +1147,36 @@ impl InPlacePlugin for DenoiserPlugin {
             if trigger {
                 self.clear_noise_profile();
             }
+        } else if id == self.param_formant_preservation {
+            self.formant_preserver.enabled = value
+                .as_bool()
+                .unwrap_or(pk(DN, "formant_preservation").default_bool());
+        } else if id == self.param_formant_strength {
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "formant_strength").default_f32());
+            if val.is_finite() {
+                self.formant_preserver.strength = val.clamp(
+                    pk(DN, "formant_strength").min_f64() as f32,
+                    pk(DN, "formant_strength").max_f64() as f32,
+                );
+            }
+        } else if id == self.param_multi_resolution {
+            let enabled = value
+                .as_bool()
+                .unwrap_or(pk(DN, "multi_resolution").default_bool());
+            if enabled && self.multi_res_state.is_none() {
+                self.multi_res_state = Some(multi_resolution::MultiResState::new(
+                    self.channels,
+                    self.mcra_alpha_s,
+                    self.mcra_alpha_p,
+                    self.mcra_l,
+                    self.mcra_delta,
+                ));
+            } else if !enabled {
+                self.multi_res_state = None;
+            }
+            self.multi_resolution = enabled;
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -1135,6 +1235,12 @@ impl InPlacePlugin for DenoiserPlugin {
             Some(ParameterValue::Bool(self.use_captured_profile))
         } else if id == &self.param_clear_profile {
             Some(ParameterValue::Bool(false)) // Trigger-only, always reads as false
+        } else if id == &self.param_formant_preservation {
+            Some(ParameterValue::Bool(self.formant_preserver.enabled))
+        } else if id == &self.param_formant_strength {
+            Some(ParameterValue::Float(self.formant_preserver.strength))
+        } else if id == &self.param_multi_resolution {
+            Some(ParameterValue::Bool(self.multi_resolution))
         } else {
             None
         }
@@ -1183,6 +1289,15 @@ impl InPlacePlugin for DenoiserPlugin {
         self.output_write_pos = 0;
         self.output_accumulator_fill = 0;
 
+        // Reset formant preserver working buffers
+        self.formant_preserver.log_mag_scratch.fill(0.0);
+        self.formant_preserver.envelope.fill(0.0);
+
+        // Reset multi-resolution state
+        if let Some(ref mut mrs) = self.multi_res_state {
+            mrs.reset();
+        }
+
         self.avg_reduction_db = 0.0;
         self.learning_active = true;
     }
@@ -1225,6 +1340,25 @@ impl InPlacePlugin for DenoiserPlugin {
         // consume all input before writing any output to avoid data corruption.
         // Loop to handle cases where input exceeds remaining buffer space:
         // process FFT blocks to free space, then continue accumulating.
+        //
+        // When multi-resolution is enabled we simultaneously feed the same raw
+        // samples into the small-FFT accumulator.  We do this first so that the
+        // small-FFT gains are ready when process_fft_block() is called below.
+        if self.multi_res_state.is_some() {
+            // Feed the whole input block into the small-FFT path before
+            // the main loop starts.  `feed_and_process` is self-contained
+            // and does not touch `buffer` after reading — safe to call here.
+            let attack = self.attack_coeff;
+            let release = self.release_coeff;
+            let reduction = self.reduction_linear;
+            let floor = self.floor_linear;
+            let channels = self.channels;
+            if let Some(ref mut mrs) = self.multi_res_state {
+                mrs.feed_and_process(&buffer[..total_samples], channels,
+                                      attack, release, reduction, floor);
+            }
+        }
+
         let mut input_pos: usize = 0;
         while input_pos < total_samples {
             let space_available = self.input_buffer.len() - self.input_buffer_fill;

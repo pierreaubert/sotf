@@ -18,10 +18,10 @@ Outputs a TSV manifest compatible with train_vocal_detector.py --data-dirs.
 
 Usage:
     # Whole-file labels (original behavior):
-    python3 scripts/prepare_musan.py --musan-dir /path/to/musan --output musan_manifest.tsv
+    python3 crates/math-audio/math-dsp/ml/prepare_musan.py --musan-dir /path/to/musan --output musan_manifest.tsv
 
     # Segment-level labels via Silero VAD (recommended):
-    python3 scripts/prepare_musan.py --musan-dir /path/to/musan --output musan_segments_manifest.tsv --segment
+    python3 crates/math-audio/math-dsp/ml/prepare_musan.py --musan-dir /path/to/musan --output musan_segments_manifest.tsv --segment
 
 Download MUSAN:
     wget https://openslr.org/resources/17/musan.tar.gz

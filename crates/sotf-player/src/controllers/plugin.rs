@@ -1553,6 +1553,7 @@ fn adjust_plugin_param(
             mb_low_feed_db,
             mb_mid_feed_db,
             mb_high_feed_db,
+            itd_delay_ms,
             autogain_enabled,
             autogain_target_lufs,
             autogain_max_gain_db,

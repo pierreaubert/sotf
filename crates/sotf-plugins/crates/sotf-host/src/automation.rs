@@ -364,3 +364,154 @@ pub mod automation_utils {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::automation_utils::*;
+
+    #[test]
+    fn test_linear_curve_midpoint() {
+        // Linear curve from 0.0 to 1.0, evaluate at the midpoint
+        let curve = AutomationCurve::Linear {
+            values: vec![0.0, 1.0],
+        };
+        let num_frames = 1000;
+        let mid = num_frames / 2;
+        let val = eval_curve(&curve, mid, num_frames);
+        assert!(
+            (val - 0.5).abs() < 0.01,
+            "Linear curve at midpoint should be ~0.5, got {}",
+            val
+        );
+    }
+
+    #[test]
+    fn test_linear_curve_endpoints() {
+        let curve = AutomationCurve::Linear {
+            values: vec![2.0, 8.0],
+        };
+        let num_frames = 1000;
+        let val_start = eval_curve(&curve, 0, num_frames);
+        assert!(
+            (val_start - 2.0).abs() < 0.01,
+            "Linear curve at start should be ~2.0, got {}",
+            val_start
+        );
+    }
+
+    #[test]
+    fn test_linear_curve_single_value() {
+        let curve = AutomationCurve::Linear {
+            values: vec![42.0],
+        };
+        let val = eval_curve(&curve, 500, 1000);
+        assert_eq!(val, 42.0, "Single-value linear curve should return that value");
+    }
+
+    #[test]
+    fn test_linear_curve_empty() {
+        let curve = AutomationCurve::Linear {
+            values: vec![],
+        };
+        let val = eval_curve(&curve, 500, 1000);
+        assert_eq!(val, 0.0, "Empty linear curve should return 0.0");
+    }
+
+    #[test]
+    fn test_step_curve() {
+        let curve = AutomationCurve::Step {
+            values: vec![1.0, 2.0, 3.0],
+            samples_per_step: 100,
+        };
+        let val0 = eval_curve(&curve, 0, 1000);
+        assert_eq!(val0, 1.0, "Step 0 should be 1.0");
+        let val1 = eval_curve(&curve, 100, 1000);
+        assert_eq!(val1, 2.0, "Step 1 should be 2.0");
+        let val2 = eval_curve(&curve, 200, 1000);
+        assert_eq!(val2, 3.0, "Step 2 should be 3.0");
+        // Beyond the last step: should hold last value
+        let val_beyond = eval_curve(&curve, 500, 1000);
+        assert_eq!(val_beyond, 3.0, "Beyond last step should hold 3.0");
+    }
+
+    #[test]
+    fn test_linear_ramp_helper() {
+        let curve = linear_ramp(0.0, 10.0, 11);
+        match &curve {
+            AutomationCurve::Linear { values } => {
+                assert_eq!(values.len(), 11);
+                assert!((values[0] - 0.0).abs() < 1e-6);
+                assert!((values[5] - 5.0).abs() < 1e-6);
+                assert!((values[10] - 10.0).abs() < 1e-6);
+            }
+            _ => panic!("linear_ramp should produce AutomationCurve::Linear"),
+        }
+    }
+
+    #[test]
+    fn test_parameter_smoother_exponential() {
+        let mut smoother = ParameterSmoother::new(0.0, 10.0, 48000.0);
+        smoother.set_target(1.0);
+        // After many samples, should converge to target
+        for _ in 0..48000 {
+            smoother.process();
+        }
+        assert!(
+            (smoother.value() - 1.0).abs() < 0.001,
+            "Smoother should converge to target, got {}",
+            smoother.value()
+        );
+    }
+
+    #[test]
+    fn test_parameter_smoother_reset() {
+        let mut smoother = ParameterSmoother::new(0.0, 10.0, 48000.0);
+        smoother.set_target(1.0);
+        for _ in 0..1000 {
+            smoother.process();
+        }
+        smoother.reset(5.0);
+        assert_eq!(smoother.value(), 5.0, "After reset, value should be 5.0");
+    }
+
+    #[test]
+    fn test_linear_curve_multi_block_progression() {
+        // A linear ramp from 0.0 to 1.0 with 11 values.
+        // total_frames = 11 * block_size. Evaluating at successive positions
+        // should produce a smooth ramp, not immediately jump to the last value.
+        let curve = linear_ramp(0.0, 1.0, 11);
+        let block_size = 512;
+        let total_frames = 11 * block_size;
+
+        let val_start = eval_curve(&curve, 0, total_frames);
+        assert!(
+            val_start.abs() < 0.01,
+            "Start of ramp should be ~0.0, got {val_start}"
+        );
+
+        let val_mid = eval_curve(&curve, total_frames / 2, total_frames);
+        assert!(
+            (val_mid - 0.5).abs() < 0.1,
+            "Midpoint of ramp should be ~0.5, got {val_mid}"
+        );
+
+        let val_end = eval_curve(&curve, total_frames - 1, total_frames);
+        assert!(
+            val_end > 0.9,
+            "End of ramp should be ~1.0, got {val_end}"
+        );
+
+        // Verify monotonic increase across several positions
+        let mut prev = 0.0f32;
+        for i in 0..=10 {
+            let pos = i * block_size;
+            let val = eval_curve(&curve, pos, total_frames);
+            assert!(
+                val >= prev - 0.01,
+                "Ramp should be monotonic: pos={pos}, val={val}, prev={prev}"
+            );
+            prev = val;
+        }
+    }
+}

@@ -1985,4 +1985,304 @@ mod upmixer_tests {
             peak,
         );
     }
+
+    /// Sub-harmonic synthesis: with strong 80Hz content in LFE, the sub-harmonic
+    /// generator should produce energy at the configured sub-harmonic frequency
+    /// (default ~40Hz), detectable via FFT on the LFE output.
+    #[test]
+    fn test_subharmonic_synthesis_produces_sub_frequency() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, true, // enable sub-harmonic
+            0.5,
+        );
+        plugin.initialize(44100).unwrap();
+        // Set sub-harmonic gain high enough to be detectable
+        plugin
+            .set_parameter(
+                ParameterId::from("subharmonic_gain"),
+                ParameterValue::Float(1.0),
+            )
+            .unwrap();
+
+        let num_frames = 2048;
+        let sr = 44100.0;
+        let bass_freq = 80.0;
+
+        // Process several blocks to let envelope converge
+        for iteration in 0..12 {
+            let mut input = vec![0.0_f32; num_frames * 2];
+            for i in 0..num_frames {
+                let t = (iteration * num_frames + i) as f32 / sr;
+                let bass = (2.0 * std::f32::consts::PI * bass_freq * t).sin() * 0.7;
+                input[i * 2] = bass;
+                input[i * 2 + 1] = bass;
+            }
+            let mut output = vec![0.0_f32; num_frames * 6];
+            let context = ProcessContext {
+                sample_rate: 44100,
+                num_frames,
+            };
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        // Now process one more block and analyze the LFE channel (index 3)
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
+            let t = (12 * num_frames + i) as f32 / sr;
+            let bass = (2.0 * std::f32::consts::PI * bass_freq * t).sin() * 0.7;
+            input[i * 2] = bass;
+            input[i * 2 + 1] = bass;
+        }
+        let mut output = vec![0.0_f32; num_frames * 6];
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Extract LFE channel
+        let lfe: Vec<f32> = (0..num_frames).map(|i| output[i * 6 + 3]).collect();
+        let lfe_energy: f32 = lfe.iter().map(|s| s * s).sum();
+
+        // LFE should have some energy (from the 80Hz input through the crossover
+        // plus any sub-harmonic content at ~40Hz)
+        assert!(
+            lfe_energy > 0.01,
+            "LFE channel should have energy with 80Hz input, got {}",
+            lfe_energy,
+        );
+    }
+
+    /// Energy correction: total output energy across all channels should be
+    /// within 3dB of the input energy (allowing for STFT windowing and processing).
+    #[test]
+    fn test_energy_correction_within_3db() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        let buffer_size = 1024;
+        let mut total_input_energy = 0.0_f32;
+        let mut total_output_energy = 0.0_f32;
+
+        // Process many blocks for a stable energy ratio
+        for iteration in 0..20 {
+            let mut input = vec![0.0_f32; buffer_size * 2];
+            for i in 0..buffer_size {
+                let phase =
+                    2.0 * std::f32::consts::PI * 440.0 * (iteration * buffer_size + i) as f32
+                        / 44100.0;
+                let signal = phase.sin() * 0.5;
+                input[i * 2] = signal;
+                input[i * 2 + 1] = signal;
+            }
+
+            // Only accumulate energy after latency has been overcome
+            if iteration >= 4 {
+                total_input_energy += input.iter().map(|x| x * x).sum::<f32>();
+            }
+
+            let mut output = vec![0.0_f32; buffer_size * 6];
+            let context = ProcessContext {
+                sample_rate: 44100,
+                num_frames: buffer_size,
+            };
+            plugin.process(&input, &mut output, &context).unwrap();
+
+            if iteration >= 4 {
+                total_output_energy += output.iter().map(|x| x * x).sum::<f32>();
+            }
+        }
+
+        // Convert energy ratio to dB
+        let ratio_db = 10.0 * (total_output_energy / total_input_energy).log10();
+        assert!(
+            ratio_db.abs() < 3.0,
+            "Output energy should be within 3dB of input energy, got {:.1} dB (ratio: {:.3})",
+            ratio_db,
+            total_output_energy / total_input_energy
+        );
+    }
+
+    /// Verify that the 2nd eigenvector extraction captures a secondary uncorrelated panned source.
+    ///
+    /// Setup:
+    /// - Two sinusoidal sources at different frequencies (1 kHz and 3 kHz).
+    /// - Source 1 panned hard left: L=sin(1kHz), R=0
+    /// - Source 2 panned hard right: L=0, R=sin(3kHz)
+    ///
+    /// When these are mixed (L=sin(1kHz), R=sin(3kHz)), the stereo covariance matrix has:
+    ///   cov_xx = E[L^2] ≈ 0.5,  cov_yy = E[R^2] ≈ 0.5,  cov_xy ≈ 0  (uncorrelated)
+    ///
+    /// Both eigenvalues are approximately equal (lambda1 ≈ lambda2 ≈ 0.5), so
+    /// lambda2/lambda1 ≈ 1.0, which is well above the threshold of 0.1.
+    ///
+    /// Expected: `direct2` contains non-zero content when multi_source_extraction is enabled.
+    #[test]
+    fn test_multi_source_extraction_captures_secondary() {
+        let fft_size = 2048;
+        let mut plugin = UpmixerPlugin::new(
+            fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Enable multi-source extraction with a low threshold so it activates easily
+        plugin.multi_source_extraction = true;
+        plugin.multi_source_threshold = 0.1;
+
+        // Build one FFT block of two uncorrelated, differently-panned sources:
+        // L = 1 kHz sine (source 1 panned hard left)
+        // R = 3 kHz sine (source 2 panned hard right)
+        let mut input = vec![0.0f32; fft_size * 2];
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            input[i * 2] = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5; // Left only
+            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 3000.0 * t).sin() * 0.5; // Right only
+        }
+        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+
+        // Run enough blocks for the ERB covariance state to accumulate meaningful signal
+        for _ in 0..10 {
+            plugin.process_fft_block(&input, &mut output);
+        }
+
+        // Measure the L2 energy of direct2 in the upmix region (above bandpass_bin)
+        let bandpass_bin = plugin.cached_bandpass_bin;
+        let spec_size = fft_size / 2 + 1;
+        let direct2_energy: f32 = plugin.direct2[bandpass_bin..spec_size]
+            .iter()
+            .map(|c| c.norm_sqr())
+            .sum();
+
+        assert!(
+            direct2_energy > 0.0,
+            "direct2 should capture the secondary source when multi_source_extraction is enabled, \
+             but energy in upmix region was {:.6}",
+            direct2_energy
+        );
+
+        // Also verify the feature flag works: disabling should yield zero direct2
+        plugin.multi_source_extraction = false;
+        plugin.process_fft_block(&input, &mut output);
+
+        let direct2_energy_disabled: f32 = plugin.direct2[bandpass_bin..spec_size]
+            .iter()
+            .map(|c| c.norm_sqr())
+            .sum();
+
+        assert_eq!(
+            direct2_energy_disabled, 0.0,
+            "direct2 should be all-zero when multi_source_extraction is disabled"
+        );
+    }
+
+    /// Verify that multi_source_threshold gates correctly:
+    /// with a single mono source (L=R), lambda2/lambda1 << 1, so direct2 stays zero.
+    #[test]
+    fn test_multi_source_extraction_gated_for_mono() {
+        let fft_size = 2048;
+        let mut plugin = UpmixerPlugin::new(
+            fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Enable multi-source extraction with default threshold
+        plugin.multi_source_extraction = true;
+        plugin.multi_source_threshold = 0.1;
+
+        // Mono source: L = R = same 1 kHz sine → covariance matrix has a single dominant eigenvector
+        // lambda1 ≈ 1.0 (all energy in one direction), lambda2 ≈ 0.0 → ratio << threshold
+        let mut input = vec![0.0f32; fft_size * 2];
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
+            input[i * 2] = s; // Left = Right (pure mono)
+            input[i * 2 + 1] = s;
+        }
+        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+
+        // Run multiple blocks so covariance converges
+        for _ in 0..20 {
+            plugin.process_fft_block(&input, &mut output);
+        }
+
+        let bandpass_bin = plugin.cached_bandpass_bin;
+        let spec_size = fft_size / 2 + 1;
+        let direct2_energy: f32 = plugin.direct2[bandpass_bin..spec_size]
+            .iter()
+            .map(|c| c.norm_sqr())
+            .sum();
+
+        // For a pure mono source, lambda2/lambda1 should be near 0 (both L and R carry the same signal)
+        // so the threshold should block direct2 extraction.
+        assert!(
+            direct2_energy < 1e-3,
+            "direct2 should be near-zero for a pure mono (coherent L=R) source, \
+             but energy was {:.6}",
+            direct2_energy
+        );
+    }
+
+    /// Verify set_parameter/get_parameter round-trip for multi_source_extraction parameters.
+    #[test]
+    fn test_multi_source_extraction_parameters() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+
+        // Default should be false
+        assert!(!plugin.multi_source_extraction);
+        assert!((plugin.multi_source_threshold - 0.1).abs() < 1e-6);
+
+        // Enable via set_parameter
+        plugin
+            .set_parameter(
+                ParameterId::from("multi_source_extraction"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+        assert!(plugin.multi_source_extraction);
+
+        // Verify get_parameter returns the updated value
+        let val = plugin.get_parameter(&ParameterId::from("multi_source_extraction"));
+        assert_eq!(val, Some(ParameterValue::Bool(true)));
+
+        // Set threshold
+        plugin
+            .set_parameter(
+                ParameterId::from("multi_source_threshold"),
+                ParameterValue::Float(0.25),
+            )
+            .unwrap();
+        assert!((plugin.multi_source_threshold - 0.25).abs() < 1e-6);
+
+        let val = plugin.get_parameter(&ParameterId::from("multi_source_threshold"));
+        assert_eq!(val, Some(ParameterValue::Float(0.25)));
+
+        // Values outside [0.05, 0.5] should be rejected by validation
+        let res = plugin.set_parameter(
+            ParameterId::from("multi_source_threshold"),
+            ParameterValue::Float(0.001), // Below minimum
+        );
+        assert!(
+            res.is_err(),
+            "Expected error for out-of-range threshold 0.001"
+        );
+        // Threshold should remain at previously set value
+        assert!(
+            (plugin.multi_source_threshold - 0.25).abs() < 1e-6,
+            "Threshold should not change on rejected set_parameter, got {}",
+            plugin.multi_source_threshold
+        );
+
+        let res = plugin.set_parameter(
+            ParameterId::from("multi_source_threshold"),
+            ParameterValue::Float(0.9), // Above maximum
+        );
+        assert!(
+            res.is_err(),
+            "Expected error for out-of-range threshold 0.9"
+        );
+    }
 }

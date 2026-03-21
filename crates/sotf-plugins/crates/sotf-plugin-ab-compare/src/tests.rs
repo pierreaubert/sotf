@@ -1140,3 +1140,166 @@ fn test_latency_compensation_no_latency() {
     assert_eq!(plugin.delay_b.len, 0);
     assert_eq!(plugin.latency_samples(), 0);
 }
+
+// ========================================================================
+// Difference Mode Tests
+// ========================================================================
+
+#[test]
+fn test_difference_mode_identical_paths_silence() {
+    // Both paths are identical (no processing) -> A - B should be ~silence
+    let params = ABComparePluginParams {
+        path_a: PathConfig::None,
+        path_b: PathConfig::None,
+        difference_mode: true,
+        auto_gain_enabled: false,
+        mix_transition_ms: 5.0,
+        ..Default::default()
+    };
+
+    let mut plugin = ABComparePlugin::from_params(2, params).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let num_frames = 4800;
+    let input = generate_sine_input(num_frames, 2);
+    let mut output = vec![0.0; num_frames * 2];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    // Process several blocks for smoothers to settle
+    for _ in 0..5 {
+        plugin.process(&input, &mut output, &context).unwrap();
+    }
+
+    // A - B with identical paths should produce near-silence
+    let rms: f32 = output.iter().map(|s| s * s).sum::<f32>() / output.len() as f32;
+    assert!(
+        rms < 1e-6,
+        "Difference of identical paths should be ~silence, RMS={}",
+        rms
+    );
+}
+
+#[test]
+fn test_difference_mode_a_sine_b_silence() {
+    // Path A = pass-through (sine), Path B = muted (gain -100dB)
+    // Difference mode: output = A - B ≈ A
+    let params = ABComparePluginParams {
+        path_a: PathConfig::None, // pass-through
+        path_b: PathConfig::Plugin {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"gain_db": -100.0}),
+        },
+        difference_mode: true,
+        auto_gain_enabled: false,
+        mix_transition_ms: 5.0,
+        ..Default::default()
+    };
+
+    let mut plugin = ABComparePlugin::from_params(2, params).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let num_frames = 4800;
+    let input = generate_sine_input(num_frames, 2);
+    let mut output = vec![0.0; num_frames * 2];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    // Process several blocks for smoothers to settle
+    for _ in 0..5 {
+        plugin.process(&input, &mut output, &context).unwrap();
+    }
+
+    // Output ≈ A (since B is ~0). Compare last block's RMS to input RMS.
+    let input_rms: f32 = input.iter().map(|s| s * s).sum::<f32>() / input.len() as f32;
+    let output_rms: f32 = output.iter().map(|s| s * s).sum::<f32>() / output.len() as f32;
+    let ratio = output_rms / input_rms;
+    assert!(
+        (ratio - 1.0).abs() < 0.1,
+        "Difference output should match A when B≈0, RMS ratio={}",
+        ratio
+    );
+}
+
+// ========================================================================
+// Band Mask Tests
+// ========================================================================
+
+#[test]
+fn test_band_mask_reduces_out_of_band_energy() {
+    // Band mask 500-2000 Hz: output should have reduced energy below 500Hz
+    // compared to the unmasked full-spectrum case.
+    let channels = 1;
+
+    // Unmasked reference
+    let params_full = ABComparePluginParams {
+        path_a: PathConfig::None,
+        path_b: PathConfig::None,
+        auto_gain_enabled: false,
+        band_mask_low_hz: 20.0,
+        band_mask_high_hz: 20000.0,
+        mix_transition_ms: 5.0,
+        ..Default::default()
+    };
+    let mut plugin_full = ABComparePlugin::from_params(channels, params_full).unwrap();
+    plugin_full.initialize(48000).unwrap();
+
+    // Masked version
+    let params_masked = ABComparePluginParams {
+        path_a: PathConfig::None,
+        path_b: PathConfig::None,
+        auto_gain_enabled: false,
+        band_mask_low_hz: 500.0,
+        band_mask_high_hz: 2000.0,
+        mix_transition_ms: 5.0,
+        ..Default::default()
+    };
+    let mut plugin_masked = ABComparePlugin::from_params(channels, params_masked).unwrap();
+    plugin_masked.initialize(48000).unwrap();
+
+    // Generate broadband signal (white-ish noise via simple LCG)
+    let num_frames = 48000; // 1 second
+    let mut input = vec![0.0f32; num_frames * channels];
+    let mut seed: u32 = 12345;
+    for s in input.iter_mut() {
+        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        *s = (seed as f32 / u32::MAX as f32) * 2.0 - 1.0;
+    }
+    // Scale down to avoid auto-gain artifacts
+    for s in input.iter_mut() {
+        *s *= 0.3;
+    }
+
+    let mut output_full = vec![0.0; num_frames * channels];
+    let mut output_masked = vec![0.0; num_frames * channels];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    // Process several blocks
+    for _ in 0..3 {
+        plugin_full
+            .process(&input, &mut output_full, &context)
+            .unwrap();
+        plugin_masked
+            .process(&input, &mut output_masked, &context)
+            .unwrap();
+    }
+
+    // The masked output should have less total energy than the full output
+    // because the band mask removes frequencies outside 500-2000 Hz
+    let energy_full: f32 = output_full.iter().map(|s| s * s).sum();
+    let energy_masked: f32 = output_masked.iter().map(|s| s * s).sum();
+
+    assert!(
+        energy_masked < energy_full * 0.8,
+        "Band mask should reduce energy: full={}, masked={}",
+        energy_full,
+        energy_masked
+    );
+}

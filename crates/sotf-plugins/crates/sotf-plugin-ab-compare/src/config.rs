@@ -116,6 +116,26 @@ pub struct ABComparePluginParams {
     /// Mix transition time in ms
     #[serde(default = "default_mix_transition_ms")]
     pub mix_transition_ms: f32,
+
+    /// Invert phase of path A output (multiply by -1.0)
+    #[serde(default)]
+    pub phase_invert_a: bool,
+
+    /// Invert phase of path B output (multiply by -1.0)
+    #[serde(default)]
+    pub phase_invert_b: bool,
+
+    /// Difference mode: output A - B instead of crossfade
+    #[serde(default)]
+    pub difference_mode: bool,
+
+    /// Band mask low frequency in Hz (highpass cutoff for comparison output)
+    #[serde(default = "default_band_mask_low_hz")]
+    pub band_mask_low_hz: f32,
+
+    /// Band mask high frequency in Hz (lowpass cutoff for comparison output)
+    #[serde(default = "default_band_mask_high_hz")]
+    pub band_mask_high_hz: f32,
 }
 
 fn default_auto_gain_enabled() -> bool {
@@ -134,6 +154,14 @@ fn default_mix_transition_ms() -> f32 {
     50.0
 }
 
+fn default_band_mask_low_hz() -> f32 {
+    20.0
+}
+
+fn default_band_mask_high_hz() -> f32 {
+    20000.0
+}
+
 impl Default for ABComparePluginParams {
     fn default() -> Self {
         Self {
@@ -148,6 +176,11 @@ impl Default for ABComparePluginParams {
             gain_smoothing_ms: 100.0,
             max_auto_gain_db: 12.0,
             mix_transition_ms: 50.0,
+            phase_invert_a: false,
+            phase_invert_b: false,
+            difference_mode: false,
+            band_mask_low_hz: 20.0,
+            band_mask_high_hz: 20000.0,
         }
     }
 }

@@ -10,7 +10,7 @@ fn test_pnd_instantiation() {
 
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
-    assert_eq!(plugin.info().name, "PND Varispeed");
+    assert_eq!(plugin.info().name, "Pitch Drift Corrector");
 
     plugin.initialize(44100).unwrap();
 }

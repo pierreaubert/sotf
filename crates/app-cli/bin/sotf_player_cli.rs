@@ -338,6 +338,22 @@ struct CompressorArgs {
         default_value = "80.0"
     )]
     sidechain_hpf_hz: f32,
+
+    /// Compressor detection mode (peak or rms)
+    #[arg(long = "compressor-detection-mode", default_value = "peak")]
+    detection_mode: String,
+
+    /// Compressor lookahead time in ms (0 to 20)
+    #[arg(long = "compressor-lookahead-ms", default_value = "0.0")]
+    lookahead_ms: f32,
+
+    /// Enable compressor program-dependent release
+    #[arg(long = "compressor-program-dependent-release", default_value_t = false)]
+    program_dependent_release: bool,
+
+    /// Enable compressor measured auto-makeup gain
+    #[arg(long = "compressor-measured-auto-makeup", default_value_t = false)]
+    measured_auto_makeup: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -393,6 +409,22 @@ struct GateArgs {
         default_value = "0.0"
     )]
     sidechain_hpf_hz: f32,
+
+    /// Gate range in dB (0 to 80)
+    #[arg(long = "gate-range-db", default_value = "80.0")]
+    range_db: f32,
+
+    /// Gate hysteresis in dB (0 to 12)
+    #[arg(long = "gate-hysteresis-db", default_value = "0.0")]
+    hysteresis_db: f32,
+
+    /// Gate knee width in dB (0 to 20)
+    #[arg(long = "gate-knee-db", default_value = "0.0")]
+    knee_db: f32,
+
+    /// Gate lookahead time in ms (0 to 20)
+    #[arg(long = "gate-lookahead-ms", default_value = "0.0")]
+    lookahead_ms: f32,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -428,6 +460,14 @@ struct LimiterArgs {
     /// Limiter wet/dry mix (0.0 to 1.0)
     #[arg(id = "limiter_mix", long = "limiter-mix", default_value = "1.0")]
     mix: f32,
+
+    /// Enable limiter true-peak detection
+    #[arg(long = "limiter-true-peak", default_value_t = false)]
+    true_peak: bool,
+
+    /// Enable limiter dual-release (adaptive fast/slow release)
+    #[arg(long = "limiter-dual-release", default_value_t = false)]
+    dual_release: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -515,6 +555,18 @@ struct ExpanderArgs {
         default_value = "80.0"
     )]
     sidechain_hpf_hz: f32,
+
+    /// Expander lookahead time in ms (0 to 20)
+    #[arg(long = "expander-lookahead-ms", default_value = "0.0")]
+    lookahead_ms: f32,
+
+    /// Expander detection mode (peak or rms)
+    #[arg(long = "expander-detection-mode", default_value = "peak")]
+    detection_mode: String,
+
+    /// Enable expander measured auto-makeup gain
+    #[arg(long = "expander-measured-auto-makeup", default_value_t = false)]
+    measured_auto_makeup: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -1278,6 +1330,10 @@ struct DownmixArgs {
     /// Downmix phase blend high frequency in Hz
     #[arg(long = "downmix-phase-blend-high-hz", default_value = "2000.0")]
     phase_blend_high_hz: f32,
+
+    /// Enable ITU-R BS.775 standard downmix mode
+    #[arg(long = "downmix-itu-mode", default_value_t = false)]
+    itu_mode: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -1384,6 +1440,10 @@ struct CrossfeedArgs {
     /// Crossfeed auto-gain smoothing time in ms
     #[arg(long = "crossfeed-autogain-smoothing-ms", default_value = "100.0")]
     autogain_smoothing_ms: f32,
+
+    /// Crossfeed ITD (interaural time delay) in ms
+    #[arg(long = "crossfeed-itd-delay-ms", default_value = "0.0")]
+    itd_delay_ms: f32,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -1618,6 +1678,10 @@ fn create_compressor_plugin_config(args: &CompressorArgs) -> Result<PluginConfig
             "auto_makeup": args.auto_makeup,
             "link_channels": !args.unlink_channels,
             "sidechain_hpf_hz": args.sidechain_hpf_hz,
+            "detection_mode": args.detection_mode,
+            "lookahead_ms": args.lookahead_ms,
+            "program_dependent_release": args.program_dependent_release,
+            "measured_auto_makeup": args.measured_auto_makeup,
         }),
     })
 }
@@ -1635,6 +1699,10 @@ fn create_gate_plugin_config(args: &GateArgs) -> Result<PluginConfig, String> {
             "mix": args.mix,
             "link_channels": !args.unlink_channels,
             "sidechain_hpf_hz": args.sidechain_hpf_hz,
+            "range_db": args.range_db,
+            "hysteresis_db": args.hysteresis_db,
+            "knee_db": args.knee_db,
+            "lookahead_ms": args.lookahead_ms,
         }),
     })
 }
@@ -1649,6 +1717,8 @@ fn create_limiter_plugin_config(args: &LimiterArgs) -> Result<PluginConfig, Stri
             "lookahead_ms": args.lookahead_ms,
             "soft": args.soft,
             "mix": args.mix,
+            "true_peak": args.true_peak,
+            "dual_release": args.dual_release,
         }),
     })
 }
@@ -1669,6 +1739,9 @@ fn create_expander_plugin_config(args: &ExpanderArgs) -> Result<PluginConfig, St
             "mix": args.mix,
             "link_channels": !args.unlink_channels,
             "sidechain_hpf_hz": args.sidechain_hpf_hz,
+            "lookahead_ms": args.lookahead_ms,
+            "detection_mode": args.detection_mode,
+            "measured_auto_makeup": args.measured_auto_makeup,
         }),
     })
 }
@@ -1937,6 +2010,7 @@ fn create_downmix_plugin_config(
             "phase_coherence": args.phase_coherence,
             "phase_blend_low_hz": args.phase_blend_low_hz,
             "phase_blend_high_hz": args.phase_blend_high_hz,
+            "itu_mode": args.itu_mode,
         }),
     })
 }
@@ -2008,6 +2082,7 @@ fn create_crossfeed_plugin_config(args: &CrossfeedArgs) -> Result<PluginConfig, 
             "autogain_target_lufs": args.autogain_target_lufs,
             "autogain_max_gain_db": args.autogain_max_gain_db,
             "autogain_smoothing_ms": args.autogain_smoothing_ms,
+            "itd_delay_ms": args.itd_delay_ms,
         }),
     })
 }
@@ -2896,6 +2971,10 @@ fn build_rack_mode_plugins(
                             low_gain: lc.low_boost,
                             high_freq: 10000.0,
                             high_gain: lc.high_boost,
+                            mid_enabled: true,
+                            mid_freq: 3000.0,
+                            mid_gain: 3.0,
+                            mid_q: 0.707,
                             auto_gain_enabled,
                             auto_gain_max_db: auto_gain_max_db as f64,
                             auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
@@ -2909,6 +2988,10 @@ fn build_rack_mode_plugins(
                             low_gain: 6.0,
                             high_freq: 10000.0,
                             high_gain: 6.0,
+                            mid_enabled: true,
+                            mid_freq: 3000.0,
+                            mid_gain: 3.0,
+                            mid_q: 0.707,
                             auto_gain_enabled,
                             auto_gain_max_db: auto_gain_max_db as f64,
                             auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
@@ -2942,6 +3025,7 @@ fn build_rack_mode_plugins(
                     plugin.settings = PluginSettings::Gain {
                         channels,
                         gain_db: plugins.gain.gain_db as f64,
+                        smoothing_ms: 20.0,
                     };
                 }
                 log::info!("Rack: Added Gain plugin ({:.1} dB)", plugins.gain.gain_db);
@@ -2963,6 +3047,10 @@ fn build_rack_mode_plugins(
                         auto_makeup: plugins.compressor.auto_makeup,
                         link_channels: !plugins.compressor.unlink_channels,
                         sidechain_hpf_hz: plugins.compressor.sidechain_hpf_hz as f64,
+                        detection_mode: "peak".to_string(),
+                        lookahead_ms: 0.0,
+                        program_dependent_release: false,
+                        measured_auto_makeup: false,
                     };
                 }
                 log::info!("Rack: Added Compressor plugin");
@@ -2984,6 +3072,7 @@ fn build_rack_mode_plugins(
                         knee_db: plugins.multiband_compressor.knee_db as f64,
                         mix: plugins.multiband_compressor.mix as f64,
                         link_channels: !plugins.multiband_compressor.unlink_channels,
+                        per_band_lookahead_ms: 0.0,
                         bands: vec![],
                     };
                 }
@@ -3001,6 +3090,10 @@ fn build_rack_mode_plugins(
                         mix: plugins.gate.mix as f64,
                         link_channels: !plugins.gate.unlink_channels,
                         sidechain_hpf_hz: plugins.gate.sidechain_hpf_hz as f64,
+                        range_db: 80.0,
+                        hysteresis_db: 0.0,
+                        knee_db: 0.0,
+                        lookahead_ms: 0.0,
                     };
                 }
                 log::info!("Rack: Added Gate plugin");
@@ -3013,6 +3106,8 @@ fn build_rack_mode_plugins(
                         release_ms: plugins.limiter.release_ms as f64,
                         lookahead_ms: plugins.limiter.lookahead_ms as f64,
                         soft: plugins.limiter.soft,
+                        true_peak: false,
+                        dual_release: false,
                         mix: plugins.limiter.mix as f64,
                     };
                 }
@@ -3034,6 +3129,9 @@ fn build_rack_mode_plugins(
                         link_channels: !plugins.expander.unlink_channels,
                         sidechain_hpf_hz: plugins.expander.sidechain_hpf_hz as f64,
                         auto_makeup: false,
+                        lookahead_ms: 0.0,
+                        detection_mode: "peak".to_string(),
+                        measured_auto_makeup: false,
                     };
                 }
                 log::info!("Rack: Added Expander plugin");
@@ -3058,6 +3156,7 @@ fn build_rack_mode_plugins(
                         hold_ms: plugins.multiband_expander.hold_ms as f64,
                         mix: plugins.multiband_expander.mix as f64,
                         link_channels: !plugins.multiband_expander.unlink_channels,
+                        detection_mode: "peak".to_string(),
                         bands: vec![],
                     };
                 }
@@ -3135,6 +3234,7 @@ fn build_rack_mode_plugins(
                         learn_noise: plugins.denoiser.learn_noise,
                         use_captured_profile: plugins.denoiser.use_captured_profile,
                         clear_profile: plugins.denoiser.clear_profile,
+                        algorithm: 0,
                     };
                 }
                 log::info!("Rack: Added Denoiser plugin");
@@ -3146,6 +3246,8 @@ fn build_rack_mode_plugins(
                         correction_strength: plugins.pnd.correction_strength as f64,
                         analysis_window_ms: plugins.pnd.analysis_window_ms as f64,
                         drift_smoothing: plugins.pnd.drift_smoothing as f64,
+                        multi_channel_analysis: true,
+                        confidence_threshold: 0.5,
                     };
                 }
                 log::info!("Rack: Added PND plugin");
@@ -3194,6 +3296,7 @@ fn build_rack_mode_plugins(
                         ir_file: ir_path.to_string_lossy().to_string(),
                         mix: plugins.convolution.mix as f64,
                         gain_db: plugins.convolution.gain_db as f64,
+                        use_nupc: true,
                     };
                 }
                 log::info!("Rack: Added Convolution plugin");
@@ -3233,6 +3336,9 @@ fn build_rack_mode_plugins(
                         path_b_config: String::new(),
                         path_a_file: String::new(),
                         path_b_file: String::new(),
+                        phase_invert_a: false,
+                        phase_invert_b: false,
+                        difference_mode: false,
                     };
                 }
                 log::info!("Rack: Added ABCompare plugin");
@@ -3273,6 +3379,7 @@ fn build_rack_mode_plugins(
                         phase_coherence: plugins.downmix.phase_coherence,
                         phase_blend_low_hz: plugins.downmix.phase_blend_low_hz as f64,
                         phase_blend_high_hz: plugins.downmix.phase_blend_high_hz as f64,
+                        itu_mode: false,
                     };
                 }
                 log::info!("Rack: Added Downmix plugin");
@@ -3287,6 +3394,7 @@ fn build_rack_mode_plugins(
                         comp_eq_depth_db: plugins.mono_to_stereo.comp_eq_depth_db as f64,
                         decor_low_hz: plugins.mono_to_stereo.decor_low_hz as f64,
                         decor_high_hz: plugins.mono_to_stereo.decor_high_hz as f64,
+                        freq_dependent: true,
                     };
                 }
                 log::info!("Rack: Added MonoToStereo plugin");
@@ -3309,6 +3417,7 @@ fn build_rack_mode_plugins(
                         mb_low_feed_db: plugins.crossfeed.mb_low_feed_db as f64,
                         mb_mid_feed_db: plugins.crossfeed.mb_mid_feed_db as f64,
                         mb_high_feed_db: plugins.crossfeed.mb_high_feed_db as f64,
+                        itd_delay_ms: 0.0,
                         autogain_enabled: plugins.crossfeed.autogain,
                         autogain_target_lufs: plugins.crossfeed.autogain_target_lufs as f64,
                         autogain_max_gain_db: plugins.crossfeed.autogain_max_gain_db as f64,

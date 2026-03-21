@@ -4,6 +4,8 @@
 
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
+use rustfft::num_complex::Complex;
+use rustfft::FftPlanner;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::{find_by_key as pk, pnd::PARAMS as PD};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
@@ -21,6 +23,174 @@ pub use config::PndPluginParams;
 
 /// Resampler chunk size — the fixed input block size expected by rubato.
 const RESAMPLER_CHUNK_SIZE: usize = 1024;
+
+// ============================================================================
+// Phase Vocoder for formant-preserving pitch shift
+// ============================================================================
+
+const PV_FFT_SIZE: usize = 2048;
+const PV_HOP_SIZE: usize = PV_FFT_SIZE / 4;
+
+/// Per-channel phase vocoder state for pitch shifting without changing duration.
+struct PhaseVocoderChannel {
+    fft_forward: Arc<dyn rustfft::Fft<f32>>,
+    fft_inverse: Arc<dyn rustfft::Fft<f32>>,
+    analysis_window: Vec<f32>,
+    /// Input accumulation buffer
+    input_buf: Vec<f32>,
+    input_fill: usize,
+    /// Output overlap-add buffer
+    output_accum: Vec<f32>,
+    output_read: usize,
+    output_fill: usize,
+    /// Previous frame analysis phases for phase accumulation
+    prev_phase: Vec<f32>,
+    /// Accumulated synthesis phases
+    synth_phase: Vec<f32>,
+    /// Scratch buffers
+    fft_buf: Vec<Complex<f32>>,
+    fft_scratch: Vec<Complex<f32>>,
+    ifft_buf: Vec<Complex<f32>>,
+}
+
+impl PhaseVocoderChannel {
+    fn new() -> Self {
+        let mut planner = FftPlanner::<f32>::new();
+        let fft_forward = planner.plan_fft_forward(PV_FFT_SIZE);
+        let fft_inverse = planner.plan_fft_inverse(PV_FFT_SIZE);
+        let scratch_len = fft_forward
+            .get_inplace_scratch_len()
+            .max(fft_inverse.get_inplace_scratch_len());
+
+        let analysis_window: Vec<f32> = (0..PV_FFT_SIZE)
+            .map(|i| {
+                let x = i as f32 / PV_FFT_SIZE as f32;
+                0.5 * (1.0 - (2.0 * std::f32::consts::PI * x).cos())
+            })
+            .collect();
+
+        Self {
+            fft_forward,
+            fft_inverse,
+            analysis_window,
+            input_buf: vec![0.0; PV_FFT_SIZE],
+            input_fill: 0,
+            output_accum: vec![0.0; PV_FFT_SIZE * 4],
+            output_read: 0,
+            output_fill: 0,
+            prev_phase: vec![0.0; PV_FFT_SIZE],
+            synth_phase: vec![0.0; PV_FFT_SIZE],
+            fft_buf: vec![Complex::new(0.0, 0.0); PV_FFT_SIZE],
+            fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
+            ifft_buf: vec![Complex::new(0.0, 0.0); PV_FFT_SIZE],
+        }
+    }
+
+    fn reset(&mut self) {
+        self.input_buf.fill(0.0);
+        self.input_fill = 0;
+        self.output_accum.fill(0.0);
+        self.output_read = 0;
+        self.output_fill = 0;
+        self.prev_phase.fill(0.0);
+        self.synth_phase.fill(0.0);
+    }
+
+    /// Process a hop of samples with the given pitch shift ratio.
+    /// pitch_shift > 1.0 shifts up, < 1.0 shifts down.
+    fn process_hop(&mut self, pitch_shift: f32) {
+        let n = PV_FFT_SIZE;
+        let hop = PV_HOP_SIZE;
+        let expected_phase_advance = 2.0 * std::f32::consts::PI * hop as f32 / n as f32;
+        let inv_n = 1.0 / n as f32;
+
+        // Window and FFT
+        for i in 0..n {
+            self.fft_buf[i] = Complex::new(self.input_buf[i] * self.analysis_window[i], 0.0);
+        }
+        self.fft_forward
+            .process_with_scratch(&mut self.fft_buf, &mut self.fft_scratch);
+
+        // Analysis: extract magnitude and phase, compute instantaneous frequency
+        for bin in 0..n {
+            let mag = self.fft_buf[bin].norm();
+            let phase = self.fft_buf[bin].arg();
+
+            // Phase difference from previous frame
+            let phase_diff = phase - self.prev_phase[bin];
+            self.prev_phase[bin] = phase;
+
+            // Remove expected phase advance
+            let deviation = phase_diff - bin as f32 * expected_phase_advance;
+
+            // Wrap to [-pi, pi]
+            let wrapped = deviation - (deviation / (2.0 * std::f32::consts::PI)).round()
+                * 2.0
+                * std::f32::consts::PI;
+
+            // True frequency (in bins)
+            let true_freq = bin as f32 + wrapped / expected_phase_advance;
+
+            // Synthesis: apply pitch shift to frequency
+            let shifted_freq = true_freq * pitch_shift;
+
+            // Accumulate synthesis phase at the shifted frequency
+            self.synth_phase[bin] += shifted_freq * expected_phase_advance;
+
+            // Reconstruct complex spectrum with original magnitude and shifted phase
+            self.ifft_buf[bin] = Complex::new(
+                mag * self.synth_phase[bin].cos(),
+                mag * self.synth_phase[bin].sin(),
+            );
+        }
+
+        // Restore conjugate symmetry for correct real-valued IFFT
+        let n = PV_FFT_SIZE;
+        self.ifft_buf[0].im = 0.0;
+        if n > 1 { self.ifft_buf[n / 2].im = 0.0; }
+        for bin in 1..n / 2 {
+            self.ifft_buf[n - bin] = self.ifft_buf[bin].conj();
+        }
+
+        // IFFT
+        self.fft_inverse
+            .process_with_scratch(&mut self.ifft_buf, &mut self.fft_scratch);
+
+        // Overlap-add with synthesis window and normalization
+        let scale = inv_n / 1.5; // Hann window with 75% overlap: sum(w^2) normalization
+        let accum_len = self.output_accum.len();
+        for i in 0..n {
+            let idx = (self.output_read + self.output_fill + i) % accum_len;
+            self.output_accum[idx] += self.ifft_buf[i].re * self.analysis_window[i] * scale;
+        }
+        self.output_fill += hop;
+
+        // Shift input buffer by hop
+        self.input_buf.copy_within(hop..n, 0);
+        self.input_fill = n - hop;
+    }
+}
+
+/// Multi-channel phase vocoder.
+struct PhaseVocoder {
+    channels: Vec<PhaseVocoderChannel>,
+}
+
+impl PhaseVocoder {
+    fn new(num_channels: usize) -> Self {
+        Self {
+            channels: (0..num_channels)
+                .map(|_| PhaseVocoderChannel::new())
+                .collect(),
+        }
+    }
+
+    fn reset(&mut self) {
+        for ch in &mut self.channels {
+            ch.reset();
+        }
+    }
+}
 
 /// Smoothing time for correction_strength parameter changes (ms).
 /// Prevents audible pitch jumps when tweaking correction strength live.
@@ -50,8 +220,8 @@ pub struct PndPlugin {
     channels: usize,
     sample_rate: u32,
 
-    // Components
-    analyzer: Option<PndAnalyzer>,
+    // Components — one analyzer per channel for multi-channel analysis
+    analyzers: Vec<PndAnalyzer>,
     resampler: Option<Async<f32>>,
 
     // State
@@ -76,6 +246,9 @@ pub struct PndPlugin {
     // Temp buffer for wrapped chunks
     interleaved_chunk_buffer: Vec<f32>,
 
+    // Scratch buffer for median computation across channels
+    channel_drift_scratch: Vec<f32>,
+
     // Parameters
     param_correction_strength: ParameterId,
     correction_strength: f32,
@@ -87,6 +260,16 @@ pub struct PndPlugin {
     param_drift_smoothing: ParameterId,
     drift_smoothing: f32,
 
+    param_multi_channel_analysis: ParameterId,
+    multi_channel_analysis: bool,
+
+    param_confidence_threshold: ParameterId,
+    confidence_threshold: f32,
+
+    param_phase_vocoder: ParameterId,
+    phase_vocoder: bool,
+    vocoder: Option<PhaseVocoder>,
+
     cache: RealTimeCache<PndData>,
     cache_update_counter: usize,
     cached_parameters: Vec<Parameter>,
@@ -97,7 +280,7 @@ impl PndPlugin {
         let mut p = Self {
             channels,
             sample_rate: 44100, // Default, updated in initialize
-            analyzer: None,
+            analyzers: Vec::new(),
             resampler: None,
             current_ratio: 1.0,
             last_drift_ratio: 1.0,
@@ -112,6 +295,7 @@ impl PndPlugin {
             output_ring_read_pos: 0,
             output_ring_count: 0,
             interleaved_chunk_buffer: Vec::new(),
+            channel_drift_scratch: vec![0.0; channels],
 
             param_correction_strength: ParameterId::from("correction_strength"),
             correction_strength: pk(PD, "correction_strength").default_f64() as f32,
@@ -127,6 +311,17 @@ impl PndPlugin {
 
             param_drift_smoothing: ParameterId::from("drift_smoothing"),
             drift_smoothing: pk(PD, "drift_smoothing").default_f64() as f32,
+
+            param_multi_channel_analysis: ParameterId::from("multi_channel_analysis"),
+            multi_channel_analysis: pk(PD, "multi_channel_analysis").default_bool(),
+
+            param_confidence_threshold: ParameterId::from("confidence_threshold"),
+            confidence_threshold: pk(PD, "confidence_threshold").default_f64() as f32,
+
+            param_phase_vocoder: ParameterId::from("phase_vocoder"),
+            phase_vocoder: pk(PD, "phase_vocoder").default_bool(),
+            vocoder: None,
+
             cache: RealTimeCache::new(PndData::default()),
             cache_update_counter: 0,
             cached_parameters: Vec::new(),
@@ -164,6 +359,29 @@ impl PndPlugin {
             )
             .with_group("Correction")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "multi_channel_analysis",
+                "Multi-Channel Analysis",
+                self.multi_channel_analysis,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "confidence_threshold",
+                "Confidence Threshold",
+                self.confidence_threshold,
+                pk(PD, "confidence_threshold").min_f64() as f32,
+                pk(PD, "confidence_threshold").max_f64() as f32,
+            )
+            .with_group("Correction")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "phase_vocoder",
+                "Phase Vocoder",
+                self.phase_vocoder,
+            )
+            .with_group("Correction")
+            .with_importance(ParameterImportance::Useful),
         ];
     }
 
@@ -172,7 +390,97 @@ impl PndPlugin {
         plugin.correction_strength = params.correction_strength;
         plugin.analysis_window_ms = params.analysis_window_ms;
         plugin.drift_smoothing = params.drift_smoothing;
+        plugin.multi_channel_analysis = params.multi_channel_analysis;
+        plugin.confidence_threshold = params.confidence_threshold;
+        plugin.phase_vocoder = params.phase_vocoder;
         plugin
+    }
+
+    /// Phase vocoder processing path: uses STFT analysis/synthesis to shift pitch
+    /// without changing duration, preserving formants better than simple resampling.
+    fn process_phase_vocoder(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        let num_frames = context.num_frames;
+        let nf = context.num_frames;
+
+        let vocoder = self.vocoder.as_mut().ok_or("Phase vocoder not initialized")?;
+
+        // Analyze drift from first channel (use planar_input[0] as scratch)
+        if self.planar_input[0].len() < num_frames {
+            self.planar_input[0].resize(num_frames, 0.0);
+        }
+        for i in 0..num_frames {
+            self.planar_input[0][i] = input[i * self.channels];
+        }
+
+        let (drift_ratio, confidence) = if !self.analyzers.is_empty() {
+            let drift = self.analyzers[0].analyze(&self.planar_input[0][..num_frames]);
+            let conf = self.analyzers[0].confidence();
+            (drift, conf)
+        } else {
+            (1.0, 0.0)
+        };
+        self.last_drift_ratio = drift_ratio as f64;
+
+        // Calculate correction ratio
+        if confidence >= self.confidence_threshold {
+            let target_correction = 1.0 / drift_ratio as f64;
+            let alpha = self.drift_smoothing as f64;
+            self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
+        }
+
+        let strength = self.correction_strength as f64;
+        let pitch_shift = (1.0 + (self.current_ratio - 1.0) * strength) as f32;
+
+        // Feed samples to each channel's vocoder and drain output
+        for i in 0..num_frames {
+            for ch in 0..self.channels {
+                let pv = &mut vocoder.channels[ch];
+                pv.input_buf[pv.input_fill] = input[i * self.channels + ch];
+                pv.input_fill += 1;
+
+                // When we have a full FFT frame, process a hop
+                if pv.input_fill >= PV_FFT_SIZE {
+                    pv.process_hop(pitch_shift);
+                }
+            }
+
+            // Drain one frame of output per channel
+            for ch in 0..self.channels {
+                let pv = &mut vocoder.channels[ch];
+                if pv.output_fill > 0 {
+                    let accum_len = pv.output_accum.len();
+                    let idx = pv.output_read % accum_len;
+                    output[i * self.channels + ch] = pv.output_accum[idx];
+                    pv.output_accum[idx] = 0.0;
+                    pv.output_read += 1;
+                    pv.output_fill -= 1;
+                } else {
+                    output[i * self.channels + ch] = 0.0;
+                }
+            }
+        }
+
+        // Update diagnostic cache (throttled)
+        self.cache_update_counter += 1;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            let drift = self.last_drift_ratio;
+            let correction = self.current_ratio;
+            self.cache.update(|d| {
+                d.drift_ratio = drift;
+                d.correction_ratio = correction;
+                d.confidence = confidence;
+                d.matched_partials = 0;
+                d.total_peaks = 0;
+            });
+        }
+
+        Ok(nf)
     }
 
     fn init_resampler(&mut self) -> PluginResult<()> {
@@ -190,13 +498,23 @@ impl PndPlugin {
         Ok(())
     }
 
-    fn init_analyzer(&mut self) {
+    fn init_analyzers(&mut self) {
         let fft_size = 2048; // Good balance for freq resolution
-        self.analyzer = Some(PndAnalyzer::new(
-            fft_size,
-            self.sample_rate,
-            self.analysis_window_ms,
-        ));
+        let num_analyzers = if self.multi_channel_analysis {
+            self.channels
+        } else {
+            1
+        };
+        self.analyzers.clear();
+        for _ in 0..num_analyzers {
+            self.analyzers.push(PndAnalyzer::new(
+                fft_size,
+                self.sample_rate,
+                self.analysis_window_ms,
+            ));
+        }
+        self.channel_drift_scratch
+            .resize(num_analyzers.max(1), 0.0);
     }
 
     /// Process one resampler chunk from the input ring buffer.
@@ -239,18 +557,42 @@ impl PndPlugin {
             }
         }
 
-        // 3. Analyze first channel for drift
-        let drift_ratio = if let Some(analyzer) = &mut self.analyzer {
-            analyzer.analyze(&self.planar_input[0][..chunk_frames])
+        // 3. Analyze channels for drift
+        let (drift_ratio, confidence) = if self.analyzers.is_empty() {
+            (1.0_f32, 0.0_f32)
+        } else if self.multi_channel_analysis && self.analyzers.len() > 1 {
+            // Analyze each channel independently and take the median drift ratio
+            let n = self.analyzers.len().min(self.channels);
+            for (ch, analyzer) in self.analyzers.iter_mut().enumerate().take(n) {
+                self.channel_drift_scratch[ch] =
+                    analyzer.analyze(&self.planar_input[ch][..chunk_frames]);
+            }
+            let mid = n / 2;
+            self.channel_drift_scratch[..n].select_nth_unstable_by(mid, |a, b| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let median_drift = self.channel_drift_scratch[mid];
+            // Average confidence across all analyzers
+            let avg_confidence =
+                self.analyzers.iter().take(n).map(|a| a.confidence()).sum::<f32>() / n as f32;
+            (median_drift, avg_confidence)
         } else {
-            1.0
+            // Single-channel mode: analyze channel 0 only
+            let drift = self.analyzers[0].analyze(&self.planar_input[0][..chunk_frames]);
+            let conf = self.analyzers[0].confidence();
+            (drift, conf)
         };
         self.last_drift_ratio = drift_ratio as f64;
 
-        // 4. Calculate correction ratio
-        let target_correction = 1.0 / drift_ratio as f64;
-        let alpha = self.drift_smoothing as f64;
-        self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
+        // 4. Calculate correction ratio (with confidence-based bypass)
+        // When confidence is below threshold, freeze the current ratio
+        // instead of applying an unreliable correction.
+        if confidence >= self.confidence_threshold {
+            let target_correction = 1.0 / drift_ratio as f64;
+            let alpha = self.drift_smoothing as f64;
+            self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
+        }
+        // else: current_ratio stays frozen at its last reliable value
 
         let strength = self.correction_strength_smoother.advance() as f64;
         let final_ratio = 1.0 + (self.current_ratio - 1.0) * strength;
@@ -333,7 +675,7 @@ impl PndPlugin {
 
 impl Plugin for PndPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("PND Varispeed", "0.2.0", "SotF")
+        PluginInfo::new("Pitch Drift Corrector", "0.2.0", "SotF")
             .with_description("Polyphonic note detection and varispeed correction")
     }
 
@@ -366,7 +708,7 @@ impl Plugin for PndPlugin {
                 .unwrap_or(pk(PD, "analysis_window_ms").default_f64() as f32);
             if v.is_finite() {
                 self.analysis_window_ms = v;
-                if let Some(analyzer) = &mut self.analyzer {
+                for analyzer in &mut self.analyzers {
                     analyzer.update_analysis_window(self.analysis_window_ms);
                 }
             }
@@ -376,6 +718,28 @@ impl Plugin for PndPlugin {
                 .unwrap_or(pk(PD, "drift_smoothing").default_f64() as f32);
             if v.is_finite() {
                 self.drift_smoothing = v;
+            }
+        } else if id == self.param_multi_channel_analysis {
+            let v = value
+                .as_bool()
+                .unwrap_or(pk(PD, "multi_channel_analysis").default_bool());
+            self.multi_channel_analysis = v;
+            // Re-create analyzers with new channel count
+            self.init_analyzers();
+        } else if id == self.param_confidence_threshold {
+            let v = value
+                .as_float()
+                .unwrap_or(pk(PD, "confidence_threshold").default_f64() as f32);
+            if v.is_finite() {
+                self.confidence_threshold = v;
+            }
+        } else if id == self.param_phase_vocoder {
+            let v = value
+                .as_bool()
+                .unwrap_or(pk(PD, "phase_vocoder").default_bool());
+            self.phase_vocoder = v;
+            if v && self.vocoder.is_none() {
+                self.vocoder = Some(PhaseVocoder::new(self.channels));
             }
         }
         self.rebuild_cached_parameters();
@@ -389,6 +753,12 @@ impl Plugin for PndPlugin {
             Some(ParameterValue::Float(self.analysis_window_ms))
         } else if id == &self.param_drift_smoothing {
             Some(ParameterValue::Float(self.drift_smoothing))
+        } else if id == &self.param_multi_channel_analysis {
+            Some(ParameterValue::Bool(self.multi_channel_analysis))
+        } else if id == &self.param_confidence_threshold {
+            Some(ParameterValue::Float(self.confidence_threshold))
+        } else if id == &self.param_phase_vocoder {
+            Some(ParameterValue::Bool(self.phase_vocoder))
         } else {
             None
         }
@@ -397,7 +767,7 @@ impl Plugin for PndPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.init_resampler()?;
-        self.init_analyzer();
+        self.init_analyzers();
 
         // Pre-allocate buffers sized for resampler chunk requirements
         self.planar_input = vec![vec![0.0; RESAMPLER_CHUNK_SIZE]; self.channels];
@@ -434,6 +804,11 @@ impl Plugin for PndPlugin {
             chunk_rate.max(1),
         );
 
+        // Initialize phase vocoder if enabled
+        if self.phase_vocoder {
+            self.vocoder = Some(PhaseVocoder::new(self.channels));
+        }
+
         Ok(())
     }
 
@@ -445,6 +820,10 @@ impl Plugin for PndPlugin {
     ) -> Result<usize, String> {
         let num_frames = context.num_frames;
         let total_input_samples = num_frames * self.channels;
+
+        if self.phase_vocoder {
+            return self.process_phase_vocoder(input, output, context);
+        }
 
         // 1. Accumulate input into input ring (Circular)
         {
@@ -501,15 +880,16 @@ impl Plugin for PndPlugin {
         self.cache_update_counter += 1;
         if self.cache_update_counter >= 10 {
             self.cache_update_counter = 0;
-            let (confidence, matched_partials, total_peaks) = if let Some(analyzer) = &self.analyzer
-            {
-                (
-                    analyzer.confidence(),
-                    analyzer.matched_partials(),
-                    analyzer.total_peaks(),
-                )
-            } else {
+            let (confidence, matched_partials, total_peaks) = if self.analyzers.is_empty() {
                 (0.0, 0, 0)
+            } else {
+                // Aggregate: average confidence, sum matched/total across analyzers
+                let n = self.analyzers.len();
+                let avg_conf = self.analyzers.iter().map(|a| a.confidence()).sum::<f32>() / n as f32;
+                let total_matched: usize =
+                    self.analyzers.iter().map(|a| a.matched_partials()).sum();
+                let total_pk: usize = self.analyzers.iter().map(|a| a.total_peaks()).sum();
+                (avg_conf, total_matched, total_pk)
             };
 
             let drift = self.last_drift_ratio;
@@ -527,7 +907,7 @@ impl Plugin for PndPlugin {
     }
 
     fn reset(&mut self) {
-        if let Some(analyzer) = &mut self.analyzer {
+        for analyzer in &mut self.analyzers {
             analyzer.reset();
         }
         self.current_ratio = 1.0;
@@ -540,6 +920,9 @@ impl Plugin for PndPlugin {
         self.output_ring_count = 0;
         self.correction_strength_smoother
             .reset(self.correction_strength);
+        if let Some(v) = &mut self.vocoder {
+            v.reset();
+        }
     }
 
     fn latency_samples(&self) -> usize {
@@ -548,5 +931,116 @@ impl Plugin for PndPlugin {
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// With high drift_smoothing, the correction ratio should change slowly
+    /// (no sudden jumps between frames).
+    #[test]
+    fn test_drift_smoothing_slow_correction() {
+        let mut p = PndPlugin::new(2);
+        p.drift_smoothing = 0.99; // very high smoothing
+        p.correction_strength = 1.0;
+        p.initialize(48000).unwrap();
+
+        let nf = RESAMPLER_CHUNK_SIZE;
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
+
+        // Process several blocks and track how current_ratio evolves
+        let mut ratios = Vec::new();
+        for block in 0..10 {
+            let input: Vec<f32> = (0..nf * 2)
+                .map(|i| {
+                    0.3 * (2.0 * std::f32::consts::PI * 440.0 * (block * nf * 2 + i) as f32
+                        / 48000.0)
+                        .sin()
+                })
+                .collect();
+            let mut output = vec![0.0f32; nf * 2];
+            let _ = p.process(&input, &mut output, &ctx);
+            ratios.push(p.current_ratio);
+        }
+
+        // With high smoothing, ratio changes should be very small between blocks
+        for i in 1..ratios.len() {
+            let delta = (ratios[i] - ratios[i - 1]).abs();
+            assert!(
+                delta < 0.01,
+                "Correction ratio changed too fast at block {i}: delta={delta:.6}, \
+                 prev={:.6}, curr={:.6}",
+                ratios[i - 1],
+                ratios[i]
+            );
+        }
+    }
+
+    /// Setting analysis_window_ms to different values should not cause panics
+    /// or errors, and the plugin should process audio correctly.
+    #[test]
+    fn test_analysis_window_parameter_values() {
+        for &window_ms in &[10.0, 50.0, 100.0, 200.0] {
+            let mut p = PndPlugin::new(2);
+            p.analysis_window_ms = window_ms;
+            p.initialize(48000).unwrap();
+
+            let nf = RESAMPLER_CHUNK_SIZE;
+            let ctx = ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            };
+
+            let input: Vec<f32> = (0..nf * 2)
+                .map(|i| 0.3 * (i as f32 * 0.01).sin())
+                .collect();
+            let mut output = vec![0.0f32; nf * 2];
+            let result = p.process(&input, &mut output, &ctx);
+            assert!(
+                result.is_ok(),
+                "PND plugin should process without error with analysis_window_ms={window_ms}"
+            );
+            assert!(
+                output.iter().all(|s| s.is_finite()),
+                "All output samples should be finite with analysis_window_ms={window_ms}"
+            );
+        }
+    }
+
+    /// Verify set_parameter / get_parameter round-trip for analysis_window_ms.
+    #[test]
+    fn test_analysis_window_param_roundtrip() {
+        let mut p = PndPlugin::new(1);
+        p.initialize(44100).unwrap();
+
+        p.set_parameter(
+            ParameterId::from("analysis_window_ms"),
+            ParameterValue::Float(75.0),
+        )
+        .unwrap();
+
+        let val = p.get_parameter(&ParameterId::from("analysis_window_ms"));
+        assert_eq!(val, Some(ParameterValue::Float(75.0)));
+    }
+
+    /// Verify set_parameter / get_parameter round-trip for drift_smoothing.
+    #[test]
+    fn test_drift_smoothing_param_roundtrip() {
+        let mut p = PndPlugin::new(1);
+        p.initialize(44100).unwrap();
+
+        p.set_parameter(
+            ParameterId::from("drift_smoothing"),
+            ParameterValue::Float(0.85),
+        )
+        .unwrap();
+
+        let val = p.get_parameter(&ParameterId::from("drift_smoothing"));
+        assert_eq!(val, Some(ParameterValue::Float(0.85)));
     }
 }

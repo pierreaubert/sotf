@@ -50,7 +50,7 @@ source venv/bin/activate
 pip install torch onnx onnxruntime onnxscript torchaudio
 ```
 
-All dependencies are listed in `scripts/requirements.txt`.
+All dependencies are listed in `crates/math-audio/math-dsp/ml/requirements.txt`.
 
 ## Training
 
@@ -58,7 +58,7 @@ All dependencies are listed in `scripts/requirements.txt`.
 
 ```bash
 source venv/bin/activate
-python3 scripts/train_vocal_detector.py --demo-only
+python3 crates/math-audio/math-dsp/ml/train_vocal_detector.py --demo-only
 ```
 
 This will:
@@ -105,7 +105,7 @@ wget https://openslr.org/resources/17/musan.tar.gz
 tar xzf musan.tar.gz
 
 # Prepare manifest
-python3 scripts/prepare_musan.py --musan-dir /path/to/musan --output musan_manifest.tsv
+python3 crates/math-audio/math-dsp/ml/prepare_musan.py --musan-dir /path/to/musan --output musan_manifest.tsv
 ```
 
 #### AVA-Speech (Google)
@@ -118,13 +118,13 @@ python3 scripts/prepare_musan.py --musan-dir /path/to/musan --output musan_manif
 wget https://research.google.com/ava/download/ava_speech_labels_v1.csv
 
 # Prepare manifest (downloads audio from YouTube via yt-dlp)
-python3 scripts/prepare_ava_speech.py \
+python3 crates/math-audio/math-dsp/ml/prepare_ava_speech.py \
     --csv ava_speech_labels_v1.csv \
     --output-dir /path/to/ava_wavs \
     --output ava_speech_manifest.tsv
 
 # Use --max-videos N for testing with a subset
-python3 scripts/prepare_ava_speech.py \
+python3 crates/math-audio/math-dsp/ml/prepare_ava_speech.py \
     --csv ava_speech_labels_v1.csv \
     --output-dir /path/to/ava_wavs \
     --output ava_speech_manifest.tsv \
@@ -135,13 +135,13 @@ python3 scripts/prepare_ava_speech.py \
 
 ```bash
 # Train with MUSAN only
-python3 scripts/train_vocal_detector.py --data-dirs musan_manifest.tsv
+python3 crates/math-audio/math-dsp/ml/train_vocal_detector.py --data-dirs musan_manifest.tsv
 
 # Train with both MUSAN and AVA-Speech
-python3 scripts/train_vocal_detector.py --data-dirs musan_manifest.tsv ava_speech_manifest.tsv
+python3 crates/math-audio/math-dsp/ml/train_vocal_detector.py --data-dirs musan_manifest.tsv ava_speech_manifest.tsv
 
 # Combine external data with demo data
-python3 scripts/train_vocal_detector.py --data-dirs musan_manifest.tsv --include-demo
+python3 crates/math-audio/math-dsp/ml/train_vocal_detector.py --data-dirs musan_manifest.tsv --include-demo
 ```
 
 #### Manifest TSV Format

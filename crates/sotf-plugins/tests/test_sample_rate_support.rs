@@ -235,22 +235,24 @@ fn test_crossover_multi_sample_rate() {
         let mut lp = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
         lp.initialize(sr).unwrap();
 
-        let mut buffer = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
+        let input = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
         let context = ProcessContext {
             sample_rate: sr,
             num_frames: NUM_FRAMES,
         };
 
-        lp.process_in_place(&mut buffer, &context).unwrap();
-        assert_all_finite(&buffer, &format!("CrossoverLP@{}Hz", sr));
+        let mut output = vec![0.0f32; input.len()];
+        lp.process(&input, &mut output, &context).unwrap();
+        assert_all_finite(&output, &format!("CrossoverLP@{}Hz", sr));
 
         // Highpass crossover
         let mut hp = CrossoverPlugin::new(2, "LR24", 1000.0, "high").unwrap();
         hp.initialize(sr).unwrap();
 
-        let mut buffer2 = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
-        hp.process_in_place(&mut buffer2, &context).unwrap();
-        assert_all_finite(&buffer2, &format!("CrossoverHP@{}Hz", sr));
+        let input2 = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
+        let mut output2 = vec![0.0f32; input2.len()];
+        hp.process(&input2, &mut output2, &context).unwrap();
+        assert_all_finite(&output2, &format!("CrossoverHP@{}Hz", sr));
     }
 }
 
@@ -371,15 +373,16 @@ fn test_crossover_delay_chain_multi_sample_rate() {
         let mut delay = DelayPlugin::new(2, 50.0, 0.2, 0.5);
         delay.initialize(sr).unwrap();
 
-        let mut buffer = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
+        let input = generate_sine_stereo(sr, 440.0, 0.5, NUM_FRAMES);
         let context = ProcessContext {
             sample_rate: sr,
             num_frames: NUM_FRAMES,
         };
 
-        crossover.process_in_place(&mut buffer, &context).unwrap();
-        delay.process_in_place(&mut buffer, &context).unwrap();
-        assert_all_finite(&buffer, &format!("CrossoverDelay@{}Hz", sr));
+        let mut crossover_output = vec![0.0f32; input.len()];
+        crossover.process(&input, &mut crossover_output, &context).unwrap();
+        delay.process_in_place(&mut crossover_output, &context).unwrap();
+        assert_all_finite(&crossover_output, &format!("CrossoverDelay@{}Hz", sr));
     }
 }
 

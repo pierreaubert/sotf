@@ -6,10 +6,15 @@ pub mod analyzer;
 pub mod analyzer_loudness_monitor;
 pub mod analyzer_spectrum;
 pub mod auto_gain;
+pub mod auto_makeup;
 pub mod automation;
+pub mod detector;
+pub mod envelope;
 pub mod error;
 pub mod host;
 pub mod layout_solver;
+pub mod lookahead;
+pub mod lr4_crossover;
 pub mod param_registry;
 pub mod param_specs;
 pub mod parameters;
@@ -21,10 +26,17 @@ pub mod smoothing;
 pub mod sofa;
 pub mod speaker_config;
 pub mod stft_common;
+pub mod true_peak;
 #[cfg(any(feature = "qa", test, debug_assertions))]
 pub mod test_utils;
 
 pub use analyzer::{AnalyzerData, LoudnessData, SpectrumData};
+pub use auto_makeup::MeasuredMakeup;
+pub use detector::{DetectionMode, LevelDetector};
+pub use envelope::DualRelease;
+pub use lookahead::LookaheadBuffer;
+pub use lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
+pub use true_peak::TruePeakDetector;
 pub use analyzer_loudness_monitor::{LoudnessMonitor, LoudnessMonitorPlugin};
 pub use analyzer_spectrum::{
     SpectralTiltCorrection, SpectrumAnalyzer, SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo,

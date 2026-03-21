@@ -11,8 +11,10 @@ path = "src/lib.rs"
 [dependencies]
 sotf-host = { workspace = true }
 arc-swap = { workspace = true }
+audioadapter-buffers = { workspace = true }
 log = { workspace = true }
 realfft = { workspace = true }
+rubato = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
 

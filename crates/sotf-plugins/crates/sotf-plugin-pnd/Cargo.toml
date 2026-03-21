@@ -21,3 +21,4 @@ sotf-host = { workspace = true }
 rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
 serde = { workspace = true }
+rustfft = { workspace = true }

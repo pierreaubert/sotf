@@ -125,6 +125,8 @@ fn plugin_description(plugin_type: &PluginType) -> &'static str {
         PluginType::MonoToStereo => "Convert mono to stereo",
         PluginType::Crossfeed => "Headphone crossfeed for natural imaging",
         PluginType::Delay => "Audio delay with feedback control",
+        PluginType::Aec => "Acoustic echo cancellation",
+        PluginType::Beamformer => "Microphone array beamforming",
     }
 }
 

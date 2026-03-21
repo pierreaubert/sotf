@@ -28,7 +28,11 @@ impl UpmixerPlugin {
 
     /// Generate base phases for LFO-based decorrelation (random anchor points)
     pub(super) fn generate_lfo_base_phases(&mut self) {
-        // Simple pseudo-random generator
+        // Numerical Recipes LCG — intentionally simple for audio-thread use.
+        // Crypto quality is irrelevant here; we only need decorrelated anchor phases.
+        // The LCG is deterministic (fixed seed) so the decorrelation pattern is
+        // reproducible across runs, and the constants (1664525 / 1013904223) give a
+        // full 2^32 period which is more than sufficient for 16 anchor points.
         let mut seed = 12345u32;
         let mut rand_f32 = || {
             seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);

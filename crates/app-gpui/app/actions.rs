@@ -105,6 +105,9 @@ actions!(
         QuickAddBandSplit,
         QuickAddBandMerge,
         QuickAddCrossfeed,
+        QuickAddDelay,
+        QuickAddAec,
+        QuickAddBeamformer,
         // Level meter actions
         SelectNextMeterGroup,
         SelectPrevMeterGroup,

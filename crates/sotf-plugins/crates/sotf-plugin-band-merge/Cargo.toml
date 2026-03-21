@@ -11,3 +11,4 @@ path = "src/lib.rs"
 [dependencies]
 sotf-host = { workspace = true }
 serde = { workspace = true }
+log = { workspace = true }

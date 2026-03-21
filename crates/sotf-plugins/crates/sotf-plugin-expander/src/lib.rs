@@ -10,6 +10,7 @@ use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, Paramet
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
+use sotf_host::{DetectionMode, LevelDetector, LookaheadBuffer, MeasuredMakeup};
 use std::any::Any;
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -42,6 +43,12 @@ pub struct ExpanderPluginParams {
     pub sidechain_hpf_hz: f32,
     #[serde(default = "default_auto_makeup")]
     pub auto_makeup: bool,
+    #[serde(default)]
+    pub lookahead_ms: f32,
+    #[serde(default = "default_detection_mode_str")]
+    pub detection_mode: String,
+    #[serde(default)]
+    pub measured_auto_makeup: bool,
 }
 
 fn default_threshold_db() -> f32 {
@@ -80,6 +87,22 @@ fn default_sidechain_hpf_hz() -> f32 {
 fn default_auto_makeup() -> bool {
     pk(EX, "auto_makeup").default_bool()
 }
+fn default_detection_mode_str() -> String {
+    "peak".to_string()
+}
+
+const RMS_WINDOW_MS: f32 = 10.0;
+const MEASURED_MAKEUP_SMOOTHING_MS: f32 = 1000.0;
+const MAX_LOOKAHEAD_MS: f32 = 20.0;
+
+fn parse_detection_mode(s: &str) -> DetectionMode {
+    match s.to_ascii_lowercase().as_str() {
+        "rms" => DetectionMode::Rms {
+            window_ms: RMS_WINDOW_MS,
+        },
+        _ => DetectionMode::Peak,
+    }
+}
 
 impl Default for ExpanderPluginParams {
     fn default() -> Self {
@@ -96,6 +119,9 @@ impl Default for ExpanderPluginParams {
             link_channels: default_link_channels(),
             sidechain_hpf_hz: default_sidechain_hpf_hz(),
             auto_makeup: default_auto_makeup(),
+            lookahead_ms: 0.0,
+            detection_mode: default_detection_mode_str(),
+            measured_auto_makeup: false,
         }
     }
 }
@@ -171,6 +197,15 @@ pub struct ExpanderPlugin {
     sidechain_hpf_hz: f32,
     param_auto_makeup: ParameterId,
     auto_makeup: bool,
+    param_lookahead: ParameterId,
+    lookahead_ms: f32,
+    param_detection_mode: ParameterId,
+    detection_mode_str: String,
+    param_measured_auto_makeup: ParameterId,
+    measured_auto_makeup: bool,
+    lookahead_buffers: Vec<LookaheadBuffer>,
+    level_detectors: Vec<LevelDetector>,
+    measured_makeup: MeasuredMakeup,
     envelope: Vec<f32>,
     gate_state: Vec<GateState>,
     hold_counter: Vec<usize>,
@@ -193,6 +228,8 @@ impl ExpanderPlugin {
     }
     pub fn with_params(channels: usize, params: ExpanderPluginParams) -> Self {
         let sr = 44100;
+        let lookahead_ms = params.lookahead_ms.clamp(0.0, MAX_LOOKAHEAD_MS);
+        let detection_mode = parse_detection_mode(&params.detection_mode);
         let mut p = Self {
             channels,
             sample_rate: sr,
@@ -220,6 +257,19 @@ impl ExpanderPlugin {
             sidechain_hpf_hz: params.sidechain_hpf_hz.max(0.0),
             param_auto_makeup: ParameterId::from("auto_makeup"),
             auto_makeup: params.auto_makeup,
+            param_lookahead: ParameterId::from("lookahead"),
+            lookahead_ms,
+            param_detection_mode: ParameterId::from("detection_mode"),
+            detection_mode_str: params.detection_mode.clone(),
+            param_measured_auto_makeup: ParameterId::from("measured_auto_makeup"),
+            measured_auto_makeup: params.measured_auto_makeup,
+            lookahead_buffers: (0..channels)
+                .map(|_| LookaheadBuffer::from_ms(MAX_LOOKAHEAD_MS, sr, 1))
+                .collect(),
+            level_detectors: (0..channels)
+                .map(|_| LevelDetector::new(detection_mode, sr))
+                .collect(),
+            measured_makeup: MeasuredMakeup::new(MEASURED_MAKEUP_SMOOTHING_MS, sr),
             envelope: vec![0.0; channels],
             gate_state: vec![GateState::Open; channels],
             hold_counter: vec![0; channels],
@@ -235,11 +285,23 @@ impl ExpanderPlugin {
             cache_update_counter: 0,
             cached_parameters: Vec::new(),
         };
+        p.update_lookahead_delay();
         p.rebuild_cached_parameters();
         p
     }
 
+    fn update_lookahead_delay(&mut self) {
+        for buf in &mut self.lookahead_buffers {
+            buf.set_delay_ms(self.lookahead_ms, self.sample_rate);
+        }
+    }
+
     fn rebuild_cached_parameters(&mut self) {
+        let det_idx = if self.detection_mode_str == "rms" {
+            1.0f32
+        } else {
+            0.0
+        };
         self.cached_parameters = vec![
             Parameter::new_float(
                 "threshold",
@@ -348,6 +410,30 @@ impl ExpanderPlugin {
             )
             .with_description("High-pass filter frequency for sidechain (Hz)")
             .with_group("Sidechain")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "lookahead",
+                "Lookahead",
+                self.lookahead_ms,
+                0.0,
+                MAX_LOOKAHEAD_MS,
+            )
+            .with_description("Lookahead delay for gain computation (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("detection_mode", "Detection Mode", det_idx, 0.0, 1.0)
+                .with_description("Level detection mode (0=peak, 1=rms)")
+                .with_group("Sidechain")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "measured_auto_makeup",
+                "Measured Makeup",
+                self.measured_auto_makeup,
+            )
+            .with_description(
+                "Use measured gain reduction for auto-makeup instead of heuristic",
+            )
+            .with_group("Output")
             .with_importance(ParameterImportance::FineTuning),
         ];
     }
@@ -550,6 +636,23 @@ impl InPlacePlugin for ExpanderPlugin {
                 self.sidechain_hpf_hz = v.max(0.0);
                 self.update_coefficients();
             }
+        } else if id == self.param_lookahead {
+            let v = value.as_float().unwrap_or(0.0);
+            if v.is_finite() {
+                self.lookahead_ms = v.clamp(0.0, MAX_LOOKAHEAD_MS);
+                self.update_lookahead_delay();
+            }
+        } else if id == self.param_detection_mode {
+            // Accept float index: 0=peak, 1=rms
+            let idx = value.as_float().unwrap_or(0.0) as usize;
+            let mode_str = if idx >= 1 { "rms" } else { "peak" };
+            self.detection_mode_str = mode_str.to_string();
+            let mode = parse_detection_mode(mode_str);
+            for det in &mut self.level_detectors {
+                det.set_mode(mode);
+            }
+        } else if id == self.param_measured_auto_makeup {
+            self.measured_auto_makeup = value.as_bool().unwrap_or(false);
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -581,6 +684,17 @@ impl InPlacePlugin for ExpanderPlugin {
             Some(ParameterValue::Bool(self.auto_makeup))
         } else if id == &self.param_sidechain_hpf_hz {
             Some(ParameterValue::Float(self.sidechain_hpf_hz))
+        } else if id == &self.param_lookahead {
+            Some(ParameterValue::Float(self.lookahead_ms))
+        } else if id == &self.param_detection_mode {
+            let idx = if self.detection_mode_str == "rms" {
+                1.0
+            } else {
+                0.0
+            };
+            Some(ParameterValue::Float(idx))
+        } else if id == &self.param_measured_auto_makeup {
+            Some(ParameterValue::Bool(self.measured_auto_makeup))
         } else {
             None
         }
@@ -590,6 +704,18 @@ impl InPlacePlugin for ExpanderPlugin {
         self.update_coefficients();
         self.threshold_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
+        let max_samples =
+            (MAX_LOOKAHEAD_MS * 0.001 * sample_rate as f32).round() as usize;
+        for buf in &mut self.lookahead_buffers {
+            buf.resize(max_samples, 1);
+        }
+        self.update_lookahead_delay();
+        let mode = parse_detection_mode(&self.detection_mode_str);
+        self.level_detectors = (0..self.channels)
+            .map(|_| LevelDetector::new(mode, sample_rate))
+            .collect();
+        self.measured_makeup
+            .set_smoothing(MEASURED_MAKEUP_SMOOTHING_MS, sample_rate);
         Ok(())
     }
     fn reset(&mut self) {
@@ -598,6 +724,13 @@ impl InPlacePlugin for ExpanderPlugin {
         self.hold_counter.fill(0);
         self.sidechain_hpf_prev_input.fill(0.0);
         self.sidechain_hpf_prev_output.fill(0.0);
+        for buf in &mut self.lookahead_buffers {
+            buf.reset();
+        }
+        for det in &mut self.level_detectors {
+            det.reset();
+        }
+        self.measured_makeup.reset();
     }
     fn process_in_place(
         &mut self,
@@ -610,9 +743,11 @@ impl InPlacePlugin for ExpanderPlugin {
 
         let thresh = self.threshold_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
+        let use_lookahead = self.lookahead_ms > 0.0;
+        let use_measured = self.auto_makeup && self.measured_auto_makeup;
 
-        // Auto-makeup: compensate for average expansion attenuation
-        let auto_makeup_gain = if self.auto_makeup {
+        // Heuristic auto-makeup (used when measured is off)
+        let heuristic_makeup_gain = if self.auto_makeup && !use_measured {
             let slope = 1.0 - 1.0 / self.ratio.max(1.0);
             let avg_atten = self.range_db.max(0.0) * slope * AUTO_MAKEUP_OVERSHOOT_FACTOR;
             fast_pow10(avg_atten / 20.0)
@@ -626,17 +761,34 @@ impl InPlacePlugin for ExpanderPlugin {
                 for ch in 0..self.channels {
                     let idx = frame * self.channels + ch;
                     let filtered = self.apply_sidechain_filter(ch, buffer[idx]);
-                    let level = filtered.abs();
+                    let level = self.level_detectors[ch].process_linear(filtered);
                     det_level = det_level.max(level);
                     self.input_levels_db[ch] = 20.0 * fast_log10(level.max(1e-10));
                 }
 
                 let input_db = 20.0 * fast_log10(det_level.max(1e-10));
                 let atten = self.process_channel(0, input_db, hold_samples, thresh);
+
+                // Update measured makeup tracker
+                if use_measured {
+                    self.measured_makeup.update(atten);
+                }
+                let auto_makeup_gain = if use_measured {
+                    self.measured_makeup.makeup_linear()
+                } else {
+                    heuristic_makeup_gain
+                };
+
                 let gain = (1.0 - mix) + mix * fast_pow10(-atten / 20.0) * auto_makeup_gain;
 
                 for ch in 0..self.channels {
-                    buffer[frame * self.channels + ch] *= gain;
+                    let idx = frame * self.channels + ch;
+                    if use_lookahead {
+                        let delayed = self.lookahead_buffers[ch].push(buffer[idx]);
+                        buffer[idx] = delayed * gain;
+                    } else {
+                        buffer[idx] *= gain;
+                    }
                 }
             }
         } else {
@@ -644,13 +796,28 @@ impl InPlacePlugin for ExpanderPlugin {
                 for ch in 0..self.channels {
                     let idx = frame * self.channels + ch;
                     let filtered = self.apply_sidechain_filter(ch, buffer[idx]);
-                    let level = filtered.abs();
+                    let level = self.level_detectors[ch].process_linear(filtered);
                     let input_db = 20.0 * fast_log10(level.max(1e-10));
                     self.input_levels_db[ch] = input_db;
 
                     let atten = self.process_channel(ch, input_db, hold_samples, thresh);
+
+                    if use_measured {
+                        self.measured_makeup.update(atten);
+                    }
+                    let auto_makeup_gain = if use_measured {
+                        self.measured_makeup.makeup_linear()
+                    } else {
+                        heuristic_makeup_gain
+                    };
+
                     let gain = (1.0 - mix) + mix * fast_pow10(-atten / 20.0) * auto_makeup_gain;
-                    buffer[idx] *= gain;
+                    if use_lookahead {
+                        let delayed = self.lookahead_buffers[ch].push(buffer[idx]);
+                        buffer[idx] = delayed * gain;
+                    } else {
+                        buffer[idx] *= gain;
+                    }
                 }
             }
         }
@@ -673,7 +840,11 @@ impl InPlacePlugin for ExpanderPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        0
+        if self.lookahead_ms > 0.0 {
+            (self.lookahead_ms * 0.001 * self.sample_rate as f32).round() as usize
+        } else {
+            0
+        }
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
@@ -770,6 +941,51 @@ mod tests {
         assert!(
             last_am > last_no,
             "auto_makeup should boost output: {last_am} > {last_no}"
+        );
+    }
+
+    /// Sidechain HPF at 0 Hz should be effectively disabled: a low-frequency
+    /// signal should still trigger expansion normally.
+    #[test]
+    fn test_sidechain_hpf_zero_hz_passes_low_freq() {
+        let params = ExpanderPluginParams {
+            sidechain_hpf_hz: 0.0,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            range_db: 40.0,
+            attack_ms: 1.0,
+            release_ms: 50.0,
+            mix: 1.0,
+            ..Default::default()
+        };
+        let mut p = ExpanderPlugin::with_params(1, params);
+        p.initialize(48000).unwrap();
+
+        // Generate a 50 Hz sine at -10 dBFS (above -20 threshold)
+        let num_frames = 4800;
+        let amplitude = 10.0_f32.powf(-10.0 / 20.0); // ~0.316
+        let mut buf = vec![0.0f32; num_frames];
+        for i in 0..num_frames {
+            buf[i] = amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin();
+        }
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        p.process_in_place(&mut buf, &ctx).unwrap();
+
+        // With HPF=0 (disabled), the 50 Hz signal should be detected and the
+        // gate should be open (signal above threshold = no expansion).
+        // Output should be close to input amplitude.
+        let last_rms: f32 = buf[4000..].iter().map(|x| x * x).sum::<f32>()
+            / (num_frames - 4000) as f32;
+        let last_rms = last_rms.sqrt();
+        let expected_rms = amplitude / 2.0_f32.sqrt(); // RMS of sine
+        assert!(
+            last_rms > expected_rms * 0.5,
+            "With HPF=0, low-freq signal above threshold should pass through. \
+             RMS={last_rms:.4}, expected ~{expected_rms:.4}"
         );
     }
 

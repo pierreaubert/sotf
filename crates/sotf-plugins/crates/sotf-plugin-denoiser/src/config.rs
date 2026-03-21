@@ -115,6 +115,18 @@ pub fn default_dd_alpha() -> f32 {
     pk(DN, "dd_alpha").default_f32()
 }
 
+pub fn default_formant_preservation() -> bool {
+    pk(DN, "formant_preservation").default_bool()
+}
+
+pub fn default_formant_strength() -> f32 {
+    pk(DN, "formant_strength").default_f32()
+}
+
+pub fn default_multi_resolution() -> bool {
+    pk(DN, "multi_resolution").default_bool()
+}
+
 /// Configuration parameters for DenoiserPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DenoiserPluginParams {
@@ -227,6 +239,24 @@ pub struct DenoiserPluginParams {
     /// Spectral subtraction floor
     #[serde(default = "default_spectral_sub_beta")]
     pub spectral_sub_beta: f32,
+
+    /// Algorithm backend: 0=Classical, 1=RNNoise, 2=DeepFilter, 3=HybridNeural
+    #[serde(default)]
+    pub algorithm: usize,
+
+    /// Preserve speech formant structure during denoising
+    #[serde(default = "default_formant_preservation")]
+    pub formant_preservation: bool,
+
+    /// Formant preservation strength (0.0 = no preservation, 1.0 = maximum)
+    #[serde(default = "default_formant_strength")]
+    pub formant_strength: f32,
+
+    /// Enable dual-resolution STFT processing (512 + 2048 samples).
+    /// Small FFT tracks transients; large FFT handles steady-state noise.
+    /// Gains are blended by spectral-flux-based transient detection.
+    #[serde(default = "default_multi_resolution")]
+    pub multi_resolution: bool,
 }
 
 impl Default for DenoiserPluginParams {
@@ -259,6 +289,10 @@ impl Default for DenoiserPluginParams {
             spectral_sub_enabled: default_spectral_sub_enabled(),
             spectral_sub_alpha: default_spectral_sub_alpha(),
             spectral_sub_beta: default_spectral_sub_beta(),
+            algorithm: 0,
+            formant_preservation: default_formant_preservation(),
+            formant_strength: default_formant_strength(),
+            multi_resolution: default_multi_resolution(),
         }
     }
 }

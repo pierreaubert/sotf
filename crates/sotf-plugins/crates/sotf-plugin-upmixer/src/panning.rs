@@ -3,6 +3,7 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
+use math_audio_dsp::fast_math::fast_cos;
 
 impl UpmixerPlugin {
     #[inline]
@@ -121,6 +122,11 @@ impl UpmixerPlugin {
                     // Correctly power-balanced gain for the extracted center signal in the physical center speaker.
                     // If stereo_w=1.0, we need sqrt(2) to match the power of the original L+R phantom center.
                     // If stereo_w=0.5, we only need sqrt(1.5)=1.225 because 0.5 of the energy is still in L/R.
+                    //
+                    // Edge case: when stereo_width=0, center_power_scale evaluates to sqrt(0)=0.
+                    // This is intentional — width=0 means "keep all content in L/R with no center
+                    // extraction", so the physical center speaker should receive zero direct signal.
+                    // The audio is not lost; it remains in direct_left/direct_right via the L/R path.
                     let center_power_scale = (2.0 * (1.0 - (1.0 - sw).powi(2))).max(0.0).sqrt();
                     let p_direct_c = if is_f && is_c {
                         center_power_scale * (1.0 - cs) * dg
@@ -142,6 +148,13 @@ impl UpmixerPlugin {
                             (&self.ambient_right, &self.ambient_left, pra, pla)
                         };
 
+                        // Pre-compute speaker azimuth in radians for DOA-based direct2 routing.
+                        // Gain = cos(doa2 - spk_az), clamped to [0, 1]: maximum when DOA aligns
+                        // with the speaker, zero when 90° away. This provides soft-knee VBAP for
+                        // the secondary source without needing a full VBAP triplet solve.
+                        let spk_az_rad = spk.azimuth * std::f32::consts::PI / 180.0;
+                        let multi_source = self.multi_source_extraction;
+
                         for i in 0..spectrum_size {
                             let d_val = self.direct[i];
                             let dl_val = self.direct_left[i] + d_val * sw_cs;
@@ -150,8 +163,19 @@ impl UpmixerPlugin {
                             let a_stereo =
                                 a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
                             // Surrounds get direct residues + decorrelated ambient
-                            self.temp_freq_out[i] =
+                            let mut out =
                                 (dl_val * plds + dr_val * prds) + a_stereo * dec[i];
+
+                            // Add secondary source contribution steered by DOA.
+                            // Gain = max(0, cos(doa2 - spk_az)) provides soft directional routing.
+                            if multi_source {
+                                let doa2 = self.direct2_doa_per_bin[i];
+                                let d2_gain =
+                                    fast_cos(doa2 - spk_az_rad).max(0.0);
+                                out += self.direct2[i] * (d2_gain * dg);
+                            }
+
+                            self.temp_freq_out[i] = out;
                         }
                     } else {
                         // Front speakers: use standard L/R mix + extracted center

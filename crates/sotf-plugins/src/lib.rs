@@ -32,7 +32,9 @@ pub use sotf_host::test_utils;
 
 // Re-export all plugin crates
 pub use sotf_plugin_ab_compare as plugin_ab_compare;
+pub use sotf_plugin_aec as plugin_aec;
 pub use sotf_plugin_band_merge as plugin_band_merge;
+pub use sotf_plugin_beamformer as plugin_beamformer;
 pub use sotf_plugin_band_split as plugin_band_split;
 pub use sotf_plugin_binaural as plugin_binaural;
 pub use sotf_plugin_channel_mute_solo as plugin_channel_mute_solo;
@@ -66,6 +68,8 @@ pub use sotf_plugin_hal_output as plugin_hal_output;
 
 // Re-export all public types for backward compatibility
 pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
+pub use plugin_aec::{AecPlugin, AecPluginParams};
+pub use plugin_beamformer::{BeamformerPlugin, BeamformerPluginParams, BeamformerType};
 pub use plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
 pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};
 pub use plugin_binaural::{

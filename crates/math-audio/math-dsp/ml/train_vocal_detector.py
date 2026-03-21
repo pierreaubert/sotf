@@ -12,16 +12,16 @@ ONNX contract:
 
 Usage:
     # Demo-only mode (default, uses bundled WAV files + Silero VAD):
-    python3 scripts/train_vocal_detector.py --demo-only
+    python3 crates/math-audio/math-dsp/ml/train_vocal_detector.py --demo-only
 
     # Train with external dataset manifests (from prepare_musan.py / prepare_ava_speech.py):
-    python3 scripts/train_vocal_detector.py --data-dirs musan_manifest.tsv ava_speech_manifest.tsv
+    python3 crates/math-audio/math-dsp/ml/train_vocal_detector.py --data-dirs musan_manifest.tsv ava_speech_manifest.tsv
 
     # Combine demo data with external manifests:
-    python3 scripts/train_vocal_detector.py --data-dirs musan_manifest.tsv --include-demo
+    python3 crates/math-audio/math-dsp/ml/train_vocal_detector.py --data-dirs musan_manifest.tsv --include-demo
 
 Output:
-    crates/plugins/models/vocal_detector.onnx
+    crates/sotf-plugins/models/vocal_detector.onnx
 """
 
 import argparse
@@ -41,9 +41,10 @@ import torch.nn as nn
 # Paths
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+# Navigate from crates/math-audio/math-dsp/ml/ up to project root
+PROJECT_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "..", "..", ".."))
 AUDIO_DIR = os.path.join(PROJECT_ROOT, "crates", "app-gpui", "assets", "demo-audio")
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "crates", "plugins", "models")
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, "crates", "sotf-plugins", "models")
 OUTPUT_PATH = os.path.join(OUTPUT_DIR, "vocal_detector.onnx")
 
 AUDIO_FILES = [

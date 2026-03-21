@@ -541,9 +541,21 @@ macro_rules! serde_param_default {
 pub mod gain {
     use super::ParamSpec;
     use crate::plugin_layout::*;
-    pub const PARAMS: &[ParamSpec] = &[ParamSpec::float(
-        "Gain", "gain_db", 0.0, -60.0, 20.0, 0.5, "dB", "General",
-    )];
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float(
+            "Gain", "gain_db", 0.0, -60.0, 20.0, 0.5, "dB", "General",
+        ),
+        ParamSpec::float(
+            "Smoothing",
+            "smoothing_ms",
+            10.0,
+            0.0,
+            100.0,
+            1.0,
+            "ms",
+            "General",
+        ),
+    ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[],
         main: &[ControlGroup {
@@ -615,12 +627,51 @@ pub mod compressor {
             "Sidechain",
         )
         .setup(),
+        ParamSpec::choice(
+            "Detection Mode",
+            "detection_mode",
+            0,
+            &["Peak", "RMS"],
+            "Sidechain",
+        )
+        .setup(),
+        ParamSpec::float(
+            "Lookahead",
+            "lookahead_ms",
+            0.0,
+            0.0,
+            20.0,
+            0.5,
+            "ms",
+            "Timing",
+        ),
+        ParamSpec::bool_param(
+            "Program Dependent Release",
+            "program_dependent_release",
+            false,
+            "Timing",
+        ),
+        ParamSpec::bool_param(
+            "Measured Auto Makeup",
+            "measured_auto_makeup",
+            false,
+            "Output",
+        )
+        .output(),
+        ParamSpec::bool_param(
+            "External Sidechain",
+            "sidechain_external",
+            false,
+            "Sidechain",
+        )
+        .setup(),
     ];
     use crate::plugin_layout::*;
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
-            ControlSpec::toggle(8), // link_channels
-            ControlSpec::knob(9),   // sidechain_hpf_hz
+            ControlSpec::toggle(8),  // link_channels
+            ControlSpec::knob(9),    // sidechain_hpf_hz
+            ControlSpec::selector(10), // detection_mode
         ],
         main: &[
             ControlGroup {
@@ -634,14 +685,17 @@ pub mod compressor {
             ControlGroup {
                 title: "TIMING",
                 controls: &[
-                    ControlSpec::slider(2), // attack
-                    ControlSpec::slider(3), // release
+                    ControlSpec::slider(2),  // attack
+                    ControlSpec::slider(3),  // release
+                    ControlSpec::knob(11),   // lookahead_ms
+                    ControlSpec::toggle(12), // program_dependent_release
                 ],
             },
         ],
         output: &[
             ControlSpec::meter(-30.0, 0.0), // GR meter
             ControlSpec::toggle(7),         // auto_makeup
+            ControlSpec::toggle(13),        // measured_auto_makeup
             ControlSpec::knob(5),           // makeup_gain
             ControlSpec::knob(6),           // mix
         ],
@@ -703,9 +757,32 @@ pub mod gate {
             "Sidechain",
         )
         .setup(),
+        ParamSpec::float("Range", "range_db", 80.0, 0.0, 120.0, 1.0, "dB", "Dynamics"),
+        ParamSpec::float(
+            "Hysteresis",
+            "hysteresis_db",
+            4.0,
+            0.0,
+            12.0,
+            0.1,
+            "dB",
+            "Dynamics",
+        ),
+        ParamSpec::float("Knee", "knee_db", 0.0, 0.0, 20.0, 0.5, "dB", "Dynamics"),
+        ParamSpec::float(
+            "Lookahead",
+            "lookahead_ms",
+            0.0,
+            0.0,
+            20.0,
+            0.5,
+            "ms",
+            "Timing",
+        ),
     ];
     use crate::plugin_layout::*;
-    /// Gate: idx 0=threshold, 1=ratio, 2=attack, 3=hold, 4=release, 5=mix, 6=link, 7=sidechain_hpf
+    /// Gate: idx 0=threshold, 1=ratio, 2=attack, 3=hold, 4=release, 5=mix, 6=link, 7=sidechain_hpf,
+    /// 8=range_db, 9=hysteresis_db, 10=knee_db, 11=lookahead_ms
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
             ControlSpec::toggle(6), // link_channels
@@ -797,16 +874,42 @@ pub mod expander {
             "Sidechain HPF",
             "sidechain_hpf_hz",
             80.0,
-            80.0,
+            0.0,
             500.0,
             5.0,
             "Hz",
             "Sidechain",
         )
         .setup(),
+        ParamSpec::float(
+            "Lookahead",
+            "lookahead_ms",
+            0.0,
+            0.0,
+            20.0,
+            0.5,
+            "ms",
+            "Timing",
+        ),
+        ParamSpec::choice(
+            "Detection Mode",
+            "detection_mode",
+            0,
+            &["Peak", "RMS"],
+            "Sidechain",
+        )
+        .setup(),
+        ParamSpec::bool_param(
+            "Measured Auto Makeup",
+            "measured_auto_makeup",
+            false,
+            "Output",
+        )
+        .output(),
     ];
     /// Expander: idx 0=threshold, 1=ratio, 2=attack, 3=release, 4=range, 5=knee,
-    /// 6=hysteresis, 7=hold, 8=mix, 9=auto_makeup, 10=link, 11=sidechain_hpf
+    /// 6=hysteresis, 7=hold, 8=mix, 9=auto_makeup, 10=link, 11=sidechain_hpf,
+    /// 12=lookahead_ms, 13=detection_mode, 14=measured_auto_makeup
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
             ControlSpec::toggle(10), // link_channels
@@ -883,13 +986,15 @@ pub mod limiter {
             "Timing",
         ),
         ParamSpec::bool_labeled("Soft Knee", "soft", false, "Soft", "Hard", "Dynamics").setup(),
+        ParamSpec::bool_labeled("True Peak", "true_peak", false, "On", "Off", "Detection").setup(),
+        ParamSpec::bool_labeled("Dual Release", "dual_release", false, "On", "Off", "Timing").setup(),
         ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "Output")
             .scaled(100.0)
             .output(),
     ];
-    /// Limiter: idx 0=threshold, 1=release, 2=lookahead, 3=soft_knee, 4=mix
+    /// Limiter: idx 0=threshold, 1=release, 2=lookahead, 3=soft_knee, 4=true_peak, 5=dual_release, 6=mix
     pub const LAYOUT: PluginLayout = PluginLayout {
-        config: &[ControlSpec::toggle(3)], // soft_knee
+        config: &[ControlSpec::toggle(3), ControlSpec::toggle(4), ControlSpec::toggle(5)], // soft_knee, true_peak, dual_release
         main: &[
             ControlGroup {
                 title: "DYNAMICS",
@@ -905,7 +1010,7 @@ pub mod limiter {
         ],
         output: &[
             ControlSpec::meter(-20.0, 0.0), // GR meter (limiter range)
-            ControlSpec::knob(4),           // mix
+            ControlSpec::knob(6),           // mix
         ],
         tabs: &[],
         visualizations: &[VizSlot::TransferCurve {
@@ -936,6 +1041,27 @@ pub mod delay {
         ParamSpec::float("Mix", "mix", 0.5, 0.0, 1.0, 0.01, "%", "General")
             .scaled(100.0)
             .output(),
+        ParamSpec::float(
+            "LFO Rate",
+            "lfo_rate_hz",
+            0.0,
+            0.0,
+            20.0,
+            0.1,
+            "Hz",
+            "Modulation",
+        ),
+        ParamSpec::float(
+            "LFO Depth",
+            "lfo_depth_ms",
+            0.0,
+            0.0,
+            10.0,
+            0.1,
+            "ms",
+            "Modulation",
+        ),
+        ParamSpec::bool_param("Allpass Feedback", "allpass_feedback", false, "General"),
     ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[],
@@ -966,10 +1092,11 @@ pub mod loudness_compensation {
     pub const PARAMS: &[ParamSpec] = &[
         ParamSpec::float("Low Freq", "low_freq", 100.0, 20.0, 500.0, 5.0, "Hz", "Low"),
         ParamSpec::float("Low Gain", "low_gain", 6.0, -20.0, 20.0, 0.5, "dB", "Low"),
+        // ISO 226:2003: sensitivity drops above ~8 kHz (80-phon contour rises steeply)
         ParamSpec::float(
             "High Freq",
             "high_freq",
-            10000.0,
+            8000.0,
             2000.0,
             20000.0,
             100.0,
@@ -986,6 +1113,20 @@ pub mod loudness_compensation {
             "dB",
             "High",
         ),
+        ParamSpec::bool_param("Mid Enabled", "mid_enabled", true, "Mid").structural(),
+        // ISO 226:2003: ear canal resonance creates max sensitivity at ~3.5 kHz
+        ParamSpec::float(
+            "Mid Freq",
+            "mid_freq",
+            3500.0,
+            500.0,
+            8000.0,
+            50.0,
+            "Hz",
+            "Mid",
+        ),
+        ParamSpec::float("Mid Gain", "mid_gain", 3.0, -20.0, 20.0, 0.5, "dB", "Mid"),
+        ParamSpec::float("Mid Q", "mid_q", 0.707, 0.1, 5.0, 0.05, "", "Mid"),
         ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain")
             .structural()
             .output(),
@@ -1025,6 +1166,15 @@ pub mod loudness_compensation {
                 ],
             },
             ControlGroup {
+                title: "MID",
+                controls: &[
+                    ControlSpec::toggle(4), // mid_enabled
+                    ControlSpec::knob(5),   // mid_freq
+                    ControlSpec::knob(6),   // mid_gain
+                    ControlSpec::knob(7),   // mid_q
+                ],
+            },
+            ControlGroup {
                 title: "HIGH",
                 controls: &[
                     ControlSpec::knob(2), // high_freq
@@ -1033,9 +1183,9 @@ pub mod loudness_compensation {
             },
         ],
         output: &[
-            ControlSpec::toggle(4), // auto_gain_enabled
-            ControlSpec::knob(5),   // auto_gain_max_db
-            ControlSpec::knob(6),   // auto_gain_smoothing_ms
+            ControlSpec::toggle(8), // auto_gain_enabled
+            ControlSpec::knob(9),   // auto_gain_max_db
+            ControlSpec::knob(10),  // auto_gain_smoothing_ms
         ],
         tabs: &[],
         visualizations: &[],
@@ -1433,6 +1583,18 @@ pub mod upmixer {
             "Output",
         )
         .output(),
+        // Analysis
+        ParamSpec::bool_param("Low Latency", "low_latency", false, "Analysis")
+            .secondary("Analysis"),
+        ParamSpec::choice(
+            "Freq Resolution",
+            "frequency_resolution",
+            0,
+            &["ERB", "Fine ERB", "Per Bin"],
+            "Analysis",
+        )
+        .secondary("Analysis")
+        .structural(),
         // Diagnostics
         ParamSpec::bool_param("Bypass Decor", "bypass_decorrelation", false, "Diagnostics")
             .diagnostic(),
@@ -1447,11 +1609,30 @@ pub mod upmixer {
             .diagnostic(),
         ParamSpec::bool_param("ML Detection", "enable_ml_detection", false, "Diagnostics")
             .diagnostic(),
+        // Multi-source extraction
+        ParamSpec::bool_param(
+            "Multi-Source Extraction",
+            "multi_source_extraction",
+            false,
+            "Enhancement",
+        )
+        .secondary("Enhancement"),
+        ParamSpec::float(
+            "Multi-Source Threshold",
+            "multi_source_threshold",
+            0.1,
+            0.05,
+            0.5,
+            0.01,
+            "",
+            "Enhancement",
+        )
+        .secondary("Enhancement"),
     ];
     use crate::plugin_layout::*;
     /// Upmixer: 0=speaker_config, 1-4=gains, 5-11=LFE, 12-14=spatial,
     /// 15-21=enhancement, 22-24=height, 25-27=surround, 28-33=dialogue,
-    /// 34=safety_cap, 35-38=diagnostics
+    /// 34=safety_cap, 35=low_latency, 36=frequency_resolution, 37-40=diagnostics
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
             ControlSpec::selector(0), // speaker_config
@@ -1533,10 +1714,10 @@ pub mod upmixer {
             TabSpec {
                 name: "Diagnostics",
                 controls: &[
-                    ControlSpec::toggle(35), // bypass_decorrelation
-                    ControlSpec::toggle(36), // bypass_transient_detection
-                    ControlSpec::toggle(37), // bypass_all
-                    ControlSpec::toggle(38), // ml_detection
+                    ControlSpec::toggle(37), // bypass_decorrelation
+                    ControlSpec::toggle(38), // bypass_transient_detection
+                    ControlSpec::toggle(39), // bypass_all
+                    ControlSpec::toggle(40), // ml_detection
                 ],
             },
         ],
@@ -1560,6 +1741,8 @@ pub mod convolution {
         ParamSpec::file_path("IR File", "ir_file", "General").setup(),
         ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "General").output(),
         ParamSpec::float("Gain", "gain_db", 0.0, -20.0, 20.0, 0.5, "dB", "General").output(),
+        ParamSpec::bool_param("Use NUPC", "use_nupc", true, "General")
+            .structural(),
     ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[ControlSpec::file_picker(0)], // ir_file
@@ -1584,8 +1767,29 @@ pub mod convolution {
 
 pub mod channel_mute_solo {
     use super::ParamSpec;
-    pub const PARAMS: &[ParamSpec] =
-        &[ParamSpec::bool_param("Enabled", "enabled", true, "General")];
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::bool_param("Enabled", "enabled", true, "General"),
+        ParamSpec::float(
+            "Dim Gain",
+            "dim_gain_db",
+            -20.0,
+            -60.0,
+            0.0,
+            1.0,
+            "dB",
+            "General",
+        ),
+        ParamSpec::float(
+            "Fade Time",
+            "fade_ms",
+            10.0,
+            0.0,
+            100.0,
+            1.0,
+            "ms",
+            "General",
+        ),
+    ];
 }
 
 // ============================================================================
@@ -1864,6 +2068,17 @@ pub mod multiband_compressor {
             "Global",
         )
         .setup(),
+        ParamSpec::float(
+            "Lookahead",
+            "per_band_lookahead_ms",
+            0.0,
+            0.0,
+            20.0,
+            0.5,
+            "ms",
+            "Global",
+        ),
+        ParamSpec::bool_param("M/S Mode", "ms_mode", false, "Global").setup(),
     ];
     /// Template for each compressor band (repeated per band).
     pub const BAND_TEMPLATE: &[ParamSpec] = &[
@@ -1984,19 +2199,35 @@ pub mod pnd {
             "General",
         )
         .scaled(1000.0),
+        ParamSpec::bool_param("Multi-Channel", "multi_channel_analysis", true, "Analysis"),
+        ParamSpec::float(
+            "Confidence Threshold",
+            "confidence_threshold",
+            0.5,
+            0.0,
+            1.0,
+            0.01,
+            "",
+            "Correction",
+        ),
+        ParamSpec::bool_param("Phase Vocoder", "phase_vocoder", false, "Correction"),
     ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[],
         main: &[
             ControlGroup {
                 title: "CORRECTION",
-                controls: &[ControlSpec::knob(0)], // correction_strength
+                controls: &[
+                    ControlSpec::knob(0), // correction_strength
+                    ControlSpec::knob(4), // confidence_threshold
+                ],
             },
             ControlGroup {
                 title: "ANALYSIS",
                 controls: &[
                     ControlSpec::knob(1), // analysis_window_ms
                     ControlSpec::knob(2), // drift_smoothing
+                    ControlSpec::toggle(3), // multi_channel_analysis
                 ],
             },
         ],
@@ -2231,11 +2462,47 @@ pub mod denoiser {
         )
         .structural()
         .secondary("Noise Profile"),
+        ParamSpec::choice(
+            "Algorithm",
+            "algorithm",
+            0,
+            &["Classical", "RNNoise", "DeepFilter", "HybridNeural"],
+            "General",
+        )
+        .structural(),
+        ParamSpec::bool_param(
+            "Formant Preserve",
+            "formant_preservation",
+            false,
+            "Formant",
+        )
+        .secondary("Formant"),
+        ParamSpec::float(
+            "Formant Strength",
+            "formant_strength",
+            0.5,
+            0.0,
+            1.0,
+            0.01,
+            "",
+            "Formant",
+        )
+        .scaled(100.0)
+        .secondary("Formant"),
+        ParamSpec::bool_param(
+            "Multi-Res",
+            "multi_resolution",
+            false,
+            "General",
+        )
+        .structural()
+        .secondary("General"),
     ];
     use crate::plugin_layout::*;
     /// Denoiser: 0=reduction, 1=floor, 2=smoothing, 3=attack, 4=release,
     /// 5=low_latency, 6=polyphonic, 7=crack_sens, 8-11=MCRA, 12=transparency,
-    /// 13-18=analysis toggles, 19-22=hiss, 23-25=spectral_sub, 26-28=noise_profile
+    /// 13-18=analysis toggles, 19-22=hiss, 23-25=spectral_sub, 26-28=noise_profile,
+    /// 29=algorithm, 30=formant_preservation, 31=formant_strength, 32=multi_resolution
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
             ControlSpec::toggle(5), // low_latency
@@ -2305,6 +2572,13 @@ pub mod denoiser {
                     ControlSpec::knob(9),  // alpha_p
                     ControlSpec::knob(10), // window (int)
                     ControlSpec::knob(11), // delta
+                ],
+            },
+            TabSpec {
+                name: "Formant",
+                controls: &[
+                    ControlSpec::toggle(30), // formant_preservation
+                    ControlSpec::knob(31),   // formant_strength
                 ],
             },
         ],
@@ -2534,6 +2808,7 @@ pub mod fletcher_munson {
             "",
             "Band 4",
         ),
+        ParamSpec::bool_param("ISO 226:2003", "iso_226", false, "Global").setup(),
     ];
     use crate::plugin_layout::*;
     pub const LAYOUT: PluginLayout = PluginLayout {
@@ -2700,6 +2975,14 @@ pub mod multiband_expander {
             "Global",
         )
         .setup(),
+        ParamSpec::choice(
+            "Detection Mode",
+            "detection_mode",
+            0,
+            &["Peak", "RMS"],
+            "Global",
+        )
+        .setup(),
     ];
     /// Template for each expander band (repeated per band).
     pub const BAND_TEMPLATE: &[ParamSpec] = &[
@@ -2843,6 +3126,7 @@ pub mod mono_to_stereo {
             "Hz",
             "General",
         ),
+        ParamSpec::bool_param("Freq Dependent", "freq_dependent", true, "General"),
     ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
@@ -2860,6 +3144,7 @@ pub mod mono_to_stereo {
                 ControlSpec::knob(1), // haas_delay_ms
                 ControlSpec::knob(4), // decor_low_hz
                 ControlSpec::knob(5), // decor_high_hz
+                ControlSpec::toggle(6), // freq_dependent
             ],
         }],
         visualizations: &[],
@@ -2939,6 +3224,7 @@ pub mod downmix {
             "Hz",
             "Phase",
         ),
+        ParamSpec::bool_param("ITU-R BS.775 Mode", "itu_mode", false, "Mode"),
     ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[ControlSpec::toggle(4)], // phase_coherence
@@ -3400,11 +3686,15 @@ pub mod ab_compare {
         ),
         ParamSpec::file_path("Path A Config", "path_a_config", "Configuration"),
         ParamSpec::file_path("Path B Config", "path_b_config", "Configuration"),
+        ParamSpec::bool_param("Phase Invert A", "phase_invert_a", false, "Phase"),
+        ParamSpec::bool_param("Phase Invert B", "phase_invert_b", false, "Phase"),
+        ParamSpec::bool_param("Difference Mode", "difference_mode", false, "Mix"),
     ];
     use crate::plugin_layout::*;
     /// AB Compare: idx 0=mix, 1=mix_mode, 2=selected_path, 3=bypass,
     /// 4=auto_gain, 5=loudness_type, 6=max_auto_gain, 7=gain_smoothing,
-    /// 8=mix_transition, 9=path_a_config, 10=path_b_config
+    /// 8=mix_transition, 9=path_a_config, 10=path_b_config,
+    /// 11=phase_invert_a, 12=phase_invert_b, 13=difference_mode
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[],
         main: &[
@@ -3556,6 +3846,17 @@ pub mod crossfeed {
             "dB",
             "Multiband",
         ),
+        // ITD (Interaural Time Difference)
+        ParamSpec::float(
+            "ITD Delay",
+            "itd_delay_ms",
+            0.0,
+            0.0,
+            1.0,
+            0.01,
+            "ms",
+            "General",
+        ),
         // Auto Gain
         ParamSpec::bool_param("Auto Gain", "autogain_enabled", false, "Auto Gain").output(),
         ParamSpec::float(
@@ -3595,7 +3896,8 @@ pub mod crossfeed {
     /// Crossfeed: idx 0=mode, 1=preset, 2=enabled, 3=mix,
     /// 4=bauer_fcut, 5=bauer_feed, 6=meier_level,
     /// 7=mb_low_freq, 8=mb_mid_high_freq, 9=mb_low_feed, 10=mb_mid_feed, 11=mb_high_feed,
-    /// 12=autogain_enabled, 13=target_lufs, 14=max_gain, 15=smoothing
+    /// 12=itd_delay_ms,
+    /// 13=autogain_enabled, 14=target_lufs, 15=max_gain, 16=smoothing
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[],
         main: &[
@@ -3626,13 +3928,19 @@ pub mod crossfeed {
                     ControlSpec::knob(11), // mb_high_feed_db
                 ],
             },
+            ControlGroup {
+                title: "ITD",
+                controls: &[
+                    ControlSpec::knob(12), // itd_delay_ms
+                ],
+            },
         ],
         output: &[
-            ControlSpec::knob(13),   // target_lufs
-            ControlSpec::toggle(12), // autogain_enabled
-            ControlSpec::knob(14),   // max_gain
+            ControlSpec::knob(14),   // target_lufs
+            ControlSpec::toggle(13), // autogain_enabled
+            ControlSpec::knob(15),   // max_gain
             ControlSpec::knob(3),    // mix
-            ControlSpec::knob(15),   // smoothing
+            ControlSpec::knob(16),   // smoothing
         ],
         tabs: &[],
         visualizations: &[],
@@ -3676,5 +3984,125 @@ pub mod ambisonics {
         tabs: &[],
         visualizations: &[],
         column_constraints: &[ColumnConstraint::main(200.0)],
+    };
+}
+
+// ============================================================================
+// AEC Plugin (Acoustic Echo Cancellation)
+// ============================================================================
+
+pub mod aec {
+    use super::ParamSpec;
+    use crate::plugin_layout::*;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float(
+            "Echo Tail",
+            "echo_tail_ms",
+            200.0,
+            50.0,
+            500.0,
+            10.0,
+            "ms",
+            "AEC",
+        ),
+        ParamSpec::float(
+            "Step Size",
+            "step_size",
+            0.5,
+            0.1,
+            0.9,
+            0.05,
+            "",
+            "AEC",
+        ),
+        ParamSpec::bool_param("Post-Filter", "post_filter_enabled", true, "AEC").output(),
+    ];
+    pub const LAYOUT: PluginLayout = PluginLayout {
+        config: &[],
+        main: &[ControlGroup {
+            title: "",
+            controls: &[
+                ControlSpec::slider(0), // echo_tail_ms
+                ControlSpec::slider(1), // step_size
+            ],
+        }],
+        output: &[ControlSpec::toggle(2)], // post_filter_enabled
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &[
+            ColumnConstraint::main(200.0),
+            ColumnConstraint::output(120.0, 0.6),
+        ],
+    };
+}
+
+// ============================================================================
+// Beamformer Plugin
+// ============================================================================
+
+pub mod beamformer {
+    use super::ParamSpec;
+    use crate::plugin_layout::*;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::int(
+            "Microphones",
+            "num_mics",
+            2,
+            2,
+            8,
+            1,
+            "",
+            "Array",
+        )
+        .structural(),
+        ParamSpec::float(
+            "Mic Spacing",
+            "mic_spacing_cm",
+            5.0,
+            1.0,
+            50.0,
+            0.5,
+            "cm",
+            "Array",
+        )
+        .structural(),
+        ParamSpec::float(
+            "Steer Angle",
+            "steer_angle_deg",
+            0.0,
+            -180.0,
+            180.0,
+            1.0,
+            "°",
+            "General",
+        ),
+        ParamSpec::choice(
+            "Algorithm",
+            "beamformer_type",
+            0,
+            &["MVDR", "Superdirective", "GSC"],
+            "General",
+        )
+        .structural(),
+    ];
+    pub const LAYOUT: PluginLayout = PluginLayout {
+        config: &[
+            ControlSpec::slider(0), // num_mics
+            ControlSpec::slider(1), // mic_spacing_cm
+        ],
+        main: &[ControlGroup {
+            title: "",
+            controls: &[
+                ControlSpec::slider(2), // steer_angle_deg
+                ControlSpec::selector(3), // beamformer_type
+            ],
+        }],
+        output: &[],
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &[
+            ColumnConstraint::config(150.0, 0.4),
+            ColumnConstraint::main(200.0),
+        ],
     };
 }

@@ -21,13 +21,14 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
-    ABComparePlugin, AutoGain, AutoGainParams, BandMergePlugin, BandSplitPlugin,
-    ChannelMuteSoloPlugin, CompressorPlugin, CrossoverPlugin, DelayPlugin, DenoiserPlugin,
-    EqPlugin, ExpanderPlugin, FletcherMunsonPlugin, FletcherMunsonPluginParams, GainPlugin,
-    GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
-    LoudnessMonitorPlugin, MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
-    Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin,
-    UpmixerPluginParams, XtcPlugin, XtcPluginParams,
+    ABComparePlugin, AecPlugin, AecPluginParams, AutoGain, AutoGainParams, BandMergePlugin,
+    BandSplitPlugin, BeamformerPlugin, ChannelMuteSoloPlugin, CompressorPlugin, CrossoverPlugin,
+    DelayPlugin, DenoiserPlugin, EqPlugin, ExpanderPlugin, FletcherMunsonPlugin,
+    FletcherMunsonPluginParams, GainPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter,
+    LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin,
+    MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
+    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams, XtcPlugin,
+    XtcPluginParams,
 };
 
 // ============================================================================
@@ -532,6 +533,53 @@ fn test_auto_gain_zero_alloc() {
     });
 }
 
+fn test_aec_zero_alloc() {
+    let params = AecPluginParams::default();
+    let mut plugin = AecPlugin::from_params(SAMPLE_RATE, params);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let input = generate_test_buffer(BUFFER_SIZE, 2); // 2-channel: mic + ref
+    let mut output = vec![0.0f32; BUFFER_SIZE]; // 1-channel output
+    let ctx = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: BUFFER_SIZE,
+    };
+
+    // Warm up
+    plugin.process(&input, &mut output, &ctx).unwrap();
+    plugin.process(&input, &mut output, &ctx).unwrap();
+
+    assert_no_allocs("AecPlugin", || {
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    });
+}
+
+fn test_beamformer_zero_alloc() {
+    let mut plugin = BeamformerPlugin::new(2, SAMPLE_RATE);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    // Use GSC mode (sample-by-sample, simplest hot path)
+    use sotf_plugins::parameters::{ParameterId, ParameterValue};
+    plugin
+        .set_parameter(ParameterId::from("beamformer_type"), ParameterValue::Int(2))
+        .unwrap();
+
+    let input = generate_test_buffer(BUFFER_SIZE, 2); // 2-mic input
+    let mut output = vec![0.0f32; BUFFER_SIZE]; // 1-channel output
+    let ctx = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: BUFFER_SIZE,
+    };
+
+    // Warm up
+    plugin.process(&input, &mut output, &ctx).unwrap();
+    plugin.process(&input, &mut output, &ctx).unwrap();
+
+    assert_no_allocs("BeamformerPlugin", || {
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    });
+}
+
 // ============================================================================
 // Criterion benchmark that runs all zero-allocation assertions
 // ============================================================================
@@ -579,6 +627,8 @@ fn benchmark_zero_allocation(c: &mut Criterion) {
         b.iter(test_loudness_monitor_zero_alloc)
     });
     group.bench_function("auto_gain", |b| b.iter(test_auto_gain_zero_alloc));
+    group.bench_function("aec", |b| b.iter(test_aec_zero_alloc));
+    group.bench_function("beamformer", |b| b.iter(test_beamformer_zero_alloc));
 
     group.finish();
 }
