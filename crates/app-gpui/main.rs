@@ -1,3 +1,6 @@
+// Suppress the console window on Windows (GUI app, not a console app)
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use anyhow::anyhow;
 use clap::Parser;
 use gpui::*;

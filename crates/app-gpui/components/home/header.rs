@@ -88,15 +88,19 @@ impl PlayerView {
         };
 
         div()
+            .id("menu-dismiss-overlay")
             .absolute()
             .top_0()
             .left_0()
             .right_0()
             .bottom_0()
             .when(active_menu != ActiveMenu::None, |el| {
-                el.on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|view, _: &MouseDownEvent, _window, cx| {
+                // Use on_click (not on_mouse_down) so menu items can handle
+                // their on_mouse_up before the overlay dismisses the dropdown.
+                // on_mouse_down would fire first, removing the dropdown before
+                // the menu item's on_mouse_up could execute.
+                el.on_click(
+                    cx.listener(|view, _: &ClickEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
                             state.app.ui_state.active_menu = ActiveMenu::None;
                         });

@@ -9082,6 +9082,7 @@ dependencies = [
  "sotf-engine",
  "sotf-player",
  "sotf-plugins",
+ "souvlaki",
  "strsim",
  "symphonia",
  "symphonia-bundle-flac",
