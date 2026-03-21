@@ -647,12 +647,13 @@ impl PlayerView {
             )
     }
 
-    /// Compute average SPL in the 100 Hz - 10 kHz range
+    /// Compute average SPL in the 100 Hz - 10 kHz range.
+    /// Excludes noise-floor sentinel values (<= -150 dB) from the average.
     fn compute_average_spl(frequencies: &[f32], magnitude_db: &[f32]) -> Option<f32> {
         let mut sum = 0.0_f32;
         let mut count = 0;
         for (&freq, &mag) in frequencies.iter().zip(magnitude_db.iter()) {
-            if (100.0..=10000.0).contains(&freq) {
+            if (100.0..=10000.0).contains(&freq) && mag > -150.0 {
                 sum += mag;
                 count += 1;
             }
@@ -681,18 +682,26 @@ impl PlayerView {
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(0.0);
 
-        // Prepare series
+        // Prepare series (filter out noise-floor placeholders from the analysis)
         let series: Vec<Series> = results
             .iter()
             .map(|(name, idx, result)| {
-                let normalized: Vec<f32> = result
-                    .magnitude_db
+                // Filter out noise-floor sentinel values (-200 dB) produced by
+                // the analysis for frequencies outside the sweep range (e.g., LFE above 500 Hz)
+                let (filtered_freqs, filtered_mags): (Vec<f32>, Vec<f32>) = result
+                    .frequencies
+                    .iter()
+                    .zip(result.magnitude_db.iter())
+                    .filter(|(_, mag)| **mag > -150.0)
+                    .unzip();
+
+                let normalized: Vec<f32> = filtered_mags
                     .iter()
                     .map(|&mag| -(mag - normalization_offset))
                     .collect();
-                let smoothed = Self::apply_smoothing(&result.frequencies, &normalized, smoothing);
+                let smoothed = Self::apply_smoothing(&filtered_freqs, &normalized, smoothing);
 
-                let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
+                let freqs_f64: Vec<f64> = filtered_freqs.iter().map(|&v| v as f64).collect();
                 let mags_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
 
                 Series::new(

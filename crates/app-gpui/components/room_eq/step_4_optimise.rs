@@ -886,6 +886,7 @@ impl PlayerView {
                                             .freq
                                             .iter()
                                             .zip(channel_res.initial_curve.spl.iter())
+                                            .filter(|(_, db)| **db > -150.0)
                                             .map(|(&f, &db)| (f, db))
                                             .collect(),
                                     ),
@@ -895,6 +896,7 @@ impl PlayerView {
                                             .freq
                                             .iter()
                                             .zip(channel_res.final_curve.spl.iter())
+                                            .filter(|(_, db)| **db > -150.0)
                                             .map(|(&f, &db)| (f, db))
                                             .collect(),
                                     ),
@@ -904,6 +906,7 @@ impl PlayerView {
                                             .freq
                                             .iter()
                                             .zip(channel_res.final_curve.spl.iter())
+                                            .filter(|(_, db)| **db > -150.0)
                                             .map(|(&f, &db)| (f, db))
                                             .collect(),
                                     ),

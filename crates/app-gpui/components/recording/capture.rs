@@ -1486,7 +1486,7 @@ impl PlayerView {
                         view.start_recording_channel(next_idx, cx);
                     });
                 } else {
-                    log::info!("Auto-recording complete - all channels recorded");
+                    log::info!("Auto-recording complete - all channels recorded, saving JSON");
                     view_entity.update(cx, |view, cx| {
                         view.state.update(cx, |state, _| {
                             state
@@ -1495,8 +1495,10 @@ impl PlayerView {
                                 .recording_state
                                 .auto_record_remaining = false;
                             state.app.measurement_state.recording_state.status_message =
-                                "All channels recorded successfully!".to_string();
+                                "All channels recorded, saving...".to_string();
                         });
+                        // Auto-save recordings.json with all channel data
+                        view.save_recordings(cx);
                         cx.notify();
                     });
                 }
