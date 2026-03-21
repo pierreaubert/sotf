@@ -232,10 +232,24 @@ impl PlayerView {
         use math_audio_iir_fir::BiquadFilterType;
         use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
 
-        // Get the DSP output from state
-        let dsp_output = {
+        // Get the DSP output and channel results from state.
+        // channel_results preserves the output channel order (0=FL, 1=FR, 2=C, etc.)
+        // from the recording config — we MUST use this order, not alphabetical sort,
+        // because the EQ plugin maps channel_filters[i] to audio channel i.
+        let (dsp_output, channel_result_names) = {
             let state = self.state.read(cx);
-            state.app.measurement_state.room_eq_state.dsp_output.clone()
+            let names: Vec<String> = state
+                .app
+                .measurement_state
+                .room_eq_state
+                .channel_results
+                .iter()
+                .map(|r| r.channel_name.clone())
+                .collect();
+            (
+                state.app.measurement_state.room_eq_state.dsp_output.clone(),
+                names,
+            )
         };
 
         let Some(dsp_output) = dsp_output else {
@@ -279,13 +293,11 @@ impl PlayerView {
                 .collect()
         };
 
-        // Collect EQ filters per channel for proper per-channel room correction
-        // Sort channel names to ensure consistent ordering (L, R, C, etc.)
-        let mut channel_names: Vec<_> = dsp_output.channels.keys().cloned().collect();
-        channel_names.sort();
-
+        // Collect EQ filters per channel in output channel order.
+        // channel_result_names preserves the order from the recording config
+        // (0=FL, 1=FR, 2=C, 3=LFE, 4=SL, 5=SR for 5.1).
         let mut per_channel_filters: Vec<Vec<EQFilter>> = Vec::new();
-        for channel_name in &channel_names {
+        for channel_name in &channel_result_names {
             if let Some(channel_dsp) = dsp_output.channels.get(channel_name) {
                 let mut channel_eq_filters: Vec<EQFilter> = Vec::new();
                 for plugin in &channel_dsp.plugins {
@@ -296,7 +308,16 @@ impl PlayerView {
                         channel_eq_filters.extend(parse_filters(filters));
                     }
                 }
+                log::info!(
+                    "Channel '{}': {} EQ filters",
+                    channel_name,
+                    channel_eq_filters.len()
+                );
                 per_channel_filters.push(channel_eq_filters);
+            } else {
+                // Channel has no DSP output (e.g., optimization skipped it)
+                log::info!("Channel '{}': no DSP output, using empty filters", channel_name);
+                per_channel_filters.push(Vec::new());
             }
         }
 
