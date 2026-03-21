@@ -221,7 +221,7 @@ tui:
 
 [group('build')]
 gpui:
-	cargo run --release --bin SotF -p sotf-gpui --features onnx
+	cargo run --release --bin SotF -p sotf-gpui --features "onnx,hal"
 
 # ----------------------------------------------------------------------
 # CLEAN

@@ -1063,6 +1063,17 @@ impl PlayerView {
             }
         };
 
+        // Ensure the recording directory exists before writing WAV/CSV files
+        if let Err(e) = std::fs::create_dir_all(&recording_dir) {
+            log::error!("Failed to create recording directory {:?}: {}", recording_dir, e);
+            self.state.update(cx, |state, _| {
+                state.app.measurement_state.recording_state.status_message =
+                    format!("Cannot create recording directory: {}", e);
+            });
+            cx.notify();
+            return;
+        }
+
         // Mark all mic entries for this speaker as Recording and clear old results
         // so the evaluating graphs reset immediately (not showing stale data).
         let mic_vec_indices: Vec<usize> = params.mics.iter().map(|m| m.vec_idx).collect();

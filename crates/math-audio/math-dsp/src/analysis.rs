@@ -861,28 +861,6 @@ pub fn analyze_recording(
         );
     }
 
-    // Detect empty/disconnected channels: if the recorded signal RMS is far below
-    // the reference (e.g., speaker not connected), the cross-correlation lag estimate
-    // is meaningless and the transfer function will produce spurious high-dB peaks.
-    // Clamp the transfer function in this case.
-    let ref_rms = (reference.iter().map(|&x| x * x).sum::<f32>() / reference.len() as f32).sqrt();
-    let rec_rms = (recorded.iter().map(|&x| x * x).sum::<f32>() / recorded.len() as f32).sqrt();
-    let rms_ratio_db = if ref_rms > 1e-10 {
-        20.0 * (rec_rms / ref_rms).log10()
-    } else {
-        0.0
-    };
-    // If the recorded signal is more than 40 dB below the reference, the channel
-    // is effectively silent (disconnected speaker, muted output, etc.).
-    let is_silent_channel = rms_ratio_db < -40.0;
-    if is_silent_channel {
-        log::warn!(
-            "[FFT Analysis] Silent channel detected: recorded RMS is {:.1} dB below reference. \
-             Transfer function will be clamped to noise floor.",
-            -rms_ratio_db,
-        );
-    }
-
     // Estimate lag using cross-correlation
     let lag = estimate_lag(reference, recorded)?;
 
@@ -935,6 +913,18 @@ pub fn analyze_recording(
     let freq_resolution = sample_rate as f32 / fft_size as f32;
     let num_bins = fft_size / 2; // Single-sided spectrum
 
+    // Compute regularization threshold relative to the peak reference energy.
+    // Bins where the reference has very little energy (e.g., disconnected speaker
+    // with a misaligned sweep) produce unreliable transfer functions — division by
+    // near-zero gives spurious high-dB peaks. We skip bins where the reference
+    // energy is more than 60 dB below the peak.
+    let ref_peak_mag_sq = ref_spectrum[1..num_bins.min(ref_spectrum.len())]
+        .iter()
+        .map(|c| c.norm_sqr())
+        .fold(0.0_f32, |a, b| a.max(b));
+    // 60 dB below peak = 10^(-6) in power
+    let ref_regularization_threshold = ref_peak_mag_sq * 1e-6;
+
     // Apply 1/24 octave smoothing for each target frequency
     let mut skipped_count = 0;
     for i in 0..num_output_points {
@@ -963,7 +953,12 @@ pub fn analyze_recording(
                 );
             }
             skipped_count += 1;
-            continue; // Skip if range is invalid
+            // Output noise-floor placeholder so all channels produce the same
+            // number of frequency points (prevents ndarray shape mismatches).
+            frequencies.push(target_freq);
+            spl_db.push(-200.0);
+            phase_deg.push(0.0);
+            continue;
         }
 
         // Average transfer function magnitude and phase across bins in the smoothing range
@@ -979,12 +974,14 @@ pub fn analyze_recording(
 
             // Compute transfer function: H(f) = recorded / reference
             // This gives the system response (for loopback, should be ~1.0 or 0 dB)
+            // Skip bins where the reference energy is too low (>60 dB below peak):
+            // dividing by near-zero produces unreliable, spuriously high values
+            // (e.g., disconnected speaker where the recording is just noise).
             let ref_mag_sq = ref_spectrum[k].norm_sqr();
-            let transfer_function = if ref_mag_sq > 1e-20 {
-                rec_spectrum[k] / ref_spectrum[k]
-            } else {
-                Complex::new(0.0, 0.0)
-            };
+            if ref_mag_sq <= ref_regularization_threshold {
+                continue;
+            }
+            let transfer_function = rec_spectrum[k] / ref_spectrum[k];
             let magnitude = transfer_function.norm();
 
             // Phase from cross-spectrum (signals are already time-aligned)
@@ -998,24 +995,16 @@ pub fn analyze_recording(
             bin_count += 1;
         }
 
-        if bin_count == 0 {
-            continue; // Skip if no bins in range
-        }
-
-        // Average magnitude
-        let avg_magnitude = sum_magnitude / bin_count as f32;
-
-        // For silent channels (disconnected speaker), clamp the transfer function
-        // to prevent noise-on-noise division from producing spurious high-dB values.
-        // The actual RMS ratio is the best estimate of the true transfer function level.
-        let avg_magnitude = if is_silent_channel {
-            avg_magnitude.min(rec_rms / ref_rms.max(1e-10))
+        // When no valid bins contribute (reference energy too low at this frequency,
+        // e.g., LFE sweep above 500 Hz), output a noise-floor value instead of skipping.
+        // Skipping would produce fewer output points than other channels, causing
+        // ndarray shape mismatches when curves are combined downstream.
+        let (avg_magnitude, db) = if bin_count == 0 {
+            (0.0, -200.0)
         } else {
-            avg_magnitude
+            let avg = sum_magnitude / bin_count as f32;
+            (avg, 20.0 * avg.max(1e-10).log10())
         };
-
-        // Convert to dB
-        let db = 20.0 * avg_magnitude.max(1e-10).log10();
 
         if frequencies.len() < 5 {
             log::debug!(
@@ -2555,5 +2544,232 @@ mod tests {
         let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let lag = estimate_lag(&signal, &signal).unwrap();
         assert_eq!(lag, 0, "Identical signals should have zero lag");
+    }
+
+    /// Write a mono f32 WAV file for testing
+    fn write_test_wav(path: &std::path::Path, samples: &[f32], sample_rate: u32) {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        for &s in samples {
+            writer.write_sample(s).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    /// Generate a log sweep signal (same as the recording system uses)
+    fn generate_test_sweep(
+        start_freq: f32,
+        end_freq: f32,
+        duration_secs: f32,
+        sample_rate: u32,
+        amplitude: f32,
+    ) -> Vec<f32> {
+        let num_samples = (duration_secs * sample_rate as f32) as usize;
+        let mut signal = Vec::with_capacity(num_samples);
+        let ln_ratio = (end_freq / start_freq).ln();
+        for i in 0..num_samples {
+            let t = i as f32 / sample_rate as f32;
+            let phase = 2.0 * PI * start_freq * duration_secs / ln_ratio
+                * ((t / duration_secs * ln_ratio).exp() - 1.0);
+            signal.push(amplitude * phase.sin());
+        }
+        signal
+    }
+
+    #[test]
+    fn test_analyze_recording_normal_channel() {
+        // Simulate a normal speaker: reference sweep played back and recorded
+        // with some attenuation and small delay
+        let sample_rate = 48000;
+        let duration = 1.0;
+        let reference = generate_test_sweep(20.0, 20000.0, duration, sample_rate, 0.5);
+
+        // Simulate recording: attenuate by ~-6dB (factor 0.5) and delay by 100 samples
+        let delay = 100;
+        let attenuation = 0.5;
+        let mut recorded = vec![0.0_f32; reference.len() + delay];
+        for (i, &s) in reference.iter().enumerate() {
+            recorded[i + delay] = s * attenuation;
+        }
+
+        let dir = std::env::temp_dir().join(format!(
+            "sotf_test_normal_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav_path = dir.join("test_normal.wav");
+        write_test_wav(&wav_path, &recorded, sample_rate);
+
+        let result = analyze_recording(&wav_path, &reference, sample_rate, None).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        // Compute average SPL in the passband (200 Hz - 10 kHz)
+        let mut sum = 0.0_f32;
+        let mut count = 0;
+        for (&freq, &db) in result.frequencies.iter().zip(result.spl_db.iter()) {
+            if (200.0..=10000.0).contains(&freq) {
+                sum += db;
+                count += 1;
+            }
+        }
+        let avg_db = sum / count as f32;
+
+        // Expected: ~-6 dB (attenuation factor 0.5)
+        // Allow generous tolerance for windowing/FFT artifacts
+        assert!(
+            avg_db > -12.0 && avg_db < 0.0,
+            "Normal channel avg SPL should be near -6 dB, got {:.1} dB",
+            avg_db
+        );
+
+        // No bin should exceed +6 dB (physically implausible for passive attenuation)
+        let max_db = result
+            .spl_db
+            .iter()
+            .zip(result.frequencies.iter())
+            .filter(|&(_, &f)| (200.0..=10000.0).contains(&f))
+            .map(|(&db, _)| db)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            max_db < 6.0,
+            "Normal channel should not have bins above +6 dB, got {:.1} dB",
+            max_db
+        );
+    }
+
+    #[test]
+    fn test_analyze_recording_silent_channel() {
+        // Simulate a disconnected speaker: reference sweep played but recording
+        // is just low-level noise (no speaker output)
+        let sample_rate = 48000;
+        let duration = 1.0;
+        let reference = generate_test_sweep(20.0, 20000.0, duration, sample_rate, 0.5);
+
+        // Recording is pure noise at -60 dBFS (amplitude 0.001)
+        let noise_amplitude = 0.001;
+        let num_samples = reference.len();
+        let mut recorded = Vec::with_capacity(num_samples);
+        // Use deterministic "noise" (alternating small values)
+        for i in 0..num_samples {
+            let pseudo_noise = noise_amplitude
+                * (((i as f32 * 0.1).sin() + (i as f32 * 0.37).cos()) * 0.5);
+            recorded.push(pseudo_noise);
+        }
+
+        let dir = std::env::temp_dir().join(format!(
+            "sotf_test_silent_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav_path = dir.join("test_silent.wav");
+        write_test_wav(&wav_path, &recorded, sample_rate);
+
+        let result = analyze_recording(&wav_path, &reference, sample_rate, None).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        // For a disconnected channel, the transfer function should be very low
+        // (noise / sweep ≈ noise floor). It must NOT show spurious high-dB peaks.
+        let max_db = result
+            .spl_db
+            .iter()
+            .zip(result.frequencies.iter())
+            .filter(|&(_, &f)| (100.0..=10000.0).contains(&f))
+            .map(|(&db, _)| db)
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(
+            max_db < 0.0,
+            "Silent/disconnected channel should not have positive dB values, got max {:.1} dB",
+            max_db
+        );
+    }
+
+    #[test]
+    fn test_analyze_recording_lfe_narrow_sweep_same_point_count() {
+        // Simulate a 5.1 scenario: LFE uses a narrow sweep (20-500 Hz) while
+        // main channels use the full range (20-20000 Hz). Both must produce
+        // the same number of output frequency points to avoid ndarray shape
+        // mismatches when curves are combined in the optimizer.
+        let sample_rate = 48000;
+        let duration = 1.0;
+
+        // Full-range reference (main channel)
+        let ref_full = generate_test_sweep(20.0, 20000.0, duration, sample_rate, 0.5);
+        // Narrow reference (LFE)
+        let ref_lfe = generate_test_sweep(20.0, 500.0, duration, sample_rate, 0.5);
+
+        // Simulate recordings: attenuated copies with delay
+        let delay = 50;
+        let atten = 0.3;
+
+        let mut rec_full = vec![0.0_f32; ref_full.len() + delay];
+        for (i, &s) in ref_full.iter().enumerate() {
+            rec_full[i + delay] = s * atten;
+        }
+
+        let mut rec_lfe = vec![0.0_f32; ref_lfe.len() + delay];
+        for (i, &s) in ref_lfe.iter().enumerate() {
+            rec_lfe[i + delay] = s * atten;
+        }
+
+        let dir = std::env::temp_dir().join(format!(
+            "sotf_test_lfe_points_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let wav_full = dir.join("main.wav");
+        let wav_lfe = dir.join("lfe.wav");
+        write_test_wav(&wav_full, &rec_full, sample_rate);
+        write_test_wav(&wav_lfe, &rec_lfe, sample_rate);
+
+        let result_full = analyze_recording(&wav_full, &ref_full, sample_rate, None).unwrap();
+        let result_lfe = analyze_recording(&wav_lfe, &ref_lfe, sample_rate, None).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+
+        // Both must produce the same number of frequency points
+        assert_eq!(
+            result_full.frequencies.len(),
+            result_lfe.frequencies.len(),
+            "Main ({}) and LFE ({}) must have the same number of frequency points",
+            result_full.frequencies.len(),
+            result_lfe.frequencies.len()
+        );
+        assert_eq!(
+            result_full.spl_db.len(),
+            result_lfe.spl_db.len(),
+            "SPL arrays must match in length"
+        );
+
+        // LFE should have valid data below ~500 Hz and noise floor above
+        let lfe_valid_count = result_lfe
+            .spl_db
+            .iter()
+            .zip(result_lfe.frequencies.iter())
+            .filter(|&(&db, &f)| f <= 500.0 && db > -100.0)
+            .count();
+        assert!(
+            lfe_valid_count > 100,
+            "LFE should have valid data below 500 Hz, got {} points",
+            lfe_valid_count
+        );
+
+        let lfe_above_500_max = result_lfe
+            .spl_db
+            .iter()
+            .zip(result_lfe.frequencies.iter())
+            .filter(|&(_, &f)| f > 1000.0)
+            .map(|(&db, _)| db)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            lfe_above_500_max <= -100.0,
+            "LFE above 1 kHz should be at noise floor, got {:.1} dB",
+            lfe_above_500_max
+        );
     }
 }
