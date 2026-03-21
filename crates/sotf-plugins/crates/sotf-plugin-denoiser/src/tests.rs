@@ -806,3 +806,44 @@ fn test_bootstrap_noise_floor_seeding() {
         total_energy
     );
 }
+
+#[test]
+fn test_mcra_noise_floor_converges_on_noise() {
+    // Feed pure noise and verify the noise floor estimate converges
+    // to a reasonable value, not just stays at zero.
+    let mut plugin = DenoiserPlugin::from_params(2, DenoiserPluginParams::default());
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    // Feed ~2 seconds of moderate-level noise to let MCRA converge
+    let block_size = 4096;
+    let num_blocks = (SAMPLE_RATE as usize * 2) / block_size;
+    let context = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: block_size,
+    };
+
+    for _ in 0..num_blocks {
+        let mut noise = make_noisy_signal(block_size, 2, -60.0, -10.0);
+        plugin.process_in_place(&mut noise, &context).unwrap();
+    }
+
+    // The avg_reduction_db field should be non-zero after processing noisy signal
+    let data = plugin.get_data();
+    assert!(data.is_some(), "get_data() should return Some after processing");
+
+    let data = data.unwrap();
+    let denoiser_data = data
+        .downcast_ref::<super::DenoiserData>()
+        .expect("get_data() should return DenoiserData");
+
+    // After 2 seconds of noise-heavy input, the denoiser should report
+    // some noise floor activity (either noise_floor_db or avg_reduction_db)
+    let has_activity = denoiser_data.avg_reduction_db.abs() > 0.01
+        || denoiser_data.noise_floor_db.iter().any(|&v| v.abs() > 0.01);
+    assert!(
+        has_activity,
+        "Denoiser should show noise estimation activity after 2s of noise. avg_reduction={}, noise_floor_sum={}",
+        denoiser_data.avg_reduction_db,
+        denoiser_data.noise_floor_db.iter().sum::<f32>()
+    );
+}

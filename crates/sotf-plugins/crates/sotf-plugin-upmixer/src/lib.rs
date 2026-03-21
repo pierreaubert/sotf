@@ -35,6 +35,7 @@ mod fft;
 mod frequency_domain;
 mod height;
 mod hr_processing;
+#[cfg(feature = "onnx")]
 mod ml_features;
 #[cfg(feature = "onnx")]
 mod ml_inference;
@@ -220,6 +221,7 @@ pub struct UpmixerPlugin {
     enable_ml_detection: bool,
     param_ml_model_path: ParameterId,
     ml_model_path: String,
+    #[cfg(feature = "onnx")]
     mfcc_extractor: Option<ml_features::MfccExtractor>,
     #[cfg(feature = "onnx")]
     ml_inference_handle: Option<ml_inference::MlInferenceHandle>,
@@ -590,8 +592,8 @@ impl UpmixerPlugin {
 
         let num_output_channels = speaker_config.total_channels;
 
-        // Panning gains will be calculated by recalculate_panning_gains() below
-        // TODO: need to change if input is not stereo
+        // Panning gains will be calculated by recalculate_panning_gains() below.
+        // The upmixer is stereo-only; input_channels() returns 2.
         let panning_gains_left = Vec::with_capacity(num_output_channels);
         let panning_gains_right = Vec::with_capacity(num_output_channels);
 
@@ -722,6 +724,7 @@ impl UpmixerPlugin {
             enable_ml_detection: false,
             param_ml_model_path: ParameterId::from("ml_model_path"),
             ml_model_path: String::new(),
+            #[cfg(feature = "onnx")]
             mfcc_extractor: None,
             #[cfg(feature = "onnx")]
             ml_inference_handle: None,
@@ -2310,8 +2313,11 @@ impl Plugin for UpmixerPlugin {
         // Cache sub-harmonic envelope coefficients that depend on sample_rate
         self.recache_subharmonic_coeffs();
 
-        // Initialize MFCC extractor (always created — cheap and needed if ML is toggled on later)
-        self.mfcc_extractor = Some(ml_features::MfccExtractor::new(sample_rate, self.fft_size));
+        // Initialize MFCC extractor (needed if ML is toggled on later)
+        #[cfg(feature = "onnx")]
+        {
+            self.mfcc_extractor = Some(ml_features::MfccExtractor::new(sample_rate, self.fft_size));
+        }
 
         // Start ML inference thread if enabled
         self.try_start_ml_inference();
@@ -2416,6 +2422,7 @@ impl Plugin for UpmixerPlugin {
         self.prev_safety_scale = 1.0;
 
         // Reset MFCC extractor state
+        #[cfg(feature = "onnx")]
         if let Some(ref mut extractor) = self.mfcc_extractor {
             extractor.reset();
         }

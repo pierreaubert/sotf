@@ -381,10 +381,8 @@ impl InPlacePlugin for LimiterPlugin {
         let use_dual_release = self.dual_release;
         let use_feed_forward = self.feed_forward && self.lookahead_len > 1;
 
-        // Reset per-block ISP tracking
+        // Reset per-block ISP tracking (no resize needed — channels is invariant)
         if use_true_peak {
-            self.monitoring_isp_linear
-                .resize(self.channels, 0.0);
             self.monitoring_isp_linear.fill(0.0);
         }
 

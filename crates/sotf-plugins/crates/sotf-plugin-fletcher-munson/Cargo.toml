@@ -8,6 +8,14 @@ edition.workspace = true
 name = "sotf_plugin_fletcher_munson"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-fletcher-munson"
+path = "bin/qa_fletcher_munson.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 math-dsp = { workspace = true }

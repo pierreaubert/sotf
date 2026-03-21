@@ -148,28 +148,33 @@ impl Plugin for BandMergePlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        // Check per-band gain parameters
-        for i in 0..self.num_bands {
-            let gain_id = format!("band_{}_gain_db", i);
-            if id.0 == gain_id {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| format!("{} must be a float", gain_id))?;
-                if v.is_finite() {
-                    self.band_gains_db[i] = v;
-                    self.band_gains_linear[i] = db_to_linear(v);
-                    self.rebuild_cached_parameters();
+        // Check per-band parameters using prefix parsing (no heap allocation)
+        if let Some(rest) = id.0.strip_prefix("band_") {
+            if let Some(idx_str) = rest.strip_suffix("_gain_db") {
+                if let Ok(i) = idx_str.parse::<usize>() {
+                    if i < self.num_bands {
+                        let v = value
+                            .as_float()
+                            .ok_or_else(|| format!("band_{}_gain_db must be a float", i))?;
+                        if v.is_finite() {
+                            self.band_gains_db[i] = v;
+                            self.band_gains_linear[i] = db_to_linear(v);
+                            self.rebuild_cached_parameters();
+                        }
+                        return Ok(());
+                    }
                 }
-                return Ok(());
-            }
-            let mute_id = format!("band_{}_mute", i);
-            if id.0 == mute_id {
-                let v = value
-                    .as_bool()
-                    .ok_or_else(|| format!("{} must be a bool", mute_id))?;
-                self.band_mutes[i] = v;
-                self.rebuild_cached_parameters();
-                return Ok(());
+            } else if let Some(idx_str) = rest.strip_suffix("_mute") {
+                if let Ok(i) = idx_str.parse::<usize>() {
+                    if i < self.num_bands {
+                        let v = value
+                            .as_bool()
+                            .ok_or_else(|| format!("band_{}_mute must be a bool", i))?;
+                        self.band_mutes[i] = v;
+                        self.rebuild_cached_parameters();
+                        return Ok(());
+                    }
+                }
             }
         }
         Err(format!("Unknown parameter: {}", id))
@@ -181,12 +186,19 @@ impl Plugin for BandMergePlugin {
         if id.0 == "reconstruction_error_db" {
             return Some(ParameterValue::Float(self.reconstruction_error_db));
         }
-        for i in 0..self.num_bands {
-            if id.0 == format!("band_{}_gain_db", i) {
-                return Some(ParameterValue::Float(self.band_gains_db[i]));
-            }
-            if id.0 == format!("band_{}_mute", i) {
-                return Some(ParameterValue::Bool(self.band_mutes[i]));
+        if let Some(rest) = id.0.strip_prefix("band_") {
+            if let Some(idx_str) = rest.strip_suffix("_gain_db") {
+                if let Ok(i) = idx_str.parse::<usize>() {
+                    if i < self.num_bands {
+                        return Some(ParameterValue::Float(self.band_gains_db[i]));
+                    }
+                }
+            } else if let Some(idx_str) = rest.strip_suffix("_mute") {
+                if let Ok(i) = idx_str.parse::<usize>() {
+                    if i < self.num_bands {
+                        return Some(ParameterValue::Bool(self.band_mutes[i]));
+                    }
+                }
             }
         }
         None

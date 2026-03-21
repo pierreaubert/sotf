@@ -289,6 +289,8 @@ pub struct DawHost {
     automation: HashMap<(NodeId, ParameterId), ParameterAutomation>,
     /// Current playback position in samples, advanced each process() call.
     playback_position: usize,
+    /// Pre-allocated scratch buffer for automation updates (avoids per-process() heap allocation).
+    automation_scratch: Vec<(NodeId, ParameterId, f32)>,
 }
 
 impl DawHost {
@@ -320,11 +322,13 @@ impl DawHost {
             node_latency_from_input: Vec::new(),
             automation: HashMap::new(),
             playback_position: 0,
+            automation_scratch: Vec::new(),
         }
     }
     pub fn new_default(sr: u32) -> Self {
         Self::new(2, sr)
     }
+    #[deprecated(note = "parallel execution is not yet implemented; this flag has no effect")]
     pub fn set_parallel_enabled(&mut self, e: bool) {
         self.parallel_enabled = e;
     }
@@ -686,46 +690,43 @@ impl DawHost {
         // `eval_curve` interprets (sample, num_frames) as a position within a window,
         // so we use each automation's relative position and advance it by nf each call.
         if !self.automation.is_empty() {
-            let updates: Vec<(NodeId, ParameterId, f32)> = self
-                .automation
-                .iter()
-                .filter_map(|((nid, _pid), auto)| {
-                    auto.curve.as_ref().map(|curve| {
-                        // Evaluate at the automation's own relative position.
-                        // total_frames = number of values * nf gives the curve its full
-                        // playback duration in samples.
-                        let total_frames = match curve {
-                            crate::automation::AutomationCurve::Step {
-                                values,
-                                samples_per_step,
-                            } => {
-                                if *samples_per_step > 0 {
-                                    values.len() * *samples_per_step
-                                } else {
-                                    values.len() * nf
-                                }
+            // Re-use pre-allocated scratch buffer (clear does not deallocate).
+            self.automation_scratch.clear();
+            for ((nid, _pid), auto) in &self.automation {
+                if let Some(curve) = auto.curve.as_ref() {
+                    let total_frames = match curve {
+                        crate::automation::AutomationCurve::Step {
+                            values,
+                            samples_per_step,
+                        } => {
+                            if *samples_per_step > 0 {
+                                values.len() * *samples_per_step
+                            } else {
+                                values.len() * nf
                             }
-                            crate::automation::AutomationCurve::Linear { values } => {
-                                values.len().max(1) * nf
-                            }
-                            crate::automation::AutomationCurve::Bezier { points } => {
-                                points.last().map_or(nf, |p| p.position.max(nf))
-                            }
-                            crate::automation::AutomationCurve::Exponential { values, .. } => {
-                                values.len().max(1) * nf
-                            }
-                        };
-                        let pos = auto.position.min(total_frames.saturating_sub(1));
-                        let val = automation_utils::eval_curve(curve, pos, total_frames);
-                        (*nid, auto.param_id.clone(), val)
-                    })
-                })
-                .collect();
-            for (nid, pid, val) in updates {
+                        }
+                        crate::automation::AutomationCurve::Linear { values } => {
+                            values.len().max(1) * nf
+                        }
+                        crate::automation::AutomationCurve::Bezier { points } => {
+                            points.last().map_or(nf, |p| p.position.max(nf))
+                        }
+                        crate::automation::AutomationCurve::Exponential { values, .. } => {
+                            values.len().max(1) * nf
+                        }
+                    };
+                    let pos = auto.position.min(total_frames.saturating_sub(1));
+                    let val = automation_utils::eval_curve(curve, pos, total_frames);
+                    self.automation_scratch
+                        .push((*nid, auto.param_id.clone(), val));
+                }
+            }
+            for i in 0..self.automation_scratch.len() {
+                let (nid, ref pid, val) = self.automation_scratch[i];
                 if let Some(p) = self.plugins[nid].as_mut() {
                     let _ = p.set_parameter(pid.clone(), ParameterValue::Float(val));
                 }
-                if let Some(auto) = self.automation.get_mut(&(nid, pid)) {
+                if let Some(auto) = self.automation.get_mut(&(nid, pid.clone())) {
                     auto.last_value = val;
                     auto.position += nf;
                 }
@@ -950,18 +951,25 @@ impl DawHost {
         } else {
             self.plugins[id].as_ref().unwrap().latency_samples()
         };
-        let inc: Vec<NodeId> = self
-            .edges
-            .iter()
-            .filter(|e| e.to_node == id)
-            .map(|e| e.from_node)
-            .collect();
-        if inc.is_empty() {
+        // Use pre-built predecessors list (no heap allocation, O(n) instead of O(2^n) for diamonds)
+        let preds = if id < self.predecessors.len() {
+            &self.predecessors[id]
+        } else {
+            // Fallback for nodes added after build() — scan edges
+            return l + self
+                .edges
+                .iter()
+                .filter(|e| e.to_node == id)
+                .map(|e| self.path_latency(e.from_node))
+                .max()
+                .unwrap_or(0);
+        };
+        if preds.is_empty() {
             l
         } else {
-            l + inc
+            l + preds
                 .iter()
-                .map(|&pid| self.path_latency(pid))
+                .map(|e| self.path_latency(e.from_node))
                 .max()
                 .unwrap_or(0)
         }
@@ -1850,5 +1858,147 @@ mod tests {
         assert_eq!(g.node_latency_from_input[id_a], 5);
         assert_eq!(g.node_latency_from_input[id_b], 15);
         assert_eq!(g.node_latency_from_input[id_c], 18);
+    }
+
+    /// Mock plugin that applies a gain parameter to all samples.
+    /// Supports `set_parameter`/`get_parameter` for the "gain" parameter so
+    /// automation tests can verify the value was written.
+    struct GainPlugin {
+        channels: usize,
+        gain: f32,
+    }
+    impl GainPlugin {
+        fn new(channels: usize, initial_gain: f32) -> Self {
+            Self {
+                channels,
+                gain: initial_gain,
+            }
+        }
+    }
+    impl Plugin for GainPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("Gain", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![crate::parameters::Parameter::new_float(
+                "gain", "Gain", 1.0, 0.0, 4.0,
+            )]
+        }
+        fn set_parameter(
+            &mut self,
+            id: crate::parameters::ParameterId,
+            val: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            if id.0 == "gain" {
+                if let crate::parameters::ParameterValue::Float(v) = val {
+                    self.gain = v;
+                    return Ok(());
+                }
+            }
+            Err(format!("unknown parameter: {}", id.0))
+        }
+        fn get_parameter(
+            &self,
+            id: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            if id.0 == "gain" {
+                Some(crate::parameters::ParameterValue::Float(self.gain))
+            } else {
+                None
+            }
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            for (o, &i) in output.iter_mut().zip(input.iter()) {
+                *o = i * self.gain;
+            }
+            Ok(ctx.num_frames)
+        }
+    }
+
+    // ---- Automation tests ----
+
+    #[test]
+    fn test_automation_basic() {
+        // Create a host with a single GainPlugin starting at gain=1.0.
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(GainPlugin::new(2, 1.0))).unwrap();
+        g.build().unwrap();
+
+        // The chain_nodes[0] is the NodeId assigned to our GainPlugin.
+        let node_id = g.chain_nodes[0];
+        let param_id = crate::parameters::ParameterId::from("gain");
+
+        // 2 channels × 48 frames = 96 samples.
+        let num_frames = 48;
+
+        // Step automation: each step lasts exactly num_frames samples so each
+        // call to process() advances to the next step value.
+        // Step 0 (samples 0..47)  → gain = 0.25
+        // Step 1 (samples 48..95) → gain = 0.75
+        g.set_automation(
+            node_id,
+            param_id.clone(),
+            crate::automation::AutomationCurve::Step {
+                values: vec![0.25, 0.75],
+                samples_per_step: num_frames,
+            },
+        );
+        let input = vec![1.0f32; num_frames * 2];
+        let mut output = vec![0.0f32; num_frames * 2];
+
+        // First process(): automation evaluates at position=0, step=0 → gain=0.25.
+        g.process(&input, &mut output).unwrap();
+
+        let gain_after_first_block = g
+            .get_plugin(0)
+            .unwrap()
+            .get_parameter(&param_id)
+            .and_then(|v| v.as_float())
+            .expect("gain parameter must be readable");
+
+        assert!(
+            (gain_after_first_block - 0.25).abs() < 1e-6,
+            "After first process(), gain should be 0.25 (step 0), got {}",
+            gain_after_first_block
+        );
+
+        // Verify the audio was actually scaled by 0.25.
+        assert!(
+            output.iter().all(|&s| (s - 0.25).abs() < 1e-6),
+            "Output samples should be input * 0.25"
+        );
+
+        // Second process(): automation position = num_frames, step=1 → gain=0.75.
+        g.process(&input, &mut output).unwrap();
+
+        let gain_after_second_block = g
+            .get_plugin(0)
+            .unwrap()
+            .get_parameter(&param_id)
+            .and_then(|v| v.as_float())
+            .expect("gain parameter must be readable");
+
+        assert!(
+            (gain_after_second_block - 0.75).abs() < 1e-6,
+            "After second process(), gain should be 0.75 (step 1), got {}",
+            gain_after_second_block
+        );
+
+        // Verify audio was scaled by 0.75.
+        assert!(
+            output.iter().all(|&s| (s - 0.75).abs() < 1e-6),
+            "Output samples should be input * 0.75"
+        );
     }
 }

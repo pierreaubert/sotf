@@ -405,28 +405,51 @@ impl ABComparePlugin {
     fn rebuild_band_mask_filters(&mut self) {
         let q = 1.0 / std::f64::consts::SQRT_2;
         let sr = self.sample_rate as f64;
-        self.band_mask_hp = (0..self.num_channels)
-            .map(|_| {
-                Biquad::new(
+        if self.band_mask_hp.len() == self.num_channels {
+            // Update coefficients in place — preserves filter delay state (click-free)
+            for f in &mut self.band_mask_hp {
+                f.update_params(
                     BiquadFilterType::Highpass,
                     self.band_mask_low_hz as f64,
                     sr,
                     q,
                     0.0,
-                )
-            })
-            .collect();
-        self.band_mask_lp = (0..self.num_channels)
-            .map(|_| {
-                Biquad::new(
+                );
+            }
+            for f in &mut self.band_mask_lp {
+                f.update_params(
                     BiquadFilterType::Lowpass,
                     self.band_mask_high_hz as f64,
                     sr,
                     q,
                     0.0,
-                )
-            })
-            .collect();
+                );
+            }
+        } else {
+            // First time: create filters from scratch
+            self.band_mask_hp = (0..self.num_channels)
+                .map(|_| {
+                    Biquad::new(
+                        BiquadFilterType::Highpass,
+                        self.band_mask_low_hz as f64,
+                        sr,
+                        q,
+                        0.0,
+                    )
+                })
+                .collect();
+            self.band_mask_lp = (0..self.num_channels)
+                .map(|_| {
+                    Biquad::new(
+                        BiquadFilterType::Lowpass,
+                        self.band_mask_high_hz as f64,
+                        sr,
+                        q,
+                        0.0,
+                    )
+                })
+                .collect();
+        }
     }
 
     /// Align both paths by delaying the shorter one.
@@ -654,6 +677,15 @@ impl Plugin for ABComparePlugin {
 
         // Rebuild band mask filters for new sample rate
         self.rebuild_band_mask_filters();
+
+        // Pre-allocate processing buffers for max expected frame size (avoids hot-path resize)
+        let max_buffer = 4096 * self.num_channels;
+        if self.buffer_a.len() < max_buffer {
+            self.buffer_a.resize(max_buffer, 0.0);
+        }
+        if self.buffer_b.len() < max_buffer {
+            self.buffer_b.resize(max_buffer, 0.0);
+        }
 
         Ok(())
     }

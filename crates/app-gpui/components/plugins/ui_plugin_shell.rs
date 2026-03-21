@@ -145,6 +145,8 @@ pub fn plugin_short_name(
         PluginType::MonoToStereo => "Mono->2.0",
         PluginType::Crossfeed => "Crossfeed",
         PluginType::Delay => "Delay",
+        PluginType::Aec => "AEC",
+        PluginType::Beamformer => "Beamfmr",
     }
 }
 

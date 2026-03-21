@@ -310,16 +310,32 @@ impl FletcherMunsonPlugin {
     fn rebuild_filters(&mut self) {
         let sr = self.sample_rate as f64;
         for ch in 0..self.num_channels {
-            self.filters[ch].clear();
-            for i in 0..NUM_BANDS {
-                let b = &self.bands[i];
-                self.filters[ch].push(Biquad::new(
-                    b.filter_type.to_biquad_type(),
-                    b.frequency,
-                    sr,
-                    b.q,
-                    self.gain_smoothers[i].current() as f64,
-                ));
+            if self.filters[ch].len() == NUM_BANDS {
+                // Update coefficients in place — preserves filter delay state
+                // (x1/x2/y1/y2) so parameter changes are click-free.
+                for i in 0..NUM_BANDS {
+                    let b = &self.bands[i];
+                    self.filters[ch][i].update_params(
+                        b.filter_type.to_biquad_type(),
+                        b.frequency,
+                        sr,
+                        b.q,
+                        self.gain_smoothers[i].current() as f64,
+                    );
+                }
+            } else {
+                // First time: create filters from scratch
+                self.filters[ch].clear();
+                for i in 0..NUM_BANDS {
+                    let b = &self.bands[i];
+                    self.filters[ch].push(Biquad::new(
+                        b.filter_type.to_biquad_type(),
+                        b.frequency,
+                        sr,
+                        b.q,
+                        self.gain_smoothers[i].current() as f64,
+                    ));
+                }
             }
         }
     }

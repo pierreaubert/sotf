@@ -37,7 +37,7 @@ pub struct HalInputPlugin {
     channels: usize,
 
     /// Counter for buffer overruns (read returned fewer samples than expected)
-    overrun_counter: Arc<AtomicU64>,
+    underrun_counter: Arc<AtomicU64>,
 
     /// True if the HAL native sample rate differs from the engine sample rate
     sample_rate_mismatch: bool,
@@ -70,7 +70,7 @@ impl HalInputPlugin {
 
             Ok(Self {
                 channels,
-                overrun_counter: Arc::new(AtomicU64::new(0)),
+                underrun_counter: Arc::new(AtomicU64::new(0)),
                 sample_rate_mismatch: false,
                 reader,
             })
@@ -93,13 +93,13 @@ impl HalInputPlugin {
     }
 
     /// Get the shared overrun counter (can be read from any thread)
-    pub fn overrun_counter(&self) -> Arc<AtomicU64> {
-        Arc::clone(&self.overrun_counter)
+    pub fn underrun_counter(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.underrun_counter)
     }
 
     /// Get the current overrun count
-    pub fn overrun_count(&self) -> u64 {
-        self.overrun_counter.load(Ordering::Relaxed)
+    pub fn underrun_count(&self) -> u64 {
+        self.underrun_counter.load(Ordering::Relaxed)
     }
 }
 
@@ -124,13 +124,13 @@ impl Plugin for HalInputPlugin {
                 .with_group("Configuration")
                 .with_importance(ParameterImportance::Critical),
             Parameter::new_int(
-                "overrun_count",
-                "Overrun Count",
-                self.overrun_counter.load(Ordering::Relaxed) as i32,
+                "underrun_count",
+                "Underrun Count",
+                self.underrun_counter.load(Ordering::Relaxed) as i32,
                 0,
                 i32::MAX,
             )
-            .with_description("Number of buffer overruns detected (read-only diagnostic)")
+            .with_description("Number of buffer underruns detected (read-only diagnostic)")
             .with_group("Diagnostics")
             .with_importance(ParameterImportance::FineTuning),
             Parameter::new_bool(
@@ -193,14 +193,14 @@ impl Plugin for HalInputPlugin {
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         let param_channels = ParameterId::from("channels");
-        let param_overrun = ParameterId::from("overrun_count");
+        let param_underrun = ParameterId::from("underrun_count");
         let param_sr_mismatch = ParameterId::from("sample_rate_mismatch");
 
         if id == &param_channels {
             Some(ParameterValue::Int(self.channels as i32))
-        } else if id == &param_overrun {
+        } else if id == &param_underrun {
             Some(ParameterValue::Int(
-                self.overrun_counter.load(Ordering::Relaxed) as i32,
+                self.underrun_counter.load(Ordering::Relaxed) as i32,
             ))
         } else if id == &param_sr_mismatch {
             Some(ParameterValue::Bool(self.sample_rate_mismatch))
@@ -244,9 +244,9 @@ impl Plugin for HalInputPlugin {
 
                 // Zero-fill any remaining samples if we didn't read enough
                 if samples_read < output.len() {
-                    self.overrun_counter.fetch_add(1, Ordering::Relaxed);
+                    self.underrun_counter.fetch_add(1, Ordering::Relaxed);
                     log::debug!(
-                        "[HAL Input] Buffer overrun: read {} samples, expected {}",
+                        "[HAL Input] Buffer underrun: read {} samples, expected {}",
                         samples_read,
                         output.len()
                     );

@@ -19,6 +19,11 @@ fn main() {
         auto_makeup: false,
         link_channels: true,
         sidechain_hpf_hz: 0.0,
+        detection_mode: "peak".to_string(),
+        lookahead_ms: 0.0,
+        program_dependent_release: false,
+        measured_auto_makeup: false,
+        sidechain_external: false,
     };
 
     let mut inner = CompressorPlugin::from_params(channels, params);

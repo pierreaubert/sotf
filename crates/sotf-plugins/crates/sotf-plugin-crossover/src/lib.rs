@@ -338,14 +338,16 @@ impl Plugin for CrossoverPlugin {
                 // to satisfy the borrow checker without unsafe.
                 {
                     let flat = &mut self.band_flat[..num_bands * in_ch];
-                    let mut band_slices: Vec<&mut [f32]> = Vec::with_capacity(num_bands);
+                    // Use fixed-size array to avoid per-frame heap allocation.
+                    // Crossover supports up to 4 bands (3 crossover points).
+                    let mut band_slices: [&mut [f32]; 4] = [&mut [], &mut [], &mut [], &mut []];
                     let mut remaining = flat;
-                    for _ in 0..num_bands {
+                    for slot in band_slices.iter_mut().take(num_bands) {
                         let (chunk, rest) = remaining.split_at_mut(in_ch);
-                        band_slices.push(chunk);
+                        *slot = chunk;
                         remaining = rest;
                     }
-                    mb.process_frame(frame_slice, &mut band_slices);
+                    mb.process_frame(frame_slice, &mut band_slices[..num_bands]);
                 }
 
                 match self.mode {

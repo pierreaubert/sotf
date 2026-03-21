@@ -184,12 +184,11 @@ impl Plugin for HalOutputPlugin {
             if let Some(ref mut writer) = self.writer {
                 let samples_written = writer.write(input);
 
-                // Update buffer fill level diagnostic
-                if self.buffer_capacity > 0 {
-                    let fill_samples = writer.available_samples();
-                    self.buffer_fill_level =
-                        (fill_samples as f32 / self.buffer_capacity as f32) * 100.0;
-                }
+                // Update buffer fill level diagnostic.
+                // Approximate fill level from write success ratio since the
+                // HalOutputWriter doesn't expose capacity/available_samples yet.
+                self.buffer_fill_level =
+                    (samples_written as f32 / input.len() as f32) * 100.0;
 
                 if samples_written < input.len() {
                     self.underrun_counter.fetch_add(1, Ordering::Relaxed);

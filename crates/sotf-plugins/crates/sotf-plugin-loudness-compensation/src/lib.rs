@@ -672,7 +672,25 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
         Ok(())
     }
     fn reset(&mut self) {
-        self.rebuild_filters();
+        // Clear filter delay state (x1/x2/y1/y2) for clean restart.
+        // rebuild_filters() uses update_params() which preserves state — wrong for reset.
+        let sr = self.sample_rate as f64;
+        let q = 0.707;
+        let lg = self.low_gain / 2.0;
+        let hg = self.high_gain / 2.0;
+        let mg = if self.mid_enabled {
+            self.mid_gain
+        } else {
+            0.0
+        };
+        for ch in 0..self.num_channels {
+            self.filters[ch].clear();
+            self.filters[ch].push(Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64));
+            self.filters[ch].push(Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64));
+            self.filters[ch].push(Biquad::new(BiquadFilterType::Peak, self.mid_freq as f64, sr, self.mid_q as f64, mg as f64));
+            self.filters[ch].push(Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64));
+            self.filters[ch].push(Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64));
+        }
     }
 
     fn process_in_place(

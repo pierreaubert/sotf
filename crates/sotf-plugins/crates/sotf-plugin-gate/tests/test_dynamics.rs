@@ -68,3 +68,74 @@ fn test_gate_passes_loud_signals() {
         rms_ratio
     );
 }
+
+#[test]
+fn test_gate_hysteresis_prevents_chatter() {
+    // With hysteresis=4dB and threshold=-20dB:
+    // - Open threshold = -20dB
+    // - Close threshold = -24dB
+    // A signal oscillating between -22dB and -18dB should not cause rapid
+    // open/close transitions. With hysteresis, once open (at -18dB > -20dB),
+    // the gate stays open until signal drops below -24dB (which -22dB does not).
+    use sotf_host::{InPlacePlugin, ParameterId, ParameterValue, ProcessContext};
+    use sotf_plugin_gate::GatePlugin;
+
+    let sr = 48000u32;
+    let mut gate = GatePlugin::new(1, -20.0, 1.0, 0.1, 0.0, 10.0);
+    gate.initialize(sr).unwrap();
+
+    // Set hysteresis to 4dB
+    gate.set_parameter(
+        ParameterId::from("hysteresis_db"),
+        ParameterValue::Float(4.0),
+    )
+    .unwrap();
+
+    // Generate 1s of signal that alternates between -18dB and -22dB every 100ms
+    let num_frames = sr as usize;
+    let amp_high = 10.0f32.powf(-18.0 / 20.0); // -18dB
+    let amp_low = 10.0f32.powf(-22.0 / 20.0);  // -22dB
+    let switch_period = sr as usize / 10; // 100ms
+
+    let mut buffer = vec![0.0f32; num_frames];
+    for i in 0..num_frames {
+        let cycle = i / switch_period;
+        let amp = if cycle % 2 == 0 { amp_high } else { amp_low };
+        let t = i as f32 / sr as f32;
+        buffer[i] = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * amp;
+    }
+
+    // Process in blocks
+    let block_size = 1024;
+    let ctx = ProcessContext {
+        sample_rate: sr,
+        num_frames: block_size,
+    };
+    for pos in (0..num_frames).step_by(block_size) {
+        let end = (pos + block_size).min(num_frames);
+        let nf = end - pos;
+        let c = ProcessContext {
+            sample_rate: sr,
+            num_frames: nf,
+        };
+        gate.process_in_place(&mut buffer[pos..end], &c).unwrap();
+    }
+
+    // Count near-zero crossings (rapid gate transitions)
+    // With hysteresis working, the output should be smooth — not rapidly alternating
+    // between gated (near-zero) and open (signal). Count frames that are near-zero
+    // in the second half (after gate has settled).
+    let second_half = &buffer[num_frames / 2..];
+    let near_zero_frames = second_half
+        .iter()
+        .filter(|&&s| s.abs() < 0.001)
+        .count();
+
+    // With proper hysteresis, the gate should stay mostly open (since -22dB > -24dB close threshold).
+    // Near-zero frames should be a small fraction of the total.
+    let zero_fraction = near_zero_frames as f32 / second_half.len() as f32;
+    assert!(
+        zero_fraction < 0.3,
+        "With hysteresis, gate should stay mostly open. Near-zero fraction: {zero_fraction:.2}"
+    );
+}

@@ -1237,4 +1237,56 @@ mod tests {
         .unwrap();
         assert_eq!(buffer, original, "Disabled crossfeed should pass through unchanged");
     }
+
+    #[test]
+    fn test_crossfeed_frequency_response_low_vs_high() {
+        // Crossfeed should affect low frequencies more than high frequencies.
+        // Generate pure left-channel tones at 200Hz and 8kHz, measure how much
+        // crossfeed leaks into the right channel at each frequency.
+        let sr = 48000u32;
+        let n = 10000; // frames
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames: n,
+        };
+
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+        params.mode = CrossfeedMode::Bauer;
+        params.bauer_feed_db = 6.0;
+
+        // Helper: generate left-only sine, process, measure right channel energy in tail
+        let measure_crossfeed = |freq: f32| -> f32 {
+            let mut p = CrossfeedPlugin::new(params.clone()).unwrap();
+            p.initialize(sr).unwrap();
+
+            let mut buf: Vec<f32> = (0..n)
+                .flat_map(|i| {
+                    let t = i as f32 / sr as f32;
+                    let s = (2.0 * std::f32::consts::PI * freq * t).sin() * 0.5;
+                    [s, 0.0] // left only
+                })
+                .collect();
+            p.process_in_place(&mut buf, &ctx).unwrap();
+
+            // Measure right channel RMS in the last 2000 frames (skip transient)
+            let tail_start = (n - 2000) * 2;
+            let right_energy: f32 = buf[tail_start..]
+                .chunks(2)
+                .map(|c| c[1] * c[1])
+                .sum::<f32>();
+            (right_energy / 2000.0).sqrt()
+        };
+
+        let low_crossfeed = measure_crossfeed(200.0);
+        let high_crossfeed = measure_crossfeed(8000.0);
+
+        assert!(
+            low_crossfeed > 0.001,
+            "200Hz should produce measurable crossfeed: {low_crossfeed}"
+        );
+        assert!(
+            low_crossfeed > high_crossfeed * 1.5,
+            "Low-frequency crossfeed ({low_crossfeed:.4}) should be significantly more than high-frequency ({high_crossfeed:.4})"
+        );
+    }
 }

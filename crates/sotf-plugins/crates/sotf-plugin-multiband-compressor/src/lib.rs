@@ -901,6 +901,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         let nf = context.num_frames;
         let stride = nf * self.channels;
 
+        // Safety guard: resize if host sends larger blocks than initialize() pre-allocated (4096 frames).
         if self.dry_buffer.len() < buffer.len() {
             self.dry_buffer.resize(buffer.len(), 0.0);
         }

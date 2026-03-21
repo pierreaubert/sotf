@@ -192,8 +192,6 @@ pub struct DualWindowStft {
     analysis_window: Vec<f32>,
     synthesis_window: Vec<f32>,
     analysis_size: usize,
-    synthesis_size: usize,
-    hop_size: usize,
     /// Input ring buffer sized to analysis window
     input_ring: RingAccumulator,
     /// Overlap-add output accumulator
@@ -280,8 +278,6 @@ impl DualWindowStft {
             analysis_window,
             synthesis_window,
             analysis_size,
-            synthesis_size,
-            hop_size,
             input_ring: RingAccumulator::new(analysis_size, hop_size),
             output_accum: vec![0.0; analysis_size * 3],
             output_read_pos: 0,
@@ -291,12 +287,13 @@ impl DualWindowStft {
         }
     }
 
-    /// Push a single sample. Returns `Some(spectrum)` when a hop boundary is reached.
+    /// Push a single sample. Returns `true` when a hop boundary is reached.
     ///
-    /// The returned spectrum can be modified, then passed to `synthesize()`.
-    pub fn analyze(&mut self, sample: f32) -> Option<Vec<Complex<f32>>> {
+    /// When `true`, the spectrum is available in `freq_buffer_mut()` for
+    /// in-place modification. Call `synthesize_in_place()` after modifying.
+    pub fn analyze(&mut self, sample: f32) -> bool {
         if !self.input_ring.push(sample) {
-            return None;
+            return false;
         }
 
         // Read the analysis window worth of samples
@@ -310,19 +307,21 @@ impl DualWindowStft {
         // Forward FFT
         self.fft.forward();
 
-        Some(self.fft.freq_buffer.clone())
+        true
     }
 
-    /// Synthesize output from a (possibly modified) spectrum.
-    ///
-    /// Call this after `analyze()` returns `Some(spectrum)`.
-    /// The output samples accumulate in the internal buffer and can be
-    /// read via `read_output()`.
-    pub fn synthesize(&mut self, spectrum: &[Complex<f32>]) {
-        // Copy spectrum to FFT buffer
-        self.fft.freq_buffer[..spectrum.len()].copy_from_slice(spectrum);
+    /// Access the frequency buffer for in-place modification after `analyze()` returns `true`.
+    pub fn freq_buffer_mut(&mut self) -> &mut [Complex<f32>] {
+        &mut self.fft.freq_buffer
+    }
 
-        // Inverse FFT
+    /// Synthesize output from the current frequency buffer (after in-place modification).
+    ///
+    /// Call this after `analyze()` returns `true` and the spectrum has been modified
+    /// via `freq_buffer_mut()`. The output samples accumulate in the internal buffer
+    /// and can be read via `read_output()`.
+    pub fn synthesize_in_place(&mut self) {
+        // Inverse FFT (operates on self.fft.freq_buffer directly)
         self.fft.inverse();
 
         // Apply synthesis window and overlap-add
@@ -356,9 +355,9 @@ impl DualWindowStft {
         F: FnMut(&mut [Complex<f32>]),
     {
         for (i, &sample) in input.iter().enumerate() {
-            if let Some(mut spectrum) = self.analyze(sample) {
-                process_fn(&mut spectrum);
-                self.synthesize(&spectrum);
+            if self.analyze(sample) {
+                process_fn(&mut self.fft.freq_buffer);
+                self.synthesize_in_place();
             }
             output[i] = self.read_output();
         }

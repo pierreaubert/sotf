@@ -1638,6 +1638,82 @@ mod tests {
         );
     }
 
+    /// RMS vs peak detection: a compressor in RMS mode should respond more slowly
+    /// to a short transient than one in peak mode, so its output peak amplitude
+    /// should be higher (less compression applied to the transient).
+    ///
+    /// Signal: 5 ms loud burst (0 dBFS sine) followed by silence.  Total duration
+    /// is 1 second so the RMS window (10 ms) is well-defined in both modes.
+    ///
+    /// Peak mode detects the instantaneous amplitude → compresses the burst hard.
+    /// RMS mode integrates over ~10 ms → the 5 ms burst barely raises the RMS
+    /// level, so less compression is applied and the transient passes louder.
+    #[test]
+    fn test_compressor_rms_vs_peak_detection() {
+        let sr = 48000u32;
+        // Very aggressive settings: high ratio, fast attack, so peak mode hammers
+        // the transient visibly.
+        let make_comp = |detection: &str| -> CompressorPlugin {
+            let mut c = CompressorPlugin::new(1, -20.0, 20.0, 0.1, 200.0, 0.0, 0.0)
+                .with_smoothing_time(0.0);
+            c.initialize(sr).unwrap();
+            c.link_channels = false;
+            c.set_parameter(
+                ParameterId::from("detection_mode"),
+                ParameterValue::String(detection.to_string()),
+            )
+            .unwrap();
+            c
+        };
+
+        // 5 ms burst at 0 dBFS, then silence for the rest of 1 second
+        let burst_frames = (0.005 * sr as f32) as usize; // 240 samples @ 48 kHz
+        let num_frames = sr as usize;
+        let signal: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                if i < burst_frames {
+                    (2.0 * PI * 1000.0 * i as f32 / sr as f32).sin()
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames,
+        };
+
+        let mut peak_comp = make_comp("peak");
+        let mut peak_buf = signal.clone();
+        peak_comp
+            .process_in_place(&mut peak_buf, &ctx)
+            .unwrap();
+
+        let mut rms_comp = make_comp("rms");
+        let mut rms_buf = signal.clone();
+        rms_comp
+            .process_in_place(&mut rms_buf, &ctx)
+            .unwrap();
+
+        // Measure peak amplitude during the burst window in each output
+        let peak_mode_peak: f32 = peak_buf[..burst_frames]
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0_f32, f32::max);
+        let rms_mode_peak: f32 = rms_buf[..burst_frames]
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0_f32, f32::max);
+
+        // RMS mode is slower to react → transient passes through with higher amplitude
+        assert!(
+            rms_mode_peak > peak_mode_peak,
+            "RMS detection should compress transients less than peak detection: \
+             rms_mode_peak={rms_mode_peak:.5}, peak_mode_peak={peak_mode_peak:.5}"
+        );
+    }
+
     #[test]
     fn test_rt_safety_with_features_enabled() {
         use sotf_host::{InPlacePluginAdapter, Plugin, assert_no_allocs};

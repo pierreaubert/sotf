@@ -904,6 +904,8 @@ impl MultibandExpanderPlugin {
 
         // Cache band parameters into a compact form to avoid repeated borrow conflicts.
         // Hold time is converted from milliseconds to hop counts at the hop rate.
+        // Uses a fixed-size array (max 5 bands) to avoid per-hop heap allocation.
+        #[derive(Clone, Copy)]
         struct BandInfo {
             th: f32,
             rat: f32,
@@ -916,24 +918,26 @@ impl MultibandExpanderPlugin {
             active: bool,
             solo: bool,
         }
+        const MAX_MB_BANDS: usize = 5;
         let hop_rate = self.sample_rate as f32 / ss.hop_size as f32;
-        let band_info: Vec<BandInfo> = (0..self.num_bands)
-            .map(|b| {
-                let bp = self.band_params.get(b);
-                let hold_ms = bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms);
-                BandInfo {
-                    th: bp.and_then(|p| p.threshold_db).unwrap_or(self.threshold_db),
-                    rat: bp.and_then(|p| p.ratio).unwrap_or(self.ratio),
-                    kn: bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db),
-                    rg: bp.and_then(|p| p.range_db).unwrap_or(self.range_db),
-                    hys: bp.and_then(|p| p.hysteresis_db).unwrap_or(self.hysteresis_db),
-                    hs: (hold_ms * 0.001 * hop_rate) as usize,
-                    bypass: bp.map(|p| p.bypass).unwrap_or(false),
-                    active: bp.map(|p| p.active).unwrap_or(true),
-                    solo: bp.map(|p| p.solo).unwrap_or(false),
-                }
-            })
-            .collect();
+        let mut band_info = [BandInfo {
+            th: 0.0, rat: 1.0, kn: 0.0, rg: 0.0, hys: 0.0, hs: 0, bypass: false, active: true, solo: false,
+        }; MAX_MB_BANDS];
+        for b in 0..self.num_bands {
+            let bp = self.band_params.get(b);
+            let hold_ms = bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms);
+            band_info[b] = BandInfo {
+                th: bp.and_then(|p| p.threshold_db).unwrap_or(self.threshold_db),
+                rat: bp.and_then(|p| p.ratio).unwrap_or(self.ratio),
+                kn: bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db),
+                rg: bp.and_then(|p| p.range_db).unwrap_or(self.range_db),
+                hys: bp.and_then(|p| p.hysteresis_db).unwrap_or(self.hysteresis_db),
+                hs: (hold_ms * 0.001 * hop_rate) as usize,
+                bypass: bp.map(|p| p.bypass).unwrap_or(false),
+                active: bp.map(|p| p.active).unwrap_or(true),
+                solo: bp.map(|p| p.solo).unwrap_or(false),
+            };
+        }
 
         for ch in 0..channels {
             // --- Forward FFT ---
@@ -2210,6 +2214,55 @@ mod tests {
         assert!(
             rms_out > 1e-5,
             "Spectral mode output should not be silent for loud input, RMS={rms_out:.8}"
+        );
+    }
+
+    /// Integration test: verify that the multiband expander actually attenuates audio.
+    ///
+    /// A quiet DC-offset signal at -40 dBFS is fed to a 2-band expander whose
+    /// threshold is set at -20 dB and ratio at 4:1.  After processing, the
+    /// output RMS must be lower than the input RMS — confirming that expansion
+    /// is being applied and not just passing audio through unchanged.
+    #[test]
+    fn test_multiband_expander_processes_audio() {
+        let params = MultibandExpanderPluginParams {
+            num_bands: 2,
+            threshold_db: -20.0,
+            ratio: 4.0,
+            attack_ms: 1.0,
+            release_ms: 50.0,
+            range_db: 60.0,
+            hold_ms: 0.0,
+            hysteresis_db: 0.0,
+            mix: 1.0,
+            ..Default::default()
+        };
+        let mut p = MultibandExpanderPlugin::with_params(1, params);
+        p.initialize(48000).unwrap();
+
+        // Quiet DC-offset signal at -40 dBFS (well below -20 dB threshold)
+        let amp = 10.0_f32.powf(-40.0 / 20.0);
+        let num_frames = 48000usize; // 1 second
+        let mut buffer = vec![amp; num_frames];
+
+        let input_rms = amp; // DC: RMS == amplitude
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        p.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // Measure RMS of the second half to let the expander settle
+        let half = num_frames / 2;
+        let output_rms: f32 =
+            (buffer[half..].iter().map(|s| s * s).sum::<f32>() / (num_frames - half) as f32)
+                .sqrt();
+
+        assert!(
+            output_rms < input_rms * 0.9,
+            "Multiband expander should attenuate a -40 dBFS signal below the -20 dB threshold, \
+             but output_rms={output_rms:.8} is not significantly less than input_rms={input_rms:.8}"
         );
     }
 

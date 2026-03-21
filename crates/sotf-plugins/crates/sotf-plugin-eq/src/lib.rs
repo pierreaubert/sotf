@@ -153,8 +153,9 @@ impl OversamplingState {
             up_out: vec![vec![0.0f32; up_out_frames]; num_channels],
             down_in: vec![vec![0.0f32; OS_CHUNK_SIZE * f]; num_channels],
             down_out: vec![vec![0.0f32; down_out_frames]; num_channels],
-            // Residual I/O buffers sized to hold a few chunks to cover latency
-            residual_in: vec![0.0f32; OS_CHUNK_SIZE * num_channels * 2],
+            // Residual I/O buffers pre-allocated for max expected frame size (4096)
+            // to avoid hot-path resize. The resize guards remain as safety nets.
+            residual_in: vec![0.0f32; (4096 + OS_CHUNK_SIZE) * num_channels],
             residual_frames: 0,
             residual_out: vec![0.0f32; (OS_CHUNK_SIZE + latency_samples) * num_channels * 4],
             residual_out_frames: 0,
@@ -723,11 +724,12 @@ impl InPlacePlugin for EqPlugin {
                 self.apply_sample_rate_to_filters(self.sample_rate as f64);
             }
             self.rebuild_cached_parameters();
-        } else if name.starts_with("band_") {
-            let parts: Vec<&str> = name.split('_').collect();
-            if parts.len() >= 3 {
-                let b_idx = parts[1].parse::<usize>().unwrap_or(0);
-                let field = parts[2];
+        } else if let Some(rest) = name.strip_prefix("band_") {
+            // Parse "band_N_field" without heap allocation.
+            // Find the next '_' to split index from field.
+            if let Some(sep) = rest.find('_') {
+                let b_idx = rest[..sep].parse::<usize>().unwrap_or(0);
+                let field = &rest[sep + 1..];
 
                 if field == "order" {
                     // Change filter order: rebuild all stages for this band
@@ -852,11 +854,12 @@ impl InPlacePlugin for EqPlugin {
             Some(ParameterValue::Bool(self.auto_gain.is_enabled()))
         } else if name == "oversampling" {
             Some(ParameterValue::Int(self.oversampling_factor as i32))
-        } else if name.starts_with("band_") {
-            let parts: Vec<&str> = name.split('_').collect();
-            if parts.len() >= 3 {
-                let b_idx = parts[1].parse::<usize>().unwrap_or(0);
-                let field = parts[2];
+        } else if let Some(rest) = name.strip_prefix("band_") {
+            // Parse "band_N_field" without heap allocation.
+            // Find the next '_' to split index from field.
+            if let Some(sep) = rest.find('_') {
+                let b_idx = rest[..sep].parse::<usize>().unwrap_or(0);
+                let field = &rest[sep + 1..];
                 if let Some(stages) = self.filters[0].get(b_idx)
                     && let Some(primary) = stages.first()
                 {
@@ -1068,20 +1071,22 @@ impl InPlacePlugin for EqPlugin {
                 if frames_available < OS_CHUNK_SIZE {
                     break;
                 }
-                // Extract one chunk's worth of data
-                let chunk: Vec<f32> = {
-                    let os = self.os_state.as_ref().unwrap();
-                    os.residual_in[..OS_CHUNK_SIZE * nc].to_vec()
-                };
-                // Shift residual_in left by OS_CHUNK_SIZE frames
+                // Extract one chunk into a stack buffer (no heap allocation).
+                // OS_CHUNK_SIZE=256, up to 32 channels = 32KB on stack.
+                const MAX_OS_CHANNELS: usize = 32;
+                assert!(nc <= MAX_OS_CHANNELS, "EQ oversampling supports at most {MAX_OS_CHANNELS} channels");
+                let chunk_len = OS_CHUNK_SIZE * nc;
+                let mut chunk_buf = [0.0f32; OS_CHUNK_SIZE * MAX_OS_CHANNELS];
                 {
                     let os = self.os_state.as_mut().unwrap();
+                    chunk_buf[..chunk_len].copy_from_slice(&os.residual_in[..chunk_len]);
+                    // Shift residual_in left by OS_CHUNK_SIZE frames
                     let remaining = (os.residual_frames - OS_CHUNK_SIZE) * nc;
-                    os.residual_in.copy_within(OS_CHUNK_SIZE * nc..OS_CHUNK_SIZE * nc + remaining, 0);
+                    os.residual_in.copy_within(chunk_len..chunk_len + remaining, 0);
                     os.residual_frames -= OS_CHUNK_SIZE;
                 }
-                // Process the chunk
-                self.process_os_chunk(&chunk)?;
+                // Process the chunk from stack buffer
+                self.process_os_chunk(&chunk_buf[..chunk_len])?;
             }
 
             // Drain residual_out into buffer
@@ -1228,6 +1233,7 @@ mod tests {
                 freq: 100.0,
                 q: 0.707,
                 db_gain: 0.0,
+                order: 2,
             }],
             channel_filters: None,
             auto_gain: Default::default(),
@@ -1681,5 +1687,44 @@ mod tests {
         let os = p.os_state.as_ref().unwrap();
         assert_eq!(os.residual_frames, 0);
         assert_eq!(os.residual_out_frames, 0);
+    }
+
+    #[test]
+    fn test_eq_oversampling_12ch_does_not_panic() {
+        // Regression: stack buffer was [0.0; OS_CHUNK_SIZE * 8] = 2048 elements.
+        // With 12 channels (e.g., 7.1.4), chunk_len = 256 * 12 = 3072, causing an OOB panic.
+        use sotf_host::plugin::InPlacePlugin;
+
+        let nc = 12;
+        let params = EqPluginParams {
+            filters: vec![BiquadFilterConfig {
+                filter_type: "peak".to_string(),
+                freq: 1000.0,
+                q: 1.0,
+                db_gain: 3.0,
+                order: 2,
+            }],
+            channel_filters: None,
+            auto_gain: Default::default(),
+        };
+        let mut p = EqPlugin::from_params(nc, 48000, params).unwrap();
+
+        // Enable oversampling
+        p.set_parameter(
+            ParameterId::from("oversampling"),
+            ParameterValue::Int(2),
+        )
+        .unwrap();
+
+        // Process enough frames to trigger the oversampling chunk path (>= OS_CHUNK_SIZE)
+        let frames = 512;
+        let mut buffer = vec![0.5f32; frames * nc];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: frames,
+        };
+        // Should not panic with 12 channels
+        p.process_in_place(&mut buffer, &ctx).unwrap();
+        assert!(buffer.iter().all(|s| s.is_finite()));
     }
 }

@@ -16,10 +16,15 @@ fn main() {
         low_gain: 6.0,
         high_freq: 10000.0,
         high_gain: 6.0,
+        mid_enabled: false,
+        mid_freq: 1000.0,
+        mid_gain: 0.0,
+        mid_q: 1.0,
         channel_params: vec![],
         auto_gain_enabled: false,
         auto_gain_max_db: 12.0,
         auto_gain_smoothing_ms: 100.0,
+        auto_gain_position: "post".to_string(),
     };
 
     let mut inner = LoudnessCompensationPlugin::from_params(channels, params).unwrap();

@@ -54,6 +54,8 @@ pub struct BandSplitPlugin {
     /// Pre-computed linear multipliers from band_gains_db.
     band_gains_linear: [f32; MAX_BANDS],
     cached_parameters: Vec<Parameter>,
+    /// Pre-allocated flat scratch buffer: [num_bands * input_channels] for per-frame band output.
+    band_flat: Vec<f32>,
 }
 
 impl BandSplitPlugin {
@@ -99,6 +101,7 @@ impl BandSplitPlugin {
             band_gains_db: [0.0; MAX_BANDS],
             band_gains_linear: [1.0; MAX_BANDS],
             cached_parameters: Vec::new(),
+            band_flat: vec![0.0f32; num_bands * input_channels],
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -276,25 +279,35 @@ impl Plugin for BandSplitPlugin {
             self.crossover.set_frequency(i, new_freq);
         }
 
-        // Allocate band output slices for process_frame
-        let mut band_bufs: Vec<Vec<f32>> = (0..self.num_bands).map(|_| vec![0.0; in_ch]).collect();
+        let nb = self.num_bands;
 
         for frame in 0..num_frames {
             let in_off = frame * in_ch;
             let out_off = frame * out_ch;
             let frame_input = &input[in_off..in_off + in_ch];
 
-            // Build mutable slice refs for process_frame
-            let mut band_slices: Vec<&mut [f32]> =
-                band_bufs.iter_mut().map(|b| b.as_mut_slice()).collect();
-            self.crossover.process_frame(frame_input, &mut band_slices);
+            // Build mutable slice refs from pre-allocated flat buffer using split_at_mut
+            // (no heap allocation). Fixed-size array since MAX_BANDS=4.
+            {
+                let flat = &mut self.band_flat[..nb * in_ch];
+                let mut band_slices: [&mut [f32]; MAX_BANDS] = [&mut [], &mut [], &mut [], &mut []];
+                let mut remaining = flat;
+                for slot in band_slices.iter_mut().take(nb) {
+                    let (chunk, rest) = remaining.split_at_mut(in_ch);
+                    *slot = chunk;
+                    remaining = rest;
+                }
+                self.crossover
+                    .process_frame(frame_input, &mut band_slices[..nb]);
+            }
 
             // Interleave bands into output: [band0_ch0, band0_ch1, band1_ch0, band1_ch1, ...]
             // Apply per-band gain as linear multiplier
-            for (band_idx, band) in band_bufs.iter().enumerate() {
+            for band_idx in 0..nb {
                 let gain = self.band_gains_linear[band_idx];
+                let band_off = band_idx * in_ch;
                 for ch in 0..in_ch {
-                    output[out_off + band_idx * in_ch + ch] = band[ch] * gain;
+                    output[out_off + band_idx * in_ch + ch] = self.band_flat[band_off + ch] * gain;
                 }
             }
         }

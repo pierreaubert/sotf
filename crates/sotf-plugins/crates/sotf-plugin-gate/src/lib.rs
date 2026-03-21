@@ -802,4 +802,96 @@ mod tests {
              when sidechain HPF=200Hz"
         );
     }
+
+    /// Hysteresis test: a signal that oscillates ±2 dB around the threshold should
+    /// not cause the gate to "chatter" (rapidly open and close).
+    ///
+    /// Setup:
+    ///   threshold = -20 dB, hysteresis = 4 dB
+    ///   → open threshold  = -20 dB
+    ///   → close threshold = -24 dB
+    ///
+    /// The test signal alternates every 100 samples between -18 dBFS and -22 dBFS.
+    /// Both levels are between -24 dB and -20 dB when the gate is open, so once
+    /// opened the gate should remain open for the entire alternating region.
+    ///
+    /// Without hysteresis the gate would open on -18 dB and close on -22 dB every
+    /// 100-sample segment, producing many transitions.  With hysteresis it should
+    /// stay open after the first opening.
+    #[test]
+    fn test_gate_hysteresis_no_chatter() {
+        let sr = 48000u32;
+        // Fast attack/release so the envelope reacts within the 100-sample segments
+        let mut p = GatePlugin::from_params(
+            1,
+            GatePluginParams {
+                threshold_db: -20.0,
+                hysteresis_db: 4.0,
+                ratio: 100.0,
+                attack_ms: 0.5,
+                hold_ms: 0.0,
+                release_ms: 1.0,
+                mix: 1.0,
+                link_channels: false,
+                sidechain_hpf_hz: 0.0,
+                range_db: 80.0,
+                knee_db: 0.0,
+                lookahead_ms: 0.0,
+            },
+        );
+        p.initialize(sr).unwrap();
+
+        // Build 1-second buffer that alternates every 100 samples between
+        // -18 dBFS (above open threshold -20 dB) and -22 dBFS (between open and
+        // close thresholds, so gate should stay open once opened).
+        let amp_high = 10.0_f32.powf(-18.0 / 20.0); // -18 dBFS
+        let amp_low = 10.0_f32.powf(-22.0 / 20.0);  // -22 dBFS  (above close threshold -24 dB)
+        let num_frames = sr as usize; // 1 second
+        let mut buffer: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                if (i / 100) % 2 == 0 {
+                    amp_high
+                } else {
+                    amp_low
+                }
+            })
+            .collect();
+
+        let ctx = ProcessContext {
+            sample_rate: sr,
+            num_frames,
+        };
+        p.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // Count how many times the output crosses a "gate closed" boundary.
+        // If the gate chatters, the output will swing between near-zero and amp_low
+        // each 100-sample segment.  With hysteresis the output should be consistently
+        // passed through after the initial opening.
+        //
+        // Threshold for "effectively gated": output below 10 % of amp_low.
+        let closed_threshold = amp_low * 0.1;
+
+        // Skip the first 500 samples (attack / settling period).
+        let steady_state = &buffer[500..];
+
+        // Count sign-changes between "open" and "closed" state.
+        let mut transitions = 0usize;
+        let mut prev_open = steady_state[0] > closed_threshold;
+        for &s in steady_state.iter().skip(1) {
+            let cur_open = s > closed_threshold;
+            if cur_open != prev_open {
+                transitions += 1;
+                prev_open = cur_open;
+            }
+        }
+
+        // With hysteresis the gate should open once and stay open: 0 or at most 1
+        // transition (the initial opening) throughout the steady-state region.
+        // Without hysteresis we would expect ~2 * (num_frames / 100) ≈ 190 transitions.
+        assert!(
+            transitions <= 2,
+            "Gate with hysteresis=4dB should not chatter on a ±2dB oscillating signal, \
+             but observed {transitions} open/closed transitions in steady-state"
+        );
+    }
 }

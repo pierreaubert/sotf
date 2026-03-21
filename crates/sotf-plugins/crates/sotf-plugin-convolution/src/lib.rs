@@ -500,23 +500,25 @@ impl InPlacePlugin for ConvolutionPlugin {
                         let channels = self.channels;
                         let ir_partitions = &state.partitions[ir_ch];
 
+                        // Use fold+reduce: each rayon thread gets ONE accumulator
+                        // that is reused across all its partitions (not one per partition).
+                        // This reduces allocations from ~N to ~num_threads per call.
                         let partial = (0..num_partitions)
                             .into_par_iter()
-                            .map(|p| {
-                                let fdl_p = (fdl_head + p) % num_partitions;
-                                let fdl_off = (fdl_p * channels + ch) * FFT_SIZE;
-                                let fdl_slice = &fdl_flat[fdl_off..fdl_off + FFT_SIZE];
-                                let ir_slice = &ir_partitions[p];
-                                // Allocate a local accumulator for this partition; the
-                                // reduce step combines them without any shared writes.
-                                let mut local = vec![Complex::new(0.0, 0.0); FFT_SIZE];
-                                complex_mul_add_simd(&mut local, fdl_slice, ir_slice);
-                                local
-                            })
+                            .fold(
+                                || vec![Complex::new(0.0, 0.0); FFT_SIZE],
+                                |mut acc, p| {
+                                    let fdl_p = (fdl_head + p) % num_partitions;
+                                    let fdl_off = (fdl_p * channels + ch) * FFT_SIZE;
+                                    let fdl_slice = &fdl_flat[fdl_off..fdl_off + FFT_SIZE];
+                                    let ir_slice = &ir_partitions[p];
+                                    complex_mul_add_simd(&mut acc, fdl_slice, ir_slice);
+                                    acc
+                                },
+                            )
                             .reduce(
                                 || vec![Complex::new(0.0, 0.0); FFT_SIZE],
                                 |mut a, b| {
-                                    // Element-wise sum of two partial accumulators.
                                     for (x, y) in a.iter_mut().zip(b.iter()) {
                                         *x += y;
                                     }
