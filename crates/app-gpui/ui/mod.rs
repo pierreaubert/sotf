@@ -100,6 +100,8 @@ pub struct PlayerView {
     update_frame_count: u64,
     /// Task for debounced window geometry saving
     geometry_save_task: Option<Task<()>>,
+    /// OS media controls (MPRIS / MediaPlayer)
+    media_controls: Option<crate::media_controls::GpuiMediaControls>,
 }
 
 impl PlayerView {
@@ -107,6 +109,18 @@ impl PlayerView {
         let focus_handle = cx.focus_handle();
         let search_focus_handle = cx.focus_handle();
         let volume_focus_handle = cx.focus_handle();
+
+        // Initialize OS media controls (MPRIS on Linux, MediaPlayer on macOS/Windows)
+        let media_controls = match crate::media_controls::GpuiMediaControls::new() {
+            Ok(mc) => {
+                log::info!("OS media controls initialized");
+                Some(mc)
+            }
+            Err(e) => {
+                log::warn!("Failed to initialize OS media controls: {}", e);
+                None
+            }
+        };
 
         // Subscribe to layout changes for granular re-renders
         let layout = state.read(cx).layout.clone();
@@ -153,6 +167,13 @@ impl PlayerView {
                         } else {
                             None
                         };
+
+                    // Collect pending media control events (before state borrow)
+                    let media_events: Vec<souvlaki::MediaControlEvent> = view
+                        .media_controls
+                        .as_ref()
+                        .map(|mc| std::iter::from_fn(|| mc.poll_event()).collect())
+                        .unwrap_or_default();
 
                     // Consolidate all state updates into a single update call
                     // to avoid multiple observer triggers
@@ -217,6 +238,11 @@ impl PlayerView {
                         {
                             log::warn!("[GPUI] Applying pending plugin update: {:?}", update_type);
                             Self::apply_plugin_update(state, update_type);
+                        }
+
+                        // Handle OS media control events (MPRIS, etc.)
+                        for event in &media_events {
+                            Self::handle_media_control_event(state, event);
                         }
 
                         // Check and record play history (30s threshold)
@@ -295,6 +321,16 @@ impl PlayerView {
                         view.load_more_albums(cx);
                     }
 
+                    // Update OS media controls metadata (outside state update)
+                    if let Some(mc) = view.media_controls.as_mut() {
+                        let state = view.state.read(cx);
+                        crate::media_controls::update_media_controls(
+                            mc,
+                            &state.app,
+                            state.app.playback.position_secs,
+                        );
+                    }
+
                     cx.notify();
                 });
                 // Exit the loop if the view is no longer valid
@@ -315,6 +351,7 @@ impl PlayerView {
             needs_initial_focus: true,
             update_frame_count: 0,
             geometry_save_task: None,
+            media_controls,
         }
     }
 

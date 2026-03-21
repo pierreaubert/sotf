@@ -8,6 +8,9 @@
 #![recursion_limit = "8192"]
 
 pub mod components;
+#[cfg(target_os = "linux")]
+pub mod desktop_integration;
+pub mod media_controls;
 
 // Note: ui must be loaded before app because app re-exports from ui::components::host
 pub mod app;

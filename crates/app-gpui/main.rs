@@ -42,6 +42,7 @@ actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 #[include = "brands/*.png"]
 #[include = "brands/*.webp"]
 #[include = "sotf.jpg"]
+#[include = "sotf.png"]
 #[include = "presets/*.json"]
 struct Assets;
 
@@ -91,6 +92,15 @@ fn main() {
     }
 
     log::info!("SOTF GPUI Player starting...");
+
+    // Install desktop integration on Linux (first-launch .desktop + icon)
+    #[cfg(target_os = "linux")]
+    {
+        let icon_png = Assets::get("sotf.png");
+        sotf_audio_player_gpui::desktop_integration::ensure_desktop_integration(
+            icon_png.as_ref().map(|f| f.data.as_ref()),
+        );
+    }
 
     // Install default presets (only copies files that don't already exist)
     install_default_presets();

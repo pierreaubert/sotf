@@ -1,4 +1,86 @@
+use souvlaki::MediaControlEvent;
+
 impl PlayerView {
+    /// Handle an OS media control event (MPRIS play/pause/next/etc.).
+    /// Called from the timer loop inside a `state.update()` closure.
+    fn handle_media_control_event(state: &mut AppState, event: &MediaControlEvent) {
+        match event {
+            MediaControlEvent::Play => {
+                if state.app.playback.current_queue_index.is_none() {
+                    if let Some(path) = state.app.start_queue() {
+                        Self::play_track(state, path);
+                    }
+                } else {
+                    let _ = state.player.lock().resume();
+                    state.app.playback.is_playing = true;
+                }
+            }
+            MediaControlEvent::Pause => {
+                let _ = state.player.lock().pause();
+                state.app.playback.is_playing = false;
+            }
+            MediaControlEvent::Toggle => {
+                if state.app.playback.is_playing {
+                    let _ = state.player.lock().pause();
+                    state.app.playback.is_playing = false;
+                } else if state.app.playback.current_queue_index.is_none() {
+                    if let Some(path) = state.app.start_queue() {
+                        Self::play_track(state, path);
+                    }
+                } else {
+                    let _ = state.player.lock().resume();
+                    state.app.playback.is_playing = true;
+                }
+            }
+            MediaControlEvent::Next => {
+                if let Some(path) = state.app.next_track() {
+                    Self::play_track(state, path);
+                } else {
+                    state.app.playback.is_playing = false;
+                }
+            }
+            MediaControlEvent::Previous => {
+                if let Some(path) = state.app.previous_track() {
+                    Self::play_track(state, path);
+                }
+            }
+            MediaControlEvent::Stop => {
+                let _ = state.player.lock().stop();
+                state.app.playback.is_playing = false;
+                state.app.playback.current_queue_index = None;
+            }
+            MediaControlEvent::SetPosition(pos) => {
+                let _ = state.player.lock().seek(pos.0.as_secs_f64());
+            }
+            MediaControlEvent::SetVolume(vol) => {
+                let clamped = vol.clamp(0.0, 1.0) as f32;
+                state.app.playback.volume = clamped;
+                let _ = state.player.lock().set_volume(clamped);
+            }
+            MediaControlEvent::Seek(direction) => {
+                let offset = match direction {
+                    souvlaki::SeekDirection::Forward => 10.0,
+                    souvlaki::SeekDirection::Backward => -10.0,
+                };
+                let new_pos = (state.app.playback.position_secs + offset).max(0.0);
+                let _ = state.player.lock().seek(new_pos);
+            }
+            MediaControlEvent::SeekBy(direction, duration) => {
+                let secs = duration.as_secs_f64();
+                let offset = match direction {
+                    souvlaki::SeekDirection::Forward => secs,
+                    souvlaki::SeekDirection::Backward => -secs,
+                };
+                let new_pos = (state.app.playback.position_secs + offset).max(0.0);
+                let _ = state.player.lock().seek(new_pos);
+            }
+            MediaControlEvent::Raise | MediaControlEvent::OpenUri(_) => {}
+            MediaControlEvent::Quit => {
+                std::process::exit(0);
+            }
+        }
+    }
+
     pub(crate) fn toggle_playback(
         &mut self,
         _: &PlayPause,
