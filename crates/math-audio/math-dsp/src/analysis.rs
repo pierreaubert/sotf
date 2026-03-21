@@ -861,6 +861,28 @@ pub fn analyze_recording(
         );
     }
 
+    // Detect empty/disconnected channels: if the recorded signal RMS is far below
+    // the reference (e.g., speaker not connected), the cross-correlation lag estimate
+    // is meaningless and the transfer function will produce spurious high-dB peaks.
+    // Clamp the transfer function in this case.
+    let ref_rms = (reference.iter().map(|&x| x * x).sum::<f32>() / reference.len() as f32).sqrt();
+    let rec_rms = (recorded.iter().map(|&x| x * x).sum::<f32>() / recorded.len() as f32).sqrt();
+    let rms_ratio_db = if ref_rms > 1e-10 {
+        20.0 * (rec_rms / ref_rms).log10()
+    } else {
+        0.0
+    };
+    // If the recorded signal is more than 40 dB below the reference, the channel
+    // is effectively silent (disconnected speaker, muted output, etc.).
+    let is_silent_channel = rms_ratio_db < -40.0;
+    if is_silent_channel {
+        log::warn!(
+            "[FFT Analysis] Silent channel detected: recorded RMS is {:.1} dB below reference. \
+             Transfer function will be clamped to noise floor.",
+            -rms_ratio_db,
+        );
+    }
+
     // Estimate lag using cross-correlation
     let lag = estimate_lag(reference, recorded)?;
 
@@ -982,6 +1004,15 @@ pub fn analyze_recording(
 
         // Average magnitude
         let avg_magnitude = sum_magnitude / bin_count as f32;
+
+        // For silent channels (disconnected speaker), clamp the transfer function
+        // to prevent noise-on-noise division from producing spurious high-dB values.
+        // The actual RMS ratio is the best estimate of the true transfer function level.
+        let avg_magnitude = if is_silent_channel {
+            avg_magnitude.min(rec_rms / ref_rms.max(1e-10))
+        } else {
+            avg_magnitude
+        };
 
         // Convert to dB
         let db = 20.0 * avg_magnitude.max(1e-10).log10();
