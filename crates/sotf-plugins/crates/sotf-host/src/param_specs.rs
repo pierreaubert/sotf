@@ -3642,3 +3642,39 @@ pub mod crossfeed {
         ],
     };
 }
+
+// ============================================================================
+// Ambisonics Decoder Plugin
+// ============================================================================
+
+pub mod ambisonics {
+    use super::ParamSpec;
+    use crate::plugin_layout::*;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::int("Order", "order", 1, 1, 3, 1, "", "Ambisonics")
+            .structural(),
+        ParamSpec::choice(
+            "Target Layout",
+            "target_layout",
+            0,
+            &["5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"],
+            "Ambisonics",
+        )
+        .structural(),
+        ParamSpec::bool_param("Max-rE", "max_re_weighting", true, "Ambisonics"),
+    ];
+    pub const LAYOUT: PluginLayout = PluginLayout {
+        config: &[
+            ControlSpec::knob(0),  // order
+            ControlSpec::selector(1), // target_layout
+        ],
+        main: &[ControlGroup {
+            title: "",
+            controls: &[ControlSpec::toggle(2)], // max_re_weighting
+        }],
+        output: &[],
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &[ColumnConstraint::main(200.0)],
+    };
+}

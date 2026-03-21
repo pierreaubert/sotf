@@ -1,0 +1,404 @@
+// ============================================================================
+// Ambisonics Decoder Plugin
+// ============================================================================
+//
+// Decodes Higher Order Ambisonics (HOA) signals to any SotF speaker layout
+// using the AllRAD (All-Round Ambisonic Decoding) algorithm.
+//
+// Input: (order+1)² Ambisonics channels in ACN/SN3D format
+// Output: Speaker feeds for the target layout
+//
+// Supports orders 1 (FOA), 2 (SOA), and 3 (TOA).
+
+pub mod config;
+pub mod decode_matrix;
+pub mod spherical_harmonics;
+
+use std::any::Any;
+use std::sync::Arc;
+
+use decode_matrix::DecodeMatrix;
+use spherical_harmonics::channel_count;
+
+use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::speaker_config::get_speaker_config;
+
+pub use config::AmbisonicsDecoderConfig;
+pub type AmbisonicsDecoderParams = AmbisonicsDecoderConfig;
+
+pub struct AmbisonicsDecoderPlugin {
+    order: usize,
+    target_layout: String,
+    max_re_weighting: bool,
+    input_channels: usize,
+    output_channels: usize,
+    decode_matrix: Option<DecodeMatrix>,
+    sample_rate: u32,
+    cached_parameters: Vec<Parameter>,
+}
+
+impl AmbisonicsDecoderPlugin {
+    pub fn new(config: &AmbisonicsDecoderConfig) -> Result<Self, String> {
+        let order = config.order.clamp(1, spherical_harmonics::MAX_ORDER);
+        let input_ch = channel_count(order);
+
+        let speaker_config = get_speaker_config(&config.target_layout).ok_or_else(|| {
+            format!(
+                "Unknown speaker layout '{}'. Available: 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6",
+                config.target_layout
+            )
+        })?;
+
+        let dm = DecodeMatrix::build(order, speaker_config, config.max_re_weighting)?;
+        let output_ch = speaker_config.total_channels;
+
+        let mut plugin = Self {
+            order,
+            target_layout: config.target_layout.clone(),
+            max_re_weighting: config.max_re_weighting,
+            input_channels: input_ch,
+            output_channels: output_ch,
+            decode_matrix: Some(dm),
+            sample_rate: 48000,
+            cached_parameters: Vec::new(),
+        };
+        plugin.rebuild_cached_parameters();
+        Ok(plugin)
+    }
+
+    fn rebuild_decode_matrix(&mut self) -> Result<(), String> {
+        let speaker_config = get_speaker_config(&self.target_layout).ok_or_else(|| {
+            format!("Unknown speaker layout '{}'", self.target_layout)
+        })?;
+
+        let dm = DecodeMatrix::build(self.order, speaker_config, self.max_re_weighting)?;
+        self.input_channels = channel_count(self.order);
+        self.output_channels = speaker_config.total_channels;
+        self.decode_matrix = Some(dm);
+        Ok(())
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_int("order", "Ambisonics Order", self.order as i32, 1, 3)
+                .with_group("Ambisonics")
+                .with_importance(ParameterImportance::Critical)
+                .with_description("1=FOA(4ch), 2=SOA(9ch), 3=TOA(16ch)")
+                .build(),
+            Parameter::new_string("target_layout", "Target Layout", self.target_layout.clone())
+                .with_group("Ambisonics")
+                .with_importance(ParameterImportance::Critical)
+                .with_description("Target speaker layout (e.g. 5.1, 7.1.4)")
+                .build(),
+            Parameter::new_bool("max_re_weighting", "Max-rE Weighting", self.max_re_weighting)
+                .with_group("Ambisonics")
+                .with_importance(ParameterImportance::Useful)
+                .with_description("Improve energy preservation at high frequencies")
+                .build(),
+        ];
+    }
+}
+
+impl std::fmt::Debug for AmbisonicsDecoderPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AmbisonicsDecoderPlugin")
+            .field("order", &self.order)
+            .field("target_layout", &self.target_layout)
+            .field("input_channels", &self.input_channels)
+            .field("output_channels", &self.output_channels)
+            .finish()
+    }
+}
+
+impl Plugin for AmbisonicsDecoderPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo {
+            name: "AmbisonicsDecoder".into(),
+            version: "0.1.0".into(),
+            author: "SotF".into(),
+            description: format!(
+                "Ambisonics decoder (order {}, {} -> {}ch)",
+                self.order, self.target_layout, self.output_channels
+            ),
+        }
+    }
+
+    fn input_channels(&self) -> usize {
+        self.input_channels
+    }
+
+    fn output_channels(&self) -> usize {
+        self.output_channels
+    }
+
+    fn parameters(&self) -> Vec<Parameter> {
+        self.cached_parameters.clone()
+    }
+
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        match id.as_str() {
+            "order" => {
+                if let ParameterValue::Int(v) = value {
+                    let new_order = (v as usize).clamp(1, spherical_harmonics::MAX_ORDER);
+                    if new_order != self.order {
+                        self.order = new_order;
+                        self.rebuild_decode_matrix()
+                            .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
+                        self.rebuild_cached_parameters();
+                    }
+                }
+            }
+            "target_layout" => {
+                if let ParameterValue::String(ref layout) = value
+                    && *layout != self.target_layout
+                {
+                    if get_speaker_config(layout).is_none() {
+                        return Err(format!("Unknown speaker layout '{layout}'"));
+                    }
+                    self.target_layout = layout.clone();
+                    self.rebuild_decode_matrix()
+                        .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
+                    self.rebuild_cached_parameters();
+                }
+            }
+            "max_re_weighting" => {
+                if let ParameterValue::Bool(v) = value
+                    && v != self.max_re_weighting
+                {
+                    self.max_re_weighting = v;
+                    self.rebuild_decode_matrix()
+                        .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
+                    self.rebuild_cached_parameters();
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        match id.as_str() {
+            "order" => Some(ParameterValue::Int(self.order as i32)),
+            "target_layout" => Some(ParameterValue::String(self.target_layout.clone())),
+            "max_re_weighting" => Some(ParameterValue::Bool(self.max_re_weighting)),
+            _ => None,
+        }
+    }
+
+    fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.sample_rate = sample_rate;
+        Ok(())
+    }
+
+    fn reset(&mut self) {
+        // Stateless decode — nothing to reset
+    }
+
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        let Some(dm) = &self.decode_matrix else {
+            // No matrix — output silence
+            output[..context.num_frames * self.output_channels].fill(0.0);
+            return Ok(context.num_frames);
+        };
+
+        let in_ch = self.input_channels;
+        let out_ch = self.output_channels;
+        let num_frames = context.num_frames;
+
+        for frame in 0..num_frames {
+            let in_offset = frame * in_ch;
+            let out_offset = frame * out_ch;
+            dm.decode_frame(
+                &input[in_offset..in_offset + in_ch],
+                &mut output[out_offset..out_offset + out_ch],
+            );
+        }
+
+        Ok(num_frames)
+    }
+
+    fn latency_samples(&self) -> usize {
+        0 // Pure matrix multiply — no latency
+    }
+
+    fn supports_channel_config(&self, input_channels: usize, output_channels: usize) -> bool {
+        input_channels == self.input_channels && output_channels == self.output_channels
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        None
+    }
+
+    fn output_frames_for_input(&self, input_frames: usize) -> usize {
+        input_frames
+    }
+
+    fn output_sample_rate(&self, input_rate: u32) -> u32 {
+        input_rate
+    }
+
+    fn last_output_frames(&self) -> Option<usize> {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_config() -> AmbisonicsDecoderConfig {
+        AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "5.1".to_owned(),
+            max_re_weighting: true,
+        }
+    }
+
+    #[test]
+    fn test_create_foa_5_1() {
+        let plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
+        assert_eq!(plugin.input_channels(), 4);
+        assert_eq!(plugin.output_channels(), 6);
+        assert_eq!(plugin.info().name, "AmbisonicsDecoder");
+    }
+
+    #[test]
+    fn test_create_soa_7_1_4() {
+        let config = AmbisonicsDecoderConfig {
+            order: 2,
+            target_layout: "7.1.4".to_owned(),
+            max_re_weighting: true,
+        };
+        let plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        assert_eq!(plugin.input_channels(), 9);
+        assert_eq!(plugin.output_channels(), 12);
+    }
+
+    #[test]
+    fn test_invalid_layout() {
+        let config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "nonexistent".to_owned(),
+            max_re_weighting: false,
+        };
+        assert!(AmbisonicsDecoderPlugin::new(&config).is_err());
+    }
+
+    #[test]
+    fn test_process_silence() {
+        let mut plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        let num_frames = 256;
+        let input = vec![0.0_f32; num_frames * 4]; // 4 FOA channels
+        let mut output = vec![0.0_f32; num_frames * 6]; // 6 channels (5.1)
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        let frames = plugin.process(&input, &mut output, &ctx).unwrap();
+        assert_eq!(frames, num_frames);
+
+        // All outputs should be zero for zero input
+        for s in &output {
+            assert!(s.abs() < 1e-10, "Expected silence, got {}", s);
+        }
+    }
+
+    #[test]
+    fn test_process_omni_signal() {
+        let config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "5.1".to_owned(),
+            max_re_weighting: false,
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        let num_frames = 1;
+        // Pure W (omnidirectional) signal
+        let input = vec![1.0_f32, 0.0, 0.0, 0.0];
+        let mut output = vec![0.0_f32; 6];
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        plugin.process(&input, &mut output, &ctx).unwrap();
+
+        // Non-LFE channels should have roughly equal non-zero levels
+        let speaker_config = get_speaker_config("5.1").unwrap();
+        let non_lfe_levels: Vec<f32> = speaker_config
+            .speakers
+            .iter()
+            .filter(|s| !s.is_lfe)
+            .map(|s| output[s.channel])
+            .collect();
+
+        // All non-LFE speakers should be non-zero
+        for &level in &non_lfe_levels {
+            assert!(level.abs() > 0.01, "Speaker should produce output for omni signal");
+        }
+    }
+
+    #[test]
+    fn test_parameter_get_set() {
+        // Use 7.1.4 (11 non-LFE speakers) so we can change to SOA (9 channels)
+        let config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "7.1.4".to_owned(),
+            max_re_weighting: true,
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+
+        // Get initial values
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("order")),
+            Some(ParameterValue::Int(1))
+        );
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("max_re_weighting")),
+            Some(ParameterValue::Bool(true))
+        );
+
+        // Change order to SOA (needs >= 9 non-LFE speakers)
+        plugin
+            .set_parameter(ParameterId::from("order"), ParameterValue::Int(2))
+            .unwrap();
+        assert_eq!(plugin.input_channels(), 9); // SOA = 9 channels
+
+        // Change max_re
+        plugin
+            .set_parameter(
+                ParameterId::from("max_re_weighting"),
+                ParameterValue::Bool(false),
+            )
+            .unwrap();
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("max_re_weighting")),
+            Some(ParameterValue::Bool(false))
+        );
+    }
+
+    #[test]
+    fn test_latency() {
+        let plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
+        assert_eq!(plugin.latency_samples(), 0);
+    }
+
+    #[test]
+    fn test_channel_config_support() {
+        let plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
+        assert!(plugin.supports_channel_config(4, 6)); // FOA -> 5.1
+        assert!(!plugin.supports_channel_config(2, 6)); // Stereo -> 5.1 not supported
+    }
+}

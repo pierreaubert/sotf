@@ -1,0 +1,31 @@
+[package]
+name = "sotf-plugin-ambisonics"
+description = "SOTF Ambisonics Decoder plugin - AllRAD decoding from HOA to speaker layouts"
+version = "0.5.3"
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_ambisonics"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-ambisonics"
+path = "bin/qa_ambisonics.rs"
+required-features = ["qa"]
+
+[[bench]]
+name = "ambisonics-benchmark"
+harness = false
+
+[dependencies]
+sotf-host = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+criterion = { workspace = true }

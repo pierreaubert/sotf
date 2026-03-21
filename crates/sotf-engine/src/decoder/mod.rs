@@ -1,6 +1,8 @@
 pub mod core;
 pub mod error;
 pub mod formats;
+#[cfg(feature = "iamf")]
+pub mod iamf;
 pub mod stream;
 
 // Re-export the main API

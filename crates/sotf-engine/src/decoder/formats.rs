@@ -458,6 +458,8 @@ pub enum AudioFormat {
     Wav,
     Vorbis,
     Aiff,
+    #[cfg(feature = "iamf")]
+    Iamf,
 }
 
 impl AudioFormat {
@@ -480,6 +482,8 @@ impl AudioFormat {
             "wav" => Ok(AudioFormat::Wav),
             "ogg" | "oga" => Ok(AudioFormat::Vorbis),
             "aiff" | "aif" => Ok(AudioFormat::Aiff),
+            #[cfg(feature = "iamf")]
+            "iamf" => Ok(AudioFormat::Iamf),
             _ => Err(AudioDecoderError::UnsupportedFormat(format!(
                 "Unsupported file extension: {}",
                 extension
@@ -496,6 +500,8 @@ impl AudioFormat {
             AudioFormat::Wav => "WAV",
             AudioFormat::Vorbis => "Vorbis",
             AudioFormat::Aiff => "AIFF",
+            #[cfg(feature = "iamf")]
+            AudioFormat::Iamf => "IAMF",
         }
     }
 
@@ -508,6 +514,8 @@ impl AudioFormat {
             AudioFormat::Wav => "wav",
             AudioFormat::Vorbis => "ogg",
             AudioFormat::Aiff => "aiff",
+            #[cfg(feature = "iamf")]
+            AudioFormat::Iamf => "iamf",
         }
     }
 
@@ -520,19 +528,25 @@ impl AudioFormat {
             AudioFormat::Wav => true,
             AudioFormat::Vorbis => false,
             AudioFormat::Aiff => true,
+            #[cfg(feature = "iamf")]
+            AudioFormat::Iamf => false, // Depends on inner codec, assume lossy
         }
     }
 
     /// Get all supported formats
     pub fn supported_formats() -> Vec<AudioFormat> {
-        vec![
+        #[allow(unused_mut)]
+        let mut formats = vec![
             AudioFormat::Flac,
             AudioFormat::Mp3,
             AudioFormat::Aac,
             AudioFormat::Wav,
             AudioFormat::Vorbis,
             AudioFormat::Aiff,
-        ]
+        ];
+        #[cfg(feature = "iamf")]
+        formats.push(AudioFormat::Iamf);
+        formats
     }
 
     /// Get a user-friendly description of supported formats

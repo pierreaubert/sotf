@@ -136,6 +136,13 @@ pub fn create_decoder<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Box<dyn Aud
         ));
     }
 
+    // Route IAMF files to the dedicated IAMF decoder
+    #[cfg(feature = "iamf")]
+    if let Ok(AudioFormat::Iamf) = AudioFormat::from_path(path) {
+        let decoder = crate::decoder::iamf::IamfAudioDecoder::new(path)?;
+        return Ok(Box::new(decoder));
+    }
+
     // Create unified Symphonia decoder that handles format detection internally
     let decoder = SymphoniaDecoder::new(path)?;
     Ok(Box::new(decoder))
