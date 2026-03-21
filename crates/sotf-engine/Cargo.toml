@@ -14,6 +14,7 @@ hal = ["driver-hal", "sotf-plugins/hal"]
 asio = ["cpal/asio"]
 iamf = ["dep:sotf-iamf", "dep:sotf-plugin-ambisonics"]
 asio = ["cpal/asio"]
+iamf = ["dep:sotf-iamf", "dep:sotf-plugin-ambisonics"]
 
 [dependencies]
 driver-common = { workspace = true }
