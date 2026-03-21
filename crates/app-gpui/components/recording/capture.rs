@@ -414,23 +414,33 @@ impl PlayerView {
                     return None;
                 }
 
-                // Compute avg SPL in 100 Hz - 10 kHz range
+                // Compute avg SPL, excluding noise-floor sentinels (-200 dB)
+                // from narrow-band sweeps (e.g., LFE 20-500 Hz)
                 let mut sum = 0.0_f32;
                 let mut count = 0usize;
                 for (&freq, &mag) in result.frequencies.iter().zip(result.magnitude_db.iter()) {
-                    if (100.0..=10000.0).contains(&freq) {
+                    if (20.0..=20000.0).contains(&freq) && mag > -150.0 {
                         sum += mag;
                         count += 1;
                     }
                 }
                 let avg_spl = if count > 0 { sum / count as f32 } else { 0.0 };
 
-                // Estimate noise floor from the lowest 5% of magnitude values
-                let mut sorted_mags: Vec<f32> = result.magnitude_db.clone();
+                // Estimate noise floor from the lowest 5% of valid magnitude values
+                // (exclude -200 dB sentinels from out-of-band frequencies)
+                let mut sorted_mags: Vec<f32> = result
+                    .magnitude_db
+                    .iter()
+                    .copied()
+                    .filter(|&m| m > -150.0)
+                    .collect();
                 sorted_mags.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 let bottom_count = (sorted_mags.len() / 20).max(1);
-                let noise_floor: f32 =
-                    sorted_mags[..bottom_count].iter().sum::<f32>() / bottom_count as f32;
+                let noise_floor: f32 = if sorted_mags.is_empty() {
+                    -100.0
+                } else {
+                    sorted_mags[..bottom_count].iter().sum::<f32>() / bottom_count as f32
+                };
 
                 // Mic input channel used for this recording
                 let mic_ch = recording_state
@@ -1321,8 +1331,11 @@ impl PlayerView {
                                 let vi = mics[mic_i].vec_idx;
                                 let mic_name = &mics[mic_i].safe_name;
 
-                                // Compute avg SPL
+                                // Compute avg SPL within the actual sweep range
+                                // (not hardcoded 100-10000 Hz — LFE uses 20-500 Hz)
                                 let avg_spl = {
+                                    let avg_min = sweep_start_freq.max(20.0);
+                                    let avg_max = sweep_end_freq.min(20000.0);
                                     let mut sum = 0.0_f32;
                                     let mut count = 0;
                                     for (&freq, &mag) in analysis_result
@@ -1330,7 +1343,7 @@ impl PlayerView {
                                         .iter()
                                         .zip(analysis_result.spl_db.iter())
                                     {
-                                        if (100.0..=10000.0).contains(&freq) {
+                                        if freq >= avg_min && freq <= avg_max && mag > -150.0 {
                                             sum += mag;
                                             count += 1;
                                         }
