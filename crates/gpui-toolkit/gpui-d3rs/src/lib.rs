@@ -61,6 +61,8 @@ pub mod geo;
 pub mod gpu2d;
 #[cfg(feature = "gpu-3d")]
 pub mod gpu3d;
+#[cfg(feature = "gpu-3d")]
+pub mod sphere_gallery;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod grid;
 pub mod hexbin;
