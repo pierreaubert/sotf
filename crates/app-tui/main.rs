@@ -152,6 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sotf_audio_player::config::set_config_dir_override(qa_dir);
     }
 
+    let t_startup = std::time::Instant::now();
     let theme = sotf_audio_player_tui::theme::Theme::default();
 
     // Try to acquire exclusive lock — second instance becomes read-only
@@ -163,7 +164,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Another instance is running — starting in read-only mode");
     }
 
+    let t0 = std::time::Instant::now();
     let mut app = App::new(theme, read_only);
+    log::info!("[startup] App::new: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
 
     // Apply scanner thread count from CLI
     if let Some(threads) = args.scanner_threads {
@@ -239,13 +242,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Load saved configuration
+    let t0 = std::time::Instant::now();
     if let Err(e) = app.load_config() {
         log::warn!("Could not load saved configuration: {}", e);
     }
+    log::info!("[startup] load_config: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
 
-    // Load available audio devices
-    app.load_output_devices();
-    app.load_recording_devices();
+    // Load available audio devices (single enumeration for both output + recording)
+    app.load_all_audio_devices();
 
     // Auto-scan if:
     // 1. Explicit --scan flag provided, OR
@@ -276,6 +280,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Initialize media controls (best-effort: works without them on headless servers)
+    let t0 = std::time::Instant::now();
     let mut media_controls = match TuiMediaControls::new() {
         Ok(mc) => {
             log::info!("Media controls initialized (Now Playing + media keys)");
@@ -289,6 +294,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None
         }
     };
+    log::info!("[startup] media_controls: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
+    log::info!("[startup] TUI total startup: {:.1}ms", t_startup.elapsed().as_secs_f64() * 1000.0);
 
     // Main loop
     let result = run_app(&mut terminal, &mut app, &mut player, &mut media_controls);

@@ -739,9 +739,15 @@ impl App {
         }
 
         // Try to load from database
+        let t0 = std::time::Instant::now();
         if let Err(e) = self.load_library_from_database() {
             log::warn!("Failed to load library from database: {}", e);
         }
+        log::info!(
+            "[startup] check_library_on_startup: {:.1}ms ({} albums)",
+            t0.elapsed().as_secs_f64() * 1000.0,
+            self.library_state.library.albums.len(),
+        );
 
         // Check if library is empty
         if self.library_state.library.albums.is_empty() {
@@ -899,6 +905,14 @@ impl App {
     pub fn load_config(&mut self) -> Result<LayoutState, Box<dyn std::error::Error>> {
         use crate::config::Config;
         let config = Config::load()?;
+        self.load_config_from(config)
+    }
+
+    /// Load configuration from an already-loaded Config (avoids duplicate disk read).
+    pub fn load_config_from(
+        &mut self,
+        config: crate::config::Config,
+    ) -> Result<LayoutState, Box<dyn std::error::Error>> {
 
         // Restore directories
         self.library_state.library.directories = config.directories;

@@ -735,9 +735,11 @@ fn spawn_room_eq_optimization(app: &mut App) {
             BroadbandTargetMatchingConfig as BackendBroadbandTargetMatchingConfig, CallbackAction,
             ExcursionProtectionConfig as BackendExcursionProtectionConfig,
             FirConfig as BackendFirConfig, GroupDelayOptimizationConfig, HighFreqFilterConfig,
-            HighpassType, LowFreqFilterConfig, MultiSeatConfig as BackendMultiSeatConfig,
-            MultiSeatStrategy, OptimizerConfig,
-            PhaseAlignmentConfig as BackendPhaseAlignmentConfig, ProcessingMode, RoomConfig,
+            HighpassType, LowFreqFilterConfig,
+            MixedPhaseSerdeConfig as BackendMixedPhaseConfig,
+            MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy, OptimizerConfig,
+            PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
+            PreRingingSerdeConfig as BackendPreRingingConfig, ProcessingMode, RoomConfig,
             SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig,
             TargetTiltConfig as BackendTargetTiltConfig, TiltType, VoiceOfGodConfig,
         };
@@ -775,6 +777,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
             RoomEqOptimizationMode::Iir => ProcessingMode::LowLatency,
             RoomEqOptimizationMode::Fir => ProcessingMode::PhaseLinear,
             RoomEqOptimizationMode::Mixed => ProcessingMode::Hybrid,
+            RoomEqOptimizationMode::MixedPhase => ProcessingMode::MixedPhase,
         };
 
         // Build OptimizerConfig directly (matching GPUI's to_room_config pattern)
@@ -796,10 +799,25 @@ fn spawn_room_eq_optimization(app: &mut App) {
             fir: Some(BackendFirConfig {
                 taps: config.fir.taps,
                 phase: config.fir.phase.clone(),
-                correct_excess_phase: false,
-                phase_smoothing: 0.167,
-                pre_ringing: None,
+                correct_excess_phase: config.fir.correct_excess_phase,
+                phase_smoothing: config.fir.phase_smoothing,
+                pre_ringing: config.fir.pre_ringing.as_ref().map(|pr| {
+                    BackendPreRingingConfig {
+                        threshold_db: pr.threshold_db,
+                        max_time_s: pr.max_time_s,
+                    }
+                }),
             }),
+            mixed_phase: if config.mode == RoomEqOptimizationMode::MixedPhase {
+                Some(BackendMixedPhaseConfig {
+                    max_fir_length_ms: config.mixed_phase.max_fir_length_ms,
+                    pre_ringing_threshold_db: config.mixed_phase.pre_ringing_threshold_db,
+                    min_spatial_depth: config.mixed_phase.min_spatial_depth,
+                    phase_smoothing_octaves: config.mixed_phase.phase_smoothing_octaves,
+                })
+            } else {
+                None
+            },
             seed: config.seed,
             mixed_config: if config.mode == RoomEqOptimizationMode::Mixed {
                 Some(autoeq::roomeq::MixedModeConfig {

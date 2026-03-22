@@ -1404,6 +1404,7 @@ impl PlayerView {
                         RoomEqOptimizationMode::Iir => "IIR",
                         RoomEqOptimizationMode::Fir => "FIR",
                         RoomEqOptimizationMode::Mixed => "Mixed",
+                        RoomEqOptimizationMode::MixedPhase => "MixedΦ",
                     };
 
                     Button::new(

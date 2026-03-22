@@ -319,6 +319,7 @@ pub fn run_multi_speaker_optimization(
             vog: None,
             broadband_target_matching: None,
             multi_measurement: None,
+            mixed_phase: None,
         },
         recording_config: None,
     };
@@ -462,6 +463,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         fir: None,
         seed: None,
         mixed_config: None,
+        mixed_phase: None,
         refine: true,
         local_algo: "cobyla".to_string(),
         psychoacoustic: true,

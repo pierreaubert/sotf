@@ -456,13 +456,29 @@ impl MusicLibrary {
         Self::default()
     }
 
-    /// Create a new library with database persistence
+    /// Create a new library with database persistence.
+    /// The backup runs on a background thread so it does not block startup.
     pub fn with_database() -> Result<Self, Box<dyn std::error::Error>> {
         let db_path =
             MusicDatabase::default_path().ok_or("Could not determine config directory")?;
 
-        // Create a timestamped backup of the existing database before opening it
-        crate::database::backup_existing_database(&db_path)?;
+        // Spawn backup on a background thread so it does not block startup.
+        // The backup reads the old file and the DB open creates a new WAL, so
+        // there is no race — the backup copies the pre-open state.
+        let backup_path = db_path.clone();
+        std::thread::Builder::new()
+            .name("db-backup".into())
+            .spawn(move || {
+                let t0 = std::time::Instant::now();
+                if let Err(e) = crate::database::backup_existing_database(&backup_path) {
+                    log::warn!("[startup] Database backup failed: {}", e);
+                } else {
+                    log::info!(
+                        "[startup] Database backup completed in {:.1}ms",
+                        t0.elapsed().as_secs_f64() * 1000.0
+                    );
+                }
+            })?;
 
         let db = MusicDatabase::open(&db_path)?;
 
@@ -528,9 +544,12 @@ impl MusicLibrary {
 
     /// Load library from database
     pub fn load_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let t_total = std::time::Instant::now();
+
         if let Some(db) = &self.db {
             // Load albums
             self.albums = db.load_library()?;
+            let t_after_albums = std::time::Instant::now();
 
             // Clear existing directories before rebuilding from database
             self.directories.clear();
@@ -591,6 +610,8 @@ impl MusicLibrary {
                 }
             }
 
+            let t_before_tree = std::time::Instant::now();
+
             // Build directory info structures for filtered directories
             // Only build tree from what exists on disk NOW (don't include dirs that were in DB but deleted)
             for (canonical_path, _original_path, _track_count, _album_count, last_scan) in
@@ -613,6 +634,16 @@ impl MusicLibrary {
 
                 self.directories.push(dir_info);
             }
+
+            log::info!(
+                "[startup] load_from_database: db_load={:.1}ms dir_processing={:.1}ms dir_tree_build={:.1}ms total={:.1}ms ({} albums, {} dirs)",
+                t_after_albums.duration_since(t_total).as_secs_f64() * 1000.0,
+                t_before_tree.duration_since(t_after_albums).as_secs_f64() * 1000.0,
+                t_before_tree.elapsed().as_secs_f64() * 1000.0,
+                t_total.elapsed().as_secs_f64() * 1000.0,
+                self.albums.len(),
+                self.directories.len(),
+            );
         }
         Ok(())
     }

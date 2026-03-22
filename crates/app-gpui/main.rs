@@ -94,6 +94,7 @@ fn main() {
             .init();
     }
 
+    let t_startup = std::time::Instant::now();
     log::info!("SOTF GPUI Player starting...");
 
     // Install desktop integration on Linux (first-launch .desktop + icon)
@@ -106,7 +107,9 @@ fn main() {
     }
 
     // Install default presets (only copies files that don't already exist)
+    let t0 = std::time::Instant::now();
     install_default_presets();
+    log::info!("[startup] install_default_presets: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
 
     // Install signal handlers for clean shutdown on Ctrl-C (SIGINT) and SIGTERM
     #[cfg(unix)]
@@ -138,6 +141,8 @@ fn main() {
     let platform = gpui_linux::current_platform(false);
     #[cfg(target_os = "windows")]
     let platform = std::rc::Rc::new(gpui_windows::WindowsPlatform::new(false).expect("failed to create Windows platform"));
+
+    log::info!("[startup] pre-GPUI init: {:.1}ms", t_startup.elapsed().as_secs_f64() * 1000.0);
 
     gpui::Application::with_platform(platform)
         .with_assets(Assets)
@@ -273,15 +278,25 @@ fn main() {
                     window_min_size: None,
                 },
                 |_, cx| {
-                    // Load configuration (directories, theme, etc.) before creating entities
+                    // Load configuration (directories, theme, etc.) before creating entities.
+                    // Reuse the config already loaded in main() to avoid a second disk read.
+                    let t0 = std::time::Instant::now();
                     let mut temp_app = App::new();
-                    let layout_state = match temp_app.load_config() {
-                        Ok(l) => l,
-                        Err(e) => {
-                            log::warn!("Could not load saved configuration: {}", e);
-                            LayoutState::default()
+                    log::info!("[startup] App::new: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
+
+                    let t0 = std::time::Instant::now();
+                    let layout_state = if let Some(cfg) = config {
+                        match temp_app.load_config_from(cfg) {
+                            Ok(l) => l,
+                            Err(e) => {
+                                log::warn!("Could not load saved configuration: {}", e);
+                                LayoutState::default()
+                            }
                         }
+                    } else {
+                        LayoutState::default()
                     };
+                    log::info!("[startup] load_config: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
 
                     let player = Player::new();
                     // Apply loaded volume to player
@@ -298,7 +313,9 @@ fn main() {
                     let app_state = cx.new(|_cx| {
                         let mut app = temp_app;
                         // Load output devices
+                        let t0 = std::time::Instant::now();
                         app.load_audio_devices();
+                        log::info!("[startup] load_audio_devices: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
 
                         AppState {
                             app,

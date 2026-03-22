@@ -443,6 +443,7 @@ pub enum RoomEqOptimizationMode {
     Iir,
     Fir,
     Mixed,
+    MixedPhase,
 }
 
 impl RoomEqOptimizationMode {
@@ -451,6 +452,7 @@ impl RoomEqOptimizationMode {
             RoomEqOptimizationMode::Iir,
             RoomEqOptimizationMode::Fir,
             RoomEqOptimizationMode::Mixed,
+            RoomEqOptimizationMode::MixedPhase,
         ]
     }
 
@@ -459,6 +461,7 @@ impl RoomEqOptimizationMode {
             RoomEqOptimizationMode::Iir => "IIR (Parametric EQ)",
             RoomEqOptimizationMode::Fir => "FIR (Convolution)",
             RoomEqOptimizationMode::Mixed => "Mixed (IIR + FIR)",
+            RoomEqOptimizationMode::MixedPhase => "Mixed-Phase (IIR + short FIR)",
         }
     }
 
@@ -467,6 +470,7 @@ impl RoomEqOptimizationMode {
             RoomEqOptimizationMode::Iir => "iir",
             RoomEqOptimizationMode::Fir => "fir",
             RoomEqOptimizationMode::Mixed => "mixed",
+            RoomEqOptimizationMode::MixedPhase => "mixed_phase",
         }
     }
 
@@ -474,7 +478,26 @@ impl RoomEqOptimizationMode {
         match code {
             "fir" => RoomEqOptimizationMode::Fir,
             "mixed" => RoomEqOptimizationMode::Mixed,
+            "mixed_phase" => RoomEqOptimizationMode::MixedPhase,
             _ => RoomEqOptimizationMode::Iir,
+        }
+    }
+}
+
+/// Pre-ringing suppression configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreRingingConfig {
+    /// Maximum pre-ringing level in dB relative to main tap (default: -30.0)
+    pub threshold_db: f64,
+    /// Maximum pre-ringing time in seconds (default: 0.005 = 5 ms)
+    pub max_time_s: f64,
+}
+
+impl Default for PreRingingConfig {
+    fn default() -> Self {
+        Self {
+            threshold_db: -30.0,
+            max_time_s: 0.005,
         }
     }
 }
@@ -484,6 +507,19 @@ impl RoomEqOptimizationMode {
 pub struct RoomEqFirConfig {
     pub taps: usize,
     pub phase: String,
+    /// Whether to correct excess phase (only applies to kirkeby mode)
+    #[serde(default)]
+    pub correct_excess_phase: bool,
+    /// Phase smoothing width in octaves (default: 0.167 = 1/6 octave)
+    #[serde(default = "default_phase_smoothing")]
+    pub phase_smoothing: f64,
+    /// Pre-ringing suppression configuration
+    #[serde(default)]
+    pub pre_ringing: Option<PreRingingConfig>,
+}
+
+fn default_phase_smoothing() -> f64 {
+    0.167
 }
 
 impl Default for RoomEqFirConfig {
@@ -491,6 +527,33 @@ impl Default for RoomEqFirConfig {
         Self {
             taps: 4096,
             phase: "kirkeby".to_string(),
+            correct_excess_phase: false,
+            phase_smoothing: 0.167,
+            pre_ringing: None,
+        }
+    }
+}
+
+/// Mixed-phase correction configuration (IIR for minimum-phase + short FIR for excess phase)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MixedPhaseUiConfig {
+    /// Maximum FIR length in milliseconds for excess phase correction (default: 10.0)
+    pub max_fir_length_ms: f64,
+    /// Pre-ringing threshold in dB (default: -30.0)
+    pub pre_ringing_threshold_db: f64,
+    /// Minimum spatial correction depth (default: 0.5)
+    pub min_spatial_depth: f64,
+    /// Phase smoothing width in octaves (default: 0.167 = 1/6 octave)
+    pub phase_smoothing_octaves: f64,
+}
+
+impl Default for MixedPhaseUiConfig {
+    fn default() -> Self {
+        Self {
+            max_fir_length_ms: 10.0,
+            pre_ringing_threshold_db: -30.0,
+            min_spatial_depth: 0.5,
+            phase_smoothing_octaves: 0.167,
         }
     }
 }
@@ -726,6 +789,8 @@ pub struct RoomEqOptimizerConfig {
     #[serde(default)]
     pub mixed_config: MixedModeUiConfig,
     #[serde(default)]
+    pub mixed_phase: MixedPhaseUiConfig,
+    #[serde(default)]
     pub target_tilt: TargetTiltConfig,
     #[serde(default)]
     pub excursion_protection: ExcursionProtectionConfig,
@@ -771,6 +836,7 @@ impl Default for RoomEqOptimizerConfig {
             vog: VoGConfig::default(),
             broadband_target_matching: BroadbandTargetMatchingConfig::default(),
             mixed_config: MixedModeUiConfig::default(),
+            mixed_phase: MixedPhaseUiConfig::default(),
             target_tilt: TargetTiltConfig::default(),
             excursion_protection: ExcursionProtectionConfig::default(),
             schroeder_split: SchroederSplitConfig::default(),

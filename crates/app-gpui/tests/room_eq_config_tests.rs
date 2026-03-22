@@ -214,6 +214,7 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         processing_mode: autoeq::roomeq::ProcessingMode::LowLatency,
         fir: None,
         mixed_config: None,
+        mixed_phase: None,
         loss_type: "flat".to_string(),
         algorithm: "autoeq:de".to_string(),
         num_filters: 7,

@@ -22,6 +22,67 @@ impl App {
         self.library.update_directory_scan_times();
     }
 
+    /// Load all audio devices (output + recording) in a single cpal enumeration.
+    /// Previously this called get_audio_devices() twice (once for output, once for recording).
+    pub fn load_all_audio_devices(&mut self) {
+        let t0 = std::time::Instant::now();
+
+        let Ok(devices_map) = sotf_audio::devices::get_audio_devices() else {
+            log::warn!("[startup] Failed to enumerate audio devices");
+            return;
+        };
+
+        log::info!(
+            "[startup] Audio device enumeration: {:.1}ms",
+            t0.elapsed().as_secs_f64() * 1000.0
+        );
+
+        // Output devices
+        if let Some(output_devices) = devices_map.get("output") {
+            self.output_devices = output_devices.clone();
+            if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
+                self.selected_output_device_index = default_idx;
+                self.current_output_device_name = output_devices[default_idx].name.clone().into();
+            }
+
+            // Recording playback devices (reuse same output list)
+            self.recording.available_playback_devices = output_devices
+                .iter()
+                .map(|d| (d.device_id.clone().unwrap_or_default(), d.name.clone()))
+                .collect();
+            if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
+                self.recording.selected_playback_idx = default_idx;
+            }
+        }
+
+        // Recording input devices
+        if let Some(input_devices) = devices_map.get("input") {
+            self.recording.available_recording_devices = input_devices
+                .iter()
+                .map(|d| (d.device_id.clone().unwrap_or_default(), d.name.clone()))
+                .collect();
+            if let Some(default_idx) = input_devices.iter().position(|d| d.is_default) {
+                self.recording.selected_recording_idx = default_idx;
+            }
+        }
+
+        // Populate device_name/device_id fields from selected devices
+        if !self.recording.available_playback_devices.is_empty() {
+            let (id, name) = self.recording.available_playback_devices
+                [self.recording.selected_playback_idx]
+                .clone();
+            self.recording.playback_config.device_name = name;
+            self.recording.playback_config.device_id = id;
+        }
+        if !self.recording.available_recording_devices.is_empty() {
+            let (id, name) = self.recording.available_recording_devices
+                [self.recording.selected_recording_idx]
+                .clone();
+            self.recording.recording_config.device_name = name;
+            self.recording.recording_config.device_id = id;
+        }
+    }
+
     pub fn load_output_devices(&mut self) {
         // Load available output devices
         if let Ok(devices_map) = sotf_audio::devices::get_audio_devices()

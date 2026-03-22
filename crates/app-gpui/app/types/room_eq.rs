@@ -10,10 +10,13 @@ use autoeq::roomeq::{
     CrossoverConfig as BackendCrossoverConfig,
     ExcursionProtectionConfig as BackendExcursionProtectionConfig, FirConfig as BackendFirConfig,
     HighFreqFilterConfig, HighpassType, LowFreqFilterConfig, MeasurementSource,
-    MultiMeasurementConfig, MultiMeasurementStrategy, MultiSeatConfig as BackendMultiSeatConfig,
-    MultiSeatStrategy, OptimizerConfig as BackendOptimizerConfig,
-    PhaseAlignmentConfig as BackendPhaseAlignmentConfig, ProcessingMode as BackendProcessingMode,
-    RoomConfig, SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig, SpeakerGroup,
+    MixedPhaseSerdeConfig as BackendMixedPhaseConfig, MultiMeasurementConfig,
+    MultiMeasurementStrategy, MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
+    OptimizerConfig as BackendOptimizerConfig,
+    PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
+    PreRingingSerdeConfig as BackendPreRingingConfig,
+    ProcessingMode as BackendProcessingMode, RoomConfig,
+    SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig, SpeakerGroup,
     TargetTiltConfig as BackendTargetTiltConfig, TiltType,
 };
 use std::collections::HashMap;
@@ -427,6 +430,8 @@ pub enum RoomEqOptimizationMode {
     Fir,
     /// Mixed (IIR + FIR)
     Mixed,
+    /// Mixed-Phase (IIR for minimum-phase + short FIR for excess phase)
+    MixedPhase,
 }
 
 impl RoomEqOptimizationMode {
@@ -435,6 +440,7 @@ impl RoomEqOptimizationMode {
             RoomEqOptimizationMode::Iir,
             RoomEqOptimizationMode::Fir,
             RoomEqOptimizationMode::Mixed,
+            RoomEqOptimizationMode::MixedPhase,
         ]
     }
 
@@ -443,6 +449,7 @@ impl RoomEqOptimizationMode {
             RoomEqOptimizationMode::Iir => "IIR (Parametric EQ)",
             RoomEqOptimizationMode::Fir => "FIR (Convolution)",
             RoomEqOptimizationMode::Mixed => "Mixed (IIR + FIR)",
+            RoomEqOptimizationMode::MixedPhase => "Mixed-Phase (IIR + short FIR)",
         }
     }
 
@@ -455,6 +462,9 @@ impl RoomEqOptimizationMode {
             RoomEqOptimizationMode::Mixed => {
                 "Combines IIR for high frequencies and FIR for low frequencies."
             }
+            RoomEqOptimizationMode::MixedPhase => {
+                "IIR for minimum-phase + short FIR for excess phase. Low latency (~10ms)."
+            }
         }
     }
 
@@ -463,6 +473,7 @@ impl RoomEqOptimizationMode {
             RoomEqOptimizationMode::Iir => "iir",
             RoomEqOptimizationMode::Fir => "fir",
             RoomEqOptimizationMode::Mixed => "mixed",
+            RoomEqOptimizationMode::MixedPhase => "mixed_phase",
         }
     }
 
@@ -470,6 +481,7 @@ impl RoomEqOptimizationMode {
         match code {
             "fir" => RoomEqOptimizationMode::Fir,
             "mixed" => RoomEqOptimizationMode::Mixed,
+            "mixed_phase" => RoomEqOptimizationMode::MixedPhase,
             _ => RoomEqOptimizationMode::Iir,
         }
     }
@@ -480,6 +492,7 @@ impl RoomEqOptimizationMode {
             RoomEqOptimizationMode::Iir => ReleaseChannel::Beta,
             RoomEqOptimizationMode::Fir => ReleaseChannel::Alpha,
             RoomEqOptimizationMode::Mixed => ReleaseChannel::Alpha,
+            RoomEqOptimizationMode::MixedPhase => ReleaseChannel::Alpha,
         }
     }
 
@@ -493,6 +506,24 @@ impl RoomEqOptimizationMode {
     }
 }
 
+/// Pre-ringing suppression configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreRingingConfig {
+    /// Maximum pre-ringing level in dB relative to main tap (default: -30.0)
+    pub threshold_db: f64,
+    /// Maximum pre-ringing time in seconds (default: 0.005 = 5 ms)
+    pub max_time_s: f64,
+}
+
+impl Default for PreRingingConfig {
+    fn default() -> Self {
+        Self {
+            threshold_db: -30.0,
+            max_time_s: 0.005,
+        }
+    }
+}
+
 /// FIR configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomEqFirConfig {
@@ -500,6 +531,19 @@ pub struct RoomEqFirConfig {
     pub taps: usize,
     /// Phase type ("linear" or "kirkeby")
     pub phase: String,
+    /// Whether to correct excess phase (only applies to kirkeby mode)
+    #[serde(default)]
+    pub correct_excess_phase: bool,
+    /// Phase smoothing width in octaves (default: 0.167 = 1/6 octave)
+    #[serde(default = "default_phase_smoothing")]
+    pub phase_smoothing: f64,
+    /// Pre-ringing suppression configuration
+    #[serde(default)]
+    pub pre_ringing: Option<PreRingingConfig>,
+}
+
+fn default_phase_smoothing() -> f64 {
+    0.167
 }
 
 impl Default for RoomEqFirConfig {
@@ -507,6 +551,33 @@ impl Default for RoomEqFirConfig {
         Self {
             taps: 4096,
             phase: "kirkeby".to_string(),
+            correct_excess_phase: false,
+            phase_smoothing: 0.167,
+            pre_ringing: None,
+        }
+    }
+}
+
+/// Mixed-phase correction configuration (IIR for minimum-phase + short FIR for excess phase)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MixedPhaseUiConfig {
+    /// Maximum FIR length in milliseconds for excess phase correction (default: 10.0)
+    pub max_fir_length_ms: f64,
+    /// Pre-ringing threshold in dB (default: -30.0)
+    pub pre_ringing_threshold_db: f64,
+    /// Minimum spatial correction depth (default: 0.5)
+    pub min_spatial_depth: f64,
+    /// Phase smoothing width in octaves (default: 0.167 = 1/6 octave)
+    pub phase_smoothing_octaves: f64,
+}
+
+impl Default for MixedPhaseUiConfig {
+    fn default() -> Self {
+        Self {
+            max_fir_length_ms: 10.0,
+            pre_ringing_threshold_db: -30.0,
+            min_spatial_depth: 0.5,
+            phase_smoothing_octaves: 0.167,
         }
     }
 }
@@ -770,6 +841,9 @@ pub struct RoomEqOptimizerConfig {
     /// Mixed mode configuration (when mode == Mixed)
     #[serde(default)]
     pub mixed_config: MixedModeUiConfig,
+    /// Mixed-phase configuration (when mode == MixedPhase)
+    #[serde(default)]
+    pub mixed_phase: MixedPhaseUiConfig,
 
     // --- Advanced Room Correction (Scenario B) ---
     #[serde(default)]
@@ -825,6 +899,7 @@ impl Default for RoomEqOptimizerConfig {
             vog: VoGConfig::default(),
             broadband_target_matching: BroadbandTargetMatchingConfig::default(),
             mixed_config: MixedModeUiConfig::default(),
+            mixed_phase: MixedPhaseUiConfig::default(),
             target_tilt: TargetTiltConfig::default(),
             excursion_protection: ExcursionProtectionConfig::default(),
             schroeder_split: SchroederSplitConfig::default(),
@@ -864,6 +939,36 @@ impl RoomEqOptimizerConfig {
         self.refine = backend.refine;
         self.local_algo = backend.local_algo.clone();
         self.seed = backend.seed;
+
+        // FIR configuration
+        if let Some(ref fir) = backend.fir {
+            self.fir.taps = fir.taps;
+            self.fir.phase = fir.phase.clone();
+            self.fir.correct_excess_phase = fir.correct_excess_phase;
+            self.fir.phase_smoothing = fir.phase_smoothing;
+            self.fir.pre_ringing = fir.pre_ringing.as_ref().map(|pr| PreRingingConfig {
+                threshold_db: pr.threshold_db,
+                max_time_s: pr.max_time_s,
+            });
+        }
+
+        // Mixed-phase configuration
+        if let Some(ref mp) = backend.mixed_phase {
+            self.mixed_phase = MixedPhaseUiConfig {
+                max_fir_length_ms: mp.max_fir_length_ms,
+                pre_ringing_threshold_db: mp.pre_ringing_threshold_db,
+                min_spatial_depth: mp.min_spatial_depth,
+                phase_smoothing_octaves: mp.phase_smoothing_octaves,
+            };
+        }
+
+        // Processing mode → optimization mode
+        self.mode = match backend.processing_mode {
+            BackendProcessingMode::LowLatency => RoomEqOptimizationMode::Iir,
+            BackendProcessingMode::PhaseLinear => RoomEqOptimizationMode::Fir,
+            BackendProcessingMode::Hybrid => RoomEqOptimizationMode::Mixed,
+            BackendProcessingMode::MixedPhase => RoomEqOptimizationMode::MixedPhase,
+        };
 
         // Feature toggles: None in backend = feature was not configured = disabled.
         self.target_tilt.enabled = backend.target_tilt.is_some();
@@ -940,6 +1045,7 @@ impl RoomEqOptimizerConfig {
                 autoeq::roomeq::MultiMeasurementStrategy::WeightedSum => "weighted_sum".to_string(),
                 autoeq::roomeq::MultiMeasurementStrategy::Minimax => "minimax".to_string(),
                 autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized => "variance_penalized".to_string(),
+                autoeq::roomeq::MultiMeasurementStrategy::SpatialRobustness => "spatial_robustness".to_string(),
             };
             self.multi_measurement.variance_lambda = mm.variance_lambda;
             self.multi_measurement.weights = mm.weights.clone().unwrap_or_default();
@@ -1724,6 +1830,7 @@ impl RoomEqState {
             RoomEqOptimizationMode::Iir => BackendProcessingMode::LowLatency,
             RoomEqOptimizationMode::Fir => BackendProcessingMode::PhaseLinear,
             RoomEqOptimizationMode::Mixed => BackendProcessingMode::Hybrid,
+            RoomEqOptimizationMode::MixedPhase => BackendProcessingMode::MixedPhase,
         };
 
         let optimizer = BackendOptimizerConfig {
@@ -1744,10 +1851,31 @@ impl RoomEqState {
             fir: Some(BackendFirConfig {
                 taps: self.optimizer_config.fir.taps,
                 phase: self.optimizer_config.fir.phase.clone(),
-                correct_excess_phase: false,
-                phase_smoothing: 0.167,
-                pre_ringing: None,
+                correct_excess_phase: self.optimizer_config.fir.correct_excess_phase,
+                phase_smoothing: self.optimizer_config.fir.phase_smoothing,
+                pre_ringing: self.optimizer_config.fir.pre_ringing.as_ref().map(|pr| {
+                    BackendPreRingingConfig {
+                        threshold_db: pr.threshold_db,
+                        max_time_s: pr.max_time_s,
+                    }
+                }),
             }),
+            mixed_phase: if self.optimizer_config.mode == RoomEqOptimizationMode::MixedPhase {
+                Some(BackendMixedPhaseConfig {
+                    max_fir_length_ms: self.optimizer_config.mixed_phase.max_fir_length_ms,
+                    pre_ringing_threshold_db: self
+                        .optimizer_config
+                        .mixed_phase
+                        .pre_ringing_threshold_db,
+                    min_spatial_depth: self.optimizer_config.mixed_phase.min_spatial_depth,
+                    phase_smoothing_octaves: self
+                        .optimizer_config
+                        .mixed_phase
+                        .phase_smoothing_octaves,
+                })
+            } else {
+                None
+            },
             seed: self.optimizer_config.seed,
             mixed_config: if self.optimizer_config.mode == RoomEqOptimizationMode::Mixed {
                 Some(autoeq::roomeq::MixedModeConfig {
@@ -1873,6 +2001,7 @@ impl RoomEqState {
                     "weighted_sum" => MultiMeasurementStrategy::WeightedSum,
                     "minimax" => MultiMeasurementStrategy::Minimax,
                     "variance_penalized" => MultiMeasurementStrategy::VariancePenalized,
+                    "spatial_robustness" => MultiMeasurementStrategy::SpatialRobustness,
                     s => panic!("Unknown multi_measurement strategy: {s}"),
                 };
                 let weights = if self.optimizer_config.multi_measurement.weights.is_empty() {
@@ -1884,6 +2013,7 @@ impl RoomEqState {
                     strategy,
                     weights,
                     variance_lambda: self.optimizer_config.multi_measurement.variance_lambda,
+                    spatial_robustness: None,
                 })
             } else {
                 None

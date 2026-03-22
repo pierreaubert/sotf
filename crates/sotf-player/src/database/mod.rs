@@ -105,6 +105,8 @@ impl MusicDatabase {
 
     /// Internal database open that skips security validation.
     fn open_internal(path: &Path) -> SqlResult<Self> {
+        let t0 = std::time::Instant::now();
+
         let conn = Connection::open(path)?;
 
         // Enable WAL mode for better concurrency
@@ -120,6 +122,11 @@ impl MusicDatabase {
 
         let db = Self { conn };
         db.initialize_schema()?;
+
+        log::info!(
+            "[startup] Database open + schema init: {:.1}ms",
+            t0.elapsed().as_secs_f64() * 1000.0
+        );
         Ok(db)
     }
 
@@ -140,7 +147,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 17;
+        const LATEST_VERSION: i64 = 18;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -1272,6 +1279,22 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 18: Add composite index for faster load_library track queries
+        migrations.insert(
+            18,
+            Migration {
+                description: "Add composite index on tracks(album_id, disc_number, track_number) for faster library loading",
+                apply: |db| {
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_tracks_album_disc_track ON tracks(album_id, disc_number, track_number)",
+                        [],
+                    )?;
+                    log::info!("Added composite index idx_tracks_album_disc_track");
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -1387,6 +1410,8 @@ impl MusicDatabase {
 
     /// Load all albums and tracks from database
     pub fn load_library(&self) -> SqlResult<Vec<Album>> {
+        let t0 = std::time::Instant::now();
+
         // Note: We still select artist from albums for backwards compatibility with old databases,
         // but we don't use it - artist is now derived from tracks
         let mut albums_stmt = self.conn.prepare(
@@ -1407,27 +1432,37 @@ impl MusicDatabase {
             ))
         })?;
 
+        // Collect album rows first so we can release the albums_stmt borrow,
+        // then reuse a single prepared statement for all track queries.
+        let album_data: Vec<_> = album_rows.collect::<SqlResult<Vec<_>>>()?;
+
+        let t1 = std::time::Instant::now();
+
         // Get all play counts at once for efficiency
         let play_counts = self.get_all_album_play_counts()?;
         let track_play_counts = self.get_all_track_play_counts()?;
 
-        for album_row in album_rows {
-            let (album_id, title, year, album_art_path, album_art_thumbnail, album_is_favorite) =
-                album_row?;
+        let t2 = std::time::Instant::now();
 
-            // Load tracks for this album (now including artist)
-            let mut tracks_stmt = self.conn.prepare(
-                "SELECT path, title, artist, track_number, duration_secs, channels,
-                        sample_rate, bit_depth,
-                        replay_gain, replay_peak, album_gain, album_peak, waveform,
-                        genre, composer, disc_number, conductor, performer,
-                        isrc, album_artist, ensemble,
-                        COALESCE(is_favorite, 0)
-                 FROM tracks
-                 WHERE album_id = ?1
-                 ORDER BY disc_number, track_number",
-            )?;
+        // Prepare the tracks statement ONCE outside the loop (was N+1 before —
+        // preparing per album is expensive for large libraries)
+        let mut tracks_stmt = self.conn.prepare(
+            "SELECT path, title, artist, track_number, duration_secs, channels,
+                    sample_rate, bit_depth,
+                    replay_gain, replay_peak, album_gain, album_peak, waveform,
+                    genre, composer, disc_number, conductor, performer,
+                    isrc, album_artist, ensemble,
+                    COALESCE(is_favorite, 0)
+             FROM tracks
+             WHERE album_id = ?1
+             ORDER BY disc_number, track_number",
+        )?;
 
+        albums.reserve(album_data.len());
+
+        for (album_id, title, year, album_art_path, album_art_thumbnail, album_is_favorite) in
+            album_data
+        {
             let tracks = tracks_stmt
                 .query_map(params![album_id], |row| {
                     let path_str = row.get::<_, String>(0)?;
@@ -1477,6 +1512,15 @@ impl MusicDatabase {
                 is_favorite: album_is_favorite != 0,
             });
         }
+
+        log::info!(
+            "[startup] load_library: albums_query={:.1}ms play_counts={:.1}ms tracks_loop={:.1}ms total={:.1}ms ({} albums)",
+            t1.duration_since(t0).as_secs_f64() * 1000.0,
+            t2.duration_since(t1).as_secs_f64() * 1000.0,
+            t2.elapsed().as_secs_f64() * 1000.0,
+            t0.elapsed().as_secs_f64() * 1000.0,
+            albums.len(),
+        );
 
         Ok(albums)
     }
