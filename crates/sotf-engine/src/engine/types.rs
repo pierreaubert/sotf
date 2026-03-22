@@ -234,6 +234,7 @@ pub enum ManagerCommand {
 
     // Plugin control
     UpdatePluginChain(Vec<PluginConfig>),
+    UpdatePluginGraph(PluginGraphConfig),
     SetPluginParameter {
         plugin_index: usize,
         param_id: String,
@@ -376,4 +377,32 @@ impl PluginConfig {
             parameters,
         }
     }
+}
+
+/// Graph-based plugin configuration for DAG processing.
+///
+/// Unlike `Vec<PluginConfig>` (linear chain), this supports parallel paths
+/// needed for multi-driver crossover setups.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PluginGraphConfig {
+    pub nodes: Vec<PluginGraphNodeConfig>,
+    pub edges: Vec<PluginGraphEdgeConfig>,
+}
+
+/// A node in the plugin graph
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PluginGraphNodeConfig {
+    /// Unique node ID (used to reference in edges)
+    pub id: usize,
+    pub plugin_type: String,
+    pub parameters: serde_json::Value,
+    /// Number of input channels this node expects
+    pub input_channels: usize,
+}
+
+/// An edge connecting two nodes in the plugin graph
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PluginGraphEdgeConfig {
+    pub from_node: usize,
+    pub to_node: usize,
 }

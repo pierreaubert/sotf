@@ -38,6 +38,7 @@ fn test_room_eq_to_room_config_simple() {
         },
         is_group: false,
         group_drivers: Vec::new(),
+        multi_mic_measurements: Vec::new(),
     });
 
     state.init_speaker_configs();
@@ -95,6 +96,7 @@ fn test_room_eq_to_room_config_advanced() {
         },
         is_group: false,
         group_drivers: Vec::new(),
+        multi_mic_measurements: Vec::new(),
     });
     state.init_speaker_configs();
 
@@ -155,6 +157,7 @@ fn test_room_eq_validation() {
         },
         is_group: false,
         group_drivers: Vec::new(),
+        multi_mic_measurements: Vec::new(),
     });
     state.init_speaker_configs();
 
@@ -271,6 +274,7 @@ fn make_dummy_measurement(channel: &str) -> ChannelMeasurement {
         },
         is_group: false,
         group_drivers: Vec::new(),
+        multi_mic_measurements: Vec::new(),
     }
 }
 

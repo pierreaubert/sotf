@@ -322,8 +322,13 @@ impl PlayerView {
         {
             let state = self.state.read(cx);
             if let Some(result) = &state.app.measurement_state.headphone_eq_state.result {
-                // Clone data needed for async task
-                let result_json = serde_json::to_string_pretty(result).unwrap_or_default();
+                let export_format = state
+                    .app
+                    .measurement_state
+                    .headphone_eq_state
+                    .export_format
+                    .clone();
+                let ext = sotf_audio_player::autoeq::get_export_extension(&export_format);
                 let save_name = state
                     .app
                     .measurement_state
@@ -332,16 +337,54 @@ impl PlayerView {
                     .clone();
 
                 let default_name = if save_name.is_empty() {
-                    "headphone_eq.json".to_string()
+                    format!("headphone_eq{ext}")
                 } else {
-                    format!("{}.json", save_name)
+                    format!("{save_name}{ext}")
                 };
 
+                let biquads: Vec<math_audio_iir_fir::Biquad> = result
+                    .biquads
+                    .iter()
+                    .map(|b| {
+                        let ft = match b.filter_type.as_str() {
+                            "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
+                            "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
+                            "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
+                            "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
+                            "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
+                            _ => math_audio_iir_fir::BiquadFilterType::Peak,
+                        };
+                        math_audio_iir_fir::Biquad::new(ft, b.freq, 48000.0, b.q, b.db_gain)
+                    })
+                    .collect();
+
+                let content = sotf_audio_player::autoeq::format_peq_export(
+                    &export_format,
+                    "Headphone EQ",
+                    &biquads,
+                    48000,
+                );
+
+                let content = match content {
+                    Ok(c) => c,
+                    Err(e) => {
+                        self.state.update(cx, |state, cx| {
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::types::ToastMessage::error(format!(
+                                    "Format error: {e}"
+                                )));
+                            cx.notify();
+                        });
+                        return;
+                    }
+                };
+
+                let ext_no_dot = ext.trim_start_matches('.');
                 let state_entity = self.state.clone();
 
                 cx.spawn(async move |_, cx| {
                     let file = rfd::AsyncFileDialog::new()
-                        .add_filter("JSON", &["json"])
+                        .add_filter("EQ File", &[ext_no_dot])
                         .set_file_name(&default_name)
                         .set_title("Save Headphone EQ Result")
                         .save_file()
@@ -349,8 +392,7 @@ impl PlayerView {
 
                     if let Some(file) = file {
                         let path = file.path().to_path_buf();
-                        // Write to file
-                        let write_res = std::fs::write(&path, result_json);
+                        let write_res = std::fs::write(&path, content);
 
                         state_entity.update(&mut cx.clone(), |state, cx| {
                             match write_res {

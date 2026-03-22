@@ -50,13 +50,8 @@ impl PlayerView {
     fn toggle_mute(&mut self, _: &ToggleMute, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.playback.muted = !state.app.playback.muted;
-            // When muted, set volume to 0; restore when unmuted
-            let effective_volume = if state.app.playback.muted {
-                0.0
-            } else {
-                state.app.playback.volume
-            };
-            let _ = state.player.lock().set_volume(effective_volume);
+            let _ = state.player.lock().set_mute(state.app.playback.muted);
+            state.app.record_mute_changed(state.app.playback.muted);
         });
         cx.notify();
     }

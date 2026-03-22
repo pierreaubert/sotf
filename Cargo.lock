@@ -781,7 +781,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.11"
+version = "0.4.12"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -3789,12 +3789,12 @@ dependencies = [
 
 [[package]]
 name = "gpui-ios"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "block",
  "core-foundation 0.10.0",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys 0.7.0",
  "core-graphics 0.24.0",
  "core-text",
  "futures",
@@ -7443,8 +7443,6 @@ dependencies = [
 [[package]]
 name = "psm"
 version = "0.1.30"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3852766467df634d74f0b2d7819bf8dc483a0eb2e3b0f50f756f9cfe8b0d18d8"
 dependencies = [
  "ar_archive_writer",
  "cc",
@@ -9290,7 +9288,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-ios"
-version = "0.1.0"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "gpui",
@@ -9847,6 +9845,24 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "walkdir",
+]
+
+[[package]]
+name = "sotf-tvos"
+version = "0.5.2"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "gpui-ios",
+ "gpui-ui-kit",
+ "log",
+ "oslog",
+ "parking_lot",
+ "rust-embed",
+ "serde_json",
+ "sotf-engine",
+ "sotf-gpui",
+ "sotf-player",
 ]
 
 [[package]]
@@ -13345,8 +13361,6 @@ dependencies = [
 [[package]]
 name = "zed-font-kit"
 version = "0.14.1-zed"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3898e450f36f852edda72e3f985c34426042c4951790b23b107f93394f9bff5"
 dependencies = [
  "bitflags 2.11.0",
  "byteorder",

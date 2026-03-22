@@ -92,6 +92,11 @@ impl PlayerView {
                 let _ = state.player.lock().pause();
                 state.app.playback.is_playing = false;
                 state.app.record_playback_paused();
+            } else if state.app.playback.current_queue_index.is_none() {
+                // No track loaded — start the queue from the beginning
+                if let Some(path) = state.app.start_queue() {
+                    Self::play_track(state, path);
+                }
             } else {
                 let _ = state.player.lock().resume();
                 state.app.playback.is_playing = true;
@@ -117,6 +122,8 @@ impl PlayerView {
             if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
+            // Cancel any pending gapless queue before manual skip
+            let _ = state.player.lock().cancel_next();
             let from_index = state.app.playback.current_queue_index;
             if let Some(path) = state.app.next_track() {
                 Self::play_track(state, path);
@@ -141,6 +148,8 @@ impl PlayerView {
             if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
+            // Cancel any pending gapless queue before manual skip
+            let _ = state.player.lock().cancel_next();
             let from_index = state.app.playback.current_queue_index;
             if let Some(path) = state.app.previous_track() {
                 Self::play_track(state, path);

@@ -26,6 +26,11 @@ impl QueueItem {
         self.album.tracks.get(self.current_track_index)
     }
 
+    /// Peek at the next track without advancing the index.
+    pub fn peek_next_track(&self) -> Option<&Track> {
+        self.album.tracks.get(self.current_track_index + 1)
+    }
+
     pub fn next_track(&mut self) -> Option<&Track> {
         if self.current_track_index + 1 < self.album.tracks.len() {
             self.current_track_index += 1;
@@ -162,6 +167,20 @@ impl Queue {
         self.current_index = Some(0);
         self.items[0].current_track_index = 0;
         self.current_track_path()
+    }
+
+    /// Peek at the next track without mutating state. Crosses album boundaries.
+    pub fn peek_next_track(&self) -> Option<&Track> {
+        let current_idx = self.current_index?;
+        let item = self.items.get(current_idx)?;
+
+        // Try next track in current album
+        if let Some(track) = item.peek_next_track() {
+            return Some(track);
+        }
+
+        // Try first track of next album
+        self.items.get(current_idx + 1)?.album.tracks.first()
     }
 
     /// Advance to the next track. Crosses album boundaries.

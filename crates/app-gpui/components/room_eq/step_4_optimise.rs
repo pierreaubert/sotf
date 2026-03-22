@@ -935,6 +935,38 @@ impl PlayerView {
                     let avg_pre = room_result.combined_pre_score;
                     let avg_post = room_result.combined_post_score;
 
+                    // Build full DSP output from roomeq ChannelDspChain (preserves all
+                    // plugin types: EQ, gain, delay, convolution, crossover, etc.)
+                    let dsp_channels: std::collections::HashMap<String, crate::app::types::ChannelDspChain> =
+                        room_result.channels.iter().map(|(name, chain)| {
+                            (
+                                name.clone(),
+                                crate::app::types::ChannelDspChain {
+                                    channel: chain.channel.clone(),
+                                    plugins: chain.plugins.iter().map(|p| {
+                                        crate::app::types::DspPluginConfig {
+                                            plugin_type: p.plugin_type.clone(),
+                                            parameters: p.parameters.clone(),
+                                        }
+                                    }).collect(),
+                                    drivers: chain.drivers.as_ref().map(|drivers| {
+                                        drivers.iter().map(|d| {
+                                            crate::app::types::DriverDspChain {
+                                                name: d.name.clone(),
+                                                index: d.index,
+                                                plugins: d.plugins.iter().map(|p| {
+                                                    crate::app::types::DspPluginConfig {
+                                                        plugin_type: p.plugin_type.clone(),
+                                                        parameters: p.parameters.clone(),
+                                                    }
+                                                }).collect(),
+                                            }
+                                        }).collect()
+                                    }),
+                                },
+                            )
+                        }).collect();
+
                     // Update final state
                     state_clone.update(&mut cx.clone(), |state, cx| {
                         state
@@ -949,33 +981,6 @@ impl PlayerView {
                         state.app.measurement_state.room_eq_state.channel_results = all_results;
                         state.app.measurement_state.room_eq_state.overall_progress = 1.0;
                         state.app.measurement_state.room_eq_state.current_channel = None;
-
-                        // Build DSP output
-                        let mut dsp_channels = std::collections::HashMap::new();
-                        for result in &state.app.measurement_state.room_eq_state.channel_results {
-                            let eq_params = serde_json::json!({
-                                "filters": result.eq_filters.iter().map(|f| {
-                                    serde_json::json!({
-                                        "filter_type": f.filter_type.to_lowercase(),
-                                        "frequency": f.frequency,
-                                        "q": f.q,
-                                        "gain_db": f.gain_db
-                                    })
-                                }).collect::<Vec<_>>()
-                            });
-
-                            dsp_channels.insert(
-                                result.channel_name.clone(),
-                                crate::app::types::ChannelDspChain {
-                                    channel: result.channel_name.clone(),
-                                    plugins: vec![crate::app::types::DspPluginConfig {
-                                        plugin_type: "EQ".to_string(),
-                                        parameters: eq_params,
-                                    }],
-                                    drivers: None,
-                                },
-                            );
-                        }
 
                         state.app.measurement_state.room_eq_state.dsp_output =
                             Some(crate::app::types::DspChainOutput {

@@ -19,8 +19,52 @@ pub use utility::{
 
 use crate::engine::PluginConfig;
 use math_audio_iir_fir::BiquadFilterType;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::json;
+
+/// Deserialize `speaker_config` accepting both a string (e.g. `"5.1"`) and
+/// a legacy integer index (e.g. `0` → `"2.0"`, `2` → `"5.1"`).
+fn deserialize_speaker_config<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de;
+
+    struct SpeakerConfigVisitor;
+
+    impl<'de> de::Visitor<'de> for SpeakerConfigVisitor {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a speaker config string (e.g. \"5.1\") or a legacy integer index")
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+
+        fn visit_string<E: de::Error>(self, v: String) -> Result<String, E> {
+            Ok(v)
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<String, E> {
+            const CONFIGS: &[&str] = &[
+                "2.0", "5.0", "5.1", "7.0", "7.1", "7.1.2", "7.1.4", "9.1", "9.1.4", "9.1.6",
+            ];
+            Ok(CONFIGS.get(v as usize).unwrap_or(&"5.1").to_string())
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<String, E> {
+            self.visit_u64(v as u64)
+        }
+
+        fn visit_f64<E: de::Error>(self, v: f64) -> Result<String, E> {
+            self.visit_u64(v as u64)
+        }
+    }
+
+    deserializer.deserialize_any(SpeakerConfigVisitor)
+}
 use sotf_plugins::{
     BandCompressorParams, BandExpanderParams, CrossfeedMode, CrossfeedPreset,
     SpectralTiltCorrection, TiltReferenceFreq,
@@ -678,6 +722,7 @@ pub enum PluginSettings {
         smoothing_ms: f64,
     },
     Upmixer {
+        #[serde(deserialize_with = "deserialize_speaker_config")]
         speaker_config: String,
         // Gain parameters (vertical sliders)
         gain_front_direct: f64,

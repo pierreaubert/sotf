@@ -133,6 +133,8 @@ pub struct AudioEngineManager {
     current_muted: AtomicBool,
     /// Allow output to virtual/loopback devices (needed for recording tests)
     allow_virtual_output: bool,
+    /// Last file path seen during event polling (for detecting gapless transitions)
+    last_seen_file: Mutex<Option<PathBuf>>,
 }
 
 /// Commands for controlling the streaming (kept for API compatibility)
@@ -151,6 +153,9 @@ pub enum StreamingEvent {
     StateChanged(StreamingState),
     EndOfStream,
     Error(String),
+    /// Decoder seamlessly transitioned to a new file (gapless playback).
+    /// Contains the path of the new file.
+    GaplessTransition(PathBuf),
 }
 
 /// Current state of the streaming manager
@@ -217,6 +222,7 @@ impl AudioEngineManager {
             current_volume: AtomicU32::new(1.0f32.to_bits()),
             current_muted: AtomicBool::new(false),
             allow_virtual_output: false,
+            last_seen_file: Mutex::new(None),
         }
     }
 
@@ -360,6 +366,9 @@ impl AudioEngineManager {
         // AudioEngine is !Sync but access is serialized by cmd_mutex
         self.engine.store(Some(Arc::new(engine)));
         self.set_state(StreamingState::Playing);
+
+        // Track current file for gapless transition detection
+        *self.last_seen_file.lock().unwrap() = Some(audio_info.path);
 
         log::debug!("[AudioEngineManager] Playback started");
 
@@ -515,6 +524,7 @@ impl AudioEngineManager {
         }
 
         self.set_state(StreamingState::Idle);
+        *self.last_seen_file.lock().unwrap() = None;
 
         Ok(())
     }
@@ -657,6 +667,25 @@ impl AudioEngineManager {
         }
     }
 
+    /// Update the plugin graph (DAG topology for multi-driver crossovers)
+    pub fn update_plugin_graph(
+        &self,
+        config: crate::engine::PluginGraphConfig,
+    ) -> Result<(), String> {
+        let _guard = self.cmd_mutex.lock().unwrap();
+        log::info!(
+            "[AudioEngineManager] Updating plugin graph with {} nodes",
+            config.nodes.len()
+        );
+
+        if let Some(engine) = &*self.engine.load() {
+            engine.update_plugin_graph(config)?;
+            Ok(())
+        } else {
+            Err("No engine running".to_string())
+        }
+    }
+
     /// Set a plugin parameter (zero-dropout update)
     pub fn set_plugin_parameter(
         &self,
@@ -749,6 +778,20 @@ impl AudioEngineManager {
         // Check engine state for end-of-stream or error
         let engine_state = self.get_engine_state();
         let current_state = self.get_state();
+
+        // Detect gapless transition: current_file changed while still playing
+        if engine_state.playback_state == PlaybackState::Playing
+            && current_state == StreamingState::Playing
+        {
+            let mut last_file = self.last_seen_file.lock().unwrap();
+            if let Some(ref current) = engine_state.current_file {
+                if last_file.as_ref() != Some(current) {
+                    let path = current.clone();
+                    *last_file = Some(path.clone());
+                    return Some(StreamingEvent::GaplessTransition(path));
+                }
+            }
+        }
 
         if engine_state.playback_state == PlaybackState::Stopped {
             if let Some(err) = engine_state.last_error.clone()

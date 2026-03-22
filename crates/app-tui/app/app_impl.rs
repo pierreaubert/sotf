@@ -86,6 +86,7 @@ pub struct App {
     pub is_playing: bool,
     pub current_queue_index: Option<usize>,
     pub volume: f32,
+    pub muted: bool,
     pub position_secs: f64,
     pub current_sample_rate: Option<u32>, // Actual playback rate from engine
 
@@ -263,6 +264,7 @@ impl App {
             is_playing: false,
             current_queue_index: None,
             volume: 0.1, // Start at 10% volume
+            muted: false,
             position_secs: 0.0,
             current_sample_rate: None,
             current_track_path: None,
@@ -357,6 +359,20 @@ impl App {
         self.current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.current_track())
+    }
+
+    /// Peek at the next track without mutating state (for gapless pre-queuing).
+    pub fn peek_next_track(&self) -> Option<&Track> {
+        let idx = self.current_queue_index?;
+        let entry = self.queue.get(idx)?;
+
+        // Try next track in current album
+        if let Some(track) = entry.item.peek_next_track() {
+            return Some(track);
+        }
+
+        // Try first track of next album
+        self.queue.get(idx + 1)?.item.album.tracks.first()
     }
 
     /// Compute the effective replay gain for the current track, considering mode + preamp + enabled.

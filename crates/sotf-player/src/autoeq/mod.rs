@@ -49,8 +49,8 @@ pub use types::{CrossoverType, SpeakerConfigType};
 pub use params::{
     ALGORITHM_OPTIONS, CURVE_NAME_OPTIONS, DE_STRATEGY_OPTIONS, EQ_EXPORT_FORMAT_OPTIONS,
     HEADPHONE_LOSS_OPTIONS, LOCAL_ALGO_OPTIONS, OptimizationParams, OptimizationParamsSerializable,
-    PEQ_MODEL_OPTIONS, ParamLimits, SPEAKER_LOSS_OPTIONS, get_export_extension, parse_loss_type,
-    parse_peq_model,
+    PEQ_MODEL_OPTIONS, ParamLimits, SPEAKER_LOSS_OPTIONS, format_peq_export,
+    get_export_extension, parse_loss_type, parse_peq_model,
 };
 
 // Re-export headphone types

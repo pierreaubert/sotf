@@ -3395,6 +3395,284 @@ pub fn peq_format_aupreset(peq: &Peq, name: &str) -> String {
     )
 }
 
+/// Format a PEQ as an EasyEffects JSON preset.
+///
+/// Produces a valid EasyEffects PEQ input preset with up to 30 bands.
+pub fn peq_format_easyeffects(comment: &str, peq: &Peq) -> String {
+    use std::fmt::Write;
+
+    fn ee_type(ft: BiquadFilterType) -> &'static str {
+        match ft {
+            BiquadFilterType::Peak | BiquadFilterType::PeakMatched => "Bell",
+            BiquadFilterType::Lowshelf | BiquadFilterType::LowshelfOrf => "Lo Shelf",
+            BiquadFilterType::Highshelf | BiquadFilterType::HighshelfOrf => "Hi Shelf",
+            BiquadFilterType::Lowpass => "Lo-pass",
+            BiquadFilterType::Highpass | BiquadFilterType::HighpassVariableQ => "Hi-pass",
+            BiquadFilterType::Notch => "Notch",
+            BiquadFilterType::Bandpass => "Bandpass",
+            BiquadFilterType::AllPass => "Allpass",
+        }
+    }
+
+    let preamp = peq_preamp_gain(peq);
+    let num_bands = peq.len().min(30);
+    let mut bands = String::new();
+
+    for (i, (_, iir)) in peq.iter().enumerate().take(30) {
+        if i > 0 {
+            write!(bands, ",\n").unwrap();
+        }
+        write!(
+            bands,
+            r#"        "band{i}": {{
+          "frequency": {freq},
+          "gain": {gain},
+          "q": {q},
+          "type": "{ft}",
+          "mode": "RLC (BT)",
+          "slope": "x1",
+          "solo": false,
+          "mute": false
+        }}"#,
+            freq = iir.freq,
+            gain = iir.db_gain,
+            q = iir.q,
+            ft = ee_type(iir.filter_type),
+        )
+        .unwrap();
+    }
+
+    format!(
+        r#"// {comment}
+{{
+  "output": {{
+    "equalizer#0": {{
+      "input-gain": {preamp:.2},
+      "output-gain": 0.0,
+      "num-bands": {num_bands},
+      "split-channels": false,
+      "left": {{
+{bands}
+      }},
+      "right": {{
+{bands}
+      }}
+    }}
+  }}
+}}"#
+    )
+}
+
+/// Format a PEQ as a PipeWire filter-chain SPA-JSON configuration.
+///
+/// Produces a stereo (L/R) PipeWire module configuration with biquad filter nodes.
+pub fn peq_format_pipewire(comment: &str, peq: &Peq) -> String {
+    use std::fmt::Write;
+
+    fn pw_label(ft: BiquadFilterType) -> &'static str {
+        match ft {
+            BiquadFilterType::Peak | BiquadFilterType::PeakMatched => "bq_peaking",
+            BiquadFilterType::Lowshelf | BiquadFilterType::LowshelfOrf => "bq_lowshelf",
+            BiquadFilterType::Highshelf | BiquadFilterType::HighshelfOrf => "bq_highshelf",
+            BiquadFilterType::Lowpass => "bq_lowpass",
+            BiquadFilterType::Highpass | BiquadFilterType::HighpassVariableQ => "bq_highpass",
+            BiquadFilterType::Notch => "bq_notch",
+            BiquadFilterType::Bandpass => "bq_bandpass",
+            BiquadFilterType::AllPass => "bq_allpass",
+        }
+    }
+
+    let preamp = peq_preamp_gain(peq);
+    let mut out = String::new();
+    writeln!(out, "# {comment}").unwrap();
+    writeln!(out, "# PipeWire filter-chain configuration").unwrap();
+    writeln!(out).unwrap();
+    writeln!(out, "context.modules = [").unwrap();
+    writeln!(out, "  {{ name = libpipewire-module-filter-chain").unwrap();
+    writeln!(out, "    args = {{").unwrap();
+    writeln!(out, "      filter.graph = {{").unwrap();
+    writeln!(out, "        nodes = [").unwrap();
+
+    // Build nodes for both L and R channels
+    let channels = ["L", "R"];
+    let mut all_node_names: Vec<Vec<String>> = Vec::new();
+
+    for ch in &channels {
+        let mut node_names = Vec::new();
+
+        // Preamp gain node
+        if preamp.abs() > 0.01 {
+            let name = format!("{ch}_preamp");
+            writeln!(out, "          {{ type = builtin  name = \"{name}\"  label = bq_highshelf  control = {{ \"Freq\" = 0  \"Q\" = 1.0  \"Gain\" = {preamp:.2} }} }}").unwrap();
+            node_names.push(name);
+        }
+
+        // EQ filter nodes
+        for (i, (_, iir)) in peq.iter().enumerate() {
+            let label = pw_label(iir.filter_type);
+            let name = format!("{ch}_eq_{i}");
+            match iir.filter_type {
+                BiquadFilterType::Lowpass | BiquadFilterType::Highpass | BiquadFilterType::HighpassVariableQ => {
+                    writeln!(out, "          {{ type = builtin  name = \"{name}\"  label = {label}  control = {{ \"Freq\" = {:.1}  \"Q\" = {:.4} }} }}", iir.freq, iir.q).unwrap();
+                }
+                _ => {
+                    writeln!(out, "          {{ type = builtin  name = \"{name}\"  label = {label}  control = {{ \"Freq\" = {:.1}  \"Q\" = {:.4}  \"Gain\" = {:.2} }} }}", iir.freq, iir.q, iir.db_gain).unwrap();
+                }
+            }
+            node_names.push(name);
+        }
+
+        all_node_names.push(node_names);
+    }
+
+    writeln!(out, "        ]").unwrap();
+
+    // Links
+    writeln!(out, "        links = [").unwrap();
+    for nodes in &all_node_names {
+        for pair in nodes.windows(2) {
+            writeln!(out, "          {{ output = \"{}:Out\"  input = \"{}:In\" }}", pair[0], pair[1]).unwrap();
+        }
+    }
+    writeln!(out, "        ]").unwrap();
+
+    // Inputs/outputs
+    writeln!(out, "        inputs  = [").unwrap();
+    for nodes in &all_node_names {
+        if let Some(first) = nodes.first() {
+            writeln!(out, "          {{ node = \"{first}\"  port = \"In\" }}").unwrap();
+        }
+    }
+    writeln!(out, "        ]").unwrap();
+    writeln!(out, "        outputs = [").unwrap();
+    for nodes in &all_node_names {
+        if let Some(last) = nodes.last() {
+            writeln!(out, "          {{ node = \"{last}\"  port = \"Out\" }}").unwrap();
+        }
+    }
+    writeln!(out, "        ]").unwrap();
+
+    writeln!(out, "      }}").unwrap();
+    writeln!(out, "      capture.props = {{ media.class = Audio/Sink  node.name = \"sotf_eq\" }}").unwrap();
+    writeln!(out, "      playback.props = {{ node.name = \"sotf_eq_out\" }}").unwrap();
+    writeln!(out, "      audio.channels = 2").unwrap();
+    writeln!(out, "      audio.position = [ \"FL\", \"FR\" ]").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "  }}").unwrap();
+    writeln!(out, "]").unwrap();
+
+    out
+}
+
+/// Format a PEQ as a CamillaDSP YAML configuration.
+///
+/// Produces a stereo CamillaDSP config with Biquad filters in the pipeline.
+pub fn peq_format_camilladsp(comment: &str, peq: &Peq, sample_rate: u32) -> String {
+    use std::fmt::Write;
+
+    fn cdsp_type(ft: BiquadFilterType) -> &'static str {
+        match ft {
+            BiquadFilterType::Peak | BiquadFilterType::PeakMatched => "Peaking",
+            BiquadFilterType::Lowshelf | BiquadFilterType::LowshelfOrf => "Lowshelf",
+            BiquadFilterType::Highshelf | BiquadFilterType::HighshelfOrf => "Highshelf",
+            BiquadFilterType::Lowpass => "LowpassQ",
+            BiquadFilterType::Highpass | BiquadFilterType::HighpassVariableQ => "HighpassQ",
+            BiquadFilterType::Notch => "Notch",
+            BiquadFilterType::Bandpass => "Bandpass",
+            BiquadFilterType::AllPass => "Allpass",
+        }
+    }
+
+    let preamp = peq_preamp_gain(peq);
+    let mut out = String::new();
+    writeln!(out, "# {comment}").unwrap();
+    writeln!(out, "# CamillaDSP configuration").unwrap();
+    writeln!(out).unwrap();
+
+    // Devices
+    writeln!(out, "devices:").unwrap();
+    writeln!(out, "  samplerate: {sample_rate}").unwrap();
+    writeln!(out, "  chunksize: 1024").unwrap();
+    writeln!(out, "  capture:").unwrap();
+    writeln!(out, "    type: Stdin").unwrap();
+    writeln!(out, "    channels: 2").unwrap();
+    writeln!(out, "    format: S32LE").unwrap();
+    writeln!(out, "  playback:").unwrap();
+    writeln!(out, "    type: Stdout").unwrap();
+    writeln!(out, "    channels: 2").unwrap();
+    writeln!(out, "    format: S32LE").unwrap();
+    writeln!(out).unwrap();
+
+    // Filters
+    writeln!(out, "filters:").unwrap();
+    if preamp.abs() > 0.01 {
+        writeln!(out, "  preamp:").unwrap();
+        writeln!(out, "    type: Gain").unwrap();
+        writeln!(out, "    parameters:").unwrap();
+        writeln!(out, "      gain: {preamp:.2}").unwrap();
+    }
+    for (i, (_, iir)) in peq.iter().enumerate() {
+        let ft = cdsp_type(iir.filter_type);
+        writeln!(out, "  eq_{i}:").unwrap();
+        writeln!(out, "    type: Biquad").unwrap();
+        writeln!(out, "    parameters:").unwrap();
+        writeln!(out, "      type: {ft}").unwrap();
+        writeln!(out, "      freq: {:.1}", iir.freq).unwrap();
+        writeln!(out, "      q: {:.4}", iir.q).unwrap();
+        if iir.db_gain.abs() > 0.001 {
+            writeln!(out, "      gain: {:.2}", iir.db_gain).unwrap();
+        }
+    }
+    writeln!(out).unwrap();
+
+    // Pipeline
+    writeln!(out, "pipeline:").unwrap();
+    writeln!(out, "  - type: Filter").unwrap();
+    writeln!(out, "    channels: [0, 1]").unwrap();
+    writeln!(out, "    names:").unwrap();
+    if preamp.abs() > 0.01 {
+        writeln!(out, "      - preamp").unwrap();
+    }
+    for i in 0..peq.len() {
+        writeln!(out, "      - eq_{i}").unwrap();
+    }
+
+    out
+}
+
+/// Format a PEQ as a Wavelet GraphicEQ string.
+///
+/// Evaluates the PEQ biquad chain at the 9 standard graphic EQ band frequencies
+/// and formats the result as a Wavelet-compatible line.
+pub fn peq_format_wavelet(comment: &str, peq: &Peq, sample_rate: f64) -> String {
+    use std::fmt::Write;
+
+    const BANDS: [f64; 9] = [32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0];
+
+    let preamp = peq_preamp_gain(peq);
+    let mut out = String::new();
+    writeln!(out, "# {comment}").unwrap();
+    writeln!(out, "# Wavelet GraphicEQ").unwrap();
+
+    write!(out, "GraphicEQ:").unwrap();
+    for (i, &freq) in BANDS.iter().enumerate() {
+        let mut db = preamp;
+        for (_, bq) in peq.iter() {
+            db += bq.log_result(freq);
+        }
+        if i > 0 {
+            write!(out, ";").unwrap();
+        }
+        write!(out, " {freq:.0} {db:.1}").unwrap();
+    }
+    writeln!(out).unwrap();
+
+    // Suppress unused variable warning for sample_rate — kept for API consistency
+    let _ = sample_rate;
+
+    out
+}
+
 #[cfg(test)]
 mod format_tests {
     use super::*;

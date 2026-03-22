@@ -62,6 +62,11 @@ members = [
     "crates/gpui-toolkit/gpui-ios",
     "crates/gpui-toolkit/gpui-ui-kit/ios",
     "crates/app-ios",
+    "crates/app-tvos",
+]
+exclude = [
+    "crates/3rdparties/psm",
+    "crates/3rdparties/zed-font-kit",
 ]
 resolver = "3"
 
@@ -378,9 +383,17 @@ split-debuginfo= "packed"
 debug = 1
 codegen-units = 256
 
-# Fix: git font-kit rev has broken core-text imports; use crates.io version
+# Fix: git font-kit rev has broken core-text imports; use local patched version
+# that also adds tvOS/watchOS/visionOS to Apple platform cfg gates.
 [patch."https://github.com/zed-industries/font-kit"]
-zed-font-kit = "0.14.1-zed"
+zed-font-kit = { path = "crates/3rdparties/zed-font-kit" }
+
+# Patches for tvOS/watchOS/visionOS support (Tier 3 Apple platforms):
+# - psm: assembly files use ELF directives instead of Mach-O on unrecognized Apple OSes
+# - zed-font-kit: pulls in fontconfig/freetype instead of CoreText on tvOS
+[patch.crates-io]
+psm = { path = "crates/3rdparties/psm" }
+zed-font-kit = { path = "crates/3rdparties/zed-font-kit" }
 
 [profile.release]
 lto = true

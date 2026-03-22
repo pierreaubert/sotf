@@ -1062,6 +1062,8 @@ impl PlayerView {
                 MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘6"),
                 MenuItem::separator(),
                 MenuItem::new("tutorial", "Show Tutorial"),
+                MenuItem::separator(),
+                MenuItem::new("settings", translations.screen_settings),
             ],
         )
         .theme(theme.to_menu_theme())
@@ -1087,6 +1089,9 @@ impl PlayerView {
                     "tutorial" => {
                         state.app.ui_state.input_mode = crate::app::InputMode::Tutorial;
                         state.app.ui_state.tutorial_screen = 0;
+                    }
+                    "settings" => {
+                        state.app.ui_state.current_screen = crate::app::Screen::Settings
                     }
                     _ => {}
                 }

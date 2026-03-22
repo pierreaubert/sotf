@@ -152,7 +152,7 @@ fn register_metal_view_class() -> &'static Class {
             class!(CAMetalLayer) as *const Class
         }
 
-        // Touch handling methods
+        // Touch handling methods (iOS touch + tvOS Siri Remote touch surface)
         extern "C" fn touches_began(
             this: &mut Object,
             _sel: Sel,
@@ -189,6 +189,34 @@ fn register_metal_view_class() -> &'static Class {
             handle_touches(this, touches, event);
         }
 
+        // tvOS press handling — Siri Remote buttons (Select, Menu, Play/Pause,
+        // arrows). Maps hardware button presses to GPUI keyboard/mouse events.
+        #[cfg(target_os = "tvos")]
+        extern "C" fn presses_began(
+            this: &mut Object,
+            _sel: Sel,
+            presses: *mut Object,
+            event: *mut Object,
+        ) {
+            handle_presses(this, presses, event, true);
+        }
+
+        #[cfg(target_os = "tvos")]
+        extern "C" fn presses_ended(
+            this: &mut Object,
+            _sel: Sel,
+            presses: *mut Object,
+            event: *mut Object,
+        ) {
+            handle_presses(this, presses, event, false);
+        }
+
+        // On tvOS the view must be focusable for UIPress events to arrive.
+        #[cfg(target_os = "tvos")]
+        extern "C" fn can_become_focused(_this: &Object, _sel: Sel) -> BOOL {
+            YES
+        }
+
         unsafe {
             // Add class method for layerClass
             decl.add_class_method(
@@ -213,6 +241,25 @@ fn register_metal_view_class() -> &'static Class {
                 sel!(touchesCancelled:withEvent:),
                 touches_cancelled as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
             );
+
+            // tvOS: press handling for Siri Remote buttons
+            #[cfg(target_os = "tvos")]
+            {
+                decl.add_method(
+                    sel!(pressesBegan:withEvent:),
+                    presses_began
+                        as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+                );
+                decl.add_method(
+                    sel!(pressesEnded:withEvent:),
+                    presses_ended
+                        as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+                );
+                decl.add_method(
+                    sel!(canBecomeFocused),
+                    can_become_focused as extern "C" fn(&Object, Sel) -> BOOL,
+                );
+            }
         }
 
         decl.register();
@@ -363,6 +410,36 @@ fn register_text_input_view_class() -> &'static Class {
     });
 
     class!(GPUITextInputView)
+}
+
+// ── tvOS press handling ──────────────────────────────────────────────────────
+// Maps Siri Remote button events to GPUI keyboard / mouse events.
+// UIPressType values: upArrow=0, downArrow=1, leftArrow=2, rightArrow=3,
+//                     select=4, menu=5, playPause=6
+
+#[cfg(target_os = "tvos")]
+fn handle_presses(
+    view: &mut Object,
+    presses: *mut Object,
+    _event: *mut Object,
+    is_down: bool,
+) {
+    unsafe {
+        let window_ptr: *mut std::ffi::c_void = *view.get_ivar(GPUI_WINDOW_IVAR);
+        if window_ptr.is_null() {
+            return;
+        }
+        let window = &*(window_ptr as *const IosWindow);
+
+        let all: *mut Object = msg_send![presses, allObjects];
+        let count: usize = msg_send![all, count];
+
+        for i in 0..count {
+            let press: *mut Object = msg_send![all, objectAtIndex: i];
+            let press_type: i64 = msg_send![press, r#type];
+            window.handle_press(press_type, is_down);
+        }
+    }
 }
 
 /// Handle touch events from the GPUIMetalView
@@ -1023,6 +1100,102 @@ impl IosWindow {
                 insets.left as f32,
                 insets.right as f32,
             )
+        }
+    }
+
+    // ── tvOS: Siri Remote button handling ─────────────────────────────────
+    //
+    // Maps hardware button presses to GPUI events:
+    //   Select (4)    → MouseDown/MouseUp at last known position (click)
+    //   Menu (5)      → Escape keystroke
+    //   Play/Pause (6)→ Space keystroke
+    //   Arrows (0-3)  → ScrollWheel impulse for list navigation
+    #[cfg(target_os = "tvos")]
+    pub fn handle_press(&self, press_type: i64, is_down: bool) {
+        let modifiers = self.modifiers.get();
+        let position = self.mouse_position.get();
+
+        let emit = |input: PlatformInput| {
+            if let Some(callback) = self.input_callback.borrow_mut().as_mut() {
+                callback(input);
+            }
+        };
+
+        // UIPressType constants
+        const UP_ARROW: i64 = 0;
+        const DOWN_ARROW: i64 = 1;
+        const LEFT_ARROW: i64 = 2;
+        const RIGHT_ARROW: i64 = 3;
+        const SELECT: i64 = 4;
+        const MENU: i64 = 5;
+        const PLAY_PAUSE: i64 = 6;
+
+        match press_type {
+            SELECT => {
+                if is_down {
+                    emit(PlatformInput::MouseDown(gpui::MouseDownEvent {
+                        button: gpui::MouseButton::Left,
+                        position,
+                        modifiers,
+                        click_count: 1,
+                        first_mouse: false,
+                    }));
+                } else {
+                    emit(PlatformInput::MouseUp(gpui::MouseUpEvent {
+                        button: gpui::MouseButton::Left,
+                        position,
+                        modifiers,
+                        click_count: 1,
+                    }));
+                }
+            }
+            MENU => {
+                if is_down {
+                    emit(PlatformInput::KeyDown(gpui::KeyDownEvent {
+                        keystroke: gpui::Keystroke::parse("escape").unwrap(),
+                        is_held: false,
+                    }));
+                } else {
+                    emit(PlatformInput::KeyUp(gpui::KeyUpEvent {
+                        keystroke: gpui::Keystroke::parse("escape").unwrap(),
+                    }));
+                }
+            }
+            PLAY_PAUSE => {
+                if is_down {
+                    emit(PlatformInput::KeyDown(gpui::KeyDownEvent {
+                        keystroke: gpui::Keystroke::parse("space").unwrap(),
+                        is_held: false,
+                    }));
+                } else {
+                    emit(PlatformInput::KeyUp(gpui::KeyUpEvent {
+                        keystroke: gpui::Keystroke::parse("space").unwrap(),
+                    }));
+                }
+            }
+            UP_ARROW | DOWN_ARROW | LEFT_ARROW | RIGHT_ARROW => {
+                // Emit a scroll impulse on press-down (repeat-friendly).
+                // 60 px per press gives comfortable list scrolling.
+                if is_down {
+                    let (dx, dy) = match press_type {
+                        UP_ARROW => (0.0, 60.0),
+                        DOWN_ARROW => (0.0, -60.0),
+                        LEFT_ARROW => (60.0, 0.0),
+                        RIGHT_ARROW => (-60.0, 0.0),
+                        _ => (0.0, 0.0),
+                    };
+                    emit(PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+                        position,
+                        delta: gpui::ScrollDelta::Pixels(gpui::point(
+                            gpui::px(dx),
+                            gpui::px(dy),
+                        )),
+                        modifiers,
+                        touch_phase: gpui::TouchPhase::Moved,
+                    }));
+                }
+            }
+            _ => {}
         }
     }
 

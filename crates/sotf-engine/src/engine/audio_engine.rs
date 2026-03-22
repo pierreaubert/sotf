@@ -16,10 +16,20 @@ pub struct AudioEngine {
 
 impl AudioEngine {
     fn expect_ok_response(&self) -> Result<(), String> {
-        match self.manager.recv_response_timeout(RESPONSE_TIMEOUT)? {
-            ManagerResponse::Ok | ManagerResponse::Shutdown => Ok(()),
-            ManagerResponse::Error(e) => Err(e),
-            _ => Err("Unexpected response".to_string()),
+        match self.manager.recv_response_timeout(RESPONSE_TIMEOUT) {
+            Ok(ManagerResponse::Ok | ManagerResponse::Shutdown) => Ok(()),
+            Ok(ManagerResponse::Error(e)) => Err(e),
+            Ok(_) => Err("Unexpected response".to_string()),
+            Err(_) => {
+                // Channel disconnected — manager thread likely died during init.
+                // Check the shared state for a more descriptive error.
+                let engine_state = self.manager.get_state();
+                if let Some(err) = engine_state.last_error {
+                    Err(err)
+                } else {
+                    Err("Engine thread exited unexpectedly".to_string())
+                }
+            }
         }
     }
 
@@ -123,6 +133,16 @@ impl AudioEngine {
     pub fn update_plugin_chain(&self, plugins: Vec<PluginConfig>) -> Result<(), String> {
         self.manager
             .send_command(ManagerCommand::UpdatePluginChain(plugins))?;
+        self.expect_ok_response()
+    }
+
+    /// Update the plugin graph (DAG topology for multi-driver crossovers)
+    pub fn update_plugin_graph(
+        &self,
+        config: super::types::PluginGraphConfig,
+    ) -> Result<(), String> {
+        self.manager
+            .send_command(ManagerCommand::UpdatePluginGraph(config))?;
         self.expect_ok_response()
     }
 

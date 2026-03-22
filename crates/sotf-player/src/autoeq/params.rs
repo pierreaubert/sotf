@@ -261,13 +261,21 @@ pub const LOCAL_ALGO_OPTIONS: &[(&str, &str)] = &[
     ("newuoa", "NEWUOA"),
 ];
 
-/// EQ export format options
+/// All EQ export format options (id, label, extension).
+/// Use `eq_export_format_options()` to get the platform-filtered list.
 pub const EQ_EXPORT_FORMAT_OPTIONS: &[(&str, &str, &str)] = &[
     ("json", "JSON", ".json"),
     ("apo", "EqualizerAPO", ".txt"),
     ("rme-channel", "RME TotalMix (Channel)", ".xml"),
     ("rme-room", "RME TotalMix (Room)", ".xml"),
+    #[cfg(target_os = "macos")]
     ("aupreset", "Apple AUNBandEQ", ".aupreset"),
+    ("camilladsp", "CamillaDSP", ".yaml"),
+    #[cfg(target_os = "linux")]
+    ("pipewire", "PipeWire", ".conf"),
+    #[cfg(target_os = "linux")]
+    ("easyeffects", "EasyEffects", ".json"),
+    ("wavelet", "Wavelet GraphicEQ", ".txt"),
 ];
 
 /// Get file extension for export format
@@ -277,6 +285,34 @@ pub fn get_export_extension(format: &str) -> &'static str {
         .find(|(id, _, _)| *id == format)
         .map(|(_, _, ext)| *ext)
         .unwrap_or(".json")
+}
+
+/// Format biquad filters in the specified export format.
+///
+/// Returns `(content, suggested_filename)` or an error.
+pub fn format_peq_export(
+    format: &str,
+    comment: &str,
+    biquads: &[math_audio_iir_fir::Biquad],
+    sample_rate: u32,
+) -> Result<String, String> {
+    let peq: math_audio_iir_fir::Peq = biquads.iter().map(|b| (1.0, b.clone())).collect();
+
+    match format {
+        "json" => serde_json::to_string_pretty(biquads).map_err(|e| e.to_string()),
+        "apo" => Ok(math_audio_iir_fir::peq_format_apo(comment, &peq)),
+        "rme-channel" => Ok(math_audio_iir_fir::peq_format_rme_channel(&peq)),
+        "rme-room" => Ok(math_audio_iir_fir::peq_format_rme_room(&peq, &peq)),
+        #[cfg(target_os = "macos")]
+        "aupreset" => Ok(math_audio_iir_fir::peq_format_aupreset(&peq, comment)),
+        "camilladsp" => Ok(math_audio_iir_fir::peq_format_camilladsp(comment, &peq, sample_rate)),
+        #[cfg(target_os = "linux")]
+        "pipewire" => Ok(math_audio_iir_fir::peq_format_pipewire(comment, &peq)),
+        #[cfg(target_os = "linux")]
+        "easyeffects" => Ok(math_audio_iir_fir::peq_format_easyeffects(comment, &peq)),
+        "wavelet" => Ok(math_audio_iir_fir::peq_format_wavelet(comment, &peq, sample_rate as f64)),
+        _ => Err(format!("Unknown export format: {format}")),
+    }
 }
 
 // ============================================================================

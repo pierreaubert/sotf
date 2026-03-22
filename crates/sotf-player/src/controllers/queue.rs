@@ -86,6 +86,11 @@ impl QueueController {
         }
     }
 
+    /// Peek at the next track without mutating state (for gapless pre-queuing).
+    pub fn peek_next_track(&self) -> Option<&Track> {
+        self.queue.peek_next_track()
+    }
+
     /// Advance to the next track (crosses album boundaries).
     pub fn next_track(&mut self) -> QueuePlaybackEffect {
         match self.queue.next_track() {

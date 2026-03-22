@@ -1886,7 +1886,8 @@ impl PlayerView {
                                     .first()
                                     .and_then(|r| r.inline_data())
                                     .cloned(),
-                                autoeq::MeasurementSource::InMemory(_) => None,
+                                autoeq::MeasurementSource::InMemory(_)
+                                | autoeq::MeasurementSource::InMemoryMultiple(_) => None,
                             },
                             _ => None, // Groups not yet supported in this conversion
                         };

@@ -14,6 +14,9 @@ SotF integrates into one application: an configurable audio player with audio ef
   - Identify room modes, early reflections and direct sound and apply different corrections to each ot them.
   - All pass filter on multi-subwoofer
   - Feature complete from my point of view but need testing for the complicated features.
+  - Added export to CamillaDSP (all platform), APO (Windows), EasyEffects, Wavelet, PipeWire (Linux)
+
+A lot of testing is needed but the system shows promises and will soon get close to SOTA products.
 
 ## Audio Plugins
 
@@ -109,22 +112,16 @@ Did you notice? we do have a website now [jump here](https://sotf.spinorama.org)
 
 ## What is coming?
 
-- ML model to  improve predictions in plugins: there are fully open source training available with public data. Medium quality for now.
-- iOS support: iPad and iPhone, possibly AppleTV but I dont have one so testing is complicated :)
+- System wide correction: working on MacOS, to be tested on Windows (WASAPI for now) and Linux (PipeWire, Alsa).
+- ML model to improve predictions in plugins: there are fully open source training available with public data. Medium quality for now.
+- iOS support: iPad and iPhone.
+- AU, VST and other formats for plugins: mostly a time questions than a technical question
 
 ## What is not ready yet!
 
 
+- AppleTV support but I dont have one so testing is complicated :) but that would be great for the home cinema people. It currently work on the simulator.
 - Android support (need a device, ordered a cheap one)
-- DAW mode (far away)
-- AU, VST and other formats for plugins: mostly a time questions than a technical question
+- DAW mode (far away, but not far away from a simple one)
 
-
-
-# 0.5.8
-
-## autoeq
-## plugins
-## engine
-## players
 

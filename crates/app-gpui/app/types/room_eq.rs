@@ -269,6 +269,9 @@ pub struct ChannelMeasurement {
     pub is_group: bool,
     /// Individual driver measurements (for multi-driver)
     pub group_drivers: Vec<RecordingResult>,
+    /// Additional mic measurements for multi-position optimization
+    #[serde(default)]
+    pub multi_mic_measurements: Vec<RecordingResult>,
 }
 
 /// Speaker configuration type
@@ -1112,6 +1115,14 @@ pub struct DspChainOutput {
     pub metadata: Option<DspChainMetadata>,
 }
 
+impl DspChainOutput {
+    /// Returns true if the DSP output can be applied to a linear rack
+    /// (no multi-driver crossovers requiring parallel paths).
+    pub fn is_rack_compatible(&self) -> bool {
+        self.channels.values().all(|chain| chain.drivers.is_none())
+    }
+}
+
 /// DSP chain for a single channel
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelDspChain {
@@ -1646,18 +1657,54 @@ impl RoomEqState {
             .collect();
     }
 
-    /// Load measurements from recording state
+    /// Load measurements from recording state.
+    ///
+    /// Groups multi-mic recordings by speaker index so that each physical channel
+    /// produces one `ChannelMeasurement` with additional mic data stored in
+    /// `multi_mic_measurements` for multi-position optimization.
     pub fn load_from_recording(&mut self, recording_state: &RecordingState) {
-        self.channel_measurements = recording_state
-            .channel_recordings
-            .iter()
-            .filter_map(|r| {
-                r.result.as_ref().map(|result| ChannelMeasurement {
-                    channel_name: r.channel_name.clone(),
-                    measurement: result.clone(),
+        use std::collections::BTreeMap;
+
+        // Group completed recordings by speaker index (channel_index)
+        let mut grouped: BTreeMap<usize, Vec<&sotf_audio_player::recording_types::ChannelRecording>> =
+            BTreeMap::new();
+        for r in &recording_state.channel_recordings {
+            if r.result.is_some() {
+                grouped.entry(r.channel_index).or_default().push(r);
+            }
+        }
+
+        self.channel_measurements = grouped
+            .into_values()
+            .map(|recordings| {
+                let first = recordings[0];
+                // Strip " (Mic N)" suffix for the channel name
+                let base_name = first
+                    .channel_name
+                    .find(" (Mic ")
+                    .map_or(first.channel_name.as_str(), |pos| {
+                        &first.channel_name[..pos]
+                    })
+                    .to_string();
+
+                let primary_result = first.result.clone().unwrap();
+                let multi_mic = if recordings.len() > 1 {
+                    recordings
+                        .iter()
+                        .skip(1)
+                        .filter_map(|r| r.result.clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+
+                ChannelMeasurement {
+                    channel_name: base_name,
+                    measurement: primary_result,
                     is_group: false,
                     group_drivers: Vec::new(),
-                })
+                    multi_mic_measurements: multi_mic,
+                }
             })
             .collect();
 
@@ -1774,11 +1821,23 @@ impl RoomEqState {
             {
                 match speaker_config.config_type {
                     SpeakerConfigType::Single => {
-                        let curve = to_curve(meas);
-                        speakers.insert(
-                            channel_name.clone(),
-                            SpeakerConfig::Single(MeasurementSource::InMemory(curve)),
-                        );
+                        if meas.multi_mic_measurements.is_empty() {
+                            let curve = to_curve(meas);
+                            speakers.insert(
+                                channel_name.clone(),
+                                SpeakerConfig::Single(MeasurementSource::InMemory(curve)),
+                            );
+                        } else {
+                            // Multiple mic measurements → InMemoryMultiple for multi-position optimization
+                            let mut curves = vec![to_curve(meas)];
+                            for extra in &meas.multi_mic_measurements {
+                                curves.push(result_to_curve(extra));
+                            }
+                            speakers.insert(
+                                channel_name.clone(),
+                                SpeakerConfig::Single(MeasurementSource::InMemoryMultiple(curves)),
+                            );
+                        }
                     }
                     SpeakerConfigType::MultiDriver => {
                         let mut driver_measurements = Vec::new();

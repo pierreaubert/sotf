@@ -41,17 +41,74 @@ impl PlayerView {
                 .measurement_state
                 .room_eq_state
                 .apply_smart_defaults();
-            // Recordings always produce single measurements
-            state
+            // Detect multi-mic recordings and set multi-position data
+            let has_multi_mic = state
                 .app
                 .measurement_state
                 .room_eq_state
-                .has_multi_position_data = false;
-            state
-                .app
-                .measurement_state
-                .room_eq_state
-                .multi_position_counts = Vec::new();
+                .channel_measurements
+                .iter()
+                .any(|m| !m.multi_mic_measurements.is_empty());
+
+            if has_multi_mic {
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .has_multi_position_data = true;
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .multi_position_counts = state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .channel_measurements
+                    .iter()
+                    .map(|m| {
+                        (
+                            m.channel_name.clone(),
+                            1 + m.multi_mic_measurements.len(),
+                        )
+                    })
+                    .collect();
+                // Auto-enable multi-measurement optimization
+                if !state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .optimizer_config
+                    .multi_measurement
+                    .enabled
+                {
+                    state
+                        .app
+                        .measurement_state
+                        .room_eq_state
+                        .optimizer_config
+                        .multi_measurement
+                        .enabled = true;
+                    state
+                        .app
+                        .measurement_state
+                        .room_eq_state
+                        .optimizer_config
+                        .multi_measurement
+                        .strategy = "variance_penalized".to_string();
+                }
+            } else {
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .has_multi_position_data = false;
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .multi_position_counts = Vec::new();
+            }
 
             let channel_count = state
                 .app
@@ -182,7 +239,10 @@ impl PlayerView {
                                             autoeq::MeasurementSource::Multiple(m) => {
                                                 m.measurements.first().and_then(|r| r.inline_data()).cloned()
                                             }
-                                            autoeq::MeasurementSource::InMemory(_) => None,
+                                            autoeq::MeasurementSource::InMemory(_)
+                                            | autoeq::MeasurementSource::InMemoryMultiple(_) => {
+                                                None
+                                            }
                                         },
                                         _ => None, // Groups not yet supported
                                     };
@@ -265,6 +325,7 @@ impl PlayerView {
                                             },
                                             is_group: false,
                                             group_drivers: Vec::new(),
+                                            multi_mic_measurements: Vec::new(),
                                         }
                                     })
                                 })

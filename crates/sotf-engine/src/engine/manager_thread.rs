@@ -9,7 +9,7 @@ use super::{
     GcThread, ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
     PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent,
 };
-use crate::engine::processing_thread::build_plugin_host;
+use crate::engine::processing_thread::{build_plugin_graph_host, build_plugin_host};
 use arc_swap::ArcSwap;
 use std::any::Any;
 use std::collections::VecDeque;
@@ -317,9 +317,15 @@ impl ManagerThread {
             .name("manager".to_string())
             .spawn(move || {
                 if let Err(e) =
-                    run_manager_thread(config, command_rx, response_tx, state_clone, cache_clone)
+                    run_manager_thread(config, command_rx, response_tx, state_clone.clone(), cache_clone)
                 {
-                    log::debug!("[Manager Thread] Error: {}", e);
+                    log::error!("[Manager Thread] Initialization failed: {}", e);
+                    // Store the error in the shared state so callers can see it
+                    // via get_engine_state() even after the thread exits
+                    let mut new_state = (**state_clone.load()).clone();
+                    new_state.last_error = Some(format!("Engine initialization failed: {}", e));
+                    new_state.playback_state = PlaybackState::Stopped;
+                    state_clone.store(Arc::new(new_state));
                 }
             })
             .map_err(|e| format!("Failed to spawn manager thread: {}", e))?;
@@ -1122,7 +1128,50 @@ fn apply_plugin_update(
 
 // `apply_plugin_update` is called in `run_manager_thread`.
 
-// Let's replace `apply_plugin_update` first.
+/// Build a DawHost from a graph config and convert to a linear `Vec<PluginConfig>` isn't
+/// possible for graph topologies. Instead, build the host directly and send it to the
+/// processing thread. This reuses the same host-swap mechanism as `apply_plugin_update`.
+fn apply_plugin_graph_update(
+    processing: &mut ProcessingThread,
+    state: &Arc<ArcSwap<AudioEngineState>>,
+    graph_config: super::types::PluginGraphConfig,
+    sample_rate: u32,
+    input_channels: usize,
+) -> Result<(), ConfigError> {
+    log::debug!(
+        "[Manager Thread] apply_plugin_graph_update: {} nodes, {} edges at {}Hz",
+        graph_config.nodes.len(),
+        graph_config.edges.len(),
+        sample_rate
+    );
+
+    let host =
+        build_plugin_graph_host(&graph_config, sample_rate, input_channels).map_err(|e| {
+            log::error!("[Manager Thread] Graph build failed: {}", e);
+            ConfigError::ProcessingError { reason: e }
+        })?;
+
+    let output_channels = host.output_channels();
+
+    processing
+        .send_command(ProcessingCommand::UpdateHost(Box::new(host)))
+        .map_err(|_| ConfigError::ChannelDisconnected)?;
+
+    // Wait for ACK from processing thread
+    match wait_for_processing_ack(
+        processing,
+        std::time::Duration::from_millis(5000),
+    ) {
+        Ok(()) => {
+            // Update state with new channel count
+            let mut new_state = (**state.load()).clone();
+            new_state.num_channels = output_channels;
+            state.store(Arc::new(new_state));
+            Ok(())
+        }
+        Err(e) => Err(ConfigError::ProcessingError { reason: e }),
+    }
+}
 
 /// Validate plugin configurations before applying
 fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), ConfigError> {
@@ -1567,6 +1616,35 @@ fn handle_command(
                     new_state.last_error = Some(message.clone());
                     state.store(Arc::new(new_state));
                     log::trace!("[Manager Thread] UpdatePluginChain: Update failed: {}", e);
+                    ManagerResponse::Error(message)
+                }
+            }
+        }
+        ManagerCommand::UpdatePluginGraph(graph_config) => {
+            log::debug!(
+                "[Manager Thread] Update plugin graph ({} nodes, {} edges)",
+                graph_config.nodes.len(),
+                graph_config.edges.len()
+            );
+
+            match apply_plugin_graph_update(
+                processing,
+                state,
+                graph_config,
+                config.output_sample_rate,
+                config.input_channels,
+            ) {
+                Ok(()) => {
+                    let mut new_state = (**state.load()).clone();
+                    new_state.last_error = None;
+                    state.store(Arc::new(new_state));
+                    ManagerResponse::Ok
+                }
+                Err(e) => {
+                    let message = e.to_string();
+                    let mut new_state = (**state.load()).clone();
+                    new_state.last_error = Some(message.clone());
+                    state.store(Arc::new(new_state));
                     ManagerResponse::Error(message)
                 }
             }

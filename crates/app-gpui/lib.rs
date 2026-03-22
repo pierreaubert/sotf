@@ -10,6 +10,7 @@
 pub mod components;
 #[cfg(target_os = "linux")]
 pub mod desktop_integration;
+#[cfg(not(any(target_os = "ios", target_os = "tvos")))]
 pub mod media_controls;
 
 // Note: ui must be loaded before app because app re-exports from ui::components::host

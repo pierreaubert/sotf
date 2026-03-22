@@ -318,6 +318,7 @@ pub struct RoomEqTuiState {
     // Step 5: export
     pub export_path: String,
     pub editing_export_path: bool,
+    pub export_format: usize,
     pub export_error: Option<String>,
     pub export_success: bool,
 }
@@ -349,6 +350,7 @@ impl Default for RoomEqTuiState {
             selected_channel: 0,
             export_path: String::new(),
             editing_export_path: false,
+            export_format: 0,
             export_error: None,
             export_success: false,
         }

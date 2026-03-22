@@ -169,6 +169,11 @@ fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerComma
             Some(Some(PlayerCommand::SetVolume(app.volume)))
         }
 
+        // Mute toggle
+        KeyCode::Char('u') if !app.input_mode.is_configure_sub_screen() => {
+            Some(Some(PlayerCommand::ToggleMute))
+        }
+
         _ => None,
     }
 }
@@ -322,6 +327,8 @@ pub enum PlayerCommand {
     Seek(f64),
     /// Seek relative to current position (positive = forward, negative = backward)
     SeekRelative(f64),
+    /// Toggle mute on/off
+    ToggleMute,
 }
 
 #[cfg(test)]

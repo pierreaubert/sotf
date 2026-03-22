@@ -85,6 +85,8 @@ num-complex = { workspace = true }
 
 
 # OS media controls (MPRIS on Linux, MediaPlayer on macOS/Windows)
+# Not available on iOS/tvOS — those platforms use their own remote command APIs.
+[target.'cfg(not(any(target_os = "ios", target_os = "tvos")))'.dependencies]
 souvlaki = { workspace = true }
 
 # Asset embedding

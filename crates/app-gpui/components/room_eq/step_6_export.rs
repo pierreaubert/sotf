@@ -13,8 +13,15 @@ impl PlayerView {
             .chain
             .find_plugin_index(&sotf_audio_player::PluginType::EQ)
             .is_some();
+        let is_rack_compatible = state
+            .app
+            .measurement_state
+            .room_eq_state
+            .dsp_output
+            .as_ref()
+            .map_or(true, |dsp| dsp.is_rack_compatible());
 
-        VStack::new()
+        let mut stack = VStack::new()
             .spacing(StackSpacing::Md)
             .child(
                 Text::new("Export & Apply")
@@ -78,13 +85,16 @@ impl PlayerView {
                                     ),
                             ),
                     ),
-            )
-            .child(
+            );
+
+        if is_rack_compatible {
+            // Simple case: EQ (+ optional delay/gain) — apply to linear rack
+            stack = stack.child(
                 Card::new()
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Apply to Player").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(Text::new("Apply to Rack").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Sm)
@@ -98,7 +108,7 @@ impl PlayerView {
                                 .color(theme.text_secondary),
                             )
                             .child(
-                                Button::new("apply_to_player", "Apply to Player")
+                                Button::new("apply_to_player", "Apply to Rack")
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .build()
@@ -110,7 +120,43 @@ impl PlayerView {
                                     ),
                             ),
                     ),
-            )
+            );
+        } else {
+            // Complex case: multi-driver crossovers — requires graph
+            stack = stack.child(
+                Card::new()
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("Apply as Graph").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                Text::new(
+                                    "This optimization includes crossovers and per-driver processing \
+                                     that requires the full graph view."
+                                )
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                            )
+                            .child(
+                                Button::new("apply_as_graph", "Apply as Graph")
+                                    .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
+                                    .build()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _, _, cx| {
+                                            view.apply_room_eq_as_graph(cx);
+                                        }),
+                                    ),
+                            ),
+                    ),
+            );
+        }
+
+        stack
     }
 
     fn export_room_eq_json(&mut self, cx: &mut Context<Self>) {
@@ -398,6 +444,180 @@ impl PlayerView {
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                 "Room EQ applied successfully",
             ));
+        });
+
+        cx.notify();
+    }
+
+    /// Apply roomeq results as a graph (for multi-driver crossover setups).
+    ///
+    /// Builds a `PluginGraphConfig` from the per-channel DSP chains (including
+    /// per-driver crossover, gain, delay, and global EQ) and sends it to the
+    /// engine via the graph update API.
+    fn apply_room_eq_as_graph(&mut self, cx: &mut Context<Self>) {
+        use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
+
+        let dsp_output = {
+            let state = self.state.read(cx);
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .dsp_output
+                .clone()
+        };
+
+        let Some(dsp_output) = dsp_output else {
+            log::warn!("No DSP output to apply as graph");
+            self.state.update(cx, |state, _| {
+                state.app.measurement_state.room_eq_state.error_message =
+                    Some("No optimization results to apply".to_string());
+            });
+            return;
+        };
+
+        // Build graph: nodes + edges from the multi-channel, potentially multi-driver chains.
+        //
+        // For each channel's ChannelDspChain:
+        //   - If no drivers: chain global plugins linearly
+        //   - If drivers: each driver's plugins are chained, then all driver outputs
+        //     feed into the global EQ plugins
+        //
+        // All channels share the same graph since they're processed as interleaved audio.
+        // For per-channel processing, we rely on the EQ plugin's per-channel mode
+        // and individual crossover/gain/delay plugins processing all channels.
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        let mut next_id: usize = 0;
+        let mut prev_node_id: Option<usize> = None;
+
+        // Flatten all channels into a single graph. For multi-driver, we process
+        // the first channel with drivers (they all share the same crossover topology).
+        let representative_chain = dsp_output
+            .channels
+            .values()
+            .find(|ch| ch.drivers.is_some())
+            .or_else(|| dsp_output.channels.values().next());
+
+        if let Some(chain) = representative_chain {
+            if let Some(drivers) = &chain.drivers {
+                // Multi-driver: add per-driver plugin chains
+                let mut driver_last_ids = Vec::new();
+
+                for driver in drivers {
+                    let mut driver_prev: Option<usize> = prev_node_id;
+
+                    for plugin in &driver.plugins {
+                        let id = next_id;
+                        next_id += 1;
+                        nodes.push(PluginGraphNodeConfig {
+                            id,
+                            plugin_type: plugin.plugin_type.clone(),
+                            parameters: plugin.parameters.clone(),
+                            input_channels: 2, // Default stereo
+                        });
+                        if let Some(prev) = driver_prev {
+                            edges.push(PluginGraphEdgeConfig {
+                                from_node: prev,
+                                to_node: id,
+                            });
+                        }
+                        driver_prev = Some(id);
+                    }
+
+                    if let Some(last) = driver_prev {
+                        driver_last_ids.push(last);
+                    }
+                }
+
+                // Global plugins after drivers (e.g., global EQ)
+                let mut global_prev: Option<usize> = None;
+                for plugin in &chain.plugins {
+                    let id = next_id;
+                    next_id += 1;
+                    nodes.push(PluginGraphNodeConfig {
+                        id,
+                        plugin_type: plugin.plugin_type.clone(),
+                        parameters: plugin.parameters.clone(),
+                        input_channels: 2,
+                    });
+
+                    // Connect all driver outputs to the first global plugin
+                    if global_prev.is_none() {
+                        for &driver_last in &driver_last_ids {
+                            edges.push(PluginGraphEdgeConfig {
+                                from_node: driver_last,
+                                to_node: id,
+                            });
+                        }
+                    }
+
+                    if let Some(prev) = global_prev {
+                        edges.push(PluginGraphEdgeConfig {
+                            from_node: prev,
+                            to_node: id,
+                        });
+                    }
+                    global_prev = Some(id);
+                }
+            } else {
+                // No drivers — just chain the plugins linearly
+                for plugin in &chain.plugins {
+                    let id = next_id;
+                    next_id += 1;
+                    nodes.push(PluginGraphNodeConfig {
+                        id,
+                        plugin_type: plugin.plugin_type.clone(),
+                        parameters: plugin.parameters.clone(),
+                        input_channels: 2,
+                    });
+                    if let Some(prev) = prev_node_id {
+                        edges.push(PluginGraphEdgeConfig {
+                            from_node: prev,
+                            to_node: id,
+                        });
+                    }
+                    prev_node_id = Some(id);
+                }
+            }
+        }
+
+        if nodes.is_empty() {
+            log::warn!("No graph nodes to apply");
+            self.state.update(cx, |state, _| {
+                state.app.measurement_state.room_eq_state.error_message =
+                    Some("No plugins in DSP output".to_string());
+            });
+            return;
+        }
+
+        let graph_config = PluginGraphConfig { nodes, edges };
+
+        log::info!(
+            "Applying room EQ as graph: {} nodes, {} edges",
+            graph_config.nodes.len(),
+            graph_config.edges.len()
+        );
+
+        // Send the graph config to the engine
+        self.state.update(cx, |state, _| {
+            match state.player.lock().update_plugin_graph(graph_config) {
+                Ok(()) => {
+                    // Switch to graph view mode
+                    state.app.plugin_state.plugin_view_mode =
+                        crate::app::state::plugin::PluginViewMode::Graph;
+                    state.app.measurement_state.room_eq_state.status_message =
+                        "Room EQ applied as graph!".to_string();
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
+                        "Room EQ graph applied successfully",
+                    ));
+                }
+                Err(e) => {
+                    log::error!("Failed to apply room EQ graph: {}", e);
+                    state.app.measurement_state.room_eq_state.error_message =
+                        Some(format!("Failed to apply graph: {}", e));
+                }
+            }
         });
 
         cx.notify();

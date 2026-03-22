@@ -69,7 +69,7 @@ pub fn show_keyboard() {
 }
 
 pub fn show_keyboard_with_type(keyboard_type: KeyboardType) {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "tvos"))]
     {
         if let Some(wrapper) = ios::ffi::IOS_WINDOW_LIST.get() {
             unsafe {
@@ -80,14 +80,14 @@ pub fn show_keyboard_with_type(keyboard_type: KeyboardType) {
             }
         }
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
     {
         let _ = keyboard_type;
     }
 }
 
 pub fn hide_keyboard() {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "tvos"))]
     {
         if let Some(wrapper) = ios::ffi::IOS_WINDOW_LIST.get() {
             unsafe {
@@ -119,7 +119,7 @@ pub fn set_keyboard_height(height: f32) {
 // ── Safe area insets ─────────────────────────────────────────────────────────
 
 pub fn safe_area_insets() -> (f32, f32, f32, f32) {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "tvos"))]
     {
         if let Some(wrapper) = ios::ffi::IOS_WINDOW_LIST.get() {
             unsafe {
@@ -133,10 +133,13 @@ pub fn safe_area_insets() -> (f32, f32, f32, f32) {
     (0.0, 0.0, 0.0, 0.0)
 }
 
-// ── iOS platform module ──────────────────────────────────────────────────────
+// ── iOS / tvOS platform module ───────────────────────────────────────────────
+// tvOS shares the same UIKit + Metal foundation as iOS, so we reuse the
+// platform layer. Input handling is cfg-gated inside the module for the
+// focus-engine (tvOS) vs touch (iOS) split.
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "tvos"))]
 pub mod ios;
 
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "tvos"))]
 pub use ios::{current_platform, IosPlatform};

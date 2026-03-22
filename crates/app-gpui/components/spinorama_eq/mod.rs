@@ -1572,24 +1572,6 @@ impl PlayerView {
             return;
         };
 
-        // Convert biquads to math_audio_iir_fir::Peq for export (Vec<(f64, Biquad)> with preamp gains)
-        let peq: math_audio_iir_fir::Peq = result
-            .biquads
-            .iter()
-            .map(|b| {
-                (
-                    0.0, // preamp gain
-                    math_audio_iir_fir::Biquad::new(
-                        math_audio_iir_fir::BiquadFilterType::Peak,
-                        b.freq,
-                        48000.0,
-                        b.q,
-                        b.db_gain,
-                    ),
-                )
-            })
-            .collect();
-
         // Get file extension for format
         let extension = sotf_audio_player::autoeq::get_export_extension(&export_format);
 
@@ -1611,21 +1593,41 @@ impl PlayerView {
                 if let Some(file) = file {
                     // Export using the appropriate format function
                     let comment = format!(
-                        "# Spinorama EQ for {}\n# Generated: {}",
+                        "Spinorama EQ for {} ({})",
                         speaker_name,
                         chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
                     );
-                    let content = match export_format.as_str() {
-                        "apo" => math_audio_iir_fir::peq_format_apo(&comment, &peq),
-                        "rme-channel" => math_audio_iir_fir::peq_format_rme_channel(&peq),
-                        "rme-room" => math_audio_iir_fir::peq_format_rme_room(&peq, &peq),
-                        "aupreset" => math_audio_iir_fir::peq_format_aupreset(
-                            &peq,
-                            &format!("Spinorama EQ {}", speaker_name),
-                        ),
-                        _ => {
-                            // JSON format - serialize the biquads directly
-                            serde_json::to_string_pretty(&result.biquads).unwrap_or_default()
+                    let biquads: Vec<math_audio_iir_fir::Biquad> = result
+                        .biquads
+                        .iter()
+                        .map(|b| {
+                            let ft = match b.filter_type.as_str() {
+                                "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
+                                "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
+                                "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
+                                "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
+                                "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
+                                _ => math_audio_iir_fir::BiquadFilterType::Peak,
+                            };
+                            math_audio_iir_fir::Biquad::new(ft, b.freq, 48000.0, b.q, b.db_gain)
+                        })
+                        .collect();
+                    let content = match sotf_audio_player::autoeq::format_peq_export(
+                        &export_format,
+                        &comment,
+                        &biquads,
+                        48000,
+                    ) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("Format error: {e}");
+                            state_entity.update(cx, |state, cx| {
+                                state.app.ui_state.toast_message = Some(
+                                    crate::app::ToastMessage::error(format!("Format error: {e}")),
+                                );
+                                cx.notify();
+                            });
+                            return;
                         }
                     };
 

@@ -765,6 +765,57 @@ pub fn build_plugin_host(
     Ok(host)
 }
 
+/// Build a plugin host from a graph config (DAG topology).
+///
+/// Unlike `build_plugin_host` which chains plugins linearly, this uses
+/// `DawHost::add_node()` + `add_edge()` to create arbitrary graph topologies
+/// needed for multi-driver crossover setups.
+pub fn build_plugin_graph_host(
+    config: &super::types::PluginGraphConfig,
+    sample_rate: u32,
+    channels: usize,
+) -> Result<PluginHost, String> {
+    use sotf_plugins::GraphEdge;
+    use std::collections::HashMap;
+
+    let mut host = PluginHost::new(channels, sample_rate);
+    let mut id_map: HashMap<usize, usize> = HashMap::new();
+
+    for node_config in &config.nodes {
+        let plugin = create_plugin(
+            &node_config.plugin_type,
+            &node_config.parameters,
+            node_config.input_channels,
+            sample_rate,
+        )?;
+        let host_id =
+            host.add_node(format!("node_{}", node_config.id), plugin)?;
+        id_map.insert(node_config.id, host_id);
+    }
+
+    for edge in &config.edges {
+        let from = *id_map
+            .get(&edge.from_node)
+            .ok_or_else(|| format!("Edge references unknown from_node {}", edge.from_node))?;
+        let to = *id_map
+            .get(&edge.to_node)
+            .ok_or_else(|| format!("Edge references unknown to_node {}", edge.to_node))?;
+        host.add_edge(GraphEdge::new(from, to))?;
+    }
+
+    host.build()?;
+
+    log::info!(
+        "[Processing Thread] Plugin graph loaded: {} nodes, {} edges, {}ch -> {}ch",
+        config.nodes.len(),
+        config.edges.len(),
+        channels,
+        host.output_channels()
+    );
+
+    Ok(host)
+}
+
 /// Create a plugin from configuration
 fn create_plugin(
     plugin_type: &str,

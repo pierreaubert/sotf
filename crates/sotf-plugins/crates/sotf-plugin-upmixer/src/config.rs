@@ -2,7 +2,42 @@
 // Configuration
 // ============================================================================
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Accept both a string (`"5.1"`) and a legacy integer index (`2` → `"5.1"`).
+fn deserialize_speaker_config<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de;
+
+    struct Visitor;
+    impl<'de> de::Visitor<'de> for Visitor {
+        type Value = String;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a speaker config string or legacy integer index")
+        }
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+        fn visit_string<E: de::Error>(self, v: String) -> Result<String, E> {
+            Ok(v)
+        }
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<String, E> {
+            const C: &[&str] = &[
+                "2.0", "5.0", "5.1", "7.0", "7.1", "7.1.2", "7.1.4", "9.1", "9.1.4", "9.1.6",
+            ];
+            Ok(C.get(v as usize).unwrap_or(&"5.1").to_string())
+        }
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<String, E> {
+            self.visit_u64(v as u64)
+        }
+        fn visit_f64<E: de::Error>(self, v: f64) -> Result<String, E> {
+            self.visit_u64(v as u64)
+        }
+    }
+    deserializer.deserialize_any(Visitor)
+}
 
 pub fn default_fft_size() -> usize {
     2048
@@ -189,7 +224,7 @@ pub struct UpmixerPluginParams {
     pub low_latency: bool,
 
     /// Speaker configuration ("5.1", "7.1", "5.1.4", etc.)
-    #[serde(default = "default_speaker_config")]
+    #[serde(default = "default_speaker_config", deserialize_with = "deserialize_speaker_config")]
     pub speaker_config: String,
 
     #[serde(default = "default_gain_front_direct")]

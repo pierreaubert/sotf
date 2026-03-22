@@ -1097,6 +1097,10 @@ fn adjust_plugin_param(
             bypass_transient_detection,
             bypass_all_processing,
             enable_ml_detection,
+            low_latency,
+            frequency_resolution,
+            multi_source_extraction,
+            multi_source_threshold,
             ..
         } => {
             use sotf_plugins::param_specs::{find_by_key as p, upmixer::PARAMS as UP};
@@ -1185,6 +1189,27 @@ fn adjust_plugin_param(
                     *enable_ml_detection = !*enable_ml_detection;
                     true
                 }
+                39 => {
+                    *low_latency = !*low_latency;
+                    true
+                }
+                40 => {
+                    let choices = p(UP, "frequency_resolution").choice_labels();
+                    let current = *frequency_resolution;
+                    *frequency_resolution = if delta > 0.0 {
+                        (current + 1) % choices.len()
+                    } else if current == 0 {
+                        choices.len() - 1
+                    } else {
+                        current - 1
+                    };
+                    true
+                }
+                41 => {
+                    *multi_source_extraction = !*multi_source_extraction;
+                    true
+                }
+                42 => adj!(multi_source_threshold, "multi_source_threshold"),
                 _ => false,
             }
         }
@@ -1738,6 +1763,10 @@ fn set_plugin_param_value(
             bypass_transient_detection,
             bypass_all_processing,
             enable_ml_detection,
+            low_latency,
+            frequency_resolution,
+            multi_source_extraction,
+            multi_source_threshold,
             ..
         } => {
             use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
@@ -1814,6 +1843,21 @@ fn set_plugin_param_value(
                     *enable_ml_detection = value > 0.5;
                     true
                 }
+                39 => {
+                    *low_latency = value > 0.5;
+                    true
+                }
+                40 => {
+                    let choices = pk(UP, "frequency_resolution").choice_labels();
+                    *frequency_resolution =
+                        (value as usize).clamp(0, choices.len() - 1);
+                    true
+                }
+                41 => {
+                    *multi_source_extraction = value > 0.5;
+                    true
+                }
+                42 => set!(multi_source_threshold, "multi_source_threshold"),
                 _ => false,
             };
             if param_idx == 0 {

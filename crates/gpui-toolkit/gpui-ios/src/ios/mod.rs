@@ -1,7 +1,9 @@
-//! iOS platform implementation for GPUI.
+//! iOS / tvOS platform implementation for GPUI.
 //!
-//! iOS uses UIKit instead of AppKit, so the platform implementation differs
-//! significantly from macOS despite sharing many underlying technologies:
+//! Both iOS and tvOS use UIKit + Metal, so this module serves both platforms.
+//! The main difference is input handling: iOS uses multi-touch gestures while
+//! tvOS uses the Siri Remote's focus engine and button presses.
+//! Shared technologies:
 //! - Grand Central Dispatch (GCD) for threading
 //! - CoreText for text rendering
 //! - Metal for GPU rendering

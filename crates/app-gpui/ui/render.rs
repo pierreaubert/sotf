@@ -490,17 +490,17 @@ impl Render for PlayerView {
             .font_family(theme.font_family.clone())
             .bg(theme.background)
             .text_color(theme.text_primary)
-            // Apply safe area insets on iOS to avoid the notch and home indicator
+            // Apply safe area insets on iOS/tvOS to avoid the notch / overscan
             .map(|div| {
-                #[cfg(target_os = "ios")]
+                #[cfg(any(target_os = "ios", target_os = "tvos"))]
                 {
                     let (top, _left, bottom, _right) = gpui_ios::safe_area_insets();
                     div.pt(px(top)).pb(px(bottom))
                 }
-                #[cfg(not(target_os = "ios"))]
+                #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                 { div }
             })
-            .when(!cfg!(target_os = "macos") && !cfg!(target_os = "ios"), |div| {
+            .when(!cfg!(target_os = "macos") && !cfg!(target_os = "ios") && !cfg!(target_os = "tvos"), |div| {
                 div.child(self.render_menu_bar(cx))
             })
             .child(self.render_header(cx))

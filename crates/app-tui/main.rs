@@ -434,6 +434,16 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.is_playing = false;
                     } else if state.engine_restarted {
                         log::info!("[TUI] Engine auto-restarted after crash, resuming playback");
+                    } else if let Some(_transition_path) = state.gapless_transition {
+                        // Gapless transition — engine already playing the new file,
+                        // just advance the queue UI to match.
+                        log::info!("[TUI] Gapless transition detected");
+                        app.stop_track_tracking();
+                        let _ = app.next_track();
+                        if let Some(path) = app.current_track_path() {
+                            app.start_track_tracking(path);
+                        }
+                        update_media_controls(app, player, media_controls);
                     } else if (state.track_ended
                         || (app.is_playing && !state.is_playing))
                         && app.current_queue_index.is_some()
@@ -480,6 +490,33 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             app.is_playing = false;
                         }
                         update_media_controls(app, player, media_controls);
+                    }
+
+                    // Gapless pre-queuing: when near end of track, queue the next file
+                    if state.is_playing && app.current_queue_index.is_some() {
+                        let position = state.position_secs;
+                        let duration = app
+                            .current_track()
+                            .and_then(|t| t.duration_secs)
+                            .unwrap_or(0) as f64;
+                        let near_end =
+                            duration > 0.0 && position > 0.0 && (duration - position) < 10.0;
+
+                        if near_end {
+                            if let Some(next_track) = app.peek_next_track() {
+                                let next_ch = next_track.channels.unwrap_or(2) as usize;
+                                let current_ch = app
+                                    .current_track()
+                                    .and_then(|t| t.channels)
+                                    .unwrap_or(2)
+                                    as usize;
+
+                                // Only gapless when channel count matches (engine constraint)
+                                if next_ch == current_ch {
+                                    let _ = player.queue_next(next_track.path.clone());
+                                }
+                            }
+                        }
                     }
 
                     // Apply pending plugin updates with debouncing and retry logic
@@ -697,6 +734,8 @@ fn handle_player_command(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
         PlayerCommand::Play(path) => {
+            // Cancel any pending gapless queue before manual play
+            let _ = player.cancel_next();
             // Stop tracking previous track if any
             app.stop_track_tracking();
 
@@ -775,6 +814,11 @@ fn handle_player_command(
                 current_pos,
                 new_pos
             );
+        }
+        PlayerCommand::ToggleMute => {
+            app.muted = !app.muted;
+            player.set_mute(app.muted)?;
+            log::info!("Mute toggled: {}", app.muted);
         }
     }
     Ok(())

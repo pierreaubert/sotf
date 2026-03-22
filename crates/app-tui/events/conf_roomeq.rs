@@ -968,16 +968,46 @@ pub(crate) fn export_room_eq_results(app: &mut App) {
         return;
     }
 
-    // Serialize channel results as JSON
-    let json = match serde_json::to_string_pretty(&app.room_eq.channel_results) {
-        Ok(j) => j,
+    let formats = sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS;
+    let (format_id, _, _) = formats
+        .get(app.room_eq.export_format)
+        .copied()
+        .unwrap_or(("json", "JSON", ".json"));
+
+    // Collect all EQ filters from channel results and convert to Biquad
+    let biquads: Vec<math_audio_iir_fir::Biquad> = app
+        .room_eq
+        .channel_results
+        .iter()
+        .flat_map(|ch| {
+            ch.eq_filters.iter().map(|f| {
+                let ft = match f.filter_type.as_str() {
+                    "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
+                    "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
+                    "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
+                    "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
+                    "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
+                    _ => math_audio_iir_fir::BiquadFilterType::Peak,
+                };
+                math_audio_iir_fir::Biquad::new(ft, f.frequency, 48000.0, f.q, f.gain_db)
+            })
+        })
+        .collect();
+
+    let content = match sotf_audio_player::autoeq::format_peq_export(
+        format_id,
+        "Room EQ",
+        &biquads,
+        48000,
+    ) {
+        Ok(c) => c,
         Err(e) => {
-            app.room_eq.export_error = Some(format!("Serialize error: {}", e));
+            app.room_eq.export_error = Some(format!("Format error: {}", e));
             return;
         }
     };
 
-    match std::fs::write(&app.room_eq.export_path, json) {
+    match std::fs::write(&app.room_eq.export_path, content) {
         Ok(()) => {
             app.room_eq.export_success = true;
             app.room_eq.export_error = None;

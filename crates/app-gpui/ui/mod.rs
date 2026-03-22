@@ -100,7 +100,8 @@ pub struct PlayerView {
     update_frame_count: u64,
     /// Task for debounced window geometry saving
     geometry_save_task: Option<Task<()>>,
-    /// OS media controls (MPRIS / MediaPlayer)
+    /// OS media controls (MPRIS / MediaPlayer) — not available on iOS/tvOS
+    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
     media_controls: Option<crate::media_controls::GpuiMediaControls>,
 }
 
@@ -111,6 +112,7 @@ impl PlayerView {
         let volume_focus_handle = cx.focus_handle();
 
         // Initialize OS media controls (MPRIS on Linux, MediaPlayer on macOS/Windows)
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         let media_controls = match crate::media_controls::GpuiMediaControls::new() {
             Ok(mc) => {
                 log::info!("OS media controls initialized");
@@ -169,11 +171,14 @@ impl PlayerView {
                         };
 
                     // Collect pending media control events (before state borrow)
+                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                     let media_events: Vec<souvlaki::MediaControlEvent> = view
                         .media_controls
                         .as_ref()
                         .map(|mc| std::iter::from_fn(|| mc.poll_event()).collect())
                         .unwrap_or_default();
+                    #[cfg(any(target_os = "ios", target_os = "tvos"))]
+                    let media_events: Vec<()> = vec![];
 
                     // Consolidate all state updates into a single update call
                     // to avoid multiple observer triggers
@@ -241,6 +246,7 @@ impl PlayerView {
                         }
 
                         // Handle OS media control events (MPRIS, etc.)
+                        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                         for event in &media_events {
                             Self::handle_media_control_event(state, event);
                         }
@@ -272,6 +278,16 @@ impl PlayerView {
                                 Some(crate::app::ToastMessage::info(
                                     "Engine restarted, resuming playback",
                                 ));
+                        } else if let Some(_transition_path) =
+                            playback_state.gapless_transition
+                        {
+                            // Gapless transition — engine already playing the new file,
+                            // just advance the queue UI to match.
+                            state.app.stop_track_tracking();
+                            let _ = state.app.next_track();
+                            if let Some(path) = state.app.get_current_track_path() {
+                                state.app.start_track_tracking(path);
+                            }
                         } else if (playback_state.track_ended
                             || (was_playing && !playback_state.is_playing))
                             && state.app.playback.current_queue_index.is_some()
@@ -282,6 +298,41 @@ impl PlayerView {
                                 Self::play_track_auto_advance(state, path);
                             } else {
                                 state.app.playback.is_playing = false;
+                            }
+                        }
+
+                        // Gapless pre-queuing: when near end of track, queue the next file
+                        if playback_state.is_playing
+                            && state.app.playback.current_queue_index.is_some()
+                        {
+                            let position = playback_state.position_secs;
+                            let duration = state.app.playback.duration_secs;
+                            let near_end = duration > 0.0
+                                && position > 0.0
+                                && (duration - position) < 10.0;
+
+                            if near_end {
+                                if let Some(next_track) = state.app.queue.peek_next_track() {
+                                    let next_ch =
+                                        next_track.channels.unwrap_or(2) as usize;
+                                    let current_ch = state
+                                        .app
+                                        .playback
+                                        .current_queue_index
+                                        .and_then(|idx| state.app.queue.get(idx))
+                                        .and_then(|item| item.current_track())
+                                        .and_then(|t| t.channels)
+                                        .unwrap_or(2)
+                                        as usize;
+
+                                    // Only gapless when channel count matches (engine constraint)
+                                    if next_ch == current_ch {
+                                        let _ = state
+                                            .player
+                                            .lock()
+                                            .queue_next(next_track.path.clone());
+                                    }
+                                }
                             }
                         }
 
@@ -322,6 +373,7 @@ impl PlayerView {
                     }
 
                     // Update OS media controls metadata (outside state update)
+                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                     if let Some(mc) = view.media_controls.as_mut() {
                         let state = view.state.read(cx);
                         crate::media_controls::update_media_controls(
@@ -351,6 +403,7 @@ impl PlayerView {
             needs_initial_focus: true,
             update_frame_count: 0,
             geometry_save_task: None,
+            #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
             media_controls,
         }
     }
@@ -425,13 +478,13 @@ impl PlayerView {
 
         // On iOS, apps don't quit — save state and let iOS manage lifecycle.
         // Audio continues in background via UIBackgroundModes=audio.
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
         {
-            log::info!("iOS: state saved, returning to background");
+            log::info!("iOS/tvOS: state saved, returning to background");
             return;
         }
 
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             log::info!("Services stopped, requesting GPUI quit...");
 
@@ -674,7 +727,8 @@ impl PlayerView {
     }
 
     fn add_directory(&mut self, _: &AddDirectory, _: &mut Window, cx: &mut Context<Self>) {
-        // On iOS, present the native document picker instead of text input
+        // On iOS, present the native document picker instead of text input.
+        // On tvOS, file import is not available (no document picker).
         #[cfg(target_os = "ios")]
         {
             unsafe extern "C" {
@@ -684,7 +738,13 @@ impl PlayerView {
             return;
         }
 
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(target_os = "tvos")]
+        {
+            log::info!("tvOS: file import not available");
+            return;
+        }
+
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             self.state.update(cx, |state, _cx| {
                 use crate::app::InputMode;
@@ -989,7 +1049,7 @@ impl PlayerView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let plugin_idx = action.plugin_idx;
             let state_entity = self.state.clone();
@@ -1018,7 +1078,7 @@ impl PlayerView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let plugin_idx = action.plugin_idx;
             let state_entity = self.state.clone();
@@ -1047,7 +1107,7 @@ impl PlayerView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let plugin_idx = action.plugin_idx;
             let path_id = action.path_id.clone();
@@ -1139,6 +1199,7 @@ impl PlayerView {
 
 // Split impl blocks for PlayerView
 include!("handle.rs");
+#[cfg(not(any(target_os = "ios", target_os = "tvos")))]
 include!("playback.rs");
 include!("plugin.rs");
 include!("render.rs");

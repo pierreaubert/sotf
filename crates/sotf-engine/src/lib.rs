@@ -44,7 +44,10 @@ pub use math_audio_dsp::signals;
 pub use math_audio_dsp::{AnalysisResult, read_analysis_csv, write_analysis_csv};
 
 pub mod engine;
-pub use engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
+pub use engine::{
+    AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig, PluginGraphConfig,
+    PluginGraphEdgeConfig, PluginGraphNodeConfig,
+};
 
 // Re-export driver-common types for daemon and other consumers
 pub use driver_common::{self, AudioDriver, DriverConfig, DriverStatus};

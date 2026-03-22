@@ -18,7 +18,7 @@ struct PluginPreset {
 }
 
 fn default_plugin_preset_version() -> u32 {
-    1
+    2
 }
 
 #[derive(Debug, Default, Clone)]
@@ -862,7 +862,7 @@ impl PluginChain {
         };
 
         // Check if migration is needed
-        const LATEST_VERSION: u32 = 1;
+        const LATEST_VERSION: u32 = 2;
         let original_version = preset.version;
 
         if preset.version < LATEST_VERSION {
@@ -894,6 +894,22 @@ impl PluginChain {
 
         self.plugins = preset.plugins;
 
+        // Strip spurious LoudnessMonitor at the edges — the default rack
+        // already includes input (first) and output (last) monitors, so
+        // presets saved with those included would double them up.
+        while self.plugins.first().is_some_and(|p| {
+            matches!(p.plugin_type(), PluginType::LoudnessMonitor) && !p.permanent
+        }) {
+            log::info!("Removing spurious leading LoudnessMonitor from loaded preset");
+            self.plugins.remove(0);
+        }
+        while self.plugins.last().is_some_and(|p| {
+            matches!(p.plugin_type(), PluginType::LoudnessMonitor) && !p.permanent
+        }) {
+            log::info!("Removing spurious trailing LoudnessMonitor from loaded preset");
+            self.plugins.pop();
+        }
+
         // Ensure the default rack (input monitor, matrix, output monitor) is present
         // even if the saved preset predates the rack system.
         self.ensure_default_rack();
@@ -910,7 +926,7 @@ impl PluginChain {
     fn migrate_preset(
         mut preset: PluginPreset,
     ) -> Result<PluginPreset, Box<dyn std::error::Error>> {
-        const LATEST_VERSION: u32 = 1;
+        const LATEST_VERSION: u32 = 2;
 
         // Apply migrations sequentially
         while preset.version < LATEST_VERSION {
@@ -918,20 +934,18 @@ impl PluginChain {
                 // Migration from legacy format (version 0) to version 1
                 0 => {
                     log::info!("Applying plugin preset migration: v0 (legacy) -> v1");
-                    // No structural changes needed for now
-                    // Future migrations might need to transform plugin settings
                     preset.version = 1;
                 }
 
-                // Example migration from version 1 to 2:
-                // 1 => {
-                //     log::info!("Applying plugin preset migration: v1 -> v2");
-                //     // Apply migration logic here
-                //     // e.g., transform plugin parameters, rename fields, etc.
-                //     preset.version = 2;
-                // }
+                // v1 -> v2: Choice params (speaker_config, etc.) stored as integer
+                // indices are now stored as strings. The deserialize_with attribute
+                // on the fields handles the conversion during loading; this migration
+                // just bumps the version so the preset is re-saved with strings.
+                1 => {
+                    log::info!("Applying plugin preset migration: v1 -> v2 (choice params as strings)");
+                    preset.version = 2;
+                }
 
-                // If we reach here with no match, we have an unknown version
                 v => {
                     return Err(format!("Unknown plugin preset version: {}", v).into());
                 }

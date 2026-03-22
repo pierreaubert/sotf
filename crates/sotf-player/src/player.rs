@@ -18,6 +18,9 @@ pub struct PlaybackState {
     /// The UI layer should check this and auto-advance the queue.
     /// Cleared on the next `get_playback_state()` call.
     pub track_ended: bool,
+    /// Set when the engine seamlessly transitioned to a new file (gapless playback).
+    /// Contains the path of the new file. Cleared after being read.
+    pub gapless_transition: Option<PathBuf>,
 }
 
 /// Saved configuration for restarting after a crash.
@@ -106,11 +109,6 @@ impl Player {
                 // Update saved config so crash recovery uses latest plugins.
                 if let Some(ref mut config) = self.saved_config {
                     config.plugins = plugins;
-                    // Note: do NOT update config.output_channels from engine state here.
-                    // engine_state.num_channels reflects the hardware channel count (e.g., 94
-                    // for an RME), not the processing chain's logical output. The TUI's
-                    // start_playback() correctly calculates output_channels from the plugin
-                    // chain, so the saved_config value from the last start is already correct.
                 }
                 log::info!("[Player] update_plugins: success");
                 Ok(())
@@ -119,6 +117,26 @@ impl Player {
                 // Engine not running yet - plugins will be applied on next playback
                 Ok(())
             }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Update the plugin graph (DAG topology for multi-driver crossovers)
+    pub fn update_plugin_graph(
+        &mut self,
+        config: sotf_audio::engine::PluginGraphConfig,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        log::info!(
+            "[Player] update_plugin_graph: {} nodes, {} edges",
+            config.nodes.len(),
+            config.edges.len()
+        );
+        match self.manager.update_plugin_graph(config) {
+            Ok(()) => {
+                log::info!("[Player] update_plugin_graph: success");
+                Ok(())
+            }
+            Err(e) if e == "No engine running" => Ok(()),
             Err(e) => Err(e.into()),
         }
     }
@@ -168,6 +186,43 @@ impl Player {
     pub fn set_volume(&self, volume: f32) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.set_volume(volume)?;
         Ok(())
+    }
+
+    pub fn get_volume(&self) -> f32 {
+        self.manager.get_volume()
+    }
+
+    pub fn set_mute(&self, muted: bool) -> Result<(), Box<dyn std::error::Error>> {
+        self.manager.set_mute(muted)?;
+        Ok(())
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.manager.is_muted()
+    }
+
+    /// Queue the next file for gapless playback.
+    /// When the current track finishes, the decoder seamlessly transitions
+    /// to the queued file without any gap. Only one file can be queued at a time.
+    pub fn queue_next(&self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        match self.manager.queue_next(path) {
+            Ok(()) => Ok(()),
+            Err(e) if e == "No engine running" => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Cancel a previously queued next file for gapless playback.
+    pub fn cancel_next(&self) -> Result<(), Box<dyn std::error::Error>> {
+        match self.manager.cancel_next() {
+            Ok(()) => Ok(()),
+            Err(e) if e == "No engine running" => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn get_underruns(&self) -> u64 {
+        self.manager.get_underruns()
     }
 
     pub fn get_position(&self) -> f64 {
@@ -276,10 +331,19 @@ impl Player {
         // Drain any pending streaming events and capture errors / end-of-stream
         let mut last_error: Option<String> = None;
         let mut track_ended = false;
+        let mut gapless_transition: Option<PathBuf> = None;
         for event in self.manager.drain_events() {
             match event {
                 StreamingEvent::Error(msg) => last_error = Some(msg),
                 StreamingEvent::EndOfStream => track_ended = true,
+                StreamingEvent::GaplessTransition(path) => {
+                    // Update saved config for crash recovery
+                    if let Some(ref mut config) = self.saved_config {
+                        config.path = path.clone();
+                        config.last_position_secs = 0.0;
+                    }
+                    gapless_transition = Some(path);
+                }
                 _ => {}
             }
         }
@@ -334,6 +398,7 @@ impl Player {
             engine_restarted,
             engine_fatal,
             track_ended,
+            gapless_transition,
         }
     }
 
