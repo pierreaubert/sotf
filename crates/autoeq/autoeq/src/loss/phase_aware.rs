@@ -13,7 +13,9 @@ pub fn compute_phase(response: &Array1<Complex64>) -> Array1<f64> {
     response.mapv(|c| c.arg().to_degrees())
 }
 
-/// Unwrap phase to avoid discontinuities
+/// Unwrap phase to avoid discontinuities.
+/// Handles arbitrary multiples of 360° (not just single wraps),
+/// equivalent to NumPy's `np.unwrap` applied to degree-valued phase.
 pub fn unwrap_phase_degrees(phase: &Array1<f64>) -> Array1<f64> {
     let mut unwrapped = Array1::zeros(phase.len());
     if phase.is_empty() {
@@ -21,21 +23,14 @@ pub fn unwrap_phase_degrees(phase: &Array1<f64>) -> Array1<f64> {
     }
 
     unwrapped[0] = phase[0];
-    let mut cumulative = 0.0;
-    let mut prev = phase[0];
+    let mut offset = 0.0;
 
     for i in 1..phase.len() {
-        let diff = phase[i] - prev;
-        let adjustment = if diff > 180.0 {
-            -360.0
-        } else if diff < -180.0 {
-            360.0
-        } else {
-            0.0
-        };
-        cumulative += adjustment;
-        unwrapped[i] = phase[i] + cumulative;
-        prev = phase[i];
+        let diff = phase[i] - phase[i - 1];
+        // Round to nearest multiple of 360° and subtract it
+        let wraps = (diff / 360.0).round();
+        offset -= wraps * 360.0;
+        unwrapped[i] = phase[i] + offset;
     }
 
     unwrapped

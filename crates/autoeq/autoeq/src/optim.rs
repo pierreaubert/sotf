@@ -309,6 +309,10 @@ pub struct ObjectiveData {
     /// Multi-objective data for multi-measurement optimization.
     /// When `Some`, `compute_base_fitness` delegates to `compute_multi_objective_fitness`.
     pub multi_objective: Option<MultiObjectiveData>,
+    /// Whether to smooth the error before computing the loss
+    pub smooth: bool,
+    /// Smoothing resolution as 1/N octave
+    pub smooth_n: usize,
 }
 
 /// Data for multi-objective optimization across multiple measurements
@@ -511,12 +515,24 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
         LossType::HeadphoneFlat | LossType::SpeakerFlat => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
-            flat_loss(&data.freqs, &error, data.min_freq, data.max_freq)
+            if data.smooth {
+                let curve = Curve { freq: data.freqs.clone(), spl: error, phase: None };
+                let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
+                flat_loss(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
+            } else {
+                flat_loss(&data.freqs, &error, data.min_freq, data.max_freq)
+            }
         }
         LossType::SpeakerFlatAsymmetric => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
-            flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq)
+            if data.smooth {
+                let curve = Curve { freq: data.freqs.clone(), spl: error, phase: None };
+                let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
+                flat_loss_asymmetric(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
+            } else {
+                flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq)
+            }
         }
         LossType::SpeakerScore => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
@@ -624,14 +640,24 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
         LossType::HeadphoneFlat | LossType::SpeakerFlat => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
-            flat_loss(&data.freqs, &error, data.min_freq, data.max_freq)
+            if data.smooth {
+                let curve = Curve { freq: data.freqs.clone(), spl: error, phase: None };
+                let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
+                flat_loss(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
+            } else {
+                flat_loss(&data.freqs, &error, data.min_freq, data.max_freq)
+            }
         }
         LossType::SpeakerFlatAsymmetric => {
-            // Asymmetric loss: peaks penalized 2x more than dips
-            // Use this for room correction where nulls cannot be fixed with EQ
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
-            flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq)
+            if data.smooth {
+                let curve = Curve { freq: data.freqs.clone(), spl: error, phase: None };
+                let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
+                flat_loss_asymmetric(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
+            } else {
+                flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq)
+            }
         }
         LossType::SpeakerScore => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
