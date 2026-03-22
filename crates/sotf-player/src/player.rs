@@ -14,6 +14,10 @@ pub struct PlaybackState {
     pub engine_restarted: bool,
     /// Set when the engine crashed twice — no further auto-restart will be attempted.
     pub engine_fatal: bool,
+    /// Set when the current track finished playing (end-of-stream).
+    /// The UI layer should check this and auto-advance the queue.
+    /// Cleared on the next `get_playback_state()` call.
+    pub track_ended: bool,
 }
 
 /// Saved configuration for restarting after a crash.
@@ -269,11 +273,14 @@ impl Player {
     /// is detected and we have a saved config, the engine is restarted once.
     /// A second crash sets `engine_fatal` and gives up.
     pub fn get_playback_state(&mut self) -> PlaybackState {
-        // Drain any pending streaming events and capture the last error (if any)
+        // Drain any pending streaming events and capture errors / end-of-stream
         let mut last_error: Option<String> = None;
+        let mut track_ended = false;
         for event in self.manager.drain_events() {
-            if let StreamingEvent::Error(msg) = event {
-                last_error = Some(msg);
+            match event {
+                StreamingEvent::Error(msg) => last_error = Some(msg),
+                StreamingEvent::EndOfStream => track_ended = true,
+                _ => {}
             }
         }
 
@@ -326,6 +333,7 @@ impl Player {
             last_error,
             engine_restarted,
             engine_fatal,
+            track_ended,
         }
     }
 

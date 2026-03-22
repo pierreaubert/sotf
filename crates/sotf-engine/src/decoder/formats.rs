@@ -19,6 +19,7 @@ static PROBE: LazyLock<Probe> = LazyLock::new(|| {
     probe.register_all::<symphonia_bundle_flac::FlacReader>();
     probe.register_all::<symphonia_bundle_mp3::MpaReader>();
     probe.register_all::<symphonia_format_riff::WavReader>();
+    probe.register_all::<symphonia_format_riff::AiffReader>();
     probe.register_all::<symphonia_format_ogg::OggReader>();
     probe.register_all::<symphonia_format_isomp4::IsoMp4Reader>();
     probe.register_all::<symphonia_codec_aac::AdtsReader>();

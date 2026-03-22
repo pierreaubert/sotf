@@ -1502,7 +1502,7 @@ impl PlayerView {
                         filters: eq_filters.clone(),
                         channel_filters: None,
                         per_channel_mode: false,
-                        max_filters: 10,
+                        max_filters: 10, tdf2: false,
                     };
                     log::info!("Updated existing EQ plugin at index {}", eq_idx);
                 }
@@ -1518,7 +1518,7 @@ impl PlayerView {
                         filters: eq_filters.clone(),
                         channel_filters: None,
                         per_channel_mode: false,
-                        max_filters: 10,
+                        max_filters: 10, tdf2: false,
                     };
                 }
                 log::info!("Inserted new EQ plugin at index {}", insert_idx);

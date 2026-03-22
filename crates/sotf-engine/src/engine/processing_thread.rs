@@ -40,11 +40,12 @@ fn send_or_interrupt<T>(
                     return Ok(Some((cmd, Some(returned_msg))));
                 }
                 retries += 1;
-                if retries > 1000 {
+                if retries > 200 {
                     return Err("Processing queue stuck for >1s".to_string());
                 }
                 msg = returned_msg;
-                std::thread::sleep(Duration::from_millis(1));
+                // Sleep 5ms instead of 1ms to reduce CPU wakeups (~200/sec vs ~1000/sec)
+                std::thread::sleep(Duration::from_millis(5));
             }
             Err(e) => return Err(format!("Channel disconnected: {}", e)),
         }
@@ -922,6 +923,22 @@ fn create_plugin(
             Ok(Box::new(plugin))
         }
 
+        #[cfg(feature = "iamf")]
+        "ambisonics_decoder" => {
+            let config: sotf_plugin_ambisonics::AmbisonicsDecoderConfig =
+                serde_json::from_value(parameters.clone())
+                    .map_err(|e| format!("Failed to parse ambisonics decoder parameters: {}", e))?;
+
+            let mut plugin = sotf_plugin_ambisonics::AmbisonicsDecoderPlugin::new(&config)?;
+            plugin.initialize(sample_rate)?;
+            Ok(Box::new(plugin))
+        }
+
+        #[cfg(not(feature = "iamf"))]
+        "ambisonics_decoder" => {
+            Err("Ambisonics decoder requires the 'iamf' feature".to_string())
+        }
+
         "loudness_compensation" => {
             let params: LoudnessCompensationPluginParams =
                 serde_json::from_value(parameters.clone()).map_err(|e| {
@@ -1266,6 +1283,8 @@ mod tests {
             PluginType::Downmix => 6,
             // BinauralDecoder defaults to 6 input channels (5.1)
             PluginType::BinauralDecoder => 6,
+            // AmbisonicsDecoder order 1 = 4 channels (FOA)
+            PluginType::AmbisonicsDecoder => 4,
             _ => 2,
         }
     }
@@ -1277,6 +1296,11 @@ mod tests {
         for plugin_type in PluginType::all() {
             // Convolution requires an IR file on disk — skip factory test
             if plugin_type == PluginType::Convolution {
+                continue;
+            }
+            // AmbisonicsDecoder requires the `iamf` feature
+            #[cfg(not(feature = "iamf"))]
+            if plugin_type == PluginType::AmbisonicsDecoder {
                 continue;
             }
 
@@ -1308,6 +1332,10 @@ mod tests {
 
         for plugin_type in PluginType::all() {
             if plugin_type == PluginType::Convolution {
+                continue;
+            }
+            #[cfg(not(feature = "iamf"))]
+            if plugin_type == PluginType::AmbisonicsDecoder {
                 continue;
             }
 
@@ -1343,6 +1371,11 @@ mod tests {
                     | PluginType::Pnd
             );
             if skip_process {
+                continue;
+            }
+            // AmbisonicsDecoder requires the `iamf` feature
+            #[cfg(not(feature = "iamf"))]
+            if plugin_type == PluginType::AmbisonicsDecoder {
                 continue;
             }
 

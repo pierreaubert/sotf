@@ -127,6 +127,7 @@ fn plugin_description(plugin_type: &PluginType) -> &'static str {
         PluginType::Delay => "Audio delay with feedback control",
         PluginType::Aec => "Acoustic echo cancellation",
         PluginType::Beamformer => "Microphone array beamforming",
+        PluginType::AmbisonicsDecoder => "Ambisonics to speaker layout decoder",
     }
 }
 

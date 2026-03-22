@@ -320,6 +320,7 @@ pub fn run_multi_speaker_optimization(
             broadband_target_matching: None,
             multi_measurement: None,
             mixed_phase: None,
+            decomposed_correction: None,
         },
         recording_config: None,
     };
@@ -480,6 +481,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         vog: None,
         broadband_target_matching: None,
         multi_measurement: None,
+        decomposed_correction: None,
     }
 }
 

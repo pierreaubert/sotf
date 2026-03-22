@@ -1939,8 +1939,10 @@ pub mod eq {
     // EQ filters are dynamic, but we can define common ranges for filter parameters
     use super::ParamSpec;
     /// Global params before the per-filter params.
-    pub const GLOBAL_PARAMS: &[ParamSpec] =
-        &[ParamSpec::int("Max Filters", "max_filters", 20, 1, 20, 1, "", "Global").structural()];
+    pub const GLOBAL_PARAMS: &[ParamSpec] = &[
+        ParamSpec::int("Max Filters", "max_filters", 20, 1, 20, 1, "", "Global").structural(),
+        ParamSpec::bool_param("TDF-II", "tdf2", false, "Algorithm"),
+    ];
     /// Template for each filter band (repeated per filter).
     pub const BAND_TEMPLATE: &[ParamSpec] = &[
         ParamSpec::float(
@@ -3970,6 +3972,7 @@ pub mod ambisonics {
         )
         .structural(),
         ParamSpec::bool_param("Max-rE", "max_re_weighting", true, "Ambisonics"),
+        ParamSpec::bool_param("Dual-Band", "dual_band", false, "Ambisonics"),
     ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[
@@ -3978,7 +3981,7 @@ pub mod ambisonics {
         ],
         main: &[ControlGroup {
             title: "",
-            controls: &[ControlSpec::toggle(2)], // max_re_weighting
+            controls: &[ControlSpec::toggle(2), ControlSpec::toggle(3)], // max_re_weighting, dual_band
         }],
         output: &[],
         tabs: &[],

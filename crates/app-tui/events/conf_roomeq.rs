@@ -934,6 +934,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 None
             },
             multi_measurement: None,
+            decomposed_correction: None,
         };
 
         let room_config = RoomConfig {

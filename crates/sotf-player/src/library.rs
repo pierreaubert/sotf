@@ -462,9 +462,12 @@ impl MusicLibrary {
         let db_path =
             MusicDatabase::default_path().ok_or("Could not determine config directory")?;
 
-        // Spawn backup on a background thread so it does not block startup.
-        // The backup reads the old file and the DB open creates a new WAL, so
-        // there is no race — the backup copies the pre-open state.
+        // Open the database first (creates WAL, runs migrations).
+        let db = MusicDatabase::open(&db_path)?;
+
+        // Spawn backup AFTER open completes — the DB is now in a consistent
+        // post-migration state. Running fs::copy concurrently with open would
+        // risk copying a partially-written file (WAL creation + migrations).
         let backup_path = db_path.clone();
         std::thread::Builder::new()
             .name("db-backup".into())
@@ -479,8 +482,6 @@ impl MusicLibrary {
                     );
                 }
             })?;
-
-        let db = MusicDatabase::open(&db_path)?;
 
         Ok(Self {
             directories: Vec::new(),

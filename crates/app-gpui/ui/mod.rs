@@ -272,11 +272,11 @@ impl PlayerView {
                                 Some(crate::app::ToastMessage::info(
                                     "Engine restarted, resuming playback",
                                 ));
-                        } else if was_playing
-                            && !playback_state.is_playing
+                        } else if (playback_state.track_ended
+                            || (was_playing && !playback_state.is_playing))
                             && state.app.playback.current_queue_index.is_some()
                         {
-                            // Check if playback ended and auto-advance
+                            // Track ended — auto-advance to next in queue
                             state.app.stop_track_tracking();
                             if let Some(path) = state.app.next_track() {
                                 Self::play_track_auto_advance(state, path);

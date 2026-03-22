@@ -434,8 +434,8 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.is_playing = false;
                     } else if state.engine_restarted {
                         log::info!("[TUI] Engine auto-restarted after crash, resuming playback");
-                    } else if app.is_playing
-                        && !state.is_playing
+                    } else if (state.track_ended
+                        || (app.is_playing && !state.is_playing))
                         && app.current_queue_index.is_some()
                     {
                         log::info!("[TUI] Track ended, attempting auto-advance...");

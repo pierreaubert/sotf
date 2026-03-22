@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 #[cfg(not(target_os = "ios"))]
 pub mod devices;
 #[cfg(not(target_os = "ios"))]

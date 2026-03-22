@@ -705,6 +705,14 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             // Don't set Stopped here - wait for PlaybackDrained so remaining
             // audio in the ring buffer gets played to hardware first.
         }
+        ThreadEvent::DecoderGaplessTransition(path) => {
+            log::info!("[Manager Thread] Gapless transition to: {:?}", path);
+            let mut new_state = (**state.load()).clone();
+            new_state.current_file = Some(path);
+            new_state.position = 0.0;
+            // playback_state stays Playing — no interruption
+            state.store(Arc::new(new_state));
+        }
         ThreadEvent::PlaybackChannelsChanged(channels) => {
             let mut new_state = (**state.load()).clone();
             new_state.num_channels = channels;
@@ -1164,6 +1172,7 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "crossfeed",
             "aec",
             "beamformer",
+            "ambisonics_decoder",
         ];
 
         let plugin_type_lower = config.plugin_type.to_lowercase();
@@ -1417,6 +1426,36 @@ fn handle_command(
                     state.store(Arc::new(new_state));
                     ManagerResponse::Ok
                 }
+                Err(e) => ManagerResponse::Error(e),
+            }
+        }
+        ManagerCommand::QueueNext(path) => {
+            log::debug!("[Manager Thread] QueueNext: {:?}", path);
+
+            if let Err(e) = decoder.send_command(DecoderCommand::QueueNext(path)) {
+                return ManagerResponse::Error(e);
+            }
+
+            match wait_for_decoder_ack(
+                decoder,
+                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
+            ) {
+                Ok(()) => ManagerResponse::Ok,
+                Err(e) => ManagerResponse::Error(e),
+            }
+        }
+        ManagerCommand::CancelNext => {
+            log::debug!("[Manager Thread] CancelNext");
+
+            if let Err(e) = decoder.send_command(DecoderCommand::CancelNext) {
+                return ManagerResponse::Error(e);
+            }
+
+            match wait_for_decoder_ack(
+                decoder,
+                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
+            ) {
+                Ok(()) => ManagerResponse::Ok,
                 Err(e) => ManagerResponse::Error(e),
             }
         }

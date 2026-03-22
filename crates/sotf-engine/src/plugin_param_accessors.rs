@@ -88,6 +88,20 @@ fn index_to_detection_mode(index: f64) -> String {
     DETECTION_MODES.get(idx).unwrap_or(&"Peak").to_string()
 }
 
+const AMBISONICS_LAYOUTS: &[&str] = &["5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"];
+
+fn ambisonics_layout_to_index(layout: &str) -> f64 {
+    AMBISONICS_LAYOUTS
+        .iter()
+        .position(|&l| l == layout)
+        .unwrap_or(0) as f64 // default to 5.1
+}
+
+fn index_to_ambisonics_layout(index: f64) -> String {
+    let idx = index as usize;
+    AMBISONICS_LAYOUTS.get(idx).unwrap_or(&"5.1").to_string()
+}
+
 const CROSSOVER_TYPES: &[&str] = &["LR24", "LR48"];
 
 fn crossover_type_to_index(ct: &str) -> f64 {
@@ -360,8 +374,10 @@ impl_param_accessors! {
             dialogue_weight: f64, voice_freq_min_hz: f64, voice_freq_max_hz: f64,
             dialogue_centroid_weight: f64, dialogue_variance_weight: f64, dialogue_coherence_weight: f64,
             safety_cap_db: f64,
+            low_latency: bool, frequency_resolution: usize,
             bypass_decorrelation: bool, bypass_transient_detection: bool,
             bypass_all_processing: bool, enable_ml_detection: bool,
+            multi_source_extraction: bool, multi_source_threshold: f64,
         ]
     },
     Convolution {
@@ -488,10 +504,20 @@ impl_param_accessors! {
         layout: Some(&param_specs::beamformer::LAYOUT),
         fields: [num_mics: usize, mic_spacing_cm: f64, steer_angle_deg: f64, beamformer_type: usize]
     },
+    AmbisonicsDecoder {
+        params: param_specs::ambisonics::PARAMS,
+        layout: Some(&param_specs::ambisonics::LAYOUT),
+        fields: [
+            order: usize,
+            target_layout: [str ambisonics_layout_to_index, index_to_ambisonics_layout],
+            max_re_weighting: bool,
+            dual_band: bool,
+        ]
+    },
     EQ {
         params: param_specs::eq::GLOBAL_PARAMS,
         layout: None,
-        fields: [max_filters: usize]
+        fields: [max_filters: usize, tdf2: bool]
     },
     MultibandCompressor {
         params: param_specs::multiband_compressor::GLOBAL_PARAMS,
@@ -581,6 +607,9 @@ impl PluginSettings {
                 match self {
                     Self::Upmixer { speaker_config, .. } if index == 0 => {
                         Some(speaker_config.clone())
+                    }
+                    Self::AmbisonicsDecoder { target_layout, .. } if index == 1 => {
+                        Some(target_layout.clone())
                     }
                     Self::BandSplit { crossover_type, .. } if index == 1 => {
                         Some(crossover_type.clone())

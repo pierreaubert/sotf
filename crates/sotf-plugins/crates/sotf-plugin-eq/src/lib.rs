@@ -186,6 +186,8 @@ pub struct EqPlugin {
     oversampling_factor: u32,
     /// Oversampling state (None when oversampling_factor == 1).
     os_state: Option<OversamplingState>,
+    /// Use Transposed Direct Form II for better numerical stability at high Q.
+    use_tdf2: bool,
 }
 
 /// Helper: create cascaded biquad stages for a given order.
@@ -246,6 +248,7 @@ impl EqPlugin {
             cached_parameters: Vec::new(),
             transitions,
             oversampling_factor: 1,
+            use_tdf2: false,
             os_state: None,
         };
         p.rebuild_cached_parameters();
@@ -261,6 +264,8 @@ impl EqPlugin {
             ),
             Parameter::new_int("oversampling", "OS", self.oversampling_factor as i32, 1, 4)
                 .with_description("Oversampling factor: 1 (off), 2 (2x), 4 (4x)"),
+            Parameter::new_bool("tdf2", "TDF-II", self.use_tdf2)
+                .with_description("Use Transposed Direct Form II for better numerical stability at high Q"),
         ];
 
         if !self.filters.is_empty() {
@@ -344,6 +349,7 @@ impl EqPlugin {
             cached_parameters: Vec::new(),
             transitions,
             oversampling_factor: 1,
+            use_tdf2: false,
             os_state: None,
         };
         p.rebuild_cached_parameters();
@@ -419,6 +425,7 @@ impl EqPlugin {
                 cached_parameters: Vec::new(),
                 transitions: (0..num_bands).map(|_| None).collect(),
                 oversampling_factor: 1,
+            use_tdf2: false,
                 os_state: None,
             }
         } else {
@@ -445,6 +452,7 @@ impl EqPlugin {
                 cached_parameters: Vec::new(),
                 transitions: (0..num_bands).map(|_| None).collect(),
                 oversampling_factor: 1,
+            use_tdf2: false,
                 os_state: None,
             }
         };
@@ -724,6 +732,18 @@ impl InPlacePlugin for EqPlugin {
                 self.apply_sample_rate_to_filters(self.sample_rate as f64);
             }
             self.rebuild_cached_parameters();
+        } else if name == "tdf2" {
+            let enabled = value.as_bool().unwrap_or(false);
+            self.use_tdf2 = enabled;
+            // Update all biquad filters
+            for ch_filters in &mut self.filters {
+                for stages in ch_filters {
+                    for bq in stages {
+                        bq.use_tdf2 = enabled;
+                    }
+                }
+            }
+            self.rebuild_cached_parameters();
         } else if let Some(rest) = name.strip_prefix("band_") {
             // Parse "band_N_field" without heap allocation.
             // Find the next '_' to split index from field.
@@ -854,6 +874,8 @@ impl InPlacePlugin for EqPlugin {
             Some(ParameterValue::Bool(self.auto_gain.is_enabled()))
         } else if name == "oversampling" {
             Some(ParameterValue::Int(self.oversampling_factor as i32))
+        } else if name == "tdf2" {
+            Some(ParameterValue::Bool(self.use_tdf2))
         } else if let Some(rest) = name.strip_prefix("band_") {
             // Parse "band_N_field" without heap allocation.
             // Find the next '_' to split index from field.

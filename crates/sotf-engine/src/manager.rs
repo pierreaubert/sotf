@@ -542,6 +542,41 @@ impl AudioEngineManager {
         Ok(())
     }
 
+    /// Queue the next file for gapless playback.
+    ///
+    /// When the current track finishes, the decoder seamlessly transitions to the
+    /// queued file without any audible gap. Only one file can be queued at a time;
+    /// calling this again replaces the previous queued file.
+    ///
+    /// The queued file must have the same channel count as the current file (the
+    /// plugin chain is not rebuilt during a gapless transition). If sample rates
+    /// differ, the decoder handles resampling automatically.
+    pub fn queue_next<P: Into<PathBuf>>(&self, path: P) -> Result<(), String> {
+        let path = path.into();
+        log::debug!("[AudioEngineManager] Queueing next: {:?}", path);
+
+        if let Some(engine) = &*self.engine.load() {
+            engine.queue_next(path)?;
+            Ok(())
+        } else {
+            Err("No engine running".to_string())
+        }
+    }
+
+    /// Cancel a previously queued next file.
+    ///
+    /// If no file is queued, this is a no-op (still returns Ok).
+    pub fn cancel_next(&self) -> Result<(), String> {
+        log::debug!("[AudioEngineManager] Cancelling queued next");
+
+        if let Some(engine) = &*self.engine.load() {
+            engine.cancel_next()?;
+            Ok(())
+        } else {
+            Err("No engine running".to_string())
+        }
+    }
+
     /// Get current state (lock-free)
     pub fn get_state(&self) -> StreamingState {
         StreamingState::from_u8(self.state.load(Ordering::Relaxed))

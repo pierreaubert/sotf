@@ -7174,7 +7174,7 @@ dependencies = [
 
 [[package]]
 name = "plugins-ffi"
-version = "0.5.13"
+version = "0.5.14"
 dependencies = [
  "cbindgen 0.29.2",
  "log",
@@ -9192,7 +9192,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.5.13"
+version = "0.5.14"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -9717,7 +9717,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugins"
-version = "0.5.13"
+version = "0.5.14"
 dependencies = [
  "anyhow",
  "arc-swap",

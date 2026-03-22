@@ -821,6 +821,12 @@ impl DawHost {
         }
         mb[..is].fill(0.0);
         for e in &preds[n.id] {
+            // Skip sidechain edges — they should not be summed into the primary
+            // audio input. Sidechain data is routed separately when plugins
+            // declare extended input channels via input_channels() > channels().
+            if e.edge_type == EdgeType::Sidechain {
+                continue;
+            }
             let sb = nbs[e.from_node].as_ref().unwrap();
             let sd = sb.read();
             if let Some(ref cm) = e.channel_map {

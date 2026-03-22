@@ -2018,6 +2018,7 @@ impl RoomEqState {
             } else {
                 None
             },
+            decomposed_correction: None,
         };
 
         log::info!(

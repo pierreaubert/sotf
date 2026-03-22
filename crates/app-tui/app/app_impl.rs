@@ -459,6 +459,7 @@ impl App {
                     channel_filters: None,
                     per_channel_mode: false,
                     max_filters: filter_count.clamp(1, 20),
+                    tdf2: false,
                 };
                 Ok(())
             } else {
@@ -568,6 +569,7 @@ impl App {
                 channel_filters: None,
                 per_channel_mode: false,
                 max_filters: n.clamp(1, 20),
+                tdf2: false,
             };
             plugin.enabled = true;
         }

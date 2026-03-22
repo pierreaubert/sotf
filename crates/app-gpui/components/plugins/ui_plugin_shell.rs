@@ -43,6 +43,7 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::Delay => theme.plugin_colors.eq,
         PluginType::Aec => theme.plugin_colors.eq,
         PluginType::Beamformer => theme.plugin_colors.binaural,
+        PluginType::AmbisonicsDecoder => theme.plugin_colors.upmixer,
     }
 }
 
@@ -93,6 +94,7 @@ pub fn plugin_icon(
         PluginType::Delay => "⏱",
         PluginType::Aec => "⊘",
         PluginType::Beamformer => "⊙",
+        PluginType::AmbisonicsDecoder => "🌐",
     }
 }
 
@@ -147,6 +149,7 @@ pub fn plugin_short_name(
         PluginType::Delay => "Delay",
         PluginType::Aec => "AEC",
         PluginType::Beamformer => "Beamfmr",
+        PluginType::AmbisonicsDecoder => "Ambi",
     }
 }
 

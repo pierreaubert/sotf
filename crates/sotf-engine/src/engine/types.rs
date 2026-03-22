@@ -116,6 +116,12 @@ pub enum DecoderCommand {
     Resume,
     /// Seek to position in seconds
     Seek(f64),
+    /// Queue the next file for gapless playback.
+    /// When the current file ends, the decoder seamlessly transitions to this file
+    /// without sending EndOfStream or Flush, avoiding any gap in audio output.
+    QueueNext(PathBuf),
+    /// Cancel a previously queued next file.
+    CancelNext,
     /// Stop decoding and cleanup
     Stop,
     /// Shutdown the thread
@@ -215,6 +221,12 @@ pub enum ManagerCommand {
     Resume,
     Stop,
     Seek(f64),
+    /// Queue the next file for gapless playback.
+    /// When the current track ends, the decoder seamlessly starts the queued file
+    /// without any gap in audio output.
+    QueueNext(PathBuf),
+    /// Cancel a previously queued next file.
+    CancelNext,
 
     // Volume control
     SetVolume(f32),
@@ -322,6 +334,8 @@ impl Default for AudioEngineState {
 pub enum ThreadEvent {
     /// Decoder reached end of stream
     DecoderEndOfStream,
+    /// Decoder seamlessly transitioned to a queued next file (gapless playback)
+    DecoderGaplessTransition(PathBuf),
     /// Decoder error
     DecoderError(String),
     PlaybackChannelsChanged(usize),

@@ -72,6 +72,9 @@ pub struct ConvolutionPlugin {
     fft_sum: Vec<Complex<f32>>,
     fft_scratch: Vec<Complex<f32>>,
     cached_parameters: Vec<Parameter>,
+    /// When use_nupc is true, per-channel NUPC engines for low-latency convolution
+    nupc_engines: Vec<nupc::NupcEngine>,
+    use_nupc: bool,
 }
 
 impl ConvolutionPlugin {
@@ -96,6 +99,8 @@ impl ConvolutionPlugin {
             fft_sum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
             fft_scratch: Vec::new(),
             cached_parameters: Vec::new(),
+            nupc_engines: Vec::new(),
+            use_nupc: false,
         };
         p.rebuild_cached_parameters();
         p
@@ -133,6 +138,7 @@ impl ConvolutionPlugin {
         params: ConvolutionPluginParams,
     ) -> Result<Self, String> {
         let mut plugin = Self::new(channels, sample_rate);
+        plugin.use_nupc = params.use_nupc;
         if !params.ir_file.is_empty() {
             let _ = plugin.load_ir(&params.ir_file);
         }
@@ -197,6 +203,38 @@ impl ConvolutionPlugin {
         self.fdl_head = 0;
         self.fft_scratch = vec![Complex::new(0.0, 0.0); fft_scratch_len];
         self.ir_file = path.to_string();
+
+        // Build NUPC engines if use_nupc is enabled.
+        // One NupcEngine per channel, each configured with the channel's IR.
+        if self.use_nupc {
+            let state_guard = self.state.load();
+            if let Some(ref state) = **state_guard {
+                self.nupc_engines.clear();
+                for ch in 0..self.channels {
+                    let ir_ch = ch % state.ir_channels;
+                    // Reconstruct the time-domain IR from the stored FFT partitions.
+                    // Each partition is PARTITION_SIZE samples zero-padded to FFT_SIZE.
+                    let mut ir_data = Vec::with_capacity(state.num_partitions * PARTITION_SIZE);
+                    for p in 0..state.num_partitions {
+                        // IFFT the partition to get time-domain samples
+                        let mut block = state.partitions[ir_ch][p].clone();
+                        state.fft_inverse.process(&mut block);
+                        let scale = 1.0 / FFT_SIZE as f32;
+                        for i in 0..PARTITION_SIZE {
+                            ir_data.push(block[i].re * scale);
+                        }
+                    }
+                    self.nupc_engines
+                        .push(nupc::NupcEngine::new(&ir_data, PARTITION_SIZE));
+                }
+                log::info!(
+                    "[Convolution] NUPC engines built: {} channels, latency={} samples",
+                    self.nupc_engines.len(),
+                    self.nupc_engines.first().map_or(0, |e| e.latency_samples())
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -439,6 +477,23 @@ impl InPlacePlugin for ConvolutionPlugin {
             None => return Ok(nf),
         };
 
+        // NUPC path: per-channel block processing with non-uniform partitions.
+        // Avoids the UPC's fixed PARTITION_SIZE constraint for lower latency.
+        if !self.nupc_engines.is_empty() && self.nupc_engines.len() == self.channels {
+            let mix = self.mix.next_n(nf);
+            let gain = self.gain_linear.next_n(nf);
+            for frame in 0..nf {
+                let off = frame * self.channels;
+                for ch in 0..self.channels {
+                    let dry = buffer[off + ch];
+                    let wet = self.nupc_engines[ch].process_sample(dry);
+                    buffer[off + ch] = dry * (1.0 - mix) + wet * mix * gain;
+                }
+            }
+            return Ok(nf);
+        }
+
+        // UPC path: uniform partitioned convolution (original code)
         let num_partitions = state.num_partitions;
 
         let mut in_pos = 0;

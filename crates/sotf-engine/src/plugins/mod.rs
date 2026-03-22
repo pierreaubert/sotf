@@ -1,0 +1,2904 @@
+//! Plugin type definitions, settings, and utilities
+
+pub mod chain;
+pub mod eq;
+pub mod matrix;
+pub mod utility;
+
+// Re-export main items from submodules
+pub use eq::EQFilter;
+pub use matrix::{
+    apply_matrix_preset, available_matrix_presets, detect_matrix_preset, resize_matrix,
+    upmixer_output_channels,
+};
+pub use chain::PluginChain;
+pub use utility::{
+    db_to_linear, get_channel_label, get_channel_label_from_config, linear_to_db_string,
+    plugins_to_path_config_json, preset_file_to_path_config_json,
+};
+
+use crate::engine::PluginConfig;
+use math_audio_iir_fir::BiquadFilterType;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use sotf_plugins::{
+    BandCompressorParams, BandExpanderParams, CrossfeedMode, CrossfeedPreset,
+    SpectralTiltCorrection, TiltReferenceFreq,
+};
+
+/// Feature maturity classification for gating experimental features.
+///
+/// Ordering: Prod < Beta < Alpha. A user on `Beta` channel sees Prod + Beta features.
+/// `allows(item_level)` returns true when `self >= item_level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
+pub enum ReleaseChannel {
+    /// Stable, production-ready features (default)
+    #[default]
+    Prod,
+    /// Features in testing, mostly stable
+    Beta,
+    /// Experimental features, may change or break
+    Alpha,
+}
+
+impl ReleaseChannel {
+    pub fn all() -> &'static [ReleaseChannel] {
+        &[
+            ReleaseChannel::Prod,
+            ReleaseChannel::Beta,
+            ReleaseChannel::Alpha,
+        ]
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ReleaseChannel::Prod => "Stable",
+            ReleaseChannel::Beta => "Beta",
+            ReleaseChannel::Alpha => "Alpha",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            ReleaseChannel::Prod => "Only stable, production-ready features",
+            ReleaseChannel::Beta => "Includes beta features in testing",
+            ReleaseChannel::Alpha => "All features including experimental ones",
+        }
+    }
+
+    /// Returns true if this channel level allows access to features at `item_level`.
+    pub fn allows(&self, item_level: ReleaseChannel) -> bool {
+        *self >= item_level
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PluginType {
+    EQ,
+    Gain,
+    Upmixer,
+    Compressor,
+    Limiter,
+    Gate,
+    Expander,
+    MultibandCompressor,
+    MultibandExpander,
+    LoudnessCompensation,
+    FletcherMunson,
+    BinauralDecoder,
+    Convolution,
+    LoudnessMonitor,
+    SpectrumAnalyzer,
+    ChannelMuteSolo,
+    Matrix,
+    XTC,
+    Denoiser,
+    Pnd,
+    ABCompare,
+    BandSplit,
+    BandMerge,
+    Downmix,
+    MonoToStereo,
+    Crossfeed,
+    Delay,
+    Aec,
+    Beamformer,
+    AmbisonicsDecoder,
+}
+
+impl PluginType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::EQ => "EQ",
+            Self::Gain => "Gain",
+            Self::Upmixer => "Upmixer",
+            Self::Compressor => "Compressor",
+            Self::Gate => "Gate",
+            Self::Limiter => "Limiter",
+            Self::Expander => "Expander",
+            Self::MultibandCompressor => "Multiband Compressor",
+            Self::MultibandExpander => "Multiband Expander",
+            Self::LoudnessCompensation => "Loudness Compensation",
+            Self::FletcherMunson => "Fletcher-Munson",
+            Self::BinauralDecoder => "Binaural Decoder",
+            Self::Convolution => "Convolution",
+            Self::LoudnessMonitor => "Loudness Monitor",
+            Self::SpectrumAnalyzer => "Spectrum Analyzer",
+            Self::ChannelMuteSolo => "Channel Mute/Solo",
+            Self::Matrix => "Matrix Mixer",
+            Self::XTC => "Crosstalk Cancellation",
+            Self::Denoiser => "Denoiser",
+            Self::Pnd => "PND Varispeed",
+            Self::ABCompare => "A/B Compare",
+            Self::BandSplit => "Band Split",
+            Self::BandMerge => "Band Merge",
+            Self::Downmix => "Downmix",
+            Self::MonoToStereo => "Mono to Stereo",
+            Self::Crossfeed => "Crossfeed",
+            Self::Delay => "Delay",
+            Self::Aec => "AEC",
+            Self::Beamformer => "Beamformer",
+            Self::AmbisonicsDecoder => "Ambisonics Decoder",
+        }
+    }
+
+    pub fn description(&self) -> &str {
+        match self {
+            Self::EQ => "Parametric Equalizer IIR",
+            Self::Gain => "Simple Volume/Gain Control",
+            Self::Upmixer => "Stereo to Surround 5.1 to 9.1.6",
+            Self::Compressor => "Dynamic Range Compressor",
+            Self::Limiter => "Peak Limiter",
+            Self::Gate => "Noise Gate",
+            Self::Expander => "Dynamic Range Expander with Hysteresis",
+            Self::MultibandCompressor => "Multiband Dynamic Range Compressor",
+            Self::MultibandExpander => "Multiband Dynamic Range Expander",
+            Self::LoudnessCompensation => "Equal Loudness Compensation",
+            Self::FletcherMunson => "Volume-dependent ISO 226 loudness curves",
+            Self::BinauralDecoder => "Multi-channel to Binaural (HRTF)",
+            Self::Convolution => "FFT-based Convolution (IR Processing)",
+            Self::LoudnessMonitor => "Real-time EBU R128 loudness monitoring",
+            Self::SpectrumAnalyzer => "Real-time frequency spectrum analysis",
+            Self::ChannelMuteSolo => "Mute or solo individual channels",
+            Self::Matrix => "Channel routing and mixing matrix",
+            Self::XTC => "Crosstalk cancellation for speaker playback",
+            Self::Denoiser => "Wiener filter denoiser with MCRA noise estimation",
+            Self::Pnd => "Polyphonic note detection and varispeed correction",
+            Self::ABCompare => "A/B comparison with auto-gain loudness matching",
+            Self::BandSplit => "Split audio into low/high frequency bands",
+            Self::BandMerge => "Merge frequency bands back together",
+            Self::Downmix => "Phase-coherent surround to stereo downmix",
+            Self::MonoToStereo => "Convert mono signal to pseudo-stereo",
+            Self::Crossfeed => "Headphone crossfeed for speaker-like listening",
+            Self::Delay => "Simple delay effect with feedback",
+            Self::Aec => "Acoustic Echo Cancellation (PBFDAF + Two-Path + Post-Filter)",
+            Self::Beamformer => "Microphone array beamformer (MVDR / Superdirective / GSC)",
+            Self::AmbisonicsDecoder => "HOA Ambisonics decoder (AllRAD) to speaker layouts",
+        }
+    }
+
+    pub fn all() -> Vec<Self> {
+        vec![
+            Self::EQ,
+            Self::Gain,
+            Self::Upmixer,
+            Self::Compressor,
+            Self::Limiter,
+            Self::Gate,
+            Self::Expander,
+            Self::MultibandCompressor,
+            Self::MultibandExpander,
+            Self::LoudnessCompensation,
+            Self::FletcherMunson,
+            Self::BinauralDecoder,
+            Self::Convolution,
+            Self::LoudnessMonitor,
+            Self::SpectrumAnalyzer,
+            Self::ChannelMuteSolo,
+            Self::Matrix,
+            Self::XTC,
+            Self::Denoiser,
+            Self::Pnd,
+            Self::ABCompare,
+            Self::BandSplit,
+            Self::BandMerge,
+            Self::Downmix,
+            Self::MonoToStereo,
+            Self::Crossfeed,
+            Self::Delay,
+            Self::Aec,
+            Self::Beamformer,
+            Self::AmbisonicsDecoder,
+        ]
+    }
+
+    /// Returns true if this is a monitoring/analyzer plugin (non-processing)
+    pub fn is_monitoring(&self) -> bool {
+        matches!(
+            self,
+            Self::LoudnessMonitor | Self::SpectrumAnalyzer | Self::ChannelMuteSolo
+        )
+    }
+
+    /// Returns the maturity level of this plugin type.
+    pub fn maturity(&self) -> ReleaseChannel {
+        match self {
+            Self::EQ
+            | Self::Gain
+            | Self::Compressor
+            | Self::ChannelMuteSolo
+            | Self::Crossfeed
+            | Self::Delay
+            | Self::Expander
+            | Self::FletcherMunson
+            | Self::Gate
+            | Self::Limiter
+            | Self::LoudnessMonitor
+            | Self::Matrix
+            | Self::MultibandCompressor
+            | Self::MultibandExpander
+            | Self::SpectrumAnalyzer
+            | Self::Upmixer
+            | Self::XTC => ReleaseChannel::Prod,
+
+            Self::ABCompare
+            | Self::BandSplit
+            | Self::BandMerge
+            | Self::Downmix
+            | Self::LoudnessCompensation
+            | Self::MonoToStereo => ReleaseChannel::Beta,
+
+            Self::BinauralDecoder
+            | Self::Convolution
+            | Self::Pnd
+            | Self::Denoiser
+            | Self::Aec
+            | Self::Beamformer
+            | Self::AmbisonicsDecoder => ReleaseChannel::Alpha,
+        }
+    }
+}
+
+// Import param_specs for plugin defaults and serde_param_default! macro
+use sotf_plugins::param_specs::ab_compare as ab_compare_specs;
+use sotf_plugins::param_specs::band_merge as band_merge_specs;
+use sotf_plugins::param_specs::band_split as band_split_specs;
+use sotf_plugins::param_specs::binaural as binaural_specs;
+use sotf_plugins::param_specs::channel_mute_solo as cms_specs;
+use sotf_plugins::param_specs::aec as aec_specs;
+use sotf_plugins::param_specs::ambisonics as ambisonics_specs;
+use sotf_plugins::param_specs::beamformer as beamformer_specs;
+use sotf_plugins::param_specs::compressor as compressor_specs;
+use sotf_plugins::param_specs::convolution as convolution_specs;
+use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
+use sotf_plugins::param_specs::delay as delay_specs;
+use sotf_plugins::param_specs::denoiser as denoiser_specs;
+use sotf_plugins::param_specs::downmix as downmix_specs;
+use sotf_plugins::param_specs::expander as expander_specs;
+use sotf_plugins::param_specs::find_by_key as pk;
+use sotf_plugins::param_specs::fletcher_munson as fm_specs;
+use sotf_plugins::param_specs::gain as gain_specs;
+use sotf_plugins::param_specs::gate as gate_specs;
+use sotf_plugins::param_specs::limiter as limiter_specs;
+use sotf_plugins::param_specs::loudness_compensation as lc_specs;
+use sotf_plugins::param_specs::matrix as matrix_specs;
+use sotf_plugins::param_specs::mono_to_stereo as mono_to_stereo_specs;
+use sotf_plugins::param_specs::multiband_compressor as mb_compressor_specs;
+use sotf_plugins::param_specs::multiband_expander as mb_expander_specs;
+use sotf_plugins::param_specs::pnd as pnd_specs;
+use sotf_plugins::param_specs::spectrum as spectrum_specs;
+use sotf_plugins::param_specs::upmixer as upmixer_specs;
+use sotf_plugins::param_specs::xtc as xtc_specs;
+
+sotf_plugins::serde_param_default! {
+    upmixer_specs::PARAMS;
+    fn default_upmixer_subharmonic_gain() -> f64 = "subharmonic_gain";
+    fn default_upmixer_hr_sharpen() -> f64 = "hr_sharpen";
+    fn default_upmixer_safety_cap_db() -> f64 = "safety_cap_db";
+    fn default_upmixer_center_spread() -> f64 = "center_spread";
+    fn default_upmixer_surround_direct_bleed() -> f64 = "surround_direct_bleed";
+    fn default_upmixer_rear_late_reflection() -> f64 = "rear_late_reflection";
+    fn default_upmixer_subharmonic_freq_hz() -> f64 = "subharmonic_freq_hz";
+    fn default_upmixer_subharmonic_attack_ms() -> f64 = "subharmonic_attack_ms";
+    fn default_upmixer_subharmonic_release_ms() -> f64 = "subharmonic_release_ms";
+    fn default_upmixer_decorrelation_lfo_rate_hz() -> f64 = "decorrelation_lfo_rate_hz";
+    fn default_upmixer_velvet_noise_duration_ms() -> f64 = "velvet_noise_duration_ms";
+    fn default_upmixer_velvet_noise_density() -> f64 = "velvet_noise_density";
+    fn default_upmixer_height_hf_cap_hz() -> f64 = "height_hf_cap_hz";
+    fn default_upmixer_height_transient_reduction() -> f64 = "height_transient_reduction";
+    fn default_upmixer_height_direct_leak() -> f64 = "height_direct_leak";
+    fn default_upmixer_rear_ambient_boost() -> f64 = "rear_ambient_boost";
+    fn default_upmixer_ambient_boost() -> f64 = "ambient_boost";
+    fn default_upmixer_dialogue_weight() -> f64 = "dialogue_weight";
+    fn default_upmixer_dialogue_centroid_weight() -> f64 = "dialogue_centroid_weight";
+    fn default_upmixer_dialogue_variance_weight() -> f64 = "dialogue_variance_weight";
+    fn default_upmixer_dialogue_coherence_weight() -> f64 = "dialogue_coherence_weight";
+    fn default_upmixer_voice_freq_min_hz() -> f64 = "voice_freq_min_hz";
+    fn default_upmixer_voice_freq_max_hz() -> f64 = "voice_freq_max_hz";
+    fn default_upmixer_enable_hr_direct() -> bool = "enable_hr_direct";
+    fn default_upmixer_multi_source_threshold() -> f64 = "multi_source_threshold";
+    fn default_upmixer_frequency_resolution() -> usize = "frequency_resolution";
+}
+
+sotf_plugins::serde_param_default! {
+    gain_specs::PARAMS;
+    fn default_gain_smoothing_ms() -> f64 = "smoothing_ms";
+}
+
+sotf_plugins::serde_param_default! {
+    compressor_specs::PARAMS;
+    fn default_compressor_link_channels() -> bool = "link_channels";
+    fn default_compressor_sidechain_hpf_hz() -> f64 = "sidechain_hpf_hz";
+}
+
+fn default_compressor_detection_mode() -> String {
+    "Peak".to_string()
+}
+
+sotf_plugins::serde_param_default! {
+    binaural_specs::PARAMS;
+    fn default_binaural_enable_optimization() -> bool = "enable_optimization";
+}
+
+sotf_plugins::serde_param_default! {
+    lc_specs::PARAMS;
+    fn default_auto_gain_max_db() -> f64 = "auto_gain_max_db";
+    fn default_auto_gain_smoothing_ms() -> f64 = "auto_gain_smoothing_ms";
+    fn default_lc_mid_enabled() -> bool = "mid_enabled";
+    fn default_lc_mid_freq() -> f64 = "mid_freq";
+    fn default_lc_mid_gain() -> f64 = "mid_gain";
+    fn default_lc_mid_q() -> f64 = "mid_q";
+}
+
+sotf_plugins::serde_param_default! {
+    fm_specs::PARAMS;
+    fn default_fm_reference_level_db() -> f64 = "reference_level_db";
+    fn default_fm_enabled() -> bool = "enabled";
+    fn default_fm_smoothing_ms() -> f64 = "smoothing_ms";
+    fn default_fm_auto_gain_max_db() -> f64 = "auto_gain_max_db";
+    fn default_fm_auto_gain_smoothing_ms() -> f64 = "auto_gain_smoothing_ms";
+    fn default_fm_band1_freq() -> f64 = "band1_freq";
+    fn default_fm_band1_q() -> f64 = "band1_q";
+    fn default_fm_band1_max_gain() -> f64 = "band1_max_gain";
+    fn default_fm_band1_slope() -> f64 = "band1_slope";
+    fn default_fm_band2_freq() -> f64 = "band2_freq";
+    fn default_fm_band2_q() -> f64 = "band2_q";
+    fn default_fm_band2_max_gain() -> f64 = "band2_max_gain";
+    fn default_fm_band2_slope() -> f64 = "band2_slope";
+    fn default_fm_band3_freq() -> f64 = "band3_freq";
+    fn default_fm_band3_q() -> f64 = "band3_q";
+    fn default_fm_band3_max_gain() -> f64 = "band3_max_gain";
+    fn default_fm_band3_slope() -> f64 = "band3_slope";
+    fn default_fm_band4_freq() -> f64 = "band4_freq";
+    fn default_fm_band4_q() -> f64 = "band4_q";
+    fn default_fm_band4_max_gain() -> f64 = "band4_max_gain";
+    fn default_fm_band4_slope() -> f64 = "band4_slope";
+}
+
+sotf_plugins::serde_param_default! {
+    limiter_specs::PARAMS;
+    fn default_limiter_lookahead_ms() -> f64 = "lookahead";
+    fn default_limiter_soft() -> bool = "soft";
+    fn default_limiter_mix() -> f64 = "mix";
+}
+
+sotf_plugins::serde_param_default! {
+    gate_specs::PARAMS;
+    fn default_gate_hold_ms() -> f64 = "hold";
+    fn default_gate_mix() -> f64 = "mix";
+    fn default_gate_link_channels() -> bool = "link_channels";
+    fn default_gate_range_db() -> f64 = "range_db";
+}
+
+sotf_plugins::serde_param_default! {
+    expander_specs::PARAMS;
+    fn default_expander_threshold_db() -> f64 = "threshold";
+    fn default_expander_ratio() -> f64 = "ratio";
+    fn default_expander_attack_ms() -> f64 = "attack";
+    fn default_expander_release_ms() -> f64 = "release";
+    fn default_expander_range_db() -> f64 = "range";
+    fn default_expander_knee_db() -> f64 = "knee";
+    fn default_expander_hysteresis_db() -> f64 = "hysteresis";
+    fn default_expander_hold_ms() -> f64 = "hold";
+    fn default_expander_mix() -> f64 = "mix";
+    fn default_expander_link_channels() -> bool = "link_channels";
+    fn default_expander_sidechain_hpf_hz() -> f64 = "sidechain_hpf_hz";
+}
+
+fn default_expander_detection_mode() -> String {
+    "Peak".to_string()
+}
+
+sotf_plugins::serde_param_default! {
+    mb_compressor_specs::GLOBAL_PARAMS;
+    fn default_mb_compressor_num_bands() -> usize = "num_bands";
+    fn default_mb_compressor_crossover_preset() -> i32 = "crossover_preset";
+    fn default_mb_compressor_crossover_freq_1() -> f64 = "crossover_freq_1";
+    fn default_mb_compressor_crossover_freq_2() -> f64 = "crossover_freq_2";
+    fn default_mb_compressor_crossover_freq_3() -> f64 = "crossover_freq_3";
+    fn default_mb_compressor_crossover_freq_4() -> f64 = "crossover_freq_4";
+    fn default_mb_compressor_threshold_db() -> f64 = "threshold";
+    fn default_mb_compressor_ratio() -> f64 = "ratio";
+    fn default_mb_compressor_attack_ms() -> f64 = "attack";
+    fn default_mb_compressor_release_ms() -> f64 = "release";
+    fn default_mb_compressor_knee_db() -> f64 = "knee";
+    fn default_mb_compressor_mix() -> f64 = "mix";
+    fn default_mb_compressor_link_channels() -> bool = "link_channels";
+}
+
+sotf_plugins::serde_param_default! {
+    mb_expander_specs::GLOBAL_PARAMS;
+    fn default_mb_expander_num_bands() -> usize = "num_bands";
+    fn default_mb_expander_crossover_preset() -> i32 = "crossover_preset";
+    fn default_mb_expander_crossover_freq_1() -> f64 = "crossover_freq_1";
+    fn default_mb_expander_crossover_freq_2() -> f64 = "crossover_freq_2";
+    fn default_mb_expander_crossover_freq_3() -> f64 = "crossover_freq_3";
+    fn default_mb_expander_crossover_freq_4() -> f64 = "crossover_freq_4";
+    fn default_mb_expander_threshold_db() -> f64 = "threshold";
+    fn default_mb_expander_ratio() -> f64 = "ratio";
+    fn default_mb_expander_attack_ms() -> f64 = "attack";
+    fn default_mb_expander_release_ms() -> f64 = "release";
+    fn default_mb_expander_range_db() -> f64 = "range";
+    fn default_mb_expander_knee_db() -> f64 = "knee";
+    fn default_mb_expander_hysteresis_db() -> f64 = "hysteresis";
+    fn default_mb_expander_hold_ms() -> f64 = "hold";
+    fn default_mb_expander_mix() -> f64 = "mix";
+    fn default_mb_expander_link_channels() -> bool = "link_channels";
+}
+
+fn default_mb_expander_detection_mode() -> String {
+    "Peak".to_string()
+}
+
+sotf_plugins::serde_param_default! {
+    xtc_specs::PARAMS;
+    fn default_xtc_distance_m() -> f64 = "distance_m";
+    fn default_xtc_speaker_angle_deg() -> f64 = "speaker_angle_deg";
+    fn default_xtc_head_radius_m() -> f64 = "head_radius_m";
+    fn default_xtc_beta_base() -> f64 = "beta_base";
+    fn default_xtc_beta_low_freq_boost() -> f64 = "beta_low_freq_boost";
+    fn default_xtc_beta_high_freq_boost() -> f64 = "beta_high_freq_boost";
+    fn default_xtc_head_shadow_cutoff_hz() -> f64 = "head_shadow_cutoff_hz";
+    fn default_xtc_head_shadow_slope() -> f64 = "head_shadow_slope_db_per_octave";
+    fn default_xtc_max_gain_db() -> f64 = "max_gain_db";
+    fn default_xtc_auto_gain_enabled() -> bool = "auto_gain_enabled";
+    fn default_xtc_auto_gain_max_db() -> f64 = "auto_gain_max_db";
+    fn default_xtc_auto_gain_smoothing_ms() -> f64 = "auto_gain_smoothing_ms";
+    fn default_xtc_room_width() -> f64 = "room_width_m";
+    fn default_xtc_room_depth() -> f64 = "room_depth_m";
+    fn default_xtc_wall_absorption() -> f64 = "wall_absorption";
+    fn default_xtc_reflection_beta_boost() -> f64 = "reflection_beta_boost";
+    fn default_xtc_spectral_normalization() -> bool = "spectral_normalization";
+    fn default_xtc_room_reflections_enabled() -> bool = "room_reflections_enabled";
+    fn default_xtc_pinna_model_enabled() -> bool = "pinna_model_enabled";
+}
+
+fn default_xtc_head_tracking_smooth_s() -> f64 {
+    pk(xtc_specs::PARAMS, "head_tracking_smooth_s").default_f64()
+}
+
+sotf_plugins::serde_param_default! {
+    denoiser_specs::PARAMS;
+    fn default_denoiser_reduction_db() -> f64 = "reduction_db";
+    fn default_denoiser_floor_db() -> f64 = "floor_db";
+    fn default_denoiser_smoothing() -> f64 = "smoothing";
+    fn default_denoiser_attack_ms() -> f64 = "attack_ms";
+    fn default_denoiser_release_ms() -> f64 = "release_ms";
+    fn default_denoiser_low_latency() -> bool = "low_latency";
+    fn default_denoiser_polyphonic_detection() -> bool = "polyphonic_detection";
+    fn default_denoiser_psychoacoustic_masking() -> bool = "psychoacoustic_masking";
+    fn default_denoiser_use_captured_profile() -> bool = "use_captured_profile";
+    fn default_denoiser_transparency() -> f64 = "transparency";
+    fn default_denoiser_dd_enabled() -> bool = "dd_enabled";
+    fn default_denoiser_dd_alpha() -> f64 = "dd_alpha";
+    fn default_denoiser_mcra_alpha_s() -> f64 = "mcra_alpha_s";
+    fn default_denoiser_mcra_alpha_p() -> f64 = "mcra_alpha_p";
+    fn default_denoiser_mcra_l() -> usize = "mcra_l";
+    fn default_denoiser_mcra_delta() -> f64 = "mcra_delta";
+    fn default_denoiser_crack_sensitivity() -> f64 = "crack_sensitivity";
+    fn default_denoiser_transient_enabled() -> bool = "transient_enabled";
+    fn default_denoiser_spectral_smoothing_enabled() -> bool = "spectral_smoothing_enabled";
+    fn default_denoiser_temporal_smoothing_enabled() -> bool = "temporal_smoothing_enabled";
+    fn default_denoiser_hiss_enabled() -> bool = "hiss_enabled";
+    fn default_denoiser_hiss_threshold_db() -> f64 = "hiss_threshold_db";
+    fn default_denoiser_hiss_frequency_hz() -> f64 = "hiss_frequency_hz";
+    fn default_denoiser_hiss_strength() -> f64 = "hiss_strength";
+    fn default_denoiser_spectral_sub_enabled() -> bool = "spectral_sub_enabled";
+    fn default_denoiser_spectral_sub_alpha() -> f64 = "spectral_sub_alpha";
+    fn default_denoiser_spectral_sub_beta() -> f64 = "spectral_sub_beta";
+    fn default_denoiser_algorithm() -> usize = "algorithm";
+}
+
+fn default_use_nupc() -> bool {
+    true
+}
+
+sotf_plugins::serde_param_default! {
+    pnd_specs::PARAMS;
+    fn default_pnd_correction_strength() -> f64 = "correction_strength";
+    fn default_pnd_analysis_window_ms() -> f64 = "analysis_window_ms";
+    fn default_pnd_drift_smoothing() -> f64 = "drift_smoothing";
+    fn default_pnd_multi_channel_analysis() -> bool = "multi_channel_analysis";
+    fn default_pnd_confidence_threshold() -> f64 = "confidence_threshold";
+}
+
+sotf_plugins::serde_param_default! {
+    ab_compare_specs::PARAMS;
+    fn default_ab_auto_gain_enabled() -> bool = "auto_gain_enabled";
+    fn default_ab_max_auto_gain_db() -> f64 = "max_auto_gain_db";
+    fn default_ab_gain_smoothing_ms() -> f64 = "gain_smoothing_ms";
+    fn default_ab_mix_transition_ms() -> f64 = "mix_transition_ms";
+}
+
+fn default_ab_path_config() -> String {
+    r#"{"type":"None"}"#.to_string()
+}
+
+sotf_plugins::serde_param_default! {
+    band_split_specs::PARAMS;
+    fn default_band_split_frequency() -> f64 = "frequency";
+}
+
+fn default_band_split_crossover_type() -> String {
+    let spec = pk(band_split_specs::PARAMS, "type");
+    spec.choice_labels()[spec.default_usize()].to_string()
+}
+
+sotf_plugins::serde_param_default! {
+    band_merge_specs::PARAMS;
+    fn default_band_merge_bands() -> usize = "bands";
+}
+
+sotf_plugins::serde_param_default! {
+    downmix_specs::PARAMS;
+    fn default_downmix_center_gain_db() -> f64 = "center_gain_db";
+    fn default_downmix_surround_gain_db() -> f64 = "surround_gain_db";
+    fn default_downmix_height_gain_db() -> f64 = "height_gain_db";
+    fn default_downmix_lfe_gain_db() -> f64 = "lfe_gain_db";
+    fn default_downmix_phase_coherence() -> bool = "phase_coherence";
+    fn default_downmix_phase_blend_low_hz() -> f64 = "phase_blend_low_hz";
+    fn default_downmix_phase_blend_high_hz() -> f64 = "phase_blend_high_hz";
+}
+
+sotf_plugins::serde_param_default! {
+    mono_to_stereo_specs::PARAMS;
+    fn default_mono_to_stereo_width() -> f64 = "stereo_width";
+    fn default_mono_to_stereo_haas_delay_ms() -> f64 = "haas_delay_ms";
+    fn default_mono_to_stereo_enable_comp_eq() -> bool = "enable_comp_eq";
+    fn default_mono_to_stereo_comp_eq_depth_db() -> f64 = "comp_eq_depth_db";
+    fn default_mono_to_stereo_decor_low_hz() -> f64 = "decor_low_hz";
+    fn default_mono_to_stereo_decor_high_hz() -> f64 = "decor_high_hz";
+    fn default_mono_to_stereo_freq_dependent() -> bool = "freq_dependent";
+}
+
+sotf_plugins::serde_param_default! {
+    crossfeed_specs::PARAMS;
+    fn default_crossfeed_bauer_fcut_hz() -> f64 = "bauer_fcut_hz";
+    fn default_crossfeed_bauer_feed_db() -> f64 = "bauer_feed_db";
+    fn default_crossfeed_meier_level() -> f64 = "meier_level";
+    fn default_crossfeed_mb_low_freq_hz() -> f64 = "mb_low_freq_hz";
+    fn default_crossfeed_mb_mid_high_freq_hz() -> f64 = "mb_mid_high_freq_hz";
+    fn default_crossfeed_mb_low_feed_db() -> f64 = "mb_low_feed_db";
+    fn default_crossfeed_mb_mid_feed_db() -> f64 = "mb_mid_feed_db";
+    fn default_crossfeed_mb_high_feed_db() -> f64 = "mb_high_feed_db";
+    fn default_crossfeed_autogain_target_lufs() -> f64 = "autogain_target_lufs";
+    fn default_crossfeed_autogain_max_gain_db() -> f64 = "autogain_max_gain_db";
+    fn default_crossfeed_autogain_smoothing_ms() -> f64 = "autogain_smoothing_ms";
+    fn default_crossfeed_mix() -> f64 = "mix";
+    fn default_delay_ms() -> f64 = "delay_ms";
+    fn default_delay_feedback() -> f64 = "feedback";
+    fn default_delay_mix() -> f64 = "mix";
+}
+
+sotf_plugins::serde_param_default! {
+    aec_specs::PARAMS;
+    fn default_aec_echo_tail_ms() -> f64 = "echo_tail_ms";
+    fn default_aec_step_size() -> f64 = "step_size";
+    fn default_aec_post_filter_enabled() -> bool = "post_filter_enabled";
+}
+
+sotf_plugins::serde_param_default! {
+    beamformer_specs::PARAMS;
+    fn default_beamformer_num_mics() -> usize = "num_mics";
+    fn default_beamformer_mic_spacing_cm() -> f64 = "mic_spacing_cm";
+    fn default_beamformer_steer_angle_deg() -> f64 = "steer_angle_deg";
+    fn default_beamformer_type() -> usize = "beamformer_type";
+}
+
+fn default_ambisonics_order() -> usize {
+    pk(ambisonics_specs::PARAMS, "order").default_usize()
+}
+fn default_ambisonics_target_layout() -> String {
+    // Default choice index 0 maps to "5.1"
+    "5.1".to_string()
+}
+fn default_ambisonics_max_re() -> bool {
+    pk(ambisonics_specs::PARAMS, "max_re_weighting").default_bool()
+}
+
+sotf_plugins::serde_param_default! {
+    cms_specs::PARAMS;
+    fn default_cms_dim_gain_db() -> f64 = "dim_gain_db";
+    fn default_cms_fade_ms() -> f64 = "fade_ms";
+}
+
+fn default_spectrum_num_bins() -> usize {
+    pk(spectrum_specs::PARAMS, "num_bins").default_usize()
+}
+fn default_spectrum_min_freq() -> f32 {
+    pk(spectrum_specs::PARAMS, "min_freq").default_f64() as f32
+}
+fn default_spectrum_max_freq() -> f32 {
+    pk(spectrum_specs::PARAMS, "max_freq").default_f64() as f32
+}
+fn default_spectrum_smoothing() -> f32 {
+    pk(spectrum_specs::PARAMS, "smoothing").default_f64() as f32
+}
+fn default_spectrum_tilt_correction() -> SpectralTiltCorrection {
+    SpectralTiltCorrection::None
+}
+fn default_spectrum_tilt_reference() -> TiltReferenceFreq {
+    TiltReferenceFreq::Standard
+}
+
+fn default_channels() -> usize {
+    2
+}
+
+fn default_max_filters() -> usize {
+    10
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PluginSettings {
+    EQ {
+        #[serde(default = "default_channels")]
+        channels: usize,
+        /// Global filters applied to all channels (used when per_channel_mode is false)
+        filters: Vec<EQFilter>,
+        /// Per-channel filters (used when per_channel_mode is true)
+        /// Index corresponds to channel index
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel_filters: Option<Vec<Vec<EQFilter>>>,
+        /// Whether to use per-channel mode (default: false = all channels share same EQ)
+        #[serde(default)]
+        per_channel_mode: bool,
+        /// Maximum number of filters to display/use in the UI
+        #[serde(default = "default_max_filters")]
+        max_filters: usize,
+        /// Use Transposed Direct Form II for biquad filters
+        #[serde(default)]
+        tdf2: bool,
+    },
+    Gain {
+        #[serde(default = "default_channels")]
+        channels: usize,
+        gain_db: f64,
+        #[serde(default = "default_gain_smoothing_ms")]
+        smoothing_ms: f64,
+    },
+    Upmixer {
+        speaker_config: String,
+        // Gain parameters (vertical sliders)
+        gain_front_direct: f64,
+        gain_front_ambient: f64,
+        gain_rear_ambient: f64,
+        height_gain: f64,
+        stereo_width: f64,
+        #[serde(default = "default_upmixer_center_spread")]
+        center_spread: f64,
+        #[serde(default = "default_upmixer_surround_direct_bleed")]
+        surround_direct_bleed: f64,
+        #[serde(default = "default_upmixer_rear_late_reflection")]
+        rear_late_reflection: f64,
+        // LFE parameters
+        lfe_cutoff_hz: f64,
+        lfe_gain: f64,
+        bandpass_hz: f64,
+        // Sub-harmonic parameters
+        #[serde(default)] // false
+        enable_subharmonic_synth: bool,
+        #[serde(default = "default_upmixer_subharmonic_gain")]
+        subharmonic_gain: f64,
+        #[serde(default = "default_upmixer_subharmonic_freq_hz")]
+        subharmonic_freq_hz: f64,
+        #[serde(default = "default_upmixer_subharmonic_attack_ms")]
+        subharmonic_attack_ms: f64,
+        #[serde(default = "default_upmixer_subharmonic_release_ms")]
+        subharmonic_release_ms: f64,
+        // Decorrelation parameters
+        #[serde(default)] // 0
+        decorrelation_mode: usize,
+        #[serde(default = "default_upmixer_decorrelation_lfo_rate_hz")]
+        decorrelation_lfo_rate_hz: f64,
+        #[serde(default = "default_upmixer_velvet_noise_duration_ms")]
+        velvet_noise_duration_ms: f64,
+        #[serde(default = "default_upmixer_velvet_noise_density")]
+        velvet_noise_density: f64,
+        // Height parameters
+        #[serde(default = "default_upmixer_enable_hr_direct")]
+        enable_hr_direct: bool,
+        #[serde(default = "default_upmixer_hr_sharpen")]
+        hr_sharpen: f64,
+        #[serde(default = "default_upmixer_height_hf_cap_hz")]
+        height_hf_cap_hz: f64,
+        #[serde(default = "default_upmixer_height_transient_reduction")]
+        height_transient_reduction: f64,
+        #[serde(default = "default_upmixer_height_direct_leak")]
+        height_direct_leak: f64,
+        // Ambient parameters
+        #[serde(default = "default_upmixer_ambient_boost")]
+        ambient_boost: f64,
+        #[serde(default = "default_upmixer_safety_cap_db")]
+        safety_cap_db: f64,
+        // Analysis window parameters
+        #[serde(default)]
+        low_latency: bool,
+        #[serde(default = "default_upmixer_frequency_resolution")]
+        frequency_resolution: usize,
+        #[serde(default = "default_upmixer_rear_ambient_boost")]
+        rear_ambient_boost: f64,
+        // Dialogue parameters
+        #[serde(default = "default_upmixer_dialogue_weight")]
+        dialogue_weight: f64,
+        #[serde(default = "default_upmixer_voice_freq_min_hz")]
+        voice_freq_min_hz: f64,
+        #[serde(default = "default_upmixer_voice_freq_max_hz")]
+        voice_freq_max_hz: f64,
+        #[serde(default = "default_upmixer_dialogue_centroid_weight")]
+        dialogue_centroid_weight: f64,
+        #[serde(default = "default_upmixer_dialogue_variance_weight")]
+        dialogue_variance_weight: f64,
+        #[serde(default = "default_upmixer_dialogue_coherence_weight")]
+        dialogue_coherence_weight: f64,
+        // Diagnostic bypass parameters
+        #[serde(default)] // false
+        bypass_decorrelation: bool,
+        #[serde(default)] // false
+        bypass_transient_detection: bool,
+        #[serde(default)] // false
+        bypass_all_processing: bool,
+        // ML vocal detection
+        #[serde(default)] // false
+        enable_ml_detection: bool,
+        // Multi-source extraction (2nd eigenvector)
+        #[serde(default)]
+        multi_source_extraction: bool,
+        #[serde(default = "default_upmixer_multi_source_threshold")]
+        multi_source_threshold: f64,
+    },
+    Compressor {
+        threshold_db: f64,
+        ratio: f64,
+        attack_ms: f64,
+        release_ms: f64,
+        knee_db: f64,
+        makeup_gain_db: f64,
+        mix: f64,
+        #[serde(default)] // false (matches plugin default)
+        auto_makeup: bool,
+        #[serde(default = "default_compressor_link_channels")]
+        link_channels: bool,
+        #[serde(default = "default_compressor_sidechain_hpf_hz")]
+        sidechain_hpf_hz: f64,
+        #[serde(default = "default_compressor_detection_mode")]
+        detection_mode: String,
+        #[serde(default)]
+        lookahead_ms: f64,
+        #[serde(default)]
+        program_dependent_release: bool,
+        #[serde(default)]
+        measured_auto_makeup: bool,
+    },
+    Limiter {
+        threshold_db: f64,
+        release_ms: f64,
+        #[serde(default = "default_limiter_lookahead_ms")]
+        lookahead_ms: f64,
+        #[serde(default = "default_limiter_soft")]
+        soft: bool,
+        #[serde(default)]
+        true_peak: bool,
+        #[serde(default)]
+        dual_release: bool,
+        #[serde(default = "default_limiter_mix")]
+        mix: f64,
+    },
+    Gate {
+        threshold_db: f64,
+        ratio: f64,
+        attack_ms: f64,
+        release_ms: f64,
+        #[serde(default = "default_gate_hold_ms")]
+        hold_ms: f64,
+        #[serde(default = "default_gate_mix")]
+        mix: f64,
+        #[serde(default = "default_gate_link_channels")]
+        link_channels: bool,
+        #[serde(default)] // 0.0
+        sidechain_hpf_hz: f64,
+        #[serde(default = "default_gate_range_db")]
+        range_db: f64,
+        #[serde(default)]
+        hysteresis_db: f64,
+        #[serde(default)]
+        knee_db: f64,
+        #[serde(default)]
+        lookahead_ms: f64,
+    },
+    Expander {
+        #[serde(default = "default_expander_threshold_db")]
+        threshold_db: f64,
+        #[serde(default = "default_expander_ratio")]
+        ratio: f64,
+        #[serde(default = "default_expander_attack_ms")]
+        attack_ms: f64,
+        #[serde(default = "default_expander_release_ms")]
+        release_ms: f64,
+        #[serde(default = "default_expander_range_db")]
+        range_db: f64,
+        #[serde(default = "default_expander_knee_db")]
+        knee_db: f64,
+        #[serde(default = "default_expander_hysteresis_db")]
+        hysteresis_db: f64,
+        #[serde(default = "default_expander_hold_ms")]
+        hold_ms: f64,
+        #[serde(default = "default_expander_mix")]
+        mix: f64,
+        #[serde(default = "default_expander_link_channels")]
+        link_channels: bool,
+        #[serde(default = "default_expander_sidechain_hpf_hz")]
+        sidechain_hpf_hz: f64,
+        #[serde(default)]
+        auto_makeup: bool,
+        #[serde(default)]
+        lookahead_ms: f64,
+        #[serde(default = "default_expander_detection_mode")]
+        detection_mode: String,
+        #[serde(default)]
+        measured_auto_makeup: bool,
+    },
+    MultibandCompressor {
+        #[serde(default = "default_mb_compressor_num_bands")]
+        num_bands: usize,
+        #[serde(default = "default_mb_compressor_crossover_preset")]
+        crossover_preset: i32,
+        #[serde(default = "default_mb_compressor_crossover_freq_1")]
+        crossover_freq_1: f64,
+        #[serde(default = "default_mb_compressor_crossover_freq_2")]
+        crossover_freq_2: f64,
+        #[serde(default = "default_mb_compressor_crossover_freq_3")]
+        crossover_freq_3: f64,
+        #[serde(default = "default_mb_compressor_crossover_freq_4")]
+        crossover_freq_4: f64,
+        #[serde(default = "default_mb_compressor_threshold_db")]
+        threshold_db: f64,
+        #[serde(default = "default_mb_compressor_ratio")]
+        ratio: f64,
+        #[serde(default = "default_mb_compressor_attack_ms")]
+        attack_ms: f64,
+        #[serde(default = "default_mb_compressor_release_ms")]
+        release_ms: f64,
+        #[serde(default = "default_mb_compressor_knee_db")]
+        knee_db: f64,
+        #[serde(default = "default_mb_compressor_mix")]
+        mix: f64,
+        #[serde(default = "default_mb_compressor_link_channels")]
+        link_channels: bool,
+        #[serde(default)]
+        per_band_lookahead_ms: f64,
+        #[serde(default)]
+        bands: Vec<BandCompressorParams>,
+    },
+    MultibandExpander {
+        #[serde(default = "default_mb_expander_num_bands")]
+        num_bands: usize,
+        #[serde(default = "default_mb_expander_crossover_preset")]
+        crossover_preset: i32,
+        #[serde(default = "default_mb_expander_crossover_freq_1")]
+        crossover_freq_1: f64,
+        #[serde(default = "default_mb_expander_crossover_freq_2")]
+        crossover_freq_2: f64,
+        #[serde(default = "default_mb_expander_crossover_freq_3")]
+        crossover_freq_3: f64,
+        #[serde(default = "default_mb_expander_crossover_freq_4")]
+        crossover_freq_4: f64,
+        #[serde(default = "default_mb_expander_threshold_db")]
+        threshold_db: f64,
+        #[serde(default = "default_mb_expander_ratio")]
+        ratio: f64,
+        #[serde(default = "default_mb_expander_attack_ms")]
+        attack_ms: f64,
+        #[serde(default = "default_mb_expander_release_ms")]
+        release_ms: f64,
+        #[serde(default = "default_mb_expander_range_db")]
+        range_db: f64,
+        #[serde(default = "default_mb_expander_knee_db")]
+        knee_db: f64,
+        #[serde(default = "default_mb_expander_hysteresis_db")]
+        hysteresis_db: f64,
+        #[serde(default = "default_mb_expander_hold_ms")]
+        hold_ms: f64,
+        #[serde(default = "default_mb_expander_mix")]
+        mix: f64,
+        #[serde(default = "default_mb_expander_link_channels")]
+        link_channels: bool,
+        #[serde(default = "default_mb_expander_detection_mode")]
+        detection_mode: String,
+        #[serde(default)]
+        bands: Vec<BandExpanderParams>,
+    },
+    LoudnessCompensation {
+        low_freq: f64,
+        low_gain: f64,
+        high_freq: f64,
+        high_gain: f64,
+        #[serde(default = "default_lc_mid_enabled")]
+        mid_enabled: bool,
+        #[serde(default = "default_lc_mid_freq")]
+        mid_freq: f64,
+        #[serde(default = "default_lc_mid_gain")]
+        mid_gain: f64,
+        #[serde(default = "default_lc_mid_q")]
+        mid_q: f64,
+        #[serde(default)]
+        auto_gain_enabled: bool,
+        #[serde(default = "default_auto_gain_max_db")]
+        auto_gain_max_db: f64,
+        #[serde(default = "default_auto_gain_smoothing_ms")]
+        auto_gain_smoothing_ms: f64,
+    },
+    FletcherMunson {
+        /// Current playback volume (set by engine/UI)
+        #[serde(default)]
+        playback_volume_db: f64,
+        /// Reference level where response is flat
+        #[serde(default = "default_fm_reference_level_db")]
+        reference_level_db: f64,
+        /// Enabled bypass switch
+        #[serde(default = "default_fm_enabled")]
+        enabled: bool,
+        /// Band 1 (sub-bass) parameters
+        #[serde(default = "default_fm_band1_freq")]
+        band1_freq: f64,
+        #[serde(default = "default_fm_band1_q")]
+        band1_q: f64,
+        #[serde(default = "default_fm_band1_max_gain")]
+        band1_max_gain: f64,
+        #[serde(default = "default_fm_band1_slope")]
+        band1_slope: f64,
+        /// Band 2 (mid-bass) parameters
+        #[serde(default = "default_fm_band2_freq")]
+        band2_freq: f64,
+        #[serde(default = "default_fm_band2_q")]
+        band2_q: f64,
+        #[serde(default = "default_fm_band2_max_gain")]
+        band2_max_gain: f64,
+        #[serde(default = "default_fm_band2_slope")]
+        band2_slope: f64,
+        /// Band 3 (presence) parameters
+        #[serde(default = "default_fm_band3_freq")]
+        band3_freq: f64,
+        #[serde(default = "default_fm_band3_q")]
+        band3_q: f64,
+        #[serde(default = "default_fm_band3_max_gain")]
+        band3_max_gain: f64,
+        #[serde(default = "default_fm_band3_slope")]
+        band3_slope: f64,
+        /// Band 4 (air/brilliance) parameters
+        #[serde(default = "default_fm_band4_freq")]
+        band4_freq: f64,
+        #[serde(default = "default_fm_band4_q")]
+        band4_q: f64,
+        #[serde(default = "default_fm_band4_max_gain")]
+        band4_max_gain: f64,
+        #[serde(default = "default_fm_band4_slope")]
+        band4_slope: f64,
+        /// Smoothing time for gain transitions (ms)
+        #[serde(default = "default_fm_smoothing_ms")]
+        smoothing_ms: f64,
+        /// Auto-gain enabled
+        #[serde(default)]
+        auto_gain_enabled: bool,
+        /// Auto-gain maximum correction in dB
+        #[serde(default = "default_fm_auto_gain_max_db")]
+        auto_gain_max_db: f64,
+        /// Auto-gain smoothing time in ms
+        #[serde(default = "default_fm_auto_gain_smoothing_ms")]
+        auto_gain_smoothing_ms: f64,
+        /// Auto-gain loudness type (0 = Momentary, 1 = ShortTerm)
+        #[serde(default)]
+        auto_gain_loudness_type: i32,
+    },
+    BinauralDecoder {
+        sofa_file: String,
+        input_channels: usize,
+        #[serde(default = "default_binaural_enable_optimization")]
+        enable_optimization: bool,
+        #[serde(default)] // 0.0
+        externalization: f64,
+        #[serde(default)] // 0.0
+        near_field_strength: f64,
+    },
+    Convolution {
+        ir_file: String,
+        mix: f64,
+        gain_db: f64,
+        #[serde(default = "default_use_nupc")]
+        use_nupc: bool,
+    },
+    LoudnessMonitor,
+    SpectrumAnalyzer {
+        #[serde(default = "default_spectrum_num_bins")]
+        num_bins: usize,
+        #[serde(default = "default_spectrum_min_freq")]
+        min_freq: f32,
+        #[serde(default = "default_spectrum_max_freq")]
+        max_freq: f32,
+        #[serde(default = "default_spectrum_smoothing")]
+        smoothing: f32,
+        #[serde(default = "default_spectrum_tilt_correction")]
+        tilt_correction: SpectralTiltCorrection,
+        #[serde(default = "default_spectrum_tilt_reference")]
+        tilt_reference: TiltReferenceFreq,
+    },
+    ChannelMuteSolo {
+        enabled: bool,
+        #[serde(default = "default_cms_dim_gain_db")]
+        dim_gain_db: f64,
+        #[serde(default = "default_cms_fade_ms")]
+        fade_ms: f64,
+        channel_states: Vec<sotf_plugins::ChannelState>,
+    },
+    Matrix {
+        input_channels: usize,
+        output_channels: usize,
+        matrix: Vec<f32>, // Row-major: matrix[out * in_count + in] = linear_gain
+        #[serde(default)]
+        channel_states: Vec<sotf_plugins::ChannelState>,
+    },
+    XTC {
+        #[serde(default = "default_xtc_distance_m")]
+        distance_m: f64,
+        #[serde(default = "default_xtc_speaker_angle_deg")]
+        speaker_angle_deg: f64,
+        #[serde(default = "default_xtc_head_radius_m")]
+        head_radius_m: f64,
+        #[serde(default = "default_xtc_beta_base")]
+        beta_base: f64,
+        #[serde(default = "default_xtc_beta_low_freq_boost")]
+        beta_low_freq_boost: f64,
+        #[serde(default = "default_xtc_beta_high_freq_boost")]
+        beta_high_freq_boost: f64,
+        #[serde(default = "default_xtc_head_shadow_cutoff_hz")]
+        head_shadow_cutoff_hz: f64,
+        #[serde(default = "default_xtc_head_shadow_slope")]
+        head_shadow_slope_db_per_octave: f64,
+        #[serde(default = "default_xtc_max_gain_db")]
+        max_gain_db: f64,
+        #[serde(default)]
+        head_offset_x: f64,
+        #[serde(default)]
+        head_offset_z: f64,
+        #[serde(default)]
+        head_yaw_deg: f64,
+        #[serde(default = "default_xtc_head_tracking_smooth_s")]
+        head_tracking_smooth_s: f64,
+        #[serde(default = "default_xtc_spectral_normalization")]
+        spectral_normalization: bool,
+        #[serde(default = "default_xtc_room_reflections_enabled")]
+        room_reflections_enabled: bool,
+        #[serde(default)]
+        room_ir_file: Option<String>,
+        #[serde(default = "default_xtc_room_width")]
+        room_width_m: f64,
+        #[serde(default = "default_xtc_room_depth")]
+        room_depth_m: f64,
+        #[serde(default = "default_xtc_wall_absorption")]
+        wall_absorption: f64,
+        #[serde(default = "default_xtc_reflection_beta_boost")]
+        reflection_beta_boost: f64,
+        #[serde(default)]
+        bypass_xtc_filters: bool,
+        #[serde(default)]
+        bypass_spectral_normalization: bool,
+        #[serde(default)]
+        bypass_neumann_refinement: bool,
+        #[serde(default = "default_xtc_auto_gain_enabled")]
+        auto_gain_enabled: bool,
+        #[serde(default = "default_xtc_auto_gain_max_db")]
+        auto_gain_max_db: f64,
+        #[serde(default = "default_xtc_auto_gain_smoothing_ms")]
+        auto_gain_smoothing_ms: f64,
+        #[serde(default = "default_xtc_pinna_model_enabled")]
+        pinna_model_enabled: bool,
+    },
+    Denoiser {
+        #[serde(default = "default_denoiser_reduction_db")]
+        reduction_db: f64,
+        #[serde(default = "default_denoiser_floor_db")]
+        floor_db: f64,
+        #[serde(default = "default_denoiser_smoothing")]
+        smoothing: f64,
+        #[serde(default = "default_denoiser_attack_ms")]
+        attack_ms: f64,
+        #[serde(default = "default_denoiser_release_ms")]
+        release_ms: f64,
+        #[serde(default = "default_denoiser_low_latency")]
+        low_latency: bool,
+        #[serde(default = "default_denoiser_polyphonic_detection")]
+        polyphonic_detection: bool,
+        #[serde(default = "default_denoiser_crack_sensitivity")]
+        crack_sensitivity: f64,
+        #[serde(default = "default_denoiser_mcra_alpha_s")]
+        mcra_alpha_s: f64,
+        #[serde(default = "default_denoiser_mcra_alpha_p")]
+        mcra_alpha_p: f64,
+        #[serde(default = "default_denoiser_mcra_l")]
+        mcra_l: usize,
+        #[serde(default = "default_denoiser_mcra_delta")]
+        mcra_delta: f64,
+        #[serde(default = "default_denoiser_transparency")]
+        transparency: f64,
+        #[serde(default = "default_denoiser_dd_enabled")]
+        dd_enabled: bool,
+        #[serde(default = "default_denoiser_dd_alpha")]
+        dd_alpha: f64,
+        #[serde(default = "default_denoiser_psychoacoustic_masking")]
+        psychoacoustic_masking: bool,
+        #[serde(default = "default_denoiser_transient_enabled")]
+        transient_enabled: bool,
+        #[serde(default = "default_denoiser_spectral_smoothing_enabled")]
+        spectral_smoothing_enabled: bool,
+        #[serde(default = "default_denoiser_temporal_smoothing_enabled")]
+        temporal_smoothing_enabled: bool,
+        #[serde(default = "default_denoiser_hiss_enabled")]
+        hiss_enabled: bool,
+        #[serde(default = "default_denoiser_hiss_threshold_db")]
+        hiss_threshold_db: f64,
+        #[serde(default = "default_denoiser_hiss_frequency_hz")]
+        hiss_frequency_hz: f64,
+        #[serde(default = "default_denoiser_hiss_strength")]
+        hiss_strength: f64,
+        #[serde(default = "default_denoiser_spectral_sub_enabled")]
+        spectral_sub_enabled: bool,
+        #[serde(default = "default_denoiser_spectral_sub_alpha")]
+        spectral_sub_alpha: f64,
+        #[serde(default = "default_denoiser_spectral_sub_beta")]
+        spectral_sub_beta: f64,
+        #[serde(default)]
+        learn_noise: bool,
+        #[serde(default = "default_denoiser_use_captured_profile")]
+        use_captured_profile: bool,
+        #[serde(default)]
+        clear_profile: bool,
+        #[serde(default = "default_denoiser_algorithm")]
+        algorithm: usize,
+    },
+    Pnd {
+        #[serde(default = "default_pnd_correction_strength")]
+        correction_strength: f64,
+        #[serde(default = "default_pnd_analysis_window_ms")]
+        analysis_window_ms: f64,
+        #[serde(default = "default_pnd_drift_smoothing")]
+        drift_smoothing: f64,
+        #[serde(default = "default_pnd_multi_channel_analysis")]
+        multi_channel_analysis: bool,
+        #[serde(default = "default_pnd_confidence_threshold")]
+        confidence_threshold: f64,
+    },
+    ABCompare {
+        /// A/B mix: -1.0 = A only, 0.0 = 50/50, 1.0 = B only
+        #[serde(default)]
+        mix: f64,
+        /// Mix mode: 0 = potentiometer (continuous), 1 = binary (A or B)
+        #[serde(default)]
+        mix_mode: i32,
+        /// Selected path in binary mode: 0 = A, 1 = B
+        #[serde(default)]
+        selected_path: i32,
+        /// Bypass: output original input
+        #[serde(default)]
+        bypass: bool,
+        /// Enable automatic loudness matching
+        #[serde(default = "default_ab_auto_gain_enabled")]
+        auto_gain_enabled: bool,
+        /// Loudness measurement type: 0 = momentary (400ms), 1 = short-term (3s)
+        #[serde(default)]
+        loudness_type: i32,
+        /// Maximum auto-gain adjustment in dB
+        #[serde(default = "default_ab_max_auto_gain_db")]
+        max_auto_gain_db: f64,
+        /// Gain smoothing time in ms
+        #[serde(default = "default_ab_gain_smoothing_ms")]
+        gain_smoothing_ms: f64,
+        /// Mix transition time in ms
+        #[serde(default = "default_ab_mix_transition_ms")]
+        mix_transition_ms: f64,
+        /// Path A configuration (JSON)
+        #[serde(default = "default_ab_path_config")]
+        path_a_config: String,
+        /// Path B configuration (JSON)
+        #[serde(default = "default_ab_path_config")]
+        path_b_config: String,
+        /// Path A config source file (for display only)
+        #[serde(default)]
+        path_a_file: String,
+        /// Path B config source file (for display only)
+        #[serde(default)]
+        path_b_file: String,
+        #[serde(default)]
+        phase_invert_a: bool,
+        #[serde(default)]
+        phase_invert_b: bool,
+        #[serde(default)]
+        difference_mode: bool,
+    },
+    BandSplit {
+        /// Number of input channels
+        #[serde(default = "default_channels")]
+        channels: usize,
+        /// Crossover frequency in Hz
+        #[serde(default = "default_band_split_frequency")]
+        frequency: f64,
+        /// Crossover type: "LR24" or "LR48"
+        #[serde(default = "default_band_split_crossover_type")]
+        crossover_type: String,
+    },
+    BandMerge {
+        /// Number of output channels
+        #[serde(default = "default_channels")]
+        channels: usize,
+        /// Number of bands to merge
+        #[serde(default = "default_band_merge_bands")]
+        bands: usize,
+    },
+    Downmix {
+        #[serde(default = "default_channels")]
+        input_channels: usize,
+        #[serde(default = "default_downmix_center_gain_db")]
+        center_gain_db: f64,
+        #[serde(default = "default_downmix_surround_gain_db")]
+        surround_gain_db: f64,
+        #[serde(default = "default_downmix_height_gain_db")]
+        height_gain_db: f64,
+        #[serde(default = "default_downmix_lfe_gain_db")]
+        lfe_gain_db: f64,
+        #[serde(default = "default_downmix_phase_coherence")]
+        phase_coherence: bool,
+        #[serde(default = "default_downmix_phase_blend_low_hz")]
+        phase_blend_low_hz: f64,
+        #[serde(default = "default_downmix_phase_blend_high_hz")]
+        phase_blend_high_hz: f64,
+        #[serde(default)]
+        itu_mode: bool,
+    },
+    MonoToStereo {
+        #[serde(default = "default_mono_to_stereo_width")]
+        stereo_width: f64,
+        #[serde(default = "default_mono_to_stereo_haas_delay_ms")]
+        haas_delay_ms: f64,
+        #[serde(default = "default_mono_to_stereo_enable_comp_eq")]
+        enable_comp_eq: bool,
+        #[serde(default = "default_mono_to_stereo_comp_eq_depth_db")]
+        comp_eq_depth_db: f64,
+        #[serde(default = "default_mono_to_stereo_decor_low_hz")]
+        decor_low_hz: f64,
+        #[serde(default = "default_mono_to_stereo_decor_high_hz")]
+        decor_high_hz: f64,
+        #[serde(default = "default_mono_to_stereo_freq_dependent")]
+        freq_dependent: bool,
+    },
+    Crossfeed {
+        #[serde(default)]
+        mode: CrossfeedMode,
+        #[serde(default)]
+        preset: CrossfeedPreset,
+        #[serde(default)]
+        enabled: bool,
+        #[serde(default = "default_crossfeed_mix")]
+        mix: f64,
+        // Bauer
+        #[serde(default = "default_crossfeed_bauer_fcut_hz")]
+        bauer_fcut_hz: f64,
+        #[serde(default = "default_crossfeed_bauer_feed_db")]
+        bauer_feed_db: f64,
+        // Meier
+        #[serde(default = "default_crossfeed_meier_level")]
+        meier_level: f64,
+        // Multiband
+        #[serde(default = "default_crossfeed_mb_low_freq_hz")]
+        mb_low_freq_hz: f64,
+        #[serde(default = "default_crossfeed_mb_mid_high_freq_hz")]
+        mb_mid_high_freq_hz: f64,
+        #[serde(default = "default_crossfeed_mb_low_feed_db")]
+        mb_low_feed_db: f64,
+        #[serde(default = "default_crossfeed_mb_mid_feed_db")]
+        mb_mid_feed_db: f64,
+        #[serde(default = "default_crossfeed_mb_high_feed_db")]
+        mb_high_feed_db: f64,
+        // ITD
+        #[serde(default)]
+        itd_delay_ms: f64,
+        // Auto gain
+        #[serde(default)]
+        autogain_enabled: bool,
+        #[serde(default = "default_crossfeed_autogain_target_lufs")]
+        autogain_target_lufs: f64,
+        #[serde(default = "default_crossfeed_autogain_max_gain_db")]
+        autogain_max_gain_db: f64,
+        #[serde(default = "default_crossfeed_autogain_smoothing_ms")]
+        autogain_smoothing_ms: f64,
+    },
+    Delay {
+        #[serde(default = "default_delay_ms")]
+        delay_ms: f64,
+        #[serde(default = "default_delay_feedback")]
+        feedback: f64,
+        #[serde(default = "default_delay_mix")]
+        mix: f64,
+        #[serde(default)]
+        lfo_rate_hz: f64,
+        #[serde(default)]
+        lfo_depth_ms: f64,
+        #[serde(default)]
+        allpass_feedback: bool,
+    },
+    Aec {
+        #[serde(default = "default_aec_echo_tail_ms")]
+        echo_tail_ms: f64,
+        #[serde(default = "default_aec_step_size")]
+        step_size: f64,
+        #[serde(default = "default_aec_post_filter_enabled")]
+        post_filter_enabled: bool,
+    },
+    Beamformer {
+        #[serde(default = "default_beamformer_num_mics")]
+        num_mics: usize,
+        #[serde(default = "default_beamformer_mic_spacing_cm")]
+        mic_spacing_cm: f64,
+        #[serde(default = "default_beamformer_steer_angle_deg")]
+        steer_angle_deg: f64,
+        #[serde(default = "default_beamformer_type")]
+        beamformer_type: usize,
+    },
+    AmbisonicsDecoder {
+        #[serde(default = "default_ambisonics_order")]
+        order: usize,
+        #[serde(default = "default_ambisonics_target_layout")]
+        target_layout: String,
+        #[serde(default = "default_ambisonics_max_re")]
+        max_re_weighting: bool,
+        #[serde(default)]
+        dual_band: bool,
+    },
+}
+impl PluginSettings {
+    pub fn plugin_type(&self) -> PluginType {
+        match self {
+            Self::EQ { .. } => PluginType::EQ,
+            Self::Gain { .. } => PluginType::Gain,
+            Self::Upmixer { .. } => PluginType::Upmixer,
+            Self::Compressor { .. } => PluginType::Compressor,
+            Self::Limiter { .. } => PluginType::Limiter,
+            Self::Gate { .. } => PluginType::Gate,
+            Self::Expander { .. } => PluginType::Expander,
+            Self::MultibandCompressor { .. } => PluginType::MultibandCompressor,
+            Self::MultibandExpander { .. } => PluginType::MultibandExpander,
+            Self::LoudnessCompensation { .. } => PluginType::LoudnessCompensation,
+            Self::FletcherMunson { .. } => PluginType::FletcherMunson,
+            Self::BinauralDecoder { .. } => PluginType::BinauralDecoder,
+            Self::Convolution { .. } => PluginType::Convolution,
+            Self::LoudnessMonitor => PluginType::LoudnessMonitor,
+            Self::SpectrumAnalyzer { .. } => PluginType::SpectrumAnalyzer,
+            Self::ChannelMuteSolo { .. } => PluginType::ChannelMuteSolo,
+            Self::Matrix { .. } => PluginType::Matrix,
+            Self::XTC { .. } => PluginType::XTC,
+            Self::Denoiser { .. } => PluginType::Denoiser,
+            Self::Pnd { .. } => PluginType::Pnd,
+            Self::ABCompare { .. } => PluginType::ABCompare,
+            Self::BandSplit { .. } => PluginType::BandSplit,
+            Self::BandMerge { .. } => PluginType::BandMerge,
+            Self::Downmix { .. } => PluginType::Downmix,
+            Self::MonoToStereo { .. } => PluginType::MonoToStereo,
+            Self::Crossfeed { .. } => PluginType::Crossfeed,
+            Self::Delay { .. } => PluginType::Delay,
+            Self::Aec { .. } => PluginType::Aec,
+            Self::Beamformer { .. } => PluginType::Beamformer,
+            Self::AmbisonicsDecoder { .. } => PluginType::AmbisonicsDecoder,
+        }
+    }
+
+    /// Returns the fixed input channel count this plugin requires, or None if it adapts to any.
+    pub fn required_input_channels(&self) -> Option<usize> {
+        match self {
+            Self::Upmixer { .. } => Some(2),
+            Self::XTC { .. } => Some(2),
+            Self::Crossfeed { .. } => Some(2),
+            Self::MonoToStereo { .. } => Some(1),
+            Self::Aec { .. } => Some(2),
+            Self::Beamformer { num_mics, .. } => Some(*num_mics),
+            _ => None,
+        }
+    }
+
+    pub fn to_plugin_config(&self, sample_rate: f64) -> PluginConfig {
+        match self {
+            Self::Crossfeed {
+                mode,
+                preset,
+                enabled,
+                mix,
+                bauer_fcut_hz,
+                bauer_feed_db,
+                meier_level,
+                mb_low_freq_hz,
+                mb_mid_high_freq_hz,
+                mb_low_feed_db,
+                mb_mid_feed_db,
+                mb_high_feed_db,
+                itd_delay_ms,
+                autogain_enabled,
+                autogain_target_lufs,
+                autogain_max_gain_db,
+                autogain_smoothing_ms,
+            } => PluginConfig::new(
+                "crossfeed",
+                json!({
+                    "mode": mode,
+                    "preset": preset,
+                    "enabled": enabled,
+                    "mix": mix,
+                    "bauer_fcut_hz": bauer_fcut_hz,
+                    "bauer_feed_db": bauer_feed_db,
+                    "meier_level": meier_level,
+                    "mb_low_freq_hz": mb_low_freq_hz,
+                    "mb_mid_high_freq_hz": mb_mid_high_freq_hz,
+                    "mb_low_feed_db": mb_low_feed_db,
+                    "mb_mid_feed_db": mb_mid_feed_db,
+                    "mb_high_feed_db": mb_high_feed_db,
+                    "itd_delay_ms": itd_delay_ms,
+                    "autogain_enabled": autogain_enabled,
+                    "autogain_target_lufs": autogain_target_lufs,
+                    "autogain_max_gain_db": autogain_max_gain_db,
+                    "autogain_smoothing_ms": autogain_smoothing_ms,
+                }),
+            ),
+            Self::Delay {
+                delay_ms,
+                feedback,
+                mix,
+                lfo_rate_hz,
+                lfo_depth_ms,
+                allpass_feedback,
+            } => PluginConfig::new(
+                "delay",
+                json!({
+                    "delay_ms": delay_ms,
+                    "feedback": feedback,
+                    "mix": mix,
+                    "lfo_rate_hz": lfo_rate_hz,
+                    "lfo_depth_ms": lfo_depth_ms,
+                    "allpass_feedback": allpass_feedback,
+                }),
+            ),
+            Self::Aec {
+                echo_tail_ms,
+                step_size,
+                post_filter_enabled,
+            } => PluginConfig::new(
+                "aec",
+                json!({
+                    "echo_tail_ms": *echo_tail_ms as f32,
+                    "step_size": *step_size as f32,
+                    "post_filter_enabled": post_filter_enabled,
+                }),
+            ),
+            Self::Beamformer {
+                num_mics,
+                mic_spacing_cm,
+                steer_angle_deg,
+                beamformer_type,
+            } => PluginConfig::new(
+                "beamformer",
+                json!({
+                    "num_mics": num_mics,
+                    "mic_spacing_cm": *mic_spacing_cm as f32,
+                    "steer_angle_deg": *steer_angle_deg as f32,
+                    "beamformer_type": beamformer_type,
+                }),
+            ),
+            Self::AmbisonicsDecoder {
+                order,
+                target_layout,
+                max_re_weighting,
+                dual_band,
+            } => PluginConfig::new(
+                "ambisonics_decoder",
+                json!({
+                    "order": order,
+                    "target_layout": target_layout,
+                    "max_re_weighting": max_re_weighting,
+                    "dual_band": dual_band,
+                }),
+            ),
+            Self::EQ {
+                channels,
+                filters,
+                channel_filters,
+                per_channel_mode,
+                max_filters: _,
+                tdf2,
+            } => {
+                // Helper to convert filters with mute/solo logic
+                let convert_filters = |filters: &[EQFilter]| -> Vec<serde_json::Value> {
+                    let any_soloed = filters.iter().any(|f| f.solo);
+                    filters
+                        .iter()
+                        .filter(|f| {
+                            if f.muted {
+                                return false;
+                            }
+                            if any_soloed && !f.solo {
+                                return false;
+                            }
+                            true
+                        })
+                        .map(|f| {
+                            let bq = f.to_biquad(sample_rate);
+                            json!({
+                                "filter_type": bq.filter_type.long_name().to_lowercase(),
+                                "freq": bq.freq,
+                                "q": bq.q,
+                                "db_gain": bq.db_gain,
+                            })
+                        })
+                        .collect()
+                };
+
+                if *per_channel_mode {
+                    // Per-channel mode: send channel_filters to the plugin
+                    if let Some(ch_filters) = channel_filters {
+                        let channel_filter_configs: Vec<Vec<serde_json::Value>> =
+                            ch_filters.iter().map(|f| convert_filters(f)).collect();
+
+                        PluginConfig::new(
+                            "eq",
+                            json!({
+                                "channels": channels,
+                                "channel_filters": channel_filter_configs,
+                                "tdf2": tdf2,
+                            }),
+                        )
+                    } else {
+                        // Fallback to global filters if channel_filters is None
+                        let filter_configs = convert_filters(filters);
+                        PluginConfig::new(
+                            "eq",
+                            json!({
+                                "channels": channels,
+                                "filters": filter_configs,
+                                "tdf2": tdf2,
+                            }),
+                        )
+                    }
+                } else {
+                    // Global mode: all channels share same EQ
+                    let filter_configs = convert_filters(filters);
+                    PluginConfig::new(
+                        "eq",
+                        json!({
+                            "channels": channels,
+                            "filters": filter_configs,
+                            "tdf2": tdf2,
+                        }),
+                    )
+                }
+            }
+            Self::Gain {
+                channels,
+                gain_db,
+                smoothing_ms,
+            } => PluginConfig::new(
+                "gain",
+                json!({
+                    "channels": channels,
+                    "gain_db": gain_db,
+                    "smoothing_ms": smoothing_ms,
+                }),
+            ),
+            Self::Upmixer {
+                speaker_config,
+                gain_front_direct,
+                gain_front_ambient,
+                gain_rear_ambient,
+                height_gain,
+                stereo_width,
+                center_spread,
+                surround_direct_bleed,
+                rear_late_reflection,
+                lfe_cutoff_hz,
+                lfe_gain,
+                bandpass_hz,
+                enable_subharmonic_synth,
+                subharmonic_gain,
+                subharmonic_freq_hz,
+                subharmonic_attack_ms,
+                subharmonic_release_ms,
+                decorrelation_mode,
+                decorrelation_lfo_rate_hz,
+                velvet_noise_duration_ms,
+                velvet_noise_density,
+                enable_hr_direct,
+                hr_sharpen,
+                height_hf_cap_hz,
+                height_transient_reduction,
+                height_direct_leak,
+                ambient_boost,
+                safety_cap_db,
+                low_latency,
+                frequency_resolution,
+                rear_ambient_boost,
+                dialogue_weight,
+                voice_freq_min_hz,
+                voice_freq_max_hz,
+                dialogue_centroid_weight,
+                dialogue_variance_weight,
+                dialogue_coherence_weight,
+                bypass_decorrelation,
+                bypass_transient_detection,
+                bypass_all_processing,
+                enable_ml_detection,
+                multi_source_extraction,
+                multi_source_threshold,
+            } => PluginConfig::new(
+                "upmixer",
+                json!({
+                    "speaker_config": speaker_config,
+                    "gain_front_direct": gain_front_direct,
+                    "gain_front_ambient": gain_front_ambient,
+                    "gain_rear_ambient": gain_rear_ambient,
+                    "height_gain": height_gain,
+                    "stereo_width": stereo_width,
+                    "center_spread": center_spread,
+                    "surround_direct_bleed": surround_direct_bleed,
+                    "rear_late_reflection": rear_late_reflection,
+                    "lfe_cutoff_hz": lfe_cutoff_hz,
+                    "lfe_gain": lfe_gain,
+                    "bandpass_hz": bandpass_hz,
+                    "enable_subharmonic_synth": enable_subharmonic_synth,
+                    "subharmonic_gain": subharmonic_gain,
+                    "subharmonic_freq_hz": subharmonic_freq_hz,
+                    "subharmonic_attack_ms": subharmonic_attack_ms,
+                    "subharmonic_release_ms": subharmonic_release_ms,
+                    "decorrelation_mode": decorrelation_mode,
+                    "decorrelation_lfo_rate_hz": decorrelation_lfo_rate_hz,
+                    "velvet_noise_duration_ms": velvet_noise_duration_ms,
+                    "velvet_noise_density": velvet_noise_density,
+                    "enable_hr_direct": enable_hr_direct,
+                    "hr_sharpen": hr_sharpen,
+                    "height_hf_cap_hz": height_hf_cap_hz,
+                    "height_transient_reduction": height_transient_reduction,
+                    "height_direct_leak": height_direct_leak,
+                    "ambient_boost": ambient_boost,
+                    "safety_cap_db": safety_cap_db,
+                    "low_latency": low_latency,
+                    "frequency_resolution": frequency_resolution,
+                    "rear_ambient_boost": rear_ambient_boost,
+                    "dialogue_weight": dialogue_weight,
+                    "voice_freq_min_hz": voice_freq_min_hz,
+                    "voice_freq_max_hz": voice_freq_max_hz,
+                    "dialogue_centroid_weight": dialogue_centroid_weight,
+                    "dialogue_variance_weight": dialogue_variance_weight,
+                    "dialogue_coherence_weight": dialogue_coherence_weight,
+                    "bypass_decorrelation": bypass_decorrelation,
+                    "bypass_transient_detection": bypass_transient_detection,
+                    "bypass_all_processing": bypass_all_processing,
+                    "enable_ml_detection": enable_ml_detection,
+                    "multi_source_extraction": multi_source_extraction,
+                    "multi_source_threshold": multi_source_threshold,
+                }),
+            ),
+            Self::Compressor {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                knee_db,
+                makeup_gain_db,
+                mix,
+                auto_makeup,
+                link_channels,
+                sidechain_hpf_hz,
+                detection_mode,
+                lookahead_ms,
+                program_dependent_release,
+                measured_auto_makeup,
+            } => PluginConfig::new(
+                "compressor",
+                json!({
+                    "threshold_db": threshold_db,
+                    "ratio": ratio,
+                    "attack_ms": attack_ms,
+                    "release_ms": release_ms,
+                    "knee_db": knee_db,
+                    "makeup_gain_db": makeup_gain_db,
+                    "mix": mix,
+                    "auto_makeup": auto_makeup,
+                    "link_channels": link_channels,
+                    "sidechain_hpf_hz": sidechain_hpf_hz,
+                    "detection_mode": detection_mode,
+                    "lookahead_ms": lookahead_ms,
+                    "program_dependent_release": program_dependent_release,
+                    "measured_auto_makeup": measured_auto_makeup,
+                }),
+            ),
+            Self::Limiter {
+                threshold_db,
+                release_ms,
+                lookahead_ms,
+                soft,
+                true_peak,
+                dual_release,
+                mix,
+            } => PluginConfig::new(
+                "limiter",
+                json!({
+                    "threshold_db": threshold_db,
+                    "release_ms": release_ms,
+                    "lookahead_ms": lookahead_ms,
+                    "soft": soft,
+                    "true_peak": true_peak,
+                    "dual_release": dual_release,
+                    "mix": mix,
+                }),
+            ),
+            Self::Gate {
+                threshold_db,
+                ratio,
+                attack_ms,
+                hold_ms,
+                release_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
+                range_db,
+                hysteresis_db,
+                knee_db,
+                lookahead_ms,
+            } => PluginConfig::new(
+                "gate",
+                json!({
+                    "threshold_db": threshold_db,
+                    "ratio": ratio,
+                    "attack_ms": attack_ms,
+                    "hold_ms": hold_ms,
+                    "release_ms": release_ms,
+                    "mix": mix,
+                    "link_channels": link_channels,
+                    "sidechain_hpf_hz": sidechain_hpf_hz,
+                    "range_db": range_db,
+                    "hysteresis_db": hysteresis_db,
+                    "knee_db": knee_db,
+                    "lookahead_ms": lookahead_ms,
+                }),
+            ),
+            Self::Expander {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                range_db,
+                knee_db,
+                hysteresis_db,
+                hold_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
+                auto_makeup,
+                lookahead_ms,
+                detection_mode,
+                measured_auto_makeup,
+            } => PluginConfig::new(
+                "expander",
+                json!({
+                    "threshold_db": threshold_db,
+                    "ratio": ratio,
+                    "attack_ms": attack_ms,
+                    "release_ms": release_ms,
+                    "range_db": range_db,
+                    "knee_db": knee_db,
+                    "hysteresis_db": hysteresis_db,
+                    "hold_ms": hold_ms,
+                    "mix": mix,
+                    "link_channels": link_channels,
+                    "sidechain_hpf_hz": sidechain_hpf_hz,
+                    "auto_makeup": auto_makeup,
+                    "lookahead_ms": lookahead_ms,
+                    "detection_mode": detection_mode,
+                    "measured_auto_makeup": measured_auto_makeup,
+                }),
+            ),
+            Self::MultibandCompressor {
+                num_bands,
+                crossover_preset,
+                crossover_freq_1,
+                crossover_freq_2,
+                crossover_freq_3,
+                crossover_freq_4,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                knee_db,
+                mix,
+                link_channels,
+                per_band_lookahead_ms,
+                bands,
+            } => PluginConfig::new(
+                "multiband_compressor",
+                json!({
+                    "num_bands": num_bands,
+                    "crossover_preset": crossover_preset,
+                    "crossover_frequencies": [crossover_freq_1, crossover_freq_2, crossover_freq_3, crossover_freq_4],
+                    "crossover_freq_1": crossover_freq_1,
+                    "crossover_freq_2": crossover_freq_2,
+                    "crossover_freq_3": crossover_freq_3,
+                    "crossover_freq_4": crossover_freq_4,
+                    "threshold_db": threshold_db,
+                    "ratio": ratio,
+                    "attack_ms": attack_ms,
+                    "release_ms": release_ms,
+                    "knee_db": knee_db,
+                    "mix": mix,
+                    "link_channels": link_channels,
+                    "per_band_lookahead_ms": per_band_lookahead_ms,
+                    "bands": bands,
+                }),
+            ),
+            Self::MultibandExpander {
+                num_bands,
+                crossover_preset,
+                crossover_freq_1,
+                crossover_freq_2,
+                crossover_freq_3,
+                crossover_freq_4,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                range_db,
+                knee_db,
+                hysteresis_db,
+                hold_ms,
+                mix,
+                link_channels,
+                detection_mode,
+                bands,
+            } => PluginConfig::new(
+                "multiband_expander",
+                json!({
+                    "num_bands": num_bands,
+                    "crossover_preset": crossover_preset,
+                    "crossover_frequencies": [crossover_freq_1, crossover_freq_2, crossover_freq_3, crossover_freq_4],
+                    "crossover_freq_1": crossover_freq_1,
+                    "crossover_freq_2": crossover_freq_2,
+                    "crossover_freq_3": crossover_freq_3,
+                    "crossover_freq_4": crossover_freq_4,
+                    "threshold_db": threshold_db,
+                    "ratio": ratio,
+                    "attack_ms": attack_ms,
+                    "release_ms": release_ms,
+                    "range_db": range_db,
+                    "knee_db": knee_db,
+                    "hysteresis_db": hysteresis_db,
+                    "hold_ms": hold_ms,
+                    "mix": mix,
+                    "link_channels": link_channels,
+                    "detection_mode": detection_mode,
+                    "bands": bands,
+                }),
+            ),
+            Self::LoudnessCompensation {
+                low_freq,
+                low_gain,
+                high_freq,
+                high_gain,
+                mid_enabled,
+                mid_freq,
+                mid_gain,
+                mid_q,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
+            } => PluginConfig::new(
+                "loudness_compensation",
+                json!({
+                    "low_freq": low_freq,
+                    "low_gain": low_gain,
+                    "high_freq": high_freq,
+                    "high_gain": high_gain,
+                    "mid_enabled": mid_enabled,
+                    "mid_freq": mid_freq,
+                    "mid_gain": mid_gain,
+                    "mid_q": mid_q,
+                    "auto_gain_enabled": auto_gain_enabled,
+                    "auto_gain_max_db": auto_gain_max_db,
+                    "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
+                }),
+            ),
+            Self::FletcherMunson {
+                playback_volume_db,
+                reference_level_db,
+                enabled,
+                band1_freq,
+                band1_q,
+                band1_max_gain,
+                band1_slope,
+                band2_freq,
+                band2_q,
+                band2_max_gain,
+                band2_slope,
+                band3_freq,
+                band3_q,
+                band3_max_gain,
+                band3_slope,
+                band4_freq,
+                band4_q,
+                band4_max_gain,
+                band4_slope,
+                smoothing_ms,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
+                auto_gain_loudness_type,
+            } => PluginConfig::new(
+                "fletcher_munson",
+                json!({
+                    "playback_volume_db": playback_volume_db,
+                    "reference_level_db": reference_level_db,
+                    "band1": {
+                        "frequency": band1_freq,
+                        "q": band1_q,
+                        "max_gain_db": band1_max_gain,
+                        "slope": band1_slope,
+                    },
+                    "band2": {
+                        "frequency": band2_freq,
+                        "q": band2_q,
+                        "max_gain_db": band2_max_gain,
+                        "slope": band2_slope,
+                    },
+                    "band3": {
+                        "frequency": band3_freq,
+                        "q": band3_q,
+                        "max_gain_db": band3_max_gain,
+                        "slope": band3_slope,
+                    },
+                    "band4": {
+                        "frequency": band4_freq,
+                        "q": band4_q,
+                        "max_gain_db": band4_max_gain,
+                        "slope": band4_slope,
+                    },
+                    "smoothing_ms": smoothing_ms,
+                    "enabled": enabled,
+                    "auto_gain_enabled": auto_gain_enabled,
+                    "auto_gain_max_db": auto_gain_max_db,
+                    "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
+                    "auto_gain_loudness_type": auto_gain_loudness_type,
+                }),
+            ),
+            Self::BinauralDecoder {
+                sofa_file,
+                input_channels,
+                enable_optimization,
+                externalization,
+                near_field_strength,
+            } => PluginConfig::new(
+                "binaural_decoder",
+                json!({
+                    "sofa_file": sofa_file,
+                    "input_channels": input_channels,
+                    "enable_optimization": enable_optimization,
+                    "externalization": externalization,
+                    "near_field_strength": near_field_strength,
+                }),
+            ),
+            Self::Convolution {
+                ir_file,
+                mix,
+                gain_db,
+                use_nupc,
+            } => PluginConfig::new(
+                "convolution",
+                json!({
+                    "ir_file": ir_file,
+                    "mix": mix,
+                    "gain_db": gain_db,
+                    "use_nupc": use_nupc,
+                }),
+            ),
+            Self::LoudnessMonitor => PluginConfig::new("loudness_monitor", json!({})),
+            Self::SpectrumAnalyzer {
+                num_bins,
+                min_freq,
+                max_freq,
+                smoothing,
+                tilt_correction,
+                tilt_reference,
+            } => PluginConfig::new(
+                "spectrum_analyzer",
+                json!({
+                    "num_bins": num_bins,
+                    "min_freq": min_freq,
+                    "max_freq": max_freq,
+                    "smoothing": smoothing,
+                    "tilt_correction": tilt_correction,
+                    "tilt_reference": tilt_reference,
+                }),
+            ),
+            Self::ChannelMuteSolo {
+                enabled,
+                dim_gain_db,
+                fade_ms,
+                channel_states,
+            } => PluginConfig::new(
+                "channel_mute_solo",
+                json!({
+                    "enabled": enabled,
+                    "dim_gain_db": dim_gain_db,
+                    "fade_ms": fade_ms,
+                    "channel_states": channel_states,
+                }),
+            ),
+            Self::Matrix {
+                input_channels,
+                output_channels,
+                matrix,
+                channel_states,
+            } => {
+                let off_diag_count = matrix
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, v)| {
+                        let row = idx / input_channels;
+                        let col = idx % input_channels;
+                        row != col && v.abs() > 1e-6
+                    })
+                    .count();
+                if off_diag_count > 0 {
+                    let off_diag_entries: Vec<_> = matrix
+                        .iter()
+                        .enumerate()
+                        .filter(|(idx, v)| {
+                            let row = idx / input_channels;
+                            let col = idx % input_channels;
+                            row != col && v.abs() > 1e-6
+                        })
+                        .map(|(idx, v)| {
+                            let row = idx / input_channels;
+                            let col = idx % input_channels;
+                            format!("in{}→out{}={:.3}", col, row, v)
+                        })
+                        .collect();
+                    log::debug!(
+                        "[Matrix::to_plugin_config] {}x{} with {} off-diagonal: [{}]",
+                        input_channels,
+                        output_channels,
+                        off_diag_count,
+                        off_diag_entries.join(", "),
+                    );
+                }
+                PluginConfig::new(
+                    "matrix",
+                    json!({
+                        "input_channels": input_channels,
+                        "output_channels": output_channels,
+                        "matrix": matrix,
+                        "channel_states": channel_states,
+                    }),
+                )
+            }
+            Self::XTC {
+                distance_m,
+                speaker_angle_deg,
+                head_radius_m,
+                beta_base,
+                beta_low_freq_boost,
+                beta_high_freq_boost,
+                head_shadow_cutoff_hz,
+                head_shadow_slope_db_per_octave,
+                max_gain_db,
+                head_offset_x,
+                head_offset_z,
+                head_yaw_deg,
+                head_tracking_smooth_s,
+                spectral_normalization,
+                room_reflections_enabled,
+                room_ir_file,
+                room_width_m,
+                room_depth_m,
+                wall_absorption,
+                reflection_beta_boost,
+                bypass_xtc_filters,
+                bypass_spectral_normalization,
+                bypass_neumann_refinement,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
+                pinna_model_enabled,
+            } => PluginConfig::new(
+                "xtc",
+                json!({
+                    "distance_m": distance_m,
+                    "speaker_angle_deg": speaker_angle_deg,
+                    "head_radius_m": head_radius_m,
+                    "beta_base": beta_base,
+                    "beta_low_freq_boost": beta_low_freq_boost,
+                    "beta_high_freq_boost": beta_high_freq_boost,
+                    "head_shadow_cutoff_hz": head_shadow_cutoff_hz,
+                    "head_shadow_slope_db_per_octave": head_shadow_slope_db_per_octave,
+                    "max_gain_db": max_gain_db,
+                    "head_offset_x": head_offset_x,
+                    "head_offset_z": head_offset_z,
+                    "head_yaw_deg": head_yaw_deg,
+                    "head_tracking_smooth_s": head_tracking_smooth_s,
+                    "spectral_normalization": spectral_normalization,
+                    "room_reflections_enabled": room_reflections_enabled,
+                    "room_ir_file": room_ir_file,
+                    "room_width_m": room_width_m,
+                    "room_depth_m": room_depth_m,
+                    "wall_absorption": wall_absorption,
+                    "reflection_beta_boost": reflection_beta_boost,
+                    "bypass_xtc_filters": bypass_xtc_filters,
+                    "bypass_spectral_normalization": bypass_spectral_normalization,
+                    "bypass_neumann_refinement": bypass_neumann_refinement,
+                    "auto_gain_enabled": auto_gain_enabled,
+                    "auto_gain_max_db": auto_gain_max_db,
+                    "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
+                    "pinna_model_enabled": pinna_model_enabled,
+                }),
+            ),
+            Self::Denoiser {
+                reduction_db,
+                floor_db,
+                smoothing,
+                attack_ms,
+                release_ms,
+                low_latency,
+                polyphonic_detection,
+                crack_sensitivity,
+                mcra_alpha_s,
+                mcra_alpha_p,
+                mcra_l,
+                mcra_delta,
+                transparency,
+                dd_enabled,
+                dd_alpha,
+                psychoacoustic_masking,
+                transient_enabled,
+                spectral_smoothing_enabled,
+                temporal_smoothing_enabled,
+                hiss_enabled,
+                hiss_threshold_db,
+                hiss_frequency_hz,
+                hiss_strength,
+                spectral_sub_enabled,
+                spectral_sub_alpha,
+                spectral_sub_beta,
+                learn_noise,
+                use_captured_profile,
+                clear_profile,
+                algorithm,
+            } => PluginConfig::new(
+                "denoiser",
+                json!({
+                    "reduction_db": reduction_db,
+                    "floor_db": floor_db,
+                    "smoothing": smoothing,
+                    "attack_ms": attack_ms,
+                    "release_ms": release_ms,
+                    "low_latency": low_latency,
+                    "polyphonic_detection": polyphonic_detection,
+                    "crack_sensitivity": crack_sensitivity,
+                    "mcra_alpha_s": mcra_alpha_s,
+                    "mcra_alpha_p": mcra_alpha_p,
+                    "mcra_l": mcra_l,
+                    "mcra_delta": mcra_delta,
+                    "transparency": transparency,
+                    "dd_enabled": dd_enabled,
+                    "dd_alpha": dd_alpha,
+                    "psychoacoustic_masking": psychoacoustic_masking,
+                    "transient_enabled": transient_enabled,
+                    "spectral_smoothing_enabled": spectral_smoothing_enabled,
+                    "temporal_smoothing_enabled": temporal_smoothing_enabled,
+                    "hiss_enabled": hiss_enabled,
+                    "hiss_threshold_db": hiss_threshold_db,
+                    "hiss_frequency_hz": hiss_frequency_hz,
+                    "hiss_strength": hiss_strength,
+                    "spectral_sub_enabled": spectral_sub_enabled,
+                    "spectral_sub_alpha": spectral_sub_alpha,
+                    "spectral_sub_beta": spectral_sub_beta,
+                    "learn_noise": learn_noise,
+                    "use_captured_profile": use_captured_profile,
+                    "clear_profile": clear_profile,
+                    "algorithm": algorithm,
+                }),
+            ),
+            Self::Pnd {
+                correction_strength,
+                analysis_window_ms,
+                drift_smoothing,
+                multi_channel_analysis,
+                confidence_threshold,
+            } => PluginConfig::new(
+                "pnd",
+                json!({
+                    "correction_strength": correction_strength,
+                    "analysis_window_ms": analysis_window_ms,
+                    "drift_smoothing": drift_smoothing,
+                    "multi_channel_analysis": multi_channel_analysis,
+                    "confidence_threshold": confidence_threshold,
+                }),
+            ),
+            Self::ABCompare {
+                mix,
+                mix_mode,
+                selected_path,
+                bypass,
+                auto_gain_enabled,
+                loudness_type,
+                max_auto_gain_db,
+                gain_smoothing_ms,
+                mix_transition_ms,
+                path_a_config,
+                path_b_config,
+                phase_invert_a,
+                phase_invert_b,
+                difference_mode,
+                ..
+            } => {
+                let loudness_type_str = match loudness_type {
+                    0 => "Momentary",
+                    _ => "ShortTerm",
+                };
+                let mix_mode_str = match mix_mode {
+                    0 => "Potentiometer",
+                    _ => "Binary",
+                };
+                let path_a_val: serde_json::Value =
+                    serde_json::from_str(path_a_config).unwrap_or(json!({"type": "None"}));
+                let path_b_val: serde_json::Value =
+                    serde_json::from_str(path_b_config).unwrap_or(json!({"type": "None"}));
+                PluginConfig::new(
+                    "ab_compare",
+                    json!({
+                        "mix": mix,
+                        "mix_mode": mix_mode_str,
+                        "selected_path": selected_path,
+                        "bypass": bypass,
+                        "auto_gain_enabled": auto_gain_enabled,
+                        "loudness_type": loudness_type_str,
+                        "max_auto_gain_db": max_auto_gain_db,
+                        "gain_smoothing_ms": gain_smoothing_ms,
+                        "mix_transition_ms": mix_transition_ms,
+                        "path_a": path_a_val,
+                        "path_b": path_b_val,
+                        "phase_invert_a": phase_invert_a,
+                        "phase_invert_b": phase_invert_b,
+                        "difference_mode": difference_mode,
+                    }),
+                )
+            }
+            Self::BandSplit {
+                channels,
+                frequency,
+                crossover_type,
+            } => PluginConfig::new(
+                "band_split",
+                json!({
+                    "channels": channels,
+                    "frequency": frequency,
+                    "type": crossover_type,
+                }),
+            ),
+            Self::BandMerge { channels, bands } => PluginConfig::new(
+                "band_merge",
+                json!({
+                    "channels": channels,
+                    "bands": bands,
+                }),
+            ),
+            Self::Downmix {
+                input_channels,
+                center_gain_db,
+                surround_gain_db,
+                height_gain_db,
+                lfe_gain_db,
+                phase_coherence,
+                phase_blend_low_hz,
+                phase_blend_high_hz,
+                itu_mode,
+            } => PluginConfig::new(
+                "downmix",
+                json!({
+                    "input_channels": input_channels,
+                    "center_gain_db": center_gain_db,
+                    "surround_gain_db": surround_gain_db,
+                    "height_gain_db": height_gain_db,
+                    "lfe_gain_db": lfe_gain_db,
+                    "phase_coherence": phase_coherence,
+                    "phase_blend_low_hz": phase_blend_low_hz,
+                    "phase_blend_high_hz": phase_blend_high_hz,
+                    "itu_mode": itu_mode,
+                }),
+            ),
+            Self::MonoToStereo {
+                stereo_width,
+                haas_delay_ms,
+                enable_comp_eq,
+                comp_eq_depth_db,
+                decor_low_hz,
+                decor_high_hz,
+                freq_dependent,
+            } => PluginConfig::new(
+                "mono_to_stereo",
+                json!({
+                    "stereo_width": stereo_width,
+                    "haas_delay_ms": haas_delay_ms,
+                    "enable_comp_eq": enable_comp_eq,
+                    "comp_eq_depth_db": comp_eq_depth_db,
+                    "decor_low_hz": decor_low_hz,
+                    "decor_high_hz": decor_high_hz,
+                    "freq_dependent": freq_dependent,
+                }),
+            ),
+        }
+    }
+
+    /// Create default settings for a plugin type
+    pub fn default_for(plugin_type: &PluginType) -> Self {
+        use sotf_plugins::param_specs::find_by_key as p;
+
+        match plugin_type {
+            PluginType::EQ => Self::EQ {
+                channels: default_channels(),
+                filters: vec![
+                    // Default: 5-band flat EQ
+                    EQFilter::new(BiquadFilterType::Peak, 100.0, 1.4, 0.0),
+                    EQFilter::new(BiquadFilterType::Peak, 300.0, 1.4, 0.0),
+                    EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.4, 0.0),
+                    EQFilter::new(BiquadFilterType::Peak, 3000.0, 1.4, 0.0),
+                    EQFilter::new(BiquadFilterType::Peak, 10000.0, 1.4, 0.0),
+                ],
+                channel_filters: None,
+                per_channel_mode: false,
+                max_filters: 5,
+                tdf2: false,
+            },
+            PluginType::Gain => Self::Gain {
+                channels: default_channels(),
+                gain_db: p(gain_specs::PARAMS, "gain_db").default_f64(),
+                smoothing_ms: p(gain_specs::PARAMS, "smoothing_ms").default_f64(),
+            },
+            PluginType::Upmixer => {
+                let u = upmixer_specs::PARAMS;
+                Self::Upmixer {
+                    speaker_config: "5.1".to_string(),
+                    gain_front_direct: p(u, "gain_front_direct").default_f64(),
+                    gain_front_ambient: p(u, "gain_front_ambient").default_f64(),
+                    gain_rear_ambient: p(u, "gain_rear_ambient").default_f64(),
+                    height_gain: p(u, "height_gain").default_f64(),
+                    stereo_width: p(u, "stereo_width").default_f64(),
+                    center_spread: p(u, "center_spread").default_f64(),
+                    surround_direct_bleed: p(u, "surround_direct_bleed").default_f64(),
+                    rear_late_reflection: p(u, "rear_late_reflection").default_f64(),
+                    lfe_cutoff_hz: p(u, "lfe_cutoff_hz").default_f64(),
+                    lfe_gain: p(u, "lfe_gain").default_f64(),
+                    bandpass_hz: p(u, "bandpass_hz").default_f64(),
+                    enable_subharmonic_synth: p(u, "enable_subharmonic_synth").default_bool(),
+                    subharmonic_gain: p(u, "subharmonic_gain").default_f64(),
+                    subharmonic_freq_hz: p(u, "subharmonic_freq_hz").default_f64(),
+                    subharmonic_attack_ms: p(u, "subharmonic_attack_ms").default_f64(),
+                    subharmonic_release_ms: p(u, "subharmonic_release_ms").default_f64(),
+                    decorrelation_mode: p(u, "decorrelation_mode").default_usize(),
+                    decorrelation_lfo_rate_hz: p(u, "decorrelation_lfo_rate_hz").default_f64(),
+                    velvet_noise_duration_ms: p(u, "velvet_noise_duration_ms").default_f64(),
+                    velvet_noise_density: p(u, "velvet_noise_density").default_f64(),
+                    enable_hr_direct: p(u, "enable_hr_direct").default_bool(),
+                    hr_sharpen: p(u, "hr_sharpen").default_f64(),
+                    height_hf_cap_hz: p(u, "height_hf_cap_hz").default_f64(),
+                    height_transient_reduction: p(u, "height_transient_reduction").default_f64(),
+                    height_direct_leak: p(u, "height_direct_leak").default_f64(),
+                    ambient_boost: p(u, "ambient_boost").default_f64(),
+                    safety_cap_db: p(u, "safety_cap_db").default_f64(),
+                    low_latency: p(u, "low_latency").default_bool(),
+                    frequency_resolution: p(u, "frequency_resolution").default_usize(),
+                    rear_ambient_boost: p(u, "rear_ambient_boost").default_f64(),
+                    dialogue_weight: p(u, "dialogue_weight").default_f64(),
+                    voice_freq_min_hz: p(u, "voice_freq_min_hz").default_f64(),
+                    voice_freq_max_hz: p(u, "voice_freq_max_hz").default_f64(),
+                    dialogue_centroid_weight: p(u, "dialogue_centroid_weight").default_f64(),
+                    dialogue_variance_weight: p(u, "dialogue_variance_weight").default_f64(),
+                    dialogue_coherence_weight: p(u, "dialogue_coherence_weight").default_f64(),
+                    bypass_decorrelation: false,
+                    bypass_transient_detection: false,
+                    bypass_all_processing: false,
+                    enable_ml_detection: p(u, "enable_ml_detection").default_bool(),
+                    multi_source_extraction: p(u, "multi_source_extraction").default_bool(),
+                    multi_source_threshold: p(u, "multi_source_threshold").default_f64(),
+                }
+            }
+            PluginType::Compressor => {
+                let c = compressor_specs::PARAMS;
+                Self::Compressor {
+                    threshold_db: p(c, "threshold").default_f64(),
+                    ratio: p(c, "ratio").default_f64(),
+                    attack_ms: p(c, "attack").default_f64(),
+                    release_ms: p(c, "release").default_f64(),
+                    knee_db: p(c, "knee").default_f64(),
+                    makeup_gain_db: p(c, "makeup_gain").default_f64(),
+                    mix: p(c, "mix").default_f64(),
+                    auto_makeup: p(c, "auto_makeup").default_bool(),
+                    link_channels: p(c, "link_channels").default_bool(),
+                    sidechain_hpf_hz: p(c, "sidechain_hpf_hz").default_f64(),
+                    detection_mode: default_compressor_detection_mode(),
+                    lookahead_ms: p(c, "lookahead_ms").default_f64(),
+                    program_dependent_release: p(c, "program_dependent_release").default_bool(),
+                    measured_auto_makeup: p(c, "measured_auto_makeup").default_bool(),
+                }
+            }
+            PluginType::Limiter => {
+                let l = limiter_specs::PARAMS;
+                Self::Limiter {
+                    threshold_db: p(l, "threshold").default_f64(),
+                    release_ms: p(l, "release").default_f64(),
+                    lookahead_ms: p(l, "lookahead").default_f64(),
+                    soft: p(l, "soft").default_bool(),
+                    true_peak: p(l, "true_peak").default_bool(),
+                    dual_release: p(l, "dual_release").default_bool(),
+                    mix: p(l, "mix").default_f64(),
+                }
+            }
+            PluginType::Gate => {
+                let g = gate_specs::PARAMS;
+                Self::Gate {
+                    threshold_db: p(g, "threshold").default_f64(),
+                    ratio: p(g, "ratio").default_f64(),
+                    attack_ms: p(g, "attack").default_f64(),
+                    hold_ms: p(g, "hold").default_f64(),
+                    release_ms: p(g, "release").default_f64(),
+                    mix: p(g, "mix").default_f64(),
+                    link_channels: p(g, "link_channels").default_bool(),
+                    sidechain_hpf_hz: p(g, "sidechain_hpf_hz").default_f64(),
+                    range_db: p(g, "range_db").default_f64(),
+                    hysteresis_db: p(g, "hysteresis_db").default_f64(),
+                    knee_db: p(g, "knee_db").default_f64(),
+                    lookahead_ms: p(g, "lookahead_ms").default_f64(),
+                }
+            }
+            PluginType::Expander => {
+                let e = expander_specs::PARAMS;
+                Self::Expander {
+                    threshold_db: p(e, "threshold").default_f64(),
+                    ratio: p(e, "ratio").default_f64(),
+                    attack_ms: p(e, "attack").default_f64(),
+                    release_ms: p(e, "release").default_f64(),
+                    range_db: p(e, "range").default_f64(),
+                    knee_db: p(e, "knee").default_f64(),
+                    hysteresis_db: p(e, "hysteresis").default_f64(),
+                    hold_ms: p(e, "hold").default_f64(),
+                    mix: p(e, "mix").default_f64(),
+                    auto_makeup: p(e, "auto_makeup").default_bool(),
+                    link_channels: p(e, "link_channels").default_bool(),
+                    sidechain_hpf_hz: p(e, "sidechain_hpf_hz").default_f64(),
+                    lookahead_ms: p(e, "lookahead_ms").default_f64(),
+                    detection_mode: default_expander_detection_mode(),
+                    measured_auto_makeup: p(e, "measured_auto_makeup").default_bool(),
+                }
+            }
+            PluginType::MultibandCompressor => {
+                let mc = mb_compressor_specs::GLOBAL_PARAMS;
+                Self::MultibandCompressor {
+                    num_bands: p(mc, "num_bands").default_usize(),
+                    crossover_preset: p(mc, "crossover_preset").default_i32(),
+                    crossover_freq_1: p(mc, "crossover_freq_1").default_f64(),
+                    crossover_freq_2: p(mc, "crossover_freq_2").default_f64(),
+                    crossover_freq_3: p(mc, "crossover_freq_3").default_f64(),
+                    crossover_freq_4: p(mc, "crossover_freq_4").default_f64(),
+                    threshold_db: p(mc, "threshold").default_f64(),
+                    ratio: p(mc, "ratio").default_f64(),
+                    attack_ms: p(mc, "attack").default_f64(),
+                    release_ms: p(mc, "release").default_f64(),
+                    knee_db: p(mc, "knee").default_f64(),
+                    mix: p(mc, "mix").default_f64(),
+                    link_channels: p(mc, "link_channels").default_bool(),
+                    per_band_lookahead_ms: p(mc, "per_band_lookahead_ms").default_f64(),
+                    bands: Vec::new(),
+                }
+            }
+            PluginType::MultibandExpander => {
+                let me = mb_expander_specs::GLOBAL_PARAMS;
+                Self::MultibandExpander {
+                    num_bands: p(me, "num_bands").default_usize(),
+                    crossover_preset: p(me, "crossover_preset").default_i32(),
+                    crossover_freq_1: p(me, "crossover_freq_1").default_f64(),
+                    crossover_freq_2: p(me, "crossover_freq_2").default_f64(),
+                    crossover_freq_3: p(me, "crossover_freq_3").default_f64(),
+                    crossover_freq_4: p(me, "crossover_freq_4").default_f64(),
+                    threshold_db: p(me, "threshold").default_f64(),
+                    ratio: p(me, "ratio").default_f64(),
+                    attack_ms: p(me, "attack").default_f64(),
+                    release_ms: p(me, "release").default_f64(),
+                    range_db: p(me, "range").default_f64(),
+                    knee_db: p(me, "knee").default_f64(),
+                    hysteresis_db: p(me, "hysteresis").default_f64(),
+                    hold_ms: p(me, "hold").default_f64(),
+                    mix: p(me, "mix").default_f64(),
+                    link_channels: p(me, "link_channels").default_bool(),
+                    detection_mode: default_mb_expander_detection_mode(),
+                    bands: Vec::new(),
+                }
+            }
+            PluginType::LoudnessCompensation => {
+                let lc = lc_specs::PARAMS;
+                Self::LoudnessCompensation {
+                    low_freq: p(lc, "low_freq").default_f64(),
+                    low_gain: p(lc, "low_gain").default_f64(),
+                    high_freq: p(lc, "high_freq").default_f64(),
+                    high_gain: p(lc, "high_gain").default_f64(),
+                    mid_enabled: p(lc, "mid_enabled").default_bool(),
+                    mid_freq: p(lc, "mid_freq").default_f64(),
+                    mid_gain: p(lc, "mid_gain").default_f64(),
+                    mid_q: p(lc, "mid_q").default_f64(),
+                    auto_gain_enabled: p(lc, "auto_gain_enabled").default_bool(),
+                    auto_gain_max_db: p(lc, "auto_gain_max_db").default_f64(),
+                    auto_gain_smoothing_ms: p(lc, "auto_gain_smoothing_ms").default_f64(),
+                }
+            }
+            PluginType::FletcherMunson => {
+                let fm = fm_specs::PARAMS;
+                Self::FletcherMunson {
+                    playback_volume_db: 0.0,
+                    reference_level_db: p(fm, "reference_level_db").default_f64(),
+                    enabled: p(fm, "enabled").default_bool(),
+                    band1_freq: p(fm, "band1_freq").default_f64(),
+                    band1_q: p(fm, "band1_q").default_f64(),
+                    band1_max_gain: p(fm, "band1_max_gain").default_f64(),
+                    band1_slope: p(fm, "band1_slope").default_f64(),
+                    band2_freq: p(fm, "band2_freq").default_f64(),
+                    band2_q: p(fm, "band2_q").default_f64(),
+                    band2_max_gain: p(fm, "band2_max_gain").default_f64(),
+                    band2_slope: p(fm, "band2_slope").default_f64(),
+                    band3_freq: p(fm, "band3_freq").default_f64(),
+                    band3_q: p(fm, "band3_q").default_f64(),
+                    band3_max_gain: p(fm, "band3_max_gain").default_f64(),
+                    band3_slope: p(fm, "band3_slope").default_f64(),
+                    band4_freq: p(fm, "band4_freq").default_f64(),
+                    band4_q: p(fm, "band4_q").default_f64(),
+                    band4_max_gain: p(fm, "band4_max_gain").default_f64(),
+                    band4_slope: p(fm, "band4_slope").default_f64(),
+                    smoothing_ms: p(fm, "smoothing_ms").default_f64(),
+                    auto_gain_enabled: p(fm, "auto_gain_enabled").default_bool(),
+                    auto_gain_max_db: p(fm, "auto_gain_max_db").default_f64(),
+                    auto_gain_smoothing_ms: p(fm, "auto_gain_smoothing_ms").default_f64(),
+                    auto_gain_loudness_type: pk(fm_specs::PARAMS, "auto_gain_loudness_type")
+                        .default_f64() as i32,
+                }
+            }
+            PluginType::BinauralDecoder => {
+                let b = binaural_specs::PARAMS;
+                Self::BinauralDecoder {
+                    sofa_file: String::new(),
+                    input_channels: 6, // Default to 5.1
+                    enable_optimization: p(b, "enable_optimization").default_bool(),
+                    externalization: p(b, "externalization").default_f64(),
+                    near_field_strength: p(b, "near_field_strength").default_f64(),
+                }
+            }
+            PluginType::Convolution => {
+                let cv = convolution_specs::PARAMS;
+                Self::Convolution {
+                    ir_file: String::new(),
+                    mix: p(cv, "mix").default_f64(),
+                    gain_db: p(cv, "gain_db").default_f64(),
+                    use_nupc: p(cv, "use_nupc").default_bool(),
+                }
+            }
+            PluginType::LoudnessMonitor => Self::LoudnessMonitor,
+            PluginType::SpectrumAnalyzer => Self::SpectrumAnalyzer {
+                num_bins: pk(spectrum_specs::PARAMS, "num_bins").default_usize(),
+                min_freq: pk(spectrum_specs::PARAMS, "min_freq").default_f64() as f32,
+                max_freq: pk(spectrum_specs::PARAMS, "max_freq").default_f64() as f32,
+                smoothing: pk(spectrum_specs::PARAMS, "smoothing").default_f64() as f32,
+                tilt_correction: SpectralTiltCorrection::None,
+                tilt_reference: TiltReferenceFreq::Standard,
+            },
+            PluginType::ChannelMuteSolo => Self::ChannelMuteSolo {
+                enabled: pk(cms_specs::PARAMS, "enabled").default_bool(),
+                dim_gain_db: pk(cms_specs::PARAMS, "dim_gain_db").default_f64(),
+                fade_ms: pk(cms_specs::PARAMS, "fade_ms").default_f64(),
+                channel_states: vec![],
+            },
+            PluginType::Matrix => Self::Matrix {
+                input_channels: 2,
+                output_channels: 2,
+                matrix: vec![
+                    pk(matrix_specs::PARAMS, "gain").max_f64() as f32,
+                    pk(matrix_specs::PARAMS, "gain").min_f64() as f32,
+                    pk(matrix_specs::PARAMS, "gain").min_f64() as f32,
+                    pk(matrix_specs::PARAMS, "gain").max_f64() as f32,
+                ], // Identity 2x2
+                channel_states: vec![],
+            },
+            PluginType::XTC => {
+                let x = xtc_specs::PARAMS;
+                Self::XTC {
+                    distance_m: p(x, "distance_m").default_f64(),
+                    speaker_angle_deg: p(x, "speaker_angle_deg").default_f64(),
+                    head_radius_m: p(x, "head_radius_m").default_f64(),
+                    beta_base: p(x, "beta_base").default_f64(),
+                    beta_low_freq_boost: p(x, "beta_low_freq_boost").default_f64(),
+                    beta_high_freq_boost: p(x, "beta_high_freq_boost").default_f64(),
+                    head_shadow_cutoff_hz: p(x, "head_shadow_cutoff_hz").default_f64(),
+                    head_shadow_slope_db_per_octave: p(x, "head_shadow_slope_db_per_octave")
+                        .default_f64(),
+                    max_gain_db: p(x, "max_gain_db").default_f64(),
+                    head_offset_x: p(x, "head_offset_x").default_f64(),
+                    head_offset_z: p(x, "head_offset_z").default_f64(),
+                    head_yaw_deg: p(x, "head_yaw_deg").default_f64(),
+                    head_tracking_smooth_s: pk(xtc_specs::PARAMS, "head_tracking_smooth_s")
+                        .default_f64(),
+                    spectral_normalization: p(x, "spectral_normalization").default_bool(),
+                    room_reflections_enabled: p(x, "room_reflections_enabled").default_bool(),
+                    room_ir_file: None,
+                    room_width_m: p(x, "room_width_m").default_f64(),
+                    room_depth_m: p(x, "room_depth_m").default_f64(),
+                    wall_absorption: p(x, "wall_absorption").default_f64(),
+                    reflection_beta_boost: p(x, "reflection_beta_boost").default_f64(),
+                    bypass_xtc_filters: p(x, "bypass_xtc_filters").default_bool(),
+                    bypass_spectral_normalization: p(x, "bypass_spectral_normalization")
+                        .default_bool(),
+                    bypass_neumann_refinement: p(x, "bypass_neumann_refinement").default_bool(),
+                    auto_gain_enabled: p(x, "auto_gain_enabled").default_bool(),
+                    auto_gain_max_db: p(x, "auto_gain_max_db").default_f64(),
+                    auto_gain_smoothing_ms: p(x, "auto_gain_smoothing_ms").default_f64(),
+                    pinna_model_enabled: p(x, "pinna_model_enabled").default_bool(),
+                }
+            }
+            PluginType::Denoiser => {
+                let d = denoiser_specs::PARAMS;
+                Self::Denoiser {
+                    reduction_db: p(d, "reduction_db").default_f64(),
+                    floor_db: p(d, "floor_db").default_f64(),
+                    smoothing: p(d, "smoothing").default_f64(),
+                    attack_ms: p(d, "attack_ms").default_f64(),
+                    release_ms: p(d, "release_ms").default_f64(),
+                    low_latency: p(d, "low_latency").default_bool(),
+                    polyphonic_detection: p(d, "polyphonic_detection").default_bool(),
+                    crack_sensitivity: p(d, "crack_sensitivity").default_f64(),
+                    mcra_alpha_s: p(d, "mcra_alpha_s").default_f64(),
+                    mcra_alpha_p: p(d, "mcra_alpha_p").default_f64(),
+                    mcra_l: p(d, "mcra_l").default_usize(),
+                    mcra_delta: p(d, "mcra_delta").default_f64(),
+                    transparency: p(d, "transparency").default_f64(),
+                    dd_enabled: p(d, "dd_enabled").default_bool(),
+                    dd_alpha: p(d, "dd_alpha").default_f64(),
+                    psychoacoustic_masking: p(d, "psychoacoustic_masking").default_bool(),
+                    transient_enabled: p(d, "transient_enabled").default_bool(),
+                    spectral_smoothing_enabled: p(d, "spectral_smoothing_enabled").default_bool(),
+                    temporal_smoothing_enabled: p(d, "temporal_smoothing_enabled").default_bool(),
+                    hiss_enabled: p(d, "hiss_enabled").default_bool(),
+                    hiss_threshold_db: p(d, "hiss_threshold_db").default_f64(),
+                    hiss_frequency_hz: p(d, "hiss_frequency_hz").default_f64(),
+                    hiss_strength: p(d, "hiss_strength").default_f64(),
+                    spectral_sub_enabled: p(d, "spectral_sub_enabled").default_bool(),
+                    spectral_sub_alpha: p(d, "spectral_sub_alpha").default_f64(),
+                    spectral_sub_beta: p(d, "spectral_sub_beta").default_f64(),
+                    learn_noise: p(d, "learn_noise").default_bool(),
+                    use_captured_profile: p(d, "use_captured_profile").default_bool(),
+                    clear_profile: p(d, "clear_profile").default_bool(),
+                    algorithm: p(d, "algorithm").default_usize(),
+                }
+            }
+            PluginType::Pnd => {
+                let pn = pnd_specs::PARAMS;
+                Self::Pnd {
+                    correction_strength: p(pn, "correction_strength").default_f64(),
+                    analysis_window_ms: p(pn, "analysis_window_ms").default_f64(),
+                    drift_smoothing: p(pn, "drift_smoothing").default_f64(),
+                    multi_channel_analysis: p(pn, "multi_channel_analysis").default_bool(),
+                    confidence_threshold: p(pn, "confidence_threshold").default_f64(),
+                }
+            }
+            PluginType::ABCompare => {
+                let ab = ab_compare_specs::PARAMS;
+                Self::ABCompare {
+                    mix: p(ab, "mix").default_f64(),
+                    mix_mode: p(ab, "mix_mode").default_i32(),
+                    selected_path: p(ab, "selected_path").default_i32(),
+                    bypass: p(ab, "bypass").default_bool(),
+                    auto_gain_enabled: p(ab, "auto_gain_enabled").default_bool(),
+                    loudness_type: p(ab, "loudness_type").default_i32(),
+                    max_auto_gain_db: p(ab, "max_auto_gain_db").default_f64(),
+                    gain_smoothing_ms: p(ab, "gain_smoothing_ms").default_f64(),
+                    mix_transition_ms: p(ab, "mix_transition_ms").default_f64(),
+                    path_a_config: default_ab_path_config(),
+                    path_b_config: default_ab_path_config(),
+                    path_a_file: String::new(),
+                    path_b_file: String::new(),
+                    phase_invert_a: p(ab, "phase_invert_a").default_bool(),
+                    phase_invert_b: p(ab, "phase_invert_b").default_bool(),
+                    difference_mode: p(ab, "difference_mode").default_bool(),
+                }
+            }
+            PluginType::BandSplit => Self::BandSplit {
+                channels: default_channels(),
+                frequency: default_band_split_frequency(),
+                crossover_type: default_band_split_crossover_type(),
+            },
+            PluginType::BandMerge => Self::BandMerge {
+                channels: default_channels(),
+                bands: default_band_merge_bands(),
+            },
+            PluginType::Downmix => {
+                let dw = downmix_specs::PARAMS;
+                Self::Downmix {
+                    input_channels: 6, // Default to 5.1
+                    center_gain_db: p(dw, "center_gain_db").default_f64(),
+                    surround_gain_db: p(dw, "surround_gain_db").default_f64(),
+                    height_gain_db: p(dw, "height_gain_db").default_f64(),
+                    lfe_gain_db: p(dw, "lfe_gain_db").default_f64(),
+                    phase_coherence: p(dw, "phase_coherence").default_bool(),
+                    phase_blend_low_hz: p(dw, "phase_blend_low_hz").default_f64(),
+                    phase_blend_high_hz: p(dw, "phase_blend_high_hz").default_f64(),
+                    itu_mode: p(dw, "itu_mode").default_bool(),
+                }
+            }
+            PluginType::MonoToStereo => {
+                let ms = mono_to_stereo_specs::PARAMS;
+                Self::MonoToStereo {
+                    stereo_width: p(ms, "stereo_width").default_f64(),
+                    haas_delay_ms: p(ms, "haas_delay_ms").default_f64(),
+                    enable_comp_eq: p(ms, "enable_comp_eq").default_bool(),
+                    comp_eq_depth_db: p(ms, "comp_eq_depth_db").default_f64(),
+                    decor_low_hz: p(ms, "decor_low_hz").default_f64(),
+                    decor_high_hz: p(ms, "decor_high_hz").default_f64(),
+                    freq_dependent: p(ms, "freq_dependent").default_bool(),
+                }
+            }
+            PluginType::Crossfeed => {
+                let cf = crossfeed_specs::PARAMS;
+                Self::Crossfeed {
+                    mode: CrossfeedMode::Bauer,
+                    preset: CrossfeedPreset::Default,
+                    enabled: true,
+                    mix: p(cf, "mix").default_f64(),
+                    bauer_fcut_hz: p(cf, "bauer_fcut_hz").default_f64(),
+                    bauer_feed_db: p(cf, "bauer_feed_db").default_f64(),
+                    meier_level: p(cf, "meier_level").default_f64(),
+                    mb_low_freq_hz: p(cf, "mb_low_freq_hz").default_f64(),
+                    mb_mid_high_freq_hz: p(cf, "mb_mid_high_freq_hz").default_f64(),
+                    mb_low_feed_db: p(cf, "mb_low_feed_db").default_f64(),
+                    mb_mid_feed_db: p(cf, "mb_mid_feed_db").default_f64(),
+                    mb_high_feed_db: p(cf, "mb_high_feed_db").default_f64(),
+                    itd_delay_ms: p(cf, "itd_delay_ms").default_f64(),
+                    autogain_enabled: p(cf, "autogain_enabled").default_bool(),
+                    autogain_target_lufs: p(cf, "autogain_target_lufs").default_f64(),
+                    autogain_max_gain_db: p(cf, "autogain_max_gain_db").default_f64(),
+                    autogain_smoothing_ms: p(cf, "autogain_smoothing_ms").default_f64(),
+                }
+            }
+            PluginType::Delay => {
+                let d = delay_specs::PARAMS;
+                Self::Delay {
+                    delay_ms: p(d, "delay_ms").default_f64(),
+                    feedback: p(d, "feedback").default_f64(),
+                    mix: p(d, "mix").default_f64(),
+                    lfo_rate_hz: p(d, "lfo_rate_hz").default_f64(),
+                    lfo_depth_ms: p(d, "lfo_depth_ms").default_f64(),
+                    allpass_feedback: p(d, "allpass_feedback").default_bool(),
+                }
+            }
+            PluginType::Aec => {
+                let a = aec_specs::PARAMS;
+                Self::Aec {
+                    echo_tail_ms: p(a, "echo_tail_ms").default_f64(),
+                    step_size: p(a, "step_size").default_f64(),
+                    post_filter_enabled: p(a, "post_filter_enabled").default_bool(),
+                }
+            }
+            PluginType::Beamformer => {
+                let b = beamformer_specs::PARAMS;
+                Self::Beamformer {
+                    num_mics: p(b, "num_mics").default_usize(),
+                    mic_spacing_cm: p(b, "mic_spacing_cm").default_f64(),
+                    steer_angle_deg: p(b, "steer_angle_deg").default_f64(),
+                    beamformer_type: p(b, "beamformer_type").default_usize(),
+                }
+            }
+            PluginType::AmbisonicsDecoder => {
+                let a = ambisonics_specs::PARAMS;
+                Self::AmbisonicsDecoder {
+                    order: p(a, "order").default_usize(),
+                    target_layout: default_ambisonics_target_layout(),
+                    max_re_weighting: p(a, "max_re_weighting").default_bool(),
+                    dual_band: p(a, "dual_band").default_bool(),
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Matrix Helper Functions
+// ============================================================================
+
+/// Get channel label for a given channel index and total channel count.
+/// Reads labels from `speaker_config.rs` (the single source of truth).
+/// Note: channel count alone is ambiguous for some layouts (e.g. 8ch = 7.1 or 5.1.2).
+/// Use `get_channel_label_from_config()` with a config ID when available.
+#[derive(Debug)]
+pub struct ChannelConflict {
+    pub index: usize,
+    pub plugin_type: PluginType,
+    pub required_channels: usize,
+    pub actual_channels: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Plugin {
+    pub id: usize,
+    pub enabled: bool,
+    pub settings: PluginSettings,
+    /// If true, this plugin cannot be removed from the chain (part of default rack)
+    #[serde(default)]
+    pub permanent: bool,
+    /// Temporarily disabled due to channel incompatibility; auto-restores on compatible tracks
+    #[serde(skip)]
+    pub suspended: bool,
+}
+
+impl Plugin {
+    pub fn new(id: usize, plugin_type: &PluginType) -> Self {
+        Self {
+            id,
+            enabled: true,
+            settings: PluginSettings::default_for(plugin_type),
+            permanent: false,
+            suspended: false,
+        }
+    }
+
+    /// Create a permanent plugin that cannot be removed
+    pub fn new_permanent(id: usize, plugin_type: &PluginType) -> Self {
+        Self {
+            id,
+            enabled: true,
+            settings: PluginSettings::default_for(plugin_type),
+            permanent: true,
+            suspended: false,
+        }
+    }
+
+    pub fn plugin_type(&self) -> PluginType {
+        self.settings.plugin_type()
+    }
+
+    /// Returns true if this plugin is permanent and cannot be removed
+    pub fn is_permanent(&self) -> bool {
+        self.permanent
+    }
+
+    pub fn to_plugin_config(&self, sample_rate: f64) -> Option<PluginConfig> {
+        if self.enabled && !self.suspended {
+            Some(self.settings.to_plugin_config(sample_rate))
+        } else {
+            None
+        }
+    }
+}
+
+// ============================================================================
+

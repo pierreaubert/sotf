@@ -2936,6 +2936,10 @@ fn build_rack_mode_plugins(
                         bypass_transient_detection: plugins.upmixer.bypass_transient_detection,
                         bypass_all_processing: plugins.upmixer.bypass_all_processing,
                         enable_ml_detection: plugins.upmixer.enable_ml_detection,
+                        low_latency: false,
+                        frequency_resolution: 0,
+                        multi_source_extraction: false,
+                        multi_source_threshold: 0.3,
                     };
                 }
                 log::info!("Rack: Added Upmixer plugin ({})", plugins.upmixer.config);
@@ -3014,6 +3018,7 @@ fn build_rack_mode_plugins(
                         channel_filters: None,
                         per_channel_mode: false,
                         max_filters: 20,
+                        tdf2: false,
                     };
                 }
                 log::info!("Rack: Added EQ plugin with {} filters", filters.len());

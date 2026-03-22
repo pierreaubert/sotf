@@ -59,7 +59,8 @@ fn send_or_interrupt<T>(
                     return Ok(Some(cmd));
                 }
                 msg = returned_msg;
-                std::thread::sleep(Duration::from_millis(1));
+                // Sleep 5ms instead of 1ms to reduce CPU wakeups
+                std::thread::sleep(Duration::from_millis(5));
             }
             Err(e) => return Err(format!("Channel disconnected: {}", e)),
         }
@@ -158,6 +159,9 @@ struct DecoderState {
     frame_send_buffer: Vec<f32>,
     /// Receives recycled Vec<f32> buffers from the processing thread
     recycle_rx: Receiver<Vec<f32>>,
+    /// Queued next file for gapless playback. When set and the current file ends,
+    /// the decoder seamlessly transitions to this file without sending EndOfStream/Flush.
+    queued_next: Option<PathBuf>,
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_input_buffer: Vec<f32>,
@@ -186,6 +190,7 @@ impl DecoderState {
             chunk_buffer: Vec::with_capacity(1024 * 8),
             frame_send_buffer: Vec::with_capacity(1024 * 8),
             recycle_rx,
+            queued_next: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_input_buffer: Vec::new(),
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -506,6 +511,40 @@ impl DecoderState {
                     self.resampler_buffer.clear();
                 }
 
+                // Gapless playback: if a next file is queued, transition seamlessly
+                // without sending EndOfStream or Flush. The audio pipeline continues
+                // uninterrupted with frames from the new file.
+                if let Some(next_path) = self.queued_next.take() {
+                    log::info!(
+                        "[Decoder Thread] Gapless transition to: {:?}",
+                        next_path
+                    );
+
+                    // Keep resampler state — clear buffers but don't destroy the
+                    // resampler. The new file may or may not need resampling; we
+                    // re-evaluate below.
+                    self.decoder = None;
+                    self.resampler_buffer.clear();
+                    self.resample_staging.clear();
+                    self.decode_buffer = None;
+
+                    match self.play(next_path.clone(), target_sample_rate, frame_size) {
+                        Ok(()) => {
+                            event_tx
+                                .send(ThreadEvent::DecoderGaplessTransition(next_path))
+                                .ok();
+                            return Ok(DecoderLoopAction::Continue);
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[Decoder Thread] Gapless transition failed: {}, falling through to EndOfStream",
+                                e
+                            );
+                            // Fall through to normal end-of-stream below
+                        }
+                    }
+                }
+
                 if let Some(cmd) =
                     send_or_interrupt(message_tx, command_rx, DecoderMessage::EndOfStream)?
                 {
@@ -561,6 +600,7 @@ impl DecoderState {
         self.current_file = None;
         self.spec = None;
         self.silent_source = false;
+        self.queued_next = None;
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             self.hal_reader = None;
@@ -853,6 +893,16 @@ fn run_decoder_thread(
                         response_tx.send(DecoderResponse::Ok).ok();
                     }
                 }
+                DecoderCommand::QueueNext(path) => {
+                    log::debug!("[Decoder Thread] Queued next: {:?}", path);
+                    state.queued_next = Some(path);
+                    response_tx.send(DecoderResponse::Ok).ok();
+                }
+                DecoderCommand::CancelNext => {
+                    log::debug!("[Decoder Thread] Cancelled queued next");
+                    state.queued_next = None;
+                    response_tx.send(DecoderResponse::Ok).ok();
+                }
                 DecoderCommand::Stop => {
                     state.stop();
                     message_tx.send(DecoderMessage::Flush).ok();
@@ -962,6 +1012,16 @@ fn run_decoder_thread(
                             DecoderCommand::StartSilentSource => {
                                 state.start_silent_source();
                             }
+                            DecoderCommand::QueueNext(path) => {
+                                log::debug!("[Decoder Thread] Queued next (from HAL interrupt): {:?}", path);
+                                state.queued_next = Some(path);
+                                response_tx.send(DecoderResponse::Ok).ok();
+                            }
+                            DecoderCommand::CancelNext => {
+                                log::debug!("[Decoder Thread] Cancelled queued next (from HAL interrupt)");
+                                state.queued_next = None;
+                                response_tx.send(DecoderResponse::Ok).ok();
+                            }
                         }
                     } else {
                         std::thread::sleep(std::time::Duration::from_millis(1));
@@ -1066,6 +1126,16 @@ fn run_decoder_thread(
                                 event_tx.send(ThreadEvent::SeekComplete).ok();
                                 response_tx.send(DecoderResponse::Ok).ok();
                             }
+                        }
+                        DecoderCommand::QueueNext(path) => {
+                            log::debug!("[Decoder Thread] Queued next (from interrupt): {:?}", path);
+                            state.queued_next = Some(path);
+                            response_tx.send(DecoderResponse::Ok).ok();
+                        }
+                        DecoderCommand::CancelNext => {
+                            log::debug!("[Decoder Thread] Cancelled queued next (from interrupt)");
+                            state.queued_next = None;
+                            response_tx.send(DecoderResponse::Ok).ok();
                         }
                         DecoderCommand::Stop => {
                             state.stop();

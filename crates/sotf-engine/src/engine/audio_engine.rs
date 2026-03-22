@@ -63,6 +63,25 @@ impl AudioEngine {
         self.expect_ok_response()
     }
 
+    /// Queue the next file for gapless playback.
+    ///
+    /// When the current track finishes decoding, the decoder seamlessly transitions
+    /// to the queued file without any gap in audio output. Only one file can be
+    /// queued at a time; calling this again replaces the previous queued file.
+    pub fn queue_next<P: Into<std::path::PathBuf>>(&self, path: P) -> Result<(), String> {
+        self.manager
+            .send_command(ManagerCommand::QueueNext(path.into()))?;
+        self.expect_ok_response()
+    }
+
+    /// Cancel a previously queued next file.
+    ///
+    /// If no file is queued, this is a no-op (still returns Ok).
+    pub fn cancel_next(&self) -> Result<(), String> {
+        self.manager.send_command(ManagerCommand::CancelNext)?;
+        self.expect_ok_response()
+    }
+
     /// Pause playback
     pub fn pause(&self) -> Result<(), String> {
         self.manager.send_command(ManagerCommand::Pause)?;

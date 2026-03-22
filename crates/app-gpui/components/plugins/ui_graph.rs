@@ -520,6 +520,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::Delay => theme.info,
         PluginType::Aec => theme.info,
         PluginType::Beamformer => theme.accent,
+        PluginType::AmbisonicsDecoder => theme.accent,
     }
 }
 
@@ -568,6 +569,8 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::Aec => (2, 1),
         // Beamformer: M in, 1 out (default 2 mics)
         PluginType::Beamformer => (2, 1),
+        // Ambisonics decoder: 4ch (FOA) in, multi-channel out
+        PluginType::AmbisonicsDecoder => (4, 6),
     }
 }
 
