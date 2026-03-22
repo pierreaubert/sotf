@@ -1,0 +1,27 @@
+[package]
+name = "sotf-services"
+description = "Streaming service integrations (Spotify, Tidal) for SOTF"
+version = "0.1.0"
+edition.workspace = true
+
+[features]
+default = []
+spotify = ["dep:librespot-core", "dep:librespot-playback", "dep:librespot-metadata"]
+tidal = ["dep:reqwest", "dep:serde", "dep:serde_json"]
+
+[dependencies]
+log = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt"] }
+
+# Spotify (optional)
+librespot-core = { version = "0.6", optional = true }
+librespot-playback = { version = "0.6", optional = true }
+librespot-metadata = { version = "0.6", optional = true }
+
+# Tidal (optional)
+reqwest = { version = "0.13", features = ["json", "blocking", "query", "form"], optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+env_logger = { workspace = true }

@@ -1,0 +1,18 @@
+[package]
+name = "sotf-cast"
+description = "AirPlay and Chromecast audio casting for SOTF"
+version = "0.1.0"
+edition.workspace = true
+
+[features]
+default = ["airplay", "chromecast"]
+airplay = []
+chromecast = []
+
+[dependencies]
+log = { workspace = true }
+tokio = { workspace = true, features = ["net", "io-util", "macros", "sync", "rt", "time"] }
+uuid = { workspace = true }
+
+[dev-dependencies]
+env_logger = { workspace = true }

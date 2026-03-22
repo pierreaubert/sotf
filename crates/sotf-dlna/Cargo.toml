@@ -1,0 +1,13 @@
+[package]
+name = "sotf-dlna"
+description = "DLNA/UPnP MediaRenderer and MediaServer for SOTF"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+log = { workspace = true }
+tokio = { workspace = true, features = ["net", "io-util", "macros", "sync", "rt", "time"] }
+uuid = { workspace = true }
+
+[dev-dependencies]
+env_logger = { workspace = true }
