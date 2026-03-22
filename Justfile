@@ -7,6 +7,7 @@ import? 'builds/cross.just'
 import? 'builds/macos.just'
 import? 'builds/windows.just'
 import? 'builds/linux.just'
+import? 'builds/ios.just'
 
 import? 'crates/math-audio/Justfile'
 import? 'crates/autoeq/Justfile'
