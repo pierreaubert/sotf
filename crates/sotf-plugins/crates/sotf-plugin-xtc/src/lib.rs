@@ -26,6 +26,7 @@
 
 mod config;
 mod filters;
+pub mod params;
 mod reflections;
 #[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]

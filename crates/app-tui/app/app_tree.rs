@@ -75,7 +75,7 @@ impl App {
     }
 
     /// Add the selected item (artist or album) to queue from tree view
-    pub fn add_tree_selection_to_queue(&mut self) -> Option<PathBuf> {
+    pub fn add_tree_selection_to_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         if self.library_view_mode != LibraryViewMode::TreeView {
             return None;
         }

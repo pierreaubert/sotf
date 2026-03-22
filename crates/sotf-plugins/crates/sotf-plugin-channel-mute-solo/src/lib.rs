@@ -2,7 +2,7 @@
 // Channel Mute/Solo Plugin - Mute or solo individual channels
 // ============================================================================
 
-pub mod param_specs;
+pub mod params;
 
 use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};

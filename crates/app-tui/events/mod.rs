@@ -315,9 +315,9 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
 
 #[derive(Debug, Clone)]
 pub enum PlayerCommand {
-    Play(std::path::PathBuf),
+    Play(sotf_audio::decoder::AudioSource),
     /// Play after channel conflict was already resolved (skip conflict re-check)
-    PlayResolved(std::path::PathBuf),
+    PlayResolved(sotf_audio::decoder::AudioSource),
     Pause,
     Resume,
     Stop,

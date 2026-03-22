@@ -2,16 +2,16 @@
 // Multiband Compressor Plugin
 // ============================================================================
 
+pub mod params;
+
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::lookahead::LookaheadBuffer;
 use sotf_host::auto_makeup::MeasuredMakeup;
-use sotf_host::param_specs::{
-    find_by_key as pk,
-    multiband_compressor::{BAND_TEMPLATE as MCB, GLOBAL_PARAMS as MC},
-};
+use crate::params::{BAND_TEMPLATE as MCB, GLOBAL_PARAMS as MC};
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};

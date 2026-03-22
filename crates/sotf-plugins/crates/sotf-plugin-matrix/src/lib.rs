@@ -2,6 +2,8 @@
 // Matrix Plugin - Channel mixer with configurable gain matrix
 // ============================================================================
 
+pub mod params;
+
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;

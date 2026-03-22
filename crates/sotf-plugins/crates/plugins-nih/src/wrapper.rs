@@ -222,7 +222,7 @@ macro_rules! sotf_nih_plugin {
 
 /// Get ParamSpec array for a plugin type.
 pub fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::ParamSpec] {
-    use sotf_host::param_specs::*;
+    use sotf_plugins::param_specs::*;
 
     match plugin_type {
         "EQ" => eq::GLOBAL_PARAMS,

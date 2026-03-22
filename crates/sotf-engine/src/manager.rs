@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
 use crate::devices::verify_working_sample_rate;
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
+use crate::decoder::AudioSource;
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
 
 /// Cache for verified working sample rates per device.
@@ -193,6 +194,7 @@ const ATOMIC_NONE: u64 = u64::MAX;
 #[derive(Debug, Clone)]
 pub struct AudioFileInfo {
     pub path: PathBuf,
+    pub source: AudioSource,
     pub format: AudioFormat,
     pub spec: AudioSpec,
     pub duration_seconds: Option<f64>,
@@ -249,6 +251,7 @@ impl AudioEngineManager {
         let duration_seconds = spec.duration().map(|d| d.as_secs_f64());
 
         let audio_info = AudioFileInfo {
+            source: AudioSource::File(path.clone()),
             path: path.clone(),
             format,
             spec,
@@ -267,6 +270,83 @@ impl AudioEngineManager {
         self.set_state(StreamingState::Ready);
 
         Ok(audio_info)
+    }
+
+    /// Load any audio source (file, URL, or service stream) for playback.
+    ///
+    /// For files, delegates to `load_file`. For URLs, probes the HTTP stream
+    /// for format/spec info. For service streams, uses minimal metadata.
+    pub fn load_source(&mut self, source: AudioSource) -> AudioDecoderResult<AudioFileInfo> {
+        match &source {
+            AudioSource::File(path) => self.load_file(path),
+            AudioSource::Url { url, format_hint: _, seekable: _ } => {
+                self.set_state(StreamingState::Loading);
+                self.stop()?;
+
+                log::debug!("[AudioEngineManager] Loading URL: {}", url);
+
+                // Create decoder from source to probe spec
+                let decoder = crate::decoder::create_decoder_from_source(&source)?;
+                let spec = decoder.spec().clone();
+                let format = decoder.format();
+                let duration_seconds = spec.duration().map(|d| d.as_secs_f64());
+
+                let audio_info = AudioFileInfo {
+                    path: PathBuf::from(url),
+                    source: source.clone(),
+                    format,
+                    spec,
+                    duration_seconds,
+                };
+
+                log::info!(
+                    "[AudioEngineManager] Loaded URL: {}Hz, {}ch, {:?}s",
+                    audio_info.spec.sample_rate,
+                    audio_info.spec.channels,
+                    audio_info.duration_seconds,
+                );
+
+                *self.current_audio_info.lock().unwrap() = Some(audio_info.clone());
+                self.set_state(StreamingState::Ready);
+                Ok(audio_info)
+            }
+            AudioSource::ServiceStream { service, track_id } => {
+                self.set_state(StreamingState::Loading);
+                self.stop()?;
+
+                log::debug!(
+                    "[AudioEngineManager] Loading service stream: {}:{}",
+                    service,
+                    track_id
+                );
+
+                // For service streams, we provide minimal info.
+                // The actual decoding happens in the decoder thread.
+                let spec = AudioSpec {
+                    sample_rate: 44100,
+                    channels: 2,
+                    bits_per_sample: 16,
+                    total_frames: None,
+                };
+
+                let audio_info = AudioFileInfo {
+                    path: PathBuf::from(format!("{}:{}", service, track_id)),
+                    source: source.clone(),
+                    format: AudioFormat::Mp3, // placeholder
+                    spec,
+                    duration_seconds: None,
+                };
+
+                *self.current_audio_info.lock().unwrap() = Some(audio_info.clone());
+                self.set_state(StreamingState::Ready);
+                Ok(audio_info)
+            }
+            AudioSource::Driver => {
+                Err(AudioDecoderError::ConfigError(
+                    "Driver source should use start_driver_playback()".to_string(),
+                ))
+            }
+        }
     }
 
     /// Start streaming playback with the given plugin chain

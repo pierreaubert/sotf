@@ -966,7 +966,7 @@ impl PlayerView {
                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                             view.state.update(cx, |state, _cx| {
                                 let was_playing = state.app.playback.is_playing;
-                                let current_path = state.app.get_current_track_path();
+                                let current_path = state.app.queue.current_track_source();
                                 let current_pos = state.app.playback.position_secs;
 
                                 state.app.audio_device_state.selected_output_device_index = idx;

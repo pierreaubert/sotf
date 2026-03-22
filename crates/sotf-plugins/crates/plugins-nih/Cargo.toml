@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 plugins-bridge = { path = "../plugins-bridge" }
 sotf-host = { workspace = true }
+sotf-plugins = { workspace = true }
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

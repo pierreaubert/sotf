@@ -2,8 +2,12 @@
 // Crossfeed Plugin - Headphone crossfeed for speaker-like listening
 // ============================================================================
 
+pub mod params;
+
 use sotf_host::lr4_crossover::MultibandLr4Crossover;
-use sotf_host::param_specs::{crossfeed::PARAMS as CF, find_by_key as pk};
+use sotf_host::param_specs::find_by_key as pk;
+
+use crate::params::PARAMS as CF;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{deinterleave_stereo, enable_ftz_daz, interleave_stereo};

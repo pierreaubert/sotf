@@ -194,7 +194,7 @@ pub struct App {
     pub current_track_already_recorded: bool,
 
     // Channel conflict dialog state
-    pub channel_conflict_path: Option<std::path::PathBuf>,
+    pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>,
     pub channel_conflicts: Vec<sotf_audio_player::ChannelConflict>,
     pub channel_conflict_track_channels: usize,
 

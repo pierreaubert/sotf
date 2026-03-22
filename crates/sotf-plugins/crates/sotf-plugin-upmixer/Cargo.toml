@@ -29,11 +29,11 @@ realfft = { workspace = true }
 rtrb = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
 hound = { workspace = true }
-serde_json = { workspace = true }
 sotf-plugin-gain = { workspace = true }
 
 [[bench]]

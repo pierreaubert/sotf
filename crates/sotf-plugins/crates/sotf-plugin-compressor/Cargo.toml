@@ -20,10 +20,10 @@ required-features = ["qa"]
 sotf-host = { workspace = true }
 math-dsp = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
-serde_json = { workspace = true }
 
 [[bench]]
 name = "compressor-benchmark"

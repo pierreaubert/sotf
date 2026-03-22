@@ -2,6 +2,8 @@
 // Parametric EQ Plugin
 // ============================================================================
 
+pub mod params;
+
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use math_audio_iir_fir::{Biquad, BiquadCoefficients};
 use rubato::{Fft, FixedSync, Resampler};

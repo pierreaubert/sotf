@@ -12,6 +12,7 @@ crate-type = ["staticlib", "cdylib"]
 [target.'cfg(target_os = "macos")'.dependencies]
 plugins-bridge = { path = "../plugins-bridge" }
 sotf-host = { workspace = true }
+sotf-plugins = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

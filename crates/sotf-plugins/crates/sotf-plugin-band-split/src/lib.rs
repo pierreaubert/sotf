@@ -2,6 +2,8 @@
 // Band Split Plugin
 // ============================================================================
 
+pub mod params;
+
 use serde::{Deserialize, Serialize};
 use sotf_host::lr4_crossover::MultibandLr4Crossover;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};

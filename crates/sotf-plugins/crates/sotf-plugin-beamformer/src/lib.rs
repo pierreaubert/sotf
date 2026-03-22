@@ -12,6 +12,7 @@
 
 pub mod gsc;
 pub mod mvdr;
+pub mod params;
 pub mod steering;
 pub mod superdirective;
 

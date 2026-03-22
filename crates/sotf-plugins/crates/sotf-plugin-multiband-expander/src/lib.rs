@@ -2,6 +2,8 @@
 // Multiband Expander Plugin
 // ============================================================================
 
+pub mod params;
+
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_dsp::stft::{RealFftProcessor, generate_hann_window};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
@@ -11,10 +13,8 @@ use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_makeup::MeasuredMakeup;
 use sotf_host::detector::{DetectionMode, LevelDetector};
-use sotf_host::param_specs::{
-    find_by_key as pk,
-    multiband_expander::{BAND_TEMPLATE as MEB, GLOBAL_PARAMS as ME},
-};
+use crate::params::{BAND_TEMPLATE as MEB, GLOBAL_PARAMS as ME};
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};

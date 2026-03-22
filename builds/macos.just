@@ -18,7 +18,7 @@ prod-daemon:
 prod-toolbar:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	CONFIGBAR_DIR="crates/daemon/configbar"
+	CONFIGBAR_DIR="crates/systemwide/crates/daemon/configbar"
 	BUILD_DIR="target/release"
 	mkdir -p "$BUILD_DIR"
 	echo "Building ConfigBar/Toolbar..."
@@ -37,7 +37,7 @@ prod-toolbar:
 prod-hal-driver:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	HAL_SWIFT_DIR="crates/driver-hal/swift"
+	HAL_SWIFT_DIR="crates/systemwide/crates/driver-hal/swift"
 	BUILD_DIR="target/release/SotFHAL.driver"
 	mkdir -p "$BUILD_DIR/Contents/MacOS"
 	mkdir -p "$BUILD_DIR/Contents/Resources"
@@ -98,21 +98,14 @@ build-au-rust:
 	# Build for both architectures
 	cargo build --release -p plugins-ffi --target x86_64-apple-darwin
 	cargo build --release -p plugins-ffi --target aarch64-apple-darwin
-	cargo build --release -p gpui-au --target x86_64-apple-darwin
-	cargo build --release -p gpui-au --target aarch64-apple-darwin
-	# Create universal binaries
-	mkdir -p crates/plugins-au/Resources
+	# Create universal binary
+	mkdir -p crates/sotf-plugins/crates/plugins-au/Resources
 	lipo -create \
 		target/x86_64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
 		target/aarch64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
-		-output crates/plugins-au/Resources/libsotf_audio_plugins_ffi.a
-	lipo -create \
-		target/x86_64-apple-darwin/release/libgpui_au.a \
-		target/aarch64-apple-darwin/release/libgpui_au.a \
-		-output crates/plugins-au/Resources/libgpui_au.a
-	# Copy header files
-	cp crates/plugins-ffi/sotf_audio_plugin_ffi.h crates/plugins-au/Shared/
-	cp crates/plugins-gpui/GPUIBridge.h crates/plugins-au/Shared/
+		-output crates/sotf-plugins/crates/plugins-au/Resources/libsotf_audio_plugins_ffi.a
+	# Copy header file
+	cp crates/sotf-plugins/crates/plugins-ffi/sotf_audio_plugin_ffi.h crates/sotf-plugins/crates/plugins-au/Shared/
 	echo "✅ Universal Rust FFI libraries created"
 
 # Build Audio Unit plugins in Xcode
@@ -120,7 +113,7 @@ build-au-rust:
 build-au-swift: build-au-rust
 	#!/usr/bin/env bash
 	set -euxo pipefail
-	cd crates/plugins-au
+	cd crates/sotf-plugins/crates/plugins-au
 	# Generate Xcode project with XcodeGen
 	if [ ! -d "SOTFAudioUnits.xcodeproj" ] || [ "project.yml" -nt "SOTFAudioUnits.xcodeproj/project.pbxproj" ]; then
 		echo "🔨 Generating Xcode project with XcodeGen..."

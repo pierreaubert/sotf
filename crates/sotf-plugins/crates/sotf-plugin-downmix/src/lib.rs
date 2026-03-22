@@ -2,7 +2,10 @@
 // Phase-Coherent Downmix Plugin
 // ============================================================================
 
-use sotf_host::param_specs::{downmix::PARAMS as DM, find_by_key as pk};
+pub mod params;
+
+use sotf_host::param_specs::find_by_key as pk;
+use crate::params::PARAMS as DM;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};

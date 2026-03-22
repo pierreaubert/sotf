@@ -934,6 +934,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 None
             },
             multi_measurement: None,
+            smooth_n: config.smooth_n,
             decomposed_correction: None,
         };
 

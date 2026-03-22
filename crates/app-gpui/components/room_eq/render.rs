@@ -563,6 +563,22 @@ fn render_response_comparison_graph(
         eq_y_max
     };
 
+    // Scale Y2 (EQ axis) proportionally when zoomed so both axes zoom together
+    let (eq_y_min, eq_y_max) = if interactive_state.is_some_and(|s| s.is_zoomed()) {
+        let original_y_range = y_max - y_min;
+        let zoomed_y_range = y_max_domain - y_min_domain;
+        if original_y_range > 0.0 {
+            let scale = zoomed_y_range / original_y_range;
+            let eq_center = (eq_y_min + eq_y_max) / 2.0;
+            let eq_half = (eq_y_max - eq_y_min) / 2.0 * scale;
+            (eq_center - eq_half, eq_center + eq_half)
+        } else {
+            (eq_y_min, eq_y_max)
+        }
+    } else {
+        (eq_y_min, eq_y_max)
+    };
+
     // Build line chart
     let mut chart_builder = line(&frequencies, &original_values)
         .x_scale(ScaleType::Log)
@@ -765,6 +781,7 @@ fn render_filter_table(
     div()
         .flex()
         .flex_wrap()
+        .justify_center()
         .gap_2()
         .children(filters.iter().enumerate().map(|(i, f)| {
             let gain_color = if f.gain_db > 0.5 {

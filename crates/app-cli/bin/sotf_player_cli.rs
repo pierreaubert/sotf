@@ -2722,10 +2722,22 @@ fn play_stream(
     // Create streaming manager with signal watching enabled
     let mut streaming_manager = AudioEngineManager::with_signal_watching(true);
 
-    // Load the audio file
+    // Detect if the input is a URL or a local file path
+    let file_str = file.to_string_lossy();
+    let source = if file_str.starts_with("http://") || file_str.starts_with("https://") {
+        sotf_audio::decoder::AudioSource::Url {
+            url: file_str.to_string(),
+            format_hint: None,
+            seekable: false,
+        }
+    } else {
+        sotf_audio::decoder::AudioSource::File(file.clone())
+    };
+
+    // Load the audio source (file or URL)
     let audio_info = streaming_manager
-        .load_file(&file)
-        .map_err(|e| format!("Failed to load audio file: {}", e))?;
+        .load_source(source)
+        .map_err(|e| format!("Failed to load audio: {}", e))?;
 
     let msg = format!(
         "Loaded audio file:\n  Format: {}\n  Sample rate: {}Hz\n  Channels: {}\n  Bits per sample: {}",

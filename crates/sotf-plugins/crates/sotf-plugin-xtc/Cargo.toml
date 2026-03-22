@@ -24,6 +24,7 @@ rayon = { workspace = true }
 realfft = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 symphonia = { workspace = true }
 symphonia-core = { workspace = true }
 symphonia-format-riff = { workspace = true }
@@ -31,7 +32,6 @@ symphonia-codec-pcm = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
-serde_json = { workspace = true }
 
 [[bench]]
 name = "xtc-validation-benchmark"

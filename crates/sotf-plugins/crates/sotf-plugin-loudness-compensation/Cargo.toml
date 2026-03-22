@@ -20,6 +20,7 @@ required-features = ["qa"]
 sotf-host = { workspace = true }
 math-iir-fir = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

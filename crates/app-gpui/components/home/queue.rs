@@ -165,11 +165,11 @@ impl PlayerView {
                                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.playback.current_queue_index = Some(idx);
-                                                    if let Some(path) = state.app.queue[idx]
+                                                    if let Some(source) = state.app.queue[idx]
                                                         .current_track()
-                                                        .map(|t| t.path.clone())
+                                                        .map(|t| t.audio_source())
                                                     {
-                                                        Self::play_track(state, path);
+                                                        Self::play_track(state, source);
                                                     }
                                                 });
                                                 cx.notify();
@@ -866,7 +866,7 @@ impl PlayerView {
                 let is_current = idx == current_track_idx;
                 let duration_str = format!("{}:{:02}", duration / 60, duration % 60);
                 let theme_c = theme.clone();
-                let track_path = track.path.clone();
+                let track_path = track.audio_source();
                 let track_play_count = track.play_count;
                 let track_is_favorite = track.is_favorite;
                 let heart_track_path = track.path.clone();

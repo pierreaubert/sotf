@@ -20,3 +20,4 @@ required-features = ["qa"]
 sotf-host = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }

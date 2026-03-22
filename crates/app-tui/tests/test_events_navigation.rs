@@ -875,7 +875,7 @@ mod tests {
         let mut app = make_app();
         app.input_mode = InputMode::ChannelConflict;
         app.channel_conflict_selection = 0;
-        app.channel_conflict_path = Some(std::path::PathBuf::from("/fake/track.flac"));
+        app.channel_conflict_path = Some(sotf_audio::decoder::AudioSource::File(std::path::PathBuf::from("/fake/track.flac")));
         app.channel_conflict_track_channels = 6;
         app.channel_conflicts = vec![ChannelConflict {
             index: 0,

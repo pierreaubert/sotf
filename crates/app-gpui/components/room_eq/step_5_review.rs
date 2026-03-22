@@ -255,9 +255,9 @@ impl PlayerView {
                 let _ = state;
                 self.state.update(cx, |state, _| {
                     // Create interactive state for frequency response chart
-                    // X: 20 Hz to 20 kHz (log scale), Y: -20 to +5 dB (typical range)
+                    // X: 20 Hz to 20 kHz (log scale), Y: -40 to +10 dB (50dB zoom-out range)
                     state.app.measurement_state.room_eq_state.review_chart_state = Some(
-                        InteractiveChartStateWrapper::new(20.0, 20000.0, -20.0, 5.0)
+                        InteractiveChartStateWrapper::new(20.0, 20000.0, -40.0, 10.0)
                             .with_log_x(true)
                             .with_size(1200.0, 400.0),
                     );

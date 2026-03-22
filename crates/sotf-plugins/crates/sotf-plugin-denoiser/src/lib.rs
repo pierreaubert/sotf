@@ -20,7 +20,10 @@
 
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
-use sotf_host::param_specs::{denoiser::PARAMS as DN, find_by_key as pk};
+pub mod params;
+
+use crate::params::PARAMS as DN;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_plugin_pnd::analysis::PndAnalyzer;
@@ -413,7 +416,7 @@ impl DenoiserPlugin {
             noise_profile_storage: vec![vec![0.0_f32; spectrum_size]; channels],
             learning_accumulator: vec![vec![0.0_f32; spectrum_size]; channels],
             learning_frames_count: 0,
-            learning_frames_target: sotf_host::param_specs::denoiser::LEARN_FRAMES,
+            learning_frames_target: crate::params::LEARN_FRAMES,
             is_learning: false,
 
             attack_coeff: Self::time_to_coeff(pk(DN, "attack_ms").default_f32(), 44100, hop_size),

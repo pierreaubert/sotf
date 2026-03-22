@@ -3,6 +3,7 @@
 // ============================================================================
 
 pub mod nupc;
+pub mod params;
 
 use arc_swap::ArcSwap;
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
@@ -107,7 +108,8 @@ impl ConvolutionPlugin {
     }
 
     fn rebuild_cached_parameters(&mut self) {
-        use sotf_host::param_specs::{convolution::PARAMS as CV, find_by_key as pk};
+        use sotf_host::param_specs::find_by_key as pk;
+        use crate::params::PARAMS as CV;
         self.cached_parameters = vec![
             Parameter::new_float(
                 "mix",

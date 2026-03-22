@@ -47,9 +47,8 @@ impl PlayerView {
             adaptive_weight_cr: 0.7,
             refine: config.refine,
             local_algo: config.local_algo.clone(),
-            // Smoothing uses defaults (hidden in room EQ form, uses psychoacoustic instead)
-            smooth: false,
-            smooth_n: 6,
+            smooth: config.smooth,
+            smooth_n: config.smooth_n,
             // Spacing uses defaults (hidden in room EQ form)
             spacing_weight: 1.0,
             min_spacing_oct: 0.08,
@@ -168,7 +167,7 @@ impl PlayerView {
             .show_goals(false) // Goals hidden: loss is always flat, system type is auto-detected
             .show_optimization_tuning(show_advanced) // Only in advanced mode
             .hide_de_params(true) // Always hidden (internal to DE algorithm)
-            .hide_smoothing(true) // Always hidden (uses psychoacoustic instead)
+            .hide_smoothing(true) // Smoothing is handled directly in the room config card
             .hide_spacing(true)   // Always hidden (internal)
             .hide_tolerance(!show_advanced) // Only in advanced mode
             .hide_sample_rate(true) // Always hidden (auto-detected)
@@ -535,12 +534,46 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
+                        let cfg = &mut state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config;
+                        cfg.psychoacoustic = value;
+                        if value {
+                            cfg.smooth = false;
+                        }
+                        cx.notify();
+                    });
+                }
+            })
+            .on_smooth_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        let cfg = &mut state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config;
+                        cfg.smooth = value;
+                        if value {
+                            cfg.psychoacoustic = false;
+                        }
+                        cx.notify();
+                    });
+                }
+            })
+            .on_smooth_n_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .psychoacoustic = value;
+                            .smooth_n = value;
                         cx.notify();
                     });
                 }

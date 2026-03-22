@@ -54,6 +54,8 @@ impl PlayerView {
             local_algo: config.local_algo.clone(),
             smooth: config.smooth,
             smooth_n: config.smooth_n,
+            spacing_weight: config.spacing_weight,
+            min_spacing_oct: config.min_spacing_oct,
             // Goals - use headphone_eq_state values
             loss_type: headphone_eq.ui_loss_type().to_string(),
             target_curve: headphone_eq.target_preset.clone(),
@@ -79,9 +81,7 @@ impl PlayerView {
             .allowed_opt_modes(vec!["iir".to_string()])
             .show_goals(true)
             .show_optimization_tuning(true)
-            .hide_de_params(true)
             .hide_smoothing(true)
-            .hide_spacing(true)
             .hide_tolerance(false)
             .hide_sample_rate(true)
             .on_loss_type_change({
@@ -509,6 +509,34 @@ impl PlayerView {
                             .headphone_eq_state
                             .optimizer_config
                             .max_iter = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_spacing_weight_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .spacing_weight = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_min_spacing_oct_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .min_spacing_oct = value;
                         cx.notify();
                     });
                 }

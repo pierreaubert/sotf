@@ -5,6 +5,8 @@
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 
+use sotf_audio::decoder::AudioSource;
+
 use crate::{Album, Track};
 
 /// A single album in the playback queue with a current track position.
@@ -159,14 +161,14 @@ impl Queue {
     }
 
     /// Start playback from the first album in the queue.
-    /// Returns the path of the first track, or `None` if the queue is empty.
-    pub fn start(&mut self) -> Option<PathBuf> {
+    /// Returns the audio source of the first track, or `None` if the queue is empty.
+    pub fn start(&mut self) -> Option<AudioSource> {
         if self.items.is_empty() {
             return None;
         }
         self.current_index = Some(0);
         self.items[0].current_track_index = 0;
-        self.current_track_path()
+        self.current_track_source()
     }
 
     /// Peek at the next track without mutating state. Crosses album boundaries.
@@ -184,14 +186,14 @@ impl Queue {
     }
 
     /// Advance to the next track. Crosses album boundaries.
-    /// Returns the path of the next track, or `None` if at the end of the queue.
-    pub fn next_track(&mut self) -> Option<PathBuf> {
+    /// Returns the audio source of the next track, or `None` if at the end of the queue.
+    pub fn next_track(&mut self) -> Option<AudioSource> {
         let current_idx = self.current_index?;
         let item = self.items.get_mut(current_idx)?;
 
         // Try to advance within the current album
         if let Some(track) = item.next_track() {
-            return Some(track.path.clone());
+            return Some(track.audio_source());
         }
 
         // Move to next album
@@ -200,7 +202,7 @@ impl Queue {
             self.items[current_idx + 1].current_track_index = 0;
             return self.items[current_idx + 1]
                 .current_track()
-                .map(|t| t.path.clone());
+                .map(|t| t.audio_source());
         }
 
         // End of queue
@@ -208,14 +210,14 @@ impl Queue {
     }
 
     /// Go to the previous track. Crosses album boundaries.
-    /// Returns the path of the previous track, or `None` if at the start of the queue.
-    pub fn previous_track(&mut self) -> Option<PathBuf> {
+    /// Returns the audio source of the previous track, or `None` if at the start of the queue.
+    pub fn previous_track(&mut self) -> Option<AudioSource> {
         let current_idx = self.current_index?;
         let item = self.items.get_mut(current_idx)?;
 
         // Try to go back within the current album
         if let Some(track) = item.previous_track() {
-            return Some(track.path.clone());
+            return Some(track.audio_source());
         }
 
         // Move to previous album (last track)
@@ -223,19 +225,25 @@ impl Queue {
             self.current_index = Some(current_idx - 1);
             if let Some(prev_item) = self.items.get_mut(current_idx - 1) {
                 prev_item.current_track_index = prev_item.album.tracks.len().saturating_sub(1);
-                return prev_item.current_track().map(|t| t.path.clone());
+                return prev_item.current_track().map(|t| t.audio_source());
             }
         }
 
         None
     }
 
-    /// Get the path of the currently playing track.
-    pub fn current_track_path(&self) -> Option<PathBuf> {
+    /// Get the audio source of the currently playing track.
+    pub fn current_track_source(&self) -> Option<AudioSource> {
         self.current_index
             .and_then(|idx| self.items.get(idx))
             .and_then(|item| item.current_track())
-            .map(|track| track.path.clone())
+            .map(|track| track.audio_source())
+    }
+
+    /// Get the path of the currently playing track (convenience for local files).
+    pub fn current_track_path(&self) -> Option<PathBuf> {
+        self.current_track_source()
+            .and_then(|s| s.as_path().map(|p| p.to_path_buf()))
     }
 
     /// Get a reference to the currently playing track.
@@ -254,14 +262,14 @@ impl Queue {
     }
 
     /// Jump to a specific album index and reset to its first track.
-    /// Returns the path of the first track, or `None` if the index is invalid.
-    pub fn jump_to(&mut self, index: usize) -> Option<PathBuf> {
+    /// Returns the audio source of the first track, or `None` if the index is invalid.
+    pub fn jump_to(&mut self, index: usize) -> Option<AudioSource> {
         if index >= self.items.len() {
             return None;
         }
         self.current_index = Some(index);
         self.items[index].current_track_index = 0;
-        self.current_track_path()
+        self.current_track_source()
     }
 }
 
@@ -305,11 +313,11 @@ mod tests {
         queue.add(make_album("A", 3));
         queue.start();
 
-        let path = queue.next_track().unwrap();
-        assert!(path.to_string_lossy().contains("track_2"));
+        let source = queue.next_track().unwrap();
+        assert!(source.to_string().contains("track_2"));
 
-        let path = queue.next_track().unwrap();
-        assert!(path.to_string_lossy().contains("track_3"));
+        let source = queue.next_track().unwrap();
+        assert!(source.to_string().contains("track_3"));
     }
 
     #[test]
@@ -320,8 +328,8 @@ mod tests {
         queue.start();
 
         // Album A has 1 track, next should go to album B
-        let path = queue.next_track().unwrap();
-        assert!(path.to_string_lossy().contains("/B/track_1"));
+        let source = queue.next_track().unwrap();
+        assert!(source.to_string().contains("/B/track_1"));
         assert_eq!(queue.current_index, Some(1));
     }
 
@@ -342,8 +350,8 @@ mod tests {
         queue.next_track(); // track 2
         queue.next_track(); // track 3
 
-        let path = queue.previous_track().unwrap();
-        assert!(path.to_string_lossy().contains("track_2"));
+        let source = queue.previous_track().unwrap();
+        assert!(source.to_string().contains("track_2"));
     }
 
     #[test]
@@ -355,9 +363,9 @@ mod tests {
         queue.next_track(); // A track 2
         queue.next_track(); // B track 1
 
-        let path = queue.previous_track().unwrap();
+        let source = queue.previous_track().unwrap();
         // Should go to last track of album A (track 2)
-        assert!(path.to_string_lossy().contains("/A/track_2"));
+        assert!(source.to_string().contains("/A/track_2"));
         assert_eq!(queue.current_index, Some(0));
     }
 
@@ -375,9 +383,9 @@ mod tests {
         // Should now be on album B
         assert!(
             queue
-                .current_track_path()
+                .current_track_source()
                 .unwrap()
-                .to_string_lossy()
+                .to_string()
                 .contains("/B/")
         );
     }
@@ -427,8 +435,8 @@ mod tests {
         queue.add(make_album("B", 2));
         queue.start();
 
-        let path = queue.jump_to(1).unwrap();
-        assert!(path.to_string_lossy().contains("/B/track_1"));
+        let source = queue.jump_to(1).unwrap();
+        assert!(source.to_string().contains("/B/track_1"));
         assert_eq!(queue.current_index, Some(1));
     }
 }

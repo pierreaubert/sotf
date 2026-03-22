@@ -58,8 +58,8 @@ fi
 DMG_DIR="$PROJECT_ROOT/target/daemon-dmg"
 APP_BUNDLE="$DMG_DIR/$APP_NAME.app"
 DRIVER_BUNDLE="$DMG_DIR/$DRIVER_NAME"
-CONFIGBAR_DIR="$PROJECT_ROOT/crates/daemon/configbar"
-HAL_DRIVER_DIR="$PROJECT_ROOT/crates/driver-hal"
+CONFIGBAR_DIR="$PROJECT_ROOT/crates/systemwide/crates/daemon/configbar"
+HAL_DRIVER_DIR="$PROJECT_ROOT/crates/systemwide/crates/driver-hal"
 
 # Command line options
 SIGN=false

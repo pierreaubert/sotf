@@ -213,6 +213,10 @@ pub struct DirectoryInfo {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Track {
     pub path: PathBuf,
+    /// Explicit audio source override. When set, this is used instead of `path`.
+    /// `None` means the source is `AudioSource::File(path)`.
+    #[allow(dead_code)]
+    pub source: Option<sotf_audio::decoder::AudioSource>,
     pub title: Option<String>,
     pub artist: Option<String>, // Track artist (may differ from album artist for compilations)
     pub track_number: Option<u32>,
@@ -237,6 +241,18 @@ pub struct Track {
     pub edition: Option<String>,
     pub is_favorite: bool,
     pub play_count: usize,
+}
+
+impl Track {
+    /// Get the audio source for this track.
+    ///
+    /// If an explicit `source` override is set (e.g. for streaming tracks),
+    /// it is returned. Otherwise, the local file path is used.
+    pub fn audio_source(&self) -> sotf_audio::decoder::AudioSource {
+        self.source
+            .clone()
+            .unwrap_or_else(|| sotf_audio::decoder::AudioSource::File(self.path.clone()))
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1343,6 +1359,7 @@ impl MusicLibrary {
                                 edition: metadata.edition.clone(),
                                 is_favorite: false,
                                 play_count: 0,
+                                source: None,
                             };
 
                             album.tracks.push(track);
@@ -2291,6 +2308,7 @@ mod tests {
             edition: None,
             is_favorite: false,
             play_count: 0,
+            source: None,
         }
     }
 
@@ -2578,6 +2596,7 @@ mod tests {
                 edition: None,
                 is_favorite: false,
                 play_count: 0,
+                source: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,

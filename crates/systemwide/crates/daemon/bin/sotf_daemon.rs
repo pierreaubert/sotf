@@ -1199,6 +1199,7 @@ fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::Delay => "delay",
         PluginType::Aec => "aec",
         PluginType::Beamformer => "beamformer",
+        PluginType::AmbisonicsDecoder => "ambisonics_decoder",
     }
 }
 
@@ -1227,6 +1228,7 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
         PluginType::Delay => "Effects",
         PluginType::Aec => "Restoration",
         PluginType::Beamformer => "Spatial & Routing",
+        PluginType::AmbisonicsDecoder => "Spatial & Routing",
     }
 }
 

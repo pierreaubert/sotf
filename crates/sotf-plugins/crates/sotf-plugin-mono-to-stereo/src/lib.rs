@@ -2,10 +2,13 @@
 // Mono-to-Stereo Plugin
 // ============================================================================
 
+pub mod params;
+
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, mono_to_stereo::PARAMS as MS};
+use sotf_host::param_specs::find_by_key as pk;
+use crate::params::PARAMS as MS;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;

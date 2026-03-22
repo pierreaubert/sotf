@@ -638,7 +638,7 @@ impl PlayerView {
                                             && let Some(first_track) =
                                                 queue_item.album.tracks.first()
                                         {
-                                            Self::play_track(state, first_track.path.clone());
+                                            Self::play_track(state, first_track.audio_source());
                                         }
                                     }
                                     (crate::app::ContextMenuType::Plugin, "toggle-enabled") => {

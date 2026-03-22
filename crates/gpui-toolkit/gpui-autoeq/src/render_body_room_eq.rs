@@ -172,9 +172,42 @@
                 }
             }
 
-            // --- Options sub-section ---
+            // Broadband Target Matching (in Target section)
+            let mut broadband_toggle =
+                Toggle::new((base_id.clone(), "broadband-target-matching"))
+                    .size(ToggleSize::Sm)
+                    .checked(config.broadband_target_matching)
+                    .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_broadband_target_matching_change_rc {
+                let h = h.clone();
+                broadband_toggle = broadband_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            target_col = target_col.child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Broadband Target Matching")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("Shelf filters for broad tonal balance")
+                                    .size(TextSize::Xs)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(broadband_toggle),
+            );
+
+            // --- Smoothing sub-section ---
             options_col = options_col.child(
-                Text::new("OPTIONS")
+                Text::new("SMOOTHING")
                     .size(TextSize::Xs)
                     .weight(TextWeight::Semibold)
                     .color(theme.accent),
@@ -184,6 +217,7 @@
             let mut psycho_toggle = Toggle::new((base_id.clone(), "psychoacoustic"))
                 .size(ToggleSize::Sm)
                 .checked(config.psychoacoustic)
+                .disabled(config.smooth)
                 .theme(toggle_theme.clone());
 
             if let Some(ref handler) = on_psychoacoustic_change_rc {
@@ -191,48 +225,88 @@
                 psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            options_col = if is_narrow_layout {
-                options_col.child(
-                    VStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .child(
-                            VStack::new()
-                                .spacing(StackSpacing::None)
-                                .child(
-                                    Text::new("Psychoacoustic Smoothing")
-                                        .size(TextSize::Xs)
-                                        .color(theme.label_color),
-                                )
-                                .child(
-                                    Text::new("1/48 oct bass, 1/6 oct treble")
-                                        .size(TextSize::Xs)
-                                        .color(theme.description_color),
-                                ),
-                        )
-                        .child(psycho_toggle),
-                )
-            } else {
-                options_col.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .justify(StackJustify::SpaceBetween)
-                        .child(
-                            VStack::new()
-                                .spacing(StackSpacing::None)
-                                .child(
-                                    Text::new("Psychoacoustic Smoothing")
-                                        .size(TextSize::Xs)
-                                        .color(theme.label_color),
-                                )
-                                .child(
-                                    Text::new("1/48 oct bass, 1/6 oct treble")
-                                        .size(TextSize::Xs)
-                                        .color(theme.description_color),
-                                ),
-                        )
-                        .child(psycho_toggle),
-                )
-            };
+            options_col = options_col.child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Psychoacoustic Smoothing")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("1/48 oct bass, 1/6 oct treble")
+                                    .size(TextSize::Xs)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(psycho_toggle),
+            );
+
+            // Curve Smoothing (mutually exclusive with psychoacoustic)
+            let mut smooth_toggle = Toggle::new((base_id.clone(), "smooth"))
+                .size(ToggleSize::Sm)
+                .checked(config.smooth)
+                .disabled(config.psychoacoustic)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref handler) = on_smooth_change_rc {
+                let h = handler.clone();
+                smooth_toggle = smooth_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            options_col = options_col.child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Curve Smoothing")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("Fixed-width octave smoothing")
+                                    .size(TextSize::Xs)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(smooth_toggle),
+            );
+
+            if config.smooth {
+                let mut smooth_n_input = NumberInput::new((base_id.clone(), "smooth-n"))
+                    .value(config.smooth_n as f64)
+                    .min(ParamLimits::SMOOTH_N.min)
+                    .max(ParamLimits::SMOOTH_N.max)
+                    .step(ParamLimits::SMOOTH_N.step)
+                    .decimals(0)
+                    .label("Smooth Window (1/N oct)")
+                    .size(NumberInputSize::Sm)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_smooth_n_change_rc {
+                    let h = handler.clone();
+                    smooth_n_input =
+                        smooth_n_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
+                options_col = options_col.child(smooth_n_input);
+            }
+
+            // --- Recommended sub-section ---
+            options_col = options_col.child(
+                Text::new("RECOMMENDED")
+                    .size(TextSize::Xs)
+                    .weight(TextWeight::Semibold)
+                    .color(theme.accent),
+            );
 
             // Asymmetric Loss
             let mut asymmetric_toggle = Toggle::new((base_id.clone(), "asymmetric-loss"))
@@ -245,48 +319,26 @@
                 asymmetric_toggle = asymmetric_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            options_col = if is_narrow_layout {
-                options_col.child(
-                    VStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .child(
-                            VStack::new()
-                                .spacing(StackSpacing::None)
-                                .child(
-                                    Text::new("Asymmetric Loss")
-                                        .size(TextSize::Xs)
-                                        .color(theme.label_color),
-                                )
-                                .child(
-                                    Text::new("Penalize peaks more than dips")
-                                        .size(TextSize::Xs)
-                                        .color(theme.description_color),
-                                ),
-                        )
-                        .child(asymmetric_toggle),
-                )
-            } else {
-                options_col.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .justify(StackJustify::SpaceBetween)
-                        .child(
-                            VStack::new()
-                                .spacing(StackSpacing::None)
-                                .child(
-                                    Text::new("Asymmetric Loss")
-                                        .size(TextSize::Xs)
-                                        .color(theme.label_color),
-                                )
-                                .child(
-                                    Text::new("Penalize peaks more than dips")
-                                        .size(TextSize::Xs)
-                                        .color(theme.description_color),
-                                ),
-                        )
-                        .child(asymmetric_toggle),
-                )
-            };
+            options_col = options_col.child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Asymmetric Loss")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("Penalize peaks more than dips")
+                                    .size(TextSize::Xs)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(asymmetric_toggle),
+            );
 
             // Excursion Protection
             let mut excursion_toggle = Toggle::new((base_id.clone(), "excursion-enabled"))
@@ -541,6 +593,14 @@
                 );
             }
 
+            // --- Delay sub-section ---
+            options_col = options_col.child(
+                Text::new("DELAY")
+                    .size(TextSize::Xs)
+                    .weight(TextWeight::Semibold)
+                    .color(theme.accent),
+            );
+
             // Allow Delay
             let mut delay_toggle = Toggle::new((base_id.clone(), "allow-delay"))
                 .size(ToggleSize::Sm)
@@ -591,60 +651,6 @@
                                 ),
                         )
                         .child(delay_toggle),
-                )
-            };
-
-            // Broadband Target Matching
-            let mut broadband_toggle =
-                Toggle::new((base_id.clone(), "broadband-target-matching"))
-                    .size(ToggleSize::Sm)
-                    .checked(config.broadband_target_matching)
-                    .theme(toggle_theme.clone());
-
-            if let Some(ref h) = on_broadband_target_matching_change_rc {
-                let h = h.clone();
-                broadband_toggle = broadband_toggle.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            options_col = if is_narrow_layout {
-                options_col.child(
-                    VStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .child(
-                            VStack::new()
-                                .spacing(StackSpacing::None)
-                                .child(
-                                    Text::new("Broadband Target Matching")
-                                        .size(TextSize::Xs)
-                                        .color(theme.label_color),
-                                )
-                                .child(
-                                    Text::new("Shelf filters for broad tonal balance")
-                                        .size(TextSize::Xs)
-                                        .color(theme.description_color),
-                                ),
-                        )
-                        .child(broadband_toggle),
-                )
-            } else {
-                options_col.child(
-                    HStack::new()
-                        .justify(StackJustify::SpaceBetween)
-                        .child(
-                            VStack::new()
-                                .spacing(StackSpacing::None)
-                                .child(
-                                    Text::new("Broadband Target Matching")
-                                        .size(TextSize::Xs)
-                                        .color(theme.label_color),
-                                )
-                                .child(
-                                    Text::new("Shelf filters for broad tonal balance")
-                                        .size(TextSize::Xs)
-                                        .color(theme.description_color),
-                                ),
-                        )
-                        .child(broadband_toggle),
                 )
             };
 
@@ -721,6 +727,14 @@
 
                 options_col = options_col.child(gd_target_input);
             }
+
+            // --- Home Cinema sub-section ---
+            options_col = options_col.child(
+                Text::new("HOME CINEMA")
+                    .size(TextSize::Xs)
+                    .weight(TextWeight::Semibold)
+                    .color(theme.accent),
+            );
 
             // Voice of God
             let mut vog_toggle = Toggle::new((base_id.clone(), "vog-enabled"))
@@ -1122,20 +1136,10 @@
                     ),
             );
 
-            if !is_narrow_layout {
-                // 2-column: target left, options right (aligned at top)
-                room_config_section = room_config_section.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .align(StackAlign::Start)
-                        .child(div().flex_1().child(target_col))
-                        .child(div().flex_1().child(options_col)),
-                );
-            } else {
-                room_config_section = room_config_section
-                    .child(target_col)
-                    .child(options_col);
-            }
+            // Always single column within the card
+            room_config_section = room_config_section
+                .child(target_col)
+                .child(options_col);
 
             // Room config card stored for later assembly with optimiser config
             Card::new().content(room_config_section)
@@ -1195,19 +1199,10 @@
                 right_col = block_out;
             }
 
-            section = if is_narrow_layout {
-                section
-                    .child(left_col)
-                    .child(right_col)
-            } else {
-                section.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Lg)
-                        .align(StackAlign::Start)
-                        .child(div().flex_1().child(left_col))
-                        .child(div().flex_1().child(right_col)),
-                )
-            };
+            // Always single column within the card
+            section = section
+                .child(left_col)
+                .child(right_col);
 
             let opt_config_card = Card::new().content(section);
 

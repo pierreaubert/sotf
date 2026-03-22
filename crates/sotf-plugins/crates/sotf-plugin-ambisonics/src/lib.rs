@@ -12,6 +12,7 @@
 
 pub mod config;
 pub mod decode_matrix;
+pub mod params;
 pub mod spherical_harmonics;
 
 use std::any::Any;

@@ -15,10 +15,10 @@ import? 'crates/autoeq/Justfile'
 import? 'crates/gpui-toolkit/Justfile'
 import? 'crates/sotf-plugins/Justfile'
 import? 'crates/sotf-engine/Justfile'
-import? 'crates/plugins-bridge/Justfile'
-import? 'crates/plugins-ffi/Justfile'
-import? 'crates/plugins-nih/Justfile'
-import? 'crates/plugins-au/Justfile'
+import? 'crates/sotf-plugins/crates/plugins-bridge/Justfile'
+import? 'crates/sotf-plugins/crates/plugins-ffi/Justfile'
+import? 'crates/sotf-plugins/crates/plugins-nih/Justfile'
+import? 'crates/sotf-plugins/crates/plugins-au/Justfile'
 
 default:
 	just --list
@@ -39,7 +39,7 @@ convert-sofa-to-sqlite:
 		hrtfdb="$${sofa%.sofa}.hrtfdb"; \
 		if [ ! -f "$$hrtfdb" ]; then \
 			echo "Converting $$sofa -> $$hrtfdb"; \
-			cargo run --bin sofa-to-sqlite -p tools --release -- "$$sofa" "$$hrtfdb"; \
+			cargo run --bin sofa-to-sqlite -p sotf-tools --release -- "$$sofa" "$$hrtfdb"; \
 		else \
 			echo "Skipping $$sofa (already converted)"; \
 		fi \
@@ -47,8 +47,8 @@ convert-sofa-to-sqlite:
 
 [group('download')]
 generate-audio-tests:
-	cargo run --bin generate-audio-tests -p tools --release --no-default-features
-	cargo run --bin generate-upmixer-golden -p tools --release --no-default-features
+	cargo run --bin generate-audio-tests -p sotf-tools --release --no-default-features
+	cargo run --bin generate-upmixer-golden -p sotf-tools --release --no-default-features
 
 [group('download')]
 generate-roomeq-tests: generate-roomeq-tests-bem generate-roomeq-tests-fem
@@ -84,16 +84,16 @@ test:
 
 [group('test')]
 test-negative:
-	cargo test -p sotf-gpui --test negative
+	cargo test -p sotf-gpui --test negative --release
 
 [group('test')]
 test-proptest:
-	PROPTEST_CASES=10000 cargo test -p sotf-gpui --test proptest_tests
+	PROPTEST_CASES=10000 cargo test -p sotf-gpui --test proptest_tests  --release
 
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest: test-negative test-proptest
-	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples
+	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples --features="qa, onnx, hal"
 
 # ----------------------------------------------------------------------
 # LINT
@@ -183,7 +183,7 @@ fmt:
 
 [group('build')]
 prod-generate-audio-tests:
-	cargo build --release --bin generate-audio-tests -p tools
+	cargo build --release --bin generate-audio-tests -p sotf-tools
 
 [group('build')]
 prod-workspace:

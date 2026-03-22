@@ -17,7 +17,109 @@ pub use sotf_host::automation;
 pub use sotf_host::error;
 pub use sotf_host::layout_solver;
 pub use sotf_host::param_registry;
-pub use sotf_host::param_specs;
+/// Parameter specifications: types from `sotf-host`, per-plugin definitions
+/// from individual plugin crates.
+///
+/// Migrated plugins export PARAMS/LAYOUT/Params from their own `params.rs`.
+/// Un-migrated plugins still have inline modules in `sotf_host::param_specs`.
+pub mod param_specs {
+    // Re-export all types, utilities, and macros from sotf-host
+    pub use sotf_host::param_specs::*;
+
+    // Migrated plugins: re-export from plugin crate (canonical source)
+    pub mod gain {
+        pub use sotf_plugin_gain::params::*;
+    }
+    pub mod delay {
+        pub use sotf_plugin_delay::params::*;
+    }
+    pub mod band_split {
+        pub use sotf_plugin_band_split::params::*;
+    }
+    pub mod band_merge {
+        pub use sotf_plugin_band_merge::params::*;
+    }
+    pub mod aec {
+        pub use sotf_plugin_aec::params::*;
+    }
+    pub mod beamformer {
+        pub use sotf_plugin_beamformer::params::*;
+    }
+    pub mod ambisonics {
+        pub use sotf_plugin_ambisonics::params::*;
+    }
+    pub mod limiter {
+        pub use sotf_plugin_limiter::params::*;
+    }
+    pub mod gate {
+        pub use sotf_plugin_gate::params::*;
+    }
+    pub mod pnd {
+        pub use sotf_plugin_pnd::params::*;
+    }
+    pub mod downmix {
+        pub use sotf_plugin_downmix::params::*;
+    }
+    pub mod mono_to_stereo {
+        pub use sotf_plugin_mono_to_stereo::params::*;
+    }
+    pub mod compressor {
+        pub use sotf_plugin_compressor::params::*;
+    }
+    pub mod expander {
+        pub use sotf_plugin_expander::params::*;
+    }
+    pub mod loudness_compensation {
+        pub use sotf_plugin_loudness_compensation::params::*;
+    }
+    pub mod convolution {
+        pub use sotf_plugin_convolution::params::*;
+    }
+    pub mod binaural {
+        pub use sotf_plugin_binaural::params::*;
+    }
+    pub mod crossfeed {
+        pub use sotf_plugin_crossfeed::params::*;
+    }
+    pub mod xtc {
+        pub use sotf_plugin_xtc::params::*;
+    }
+    pub mod ab_compare {
+        pub use sotf_plugin_ab_compare::params::*;
+    }
+    pub mod fletcher_munson {
+        pub use sotf_plugin_fletcher_munson::params::*;
+    }
+    pub mod upmixer {
+        pub use sotf_plugin_upmixer::params::*;
+    }
+    pub mod denoiser {
+        pub use sotf_plugin_denoiser::params::*;
+    }
+    pub mod eq {
+        pub use sotf_plugin_eq::params::*;
+    }
+    pub mod multiband_compressor {
+        pub use sotf_plugin_multiband_compressor::params::*;
+    }
+    pub mod multiband_expander {
+        pub use sotf_plugin_multiband_expander::params::*;
+    }
+    pub mod matrix {
+        pub use sotf_plugin_matrix::params::*;
+    }
+    pub mod channel_mute_solo {
+        pub use sotf_plugin_channel_mute_solo::params::*;
+    }
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    pub mod hal_input {
+        pub use sotf_plugin_hal_input::params::*;
+    }
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    pub mod hal_output {
+        pub use sotf_plugin_hal_output::params::*;
+    }
+}
 pub use sotf_host::parameters;
 pub use sotf_host::plugin;
 pub use sotf_host::plugin_layout;

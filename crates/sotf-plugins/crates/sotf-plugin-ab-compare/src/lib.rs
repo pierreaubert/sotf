@@ -10,6 +10,7 @@
 
 mod config;
 mod factory;
+pub mod params;
 #[cfg(test)]
 mod tests;
 

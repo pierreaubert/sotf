@@ -17,6 +17,7 @@ realfft = { workspace = true }
 rubato = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

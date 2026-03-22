@@ -220,7 +220,7 @@ impl Drop for ParameterMap {
 
 /// Get the ParamSpec array for a given plugin type.
 fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::ParamSpec] {
-    use sotf_host::param_specs::*;
+    use sotf_plugins::param_specs::*;
 
     match plugin_type {
         // EQ has GLOBAL_PARAMS + per-band BAND_TEMPLATE (dynamic bands)

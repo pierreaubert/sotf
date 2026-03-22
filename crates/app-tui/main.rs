@@ -662,11 +662,11 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     Ok(())
 }
 
-/// Start playback for a file, handling matrix adaptation and channel clamping.
+/// Start playback for an audio source, handling matrix adaptation and channel clamping.
 fn start_playback(
     player: &mut Player,
     app: &mut App,
-    path: PathBuf,
+    source: sotf_audio::decoder::AudioSource,
     track_channels: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let track_sample_rate = app
@@ -715,15 +715,17 @@ fn start_playback(
     // Sync volume to the engine before playback starts
     player.set_volume(app.volume)?;
 
-    let path_clone = path.clone();
-    player.load_and_play(
-        path,
+    let source_path = source.as_path().map(|p| p.to_path_buf());
+    player.load_and_play_source(
+        source,
         plugins,
         output_channels,
         app.current_output_device_name.clone(),
     )?;
 
-    app.start_track_tracking(path_clone);
+    if let Some(path) = source_path {
+        app.start_track_tracking(path);
+    }
     Ok(())
 }
 

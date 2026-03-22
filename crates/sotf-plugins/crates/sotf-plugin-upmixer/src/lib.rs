@@ -18,7 +18,10 @@
 use math_audio_dsp::fast_math::fast_pow10;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
-use sotf_host::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
+pub mod params;
+
+use crate::params::PARAMS as UP;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};

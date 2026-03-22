@@ -802,12 +802,12 @@ impl PlayerView {
         cx.notify();
     }
 
-    pub(crate) fn play_track(state: &mut AppState, path: std::path::PathBuf) {
-        Self::play_track_at(state, path, None);
+    pub(crate) fn play_track(state: &mut AppState, source: sotf_audio::decoder::AudioSource) {
+        Self::play_track_at(state, source, None);
     }
 
     /// Auto-advance variant: auto-suspends incompatible plugins without showing a dialog.
-    pub(crate) fn play_track_auto_advance(state: &mut AppState, path: std::path::PathBuf) {
+    pub(crate) fn play_track_auto_advance(state: &mut AppState, source: sotf_audio::decoder::AudioSource) {
         let track_channels = state
             .app
             .playback
@@ -845,12 +845,12 @@ impl PlayerView {
                 .update_channel_dependent_plugins();
         }
 
-        Self::play_track_at_inner(state, path, None, track_channels);
+        Self::play_track_at_inner(state, source, None, track_channels);
     }
 
     pub(crate) fn play_track_at(
         state: &mut AppState,
-        path: std::path::PathBuf,
+        source: sotf_audio::decoder::AudioSource,
         position: Option<f64>,
     ) {
         let track_channels = state
@@ -883,20 +883,20 @@ impl PlayerView {
                 conflicts.len()
             );
             state.app.channel_conflicts = conflicts;
-            state.app.channel_conflict_path = Some(path);
+            state.app.channel_conflict_path = Some(source);
             state.app.channel_conflict_track_channels = track_channels;
             state.app.ui_state.input_mode = crate::app::InputMode::ChannelConflict;
             return;
         }
 
-        Self::play_track_at_inner(state, path, position, track_channels);
+        Self::play_track_at_inner(state, source, position, track_channels);
     }
 
     /// Inner play logic after conflict resolution. Called by both play_track_at and
     /// play_track_auto_advance after suspensions are handled.
     fn play_track_at_inner(
         state: &mut AppState,
-        path: std::path::PathBuf,
+        source: sotf_audio::decoder::AudioSource,
         position: Option<f64>,
         track_channels: usize,
     ) {
@@ -963,8 +963,8 @@ impl PlayerView {
 
         let plugins = state.app.plugin_state.chain.to_plugin_configs(sample_rate);
 
-        if let Err(e) = state.player.lock().load_and_play_at(
-            path.clone(),
+        if let Err(e) = state.player.lock().load_and_play_source_at(
+            source,
             plugins,
             output_channels,
             device_name,
@@ -980,9 +980,11 @@ impl PlayerView {
             if let Some(queue_index) = state.app.playback.current_queue_index {
                 state
                     .app
-                    .record_playback_started(queue_index, Some(path.clone()));
+                    .record_playback_started(queue_index, state.app.queue.current_track_path());
             }
-            state.app.start_track_tracking(path);
+            if let Some(path) = state.app.queue.current_track_path() {
+                state.app.start_track_tracking(path);
+            }
         }
     }
     // Plugin parameter handling

@@ -20,6 +20,7 @@ pub mod param_specs;
 pub mod parameters;
 pub mod plugin;
 pub mod plugin_layout;
+pub mod plugin_params;
 pub mod serialization;
 pub mod simd;
 pub mod smoothing;

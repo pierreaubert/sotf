@@ -17,4 +17,5 @@ driver-hal = { workspace = true, optional = true }
 [dependencies]
 sotf-host = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 log = { workspace = true }

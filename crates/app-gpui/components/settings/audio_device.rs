@@ -359,11 +359,11 @@ impl PlayerView {
 
                                             // If playing, restart track with new device
                                             if state.app.playback.is_playing
-                                                && let Some(path) =
-                                                    state.app.get_current_track_path()
+                                                && let Some(source) =
+                                                    state.app.queue.current_track_source()
                                             {
                                                 let position = state.app.playback.position_secs;
-                                                Self::play_track_at(state, path, Some(position));
+                                                Self::play_track_at(state, source, Some(position));
                                             }
                                         }
                                     });

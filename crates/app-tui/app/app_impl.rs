@@ -41,7 +41,7 @@ pub struct App {
     pub error_message: Option<String>,  // For displaying decode/playback errors in a modal
 
     // Channel conflict dialog state
-    pub channel_conflict_path: Option<PathBuf>, // File pending playback
+    pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>, // Source pending playback
     pub channel_conflict_selection: usize,      // Currently highlighted option (0-2)
     pub channel_conflict_track_channels: usize, // File's channel count
     pub channel_conflicts: Vec<ChannelConflict>, // All incompatible plugins
@@ -348,10 +348,15 @@ impl App {
     }
 
     pub fn current_track_path(&self) -> Option<PathBuf> {
+        self.current_track_source()
+            .and_then(|s| s.as_path().map(|p| p.to_path_buf()))
+    }
+
+    pub fn current_track_source(&self) -> Option<sotf_audio::decoder::AudioSource> {
         self.current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.current_track())
-            .map(|track| track.path.clone())
+            .map(|track| track.audio_source())
     }
 
     /// Get the currently playing track info
@@ -391,27 +396,27 @@ impl App {
         gain.map(|g| g + self.replay_gain_preamp as f64)
     }
 
-    pub fn next_track(&mut self) -> Option<PathBuf> {
+    pub fn next_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         if let Some(idx) = self.current_queue_index {
             if let Some(entry) = self.queue.get_mut(idx)
                 && let Some(track) = entry.item.next_track()
             {
-                return Some(track.path.clone());
+                return Some(track.audio_source());
             }
 
             // Album finished (or entry missing), remove it and move to next
             self.remove_from_queue(idx);
-            return self.current_track_path();
+            return self.current_track_source();
         }
         None
     }
 
-    pub fn previous_track(&mut self) -> Option<PathBuf> {
+    pub fn previous_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         if let Some(idx) = self.current_queue_index
             && let Some(entry) = self.queue.get_mut(idx)
         {
             if let Some(track) = entry.item.previous_track() {
-                return Some(track.path.clone());
+                return Some(track.audio_source());
             } else {
                 // Move to previous album in queue
                 if idx > 0 {
@@ -421,26 +426,26 @@ impl App {
                         prev_entry.item.current_track_index =
                             prev_entry.item.album.tracks.len().saturating_sub(1);
                     }
-                    return self.current_track_path();
+                    return self.current_track_source();
                 }
             }
         }
         None
     }
 
-    pub fn start_queue(&mut self) -> Option<PathBuf> {
+    pub fn start_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         if !self.queue.is_empty() {
             self.current_queue_index = Some(0);
             self.queue[0].item.current_track_index = 0;
             self.is_playing = true;
-            self.current_track_path()
+            self.current_track_source()
         } else {
             None
         }
     }
 
     /// Jump to the selected album/track in queue and start playing
-    pub fn jump_to_selected_album(&mut self) -> Option<PathBuf> {
+    pub fn jump_to_selected_album(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         if self.selected_queue_index < self.queue.len() {
             self.current_queue_index = Some(self.selected_queue_index);
             let track_idx = self.selected_queue_track_index.unwrap_or(0);
@@ -448,7 +453,7 @@ impl App {
                 .item
                 .current_track_index = track_idx;
             self.is_playing = true;
-            self.current_track_path()
+            self.current_track_source()
         } else {
             None
         }

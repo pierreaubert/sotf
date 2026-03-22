@@ -740,6 +740,9 @@ impl Default for MultiMeasurementUiConfig {
     }
 }
 
+fn default_room_smooth_n() -> usize {
+    2 // 1/2 octave loss smoothing
+}
 fn default_room_tolerance() -> f64 {
     1e-5
 }
@@ -771,6 +774,8 @@ pub struct RoomEqOptimizerConfig {
     pub loss_type: String,
     pub psychoacoustic: bool,
     pub asymmetric_loss: bool,
+    #[serde(default = "default_room_smooth_n")]
+    pub smooth_n: usize,
     #[serde(default = "default_room_tolerance")]
     pub tolerance: f64,
     #[serde(default = "default_room_atolerance")]
@@ -827,6 +832,7 @@ impl Default for RoomEqOptimizerConfig {
             loss_type: "flat".to_string(),
             psychoacoustic: true,
             asymmetric_loss: true,
+            smooth_n: default_room_smooth_n(),
             tolerance: 1e-5,
             atolerance: 1e-5,
             target_curve: "flat".to_string(),

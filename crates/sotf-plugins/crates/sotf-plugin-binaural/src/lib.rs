@@ -14,6 +14,7 @@ use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub mod config;
 pub mod error;
 pub mod filter;
 pub mod hrtf;
@@ -21,10 +22,10 @@ pub mod hrtf_database;
 pub mod params;
 pub mod room;
 
-pub use self::error::BinauralError;
-pub use self::params::{
+pub use self::config::{
     BinauralDecoderParams, default_enable_optimization as binaural_default_enable_optimization,
 };
+pub use self::error::BinauralError;
 pub use self::room::{Reflection, RoomModel};
 
 struct BinauralState {

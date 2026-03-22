@@ -27,7 +27,7 @@ pub struct PlaybackState {
 /// Saved configuration for restarting after a crash.
 #[derive(Clone)]
 struct SavedPlaybackConfig {
-    path: PathBuf, // Still PathBuf — only local files go through load_file/probe_file
+    source: AudioSource,
     plugins: Vec<PluginConfig>,
     output_channels: usize,
     output_device: Option<String>,
@@ -75,9 +75,38 @@ impl Player {
         output_device: Option<String>,
         position: Option<f64>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.load_and_play_source_at(
+            AudioSource::File(path),
+            plugins,
+            output_channels,
+            output_device,
+            position,
+        )
+    }
+
+    /// Load and play any audio source (file, URL, or service stream).
+    pub fn load_and_play_source(
+        &mut self,
+        source: AudioSource,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        output_device: Option<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.load_and_play_source_at(source, plugins, output_channels, output_device, None)
+    }
+
+    /// Load and play any audio source at a specific position.
+    pub fn load_and_play_source_at(
+        &mut self,
+        source: AudioSource,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        output_device: Option<String>,
+        position: Option<f64>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Save config for potential crash recovery
         self.saved_config = Some(SavedPlaybackConfig {
-            path: path.clone(),
+            source: source.clone(),
             plugins: plugins.clone(),
             output_channels,
             output_device: output_device.clone(),
@@ -90,8 +119,8 @@ impl Player {
         // Stop current playback if any
         self.manager.stop()?;
 
-        // Load the new file
-        self.manager.load_file(&path)?;
+        // Load the source (file, URL, or service stream)
+        self.manager.load_source(source)?;
 
         // Start playback with plugins and specified output device
         self.manager
@@ -206,7 +235,12 @@ impl Player {
     /// When the current track finishes, the decoder seamlessly transitions
     /// to the queued file without any gap. Only one file can be queued at a time.
     pub fn queue_next(&self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-        match self.manager.queue_next(path) {
+        self.queue_next_source(AudioSource::File(path))
+    }
+
+    /// Queue any audio source for gapless playback.
+    pub fn queue_next_source(&self, source: AudioSource) -> Result<(), Box<dyn std::error::Error>> {
+        match self.manager.queue_next(source) {
             Ok(()) => Ok(()),
             Err(e) if e == "No engine running" => Ok(()),
             Err(e) => Err(e.into()),
@@ -338,12 +372,10 @@ impl Player {
                 StreamingEvent::Error(msg) => last_error = Some(msg),
                 StreamingEvent::EndOfStream => track_ended = true,
                 StreamingEvent::GaplessTransition(source) => {
-                    // Update saved config for crash recovery (only for File sources)
-                    if let Some(path) = source.as_path() {
-                        if let Some(ref mut config) = self.saved_config {
-                            config.path = path.to_path_buf();
-                            config.last_position_secs = 0.0;
-                        }
+                    // Update saved config for crash recovery
+                    if let Some(ref mut config) = self.saved_config {
+                        config.source = source.clone();
+                        config.last_position_secs = 0.0;
                     }
                     gapless_transition = Some(source);
                 }
@@ -424,7 +456,7 @@ impl Player {
         let _ = self.manager.stop();
 
         // Re-load and play
-        self.manager.load_file(&config.path)?;
+        self.manager.load_source(config.source)?;
         self.manager.start_playback_at(
             config.output_device,
             config.plugins,

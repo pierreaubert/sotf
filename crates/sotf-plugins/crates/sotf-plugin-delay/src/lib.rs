@@ -3,6 +3,7 @@
 // ============================================================================
 
 pub mod param_specs;
+pub mod params;
 
 use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};

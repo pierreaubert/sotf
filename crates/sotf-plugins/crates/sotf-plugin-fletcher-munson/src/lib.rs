@@ -2,8 +2,12 @@
 // Fletcher-Munson Loudness Compensation Plugin
 // ============================================================================
 
+pub mod params;
+
 use sotf_host::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
-use sotf_host::param_specs::{find_by_key as pk, fletcher_munson::PARAMS as FM};
+use sotf_host::param_specs::find_by_key as pk;
+
+use crate::params::PARAMS as FM;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};

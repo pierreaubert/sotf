@@ -2,6 +2,8 @@
 // Band Merge Plugin
 // ============================================================================
 
+pub mod params;
+
 use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};

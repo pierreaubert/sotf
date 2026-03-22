@@ -618,6 +618,7 @@ sotf_plugins::serde_param_default! {
 
 sotf_plugins::serde_param_default! {
     crossfeed_specs::PARAMS;
+    fn default_crossfeed_enabled() -> bool = "enabled";
     fn default_crossfeed_bauer_fcut_hz() -> f64 = "bauer_fcut_hz";
     fn default_crossfeed_bauer_feed_db() -> f64 = "bauer_feed_db";
     fn default_crossfeed_meier_level() -> f64 = "meier_level";
@@ -1355,7 +1356,7 @@ pub enum PluginSettings {
         mode: CrossfeedMode,
         #[serde(default)]
         preset: CrossfeedPreset,
-        #[serde(default)]
+        #[serde(default = "default_crossfeed_enabled")]
         enabled: bool,
         #[serde(default = "default_crossfeed_mix")]
         mix: f64,

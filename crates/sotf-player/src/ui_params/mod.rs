@@ -879,19 +879,13 @@ impl TuiEditablePlugin for PluginSettings {
                 output_channels,
                 ..
             } => {
-                use sotf_plugins::param_specs::{find_by_key as pk, hal::PARAMS as HL};
+                // HAL Matrix: input/output channel counts (1..32)
                 match index {
                     0 => {
-                        *input_channels = ((*input_channels as i64) + delta as i64).clamp(
-                            pk(HL, "input_channels").min_f64() as i64,
-                            pk(HL, "input_channels").max_f64() as i64,
-                        ) as usize
+                        *input_channels = ((*input_channels as i64) + delta as i64).clamp(1, 32) as usize
                     }
                     1 => {
-                        *output_channels = ((*output_channels as i64) + delta as i64).clamp(
-                            pk(HL, "output_channels").min_f64() as i64,
-                            pk(HL, "output_channels").max_f64() as i64,
-                        ) as usize
+                        *output_channels = ((*output_channels as i64) + delta as i64).clamp(1, 32) as usize
                     }
                     _ => return false,
                 }

@@ -2,12 +2,15 @@
 // PND (Polyphonic Note Detection & Varispeed) Plugin
 // ============================================================================
 
+pub mod params;
+
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::{find_by_key as pk, pnd::PARAMS as PD};
+use sotf_host::param_specs::find_by_key as pk;
+use crate::params::PARAMS as PD;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{deinterleave_stereo, interleave_stereo};

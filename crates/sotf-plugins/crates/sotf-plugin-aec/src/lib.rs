@@ -10,6 +10,8 @@
 // Input: 2-channel interleaved (channel 0 = microphone, channel 1 = reference)
 // Output: 1-channel (echo-cancelled microphone signal)
 
+pub mod params;
+
 mod pbfdaf;
 mod post_filter;
 mod two_path;

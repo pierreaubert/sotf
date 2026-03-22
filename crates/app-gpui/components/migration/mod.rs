@@ -138,11 +138,11 @@ pub fn write_room_config(measurements: &RoomEqMeasurementsFile, path: &Path) -> 
         let safe_channel_name = sanitize_filename(&ch.channel_name);
         let result = &ch.measurement;
 
-        // Create inline measurement with frequency response data
+        // Store only file references, not inline data
         let inline_measurement = InlineMeasurement {
-            frequencies: result.frequencies.iter().map(|&f| f as f64).collect(),
-            magnitude_db: result.magnitude_db.iter().map(|&m| m as f64).collect(),
-            phase_deg: Some(result.phase_deg.iter().map(|&p| p as f64).collect()),
+            frequencies: Vec::new(),
+            magnitude_db: Vec::new(),
+            phase_deg: None,
             name: Some(ch.channel_name.clone()),
             wav_path: result.wav_path.clone(),
             csv_path: Some(format!("{}.csv", safe_channel_name)),

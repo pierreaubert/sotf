@@ -19,3 +19,4 @@ required-features = ["qa"]
 [dependencies]
 sotf-host = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }

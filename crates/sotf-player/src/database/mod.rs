@@ -1493,6 +1493,7 @@ impl MusicDatabase {
                         edition: None,
                         is_favorite: is_fav,
                         play_count,
+                        source: None,
                     })
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;

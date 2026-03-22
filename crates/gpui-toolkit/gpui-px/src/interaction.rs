@@ -876,9 +876,22 @@ mod interactive_chart {
                         window.refresh();
                     }
                 })
-                // Scroll wheel - zoom
+                // Scroll wheel - zoom (only when cursor is over the plot area)
                 .on_scroll_wheel(move |event: &ScrollWheelEvent, window, _cx| {
                     if state_for_wheel.config.enable_wheel_zoom {
+                        // Check if cursor is within the chart plot area (inside margins)
+                        let raw_x = f32::from(event.position.x);
+                        let raw_y = f32::from(event.position.y);
+                        let cfg = &state_for_wheel.config;
+                        let (plot_w, plot_h) = state_for_wheel.interaction.borrow().plot_size;
+                        if raw_x < cfg.left_margin
+                            || raw_x > cfg.left_margin + plot_w
+                            || raw_y < cfg.top_margin
+                            || raw_y > cfg.top_margin + plot_h
+                        {
+                            return; // Outside plot area — let the page scroll
+                        }
+
                         let (x, y) = state_for_wheel.to_chart_coords(event.position);
                         let delta_y = match event.delta {
                             ScrollDelta::Lines(lines) => lines.y,

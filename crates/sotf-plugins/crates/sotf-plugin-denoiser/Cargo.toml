@@ -14,5 +14,6 @@ math-dsp = { workspace = true }
 realfft = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 sotf-plugin-pnd = { workspace = true }
 nnnoiseless = { workspace = true }

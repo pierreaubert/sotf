@@ -36,17 +36,17 @@ members = [
     "crates/sotf-plugins",
     "crates/sotf-engine",
     "crates/sotf-player",
-    "crates/tools",
+    "crates/sotf-tools",
     "crates/app-cli",
     "crates/app-gpui",
     "crates/app-tui",
-    "crates/midi",
-    "crates/plugins-bridge",
-    "crates/plugins-ffi",
-    "crates/plugins-nih",
-    "crates/driver-common",
-    "crates/driver-hal",
-    "crates/daemon",
+    "crates/sotf-midi",
+    "crates/sotf-plugins/crates/plugins-bridge",
+    "crates/sotf-plugins/crates/plugins-ffi",
+    "crates/sotf-plugins/crates/plugins-nih",
+    "crates/systemwide/crates/driver-common",
+    "crates/systemwide/crates/driver-hal",
+    "crates/systemwide/crates/daemon",
     "crates/math-audio/math-optimisation",
     "crates/math-audio/math-xem-common",
     "crates/math-audio/math-solvers",
@@ -60,15 +60,23 @@ members = [
     "crates/autoeq/autoeq-datagen",
     "crates/autoeq/autoeq",
     "crates/sotf-iamf",
+    "crates/sotf-streaming",
+    "crates/sotf-mpd",
+    "crates/sotf-services",
+    "crates/sotf-dlna",
+    "crates/sotf-cast",
     "crates/3rdparties/sofa-reader",
     "crates/gpui-toolkit/gpui-ios",
-    "crates/gpui-toolkit/gpui-ui-kit/ios",
-    "crates/app-ios",
-    "crates/app-tvos",
 ]
 exclude = [
     "crates/3rdparties/psm",
     "crates/3rdparties/zed-font-kit",
+    "crates/3rdparties/coreaudio-rs",
+    "crates/3rdparties/mach2",
+    # iOS/tvOS crates require target_os = ios/tvos — cannot compile on macOS
+    "crates/gpui-toolkit/gpui-ui-kit/ios",
+    "crates/app-ios",
+    "crates/app-tvos",
 ]
 resolver = "3"
 
@@ -203,12 +211,17 @@ sotf-plugin-resampler = { path = "crates/sotf-plugins/crates/sotf-plugin-resampl
 sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer", default-features = false }
 sotf-plugin-xtc = { path = "crates/sotf-plugins/crates/sotf-plugin-xtc" }
 sotf-iamf = { path = "crates/sotf-iamf" }
+sotf-streaming = { path = "crates/sotf-streaming" }
+sotf-mpd = { path = "crates/sotf-mpd" }
+sotf-services = { path = "crates/sotf-services", default-features = false }
+sotf-dlna = { path = "crates/sotf-dlna" }
+sotf-cast = { path = "crates/sotf-cast" }
 sotf-engine = { path = "crates/sotf-engine", default-features = false }
 sotf-player = { path = "crates/sotf-player" }
-player-midi = { path = "crates/midi" }
+sotf-midi = { path = "crates/sotf-midi" }
 sotf-plugins = { path = "crates/sotf-plugins", default-features = false }
-driver-common = { path = "crates/driver-common" }
-driver-hal = { path = "crates/driver-hal" }  # macOS only
+driver-common = { path = "crates/systemwide/crates/driver-common" }
+driver-hal = { path = "crates/systemwide/crates/driver-hal" }  # macOS only
 
 # audio
 cpal = "0.17"
@@ -393,9 +406,13 @@ zed-font-kit = { path = "crates/3rdparties/zed-font-kit" }
 # Patches for tvOS/watchOS/visionOS support (Tier 3 Apple platforms):
 # - psm: assembly files use ELF directives instead of Mach-O on unrecognized Apple OSes
 # - zed-font-kit: pulls in fontconfig/freetype instead of CoreText on tvOS
+# - coreaudio-rs: cfg(target_os = "ios") doesn't include tvos
+# - mach2: compile_error! gate doesn't include tvos
 [patch.crates-io]
 psm = { path = "crates/3rdparties/psm" }
 zed-font-kit = { path = "crates/3rdparties/zed-font-kit" }
+coreaudio-rs = { path = "crates/3rdparties/coreaudio-rs" }
+mach2 = { path = "crates/3rdparties/mach2" }
 
 [profile.release]
 lto = true

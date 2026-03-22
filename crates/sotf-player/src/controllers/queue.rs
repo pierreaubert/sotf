@@ -6,6 +6,8 @@
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 
+use sotf_audio::decoder::AudioSource;
+
 use crate::{Album, Queue, QueueItem, Track};
 
 /// Effect that a queue mutation has on playback.
@@ -14,8 +16,8 @@ use crate::{Album, Queue, QueueItem, Track};
 pub enum QueuePlaybackEffect {
     /// No playback change needed.
     None,
-    /// Start playing the track at this path.
-    Play(PathBuf),
+    /// Start playing from this audio source.
+    Play(AudioSource),
     /// Stop playback (queue is empty or current item was removed).
     Stop,
 }
@@ -72,8 +74,8 @@ impl QueueController {
     pub fn play_album_now(&mut self, album: Album) -> QueuePlaybackEffect {
         let new_index = self.queue.add(album);
         self.queue.current_index = Some(new_index);
-        match self.queue.current_track_path() {
-            Some(path) => QueuePlaybackEffect::Play(path),
+        match self.queue.current_track_source() {
+            Some(source) => QueuePlaybackEffect::Play(source),
             None => QueuePlaybackEffect::None,
         }
     }
@@ -81,7 +83,7 @@ impl QueueController {
     /// Start playback from the first album in the queue.
     pub fn start(&mut self) -> QueuePlaybackEffect {
         match self.queue.start() {
-            Some(path) => QueuePlaybackEffect::Play(path),
+            Some(source) => QueuePlaybackEffect::Play(source),
             None => QueuePlaybackEffect::None,
         }
     }
@@ -94,7 +96,7 @@ impl QueueController {
     /// Advance to the next track (crosses album boundaries).
     pub fn next_track(&mut self) -> QueuePlaybackEffect {
         match self.queue.next_track() {
-            Some(path) => QueuePlaybackEffect::Play(path),
+            Some(source) => QueuePlaybackEffect::Play(source),
             None => QueuePlaybackEffect::Stop,
         }
     }
@@ -102,7 +104,7 @@ impl QueueController {
     /// Go to the previous track (crosses album boundaries).
     pub fn previous_track(&mut self) -> QueuePlaybackEffect {
         match self.queue.previous_track() {
-            Some(path) => QueuePlaybackEffect::Play(path),
+            Some(source) => QueuePlaybackEffect::Play(source),
             None => QueuePlaybackEffect::None,
         }
     }
@@ -110,7 +112,7 @@ impl QueueController {
     /// Jump to a specific album index and reset to its first track.
     pub fn jump_to(&mut self, index: usize) -> QueuePlaybackEffect {
         match self.queue.jump_to(index) {
-            Some(path) => QueuePlaybackEffect::Play(path),
+            Some(source) => QueuePlaybackEffect::Play(source),
             None => QueuePlaybackEffect::None,
         }
     }

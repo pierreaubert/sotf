@@ -387,6 +387,9 @@ fn default_tolerance() -> f64 {
 fn default_atolerance() -> f64 {
     1e-5
 }
+fn default_smooth_n() -> usize {
+    6
+}
 
 // Re-export shared algorithm type from player crate
 pub use sotf_audio_player::room_eq_types::RoomEqAlgorithm;
@@ -812,6 +815,12 @@ pub struct RoomEqOptimizerConfig {
     pub loss_type: String,
     /// Enable psychoacoustic smoothing
     pub psychoacoustic: bool,
+    /// Enable curve smoothing
+    #[serde(default)]
+    pub smooth: bool,
+    /// Curve smoothing window size (1/N octave)
+    #[serde(default = "default_smooth_n")]
+    pub smooth_n: usize,
     /// Enable asymmetric loss (penalize peaks more than dips)
     pub asymmetric_loss: bool,
     /// Convergence tolerance (relative)
@@ -891,6 +900,8 @@ impl Default for RoomEqOptimizerConfig {
             local_algo: "cobyla".to_string(),
             loss_type: "flat".to_string(),
             psychoacoustic: true,
+            smooth: false,
+            smooth_n: 6,
             asymmetric_loss: true,
             tolerance: 1e-5,
             atolerance: 1e-5,
@@ -2077,6 +2088,7 @@ impl RoomEqState {
             } else {
                 None
             },
+            smooth_n: self.optimizer_config.smooth_n,
             decomposed_correction: None,
         };
 

@@ -22,4 +22,5 @@ nalgebra = { workspace = true }
 realfft = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 math-dsp = { workspace = true }

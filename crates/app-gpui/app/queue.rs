@@ -27,7 +27,7 @@ impl App {
         self.playback.current_queue_index = self.queue.current_index();
     }
 
-    pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
+    pub fn add_album_to_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.playback.is_playing;
 
@@ -54,7 +54,7 @@ impl App {
     }
 
     /// Add album to queue and immediately jump to it and start playing
-    pub fn play_album_now(&mut self) -> Option<PathBuf> {
+    pub fn play_album_now(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         let albums = self.filtered_albums();
         let selected_album = albums.get(self.library_state.selected_index).copied();
 
@@ -66,9 +66,9 @@ impl App {
                 self.queue.current_index = Some(existing_index);
                 self.queue.items[existing_index].current_track_index = 0;
                 self.sync_queue_index();
-                if let Some(path) = self.queue.current_track_path() {
+                if let Some(source) = self.queue.current_track_source() {
                     self.playback.is_playing = true;
-                    return Some(path);
+                    return Some(source);
                 }
                 return None;
             }
@@ -78,29 +78,29 @@ impl App {
             self.sync_queue_index();
             self.assert_queue_consistency();
 
-            if let QueuePlaybackEffect::Play(path) = effect {
+            if let QueuePlaybackEffect::Play(source) = effect {
                 self.playback.is_playing = true;
-                return Some(path);
+                return Some(source);
             }
         }
         None
     }
 
-    pub fn start_queue(&mut self) -> Option<PathBuf> {
+    pub fn start_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         let effect = self.queue.start();
         self.sync_queue_index();
-        if let QueuePlaybackEffect::Play(path) = effect {
+        if let QueuePlaybackEffect::Play(source) = effect {
             self.playback.is_playing = true;
-            return Some(path);
+            return Some(source);
         }
         None
     }
 
-    pub fn next_track(&mut self) -> Option<PathBuf> {
+    pub fn next_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         match self.queue.next_track() {
-            QueuePlaybackEffect::Play(path) => {
+            QueuePlaybackEffect::Play(source) => {
                 self.sync_queue_index();
-                Some(path)
+                Some(source)
             }
             QueuePlaybackEffect::Stop => {
                 self.sync_queue_index();
@@ -113,11 +113,11 @@ impl App {
         }
     }
 
-    pub fn previous_track(&mut self) -> Option<PathBuf> {
+    pub fn previous_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         match self.queue.previous_track() {
-            QueuePlaybackEffect::Play(path) => {
+            QueuePlaybackEffect::Play(source) => {
                 self.sync_queue_index();
-                Some(path)
+                Some(source)
             }
             _ => {
                 self.sync_queue_index();
@@ -183,16 +183,16 @@ impl App {
     }
 
     /// Play the selected queue item (album) from the beginning
-    pub fn play_selected_queue_item(&mut self) -> Option<PathBuf> {
+    pub fn play_selected_queue_item(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         if self.selected_queue_index >= self.queue.len() {
             return None;
         }
 
         let effect = self.queue.jump_to(self.selected_queue_index);
         self.sync_queue_index();
-        if let QueuePlaybackEffect::Play(path) = effect {
+        if let QueuePlaybackEffect::Play(source) = effect {
             self.playback.is_playing = true;
-            return Some(path);
+            return Some(source);
         }
         None
     }

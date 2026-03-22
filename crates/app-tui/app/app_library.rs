@@ -197,7 +197,7 @@ impl App {
         self.needs_filter_update = true;
     }
 
-    pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
+    pub fn add_album_to_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.is_playing;
 

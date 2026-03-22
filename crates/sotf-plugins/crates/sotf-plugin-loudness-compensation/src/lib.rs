@@ -16,9 +16,12 @@
 // previous arbitrary defaults and provide perceptually-motivated compensation.
 // ============================================================================
 
+pub mod params;
+
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
-use sotf_host::param_specs::{find_by_key as pk, loudness_compensation::PARAMS as LC};
+use sotf_host::param_specs::find_by_key as pk;
+use crate::params::PARAMS as LC;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};

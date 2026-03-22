@@ -72,6 +72,14 @@ fn default_atolerance() -> f64 {
     1e-5
 }
 
+fn default_spacing_weight() -> f64 {
+    1.0
+}
+
+fn default_min_spacing_oct() -> f64 {
+    0.08
+}
+
 /// Headphone EQ optimizer configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeadphoneEqOptimizerConfig {
@@ -122,6 +130,12 @@ pub struct HeadphoneEqOptimizerConfig {
     pub smooth: bool,
     /// Smoothing window size
     pub smooth_n: usize,
+    /// Spacing weight for filter frequency spacing penalty
+    #[serde(default = "default_spacing_weight")]
+    pub spacing_weight: f64,
+    /// Minimum spacing between filters in octaves
+    #[serde(default = "default_min_spacing_oct")]
+    pub min_spacing_oct: f64,
 }
 
 impl Default for HeadphoneEqOptimizerConfig {
@@ -150,6 +164,8 @@ impl Default for HeadphoneEqOptimizerConfig {
             local_algo: "cobyla".to_string(),
             smooth: false,
             smooth_n: 1,
+            spacing_weight: 1.0,
+            min_spacing_oct: 0.08,
         }
     }
 }

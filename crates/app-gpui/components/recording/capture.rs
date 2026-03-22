@@ -1686,11 +1686,12 @@ impl PlayerView {
                         .and_then(|p| std::path::Path::new(p).file_name())
                         .map(|f| f.to_string_lossy().to_string());
 
-                    // Create inline measurement with frequency response data
+                    // Store only file references, not inline data
+                    // Data will be loaded from CSV on demand
                     let inline_measurement = InlineMeasurement {
-                        frequencies: result.frequencies.iter().map(|&f| f as f64).collect(),
-                        magnitude_db: result.magnitude_db.iter().map(|&m| m as f64).collect(),
-                        phase_deg: Some(result.phase_deg.iter().map(|&p| p as f64).collect()),
+                        frequencies: Vec::new(),
+                        magnitude_db: Vec::new(),
+                        phase_deg: None,
                         name: Some(rec.channel_name.clone()),
                         wav_path: relative_wav,
                         csv_path: relative_csv,
