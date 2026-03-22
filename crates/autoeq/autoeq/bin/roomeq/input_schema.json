@@ -11,7 +11,7 @@
     "version": {
       "type": "string",
       "description": "Configuration version (semantic versioning)",
-      "default": "1.1.0",
+      "default": "1.3.0",
       "pattern": "^\\d+\\.\\d+\\.\\d+$"
     },
     "system": {
@@ -40,6 +40,10 @@
     "optimizer": {
       "$ref": "#/$defs/OptimizerConfig",
       "description": "Optimization parameters"
+    },
+    "recording_config": {
+      "$ref": "#/$defs/RecordingConfiguration",
+      "description": "Recording configuration (device settings, signal parameters used during measurement capture)"
     }
   },
   "$defs": {
@@ -130,17 +134,28 @@
           "$ref": "#/$defs/MeasurementRef"
         },
         {
-          "type": "array",
+          "type": "object",
           "description": "Multiple measurements to be averaged",
-          "items": {
-            "$ref": "#/$defs/MeasurementRef"
+          "required": ["measurements"],
+          "properties": {
+            "measurements": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MeasurementRef"
+              },
+              "minItems": 1
+            },
+            "speaker_name": {
+              "type": "string",
+              "description": "Optional speaker model name (e.g., 'Genelec 8361A')"
+            }
           },
-          "minItems": 1
+          "additionalProperties": false
         }
       ]
     },
     "MeasurementRef": {
-      "description": "Reference to a measurement file",
+      "description": "Reference to a measurement file or inline data",
       "oneOf": [
         {
           "type": "string",
@@ -160,15 +175,70 @@
             "name": {
               "type": "string",
               "description": "Optional display name for the measurement"
+            },
+            "speaker_name": {
+              "type": "string",
+              "description": "Optional speaker model name (e.g., 'Genelec 8361A')"
             }
           },
           "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/InlineMeasurement",
+          "description": "Inline measurement data (stored directly in JSON)"
         }
       ]
     },
+    "InlineMeasurement": {
+      "type": "object",
+      "description": "Inline measurement data stored directly in the JSON configuration (no external CSV file needed)",
+      "required": [
+        "frequencies",
+        "magnitude_db"
+      ],
+      "properties": {
+        "frequencies": {
+          "type": "array",
+          "description": "Frequency points in Hz",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minItems": 1
+        },
+        "magnitude_db": {
+          "type": "array",
+          "description": "Sound Pressure Level in dB",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1
+        },
+        "phase_deg": {
+          "type": "array",
+          "description": "Phase in degrees (optional)",
+          "items": {
+            "type": "number"
+          }
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional display name"
+        },
+        "wav_path": {
+          "type": "string",
+          "description": "Optional path to associated WAV file"
+        },
+        "csv_path": {
+          "type": "string",
+          "description": "Optional path to associated CSV file"
+        }
+      },
+      "additionalProperties": false
+    },
     "SpeakerGroup": {
       "type": "object",
-      "description": "Multi-driver speaker group with crossover. IMPORTANT: For accurate crossover optimization, measurements should include phase data. The optimizer uses complex summation (vector sum) to model interference between drivers at crossover frequencies. Without phase data, the optimizer assumes 0\u00b0 phase, which may result in suboptimal crossover frequencies and driver alignment.",
+      "description": "Multi-driver speaker group with crossover. IMPORTANT: For accurate crossover optimization, measurements should include phase data. The optimizer uses complex summation (vector sum) to model interference between drivers at crossover frequencies. Without phase data, the optimizer assumes 0° phase, which may result in suboptimal crossover frequencies and driver alignment.",
       "required": [
         "name",
         "measurements"
@@ -177,6 +247,10 @@
         "name": {
           "type": "string",
           "description": "Name of the speaker group"
+        },
+        "speaker_name": {
+          "type": "string",
+          "description": "Optional speaker model name (e.g., 'KEF R3')"
         },
         "measurements": {
           "type": "array",
@@ -195,7 +269,7 @@
     },
     "MultiSubGroup": {
       "type": "object",
-      "description": "Multiple subwoofers with gain/delay optimization. IMPORTANT: For accurate optimization, measurements MUST include phase data. The optimizer uses complex summation (H_total = H_sub1 + H_sub2 * e^(-j\u03c9\u03c4)) to model constructive/destructive interference between subwoofers. Without phase data, the optimizer cannot properly find delay settings that maximize summation at the listening position.",
+      "description": "Multiple subwoofers with gain/delay optimization. IMPORTANT: For accurate optimization, measurements MUST include phase data. The optimizer uses complex summation (H_total = H_sub1 + H_sub2 * e^(-jωτ)) to model constructive/destructive interference between subwoofers. Without phase data, the optimizer cannot properly find delay settings that maximize summation at the listening position.",
       "required": [
         "name",
         "subwoofers"
@@ -205,6 +279,10 @@
           "type": "string",
           "description": "Name of the subwoofer group"
         },
+        "speaker_name": {
+          "type": "string",
+          "description": "Optional speaker model name"
+        },
         "subwoofers": {
           "type": "array",
           "description": "Measurements for each subwoofer. MUST include phase data (e.g., export from REW with phase) for accurate delay optimization.",
@@ -212,13 +290,18 @@
             "$ref": "#/$defs/MeasurementSource"
           },
           "minItems": 2
+        },
+        "allpass_optimization": {
+          "type": "boolean",
+          "description": "Enable per-subwoofer all-pass filter optimization (Dirac Bass Control inspired). When true, optimizes gain + delay + all-pass biquad per sub for improved phase alignment and mode cancellation. Uses DE global optimizer.",
+          "default": false
         }
       },
       "additionalProperties": false
     },
     "DBAConfig": {
       "type": "object",
-      "description": "Double Bass Array with front and rear arrays. IMPORTANT: For accurate DBA optimization, measurements MUST include phase data. The optimizer uses complex summation to model the interference between front and rear arrays. The rear array is automatically phase-inverted (180\u00b0) to create the pressure wave cancellation pattern characteristic of DBA systems.",
+      "description": "Double Bass Array with front and rear arrays. IMPORTANT: For accurate DBA optimization, measurements MUST include phase data. The optimizer uses complex summation to model the interference between front and rear arrays. The rear array is automatically phase-inverted (180°) to create the pressure wave cancellation pattern characteristic of DBA systems.",
       "required": [
         "name",
         "front",
@@ -228,6 +311,10 @@
         "name": {
           "type": "string",
           "description": "Name of the DBA system"
+        },
+        "speaker_name": {
+          "type": "string",
+          "description": "Optional speaker model name"
         },
         "front": {
           "type": "array",
@@ -239,7 +326,7 @@
         },
         "rear": {
           "type": "array",
-          "description": "Measurements for the rear array (will be phase-inverted by adding 180\u00b0). Include phase data for accurate optimization.",
+          "description": "Measurements for the rear array (will be phase-inverted by adding 180°). Include phase data for accurate optimization.",
           "items": {
             "$ref": "#/$defs/MeasurementSource"
           },
@@ -261,6 +348,10 @@
         "name": {
           "type": "string",
           "description": "Name of the cardioid system"
+        },
+        "speaker_name": {
+          "type": "string",
+          "description": "Optional speaker model name"
         },
         "front": {
           "$ref": "#/$defs/MeasurementSource",
@@ -349,17 +440,37 @@
       "properties": {
         "mode": {
           "type": "string",
-          "description": "Optimization mode: 'iir' uses parametric EQ filters (biquads), 'fir' generates FIR impulse response files (WAV), 'mixed' combines both (IIR for high frequencies, FIR for low frequencies by default). For 'fir' and 'mixed' modes, a WAV file is generated per channel (e.g., 'left_fir.wav') and referenced in the output JSON via a 'convolution' plugin.",
+          "description": "Optimization mode: 'iir' uses parametric EQ filters (biquads), 'fir' generates FIR impulse response files (WAV), 'mixed' combines both (IIR for high frequencies, FIR for low frequencies by default), 'mixed_phase' uses IIR for minimum-phase + short FIR for excess phase correction.",
           "enum": [
             "iir",
             "fir",
-            "mixed"
+            "mixed",
+            "mixed_phase"
           ],
           "default": "iir"
+        },
+        "processing_mode": {
+          "type": "string",
+          "description": "Processing mode for RoomEQ v2. 'low_latency' = IIR only (< 5ms), 'phase_linear' = FIR only, 'hybrid' = IIR bass + FIR mids/highs, 'mixed_phase' = IIR minimum-phase + short FIR for excess phase (~10ms latency, requires phase data).",
+          "enum": [
+            "low_latency",
+            "phase_linear",
+            "hybrid",
+            "mixed_phase"
+          ],
+          "default": "low_latency"
         },
         "fir": {
           "$ref": "#/$defs/FirConfig",
           "description": "FIR configuration (when mode is 'fir' or 'mixed'). The generated FIR filter is saved as a WAV file and referenced in the output via a convolution plugin."
+        },
+        "mixed_config": {
+          "$ref": "#/$defs/MixedModeConfig",
+          "description": "Mixed mode configuration for frequency-based crossover. When mode='mixed' and this is set, uses frequency-based crossover (FIR on one band, IIR on the other)."
+        },
+        "mixed_phase": {
+          "$ref": "#/$defs/MixedPhaseSerdeConfig",
+          "description": "Mixed-phase correction configuration. Used when processing_mode='mixed_phase'. Decomposes measurement into minimum-phase (IIR) and excess phase (short FIR)."
         },
         "loss_type": {
           "type": "string",
@@ -373,12 +484,15 @@
         "algorithm": {
           "type": "string",
           "description": "Optimization algorithm",
-          "default": "cobyla",
+          "default": "autoeq:de",
           "examples": [
             "cobyla",
+            "de",
             "nlopt:cobyla",
             "autoeq:de",
-            "nlopt:isres"
+            "nlopt:isres",
+            "mh:firefly",
+            "mh:pso"
           ]
         },
         "num_filters": {
@@ -386,7 +500,7 @@
           "description": "Number of PEQ filters per channel",
           "minimum": 1,
           "maximum": 50,
-          "default": 10
+          "default": 7
         },
         "min_q": {
           "type": "number",
@@ -400,7 +514,7 @@
           "description": "Maximum Q factor",
           "minimum": 0.1,
           "maximum": 50,
-          "default": 10.0
+          "default": 6.0
         },
         "min_db": {
           "type": "number",
@@ -414,7 +528,7 @@
           "description": "Maximum gain in dB",
           "minimum": 0,
           "maximum": 30,
-          "default": 12.0
+          "default": 4.0
         },
         "min_freq": {
           "type": "number",
@@ -428,14 +542,21 @@
           "description": "Maximum frequency in Hz",
           "minimum": 20,
           "maximum": 48000,
-          "default": 20000.0
+          "default": 1600.0
         },
         "max_iter": {
           "type": "integer",
           "description": "Maximum number of optimization iterations",
           "minimum": 100,
           "maximum": 1000000,
-          "default": 10000
+          "default": 50000
+        },
+        "population": {
+          "type": "integer",
+          "description": "Population size for DE optimizer",
+          "minimum": 10,
+          "maximum": 10000,
+          "default": 50
         },
         "peq_model": {
           "type": "string",
@@ -446,6 +567,11 @@
             "free"
           ],
           "default": "pk"
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Random seed for reproducible results. When set, the optimizer will produce deterministic results.",
+          "minimum": 0
         },
         "refine": {
           "type": "boolean",
@@ -472,6 +598,22 @@
           "description": "Enable asymmetric loss weighting where peaks are penalized 2x more than dips. This is psychoacoustically correct: we can hear and fix peaks with EQ cuts, but nulls/dips cannot be fixed with EQ boosts (boosting into a null just wastes amplifier power). Recommended for room correction.",
           "default": true
         },
+        "tolerance": {
+          "type": "number",
+          "description": "Optimization convergence tolerance (relative)",
+          "minimum": 0,
+          "default": 1e-5
+        },
+        "atolerance": {
+          "type": "number",
+          "description": "Optimization convergence tolerance (absolute)",
+          "minimum": 0,
+          "default": 1e-5
+        },
+        "allow_delay": {
+          "type": "boolean",
+          "description": "Allow inter-speaker delay optimization. When true, the optimizer generates delay plugins to align speakers in time (time alignment, phase alignment, group delay optimization). Default: false for IIR mode (low-latency), true for FIR and mixed modes. When omitted, the default is inferred from the mode."
+        },
         "target_tilt": {
           "$ref": "#/$defs/TargetTiltConfig",
           "description": "Target curve tilt configuration for Harman-style room curves"
@@ -495,6 +637,22 @@
         "broadband_target_matching": {
           "$ref": "#/$defs/BroadbandTargetMatchingConfig",
           "description": "Broadband target matching configuration (shelf filters)"
+        },
+        "gd_opt": {
+          "$ref": "#/$defs/GroupDelayOptimizationConfig",
+          "description": "Group Delay Optimization configuration"
+        },
+        "vog": {
+          "$ref": "#/$defs/VoiceOfGodConfig",
+          "description": "Voice of God (Timbre Matching) configuration"
+        },
+        "multi_measurement": {
+          "$ref": "#/$defs/MultiMeasurementConfig",
+          "description": "Multi-measurement optimization configuration. Controls how multiple measurements per speaker are combined during optimization."
+        },
+        "decomposed_correction": {
+          "$ref": "#/$defs/DecomposedCorrectionSerdeConfig",
+          "description": "Decomposed correction configuration (Trinnov-inspired). Applies frequency-dependent correction weights based on acoustic decomposition."
         }
       },
       "additionalProperties": false
@@ -512,9 +670,10 @@
         },
         "phase": {
           "type": "string",
-          "description": "Phase response type: 'linear' produces symmetric FIR, 'kirkeby' applies magnitude limits",
+          "description": "Phase response type: 'linear' produces symmetric FIR, 'minimum' produces minimum-phase FIR, 'kirkeby' applies magnitude limits",
           "enum": [
             "linear",
+            "minimum",
             "kirkeby"
           ],
           "default": "kirkeby"
@@ -527,6 +686,95 @@
         "phase_smoothing": {
           "type": "number",
           "description": "Phase smoothing width in octaves (default: 0.167 = 1/6 octave). Applied via group delay smoothing when excess phase correction is enabled. Smoothing reduces noise artifacts in phase measurements. Set to 0.0 to disable smoothing.",
+          "minimum": 0.0,
+          "maximum": 2.0,
+          "default": 0.167
+        },
+        "pre_ringing": {
+          "$ref": "#/$defs/PreRingingSerdeConfig",
+          "description": "Pre-ringing suppression configuration. When set, FIR filter pre-ringing is constrained to the specified threshold."
+        }
+      },
+      "additionalProperties": false
+    },
+    "PreRingingSerdeConfig": {
+      "type": "object",
+      "description": "Pre-ringing suppression configuration for FIR filters",
+      "properties": {
+        "threshold_db": {
+          "type": "number",
+          "description": "Maximum pre-ringing level in dB relative to main tap",
+          "default": -30.0
+        },
+        "max_time_s": {
+          "type": "number",
+          "description": "Maximum pre-ringing time in seconds",
+          "minimum": 0,
+          "default": 0.005
+        }
+      },
+      "additionalProperties": false
+    },
+    "MixedModeConfig": {
+      "type": "object",
+      "description": "Mixed mode configuration for frequency-based crossover. When mode='mixed' and this is set, the optimizer uses different filter types for different frequency bands separated by a crossover frequency.",
+      "properties": {
+        "crossover_freq": {
+          "type": "number",
+          "description": "Crossover frequency dividing IIR and FIR bands (Hz)",
+          "minimum": 20,
+          "maximum": 20000,
+          "default": 300.0
+        },
+        "crossover_type": {
+          "type": "string",
+          "description": "Crossover filter type",
+          "enum": [
+            "LR24",
+            "LR48",
+            "LR4",
+            "LR8"
+          ],
+          "default": "LR24"
+        },
+        "fir_band": {
+          "type": "string",
+          "description": "Which band uses FIR: 'low' or 'high'. FIR is typically better for low frequencies (bass room modes).",
+          "enum": [
+            "low",
+            "high"
+          ],
+          "default": "low"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MixedPhaseSerdeConfig": {
+      "type": "object",
+      "description": "Mixed-phase correction configuration. Decomposes measurement into minimum-phase component (corrected by IIR) and excess phase component (corrected by short FIR). Requires phase data in measurements. Low latency (~10ms).",
+      "properties": {
+        "max_fir_length_ms": {
+          "type": "number",
+          "description": "Maximum FIR length in milliseconds for excess phase correction",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10.0
+        },
+        "pre_ringing_threshold_db": {
+          "type": "number",
+          "description": "Pre-ringing threshold in dB",
+          "default": -30.0
+        },
+        "min_spatial_depth": {
+          "type": "number",
+          "description": "Minimum spatial correction depth for excess phase correction (0.0-1.0)",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.5
+        },
+        "phase_smoothing_octaves": {
+          "type": "number",
+          "description": "Phase smoothing width in octaves",
           "minimum": 0.0,
           "maximum": 2.0,
           "default": 0.167
@@ -768,7 +1016,7 @@
           "description": "Maximum delay in milliseconds",
           "minimum": 0,
           "maximum": 50,
-          "default": 30
+          "default": 3.0
         }
       },
       "additionalProperties": false
@@ -816,6 +1064,254 @@
           "type": "boolean",
           "description": "Enable broadband target matching",
           "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "GroupDelayOptimizationConfig": {
+      "type": "object",
+      "description": "Configuration for Group Delay Optimization (GD-Opt). Optimizes crossover group delay alignment.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable Group Delay Optimization",
+          "default": false
+        },
+        "target_ms": {
+          "type": "number",
+          "description": "Target group delay at crossover (ms). 0.0 = perfect alignment.",
+          "default": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "VoiceOfGodConfig": {
+      "type": "object",
+      "description": "Voice of God (Timbre Matching) configuration. Matches the tonal character of all speakers to a reference channel.",
+      "required": [
+        "reference_channel"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable Voice of God optimization",
+          "default": false
+        },
+        "reference_channel": {
+          "type": "string",
+          "description": "Reference channel name (e.g., 'Center' or 'Left')"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MultiMeasurementConfig": {
+      "type": "object",
+      "description": "Configuration for multi-measurement optimization. When a speaker has multiple measurements (different listening positions), controls how they are combined during optimization.",
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "description": "Strategy for combining per-measurement losses",
+          "enum": [
+            "average",
+            "weighted_sum",
+            "minimax",
+            "variance_penalized",
+            "spatial_robustness"
+          ],
+          "default": "average"
+        },
+        "weights": {
+          "type": "array",
+          "description": "Weights for weighted_sum strategy (normalized internally). Equal weights if omitted.",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "variance_lambda": {
+          "type": "number",
+          "description": "Lambda for variance_penalized strategy. Higher = more consistent across positions.",
+          "minimum": 0,
+          "default": 1.0
+        },
+        "spatial_robustness": {
+          "$ref": "#/$defs/SpatialRobustnessSerdeConfig",
+          "description": "Spatial robustness configuration (used when strategy = 'spatial_robustness')."
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpatialRobustnessSerdeConfig": {
+      "type": "object",
+      "description": "Spatial robustness configuration. Only corrects features consistent across positions (Dirac-inspired). Uses a correction depth mask based on inter-position variance.",
+      "properties": {
+        "variance_threshold_db": {
+          "type": "number",
+          "description": "Variance threshold (dB) below which full correction is allowed",
+          "minimum": 0,
+          "default": 3.0
+        },
+        "transition_width_db": {
+          "type": "number",
+          "description": "Transition width (dB) for sigmoid blending",
+          "minimum": 0,
+          "default": 2.0
+        },
+        "min_correction_depth": {
+          "type": "number",
+          "description": "Minimum correction depth (0.0-1.0)",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.1
+        },
+        "mask_smoothing_octaves": {
+          "type": "number",
+          "description": "Smoothing width in octaves for the correction depth mask",
+          "minimum": 0.0,
+          "maximum": 2.0,
+          "default": 0.167
+        }
+      },
+      "additionalProperties": false
+    },
+    "DecomposedCorrectionSerdeConfig": {
+      "type": "object",
+      "description": "Decomposed correction configuration (Trinnov-inspired). When enabled, applies frequency-dependent correction weights: room modes (below Schroeder) get full correction, steady-state response (above Schroeder) gets gentle correction, position-dependent features get reduced correction.",
+      "properties": {
+        "schroeder_freq": {
+          "type": "number",
+          "description": "Schroeder frequency (Hz). Below: modal, above: statistical.",
+          "minimum": 50,
+          "maximum": 1000,
+          "default": 200.0
+        },
+        "min_mode_q": {
+          "type": "number",
+          "description": "Minimum Q to qualify as a room mode",
+          "minimum": 0.5,
+          "default": 3.0
+        },
+        "min_mode_prominence_db": {
+          "type": "number",
+          "description": "Minimum prominence (dB) for mode detection",
+          "minimum": 0,
+          "default": 3.0
+        },
+        "mode_correction_weight": {
+          "type": "number",
+          "description": "Correction weight for detected room modes (0.0-1.0)",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 1.0
+        },
+        "early_reflection_weight": {
+          "type": "number",
+          "description": "Correction weight for early reflections (0.0-1.0)",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.3
+        },
+        "steady_state_weight": {
+          "type": "number",
+          "description": "Correction weight for steady-state above Schroeder (0.0-1.0)",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.5
+        }
+      },
+      "additionalProperties": false
+    },
+    "RecordingConfiguration": {
+      "type": "object",
+      "description": "Recording configuration stored with measurements. Contains device settings and signal parameters used during measurement capture.",
+      "properties": {
+        "playback_device_name": {
+          "type": "string",
+          "description": "Playback device name"
+        },
+        "playback_device_id": {
+          "type": "string",
+          "description": "Playback device ID"
+        },
+        "playback_sample_rate": {
+          "type": "integer",
+          "description": "Playback sample rate in Hz",
+          "minimum": 8000
+        },
+        "playback_channels": {
+          "type": "integer",
+          "description": "Playback channel count",
+          "minimum": 1
+        },
+        "speaker_configuration": {
+          "type": "string",
+          "description": "Speaker configuration (e.g., '5.1', '7.1.4', 'Stereo')"
+        },
+        "channel_names": {
+          "type": "array",
+          "description": "Channel names in order (e.g., ['L', 'R', 'C', 'LFE', 'SL', 'SR'])",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recording_device_name": {
+          "type": "string",
+          "description": "Recording device name"
+        },
+        "recording_device_id": {
+          "type": "string",
+          "description": "Recording device ID"
+        },
+        "recording_sample_rate": {
+          "type": "integer",
+          "description": "Recording sample rate in Hz",
+          "minimum": 8000
+        },
+        "recording_channels": {
+          "type": "integer",
+          "description": "Recording channel count",
+          "minimum": 1
+        },
+        "mic_calibration_path": {
+          "type": "string",
+          "description": "Microphone calibration file path (if used)"
+        },
+        "mic_calibration_paths": {
+          "type": "array",
+          "description": "Per-channel microphone calibration file paths",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "null" }
+            ]
+          }
+        },
+        "recording_directory": {
+          "type": "string",
+          "description": "Recording output directory"
+        },
+        "signal_type": {
+          "type": "string",
+          "description": "Signal type used for measurements (e.g., 'Sweep', 'Pink Noise')"
+        },
+        "signal_duration_secs": {
+          "type": "number",
+          "description": "Signal duration in seconds",
+          "minimum": 0
+        },
+        "signal_level_db": {
+          "type": "number",
+          "description": "Signal level in dB"
+        },
+        "sweep_start_freq": {
+          "type": "number",
+          "description": "Sweep start frequency in Hz (only applicable when signal_type is 'Sweep')",
+          "minimum": 1
+        },
+        "sweep_end_freq": {
+          "type": "number",
+          "description": "Sweep end frequency in Hz (only applicable when signal_type is 'Sweep')",
+          "minimum": 1
         }
       },
       "additionalProperties": false

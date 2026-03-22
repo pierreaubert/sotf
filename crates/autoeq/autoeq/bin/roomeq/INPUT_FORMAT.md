@@ -17,12 +17,13 @@ check-jsonschema --schemafile input_schema.json your_config.json
 
 ```json
 {
-  "version": "1.1.0",
+  "version": "1.3.0",
   "system": { ... },
   "speakers": { ... },
   "crossovers": { ... },
   "target_curve": "...",
-  "optimizer": { ... }
+  "optimizer": { ... },
+  "recording_config": { ... }
 }
 ```
 
@@ -30,12 +31,13 @@ check-jsonschema --schemafile input_schema.json your_config.json
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `version` | string | No | `"1.1.0"` | Configuration version (semantic versioning) |
+| `version` | string | No | `"1.3.0"` | Configuration version (semantic versioning) |
 | `system` | object | No | - | System topology and logical channel mapping |
 | `speakers` | object | **Yes** | - | Map of channel names to speaker configurations |
 | `crossovers` | object | No | - | Crossover configurations referenced by multi-driver speakers |
 | `target_curve` | string | No | - | Target frequency response curve |
 | `optimizer` | object | No | defaults | Optimization parameters |
+| `recording_config` | object | No | - | Recording configuration (device settings, signal parameters used during capture) |
 
 ---
 
@@ -98,7 +100,7 @@ RoomEQ supports five speaker types:
 
 ### Measurement References
 
-Measurements can be specified in four ways:
+Measurements can be specified in several ways:
 
 **1. Simple path string:**
 ```json
@@ -120,13 +122,32 @@ Measurements can be specified in four ways:
 }
 ```
 
-**4. Multiple measurements (averaged):**
+**4. Measurement with speaker model name:**
 ```json
-"left": [
-  "measurements/left_pos1.csv",
-  "measurements/left_pos2.csv",
-  "measurements/left_pos3.csv"
-]
+"left": {
+  "path": "measurements/left.csv",
+  "speaker_name": "KEF R3"
+}
+```
+
+**5. Multiple measurements (averaged):**
+```json
+"left": {
+  "measurements": [
+    "measurements/left_pos1.csv",
+    "measurements/left_pos2.csv",
+    "measurements/left_pos3.csv"
+  ]
+}
+```
+
+**6. Inline measurement data (no external file):**
+```json
+"left": {
+  "frequencies": [20, 50, 100, 200, 500, 1000, 5000, 10000, 20000],
+  "magnitude_db": [60, 72, 78, 80, 82, 80, 79, 75, 68],
+  "phase_deg": [45, 30, 15, 5, -10, -30, -60, -90, -120]
+}
 ```
 
 ### Single Speaker
@@ -170,6 +191,7 @@ For speakers with multiple drivers (woofer, midrange, tweeter) requiring crossov
   "speakers": {
     "left": {
       "name": "Left 2-Way Speaker",
+      "speaker_name": "KEF R3",
       "measurements": [
         "measurements/left_woofer.csv",
         "measurements/left_tweeter.csv"
@@ -190,6 +212,7 @@ For speakers with multiple drivers (woofer, midrange, tweeter) requiring crossov
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | **Yes** | Descriptive name for the speaker |
+| `speaker_name` | string | No | Speaker model name (e.g., "KEF R3") |
 | `measurements` | array | **Yes** | Array of measurement sources (order: lowest to highest frequency driver) |
 | `crossover` | string | No | Key referencing a crossover in the `crossovers` map |
 
@@ -215,12 +238,27 @@ For optimizing multiple subwoofers with individual gain and delay adjustments.
 }
 ```
 
+With all-pass optimization (Dirac Bass Control inspired):
+```json
+{
+  "speakers": {
+    "lfe": {
+      "name": "Quad Subwoofers",
+      "subwoofers": [ ... ],
+      "allpass_optimization": true
+    }
+  }
+}
+```
+
 **MultiSubGroup Fields:**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | **Yes** | Name of the subwoofer group |
-| `subwoofers` | array | **Yes** | Array of measurement sources for each subwoofer |
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | **Yes** | - | Name of the subwoofer group |
+| `speaker_name` | string | No | - | Speaker model name |
+| `subwoofers` | array | **Yes** | - | Array of measurement sources for each subwoofer |
+| `allpass_optimization` | boolean | No | `false` | Enable per-sub all-pass filter optimization (gain + delay + all-pass biquad) |
 
 ### Double Bass Array (DBA)
 
@@ -251,6 +289,7 @@ For optimizing front and rear bass arrays with phase cancellation. The rear arra
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | **Yes** | Name of the DBA system |
+| `speaker_name` | string | No | Speaker model name |
 | `front` | array | **Yes** | Measurements for the front array |
 | `rear` | array | **Yes** | Measurements for the rear array (will be phase-inverted by adding 180°) |
 
@@ -276,6 +315,7 @@ For optimizing a pair of subwoofers in a gradient cardioid configuration (e.g., 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | **Yes** | Name of the cardioid system |
+| `speaker_name` | string | No | Speaker model name |
 | `front` | source | **Yes** | Measurement for the front (primary) subwoofer |
 | `rear` | source | **Yes** | Measurement for the rear (cancellation) subwoofer |
 | `separation_meters` | number | **Yes** | Physical separation distance between acoustic centers (meters) |
@@ -352,15 +392,15 @@ Controls the optimization algorithm, constraints, and advanced features.
   "optimizer": {
     "mode": "iir",
     "loss_type": "flat",
-    "algorithm": "cobyla",
-    "num_filters": 10,
+    "algorithm": "autoeq:de",
+    "num_filters": 7,
     "min_q": 0.5,
-    "max_q": 10.0,
+    "max_q": 6.0,
     "min_db": -12.0,
-    "max_db": 12.0,
+    "max_db": 4.0,
     "min_freq": 20.0,
-    "max_freq": 20000.0,
-    "max_iter": 10000,
+    "max_freq": 1600.0,
+    "max_iter": 50000,
     "peq_model": "pk",
     "refine": true,
     "local_algo": "cobyla",
@@ -374,38 +414,53 @@ Controls the optimization algorithm, constraints, and advanced features.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `mode` | string | `"iir"` | Optimization mode: `"iir"`, `"fir"`, or `"mixed"` |
+| `mode` | string | `"iir"` | Optimization mode: `"iir"`, `"fir"`, `"mixed"`, or `"mixed_phase"` |
+| `processing_mode` | string | `"low_latency"` | V2 processing mode: `"low_latency"`, `"phase_linear"`, `"hybrid"`, `"mixed_phase"` |
 | `fir` | object | - | FIR configuration (when mode is `"fir"` or `"mixed"`) |
+| `mixed_config` | object | - | Mixed mode configuration for frequency-based crossover |
+| `mixed_phase` | object | - | Mixed-phase correction config (when processing_mode is `"mixed_phase"`) |
 | `loss_type` | string | `"flat"` | Loss function: `"flat"` or `"score"` |
-| `algorithm` | string | `"cobyla"` | Global optimization algorithm |
-| `num_filters` | integer | `10` | Number of PEQ filters per channel |
+| `algorithm` | string | `"autoeq:de"` | Optimization algorithm |
+| `num_filters` | integer | `7` | Number of PEQ filters per channel |
 | `min_q` | number | `0.5` | Minimum Q factor |
-| `max_q` | number | `10.0` | Maximum Q factor |
+| `max_q` | number | `6.0` | Maximum Q factor |
 | `min_db` | number | `-12.0` | Minimum gain in dB |
-| `max_db` | number | `12.0` | Maximum gain in dB |
+| `max_db` | number | `4.0` | Maximum gain in dB |
 | `min_freq` | number (Hz) | `20.0` | Minimum frequency |
-| `max_freq` | number (Hz) | `20000.0` | Maximum frequency |
-| `max_iter` | integer | `10000` | Maximum optimization iterations |
+| `max_freq` | number (Hz) | `1600.0` | Maximum frequency |
+| `max_iter` | integer | `50000` | Maximum optimization iterations |
+| `population` | integer | `50` | Population size for DE optimizer |
 | `peq_model` | string | `"pk"` | PEQ model type |
+| `seed` | integer | - | Random seed for reproducible results |
 | `refine` | boolean | `true` | Enable hybrid two-stage optimization (DE global + COBYLA local) |
 | `local_algo` | string | `"cobyla"` | Local optimizer for refinement stage (when `refine=true`) |
 | `psychoacoustic` | boolean | `true` | Enable psychoacoustic variable smoothing before optimization |
-| `asymmetric_loss` | boolean | `true` | Penalize peaks 2× more than dips (psychoacoustically correct) |
+| `asymmetric_loss` | boolean | `true` | Penalize peaks 2x more than dips (psychoacoustically correct) |
+| `tolerance` | number | `1e-5` | Optimization convergence tolerance (relative) |
+| `atolerance` | number | `1e-5` | Optimization convergence tolerance (absolute) |
+| `allow_delay` | boolean | - | Allow inter-speaker delay optimization. Default: false for IIR, true for FIR/mixed. |
 | `target_tilt` | object | - | Target curve tilt configuration |
 | `excursion_protection` | object | - | Excursion protection for bookshelf speakers |
 | `schroeder_split` | object | - | Different Q constraints above/below Schroeder frequency |
 | `phase_alignment` | object | - | Phase alignment for subwoofer integration |
 | `multi_seat` | object | - | Multi-seat variance optimization |
 | `broadband_target_matching` | object | - | Preliminary broadband shelf alignment |
+| `gd_opt` | object | - | Group Delay Optimization |
+| `vog` | object | - | Voice of God (timbre matching) |
+| `multi_measurement` | object | - | Multi-measurement optimization strategy |
+| `decomposed_correction` | object | - | Trinnov-inspired decomposed correction |
 
 ### Optimization Algorithms
 
 | Algorithm | Description |
 |-----------|-------------|
+| `autoeq:de` | Differential Evolution (default global optimizer) |
 | `cobyla` | COBYLA (Constrained Optimization BY Linear Approximations) |
+| `de` | Bare DE alias |
 | `nlopt:cobyla` | NLopt COBYLA variant |
-| `autoeq:de` | Differential Evolution (global optimizer) |
 | `nlopt:isres` | Improved Stochastic Ranking Evolution Strategy |
+| `mh:firefly` | Firefly Algorithm |
+| `mh:pso` | Particle Swarm Optimization |
 
 ### Local Algorithms (for `refine`)
 
@@ -450,12 +505,93 @@ When `mode` is `"fir"` or `"mixed"`, a WAV file is generated per channel (e.g., 
 }
 ```
 
+With pre-ringing suppression:
+```json
+{
+  "optimizer": {
+    "mode": "fir",
+    "fir": {
+      "taps": 4096,
+      "phase": "kirkeby",
+      "pre_ringing": {
+        "threshold_db": -30.0,
+        "max_time_s": 0.005
+      }
+    }
+  }
+}
+```
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `taps` | integer | `4096` | Number of FIR filter taps (64–65536) |
-| `phase` | string | `"kirkeby"` | Phase type: `"linear"` (symmetric FIR) or `"kirkeby"` (magnitude limits) |
+| `taps` | integer | `4096` | Number of FIR filter taps (64-65536) |
+| `phase` | string | `"kirkeby"` | Phase type: `"linear"` (symmetric FIR), `"minimum"` (minimum-phase FIR), or `"kirkeby"` (magnitude limits) |
 | `correct_excess_phase` | boolean | `false` | Correct excess phase (kirkeby only). Requires clean phase measurements. |
 | `phase_smoothing` | number | `0.167` | Phase smoothing width in octaves (0 = disabled). Applied via group delay smoothing when excess phase correction is enabled. |
+| `pre_ringing` | object | - | Pre-ringing suppression configuration |
+
+**PreRinging Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `threshold_db` | number | `-30.0` | Maximum pre-ringing level in dB relative to main tap |
+| `max_time_s` | number | `0.005` | Maximum pre-ringing time in seconds |
+
+---
+
+## Mixed Mode Configuration
+
+When `mode` is `"mixed"` and `mixed_config` is provided, the optimizer uses different filter types for different frequency bands separated by a crossover.
+
+```json
+{
+  "optimizer": {
+    "mode": "mixed",
+    "mixed_config": {
+      "crossover_freq": 300.0,
+      "crossover_type": "LR24",
+      "fir_band": "low"
+    },
+    "fir": {
+      "taps": 4096,
+      "phase": "kirkeby"
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `crossover_freq` | number (Hz) | `300.0` | Crossover frequency dividing IIR and FIR bands |
+| `crossover_type` | string | `"LR24"` | Crossover filter type: `"LR24"`, `"LR48"`, `"LR4"`, `"LR8"` |
+| `fir_band` | string | `"low"` | Which band uses FIR: `"low"` or `"high"`. FIR is typically better for low frequencies. |
+
+---
+
+## Mixed-Phase Correction Configuration
+
+When `processing_mode` is `"mixed_phase"`, decomposes the measurement into minimum-phase (corrected by IIR) and excess phase (corrected by short FIR). Requires phase data.
+
+```json
+{
+  "optimizer": {
+    "processing_mode": "mixed_phase",
+    "mixed_phase": {
+      "max_fir_length_ms": 10.0,
+      "pre_ringing_threshold_db": -30.0,
+      "min_spatial_depth": 0.5,
+      "phase_smoothing_octaves": 0.167
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_fir_length_ms` | number | `10.0` | Maximum FIR length in ms for excess phase correction |
+| `pre_ringing_threshold_db` | number | `-30.0` | Pre-ringing threshold in dB |
+| `min_spatial_depth` | number | `0.5` | Minimum spatial correction depth (0.0-1.0) |
+| `phase_smoothing_octaves` | number | `0.167` | Phase smoothing width in octaves (1/6 octave) |
 
 ---
 
@@ -588,7 +724,7 @@ With automatic Schroeder frequency from room dimensions:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `false` | Enable Schroeder split optimization |
-| `schroeder_freq` | number (Hz) | `300` | Schroeder frequency (typical: 200–500 Hz for domestic rooms) |
+| `schroeder_freq` | number (Hz) | `300` | Schroeder frequency (typical: 200-500 Hz for domestic rooms) |
 | `room_dimensions` | object | - | Room dimensions for automatic Schroeder frequency calculation |
 | `low_freq_config` | object | - | Low frequency filter configuration (below Schroeder) |
 | `high_freq_config` | object | - | High frequency filter configuration (above Schroeder) |
@@ -630,7 +766,7 @@ Optimizes delay and polarity to maximize energy sum in the crossover region betw
       "min_freq": 60,
       "max_freq": 100,
       "optimize_polarity": true,
-      "max_delay_ms": 30
+      "max_delay_ms": 3.0
     }
   }
 }
@@ -642,7 +778,7 @@ Optimizes delay and polarity to maximize energy sum in the crossover region betw
 | `min_freq` | number (Hz) | `60` | Minimum frequency for optimization |
 | `max_freq` | number (Hz) | `100` | Maximum frequency for optimization |
 | `optimize_polarity` | boolean | `true` | Optimize polarity (normal vs inverted) |
-| `max_delay_ms` | number (ms) | `30` | Maximum delay in milliseconds |
+| `max_delay_ms` | number (ms) | `3.0` | Maximum delay in milliseconds |
 
 ---
 
@@ -688,7 +824,7 @@ With primary seat constraints:
 
 Using `min_freq` / `max_freq` limits the optimization range, which can leave spectral imbalances outside that band. Broadband Target Matching solves this with a preliminary alignment pass:
 
-1. Analyzes the full 20 Hz–20 kHz spectrum.
+1. Analyzes the full 20 Hz-20 kHz spectrum.
 2. Fits Low Shelf (200 Hz), High Shelf (4 kHz), and Gain filters to match the target curve.
 3. Applies this correction *before* the fine-grained PEQ optimization.
 
@@ -707,6 +843,128 @@ This ensures the overall tonal balance is correct even when the main optimizer f
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `true` | Enable broadband target matching |
+
+---
+
+## Group Delay Optimization
+
+Optimizes crossover group delay alignment between drivers.
+
+```json
+{
+  "optimizer": {
+    "gd_opt": {
+      "enabled": true,
+      "target_ms": 0.0
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable Group Delay Optimization |
+| `target_ms` | number | `0.0` | Target group delay at crossover (ms). 0.0 = perfect alignment. |
+
+---
+
+## Voice of God (Timbre Matching)
+
+Matches the tonal character of all speakers to a reference channel.
+
+```json
+{
+  "optimizer": {
+    "vog": {
+      "enabled": true,
+      "reference_channel": "Center"
+    }
+  }
+}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | boolean | No | `false` | Enable Voice of God optimization |
+| `reference_channel` | string | **Yes** | - | Reference channel name (e.g., "Center" or "Left") |
+
+---
+
+## Multi-Measurement Optimization
+
+When a speaker has multiple measurements (different listening positions), controls how they are combined during optimization.
+
+```json
+{
+  "optimizer": {
+    "multi_measurement": {
+      "strategy": "spatial_robustness",
+      "spatial_robustness": {
+        "variance_threshold_db": 3.0,
+        "transition_width_db": 2.0,
+        "min_correction_depth": 0.1,
+        "mask_smoothing_octaves": 0.167
+      }
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `strategy` | string | `"average"` | Strategy: `"average"`, `"weighted_sum"`, `"minimax"`, `"variance_penalized"`, `"spatial_robustness"` |
+| `weights` | array | - | Weights for `weighted_sum` (normalized internally). Equal if omitted. |
+| `variance_lambda` | number | `1.0` | Lambda for `variance_penalized`. Higher = more consistent. |
+| `spatial_robustness` | object | - | Configuration for `spatial_robustness` strategy |
+
+**Multi-Measurement Strategies:**
+
+| Strategy | Description |
+|----------|-------------|
+| `average` | RMS-average curves, optimize on average (default) |
+| `weighted_sum` | loss = sum(w_i * loss_i) - weighted sum of per-measurement losses |
+| `minimax` | loss = max(loss_i) - optimize worst case across all measurements |
+| `variance_penalized` | loss = mean(loss_i) + lambda * var(loss_i) - balance quality + consistency |
+| `spatial_robustness` | RMS-average + correction depth mask based on spatial variance (Dirac-inspired) |
+
+**SpatialRobustness Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `variance_threshold_db` | number | `3.0` | Variance threshold (dB) below which full correction is allowed |
+| `transition_width_db` | number | `2.0` | Transition width (dB) for sigmoid blending |
+| `min_correction_depth` | number | `0.1` | Minimum correction depth (0.0-1.0) |
+| `mask_smoothing_octaves` | number | `0.167` | Smoothing width in octaves for the correction depth mask |
+
+---
+
+## Decomposed Correction (Trinnov-Inspired)
+
+Applies frequency-dependent correction weights based on acoustic decomposition. Room modes get aggressive correction, steady-state response gets gentle correction, early reflections get reduced correction.
+
+```json
+{
+  "optimizer": {
+    "decomposed_correction": {
+      "schroeder_freq": 200,
+      "min_mode_q": 3.0,
+      "min_mode_prominence_db": 3.0,
+      "mode_correction_weight": 1.0,
+      "early_reflection_weight": 0.3,
+      "steady_state_weight": 0.5
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `schroeder_freq` | number (Hz) | `200` | Schroeder frequency. Below: modal, above: statistical. |
+| `min_mode_q` | number | `3.0` | Minimum Q to qualify as a room mode |
+| `min_mode_prominence_db` | number | `3.0` | Minimum prominence (dB) for mode detection |
+| `mode_correction_weight` | number | `1.0` | Correction weight for room modes (0.0-1.0) |
+| `early_reflection_weight` | number | `0.3` | Correction weight for early reflections (0.0-1.0) |
+| `steady_state_weight` | number | `0.5` | Correction weight for steady-state above Schroeder (0.0-1.0) |
 
 ---
 
@@ -742,11 +1000,11 @@ freq,spl,phase
     "right": "measurements/right.csv"
   },
   "optimizer": {
-    "num_filters": 10,
-    "algorithm": "cobyla",
-    "max_iter": 5000,
+    "num_filters": 7,
+    "algorithm": "autoeq:de",
+    "max_iter": 50000,
     "min_freq": 20.0,
-    "max_freq": 20000.0
+    "max_freq": 1600.0
   }
 }
 ```
@@ -755,7 +1013,7 @@ freq,spl,phase
 
 ```json
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "system": {
     "model": "stereo",
     "speakers": {
@@ -781,11 +1039,11 @@ freq,spl,phase
     }
   },
   "optimizer": {
-    "num_filters": 10,
-    "algorithm": "cobyla",
-    "max_iter": 10000,
+    "num_filters": 7,
+    "algorithm": "autoeq:de",
+    "max_iter": 50000,
     "min_freq": 20.0,
-    "max_freq": 20000.0
+    "max_freq": 1600.0
   }
 }
 ```
@@ -797,365 +1055,67 @@ freq,spl,phase
   "speakers": {
     "left": {
       "name": "Left 2-Way",
+      "speaker_name": "KEF R3",
       "measurements": [
         "measurements/left_woofer.csv",
         "measurements/left_tweeter.csv"
       ],
-      "crossover": "lr24_xover"
+      "crossover": "main_xo"
     },
     "right": {
       "name": "Right 2-Way",
+      "speaker_name": "KEF R3",
       "measurements": [
         "measurements/right_woofer.csv",
         "measurements/right_tweeter.csv"
       ],
-      "crossover": "lr24_xover"
+      "crossover": "main_xo"
     }
   },
   "crossovers": {
-    "lr24_xover": {
+    "main_xo": {
       "type": "LR24",
       "frequency_range": [1500, 3500]
     }
   },
   "optimizer": {
-    "num_filters": 12,
-    "algorithm": "cobyla",
-    "max_iter": 15000,
-    "min_freq": 50.0,
-    "max_freq": 20000.0
-  }
-}
-```
-
-### Example 4: 3-Way Speaker with Fixed Crossovers
-
-```json
-{
-  "speakers": {
-    "left": {
-      "name": "Left 3-Way Tower",
-      "measurements": [
-        {"path": "measurements/left_woofer.csv", "name": "woofer"},
-        {"path": "measurements/left_midrange.csv", "name": "midrange"},
-        {"path": "measurements/left_tweeter.csv", "name": "tweeter"}
-      ],
-      "crossover": "3way_fixed"
-    }
-  },
-  "crossovers": {
-    "3way_fixed": {
-      "type": "LR48",
-      "frequencies": [500, 3000]
-    }
-  },
-  "optimizer": {
-    "num_filters": 15,
-    "algorithm": "autoeq:de",
-    "max_iter": 20000
-  }
-}
-```
-
-### Example 5: Home Theater with Multiple Subwoofers
-
-```json
-{
-  "speakers": {
-    "left": "measurements/left_main.csv",
-    "center": "measurements/center.csv",
-    "right": "measurements/right_main.csv",
-    "surround_left": "measurements/surround_left.csv",
-    "surround_right": "measurements/surround_right.csv",
-    "lfe": {
-      "name": "Quad Subwoofers",
-      "subwoofers": [
-        "measurements/sub_fl.csv",
-        "measurements/sub_fr.csv",
-        "measurements/sub_rl.csv",
-        "measurements/sub_rr.csv"
-      ]
-    }
-  },
-  "optimizer": {
-    "num_filters": 10,
-    "algorithm": "cobyla",
-    "max_iter": 10000,
-    "min_freq": 20.0,
-    "max_freq": 20000.0,
-    "min_db": -15.0,
-    "max_db": 15.0
-  }
-}
-```
-
-### Example 6: Double Bass Array
-
-```json
-{
-  "speakers": {
-    "left": "measurements/left.csv",
-    "right": "measurements/right.csv",
-    "lfe": {
-      "name": "DBA System",
-      "front": [
-        "measurements/front_sub_left.csv",
-        "measurements/front_sub_right.csv"
-      ],
-      "rear": [
-        "measurements/rear_sub_left.csv",
-        "measurements/rear_sub_right.csv"
-      ]
-    }
-  },
-  "optimizer": {
-    "num_filters": 8,
-    "algorithm": "cobyla",
-    "max_iter": 15000,
-    "min_freq": 20.0,
-    "max_freq": 200.0
-  }
-}
-```
-
-### Example 7: Multiple Measurement Positions (Averaged)
-
-```json
-{
-  "speakers": {
-    "left": [
-      "measurements/left_pos1.csv",
-      "measurements/left_pos2.csv",
-      "measurements/left_pos3.csv"
-    ],
-    "right": [
-      "measurements/right_pos1.csv",
-      "measurements/right_pos2.csv",
-      "measurements/right_pos3.csv"
-    ]
-  },
-  "optimizer": {
-    "num_filters": 10,
-    "algorithm": "cobyla",
-    "max_iter": 10000
-  }
-}
-```
-
-### Example 8: FIR Mode with Excess Phase Correction
-
-```json
-{
-  "speakers": {
-    "left": "measurements/left.csv",
-    "right": "measurements/right.csv"
-  },
-  "optimizer": {
-    "mode": "fir",
-    "fir": {
-      "taps": 8192,
-      "phase": "kirkeby",
-      "correct_excess_phase": true,
-      "phase_smoothing": 0.167
-    },
-    "algorithm": "cobyla",
-    "max_iter": 5000,
-    "min_freq": 20.0,
-    "max_freq": 20000.0
-  }
-}
-```
-
-### Example 9: Target Curve with Harman Tilt
-
-```json
-{
-  "speakers": {
-    "left": "measurements/left.csv",
-    "right": "measurements/right.csv"
-  },
-  "target_curve": "flat",
-  "optimizer": {
-    "loss_type": "flat",
-    "num_filters": 12,
-    "algorithm": "cobyla",
-    "max_iter": 10000,
-    "target_tilt": {
-      "tilt_type": "harman"
-    }
-  }
-}
-```
-
-### Example 10: Bookshelf Speakers with Excursion Protection
-
-```json
-{
-  "speakers": {
-    "left": "measurements/left_bookshelf.csv",
-    "right": "measurements/right_bookshelf.csv"
-  },
-  "optimizer": {
-    "num_filters": 10,
-    "algorithm": "cobyla",
-    "max_iter": 10000,
-    "excursion_protection": {
-      "enabled": true,
-      "auto_detect_f3": true,
-      "filter_order": 4,
-      "filter_type": "linkwitzriley"
-    }
-  }
-}
-```
-
-### Example 11: Room Mode Correction with Schroeder Split
-
-```json
-{
-  "speakers": {
-    "left": "measurements/left.csv",
-    "right": "measurements/right.csv"
-  },
-  "optimizer": {
-    "num_filters": 15,
-    "algorithm": "autoeq:de",
-    "refine": true,
-    "local_algo": "cobyla",
+    "num_filters": 7,
+    "max_iter": 50000,
     "psychoacoustic": true,
-    "asymmetric_loss": true,
-    "schroeder_split": {
-      "enabled": true,
-      "room_dimensions": {
-        "length": 6.5,
-        "width": 4.2,
-        "height": 2.7
-      },
-      "low_freq_config": {
-        "max_q": 12.0,
-        "allow_boost": false
-      },
-      "high_freq_config": {
-        "max_q": 1.0
-      }
-    }
+    "asymmetric_loss": true
   }
 }
 ```
 
-### Example 12: Subwoofer Phase Alignment
+### Example 4: Multi-Sub System with Spatial Robustness
 
 ```json
 {
   "speakers": {
     "left": "measurements/left.csv",
     "right": "measurements/right.csv",
-    "sub": "measurements/sub.csv"
-  },
-  "optimizer": {
-    "num_filters": 10,
-    "algorithm": "cobyla",
-    "max_iter": 10000,
-    "phase_alignment": {
-      "enabled": true,
-      "min_freq": 40,
-      "max_freq": 120,
-      "optimize_polarity": true,
-      "max_delay_ms": 30
-    }
-  }
-}
-```
-
-### Example 13: Multi-Seat Home Theater Optimization
-
-```json
-{
-  "speakers": {
-    "left": "measurements/left.csv",
-    "right": "measurements/right.csv",
-    "sub": {
+    "lfe": {
       "name": "Dual Subs",
       "subwoofers": [
-        "measurements/sub_left.csv",
-        "measurements/sub_right.csv"
-      ]
+        "measurements/sub_front.csv",
+        "measurements/sub_rear.csv"
+      ],
+      "allpass_optimization": true
     }
   },
   "optimizer": {
-    "num_filters": 10,
-    "algorithm": "autoeq:de",
-    "refine": true,
-    "multi_seat": {
-      "enabled": true,
-      "strategy": "primary_with_constraints",
-      "primary_seat": 0,
-      "max_deviation_db": 6
-    }
-  }
-}
-```
-
-### Example 14: Full-Featured Room Correction
-
-```json
-{
-  "version": "1.2.0",
-  "system": {
-    "model": "stereo",
-    "speakers": {
-      "L": "left",
-      "R": "right",
-      "LFE": "sub"
-    },
-    "subwoofers": {
-      "config": "single",
-      "crossover": "bass_xover",
-      "sub": "L"
-    }
-  },
-  "speakers": {
-    "left": "measurements/left.csv",
-    "right": "measurements/right.csv",
-    "sub": "measurements/sub.csv"
-  },
-  "crossovers": {
-    "bass_xover": {
-      "type": "LR24",
-      "frequency": 80.0
-    }
-  },
-  "target_curve": "flat",
-  "optimizer": {
-    "num_filters": 15,
-    "algorithm": "autoeq:de",
-    "refine": true,
-    "local_algo": "cobyla",
-    "psychoacoustic": true,
-    "asymmetric_loss": true,
-    "min_freq": 20.0,
-    "max_freq": 20000.0,
-    "target_tilt": {
-      "tilt_type": "harman"
-    },
-    "schroeder_split": {
-      "enabled": true,
-      "schroeder_freq": 300,
-      "low_freq_config": {
-        "max_q": 10.0,
-        "allow_boost": false
-      },
-      "high_freq_config": {
-        "max_q": 1.0
+    "num_filters": 7,
+    "multi_measurement": {
+      "strategy": "spatial_robustness",
+      "spatial_robustness": {
+        "variance_threshold_db": 3.0,
+        "min_correction_depth": 0.1
       }
     },
-    "phase_alignment": {
-      "enabled": true,
-      "min_freq": 60,
-      "max_freq": 100
-    },
-    "broadband_target_matching": {
-      "enabled": true
+    "decomposed_correction": {
+      "schroeder_freq": 200,
+      "mode_correction_weight": 1.0,
+      "steady_state_weight": 0.5
     }
   }
 }

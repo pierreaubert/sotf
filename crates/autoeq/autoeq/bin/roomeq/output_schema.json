@@ -43,9 +43,47 @@
           "items": {
             "type": "number"
           }
+        },
+        "phase": {
+          "type": "array",
+          "description": "Phase in degrees (optional)",
+          "items": {
+            "type": "number"
+          }
+        },
+        "norm_range": {
+          "type": "array",
+          "description": "Frequency range used for normalization [min_hz, max_hz] (optional)",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "required": ["freq", "spl"],
+      "additionalProperties": false
+    },
+    "IrWaveform": {
+      "type": "object",
+      "description": "Impulse response waveform (time-domain)",
+      "required": ["time_ms", "amplitude"],
+      "properties": {
+        "time_ms": {
+          "type": "array",
+          "description": "Time axis in milliseconds",
+          "items": {
+            "type": "number"
+          }
+        },
+        "amplitude": {
+          "type": "array",
+          "description": "Amplitude (normalized so pre-IR peak = 1.0)",
+          "items": {
+            "type": "number"
+          }
+        }
+      },
       "additionalProperties": false
     },
     "ChannelDspChain": {
@@ -99,6 +137,50 @@
               "description": "Final frequency response curve after applying correction (normalized)"
             }
           ]
+        },
+        "eq_response": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/CurveData",
+              "description": "EQ filter response curve (correction magnitude in dB)"
+            }
+          ]
+        },
+        "target_curve": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/CurveData",
+              "description": "Effective target curve the optimizer worked against (mean-shifted + tilt, in absolute SPL coordinates)"
+            }
+          ]
+        },
+        "pre_ir": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/IrWaveform",
+              "description": "Impulse response before correction (requires phase data in measurement)"
+            }
+          ]
+        },
+        "post_ir": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/IrWaveform",
+              "description": "Impulse response after correction (requires phase data in measurement)"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -123,6 +205,17 @@
           "items": {
             "$ref": "#/$defs/PluginConfig"
           }
+        },
+        "initial_curve": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/CurveData",
+              "description": "Initial frequency response curve for this driver before optimization"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -307,7 +400,7 @@
         "type": {
           "type": "string",
           "description": "Crossover type",
-          "enum": ["LR24", "LR48", "Butterworth12", "Butterworth24"]
+          "enum": ["LR24", "LR4", "LR48", "LR8", "Butterworth12", "BW12", "Butterworth24", "BW24"]
         },
         "frequency": {
           "type": "number",
@@ -371,7 +464,7 @@
         "type": {
           "type": "string",
           "description": "Crossover filter type",
-          "enum": ["LR24", "LR48", "Butterworth12", "Butterworth24"]
+          "enum": ["LR24", "LR4", "LR48", "LR8", "Butterworth12", "BW12", "Butterworth24", "BW24"]
         }
       },
       "additionalProperties": false

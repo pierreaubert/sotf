@@ -169,7 +169,7 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
     }
 
     // Validate mode
-    let valid_modes = ["iir", "fir", "mixed"];
+    let valid_modes = ["iir", "fir", "mixed", "mixed_phase"];
     if !valid_modes.contains(&opt.mode.as_str()) {
         result.add_error(format!(
             "Unknown mode '{}', must be one of {:?}",

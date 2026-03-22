@@ -17,7 +17,7 @@ check-jsonschema --schemafile output_schema.json dsp_chain.json
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.3.0",
   "channels": { ... },
   "metadata": { ... }
 }
@@ -43,7 +43,13 @@ Each channel contains an ordered list of plugins that process audio in sequence.
     "left": {
       "channel": "left",
       "plugins": [ ... ],
-      "drivers": [ ... ]
+      "drivers": [ ... ],
+      "initial_curve": { ... },
+      "final_curve": { ... },
+      "eq_response": { ... },
+      "target_curve": { ... },
+      "pre_ir": { ... },
+      "post_ir": { ... }
     }
   }
 }
@@ -56,6 +62,52 @@ Each channel contains an ordered list of plugins that process audio in sequence.
 | `channel` | string | Channel name |
 | `plugins` | array | Ordered list of plugin configurations |
 | `drivers` | array or null | Per-driver DSP chains (for multi-driver speakers) |
+| `initial_curve` | CurveData or null | Initial frequency response before optimization (normalized) |
+| `final_curve` | CurveData or null | Final frequency response after applying correction (normalized) |
+| `eq_response` | CurveData or null | EQ filter response curve (correction magnitude in dB) |
+| `target_curve` | CurveData or null | Effective target curve the optimizer worked against (mean-shifted + tilt, in absolute SPL) |
+| `pre_ir` | IrWaveform or null | Impulse response before correction (requires phase data) |
+| `post_ir` | IrWaveform or null | Impulse response after correction (requires phase data) |
+
+---
+
+## Curve Data
+
+Frequency response curves used for visualization.
+
+```json
+{
+  "freq": [20, 50, 100, 200, 500, 1000, 5000, 10000, 20000],
+  "spl": [60, 72, 78, 80, 82, 80, 79, 75, 68],
+  "phase": [45, 30, 15, 5, -10, -30, -60, -90, -120],
+  "norm_range": [1000, 2000]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `freq` | array (Hz) | **Yes** | Frequency points |
+| `spl` | array (dB) | **Yes** | Sound Pressure Level (normalized) |
+| `phase` | array (degrees) | No | Phase response |
+| `norm_range` | [min, max] (Hz) | No | Frequency range used for normalization |
+
+---
+
+## Impulse Response Waveform
+
+Time-domain impulse response for visualization (pre/post correction comparison).
+
+```json
+{
+  "time_ms": [-5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0],
+  "amplitude": [0.0, 0.01, 0.02, 0.05, 0.3, 1.0, 0.4, 0.1, 0.02]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `time_ms` | array (ms) | **Yes** | Time axis in milliseconds |
+| `amplitude` | array | **Yes** | Amplitude (normalized so pre-IR peak = 1.0) |
 
 ---
 
@@ -138,7 +190,7 @@ Frequency band splitting for multi-driver systems.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `type` | string | Crossover type: `"LR24"`, `"LR48"`, `"Butterworth12"`, `"Butterworth24"` |
+| `type` | string | Crossover type: `"LR24"`, `"LR4"`, `"LR48"`, `"LR8"`, `"Butterworth12"`, `"BW12"`, `"Butterworth24"`, `"BW24"` |
 | `frequency` | number (Hz) | Crossover frequency |
 | `output` | string | Band selection: `"low"` (lowpass) or `"high"` (highpass) |
 
@@ -174,7 +226,44 @@ FIR filter via convolution with impulse response.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `ir_file` | string | Path to WAV file containing impulse response |
+| `ir_file` | string | Path to WAV file containing impulse response (32-bit float mono, relative to output JSON location) |
+| `channels` | array | Optional: specific channel indices to apply convolution to (used in mixed mode) |
+
+### Band Split Plugin
+
+Splits audio into frequency bands for mixed mode processing.
+
+```json
+{
+  "plugin_type": "band_split",
+  "parameters": {
+    "frequency": 300.0,
+    "type": "LR24"
+  }
+}
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `frequency` | number (Hz) | Crossover frequency |
+| `type` | string | Crossover filter type |
+
+### Band Merge Plugin
+
+Recombines frequency bands that were split by `band_split`.
+
+```json
+{
+  "plugin_type": "band_merge",
+  "parameters": {
+    "bands": 2
+  }
+}
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `bands` | integer | Number of bands to merge |
 
 ---
 
@@ -205,7 +294,8 @@ For multi-driver speakers, the output includes individual processing chains for 
             "output": "low"
           }
         }
-      ]
+      ],
+      "initial_curve": { "freq": [...], "spl": [...] }
     },
     {
       "name": "tweeter",
@@ -236,6 +326,7 @@ For multi-driver speakers, the output includes individual processing chains for 
 | `name` | string | Driver name (e.g., `"woofer"`, `"tweeter"`, `"midrange"`) |
 | `index` | integer | Driver index (0 = lowest frequency driver) |
 | `plugins` | array | Plugins for this driver |
+| `initial_curve` | CurveData or null | Initial frequency response for this driver (optional) |
 
 ### Automatic Driver Naming
 
@@ -260,8 +351,8 @@ Information about the optimization process.
   "metadata": {
     "pre_score": 2.451,
     "post_score": 0.125,
-    "algorithm": "cobyla",
-    "iterations": 10000,
+    "algorithm": "autoeq:de",
+    "iterations": 50000,
     "timestamp": "2025-01-15T12:34:56Z"
   }
 }
@@ -285,7 +376,7 @@ Output for a basic stereo system with EQ filters only.
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.3.0",
   "channels": {
     "left": {
       "channel": "left",
@@ -311,62 +402,34 @@ Output for a basic stereo system with EQ filters only.
                 "freq": 250.0,
                 "q": 1.8,
                 "db_gain": 2.1
-              },
-              {
-                "filter_type": "peak",
-                "freq": 3150.0,
-                "q": 3.2,
-                "db_gain": -3.5
               }
             ]
           }
         }
       ],
-      "drivers": null
-    },
-    "right": {
-      "channel": "right",
-      "plugins": [
-        {
-          "plugin_type": "gain",
-          "parameters": {
-            "gain_db": -1.8
-          }
-        },
-        {
-          "plugin_type": "eq",
-          "parameters": {
-            "filters": [
-              {
-                "filter_type": "peak",
-                "freq": 80.0,
-                "q": 2.0,
-                "db_gain": -3.8
-              },
-              {
-                "filter_type": "peak",
-                "freq": 200.0,
-                "q": 1.5,
-                "db_gain": 1.9
-              },
-              {
-                "filter_type": "peak",
-                "freq": 4000.0,
-                "q": 2.8,
-                "db_gain": -2.7
-              }
-            ]
-          }
-        }
-      ],
-      "drivers": null
+      "initial_curve": {
+        "freq": [20, 50, 100, 500, 1000, 5000, 20000],
+        "spl": [60, 78, 82, 80, 78, 76, 65]
+      },
+      "final_curve": {
+        "freq": [20, 50, 100, 500, 1000, 5000, 20000],
+        "spl": [60, 75, 79, 79, 78, 77, 65]
+      },
+      "eq_response": {
+        "freq": [20, 50, 100, 500, 1000, 5000, 20000],
+        "spl": [0, -3.0, -1.5, 0.5, 0, 0.2, 0]
+      },
+      "target_curve": {
+        "freq": [20, 50, 100, 500, 1000, 5000, 20000],
+        "spl": [60, 75, 79, 79, 78, 77, 65]
+      }
     }
   },
   "metadata": {
     "pre_score": 3.24,
     "post_score": 0.45,
-    "algorithm": "cobyla",
-    "iterations": 5000,
+    "algorithm": "autoeq:de",
+    "iterations": 50000,
     "timestamp": "2025-01-15T10:30:00Z"
   }
 }
@@ -378,7 +441,7 @@ Output for a 2-way speaker with crossover and per-driver processing.
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.3.0",
   "channels": {
     "left": {
       "channel": "left",
@@ -392,12 +455,6 @@ Output for a 2-way speaker with crossover and per-driver processing.
                 "freq": 1000.0,
                 "q": 1.5,
                 "db_gain": -2.0
-              },
-              {
-                "filter_type": "peak",
-                "freq": 5000.0,
-                "q": 2.0,
-                "db_gain": 1.5
               }
             ]
           }
@@ -409,12 +466,6 @@ Output for a 2-way speaker with crossover and per-driver processing.
           "index": 0,
           "plugins": [
             {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": 0.0
-              }
-            },
-            {
               "plugin_type": "crossover",
               "parameters": {
                 "type": "LR24",
@@ -422,7 +473,11 @@ Output for a 2-way speaker with crossover and per-driver processing.
                 "output": "low"
               }
             }
-          ]
+          ],
+          "initial_curve": {
+            "freq": [20, 100, 500, 1000, 2000, 5000],
+            "spl": [55, 78, 82, 80, 75, 60]
+          }
         },
         {
           "name": "tweeter",
@@ -448,7 +503,11 @@ Output for a 2-way speaker with crossover and per-driver processing.
                 "output": "high"
               }
             }
-          ]
+          ],
+          "initial_curve": {
+            "freq": [1000, 2000, 5000, 10000, 20000],
+            "spl": [50, 65, 80, 78, 72]
+          }
         }
       ]
     }
@@ -456,524 +515,107 @@ Output for a 2-way speaker with crossover and per-driver processing.
   "metadata": {
     "pre_score": 5.12,
     "post_score": 0.28,
-    "algorithm": "cobyla",
-    "iterations": 15000,
+    "algorithm": "autoeq:de",
+    "iterations": 50000,
     "timestamp": "2025-01-15T11:00:00Z"
   }
 }
 ```
 
-### Example 3: 3-Way Speaker
+### Example 3: FIR Mode with Convolution
 
-Output for a 3-way speaker with woofer, midrange, and tweeter.
+Output for FIR mode, where each channel gets a WAV impulse response file.
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.3.0",
   "channels": {
     "left": {
       "channel": "left",
       "plugins": [
         {
-          "plugin_type": "eq",
+          "plugin_type": "convolution",
           "parameters": {
-            "filters": [
-              {
-                "filter_type": "peak",
-                "freq": 100.0,
-                "q": 1.2,
-                "db_gain": -3.0
-              }
-            ]
+            "ir_file": "left_fir.wav"
           }
         }
-      ],
-      "drivers": [
+      ]
+    },
+    "right": {
+      "channel": "right",
+      "plugins": [
         {
-          "name": "woofer",
-          "index": 0,
-          "plugins": [
-            {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": 1.2
-              }
-            },
-            {
-              "plugin_type": "crossover",
-              "parameters": {
-                "type": "LR24",
-                "frequency": 500.0,
-                "output": "low"
-              }
-            }
-          ]
-        },
-        {
-          "name": "midrange",
-          "index": 1,
-          "plugins": [
-            {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": 0.0
-              }
-            },
-            {
-              "plugin_type": "crossover",
-              "parameters": {
-                "type": "LR24",
-                "frequency": 500.0,
-                "output": "high"
-              }
-            },
-            {
-              "plugin_type": "crossover",
-              "parameters": {
-                "type": "LR24",
-                "frequency": 3500.0,
-                "output": "low"
-              }
-            }
-          ]
-        },
-        {
-          "name": "tweeter",
-          "index": 2,
-          "plugins": [
-            {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": -2.0
-              }
-            },
-            {
-              "plugin_type": "delay",
-              "parameters": {
-                "delay_ms": 0.25
-              }
-            },
-            {
-              "plugin_type": "crossover",
-              "parameters": {
-                "type": "LR24",
-                "frequency": 3500.0,
-                "output": "high"
-              }
-            }
-          ]
+          "plugin_type": "convolution",
+          "parameters": {
+            "ir_file": "right_fir.wav"
+          }
         }
       ]
     }
   },
   "metadata": {
-    "pre_score": 6.85,
-    "post_score": 0.35,
-    "algorithm": "cobyla",
-    "iterations": 20000,
+    "pre_score": 4.10,
+    "post_score": 0.15,
+    "algorithm": "autoeq:de",
+    "iterations": 50000,
     "timestamp": "2025-01-15T12:00:00Z"
   }
 }
 ```
 
-### Example 4: Multiple Subwoofers
+### Example 4: Mixed Mode with Band Splitting
 
-Output for a multi-subwoofer system with optimized gains and delays.
+Output for mixed mode where FIR handles low frequencies and IIR handles high frequencies.
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.3.0",
   "channels": {
-    "lfe": {
-      "channel": "lfe",
+    "left": {
+      "channel": "left",
       "plugins": [
+        {
+          "plugin_type": "band_split",
+          "parameters": {
+            "frequency": 300.0,
+            "type": "LR24"
+          }
+        },
+        {
+          "plugin_type": "convolution",
+          "parameters": {
+            "ir_file": "left_low_fir.wav",
+            "channels": [0]
+          }
+        },
         {
           "plugin_type": "eq",
           "parameters": {
             "filters": [
               {
                 "filter_type": "peak",
-                "freq": 40.0,
-                "q": 3.0,
-                "db_gain": -5.5
-              },
-              {
-                "filter_type": "peak",
-                "freq": 80.0,
-                "q": 2.5,
-                "db_gain": 2.0
+                "freq": 1000.0,
+                "q": 1.5,
+                "db_gain": -2.0
               }
             ]
           }
-        }
-      ],
-      "drivers": [
-        {
-          "name": "sub_1",
-          "index": 0,
-          "plugins": [
-            {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": 0.0
-              }
-            }
-          ]
         },
         {
-          "name": "sub_2",
-          "index": 1,
-          "plugins": [
-            {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": -2.5
-              }
-            },
-            {
-              "plugin_type": "delay",
-              "parameters": {
-                "delay_ms": 3.2
-              }
-            }
-          ]
-        },
-        {
-          "name": "sub_3",
-          "index": 2,
-          "plugins": [
-            {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": -1.8
-              }
-            },
-            {
-              "plugin_type": "delay",
-              "parameters": {
-                "delay_ms": 1.5
-              }
-            }
-          ]
-        },
-        {
-          "name": "sub_4",
-          "index": 3,
-          "plugins": [
-            {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": -3.0
-              }
-            },
-            {
-              "plugin_type": "delay",
-              "parameters": {
-                "delay_ms": 4.8
-              }
-            }
-          ]
-        }
-      ]
-    }
-  },
-  "metadata": {
-    "pre_score": 8.5,
-    "post_score": 0.6,
-    "algorithm": "cobyla",
-    "iterations": 10000,
-    "timestamp": "2025-01-15T13:00:00Z"
-  }
-}
-```
-
-### Example 5: Double Bass Array (DBA)
-
-Output for a DBA system with front and rear arrays.
-
-```json
-{
-  "version": "1.0.0",
-  "channels": {
-    "lfe": {
-      "channel": "lfe",
-      "plugins": [
-        {
-          "plugin_type": "eq",
+          "plugin_type": "band_merge",
           "parameters": {
-            "filters": [
-              {
-                "filter_type": "peak",
-                "freq": 35.0,
-                "q": 4.0,
-                "db_gain": -3.0
-              }
-            ]
+            "bands": 2
           }
-        }
-      ],
-      "drivers": [
-        {
-          "name": "Front Array",
-          "index": 0,
-          "plugins": [
-            {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": 0.0
-              }
-            }
-          ]
-        },
-        {
-          "name": "Rear Array",
-          "index": 1,
-          "plugins": [
-            {
-              "plugin_type": "gain",
-              "parameters": {
-                "gain_db": -1.5,
-                "invert": true
-              }
-            },
-            {
-              "plugin_type": "delay",
-              "parameters": {
-                "delay_ms": 8.5
-              }
-            }
-          ]
         }
       ]
     }
   },
   "metadata": {
-    "pre_score": 12.0,
-    "post_score": 0.8,
-    "algorithm": "cobyla",
-    "iterations": 15000,
+    "pre_score": 4.50,
+    "post_score": 0.10,
+    "algorithm": "autoeq:de",
+    "iterations": 50000,
     "timestamp": "2025-01-15T14:00:00Z"
   }
 }
 ```
-
-### Example 6: FIR Convolution Output
-
-Output when using FIR mode optimization.
-
-```json
-{
-  "version": "1.0.0",
-  "channels": {
-    "left": {
-      "channel": "left",
-      "plugins": [
-        {
-          "plugin_type": "gain",
-          "parameters": {
-            "gain_db": -3.0
-          }
-        },
-        {
-          "plugin_type": "convolution",
-          "parameters": {
-            "ir_file": "output/left_fir.wav"
-          }
-        }
-      ],
-      "drivers": null
-    },
-    "right": {
-      "channel": "right",
-      "plugins": [
-        {
-          "plugin_type": "gain",
-          "parameters": {
-            "gain_db": -2.8
-          }
-        },
-        {
-          "plugin_type": "convolution",
-          "parameters": {
-            "ir_file": "output/right_fir.wav"
-          }
-        }
-      ],
-      "drivers": null
-    }
-  },
-  "metadata": {
-    "pre_score": 4.2,
-    "post_score": 0.15,
-    "algorithm": "cobyla",
-    "iterations": 5000,
-    "timestamp": "2025-01-15T15:00:00Z"
-  }
-}
-```
-
-### Example 7: Complete Home Theater System
-
-Output for a 5.1 home theater system.
-
-```json
-{
-  "version": "1.0.0",
-  "channels": {
-    "left": {
-      "channel": "left",
-      "plugins": [
-        {
-          "plugin_type": "gain",
-          "parameters": { "gain_db": -1.5 }
-        },
-        {
-          "plugin_type": "eq",
-          "parameters": {
-            "filters": [
-              { "filter_type": "peak", "freq": 80.0, "q": 2.0, "db_gain": -4.0 },
-              { "filter_type": "peak", "freq": 3000.0, "q": 1.5, "db_gain": 2.0 }
-            ]
-          }
-        }
-      ],
-      "drivers": null
-    },
-    "center": {
-      "channel": "center",
-      "plugins": [
-        {
-          "plugin_type": "gain",
-          "parameters": { "gain_db": 0.5 }
-        },
-        {
-          "plugin_type": "eq",
-          "parameters": {
-            "filters": [
-              { "filter_type": "peak", "freq": 200.0, "q": 1.8, "db_gain": -3.0 },
-              { "filter_type": "peak", "freq": 4000.0, "q": 2.0, "db_gain": 1.5 }
-            ]
-          }
-        }
-      ],
-      "drivers": null
-    },
-    "right": {
-      "channel": "right",
-      "plugins": [
-        {
-          "plugin_type": "gain",
-          "parameters": { "gain_db": -1.2 }
-        },
-        {
-          "plugin_type": "eq",
-          "parameters": {
-            "filters": [
-              { "filter_type": "peak", "freq": 100.0, "q": 2.2, "db_gain": -3.5 },
-              { "filter_type": "peak", "freq": 2800.0, "q": 1.6, "db_gain": 1.8 }
-            ]
-          }
-        }
-      ],
-      "drivers": null
-    },
-    "surround_left": {
-      "channel": "surround_left",
-      "plugins": [
-        {
-          "plugin_type": "gain",
-          "parameters": { "gain_db": -2.0 }
-        },
-        {
-          "plugin_type": "eq",
-          "parameters": {
-            "filters": [
-              { "filter_type": "peak", "freq": 150.0, "q": 1.5, "db_gain": -2.5 }
-            ]
-          }
-        }
-      ],
-      "drivers": null
-    },
-    "surround_right": {
-      "channel": "surround_right",
-      "plugins": [
-        {
-          "plugin_type": "gain",
-          "parameters": { "gain_db": -1.8 }
-        },
-        {
-          "plugin_type": "eq",
-          "parameters": {
-            "filters": [
-              { "filter_type": "peak", "freq": 160.0, "q": 1.5, "db_gain": -2.2 }
-            ]
-          }
-        }
-      ],
-      "drivers": null
-    },
-    "lfe": {
-      "channel": "lfe",
-      "plugins": [
-        {
-          "plugin_type": "gain",
-          "parameters": { "gain_db": -3.0 }
-        },
-        {
-          "plugin_type": "eq",
-          "parameters": {
-            "filters": [
-              { "filter_type": "peak", "freq": 40.0, "q": 3.0, "db_gain": -6.0 },
-              { "filter_type": "peak", "freq": 80.0, "q": 2.0, "db_gain": 2.5 }
-            ]
-          }
-        }
-      ],
-      "drivers": null
-    }
-  },
-  "metadata": {
-    "pre_score": 15.5,
-    "post_score": 1.2,
-    "algorithm": "cobyla",
-    "iterations": 10000,
-    "timestamp": "2025-01-15T16:00:00Z"
-  }
-}
-```
-
----
-
-## Processing Order
-
-When implementing the DSP chain, plugins should be applied in the order they appear in the `plugins` array:
-
-1. **For single-driver channels**: Apply plugins sequentially
-2. **For multi-driver channels**:
-   - Split the input signal to each driver
-   - Apply each driver's plugins independently
-   - Sum the driver outputs
-   - Apply the channel-level plugins to the summed output
-
-### Signal Flow Diagram
-
-```
-Single Driver:
-  Input → [Gain] → [EQ] → Output
-
-Multi-Driver (2-way):
-  Input ─┬→ [Woofer: Gain → Delay → Crossover(low)] ─┐
-         │                                            ├→ Sum → [EQ] → Output
-         └→ [Tweeter: Gain → Delay → Crossover(high)] ┘
-```
-
----
-
-## Notes
-
-- Gain values near zero (< 0.01 dB) may be omitted from the output
-- Delay values near zero (< 0.001 ms) may be omitted from the output
-- The `drivers` field is `null` for single-driver speakers
-- Filter frequency, Q, and gain values are optimized for the specified sample rate
-- The `invert` parameter is only used for DBA rear arrays

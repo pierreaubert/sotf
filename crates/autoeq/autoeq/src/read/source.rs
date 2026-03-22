@@ -133,6 +133,10 @@ pub enum MeasurementSource {
     /// Use this when curves are already loaded in memory.
     #[serde(skip)]
     InMemory(Curve),
+    /// Multiple in-memory curves (e.g., multi-mic recordings).
+    /// Not serializable — use for GPUI in-memory data.
+    #[serde(skip)]
+    InMemoryMultiple(Vec<Curve>),
 }
 
 /// Single measurement with metadata
@@ -254,7 +258,7 @@ impl MeasurementSource {
         match self {
             MeasurementSource::Single(s) => s.speaker_name.as_deref(),
             MeasurementSource::Multiple(m) => m.speaker_name.as_deref(),
-            MeasurementSource::InMemory(_) => None,
+            MeasurementSource::InMemory(_) | MeasurementSource::InMemoryMultiple(_) => None,
         }
     }
 
@@ -267,7 +271,7 @@ impl MeasurementSource {
                     r.resolve_paths(base_dir);
                 }
             }
-            MeasurementSource::InMemory(_) => {} // No paths to resolve
+            MeasurementSource::InMemory(_) | MeasurementSource::InMemoryMultiple(_) => {} // No paths to resolve
         }
     }
 }
@@ -333,6 +337,7 @@ pub fn load_source_individual(source: &MeasurementSource) -> Result<Vec<Curve>, 
             Ok(vec![curve])
         }
         MeasurementSource::InMemory(curve) => Ok(vec![curve.clone()]),
+        MeasurementSource::InMemoryMultiple(curves) => Ok(curves.clone()),
         MeasurementSource::Multiple(m) => {
             if m.measurements.is_empty() {
                 return Err("Measurement list is empty".into());
@@ -373,6 +378,31 @@ pub fn load_source(source: &MeasurementSource) -> Result<Curve, Box<dyn Error>> 
     match source {
         MeasurementSource::Single(s) => load_measurement(&s.measurement),
         MeasurementSource::InMemory(curve) => Ok(curve.clone()),
+        MeasurementSource::InMemoryMultiple(curves) => {
+            if curves.is_empty() {
+                return Err("InMemoryMultiple has no curves".into());
+            }
+            if curves.len() == 1 {
+                return Ok(curves[0].clone());
+            }
+            // Average: same logic as Multiple below
+            let ref_curve = &curves[0];
+            let freqs = ref_curve.freq.clone();
+            let mut power_sum = Array1::<f64>::zeros(freqs.len());
+            for curve in curves {
+                let interpolated = interpolate_log_space(&freqs, curve);
+                let p = interpolated.spl.mapv(|spl| 10.0_f64.powf(spl / 10.0));
+                power_sum = power_sum + p;
+            }
+            let avg_power = power_sum / (curves.len() as f64);
+            let avg_spl = avg_power.mapv(|p| 10.0 * p.log10());
+            let phase = ref_curve.phase.clone();
+            Ok(Curve {
+                freq: freqs,
+                spl: avg_spl,
+                phase,
+            })
+        }
         MeasurementSource::Multiple(m) => {
             if m.measurements.is_empty() {
                 return Err("Measurement list is empty".into());

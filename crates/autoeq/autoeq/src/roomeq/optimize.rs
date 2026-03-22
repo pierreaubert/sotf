@@ -1366,15 +1366,15 @@ fn extract_wav_path(source: &MeasurementSource) -> Option<String> {
                 }
             })
         }
-        MeasurementSource::InMemory(_) => None,
+        MeasurementSource::InMemory(_) | MeasurementSource::InMemoryMultiple(_) => None,
     }
 }
 
 /// Optimize EQ filters, dispatching to multi-measurement if configured.
 ///
-/// If the source is `Multiple` and a non-Average multi-measurement strategy is configured,
-/// loads individual curves and uses `optimize_channel_eq_multi`. Otherwise falls back to
-/// the standard single-curve path.
+/// If the source is `Multiple` or `InMemoryMultiple` and a non-Average multi-measurement
+/// strategy is configured, loads individual curves and uses `optimize_channel_eq_multi`.
+/// Otherwise falls back to the standard single-curve path.
 fn optimize_eq_maybe_multi(
     source: &MeasurementSource,
     optimization_curve: &Curve,
@@ -1386,11 +1386,13 @@ fn optimize_eq_maybe_multi(
 ) -> Result<(Vec<Biquad>, f64)> {
     use super::types::MultiMeasurementStrategy;
 
-    let use_multi = matches!(source, MeasurementSource::Multiple(_))
-        && optimizer_config
-            .multi_measurement
-            .as_ref()
-            .is_some_and(|mc| mc.strategy != MultiMeasurementStrategy::Average);
+    let use_multi = matches!(
+        source,
+        MeasurementSource::Multiple(_) | MeasurementSource::InMemoryMultiple(_)
+    ) && optimizer_config
+        .multi_measurement
+        .as_ref()
+        .is_some_and(|mc| mc.strategy != MultiMeasurementStrategy::Average);
 
     if use_multi {
         let multi_config = optimizer_config.multi_measurement.as_ref().unwrap();
@@ -1464,7 +1466,7 @@ fn process_single_speaker(
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: &Path,
-    callback: Option<crate::optim::OptimProgressCallback>,
+    mut callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<MixedModeResult> {
     // Load measurement
     let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
@@ -1787,6 +1789,11 @@ fn process_single_speaker(
         ProcessingMode::PhaseLinear => {
             info!("  Generating FIR filter...");
 
+            // Report initial loss so the progress chart has data
+            if let Some(ref mut cb) = callback {
+                cb(1, pre_score);
+            }
+
             // Check if we should force excess phase correction for GD-Opt on subwoofer
             let mut opt_config = clamped_optimizer.clone();
             if let Some(gd_opt) = &clamped_optimizer.gd_opt
@@ -1878,6 +1885,11 @@ fn process_single_speaker(
                 pre_score, post_score
             );
 
+            // Report final loss so the progress chart shows the FIR improvement
+            if let Some(ref mut cb) = callback {
+                cb(2, post_score);
+            }
+
             // Extend curves to 20 Hz – 20 kHz for display output
             let display_initial = output::extend_curve_to_full_range(&curve_raw);
             let display_fir_resp =
@@ -1922,6 +1934,7 @@ fn process_single_speaker(
                     mean_spl,
                     pre_score,
                     arrival_time_ms,
+                    callback,
                 );
             }
 
@@ -3272,6 +3285,7 @@ fn process_mixed_mode_crossover(
     mean: f64,
     pre_score: f64,
     arrival_time_ms: Option<f64>,
+    callback: Option<crate::optim::OptimProgressCallback>,
 ) -> Result<MixedModeResult> {
     let crossover_freq = mixed_config.crossover_freq;
     let fir_uses_low = mixed_config.fir_band.to_lowercase() == "low";
@@ -3311,12 +3325,22 @@ fn process_mixed_mode_crossover(
         ..room_config.optimizer.clone()
     };
 
-    let (eq_filters, _) = eq::optimize_channel_eq(
-        iir_curve,
-        &iir_config,
-        room_config.target_curve.as_ref(),
-        sample_rate,
-    )
+    let (eq_filters, _) = if let Some(cb) = callback {
+        eq::optimize_channel_eq_with_callback(
+            iir_curve,
+            &iir_config,
+            room_config.target_curve.as_ref(),
+            sample_rate,
+            cb,
+        )
+    } else {
+        eq::optimize_channel_eq(
+            iir_curve,
+            &iir_config,
+            room_config.target_curve.as_ref(),
+            sample_rate,
+        )
+    }
     .map_err(|e| AutoeqError::OptimizationFailed {
         message: format!(
             "IIR optimization failed for {} band: {}",
