@@ -6,6 +6,7 @@
 // Handles channel-based (layout mapping) and scene-based (Ambisonics) elements.
 
 pub mod channel;
+pub mod object;
 pub mod scene;
 
 use crate::error::IamfResult;

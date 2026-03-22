@@ -20,6 +20,7 @@ use std::sync::Arc;
 use decode_matrix::DecodeMatrix;
 use spherical_harmonics::channel_count;
 
+use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::speaker_config::get_speaker_config;
@@ -27,13 +28,34 @@ use sotf_host::speaker_config::get_speaker_config;
 pub use config::AmbisonicsDecoderConfig;
 pub type AmbisonicsDecoderParams = AmbisonicsDecoderConfig;
 
+/// Crossover frequency for dual-band decoding (Hz).
+const DUAL_BAND_CROSSOVER_HZ: f32 = 700.0;
+
 pub struct AmbisonicsDecoderPlugin {
     order: usize,
     target_layout: String,
     max_re_weighting: bool,
+    /// When true, a separate basic (no max-rE) matrix is used for LF and the
+    /// max-rE matrix for HF, split at `DUAL_BAND_CROSSOVER_HZ`.
+    dual_band: bool,
     input_channels: usize,
     output_channels: usize,
+    /// max-rE decode matrix (or the only matrix when `dual_band` is false).
     decode_matrix: Option<DecodeMatrix>,
+    /// Basic (no max-rE) decode matrix — populated only when `dual_band` is true.
+    basic_matrix: Option<DecodeMatrix>,
+    /// LR4 crossover used in dual-band mode.  One filter bank per ambisonics
+    /// input channel (each channel processed independently).
+    crossover: Option<Lr4Crossover>,
+    /// Scratch buffer for LF-filtered ambisonics channels: `[frame][channel]`
+    /// stored flat as `[frame * in_ch + ch]`, same layout as `input`.
+    lf_buffer: Vec<f32>,
+    /// Scratch buffer for HF-filtered ambisonics channels, same layout.
+    hf_buffer: Vec<f32>,
+    /// Per-frame LF decode output scratch (length = output_channels)
+    lf_frame: Vec<f32>,
+    /// Per-frame HF decode output scratch (length = output_channels)
+    hf_frame: Vec<f32>,
     sample_rate: u32,
     cached_parameters: Vec<Parameter>,
 }
@@ -53,13 +75,26 @@ impl AmbisonicsDecoderPlugin {
         let dm = DecodeMatrix::build(order, speaker_config, config.max_re_weighting)?;
         let output_ch = speaker_config.total_channels;
 
+        let basic_matrix = if config.dual_band {
+            Some(DecodeMatrix::build_basic(order, speaker_config)?)
+        } else {
+            None
+        };
+
         let mut plugin = Self {
             order,
             target_layout: config.target_layout.clone(),
             max_re_weighting: config.max_re_weighting,
+            dual_band: config.dual_band,
             input_channels: input_ch,
             output_channels: output_ch,
             decode_matrix: Some(dm),
+            basic_matrix,
+            crossover: None, // created in initialize() when we have the sample rate
+            lf_buffer: Vec::new(),
+            hf_buffer: Vec::new(),
+            lf_frame: vec![0.0; output_ch],
+            hf_frame: vec![0.0; output_ch],
             sample_rate: 48000,
             cached_parameters: Vec::new(),
         };
@@ -76,6 +111,19 @@ impl AmbisonicsDecoderPlugin {
         self.input_channels = channel_count(self.order);
         self.output_channels = speaker_config.total_channels;
         self.decode_matrix = Some(dm);
+
+        if self.dual_band {
+            self.basic_matrix = Some(DecodeMatrix::build_basic(self.order, speaker_config)?);
+            // Rebuild crossover for the (possibly changed) channel count.
+            self.crossover = Some(Lr4Crossover::new(
+                DUAL_BAND_CROSSOVER_HZ,
+                self.sample_rate,
+                self.input_channels,
+            ));
+        } else {
+            self.basic_matrix = None;
+            self.crossover = None;
+        }
         Ok(())
     }
 
@@ -96,6 +144,13 @@ impl AmbisonicsDecoderPlugin {
                 .with_importance(ParameterImportance::Useful)
                 .with_description("Improve energy preservation at high frequencies")
                 .build(),
+            Parameter::new_bool("dual_band", "Dual-Band Decoding", self.dual_band)
+                .with_group("Ambisonics")
+                .with_importance(ParameterImportance::Useful)
+                .with_description(
+                    "Use basic matrix for LF (<700 Hz) and max-rE matrix for HF (>=700 Hz)",
+                )
+                .build(),
         ];
     }
 }
@@ -107,6 +162,7 @@ impl std::fmt::Debug for AmbisonicsDecoderPlugin {
             .field("target_layout", &self.target_layout)
             .field("input_channels", &self.input_channels)
             .field("output_channels", &self.output_channels)
+            .field("dual_band", &self.dual_band)
             .finish()
     }
 }
@@ -172,6 +228,16 @@ impl Plugin for AmbisonicsDecoderPlugin {
                     self.rebuild_cached_parameters();
                 }
             }
+            "dual_band" => {
+                if let ParameterValue::Bool(v) = value
+                    && v != self.dual_band
+                {
+                    self.dual_band = v;
+                    self.rebuild_decode_matrix()
+                        .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
+                    self.rebuild_cached_parameters();
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -182,17 +248,40 @@ impl Plugin for AmbisonicsDecoderPlugin {
             "order" => Some(ParameterValue::Int(self.order as i32)),
             "target_layout" => Some(ParameterValue::String(self.target_layout.clone())),
             "max_re_weighting" => Some(ParameterValue::Bool(self.max_re_weighting)),
+            "dual_band" => Some(ParameterValue::Bool(self.dual_band)),
             _ => None,
         }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+        if self.dual_band {
+            self.crossover = Some(Lr4Crossover::new(
+                DUAL_BAND_CROSSOVER_HZ,
+                sample_rate,
+                self.input_channels,
+            ));
+            // Pre-allocate scratch buffers for max expected frame size (4096)
+            let max_batch = 4096 * self.input_channels;
+            if self.lf_buffer.len() < max_batch {
+                self.lf_buffer.resize(max_batch, 0.0);
+            }
+            if self.hf_buffer.len() < max_batch {
+                self.hf_buffer.resize(max_batch, 0.0);
+            }
+        }
+        // Pre-allocate per-frame decode scratch
+        self.lf_frame.resize(self.output_channels, 0.0);
+        self.hf_frame.resize(self.output_channels, 0.0);
         Ok(())
     }
 
     fn reset(&mut self) {
-        // Stateless decode — nothing to reset
+        if let Some(xo) = &mut self.crossover {
+            xo.reset();
+        }
+        self.lf_buffer.fill(0.0);
+        self.hf_buffer.fill(0.0);
     }
 
     fn process(
@@ -201,23 +290,95 @@ impl Plugin for AmbisonicsDecoderPlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        let Some(dm) = &self.decode_matrix else {
+        if self.decode_matrix.is_none() {
             // No matrix — output silence
             output[..context.num_frames * self.output_channels].fill(0.0);
             return Ok(context.num_frames);
-        };
+        }
 
         let in_ch = self.input_channels;
         let out_ch = self.output_channels;
         let num_frames = context.num_frames;
 
-        for frame in 0..num_frames {
-            let in_offset = frame * in_ch;
-            let out_offset = frame * out_ch;
-            dm.decode_frame(
-                &input[in_offset..in_offset + in_ch],
-                &mut output[out_offset..out_offset + out_ch],
-            );
+        if self.dual_band
+            && self.basic_matrix.is_some()
+            && self.crossover.is_some()
+            && self.decode_matrix.is_some()
+        {
+            // Dual-band path: split each ambisonics channel into LF and HF,
+            // apply the basic matrix to LF and the max-rE matrix to HF, then sum.
+            //
+            // The crossover needs &mut self.  To also read basic_matrix and
+            // decode_matrix after, we take() the crossover (moves it out of self),
+            // run the split loop, then restore it.
+
+            // Ensure scratch buffers are sized for this batch.
+            let batch_len = num_frames * in_ch;
+            if self.lf_buffer.len() < batch_len {
+                self.lf_buffer.resize(batch_len, 0.0);
+            }
+            if self.hf_buffer.len() < batch_len {
+                self.hf_buffer.resize(batch_len, 0.0);
+            }
+
+            // --- Phase 1: crossover split ---
+            // take() avoids a double-borrow between self.crossover (&mut) and
+            // self.lf_buffer / self.hf_buffer in the same loop body.
+            let mut crossover = self.crossover.take().expect("checked is_some above");
+            // The crossover has `in_ch` filter banks (one per ambisonics channel).
+            // Input layout: interleaved [frame * in_ch + ch].
+            for frame in 0..num_frames {
+                let off = frame * in_ch;
+                for ch in 0..in_ch {
+                    let (lf, hf) = crossover.process(input[off + ch], ch);
+                    self.lf_buffer[off + ch] = lf;
+                    self.hf_buffer[off + ch] = hf;
+                }
+            }
+            self.crossover = Some(crossover);
+
+            // --- Phase 2: matrix decode + accumulate ---
+            // All three Options are Some — verified in the outer if condition.
+            let (Some(dm_ref), Some(basic_ref)) =
+                (self.decode_matrix.as_ref(), self.basic_matrix.as_ref())
+            else {
+                unreachable!("checked is_some above");
+            };
+
+            // Per-frame scratch vectors for summing LF and HF contributions.
+            // out_ch is at most 16 in practice (9.1.6 layout).
+            // Use pre-allocated per-frame scratch (no heap allocation)
+            let lf_frame = &mut self.lf_frame;
+            let hf_frame = &mut self.hf_frame;
+
+            for frame in 0..num_frames {
+                let in_off = frame * in_ch;
+                let out_off = frame * out_ch;
+
+                basic_ref.decode_frame(
+                    &self.lf_buffer[in_off..in_off + in_ch],
+                    lf_frame,
+                );
+                dm_ref.decode_frame(
+                    &self.hf_buffer[in_off..in_off + in_ch],
+                    hf_frame,
+                );
+
+                for s in 0..out_ch {
+                    output[out_off + s] = lf_frame[s] + hf_frame[s];
+                }
+            }
+        } else {
+            // Single-band path (unchanged behaviour)
+            let dm = self.decode_matrix.as_ref().unwrap();
+            for frame in 0..num_frames {
+                let in_offset = frame * in_ch;
+                let out_offset = frame * out_ch;
+                dm.decode_frame(
+                    &input[in_offset..in_offset + in_ch],
+                    &mut output[out_offset..out_offset + out_ch],
+                );
+            }
         }
 
         Ok(num_frames)
@@ -257,6 +418,7 @@ mod tests {
             order: 1,
             target_layout: "5.1".to_owned(),
             max_re_weighting: true,
+            dual_band: false,
         }
     }
 
@@ -274,6 +436,7 @@ mod tests {
             order: 2,
             target_layout: "7.1.4".to_owned(),
             max_re_weighting: true,
+            dual_band: false,
         };
         let plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         assert_eq!(plugin.input_channels(), 9);
@@ -286,6 +449,7 @@ mod tests {
             order: 1,
             target_layout: "nonexistent".to_owned(),
             max_re_weighting: false,
+            dual_band: false,
         };
         assert!(AmbisonicsDecoderPlugin::new(&config).is_err());
     }
@@ -319,6 +483,7 @@ mod tests {
             order: 1,
             target_layout: "5.1".to_owned(),
             max_re_weighting: false,
+            dual_band: false,
         };
         let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
         plugin.initialize(48000).unwrap();
@@ -357,6 +522,7 @@ mod tests {
             order: 1,
             target_layout: "7.1.4".to_owned(),
             max_re_weighting: true,
+            dual_band: false,
         };
         let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
 
@@ -400,5 +566,133 @@ mod tests {
         let plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
         assert!(plugin.supports_channel_config(4, 6)); // FOA -> 5.1
         assert!(!plugin.supports_channel_config(2, 6)); // Stereo -> 5.1 not supported
+    }
+
+    /// Dual-band decoding must produce different output than single-band for a
+    /// signal that exercises the crossover (transient with broadband energy).
+    ///
+    /// We run enough frames for the LR4 crossover to settle (it has a ~5 ms
+    /// step-response at 700 Hz / 48 kHz), then verify the outputs diverge.
+    #[test]
+    fn test_dual_band_differs_from_single_band() {
+        let single_config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "5.1".to_owned(),
+            max_re_weighting: true,
+            dual_band: false,
+        };
+        let dual_config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "5.1".to_owned(),
+            max_re_weighting: true,
+            dual_band: true,
+        };
+
+        let mut single = AmbisonicsDecoderPlugin::new(&single_config).unwrap();
+        let mut dual = AmbisonicsDecoderPlugin::new(&dual_config).unwrap();
+        single.initialize(48000).unwrap();
+        dual.initialize(48000).unwrap();
+
+        // Feed a non-trivial signal: front-panned FOA with W and X components.
+        // Use enough frames so the crossover is well past its initial transient.
+        let num_frames = 2048;
+        let in_ch = 4; // FOA
+        let out_ch = 6; // 5.1
+
+        let mut input = vec![0.0_f32; num_frames * in_ch];
+        for frame in 0..num_frames {
+            let t = frame as f32 / 48000.0;
+            // Mix of low (100 Hz) and high (3000 Hz) frequency content
+            let sig = (2.0 * std::f32::consts::PI * 100.0 * t).sin()
+                + 0.5 * (2.0 * std::f32::consts::PI * 3000.0 * t).sin();
+            let off = frame * in_ch;
+            input[off] = sig * std::f32::consts::FRAC_1_SQRT_2; // W
+            input[off + 3] = sig * std::f32::consts::FRAC_1_SQRT_2; // X (front)
+        }
+
+        let mut single_out = vec![0.0_f32; num_frames * out_ch];
+        let mut dual_out = vec![0.0_f32; num_frames * out_ch];
+
+        let ctx = ProcessContext { sample_rate: 48000, num_frames };
+        single.process(&input, &mut single_out, &ctx).unwrap();
+        dual.process(&input, &mut dual_out, &ctx).unwrap();
+
+        // The outputs must differ — dual-band uses two different matrices
+        let max_diff = single_out
+            .iter()
+            .zip(dual_out.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            max_diff > 1e-4,
+            "Dual-band output should differ from single-band, max_diff = {max_diff}"
+        );
+
+        // Both outputs must be finite and non-trivial
+        let single_energy: f32 = single_out.iter().map(|s| s * s).sum();
+        let dual_energy: f32 = dual_out.iter().map(|s| s * s).sum();
+        assert!(single_energy > 1.0, "Single-band output has no energy");
+        assert!(dual_energy > 1.0, "Dual-band output has no energy");
+    }
+
+    /// Dual-band decode of pure silence must still produce silence.
+    #[test]
+    fn test_dual_band_silence() {
+        let config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "5.1".to_owned(),
+            max_re_weighting: true,
+            dual_band: true,
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        let num_frames = 256;
+        let input = vec![0.0_f32; num_frames * 4];
+        let mut output = vec![0.0_f32; num_frames * 6];
+        let ctx = ProcessContext { sample_rate: 48000, num_frames };
+
+        let frames = plugin.process(&input, &mut output, &ctx).unwrap();
+        assert_eq!(frames, num_frames);
+        for s in &output {
+            assert!(s.abs() < 1e-10, "Expected silence for zero input, got {s}");
+        }
+    }
+
+    /// Toggling dual_band via set_parameter rebuilds the matrices and crossover.
+    #[test]
+    fn test_dual_band_parameter_toggle() {
+        let config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "5.1".to_owned(),
+            max_re_weighting: true,
+            dual_band: false,
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("dual_band")),
+            Some(ParameterValue::Bool(false))
+        );
+
+        plugin
+            .set_parameter(ParameterId::from("dual_band"), ParameterValue::Bool(true))
+            .unwrap();
+
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("dual_band")),
+            Some(ParameterValue::Bool(true))
+        );
+        assert!(plugin.basic_matrix.is_some(), "basic_matrix should be built after enabling dual_band");
+        assert!(plugin.crossover.is_some(), "crossover should be created after enabling dual_band");
+
+        // Toggle back off
+        plugin
+            .set_parameter(ParameterId::from("dual_band"), ParameterValue::Bool(false))
+            .unwrap();
+        assert!(plugin.basic_matrix.is_none(), "basic_matrix should be cleared after disabling dual_band");
+        assert!(plugin.crossover.is_none(), "crossover should be cleared after disabling dual_band");
     }
 }

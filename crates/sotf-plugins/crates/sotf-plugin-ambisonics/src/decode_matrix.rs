@@ -26,6 +26,23 @@ pub struct DecodeMatrix {
 }
 
 impl DecodeMatrix {
+    /// Build a basic decode matrix (no max-rE weighting).
+    ///
+    /// Preserves the velocity vector magnitude, giving accurate interaural time
+    /// difference (ITD) cues.  Appropriate for low-frequency decoding in a
+    /// dual-band setup.
+    pub fn build_basic(order: usize, speaker_config: &SpeakerConfig) -> Result<Self, String> {
+        Self::build(order, speaker_config, false)
+    }
+
+    /// Build a max-rE decode matrix.
+    ///
+    /// Applies max-rE per-degree weights to concentrate energy toward the
+    /// intended direction.  Appropriate for high-frequency decoding.
+    pub fn build_maxre(order: usize, speaker_config: &SpeakerConfig) -> Result<Self, String> {
+        Self::build(order, speaker_config, true)
+    }
+
     /// Build a decode matrix for the given Ambisonics order and target speaker layout.
     ///
     /// Uses mode-matching (pseudoinverse of Y matrix) with optional max-rE weighting.

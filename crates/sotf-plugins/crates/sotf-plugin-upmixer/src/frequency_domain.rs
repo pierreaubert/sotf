@@ -32,17 +32,6 @@ const STEERING_RELEASE_BASE: f32 = 0.02;
 /// Steering release alpha range scaled by frequency norm
 const STEERING_RELEASE_RANGE: f32 = 0.06;
 
-/// Minimum energy correction ratio (prevents over-attenuation)
-const ENERGY_CORRECTION_MIN: f32 = 0.85;
-/// Maximum energy correction ratio (prevents over-boost)
-const ENERGY_CORRECTION_MAX: f32 = 1.15;
-
-/// Base L-R bleed factor for ambient extraction.
-/// Scaled by (1 - coherence) so that highly correlated (centered/mono) content
-/// gets minimal Blumlein-like side bleed, while diffuse/wide stereo content
-/// gets up to this amount. This prevents hollow/phasey artifacts on near-mono
-/// material where L ~= R.
-const BASE_LR_BLEED: f32 = 0.3;
 
 /// Smoothing alpha for DOA angle tracking (one-pole filter)
 const DOA_SMOOTHING_ALPHA: f32 = 0.2;
@@ -357,12 +346,7 @@ impl UpmixerPlugin {
                 let doa2_band = fast_atan2(ev2_l_mag - ev2_r_mag, 1.0);
 
                 let stereo_w = self.stereo_width.current();
-                // Scale L-R bleed by diffuseness: directional content gets near-zero
-                // bleed, while diffuse content gets up to BASE_LR_BLEED.
-                let lr_bleed = BASE_LR_BLEED * diffuseness;
                 let upmix_start = transition_end.max(start_bin);
-                let mut in_e = 0.0f32;
-                let mut out_e = 0.0f32;
 
                 // Transition zone: cross-fade between pass-through and decomposed
                 let xfade_start = transition_start.max(start_bin).max(lfe_cutoff_bin + 1);
@@ -386,10 +370,8 @@ impl UpmixerPlugin {
                     };
                     let aligned_r = direct_r * phase_correction.conj();
                     let decomp_center = (direct_l + aligned_r) * (eff_coh * 0.5);
-                    let decomp_amb_l =
-                        (l - direct_l) * ambient_gain + (l - r) * (lr_bleed * ambient_gain);
-                    let decomp_amb_r =
-                        (r - direct_r) * ambient_gain - (l - r) * (lr_bleed * ambient_gain);
+                    let decomp_amb_l = (l - direct_l) * ambient_gain;
+                    let decomp_amb_r = (r - direct_r) * ambient_gain;
                     let decomp_dl = l - decomp_center * stereo_w;
                     let decomp_dr = r - decomp_center * phase_correction * stereo_w;
 
@@ -414,12 +396,6 @@ impl UpmixerPlugin {
                         self.direct2_doa_per_bin[i] = 0.0;
                     }
 
-                    in_e += l.norm_sqr() + r.norm_sqr();
-                    out_e += self.direct[i].norm_sqr()
-                        + self.direct_left[i].norm_sqr()
-                        + self.direct_right[i].norm_sqr()
-                        + self.ambient_left[i].norm_sqr()
-                        + self.ambient_right[i].norm_sqr();
                 }
 
                 // Full upmix band (after transition zone)
@@ -437,10 +413,8 @@ impl UpmixerPlugin {
                     };
                     let aligned_r = direct_r * phase_correction.conj();
                     self.direct[i] = (direct_l + aligned_r) * (eff_coh * 0.5);
-                    self.ambient_left[i] =
-                        (l - direct_l) * ambient_gain + (l - r) * (lr_bleed * ambient_gain);
-                    self.ambient_right[i] =
-                        (r - direct_r) * ambient_gain - (l - r) * (lr_bleed * ambient_gain);
+                    self.ambient_left[i] = (l - direct_l) * ambient_gain;
+                    self.ambient_right[i] = (r - direct_r) * ambient_gain;
                     self.direct_left[i] = l - self.direct[i] * stereo_w;
                     self.direct_right[i] = r - self.direct[i] * phase_correction * stereo_w;
                     self.lfe[i] = Complex::new(0.0, 0.0);
@@ -455,27 +429,13 @@ impl UpmixerPlugin {
                         self.direct2_doa_per_bin[i] = 0.0;
                     }
 
-                    in_e += l.norm_sqr() + r.norm_sqr();
-                    out_e += self.direct[i].norm_sqr()
-                        + self.direct_left[i].norm_sqr()
-                        + self.direct_right[i].norm_sqr()
-                        + self.ambient_left[i].norm_sqr()
-                        + self.ambient_right[i].norm_sqr();
                 }
 
-                let corr = if out_e > 1e-12 && in_e > 1e-12 {
-                    (in_e / out_e)
-                        .sqrt()
-                        .clamp(ENERGY_CORRECTION_MIN, ENERGY_CORRECTION_MAX)
-                } else {
-                    1.0
-                };
                 let tr_red = 1.0
                     - (self.height_transient_env_slow * self.height_transient_reduction.current())
                         .min(self.height_transient_reduction.current());
                 let corr_start = xfade_start.min(upmix_start);
                 for i in corr_start..end_bin {
-                    self.energy_correction_per_bin[i] = corr;
                     // Height suitability: blend frequency weight with diffuseness
                     // Diffuse content is better suited for height channels than coherent content
                     let h_suit = (self.height_freq_weights[i] * 0.5
@@ -485,8 +445,6 @@ impl UpmixerPlugin {
                 }
             }
         }
-
-        self.smooth_and_apply_energy_correction();
         let strength = (1.0 - self.dialogue_probability * 0.7).clamp(0.05, 1.0);
         self.decorrelation_strength = strength;
 
@@ -571,37 +529,4 @@ impl UpmixerPlugin {
         self.smooth_height_gains();
     }
 
-    #[inline]
-    fn smooth_and_apply_energy_correction(&mut self) {
-        let spec_size = self.fft_size / 2 + 1;
-        // Only apply correction to upmix bins (including transition zone)
-        let apply_start = self.cached_bandpass_bin.saturating_sub(4);
-        let mut smoothed = std::mem::take(&mut self.energy_correction_temp);
-        #[allow(clippy::needless_range_loop)]
-        for i in apply_start..spec_size {
-            let start = i.saturating_sub(1).max(apply_start);
-            let end = (i + 2).min(spec_size);
-            let mut sum = 0.0f32;
-            let mut count = 0;
-            for j in start..end {
-                sum += self.energy_correction_per_bin[j];
-                count += 1;
-            }
-            smoothed[i] = sum / count as f32;
-        }
-
-        #[allow(clippy::needless_range_loop)]
-        for i in apply_start..spec_size {
-            let prev = self.energy_correction_prev[i];
-            let alpha = if smoothed[i] < prev { 0.3 } else { 0.1 };
-            let blended = alpha * smoothed[i] + (1.0 - alpha) * prev;
-            self.energy_correction_prev[i] = blended;
-            self.direct[i] *= blended;
-            self.direct_left[i] *= blended;
-            self.direct_right[i] *= blended;
-            self.ambient_left[i] *= blended;
-            self.ambient_right[i] *= blended;
-        }
-        self.energy_correction_temp = smoothed;
-    }
 }

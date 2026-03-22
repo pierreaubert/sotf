@@ -50,3 +50,5 @@ pub use config_watcher_stub::{ConfigEvent, ConfigWatcher};
 
 mod gc_thread;
 pub use gc_thread::{GcSender, GcThread};
+
+mod rt_priority;

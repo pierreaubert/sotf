@@ -23,6 +23,15 @@ impl AudioEngine {
         }
     }
 
+    /// Drain any pending manager response without blocking.
+    /// Used by fire-and-forget commands to clear the response channel.
+    fn drain_response(&self) {
+        // Try to receive any response that arrived (non-blocking).
+        // If the manager sent one for a previous command, consume it
+        // so it doesn't pollute future synchronous calls.
+        while self.manager.try_recv_response().is_some() {}
+    }
+
     /// Create and start a new audio engine
     pub fn new(config: EngineConfig) -> Result<Self, String> {
         let manager = ManagerThread::new(config)?;
@@ -36,6 +45,7 @@ impl AudioEngine {
 
     /// Play an audio file
     pub fn play<P: Into<std::path::PathBuf>>(&self, path: P) -> Result<(), String> {
+        self.drain_response();
         self.manager
             .send_command(ManagerCommand::Play(path.into()))?;
         self.expect_ok_response()
@@ -47,6 +57,7 @@ impl AudioEngine {
         path: P,
         position: f64,
     ) -> Result<(), String> {
+        self.drain_response();
         self.manager
             .send_command(ManagerCommand::PlayAt(path.into(), position))?;
         self.expect_ok_response()

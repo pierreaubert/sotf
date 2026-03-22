@@ -430,6 +430,13 @@ fn run_processing_thread(
     // performance issues in IIR filters and other DSP code
     sotf_plugins::enable_ftz_daz();
 
+    // Elevate thread priority for lower latency
+    match super::rt_priority::set_realtime_priority(super::rt_priority::RtPriority::Processing) {
+        Ok(true) => log::info!("[Processing Thread] RT priority set successfully"),
+        Ok(false) => log::debug!("[Processing Thread] RT priority not available on this platform"),
+        Err(e) => log::warn!("[Processing Thread] Failed to set RT priority: {e}"),
+    }
+
     let mut state = ProcessingState::new(channels, sample_rate);
 
     log::info!(

@@ -169,6 +169,13 @@ fn run_playback_thread(
     recycle_tx: SyncSender<Vec<f32>>,
     allow_virtual_output: bool,
 ) -> Result<(), String> {
+    // Elevate thread priority for lowest audio latency
+    match super::rt_priority::set_realtime_priority(super::rt_priority::RtPriority::Playback) {
+        Ok(true) => log::info!("[Playback Thread] RT priority set successfully"),
+        Ok(false) => log::debug!("[Playback Thread] RT priority not available on this platform"),
+        Err(e) => log::warn!("[Playback Thread] Failed to set RT priority: {e}"),
+    }
+
     // Initialize cpal host — ASIO host if "ASIO:" prefix, default otherwise
     let host = crate::devices::get_host_for_device(output_device.as_deref());
 

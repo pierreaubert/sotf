@@ -27,6 +27,7 @@ pub mod sofa;
 pub mod speaker_config;
 pub mod stft_common;
 pub mod true_peak;
+pub mod vbap;
 #[cfg(any(feature = "qa", test, debug_assertions))]
 pub mod test_utils;
 
