@@ -23,6 +23,7 @@ pub struct TuiParamDescriptor {
     pub param_type: TuiParamType,
     pub unit: String,
     pub group: String,
+    pub doc: String,
 }
 
 pub trait TuiEditablePlugin {
@@ -108,6 +109,7 @@ fn spec_to_descriptor(spec: &sotf_plugins::param_specs::ParamSpec) -> TuiParamDe
         },
         unit: spec.unit.to_string(),
         group: spec.group.to_string(),
+        doc: spec.doc.to_string(),
     }
 }
 

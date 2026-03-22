@@ -2,6 +2,7 @@
 // Audio Engine Types
 // ============================================================================
 
+use crate::decoder::AudioSource;
 use serde::{Deserialize, Serialize};
 use sotf_plugins::PluginHost;
 use std::any::Any;
@@ -103,10 +104,10 @@ pub enum ProcessingMessage {
 /// Commands for the decoder thread
 #[derive(Clone, Debug)]
 pub enum DecoderCommand {
-    /// Start playing a file
-    Play(PathBuf),
-    /// Start playing a file at a specific position in seconds
-    PlayAt(PathBuf, f64),
+    /// Start playing an audio source
+    Play(AudioSource),
+    /// Start playing an audio source at a specific position in seconds
+    PlayAt(AudioSource, f64),
     /// Start silent source (for HAL input plugins)
     /// Sends empty frames at regular intervals for source plugins
     StartSilentSource,
@@ -116,11 +117,11 @@ pub enum DecoderCommand {
     Resume,
     /// Seek to position in seconds
     Seek(f64),
-    /// Queue the next file for gapless playback.
-    /// When the current file ends, the decoder seamlessly transitions to this file
+    /// Queue the next source for gapless playback.
+    /// When the current source ends, the decoder seamlessly transitions to this source
     /// without sending EndOfStream or Flush, avoiding any gap in audio output.
-    QueueNext(PathBuf),
-    /// Cancel a previously queued next file.
+    QueueNext(AudioSource),
+    /// Cancel a previously queued next source.
     CancelNext,
     /// Stop decoding and cleanup
     Stop,
@@ -214,18 +215,18 @@ pub enum PlaybackCommand {
 #[derive(Clone, Debug)]
 pub enum ManagerCommand {
     // Playback control
-    Play(PathBuf),
-    /// Play a file starting at a specific position
-    PlayAt(PathBuf, f64),
+    Play(AudioSource),
+    /// Play a source starting at a specific position
+    PlayAt(AudioSource, f64),
     Pause,
     Resume,
     Stop,
     Seek(f64),
-    /// Queue the next file for gapless playback.
-    /// When the current track ends, the decoder seamlessly starts the queued file
+    /// Queue the next source for gapless playback.
+    /// When the current track ends, the decoder seamlessly starts the queued source
     /// without any gap in audio output.
-    QueueNext(PathBuf),
-    /// Cancel a previously queued next file.
+    QueueNext(AudioSource),
+    /// Cancel a previously queued next source.
     CancelNext,
 
     // Volume control
@@ -280,7 +281,9 @@ pub enum PlaybackState {
 pub struct AudioEngineState {
     /// Current playback state
     pub playback_state: PlaybackState,
-    /// Currently playing file
+    /// Currently playing source
+    pub current_source: Option<AudioSource>,
+    /// Currently playing file path (convenience accessor, populated for File sources)
     pub current_file: Option<PathBuf>,
     /// Current position in seconds
     pub position: f64,
@@ -310,6 +313,7 @@ impl Default for AudioEngineState {
     fn default() -> Self {
         Self {
             playback_state: PlaybackState::Stopped,
+            current_source: None,
             current_file: None,
             position: 0.0,
             duration: None,
@@ -335,8 +339,8 @@ impl Default for AudioEngineState {
 pub enum ThreadEvent {
     /// Decoder reached end of stream
     DecoderEndOfStream,
-    /// Decoder seamlessly transitioned to a queued next file (gapless playback)
-    DecoderGaplessTransition(PathBuf),
+    /// Decoder seamlessly transitioned to a queued next source (gapless playback)
+    DecoderGaplessTransition(AudioSource),
     /// Decoder error
     DecoderError(String),
     PlaybackChannelsChanged(usize),

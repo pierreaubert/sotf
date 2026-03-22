@@ -26,8 +26,7 @@ naga = { version = "28", features = ["termcolor"] }
 sotf-player = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
-player-midi = { workspace = true }
-
+sotf-midi = { workspace = true }
 # math libraries
 math-iir-fir = { workspace = true }
 autoeq = { workspace = true }
@@ -84,11 +83,6 @@ ndarray = { workspace = true }
 num-complex = { workspace = true }
 
 
-# OS media controls (MPRIS on Linux, MediaPlayer on macOS/Windows)
-# Not available on iOS/tvOS — those platforms use their own remote command APIs.
-[target.'cfg(not(any(target_os = "ios", target_os = "tvos")))'.dependencies]
-souvlaki = { workspace = true }
-
 # Asset embedding
 rust-embed = { workspace = true }
 anyhow = { workspace = true }
@@ -101,11 +95,12 @@ mimalloc = { workspace = true }
 
 rustfft = { workspace = true }
 
-# Desktop-only dependencies (not available on iOS)
-[target.'cfg(not(target_os = "ios"))'.dependencies]
-rfd = { workspace = true }
+# Not available on iOS/tvOS — those platforms use their own APIs or lack support.
+[target.'cfg(not(any(target_os = "ios", target_os = "tvos")))'.dependencies]
+souvlaki = { workspace = true }    # OS media controls (MPRIS / MediaPlayer)
+rfd = { workspace = true }         # File dialogs (no backend on tvOS)
 
-[target.'cfg(all(unix, not(target_os = "ios")))'.dependencies]
+[target.'cfg(all(unix, not(any(target_os = "ios", target_os = "tvos"))))'.dependencies]
 signal-hook = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -121,7 +116,7 @@ gpui_windows = { workspace = true }
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1"
 
-[target.'cfg(target_os = "ios")'.dependencies]
+[target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
 gpui-ios = { workspace = true }
 
 [lib]

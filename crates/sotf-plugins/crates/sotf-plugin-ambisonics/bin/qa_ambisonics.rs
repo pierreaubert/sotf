@@ -15,6 +15,7 @@ fn main() {
         order: 1,
         target_layout: "5.1".to_owned(),
         max_re_weighting: true,
+        dual_band: false,
     };
     let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
     plugin.initialize(sample_rate).unwrap();
@@ -70,6 +71,7 @@ fn main() {
         order: 2,
         target_layout: "7.1.4".to_owned(),
         max_re_weighting: true,
+        dual_band: false,
     };
     let mut plugin_soa = AmbisonicsDecoderPlugin::new(&config_soa).unwrap();
     plugin_soa.initialize(sample_rate).unwrap();

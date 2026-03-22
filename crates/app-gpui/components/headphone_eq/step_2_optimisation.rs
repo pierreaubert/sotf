@@ -87,7 +87,7 @@ impl PlayerView {
             .on_loss_type_change({
                 let state = self.state.clone();
                 move |loss_type, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -99,6 +99,7 @@ impl PlayerView {
                             .headphone_eq_state
                             .dropdowns
                             .loss_type_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -119,7 +120,7 @@ impl PlayerView {
             .on_target_curve_change({
                 let state = self.state.clone();
                 move |target, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.measurement_state.headphone_eq_state.target_preset =
                             target.to_string();
                         state
@@ -128,6 +129,7 @@ impl PlayerView {
                             .headphone_eq_state
                             .dropdowns
                             .target_curve_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -149,7 +151,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |algo, _window, cx| {
                     use crate::app::types::RoomEqAlgorithm;
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -167,6 +169,7 @@ impl PlayerView {
                             .headphone_eq_state
                             .dropdowns
                             .algorithm_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -187,7 +190,7 @@ impl PlayerView {
             .on_peq_model_change({
                 let state = self.state.clone();
                 move |model, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -200,6 +203,7 @@ impl PlayerView {
                             .headphone_eq_state
                             .dropdowns
                             .peq_model_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -220,46 +224,49 @@ impl PlayerView {
             .on_population_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .population = value;
+                        cx.notify();
                     });
                 }
             })
             .on_de_f_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .de_f = value;
+                        cx.notify();
                     });
                 }
             })
             .on_de_cr_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .de_cr = value;
+                        cx.notify();
                     });
                 }
             })
             .on_strategy_change({
                 let state = self.state.clone();
                 move |strategy, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -272,6 +279,7 @@ impl PlayerView {
                             .headphone_eq_state
                             .dropdowns
                             .strategy_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -292,46 +300,49 @@ impl PlayerView {
             .on_tolerance_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .tolerance = value;
+                        cx.notify();
                     });
                 }
             })
             .on_atolerance_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .atolerance = value;
+                        cx.notify();
                     });
                 }
             })
             .on_refine_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .refine = value;
+                        cx.notify();
                     });
                 }
             })
             .on_local_algo_change({
                 let state = self.state.clone();
                 move |algo, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -344,6 +355,7 @@ impl PlayerView {
                             .headphone_eq_state
                             .dropdowns
                             .local_algo_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -364,130 +376,140 @@ impl PlayerView {
             .on_smooth_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .smooth = value;
+                        cx.notify();
                     });
                 }
             })
             .on_smooth_n_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .smooth_n = value;
+                        cx.notify();
                     });
                 }
             })
             .on_num_filters_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .num_filters = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_q_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .min_q = value;
+                        cx.notify();
                     });
                 }
             })
             .on_max_q_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .max_q = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_db_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .min_db = value;
+                        cx.notify();
                     });
                 }
             })
             .on_max_db_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .max_db = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_freq_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .min_freq = value;
+                        cx.notify();
                     });
                 }
             })
             .on_max_freq_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .max_freq = value;
+                        cx.notify();
                     });
                 }
             })
             .on_maxeval_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .optimizer_config
                             .max_iter = value;
+                        cx.notify();
                     });
                 }
             });

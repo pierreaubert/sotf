@@ -1331,6 +1331,10 @@ impl PlayerView {
                 bypass_transient_detection,
                 bypass_all_processing,
                 enable_ml_detection,
+                low_latency,
+                frequency_resolution,
+                multi_source_extraction,
+                multi_source_threshold,
                 ..
             } => render_upmixer_plugin(
                 entity,
@@ -1375,6 +1379,10 @@ impl PlayerView {
                     bypass_transient_detection: *bypass_transient_detection,
                     bypass_all_processing: *bypass_all_processing,
                     enable_ml_detection: *enable_ml_detection,
+                    low_latency: *low_latency,
+                    frequency_resolution: *frequency_resolution,
+                    multi_source_extraction: *multi_source_extraction,
+                    multi_source_threshold: *multi_source_threshold,
                     is_editing: false,
                     selected_param: 0,
                     config_open: false,

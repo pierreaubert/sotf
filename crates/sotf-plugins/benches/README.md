@@ -88,9 +88,9 @@ Tests passthrough mode (no SOFA file loaded).
 **Expected results:** Near-zero overhead for passthrough.
 
 ### 7. `binaural_atmos_7_1_4`
-Realistic workload for Dolby Atmos 7.1.4 with all features enabled.
+Realistic workload for immersive 7.1.4 with all features enabled.
 
-**What it measures:** Real-world performance with 12-channel Atmos content.
+**What it measures:** Real-world performance with 12-channel immersive content.
 
 **Expected results:** Target < 2ms processing time for 512-frame blocks @ 48kHz.
 

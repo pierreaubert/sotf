@@ -3023,7 +3023,7 @@ fn process_multisub_group(
     _output_dir: &Path,
 ) -> Result<MixedModeResult> {
     let (result, combined_curve, allpass_filters) = if group.allpass_optimization {
-        // All-pass enhanced optimization (Dirac Bass Control inspired)
+        // All-pass enhanced optimization
         info!("  Using all-pass enhanced multi-sub optimization");
         let ap_result = multisub::optimize_multisub_with_allpass(
             &group.subwoofers,

@@ -118,7 +118,7 @@ impl PlayerView {
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|_view, _: &MouseUpEvent, _window, cx| {
-                                    #[cfg(not(target_os = "ios"))]
+                                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                                     {
                                         cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
                                             if let Some(handle) =

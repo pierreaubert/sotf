@@ -211,7 +211,7 @@
     "slice_frequency_indices": []
   },
   "metadata": {
-    "description": "5.1.4 Dolby Atmos home theater setup",
+    "description": "5.1.4 immersive home theater setup",
     "author": "Room Simulator",
     "date": "2025-01-28",
     "notes": "Medium-sized dedicated home theater room (5.5m x 7.0m x 2.6m). Features: 3 front channels (L/C/R), 2 surround channels, 1 subwoofer (80Hz crossover), 4 height channels (100Hz crossover). Listening position at optimal 3m from screen. Bass management with 80Hz LR4 crossover for mains, 100Hz for heights."

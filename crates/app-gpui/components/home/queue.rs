@@ -352,24 +352,8 @@ impl PlayerView {
             .when(!meters_collapsed, |d| {
                 let state_entity = self.state.clone();
 
-                // Calculate panel width: use the wider of LUFS (400px) and meters width
-                let num_channels = self.state.read(cx).app.level_meter_groups.iter()
-                    .map(|g| g.channels.len())
-                    .sum::<usize>()
-                    .max(2);
-                let meters_width = crate::components::plugins::level_meters::calculate_meters_panel_width(num_channels);
-                let ideal_width = if meters_panel_tall {
-                    // Show both: use the wider panel's width
-                    meters_width.max(400.0)
-                } else if meter_display_mode == MeterDisplayMode::Lufs {
-                    400.0
-                } else {
-                    meters_width
-                };
-                // Cap meters panel to at most 40% of available queue width so it
-                // doesn't squeeze out the queue list and now-playing panels.
-                let max_meters_width = available_queue_width * 0.4;
-                let panel_width = ideal_width.min(max_meters_width).max(120.0);
+                // Use meters_panel_ratio to control width (resizable via divider drag)
+                let panel_width = (meters_ratio * available_queue_width).clamp(120.0, available_queue_width * 0.6);
 
                 d.child(
                     div()
@@ -739,6 +723,7 @@ impl PlayerView {
                                                     .on_mouse_up(
                                                         MouseButton::Left,
                                                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                                            cx.stop_propagation();
                                                             view.state.update(cx, |state, _cx| {
                                                                 state.app.toggle_album_favorite(aid);
                                                             });
@@ -961,6 +946,8 @@ impl PlayerView {
                                 .on_mouse_up(
                                     MouseButton::Left,
                                     cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                        // Stop propagation so the row's play handler doesn't fire
+                                        cx.stop_propagation();
                                         let path = heart_track_path.clone();
                                         view.state.update(cx, |state, _cx| {
                                             state.app.toggle_track_favorite(&path);
@@ -976,7 +963,9 @@ impl PlayerView {
                                     })
                                     .xs()
                                     .color(
-                                        if track_is_favorite {
+                                        if track_is_favorite && is_current {
+                                            theme_c.text_on_accent
+                                        } else if track_is_favorite {
                                             theme_c.accent
                                         } else if is_current {
                                             theme_c.text_on_accent

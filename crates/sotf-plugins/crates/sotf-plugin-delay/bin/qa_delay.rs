@@ -12,6 +12,9 @@ fn main() {
         delay_ms: 10.0, // 480 samples
         feedback: 0.0,
         mix: 1.0, // Wet only
+        lfo_rate_hz: 0.0,
+        lfo_depth_ms: 0.0,
+        allpass_feedback: false,
     };
 
     let mut inner = DelayPlugin::from_params(channels, params);

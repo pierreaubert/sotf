@@ -198,39 +198,41 @@ impl PlayerView {
                         state.app.playback.position_secs = playback_state.position_secs;
                         state.app.playback.duration_secs = state.app.get_current_track_duration();
 
-                        // Read analyzer data from the shared cache (no audio pipeline blocking)
-                        if playback_state.is_playing {
+                        // Read analyzer data from the shared cache (no audio pipeline blocking).
+                        // Read unconditionally (like TUI) — when no engine is running,
+                        // get_cached_plugin_data returns None harmlessly.
+                        {
                             let chain = &state.app.plugin_state.chain;
 
-                            if let Some(idx) = chain.input_monitor_engine_index()
-                                && let Some(data) = player.get_cached_plugin_data(idx)
-                                && let Some(loudness) =
-                                    data.downcast_ref::<sotf_audio_player::LoudnessData>()
-                            {
-                                state.app.playback.input_loudness_info = Some(loudness.clone());
-                            }
+                            state.app.playback.input_loudness_info = chain
+                                .input_monitor_engine_index()
+                                .and_then(|idx| player.get_cached_plugin_data(idx))
+                                .and_then(|d| {
+                                    d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned()
+                                });
 
-                            if let Some(idx) = chain.output_monitor_engine_index()
-                                && let Some(data) = player.get_cached_plugin_data(idx)
-                                && let Some(loudness) =
-                                    data.downcast_ref::<sotf_audio_player::LoudnessData>()
-                            {
-                                state.app.playback.loudness_info = Some(loudness.clone());
-                            }
+                            state.app.playback.loudness_info = chain
+                                .output_monitor_engine_index()
+                                .and_then(|idx| player.get_cached_plugin_data(idx))
+                                .and_then(|d| {
+                                    d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned()
+                                });
 
-                            if include_spectrum && let Some(idx) = chain.spectrum_engine_index() {
-                                state.app.playback.spectrum_info =
-                                    player.get_cached_plugin_data(idx).and_then(|d| {
+                            if include_spectrum {
+                                state.app.playback.spectrum_info = chain
+                                    .spectrum_engine_index()
+                                    .and_then(|idx| player.get_cached_plugin_data(idx))
+                                    .and_then(|d| {
                                         d.downcast_ref::<sotf_audio_player::SpectrumData>().cloned()
                                     });
                             }
 
-                            if let Some(idx) = chain.compressor_engine_index() {
-                                state.app.playback.compressor_info =
-                                    player.get_cached_plugin_data(idx).and_then(|d| {
-                                        d.downcast_ref::<sotf_plugins::CompressorData>().cloned()
-                                    });
-                            }
+                            state.app.playback.compressor_info = chain
+                                .compressor_engine_index()
+                                .and_then(|idx| player.get_cached_plugin_data(idx))
+                                .and_then(|d| {
+                                    d.downcast_ref::<sotf_plugins::CompressorData>().cloned()
+                                });
                         }
 
                         drop(player);
@@ -278,7 +280,7 @@ impl PlayerView {
                                 Some(crate::app::ToastMessage::info(
                                     "Engine restarted, resuming playback",
                                 ));
-                        } else if let Some(_transition_path) =
+                        } else if let Some(_transition_source) =
                             playback_state.gapless_transition
                         {
                             // Gapless transition — engine already playing the new file,
@@ -1199,7 +1201,6 @@ impl PlayerView {
 
 // Split impl blocks for PlayerView
 include!("handle.rs");
-#[cfg(not(any(target_os = "ios", target_os = "tvos")))]
 include!("playback.rs");
 include!("plugin.rs");
 include!("render.rs");

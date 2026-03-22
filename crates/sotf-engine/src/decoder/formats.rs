@@ -57,6 +57,152 @@ pub struct SymphoniaDecoder {
 }
 
 impl SymphoniaDecoder {
+    /// Create a Symphonia decoder from an already-opened `MediaSource`.
+    ///
+    /// Used for HTTP streams where the source is not a local file.
+    /// `hint` should contain a format extension hint if available.
+    /// `format_label` is used for logging (e.g. the URL).
+    pub fn from_media_source(
+        source: Box<dyn symphonia_core::io::MediaSource>,
+        hint: Hint,
+        format_label: &str,
+    ) -> AudioDecoderResult<Self> {
+        let media_source = MediaSourceStream::new(source, Default::default());
+
+        let probe_result = PROBE
+            .format(
+                &hint,
+                media_source,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
+            .map_err(|e| match e {
+                SymphoniaError::Unsupported(_) => AudioDecoderError::UnsupportedFormat(
+                    "Audio format not supported by Symphonia".to_string(),
+                ),
+                _ => AudioDecoderError::from(e),
+            })?;
+
+        let mut format_reader = probe_result.format;
+
+        let track = format_reader
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != symphonia::core::codecs::CODEC_TYPE_NULL)
+            .ok_or_else(|| {
+                AudioDecoderError::InvalidFile("No valid audio track found".to_string())
+            })?;
+
+        let track_id = track.id;
+        let codec_params = track.codec_params.clone();
+
+        let decoder_opts = DecoderOptions::default();
+
+        let sample_rate = codec_params
+            .sample_rate
+            .ok_or_else(|| AudioDecoderError::InvalidFile("No sample rate found".to_string()))?;
+
+        // For streaming sources we cannot re-open the source to probe channels,
+        // so if channel info is not in codec params we decode the first packet
+        // and continue from there (no reset possible for non-seekable streams).
+        let channels_opt = codec_params.channels.map(|layout| layout.count() as u16);
+
+        let (final_format_reader, final_decoder, channels) = match channels_opt {
+            None => {
+                let mut temp_decoder =
+                    CODEC_REGISTRY
+                        .make(&codec_params, &decoder_opts)
+                        .map_err(|e| {
+                            AudioDecoderError::UnsupportedFormat(format!(
+                                "Cannot create decoder for codec '{:?}': {:?}",
+                                codec_params.codec, e
+                            ))
+                        })?;
+
+                let mut detected_channels = None;
+                // We consume the first packet; the decoder will continue from the second.
+                // This is acceptable for streaming — we lose one packet of audio.
+                if let Ok(packet) = format_reader.next_packet()
+                    && packet.track_id() == track_id
+                    && let Ok(decoded) = temp_decoder.decode(&packet)
+                {
+                    detected_channels = Some(decoded.spec().channels.count() as u16);
+                }
+
+                let channels = detected_channels.ok_or_else(|| {
+                    AudioDecoderError::InvalidFile(
+                        "No channel information found even after decoding first packet".to_string(),
+                    )
+                })?;
+
+                (format_reader, temp_decoder, channels)
+            }
+            Some(channels) => {
+                let decoder = CODEC_REGISTRY
+                    .make(&codec_params, &decoder_opts)
+                    .map_err(|e| {
+                        AudioDecoderError::UnsupportedFormat(format!(
+                            "Cannot create decoder for codec '{:?}': {:?}",
+                            codec_params.codec, e
+                        ))
+                    })?;
+                (format_reader, decoder, channels)
+            }
+        };
+
+        let bits_per_sample = codec_params.bits_per_sample.unwrap_or(16);
+        let total_frames = codec_params.n_frames;
+
+        let spec = AudioSpec {
+            sample_rate,
+            channels,
+            bits_per_sample: bits_per_sample as u16,
+            total_frames,
+        };
+
+        // For streaming sources we don't have a file extension, so try to
+        // detect format from the probed codec.
+        let format = Self::format_from_codec(codec_params.codec);
+
+        log::info!(
+            "[SymphoniaDecoder] Initialized from stream '{}': {}Hz, {}ch, {}bit, {:?} frames, format={:?}",
+            format_label,
+            spec.sample_rate,
+            spec.channels,
+            spec.bits_per_sample,
+            spec.total_frames,
+            format,
+        );
+
+        Ok(Self {
+            spec,
+            format,
+            format_reader: final_format_reader,
+            decoder: final_decoder,
+            position: 0,
+            track_id,
+            eof: false,
+        })
+    }
+
+    /// Infer AudioFormat from a Symphonia codec type.
+    fn format_from_codec(codec: symphonia::core::codecs::CodecType) -> AudioFormat {
+        use symphonia::core::codecs;
+        match codec {
+            codecs::CODEC_TYPE_FLAC => AudioFormat::Flac,
+            codecs::CODEC_TYPE_MP3 => AudioFormat::Mp3,
+            codecs::CODEC_TYPE_AAC => AudioFormat::Aac,
+            codecs::CODEC_TYPE_VORBIS => AudioFormat::Vorbis,
+            codecs::CODEC_TYPE_ALAC => AudioFormat::Aac, // ALAC in M4A container
+            codecs::CODEC_TYPE_PCM_S16LE
+            | codecs::CODEC_TYPE_PCM_S24LE
+            | codecs::CODEC_TYPE_PCM_S32LE
+            | codecs::CODEC_TYPE_PCM_F32LE
+            | codecs::CODEC_TYPE_PCM_F64LE => AudioFormat::Wav,
+            _ => AudioFormat::Mp3, // fallback
+        }
+    }
+
     /// Create a new Symphonia decoder for any supported format
     pub fn new<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Self> {
         let path = path.as_ref();

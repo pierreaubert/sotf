@@ -1373,7 +1373,7 @@ impl PluginFuzzer for DownmixFuzzer {
             phase_blend_low_hz: 200.0,
             phase_blend_high_hz: 500.0,
             itu_mode: rng.random_bool(0.3),
-            dolby_ltrt: false,
+            matrix_ltrt: false,
         };
 
         let plugin = DownmixPlugin::from_params(params.clone());

@@ -14,7 +14,7 @@
 //! installed on the system. The remaining databases (`fs`, `mem`, and `multi`) allow `font-kit` to
 //! query fonts not installed on the system.
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))]
 pub mod core_text;
 
 #[cfg(target_family = "windows")]
@@ -24,6 +24,9 @@ pub mod directwrite;
     not(any(
         target_os = "macos",
         target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "visionos",
         target_family = "windows",
         target_arch = "wasm32",
         target_env = "ohos",

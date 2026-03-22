@@ -1200,6 +1200,10 @@ mod tests {
                 bypass_transient_detection: false,
                 bypass_all_processing: false,
                 enable_ml_detection: false,
+                multi_source_extraction: false,
+                multi_source_threshold: 0.5,
+                low_latency: false,
+                frequency_resolution: 0,
             };
         }
         assert_eq!(chain.output_channels(), 8);
@@ -1272,6 +1276,10 @@ mod tests {
                 bypass_transient_detection: false,
                 bypass_all_processing: false,
                 enable_ml_detection: false,
+                multi_source_extraction: false,
+                multi_source_threshold: 0.5,
+                low_latency: false,
+                frequency_resolution: 0,
             };
         }
 

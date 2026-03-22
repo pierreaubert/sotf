@@ -43,7 +43,7 @@ fn default_phase_blend_high_hz() -> f32 {
 fn default_itu_mode() -> bool {
     pk(DM, "itu_mode").default_bool()
 }
-fn default_dolby_ltrt() -> bool {
+fn default_matrix_ltrt() -> bool {
     false
 }
 
@@ -67,9 +67,9 @@ pub struct DownmixPluginParams {
     /// When true, use ITU-R BS.775 standard downmix coefficients for 5.1→stereo
     #[serde(default = "default_itu_mode")]
     pub itu_mode: bool,
-    /// When true, use Dolby Pro Logic Lt/Rt encoding for surround channels
-    #[serde(default = "default_dolby_ltrt")]
-    pub dolby_ltrt: bool,
+    /// When true, use matrix Lt/Rt encoding for surround channels
+    #[serde(default = "default_matrix_ltrt", alias = "dolby_ltrt")]
+    pub matrix_ltrt: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -126,10 +126,10 @@ pub struct DownmixPlugin {
     phase_blend_low_hz: f32,
     phase_blend_high_hz: f32,
     itu_mode: bool,
-    dolby_ltrt: bool,
+    matrix_ltrt: bool,
 
     /// Per-surround-channel first-order allpass filters for ~90° phase shift.
-    /// Used only when dolby_ltrt is enabled.
+    /// Used only when matrix_ltrt is enabled.
     /// Each surround channel gets one allpass filter.
     ltrt_allpass: Vec<LtRtAllpass>,
 
@@ -139,7 +139,7 @@ pub struct DownmixPlugin {
     param_lfe_gain_db: ParameterId,
     param_phase_coherence: ParameterId,
     param_itu_mode: ParameterId,
-    param_dolby_ltrt: ParameterId,
+    param_matrix_ltrt: ParameterId,
     cached_parameters: Vec<Parameter>,
 }
 
@@ -148,7 +148,7 @@ pub struct DownmixPlugin {
 /// Uses a first-order allpass: y[n] = -a*x[n] + x[n-1] + a*y[n-1]
 /// where a = (tan(pi*fc/fs) - 1) / (tan(pi*fc/fs) + 1).
 /// At frequencies >> fc, the phase approaches -180°; at fc, it's -90°.
-/// For Dolby Lt/Rt, fc is tuned to ~300 Hz so surround content (primarily
+/// For Lt/Rt encoding, fc is tuned to ~300 Hz so surround content (primarily
 /// 300 Hz+) gets approximately 90° shift relative to the direct path.
 struct LtRtAllpass {
     coeff_a: f32,
@@ -241,7 +241,7 @@ impl DownmixPlugin {
             phase_blend_low_hz: pk(DM, "phase_blend_low_hz").default_f64() as f32,
             phase_blend_high_hz: pk(DM, "phase_blend_high_hz").default_f64() as f32,
             itu_mode: pk(DM, "itu_mode").default_bool(),
-            dolby_ltrt: false,
+            matrix_ltrt: false,
             ltrt_allpass: Vec::new(),
             param_center_gain_db: ParameterId::from("center_gain_db"),
             param_surround_gain_db: ParameterId::from("surround_gain_db"),
@@ -249,7 +249,7 @@ impl DownmixPlugin {
             param_lfe_gain_db: ParameterId::from("lfe_gain_db"),
             param_phase_coherence: ParameterId::from("phase_coherence"),
             param_itu_mode: ParameterId::from("itu_mode"),
-            param_dolby_ltrt: ParameterId::from("dolby_ltrt"),
+            param_matrix_ltrt: ParameterId::from("matrix_ltrt"),
             cached_parameters: Vec::new(),
         };
         p.compute_coefficients(true);
@@ -289,7 +289,7 @@ impl DownmixPlugin {
             ),
             Parameter::new_bool("phase_coherence", "Phase Coherence", self.phase_coherence),
             Parameter::new_bool("itu_mode", "ITU-R BS.775 Mode", self.itu_mode),
-            Parameter::new_bool("dolby_ltrt", "Dolby Lt/Rt", self.dolby_ltrt),
+            Parameter::new_bool("matrix_ltrt", "Matrix Lt/Rt", self.matrix_ltrt),
         ];
     }
 
@@ -303,7 +303,7 @@ impl DownmixPlugin {
         plugin.phase_blend_low_hz = params.phase_blend_low_hz;
         plugin.phase_blend_high_hz = params.phase_blend_high_hz;
         plugin.itu_mode = params.itu_mode;
-        plugin.dolby_ltrt = params.dolby_ltrt;
+        plugin.matrix_ltrt = params.matrix_ltrt;
         plugin.compute_coefficients(true);
         plugin.rebuild_cached_parameters();
         plugin
@@ -590,8 +590,8 @@ impl DownmixPlugin {
     }
 
     fn process_simple(&mut self, input: &[f32], output: &mut [f32], num_frames: usize) {
-        if self.dolby_ltrt {
-            self.process_dolby_ltrt(input, output, num_frames);
+        if self.matrix_ltrt {
+            self.process_matrix_ltrt(input, output, num_frames);
             return;
         }
         for frame in 0..num_frames {
@@ -614,7 +614,7 @@ impl DownmixPlugin {
         }
     }
 
-    /// Dolby Pro Logic Lt/Rt stereo encoding.
+    /// Matrix Lt/Rt stereo encoding.
     ///
     /// Lt = L + 0.707*C - 0.707*j*Ls - 0.707*j*Rs
     /// Rt = R + 0.707*C + 0.707*j*Ls + 0.707*j*Rs
@@ -622,7 +622,7 @@ impl DownmixPlugin {
     /// where j = 90° phase shift, approximated by a first-order allpass filter.
     /// For speaker configurations without standard 5.1 layout, we identify
     /// center/surround channels by azimuth.
-    fn process_dolby_ltrt(&mut self, input: &[f32], output: &mut [f32], num_frames: usize) {
+    fn process_matrix_ltrt(&mut self, input: &[f32], output: &mut [f32], num_frames: usize) {
         const ATTEN: f32 = 0.707; // -3 dB
 
         for frame in 0..num_frames {
@@ -888,8 +888,8 @@ impl Plugin for DownmixPlugin {
             self.itu_mode = value
                 .as_bool()
                 .unwrap_or(pk(DM, "itu_mode").default_bool());
-        } else if id == self.param_dolby_ltrt {
-            self.dolby_ltrt = value.as_bool().unwrap_or(false);
+        } else if id == self.param_matrix_ltrt {
+            self.matrix_ltrt = value.as_bool().unwrap_or(false);
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -910,8 +910,8 @@ impl Plugin for DownmixPlugin {
             Some(ParameterValue::Bool(self.phase_coherence))
         } else if id == &self.param_itu_mode {
             Some(ParameterValue::Bool(self.itu_mode))
-        } else if id == &self.param_dolby_ltrt {
-            Some(ParameterValue::Bool(self.dolby_ltrt))
+        } else if id == &self.param_matrix_ltrt {
+            Some(ParameterValue::Bool(self.matrix_ltrt))
         } else {
             None
         }
@@ -1140,7 +1140,7 @@ mod tests {
             phase_blend_low_hz: 200.0,
             phase_blend_high_hz: 5000.0,
             itu_mode: false,
-            dolby_ltrt: false,
+            matrix_ltrt: false,
         });
         p.initialize(48000).unwrap();
 
@@ -1203,7 +1203,7 @@ mod tests {
             phase_blend_low_hz: 200.0,
             phase_blend_high_hz: 5000.0,
             itu_mode: false,
-            dolby_ltrt: false,
+            matrix_ltrt: false,
         });
 
         // Sum the absolute values of all left gains — should be <= 2.0 after normalization
@@ -1234,7 +1234,7 @@ mod tests {
             phase_blend_low_hz: 200.0,
             phase_blend_high_hz: 5000.0,
             itu_mode: false,
-            dolby_ltrt: false,
+            matrix_ltrt: false,
         });
 
         // In 7.1: ch4=SL(90°), ch5=SR(-90°), ch6=BL(150°), ch7=BR(-150°)
@@ -1334,7 +1334,7 @@ mod tests {
                 phase_blend_low_hz: 200.0,
                 phase_blend_high_hz: 5000.0,
                 itu_mode: false,
-                dolby_ltrt: false,
+                matrix_ltrt: false,
             });
 
             assert_eq!(

@@ -403,7 +403,7 @@ pub struct MultiSubGroup {
     /// Measurements for each subwoofer
     pub subwoofers: Vec<MeasurementSource>,
 
-    /// Enable per-subwoofer all-pass filter optimization (Dirac Bass Control inspired).
+    /// Enable per-subwoofer all-pass filter optimization.
     /// When true, optimizes gain + delay + all-pass biquad per sub for improved
     /// phase alignment and mode cancellation. Uses DE global optimizer.
     /// Default: false (standard gain + delay only)
@@ -1186,7 +1186,7 @@ pub struct OptimizerConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_measurement: Option<MultiMeasurementConfig>,
 
-    /// Decomposed correction configuration (Trinnov-inspired).
+    /// Decomposed correction configuration.
     /// When set, applies frequency-dependent correction weights based on acoustic
     /// decomposition: room modes get aggressive correction, steady-state response
     /// gets gentle correction, early reflections get reduced correction.
@@ -1234,7 +1234,7 @@ pub enum MultiMeasurementStrategy {
     /// loss = mean(loss_i) + λ * var(loss_i) — balance quality + consistency
     VariancePenalized,
     /// Spatial robustness: RMS-average + correction depth mask based on spatial variance.
-    /// Only corrects features consistent across positions (Dirac-inspired).
+    /// Only corrects features consistent across positions.
     SpatialRobustness,
 }
 
@@ -1302,7 +1302,7 @@ fn default_variance_lambda() -> f64 {
 
 /// Serializable decomposed correction configuration for JSON config files.
 ///
-/// When enabled, applies Trinnov-inspired frequency-dependent correction weights:
+/// When enabled, applies frequency-dependent correction weights:
 /// room modes (below Schroeder) get full correction, steady-state response
 /// (above Schroeder) gets gentle correction, position-dependent features get reduced correction.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

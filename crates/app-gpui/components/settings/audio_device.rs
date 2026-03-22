@@ -567,9 +567,6 @@ fn get_brand_image_path(device_name: &str) -> Option<&'static str> {
     if lower_name.contains("blackhole") {
         return Some("brands/blackhole.jpeg");
     }
-    if lower_name.contains("dolby") {
-        return Some("brands/dolby-audio.png");
-    }
     if lower_name.contains("focusrite") || lower_name.contains("scarlett") {
         return Some("brands/focusrite.png");
     }

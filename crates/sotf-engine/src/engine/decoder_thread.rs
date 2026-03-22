@@ -5,9 +5,8 @@
 // Decodes audio files using Symphonia and resamples if needed.
 
 use super::{AudioFrame, DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
-use crate::decoder::{AudioDecoder, AudioSpec, DecodedAudio, create_decoder};
+use crate::decoder::{AudioDecoder, AudioSource, AudioSpec, DecodedAudio, create_decoder_from_source};
 use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
-use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::{Duration, Instant};
 
@@ -142,7 +141,7 @@ struct DecoderState {
     resampler: Option<ResamplerPlugin>,
     resampler_buffer: Vec<f32>,
     paused: bool,
-    current_file: Option<PathBuf>,
+    current_source: Option<AudioSource>,
     spec: Option<AudioSpec>,
     silent_source: bool, // For HAL input plugins (no file source)
     decode_buffer: Option<DecodedAudio>,
@@ -159,9 +158,9 @@ struct DecoderState {
     frame_send_buffer: Vec<f32>,
     /// Receives recycled Vec<f32> buffers from the processing thread
     recycle_rx: Receiver<Vec<f32>>,
-    /// Queued next file for gapless playback. When set and the current file ends,
-    /// the decoder seamlessly transitions to this file without sending EndOfStream/Flush.
-    queued_next: Option<PathBuf>,
+    /// Queued next source for gapless playback. When set and the current source ends,
+    /// the decoder seamlessly transitions to this source without sending EndOfStream/Flush.
+    queued_next: Option<AudioSource>,
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_input_buffer: Vec<f32>,
@@ -180,7 +179,7 @@ impl DecoderState {
             resampler: None,
             resampler_buffer: Vec::new(),
             paused: false,
-            current_file: None,
+            current_source: None,
             spec: None,
             silent_source: false,
             decode_buffer: None,
@@ -202,16 +201,15 @@ impl DecoderState {
         }
     }
 
-    /// Start playing a new file
+    /// Start playing a new audio source
     fn play(
         &mut self,
-        path: PathBuf,
+        source: AudioSource,
         target_sample_rate: u32,
         frame_size: usize,
     ) -> Result<(), String> {
-        // Create decoder
-        let decoder =
-            create_decoder(&path).map_err(|e| format!("Failed to create decoder: {:?}", e))?;
+        let decoder = create_decoder_from_source(&source)
+            .map_err(|e| format!("Failed to create decoder: {:?}", e))?;
 
         // Get audio spec
         let spec = decoder.spec().clone();
@@ -219,8 +217,8 @@ impl DecoderState {
         let channels = spec.channels as usize;
 
         log::info!(
-            "[Decoder Thread] Playing: {:?} ({}Hz, {}ch)",
-            path,
+            "[Decoder Thread] Playing: {} ({}Hz, {}ch)",
+            source.display_name(),
             source_sample_rate,
             channels
         );
@@ -245,7 +243,7 @@ impl DecoderState {
         self.resampler_buffer.clear();
         self.resample_staging.clear();
         self.paused = false;
-        self.current_file = Some(path);
+        self.current_source = Some(source);
         self.spec = Some(spec);
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -514,32 +512,35 @@ impl DecoderState {
                 // Gapless playback: if a next file is queued, transition seamlessly
                 // without sending EndOfStream or Flush. The audio pipeline continues
                 // uninterrupted with frames from the new file.
-                if let Some(next_path) = self.queued_next.take() {
+                if let Some(next_source) = self.queued_next.take() {
                     log::info!(
-                        "[Decoder Thread] Gapless transition to: {:?}",
-                        next_path
+                        "[Decoder Thread] Gapless transition to: {}",
+                        next_source.display_name()
                     );
 
                     // Keep resampler state — clear buffers but don't destroy the
-                    // resampler. The new file may or may not need resampling; we
+                    // resampler. The new source may or may not need resampling; we
                     // re-evaluate below.
                     self.decoder = None;
                     self.resampler_buffer.clear();
                     self.resample_staging.clear();
                     self.decode_buffer = None;
 
-                    match self.play(next_path.clone(), target_sample_rate, frame_size) {
+                    match self.play(next_source.clone(), target_sample_rate, frame_size) {
                         Ok(()) => {
                             event_tx
-                                .send(ThreadEvent::DecoderGaplessTransition(next_path))
+                                .send(ThreadEvent::DecoderGaplessTransition(next_source))
                                 .ok();
                             return Ok(DecoderLoopAction::Continue);
                         }
                         Err(e) => {
-                            log::warn!(
-                                "[Decoder Thread] Gapless transition failed: {}, falling through to EndOfStream",
+                            let msg = format!(
+                                "Gapless transition to '{}' failed: {}",
+                                next_source.display_name(),
                                 e
                             );
+                            log::warn!("[Decoder Thread] {}, falling through to EndOfStream", msg);
+                            event_tx.send(ThreadEvent::DecoderError(msg)).ok();
                             // Fall through to normal end-of-stream below
                         }
                     }
@@ -597,7 +598,7 @@ impl DecoderState {
         self.decoder = None;
         self.resampler = None;
         self.resampler_buffer.clear();
-        self.current_file = None;
+        self.current_source = None;
         self.spec = None;
         self.silent_source = false;
         self.queued_next = None;
@@ -832,10 +833,10 @@ fn run_decoder_thread(
 
         if let Some(cmd) = command {
             match cmd {
-                DecoderCommand::Play(path) => {
+                DecoderCommand::Play(source) => {
                     message_tx.send(DecoderMessage::Flush).ok();
                     state.stop();
-                    if let Err(e) = state.play(path, target_sample_rate, frame_size) {
+                    if let Err(e) = state.play(source, target_sample_rate, frame_size) {
                         log::debug!("[Decoder Thread] Play failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
                         response_tx
@@ -847,10 +848,10 @@ fn run_decoder_thread(
                         response_tx.send(DecoderResponse::Ok).ok();
                     }
                 }
-                DecoderCommand::PlayAt(path, position) => {
+                DecoderCommand::PlayAt(source, position) => {
                     message_tx.send(DecoderMessage::Flush).ok();
                     state.stop();
-                    if let Err(e) = state.play(path, target_sample_rate, frame_size) {
+                    if let Err(e) = state.play(source, target_sample_rate, frame_size) {
                         log::debug!("[Decoder Thread] PlayAt (load) failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
                         response_tx
@@ -893,9 +894,9 @@ fn run_decoder_thread(
                         response_tx.send(DecoderResponse::Ok).ok();
                     }
                 }
-                DecoderCommand::QueueNext(path) => {
-                    log::debug!("[Decoder Thread] Queued next: {:?}", path);
-                    state.queued_next = Some(path);
+                DecoderCommand::QueueNext(source) => {
+                    log::debug!("[Decoder Thread] Queued next: {}", source.display_name());
+                    state.queued_next = Some(source);
                     response_tx.send(DecoderResponse::Ok).ok();
                 }
                 DecoderCommand::CancelNext => {

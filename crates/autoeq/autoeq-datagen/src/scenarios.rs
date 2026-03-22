@@ -593,12 +593,12 @@ fn scenario_12_medium_multi_sub_multi_seat() -> Scenario {
 
 // ============================================================================
 // Medium room surround: 5 x 4 x 2.5 m
-// Speaker placement follows ITU-R BS.775 / Dolby guidelines:
+// Speaker placement follows ITU-R BS.775 / ITU-R BS.2051 guidelines:
 //   - L/R at ±30° from center, front wall
 //   - Center at 0° (front wall center)
 //   - SL/SR at ±110° from center, behind listener
 //   - Sub at front-left corner, floor level
-//   - Height channels (Atmos) near ceiling, at ±45° front / ±135° rear
+//   - Height channels near ceiling, at ±45° front / ±135° rear
 // ============================================================================
 
 /// Scenario 13: Medium room, 5.0 surround (L/R/C/SL/SR), fullrange, 1 LP
@@ -661,7 +661,7 @@ fn scenario_14_medium_surround_5_1() -> Scenario {
     }
 }
 
-/// Scenario 15: Medium room, 5.1.4 Atmos (5.1 + 4 height channels), HP all, 1 LP
+/// Scenario 15: Medium room, 5.1.4 immersive (5.1 + 4 height channels), HP all, 1 LP
 fn scenario_15_medium_surround_5_1_4() -> Scenario {
     let room = medium_room();
     // Ear-level speakers
@@ -681,7 +681,7 @@ fn scenario_15_medium_surround_5_1_4() -> Scenario {
 
     Scenario {
         name: "medium_surround_5_1_4".to_string(),
-        description: "Medium 5x4x2.5m room, 5.1.4 Dolby Atmos".to_string(),
+        description: "Medium 5x4x2.5m room, 5.1.4 immersive audio".to_string(),
         simulation: make_simulation_with_boundaries(
             room,
             vec![
@@ -740,7 +740,7 @@ fn scenario_16_large_surround_5_1() -> Scenario {
     }
 }
 
-/// Scenario 17: Large room, 5.1.4 Atmos, HP all, 1 LP
+/// Scenario 17: Large room, 5.1.4 immersive, HP all, 1 LP
 fn scenario_17_large_surround_5_1_4() -> Scenario {
     let room = large_room();
     // Ear-level speakers
@@ -760,7 +760,7 @@ fn scenario_17_large_surround_5_1_4() -> Scenario {
 
     Scenario {
         name: "large_surround_5_1_4".to_string(),
-        description: "Large 7x5.5x2.6m room, 5.1.4 Dolby Atmos".to_string(),
+        description: "Large 7x5.5x2.6m room, 5.1.4 immersive audio".to_string(),
         simulation: make_simulation_with_boundaries(
             room,
             vec![

@@ -19,6 +19,7 @@ use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
 use sotf_audio_player_midi::MidiMappingEngine;
 use sotf_audio_player_midi::mapping::MidiOverlay;
+use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
 
 use crate::components::themed_tooltip as make_tooltip;
 
@@ -1886,7 +1887,7 @@ impl PlayerView {
                                     div().w(px(80.0)).child(
                                         gpui_ui_kit::Select::new("rack-config-select")
                                             .options(
-                                                ["2.0","5.0","5.1","7.1","5.1.2","5.1.4","7.1.2","7.1.4","9.1.4","9.1.6"]
+                                                pk(UP, "speaker_config").choice_labels()
                                                     .iter()
                                                     .map(|c| gpui_ui_kit::SelectOption::new(c.to_string(), c.to_string()))
                                                     .collect(),
@@ -1907,8 +1908,8 @@ impl PlayerView {
                                             .on_change({
                                                 let state_c = state_c.clone();
                                                 move |value, _, cx| {
-                                                    let configs = ["2.0","5.0","5.1","7.1","5.1.2","5.1.4","7.1.2","7.1.4","9.1.4","9.1.6"];
-                                                    let idx = configs.iter().position(|&c| c == value.as_ref()).unwrap_or(0);
+                                                    let configs = pk(UP, "speaker_config").choice_labels();
+                                                    let idx = configs.iter().position(|c| *c == value.as_ref()).unwrap_or(0);
                                                     state_c.update(cx, |state, _| {
                                                         state.app.set_plugin_param(selected_idx, 0, idx as f64); // param 0 = speaker_config
                                                         state.app.upmixer_config_open = false;

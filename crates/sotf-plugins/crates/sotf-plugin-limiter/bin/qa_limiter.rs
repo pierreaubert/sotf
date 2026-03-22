@@ -13,7 +13,10 @@ fn main() {
         release_ms: 10.0,
         lookahead_ms: 5.0,
         soft: false,
+        true_peak: false,
+        dual_release: false,
         mix: 1.0,
+        feed_forward: false,
     };
 
     let mut inner = LimiterPlugin::from_params(channels, params);

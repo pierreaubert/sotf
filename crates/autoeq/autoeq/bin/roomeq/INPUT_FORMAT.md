@@ -238,7 +238,7 @@ For optimizing multiple subwoofers with individual gain and delay adjustments.
 }
 ```
 
-With all-pass optimization (Dirac Bass Control inspired):
+With all-pass optimization:
 ```json
 {
   "speakers": {
@@ -448,7 +448,7 @@ Controls the optimization algorithm, constraints, and advanced features.
 | `gd_opt` | object | - | Group Delay Optimization |
 | `vog` | object | - | Voice of God (timbre matching) |
 | `multi_measurement` | object | - | Multi-measurement optimization strategy |
-| `decomposed_correction` | object | - | Trinnov-inspired decomposed correction |
+| `decomposed_correction` | object | - | Decomposed correction |
 
 ### Optimization Algorithms
 
@@ -925,7 +925,7 @@ When a speaker has multiple measurements (different listening positions), contro
 | `weighted_sum` | loss = sum(w_i * loss_i) - weighted sum of per-measurement losses |
 | `minimax` | loss = max(loss_i) - optimize worst case across all measurements |
 | `variance_penalized` | loss = mean(loss_i) + lambda * var(loss_i) - balance quality + consistency |
-| `spatial_robustness` | RMS-average + correction depth mask based on spatial variance (Dirac-inspired) |
+| `spatial_robustness` | RMS-average + correction depth mask based on spatial variance |
 
 **SpatialRobustness Fields:**
 
@@ -938,7 +938,7 @@ When a speaker has multiple measurements (different listening positions), contro
 
 ---
 
-## Decomposed Correction (Trinnov-Inspired)
+## Decomposed Correction
 
 Applies frequency-dependent correction weights based on acoustic decomposition. Room modes get aggressive correction, steady-state response gets gentle correction, early reflections get reduced correction.
 

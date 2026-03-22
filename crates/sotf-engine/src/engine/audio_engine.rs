@@ -53,40 +53,43 @@ impl AudioEngine {
         Self::new(EngineConfig::default())
     }
 
-    /// Play an audio file
-    pub fn play<P: Into<std::path::PathBuf>>(&self, path: P) -> Result<(), String> {
+    /// Play an audio source (file, URL, or service stream).
+    pub fn play(&self, source: impl Into<crate::decoder::AudioSource>) -> Result<(), String> {
         self.drain_response();
         self.manager
-            .send_command(ManagerCommand::Play(path.into()))?;
+            .send_command(ManagerCommand::Play(source.into()))?;
         self.expect_ok_response()
     }
 
-    /// Play an audio file at a specific position
-    pub fn play_at<P: Into<std::path::PathBuf>>(
+    /// Play an audio source at a specific position.
+    pub fn play_at(
         &self,
-        path: P,
+        source: impl Into<crate::decoder::AudioSource>,
         position: f64,
     ) -> Result<(), String> {
         self.drain_response();
         self.manager
-            .send_command(ManagerCommand::PlayAt(path.into(), position))?;
+            .send_command(ManagerCommand::PlayAt(source.into(), position))?;
         self.expect_ok_response()
     }
 
-    /// Queue the next file for gapless playback.
+    /// Queue the next source for gapless playback.
     ///
     /// When the current track finishes decoding, the decoder seamlessly transitions
-    /// to the queued file without any gap in audio output. Only one file can be
-    /// queued at a time; calling this again replaces the previous queued file.
-    pub fn queue_next<P: Into<std::path::PathBuf>>(&self, path: P) -> Result<(), String> {
+    /// to the queued source without any gap in audio output. Only one source can be
+    /// queued at a time; calling this again replaces the previous queued source.
+    pub fn queue_next(
+        &self,
+        source: impl Into<crate::decoder::AudioSource>,
+    ) -> Result<(), String> {
         self.manager
-            .send_command(ManagerCommand::QueueNext(path.into()))?;
+            .send_command(ManagerCommand::QueueNext(source.into()))?;
         self.expect_ok_response()
     }
 
-    /// Cancel a previously queued next file.
+    /// Cancel a previously queued next source.
     ///
-    /// If no file is queued, this is a no-op (still returns Ok).
+    /// If no source is queued, this is a no-op (still returns Ok).
     pub fn cancel_next(&self) -> Result<(), String> {
         self.manager.send_command(ManagerCommand::CancelNext)?;
         self.expect_ok_response()

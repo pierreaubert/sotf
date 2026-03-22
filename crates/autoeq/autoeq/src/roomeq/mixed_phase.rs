@@ -1,6 +1,6 @@
 //! Mixed-phase correction for room EQ.
 //!
-//! Implements Dirac-inspired mixed-phase filter design:
+//! Implements mixed-phase filter design:
 //! 1. Decompose measurement into minimum-phase + excess phase
 //! 2. IIR (parametric EQ) corrects the minimum-phase component
 //! 3. Short FIR corrects the excess phase component (with pre-ringing constraint)

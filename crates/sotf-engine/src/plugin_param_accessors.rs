@@ -18,12 +18,12 @@ use sotf_plugins::{CrossfeedMode, CrossfeedPreset};
 // Enum/String <-> index helpers
 // ============================================================================
 
-const SPEAKER_CONFIGS: &[&str] = &[
-    "2.0", "5.0", "5.1", "7.0", "7.1", "7.1.2", "7.1.4", "9.1", "9.1.4", "9.1.6",
-];
+fn speaker_configs() -> &'static [&'static str] {
+    param_specs::find_by_key(param_specs::upmixer::PARAMS, "speaker_config").choice_labels()
+}
 
 fn speaker_config_to_index(config: &str) -> f64 {
-    SPEAKER_CONFIGS
+    speaker_configs()
         .iter()
         .position(|&c| c == config)
         .unwrap_or(2) as f64 // default to 5.1
@@ -31,7 +31,7 @@ fn speaker_config_to_index(config: &str) -> f64 {
 
 fn index_to_speaker_config(index: f64) -> String {
     let idx = index as usize;
-    SPEAKER_CONFIGS.get(idx).unwrap_or(&"5.1").to_string()
+    speaker_configs().get(idx).unwrap_or(&"5.1").to_string()
 }
 
 fn crossfeed_mode_to_index(mode: &CrossfeedMode) -> f64 {
@@ -74,10 +74,12 @@ fn index_to_crossfeed_preset(index: f64) -> CrossfeedPreset {
     }
 }
 
-const DETECTION_MODES: &[&str] = &["Peak", "RMS"];
+fn detection_modes() -> &'static [&'static str] {
+    param_specs::find_by_key(param_specs::compressor::PARAMS, "detection_mode").choice_labels()
+}
 
 fn detection_mode_to_index(mode: &str) -> f64 {
-    DETECTION_MODES
+    detection_modes()
         .iter()
         .position(|&m| m == mode)
         .unwrap_or(0) as f64
@@ -85,32 +87,36 @@ fn detection_mode_to_index(mode: &str) -> f64 {
 
 fn index_to_detection_mode(index: f64) -> String {
     let idx = index as usize;
-    DETECTION_MODES.get(idx).unwrap_or(&"Peak").to_string()
+    detection_modes().get(idx).unwrap_or(&"Peak").to_string()
 }
 
-const AMBISONICS_LAYOUTS: &[&str] = &["5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"];
+fn ambisonics_layouts() -> &'static [&'static str] {
+    param_specs::find_by_key(param_specs::ambisonics::PARAMS, "target_layout").choice_labels()
+}
 
 fn ambisonics_layout_to_index(layout: &str) -> f64 {
-    AMBISONICS_LAYOUTS
+    ambisonics_layouts()
         .iter()
         .position(|&l| l == layout)
-        .unwrap_or(0) as f64 // default to 5.1
+        .unwrap_or(0) as f64
 }
 
 fn index_to_ambisonics_layout(index: f64) -> String {
     let idx = index as usize;
-    AMBISONICS_LAYOUTS.get(idx).unwrap_or(&"5.1").to_string()
+    ambisonics_layouts().get(idx).unwrap_or(&"5.1").to_string()
 }
 
-const CROSSOVER_TYPES: &[&str] = &["LR24", "LR48"];
+fn crossover_types() -> &'static [&'static str] {
+    param_specs::find_by_key(param_specs::band_split::PARAMS, "crossover_type").choice_labels()
+}
 
 fn crossover_type_to_index(ct: &str) -> f64 {
-    CROSSOVER_TYPES.iter().position(|&c| c == ct).unwrap_or(0) as f64
+    crossover_types().iter().position(|&c| c == ct).unwrap_or(0) as f64
 }
 
 fn index_to_crossover_type(index: f64) -> String {
     let idx = index as usize;
-    CROSSOVER_TYPES.get(idx).unwrap_or(&"LR24").to_string()
+    crossover_types().get(idx).unwrap_or(&"LR24").to_string()
 }
 
 // ============================================================================
@@ -195,6 +201,16 @@ macro_rules! impl_param_accessors {
         no_params_unit: [$($NoParamUnit:ident),* $(,)?];
         no_params_struct: [$($NoParamStruct:ident),* $(,)?]
     ) => {
+        // Compile-time assertion: field count must match PARAMS array length.
+        // Catches bugs where someone adds a param to PARAMS but forgets the field (or vice versa).
+        $(
+            const _: () = assert!(
+                impl_param_accessors!(@count $($field)*) == $params.len(),
+                concat!("PARAMS length mismatch for ", stringify!($Variant),
+                    ": fields and param_specs array must have the same number of entries")
+            );
+        )+
+
         impl PluginSettings {
             /// Return the static `PARAMS` array for this plugin variant.
             ///
@@ -260,8 +276,28 @@ macro_rules! impl_param_accessors {
                     $(Self::$NoParamStruct { .. } => {},)*
                 }
             }
+
+            /// Adjust parameter at `index` by `delta`, clamping to spec bounds.
+            ///
+            /// Returns `true` if the parameter was adjusted, `false` if the index
+            /// is out of range or the parameter is not adjustable (e.g., FilePath).
+            pub fn adjust_param_value(&mut self, index: usize, delta: f64) -> bool {
+                let specs = self.param_specs();
+                if let Some(spec) = specs.get(index) {
+                    if let Some(current) = self.param_value(index) {
+                        let new_val = spec.adjust_f64(current, delta);
+                        self.set_param_value(index, new_val);
+                        return true;
+                    }
+                }
+                false
+            }
         }
     };
+
+    // --- Count: counts the number of field tokens ---
+    (@count) => { 0usize };
+    (@count $head:ident $($rest:ident)*) => { 1usize + impl_param_accessors!(@count $($rest)*) };
 
     // --- Recursive get: generates if/else chain returning Option<f64> ---
     (@get $idx:ident; $n:expr; ) => { None };
@@ -303,6 +339,7 @@ impl_param_accessors! {
             auto_makeup: bool, link_channels: bool, sidechain_hpf_hz: f64,
             detection_mode: [str detection_mode_to_index, index_to_detection_mode],
             lookahead_ms: f64, program_dependent_release: bool, measured_auto_makeup: bool,
+            sidechain_external: bool,
         ]
     },
     Gate {
@@ -354,6 +391,7 @@ impl_param_accessors! {
             band2_freq: f64, band2_q: f64, band2_max_gain: f64, band2_slope: f64,
             band3_freq: f64, band3_q: f64, band3_max_gain: f64, band3_slope: f64,
             band4_freq: f64, band4_q: f64, band4_max_gain: f64, band4_slope: f64,
+            iso_226: bool,
         ]
     },
     Upmixer {
@@ -425,6 +463,7 @@ impl_param_accessors! {
             spectral_sub_enabled: bool, spectral_sub_alpha: f64, spectral_sub_beta: f64,
             learn_noise: bool, use_captured_profile: bool, clear_profile: bool,
             algorithm: usize,
+            formant_preservation: bool, formant_strength: f64, multi_resolution: bool,
         ]
     },
     Pnd {
@@ -433,6 +472,7 @@ impl_param_accessors! {
         fields: [
             correction_strength: f64, analysis_window_ms: f64, drift_smoothing: f64,
             multi_channel_analysis: bool, confidence_threshold: f64,
+            phase_vocoder: bool,
         ]
     },
     ABCompare {
@@ -528,7 +568,7 @@ impl_param_accessors! {
             crossover_freq_3: f64, crossover_freq_4: f64,
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             knee_db: f64, mix: f64, link_channels: bool,
-            per_band_lookahead_ms: f64,
+            per_band_lookahead_ms: f64, ms_mode: bool,
         ]
     },
     MultibandExpander {

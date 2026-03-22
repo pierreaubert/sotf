@@ -1,6 +1,6 @@
 //! Spatial robustness analysis for multi-position room measurements.
 //!
-//! Implements Dirac-inspired spatial robustness:
+//! Implements spatial robustness optimization:
 //! 1. RMS power spectrum averaging across measurement positions
 //! 2. Spatial variance computation per frequency bin
 //! 3. Correction depth mask: full correction where variance is low (room modes),

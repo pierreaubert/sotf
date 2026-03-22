@@ -133,8 +133,8 @@ pub struct AudioEngineManager {
     current_muted: AtomicBool,
     /// Allow output to virtual/loopback devices (needed for recording tests)
     allow_virtual_output: bool,
-    /// Last file path seen during event polling (for detecting gapless transitions)
-    last_seen_file: Mutex<Option<PathBuf>>,
+    /// Last source seen during event polling (for detecting gapless transitions)
+    last_seen_source: Mutex<Option<crate::decoder::AudioSource>>,
 }
 
 /// Commands for controlling the streaming (kept for API compatibility)
@@ -153,9 +153,9 @@ pub enum StreamingEvent {
     StateChanged(StreamingState),
     EndOfStream,
     Error(String),
-    /// Decoder seamlessly transitioned to a new file (gapless playback).
-    /// Contains the path of the new file.
-    GaplessTransition(PathBuf),
+    /// Decoder seamlessly transitioned to a new source (gapless playback).
+    /// Contains the new audio source.
+    GaplessTransition(crate::decoder::AudioSource),
 }
 
 /// Current state of the streaming manager
@@ -222,7 +222,7 @@ impl AudioEngineManager {
             current_volume: AtomicU32::new(1.0f32.to_bits()),
             current_muted: AtomicBool::new(false),
             allow_virtual_output: false,
-            last_seen_file: Mutex::new(None),
+            last_seen_source: Mutex::new(None),
         }
     }
 
@@ -329,6 +329,7 @@ impl AudioEngineManager {
             watch_config: self.watch_signals, // Enable signal watching if requested
             driver_mode: false,
             allow_virtual_output: self.allow_virtual_output,
+            sink_type: Default::default(),
         };
 
         log::warn!(
@@ -367,8 +368,8 @@ impl AudioEngineManager {
         self.engine.store(Some(Arc::new(engine)));
         self.set_state(StreamingState::Playing);
 
-        // Track current file for gapless transition detection
-        *self.last_seen_file.lock().unwrap() = Some(audio_info.path);
+        // Track current source for gapless transition detection
+        *self.last_seen_source.lock().unwrap() = Some(crate::decoder::AudioSource::File(audio_info.path.clone()));
 
         log::debug!("[AudioEngineManager] Playback started");
 
@@ -422,6 +423,7 @@ impl AudioEngineManager {
             watch_config: self.watch_signals,
             driver_mode: true,
             allow_virtual_output: false,
+            sink_type: Default::default(),
         };
 
         log::info!(
@@ -524,7 +526,7 @@ impl AudioEngineManager {
         }
 
         self.set_state(StreamingState::Idle);
-        *self.last_seen_file.lock().unwrap() = None;
+        *self.last_seen_source.lock().unwrap() = None;
 
         Ok(())
     }
@@ -561,21 +563,21 @@ impl AudioEngineManager {
     /// The queued file must have the same channel count as the current file (the
     /// plugin chain is not rebuilt during a gapless transition). If sample rates
     /// differ, the decoder handles resampling automatically.
-    pub fn queue_next<P: Into<PathBuf>>(&self, path: P) -> Result<(), String> {
-        let path = path.into();
-        log::debug!("[AudioEngineManager] Queueing next: {:?}", path);
+    pub fn queue_next(&self, source: impl Into<crate::decoder::AudioSource>) -> Result<(), String> {
+        let source = source.into();
+        log::debug!("[AudioEngineManager] Queueing next: {}", source.display_name());
 
         if let Some(engine) = &*self.engine.load() {
-            engine.queue_next(path)?;
+            engine.queue_next(source)?;
             Ok(())
         } else {
             Err("No engine running".to_string())
         }
     }
 
-    /// Cancel a previously queued next file.
+    /// Cancel a previously queued next source.
     ///
-    /// If no file is queued, this is a no-op (still returns Ok).
+    /// If no source is queued, this is a no-op (still returns Ok).
     pub fn cancel_next(&self) -> Result<(), String> {
         log::debug!("[AudioEngineManager] Cancelling queued next");
 
@@ -779,16 +781,15 @@ impl AudioEngineManager {
         let engine_state = self.get_engine_state();
         let current_state = self.get_state();
 
-        // Detect gapless transition: current_file changed while still playing
+        // Detect gapless transition: current_source changed while still playing
         if engine_state.playback_state == PlaybackState::Playing
             && current_state == StreamingState::Playing
         {
-            let mut last_file = self.last_seen_file.lock().unwrap();
-            if let Some(ref current) = engine_state.current_file {
-                if last_file.as_ref() != Some(current) {
-                    let path = current.clone();
-                    *last_file = Some(path.clone());
-                    return Some(StreamingEvent::GaplessTransition(path));
+            let mut last_source = self.last_seen_source.lock().unwrap();
+            if let Some(ref current) = engine_state.current_source {
+                if last_source.as_ref() != Some(current) {
+                    *last_source = Some(current.clone());
+                    return Some(StreamingEvent::GaplessTransition(current.clone()));
                 }
             }
         }

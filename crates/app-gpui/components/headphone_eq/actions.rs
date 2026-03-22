@@ -9,7 +9,7 @@ impl PlayerView {
     // ========================================================================
 
     pub(crate) fn browse_headphone_eq_measurement(&mut self, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state_entity = self.state.clone();
             cx.spawn(async move |_, cx| {
@@ -35,7 +35,7 @@ impl PlayerView {
     }
 
     pub(crate) fn browse_headphone_eq_target(&mut self, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state_entity = self.state.clone();
             cx.spawn(async move |_, cx| {
@@ -318,7 +318,7 @@ impl PlayerView {
     }
 
     pub(crate) fn save_headphone_eq_result(&mut self, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state = self.state.read(cx);
             if let Some(result) = &state.app.measurement_state.headphone_eq_state.result {

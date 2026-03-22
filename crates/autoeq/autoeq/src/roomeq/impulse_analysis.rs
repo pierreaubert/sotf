@@ -1,6 +1,6 @@
 //! Decomposed correction strategy for room EQ.
 //!
-//! Inspired by Trinnov Optimizer: separately identify and treat different
+//! Separately identify and treat different
 //! acoustic phenomena with appropriate correction strategies:
 //!
 //! 1. **Room modes** (below Schroeder frequency): narrow resonances that are

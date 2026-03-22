@@ -348,7 +348,7 @@ fn test_binaural_optimization_equivalence() {
     fs::remove_file(sofa_path).ok();
 }
 
-/// Test Dolby Atmos 7.1.4 configuration
+/// Test immersive 7.1.4 configuration
 #[test]
 fn test_binaural_atmos_7_1_4() {
     let sofa_path = create_test_sofa_file("test_atmos.sofa", 12, 256, 48000.0);

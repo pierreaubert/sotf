@@ -2,7 +2,7 @@
 //!
 //! Layout:
 //! - Main area: Channel Gains (4 faders) + Spatial Controls (4 faders) side by side
-//! - Tab bar: LFE & Bass | Dialogue | Ambient | Height | Decorrelation | Config
+//! - Tab bar: LFE & Bass | Dialogue | Ambient | Height | HR Direct | Decorrelation | Analysis
 //! - Tab content: Expandable panel for the selected tab
 
 use super::common::{render_knob, render_vertical_slider_with_ticks};
@@ -64,64 +64,78 @@ pub struct UpmixerRenderState<'a> {
     pub bypass_all_processing: bool,
     // ML vocal detection
     pub enable_ml_detection: bool,
+    // Analysis parameters
+    pub low_latency: bool,
+    pub frequency_resolution: usize,
+    pub multi_source_extraction: bool,
+    pub multi_source_threshold: f64,
     // UI state
     pub is_editing: bool,
     pub selected_param: usize,
     pub config_open: bool,
-    /// 0=none, 1=LFE, 2=Dialogue, 3=Ambient, 4=Height, 5=Decorrelation
+    /// 0=none, 1=LFE, 2=Dialogue, 3=Ambient, 4=Height, 5=HR Direct, 6=Decorrelation, 7=Analysis
     pub upmixer_tab: usize,
 }
 
-/// Parameter indices matching PARAMS ordering in param_specs::upmixer::PARAMS
+/// Parameter indices derived from param_specs::upmixer::PARAMS at compile time.
+/// If a key is renamed or removed, compilation fails.
 mod param_idx {
-    pub const _SPEAKER_CONFIG: usize = 0;
-    pub const GAIN_FRONT_DIRECT: usize = 1;
-    pub const GAIN_FRONT_AMBIENT: usize = 2;
-    pub const GAIN_REAR_AMBIENT: usize = 3;
-    pub const HEIGHT_GAIN: usize = 4;
-    pub const LFE_GAIN: usize = 5;
-    pub const LFE_CUTOFF_HZ: usize = 6;
-    pub const ENABLE_SUBHARMONIC_SYNTH: usize = 7;
-    pub const SUBHARMONIC_GAIN: usize = 8;
-    pub const SUBHARMONIC_FREQ_HZ: usize = 9;
-    pub const SUBHARMONIC_ATTACK_MS: usize = 10;
-    pub const SUBHARMONIC_RELEASE_MS: usize = 11;
-    pub const STEREO_WIDTH: usize = 12;
-    pub const CENTER_SPREAD: usize = 13;
-    pub const _BANDPASS_HZ: usize = 14; // Reserved but currently unused in UI
-    pub const ENABLE_HR_DIRECT: usize = 15;
-    pub const HR_SHARPEN: usize = 16;
-    pub const AMBIENT_BOOST: usize = 17;
-    pub const DECORRELATION_MODE: usize = 18;
-    pub const DECORRELATION_LFO_RATE_HZ: usize = 19;
-    pub const VELVET_NOISE_DURATION_MS: usize = 20;
-    pub const VELVET_NOISE_DENSITY: usize = 21;
-    pub const HEIGHT_HF_CAP_HZ: usize = 22;
-    pub const HEIGHT_TRANSIENT_REDUCTION: usize = 23;
-    pub const HEIGHT_DIRECT_LEAK: usize = 24;
-    pub const SURROUND_DIRECT_BLEED: usize = 25;
-    pub const REAR_AMBIENT_BOOST: usize = 26;
-    pub const REAR_LATE_REFLECTION: usize = 27;
-    pub const DIALOGUE_WEIGHT: usize = 28;
-    pub const VOICE_FREQ_MIN_HZ: usize = 29;
-    pub const VOICE_FREQ_MAX_HZ: usize = 30;
-    pub const DIALOGUE_CENTROID_WEIGHT: usize = 31;
-    pub const DIALOGUE_VARIANCE_WEIGHT: usize = 32;
-    pub const DIALOGUE_COHERENCE_WEIGHT: usize = 33;
-    pub const SAFETY_CAP_DB: usize = 34;
-    pub const BYPASS_DECORRELATION: usize = 35;
-    pub const BYPASS_TRANSIENT_DETECTION: usize = 36;
-    pub const BYPASS_ALL_PROCESSING: usize = 37;
-    pub const ENABLE_ML_DETECTION: usize = 38;
+    use sotf_plugins::param_specs::{index_of, upmixer::PARAMS as P};
+
+    pub const _SPEAKER_CONFIG: usize = index_of(P, "speaker_config");
+    pub const GAIN_FRONT_DIRECT: usize = index_of(P, "gain_front_direct");
+    pub const GAIN_FRONT_AMBIENT: usize = index_of(P, "gain_front_ambient");
+    pub const GAIN_REAR_AMBIENT: usize = index_of(P, "gain_rear_ambient");
+    pub const HEIGHT_GAIN: usize = index_of(P, "height_gain");
+    pub const LFE_GAIN: usize = index_of(P, "lfe_gain");
+    pub const LFE_CUTOFF_HZ: usize = index_of(P, "lfe_cutoff_hz");
+    pub const ENABLE_SUBHARMONIC_SYNTH: usize = index_of(P, "enable_subharmonic_synth");
+    pub const SUBHARMONIC_GAIN: usize = index_of(P, "subharmonic_gain");
+    pub const SUBHARMONIC_FREQ_HZ: usize = index_of(P, "subharmonic_freq_hz");
+    pub const SUBHARMONIC_ATTACK_MS: usize = index_of(P, "subharmonic_attack_ms");
+    pub const SUBHARMONIC_RELEASE_MS: usize = index_of(P, "subharmonic_release_ms");
+    pub const STEREO_WIDTH: usize = index_of(P, "stereo_width");
+    pub const CENTER_SPREAD: usize = index_of(P, "center_spread");
+    pub const _BANDPASS_HZ: usize = index_of(P, "bandpass_hz");
+    pub const ENABLE_HR_DIRECT: usize = index_of(P, "enable_hr_direct");
+    pub const HR_SHARPEN: usize = index_of(P, "hr_sharpen");
+    pub const AMBIENT_BOOST: usize = index_of(P, "ambient_boost");
+    pub const DECORRELATION_MODE: usize = index_of(P, "decorrelation_mode");
+    pub const DECORRELATION_LFO_RATE_HZ: usize = index_of(P, "decorrelation_lfo_rate_hz");
+    pub const VELVET_NOISE_DURATION_MS: usize = index_of(P, "velvet_noise_duration_ms");
+    pub const VELVET_NOISE_DENSITY: usize = index_of(P, "velvet_noise_density");
+    pub const HEIGHT_HF_CAP_HZ: usize = index_of(P, "height_hf_cap_hz");
+    pub const HEIGHT_TRANSIENT_REDUCTION: usize = index_of(P, "height_transient_reduction");
+    pub const HEIGHT_DIRECT_LEAK: usize = index_of(P, "height_direct_leak");
+    pub const SURROUND_DIRECT_BLEED: usize = index_of(P, "surround_direct_bleed");
+    pub const REAR_AMBIENT_BOOST: usize = index_of(P, "rear_ambient_boost");
+    pub const REAR_LATE_REFLECTION: usize = index_of(P, "rear_late_reflection");
+    pub const DIALOGUE_WEIGHT: usize = index_of(P, "dialogue_weight");
+    pub const VOICE_FREQ_MIN_HZ: usize = index_of(P, "voice_freq_min_hz");
+    pub const VOICE_FREQ_MAX_HZ: usize = index_of(P, "voice_freq_max_hz");
+    pub const DIALOGUE_CENTROID_WEIGHT: usize = index_of(P, "dialogue_centroid_weight");
+    pub const DIALOGUE_VARIANCE_WEIGHT: usize = index_of(P, "dialogue_variance_weight");
+    pub const DIALOGUE_COHERENCE_WEIGHT: usize = index_of(P, "dialogue_coherence_weight");
+    pub const SAFETY_CAP_DB: usize = index_of(P, "safety_cap_db");
+    pub const BYPASS_DECORRELATION: usize = index_of(P, "bypass_decorrelation");
+    pub const BYPASS_TRANSIENT_DETECTION: usize = index_of(P, "bypass_transient_detection");
+    pub const BYPASS_ALL_PROCESSING: usize = index_of(P, "bypass_all_processing");
+    pub const ENABLE_ML_DETECTION: usize = index_of(P, "enable_ml_detection");
+    pub const LOW_LATENCY: usize = index_of(P, "low_latency");
+    pub const FREQUENCY_RESOLUTION: usize = index_of(P, "frequency_resolution");
+    pub const MULTI_SOURCE_EXTRACTION: usize = index_of(P, "multi_source_extraction");
+    pub const MULTI_SOURCE_THRESHOLD: usize = index_of(P, "multi_source_threshold");
 }
 
 /// Configuration menu items
-const CONFIG_ITEMS: [&str; 5] = [
+const CONFIG_ITEMS: [&str; 7] = [
     "LFE & Bass",
     "Dialogue",
     "Ambient",
     "Height",
+    "HR Direct",
     "Decorrelation",
+    "Analysis",
 ];
 
 /// Render the upmixer plugin controls
@@ -139,7 +153,7 @@ pub fn render_upmixer_plugin(
     // Tab bar below main area
     let tab_bar = render_tab_bar(entity.clone(), selected_config, theme);
 
-    // Configuration row: conditional on selected_config (1-5)
+    // Configuration row: conditional on selected_config (1-7)
     let config_row = render_config_row(entity.clone(), plugin_idx, selected_config, &state, theme);
 
     // Diagnostic toggles row
@@ -150,7 +164,7 @@ pub fn render_upmixer_plugin(
             .spacing(StackSpacing::Xs)
             .child(main_area)
             .child(tab_bar)
-            .when((1..=5).contains(&selected_config), |el| {
+            .when((1..=7).contains(&selected_config), |el| {
                 el.child(config_row)
             })
             .child(diag_row)
@@ -223,8 +237,9 @@ fn render_tab_bar(
                     1 => "cfg-dialogue",
                     2 => "cfg-ambient",
                     3 => "cfg-height",
-                    4 => "cfg-decorr",
-                    5 => "cfg-config",
+                    4 => "cfg-hr-direct",
+                    5 => "cfg-decorr",
+                    6 => "cfg-analysis",
                     _ => "cfg-unknown",
                 },
                 label,
@@ -422,7 +437,9 @@ fn render_config_row(
         2 => render_config_dialogue(entity, plugin_idx, state, theme).into_any_element(),
         3 => render_config_ambient(entity, plugin_idx, state, theme).into_any_element(),
         4 => render_config_height(entity, plugin_idx, state, theme).into_any_element(),
-        5 => render_config_decorrelation(entity, plugin_idx, state, theme).into_any_element(),
+        5 => render_config_hr_direct(entity, plugin_idx, state, theme).into_any_element(),
+        6 => render_config_decorrelation(entity, plugin_idx, state, theme).into_any_element(),
+        7 => render_config_analysis(entity, plugin_idx, state, theme).into_any_element(),
         _ => div().into_any_element(),
     };
 
@@ -757,8 +774,68 @@ fn render_config_ambient(
         .build()
 }
 
-/// Height configuration row
+/// Height configuration row (pure height channel params, no HR Direct)
 fn render_config_height(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header("Height", theme))
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "HF Cap",
+                    state.height_hf_cap_hz,
+                    pk(UP, "height_hf_cap_hz").min_f64(),
+                    pk(UP, "height_hf_cap_hz").max_f64(),
+                    "Hz",
+                    param_idx::HEIGHT_HF_CAP_HZ,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Trans Red",
+                    state.height_transient_reduction,
+                    pk(UP, "height_transient_reduction").min_f64(),
+                    pk(UP, "height_transient_reduction").max_f64(),
+                    "",
+                    param_idx::HEIGHT_TRANSIENT_REDUCTION,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Dir Leak",
+                    state.height_direct_leak,
+                    pk(UP, "height_direct_leak").min_f64(),
+                    pk(UP, "height_direct_leak").max_f64(),
+                    "",
+                    param_idx::HEIGHT_DIRECT_LEAK,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .build(),
+        )
+        .build()
+}
+
+/// HR Direct configuration row
+fn render_config_hr_direct(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -771,14 +848,14 @@ fn render_config_height(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(render_section_header("Height", theme))
+                .child(render_section_header("HR Direct", theme))
                 .child(
                     Toggle::new(("hr-direct-toggle", plugin_idx))
                         .checked(state.enable_hr_direct)
                         .label(if state.enable_hr_direct {
-                            "HR On"
+                            "On"
                         } else {
-                            "HR Off"
+                            "Off"
                         })
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
@@ -820,40 +897,12 @@ fn render_config_height(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "HF Cap",
-                    state.height_hf_cap_hz,
-                    pk(UP, "height_hf_cap_hz").min_f64(),
-                    pk(UP, "height_hf_cap_hz").max_f64(),
-                    "Hz",
-                    param_idx::HEIGHT_HF_CAP_HZ,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    "Trans Red",
-                    state.height_transient_reduction,
-                    pk(UP, "height_transient_reduction").min_f64(),
-                    pk(UP, "height_transient_reduction").max_f64(),
-                    "",
-                    param_idx::HEIGHT_TRANSIENT_REDUCTION,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    "Dir Leak",
-                    state.height_direct_leak,
-                    pk(UP, "height_direct_leak").min_f64(),
-                    pk(UP, "height_direct_leak").max_f64(),
-                    "",
-                    param_idx::HEIGHT_DIRECT_LEAK,
+                    "Amb Boost",
+                    state.ambient_boost,
+                    pk(UP, "ambient_boost").min_f64(),
+                    pk(UP, "ambient_boost").max_f64(),
+                    "x",
+                    param_idx::AMBIENT_BOOST,
                     state.selected_param,
                     state.is_editing,
                     None,
@@ -957,6 +1006,123 @@ fn render_config_decorrelation(
                         theme,
                     ))
                 })
+                .build(),
+        )
+        .build()
+}
+
+/// Analysis & Source Extraction configuration row
+fn render_config_analysis(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(render_section_header("Analysis", theme))
+                .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
+                .child(render_section_header("Source Extraction", theme))
+                .child(
+                    Toggle::new(("multi-source-toggle", plugin_idx))
+                        .checked(state.multi_source_extraction)
+                        .label(if state.multi_source_extraction {
+                            "On"
+                        } else {
+                            "Off"
+                        })
+                        .style(ToggleStyle::Segmented)
+                        .theme(theme.to_toggle_theme())
+                        .on_change({
+                            let entity = entity.clone();
+                            move |new_value, _, cx| {
+                                entity.update(cx, |state, _| {
+                                    state.app.set_plugin_param(
+                                        plugin_idx,
+                                        param_idx::MULTI_SOURCE_EXTRACTION,
+                                        if new_value { 1.0 } else { 0.0 },
+                                    );
+                                });
+                            }
+                        }),
+                ),
+        )
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                // Analysis: Low Latency toggle
+                .child(render_diag_toggle(
+                    entity.clone(),
+                    plugin_idx,
+                    "Low Latency",
+                    state.low_latency,
+                    param_idx::LOW_LATENCY,
+                    theme,
+                ))
+                // Analysis: Freq Resolution selector
+                .child({
+                    let freq_res = state.frequency_resolution;
+                    let labels = pk(UP, "frequency_resolution").choice_labels();
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_secondary)
+                                .child("Resolution".to_string()),
+                        )
+                        .children(labels.iter().enumerate().map(|(i, label)| {
+                            let is_active = freq_res == i;
+                            let entity = entity.clone();
+                            render_tab_button(
+                                match i {
+                                    0 => "freq-erb",
+                                    1 => "freq-fine",
+                                    _ => "freq-bin",
+                                },
+                                label,
+                                is_active,
+                                theme,
+                            )
+                            .on_click(move |_, _window, cx| {
+                                entity.update(cx, |state, _| {
+                                    state.app.set_plugin_param(
+                                        plugin_idx,
+                                        param_idx::FREQUENCY_RESOLUTION,
+                                        i as f64,
+                                    );
+                                });
+                            })
+                        }))
+                })
+                // Separator
+                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
+                // Source Extraction threshold (dimmed when disabled)
+                .child(
+                    div()
+                        .when(!state.multi_source_extraction, |d| d.opacity(0.3))
+                        .child(render_knob(
+                            entity,
+                            plugin_idx,
+                            "Threshold",
+                            state.multi_source_threshold,
+                            pk(UP, "multi_source_threshold").min_f64(),
+                            pk(UP, "multi_source_threshold").max_f64(),
+                            "",
+                            param_idx::MULTI_SOURCE_THRESHOLD,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        )),
+                )
                 .build(),
         )
         .build()

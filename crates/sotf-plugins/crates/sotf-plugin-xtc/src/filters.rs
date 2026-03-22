@@ -793,7 +793,7 @@ fn compute_xtc_filters_symmetric_with_cache(
 /// First computes the regularized inverse W₁ = (C^H*C + β*I)^-1 * C^H, then
 /// refines it with one iteration of Neumann series: W₂ = W₁ * (2*I - C*W₁).
 /// This improves broadband cancellation depth by correcting residual errors
-/// from regularization, similar to the BACCH approach.
+/// from regularization, similar to the crosstalk cancellation literature.
 ///
 /// Returns (w_ipsi, w_contra) filter coefficients.
 /// max_gain_linear limits the magnitude of each output coefficient.

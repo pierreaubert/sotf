@@ -162,7 +162,7 @@ fn y_to_level(y: f32) -> f64 {
 impl PlayerView {
     /// Load a custom target curve from a JSON file
     fn load_custom_target_curve(&mut self, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state_entity = self.state.clone();
             cx.spawn(async move |_, cx| {
@@ -202,7 +202,7 @@ impl PlayerView {
 
     /// Save the current custom target curve to a JSON file
     fn save_custom_target_curve(&mut self, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state = self.state.read(cx);
             let curve = state

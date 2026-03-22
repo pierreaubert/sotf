@@ -830,7 +830,7 @@ fn all_test_cases() -> Vec<TestCase> {
             optim_subdir: "medium_multi_seat",
             options: vec![OptionOverride::MultiMeasurementVariancePenalized],
         },
-        // --- D.8: Spatial robustness (Dirac-inspired multi-position correction depth) ---
+        // --- D.8: Spatial robustness (multi-position correction depth) ---
         TestCase::OptionEffect {
             name: "OE spatial_robustness",
             fem_subdir: "medium_multi_seat",
@@ -851,7 +851,7 @@ fn all_test_cases() -> Vec<TestCase> {
             optim_subdir: "small_stereo_2_0",
             options: vec![OptionOverride::MixedPhaseMode],
         },
-        // --- D.11: Decomposed correction (Trinnov-inspired mode/steady-state weighting) ---
+        // --- D.11: Decomposed correction (mode/steady-state weighting) ---
         TestCase::OptionEffect {
             name: "OE decomposed_correction",
             fem_subdir: "small_stereo_2_0",

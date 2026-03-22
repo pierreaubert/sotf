@@ -298,7 +298,7 @@ fn bench_passthrough(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark realistic Dolby Atmos 7.1.4 workload
+/// Benchmark realistic immersive 7.1.4 workload
 fn bench_atmos_7_1_4(c: &mut Criterion) {
     let mut group = c.benchmark_group("binaural_atmos_7_1_4");
     group.sample_size(30);

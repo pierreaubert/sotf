@@ -711,10 +711,11 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             // Don't set Stopped here - wait for PlaybackDrained so remaining
             // audio in the ring buffer gets played to hardware first.
         }
-        ThreadEvent::DecoderGaplessTransition(path) => {
-            log::info!("[Manager Thread] Gapless transition to: {:?}", path);
+        ThreadEvent::DecoderGaplessTransition(source) => {
+            log::info!("[Manager Thread] Gapless transition to: {}", source.display_name());
             let mut new_state = (**state.load()).clone();
-            new_state.current_file = Some(path);
+            new_state.current_file = source.as_path().map(|p| p.to_path_buf());
+            new_state.current_source = Some(source);
             new_state.position = 0.0;
             // playback_state stays Playing — no interruption
             state.store(Arc::new(new_state));
@@ -996,7 +997,6 @@ fn apply_plugin_update(
 
     let host = build_plugin_host(&plugins, sample_rate, input_channels).map_err(|e| {
         log::error!("[Manager Thread] Local build failed: {}", e);
-
         ConfigError::ProcessingError { reason: e }
     })?;
 
@@ -1342,11 +1342,11 @@ fn handle_command(
     config_queue: &mut ConfigUpdateQueue,
 ) -> ManagerResponse {
     match command {
-        ManagerCommand::Play(path) => {
-            log::debug!("[Manager Thread] Play: {:?}", path);
+        ManagerCommand::Play(source) => {
+            log::debug!("[Manager Thread] Play: {}", source.display_name());
 
             // Send to decoder
-            if let Err(e) = decoder.send_command(DecoderCommand::Play(path.clone())) {
+            if let Err(e) = decoder.send_command(DecoderCommand::Play(source.clone())) {
                 return ManagerResponse::Error(e);
             }
 
@@ -1356,7 +1356,8 @@ fn handle_command(
             ) {
                 Ok(()) => {
                     let mut new_state = (**state.load()).clone();
-                    new_state.current_file = Some(path);
+                    new_state.current_file = source.as_path().map(|p| p.to_path_buf());
+                    new_state.current_source = Some(source);
                     new_state.playback_state = PlaybackState::Playing;
                     new_state.position = 0.0;
                     state.store(Arc::new(new_state));
@@ -1365,11 +1366,11 @@ fn handle_command(
                 Err(e) => ManagerResponse::Error(e),
             }
         }
-        ManagerCommand::PlayAt(path, position) => {
-            log::debug!("[Manager Thread] PlayAt: {:?} at {:.2}s", path, position);
+        ManagerCommand::PlayAt(source, position) => {
+            log::debug!("[Manager Thread] PlayAt: {} at {:.2}s", source.display_name(), position);
 
             // Send to decoder
-            if let Err(e) = decoder.send_command(DecoderCommand::PlayAt(path.clone(), position)) {
+            if let Err(e) = decoder.send_command(DecoderCommand::PlayAt(source.clone(), position)) {
                 return ManagerResponse::Error(e);
             }
 
@@ -1379,7 +1380,8 @@ fn handle_command(
             ) {
                 Ok(()) => {
                     let mut new_state = (**state.load()).clone();
-                    new_state.current_file = Some(path);
+                    new_state.current_file = source.as_path().map(|p| p.to_path_buf());
+                    new_state.current_source = Some(source);
                     new_state.playback_state = PlaybackState::Playing;
                     new_state.position = position;
                     state.store(Arc::new(new_state));
@@ -1451,6 +1453,7 @@ fn handle_command(
             let mut new_state = (**state.load()).clone();
             new_state.playback_state = PlaybackState::Stopped;
             new_state.current_file = None;
+            new_state.current_source = None;
             new_state.position = 0.0;
             new_state.seeking = false;
             state.store(Arc::new(new_state));
@@ -1478,10 +1481,10 @@ fn handle_command(
                 Err(e) => ManagerResponse::Error(e),
             }
         }
-        ManagerCommand::QueueNext(path) => {
-            log::debug!("[Manager Thread] QueueNext: {:?}", path);
+        ManagerCommand::QueueNext(source) => {
+            log::debug!("[Manager Thread] QueueNext: {}", source.display_name());
 
-            if let Err(e) = decoder.send_command(DecoderCommand::QueueNext(path)) {
+            if let Err(e) = decoder.send_command(DecoderCommand::QueueNext(source)) {
                 return ManagerResponse::Error(e);
             }
 

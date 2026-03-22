@@ -17,6 +17,10 @@ fn main() {
         mix: 1.0,
         link_channels: true,
         sidechain_hpf_hz: 0.0,
+        range_db: 80.0,
+        hysteresis_db: 0.0,
+        knee_db: 0.0,
+        lookahead_ms: 0.0,
     };
 
     let mut inner = GatePlugin::from_params(channels, params);

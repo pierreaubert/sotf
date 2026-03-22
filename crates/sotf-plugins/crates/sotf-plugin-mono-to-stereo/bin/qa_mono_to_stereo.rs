@@ -10,7 +10,8 @@ fn main() {
     let sample_rate = 48000;
     let params = MonoToStereoPluginParams {
         stereo_width: 1.0,
-        comp_eq_depth_db: 0.0,
+        freq_dependent: false,
+        haas_delay_ms: 0.0,
     };
 
     let mut plugin = MonoToStereoPlugin::from_params(1, params);
@@ -22,7 +23,8 @@ fn main() {
     println!("\n[Test 0] Mono Passthrough (width = 0)");
     let params_mono = MonoToStereoPluginParams {
         stereo_width: 0.0,
-        comp_eq_depth_db: 0.0,
+        freq_dependent: false,
+        haas_delay_ms: 0.0,
     };
     let mut plugin_mono = MonoToStereoPlugin::from_params(1, params_mono);
     plugin_mono.initialize(sample_rate).unwrap();
@@ -60,7 +62,8 @@ fn main() {
         1,
         MonoToStereoPluginParams {
             stereo_width: 1.0,
-            comp_eq_depth_db: 0.0,
+            freq_dependent: false,
+            haas_delay_ms: 0.0,
         },
     );
     plugin.initialize(sample_rate).unwrap();

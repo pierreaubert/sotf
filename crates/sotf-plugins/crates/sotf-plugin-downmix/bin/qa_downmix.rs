@@ -17,6 +17,7 @@ fn main() {
         phase_blend_low_hz: 200.0,
         phase_blend_high_hz: 5000.0,
         itu_mode: false,
+        matrix_ltrt: false,
     };
 
     let mut plugin = DownmixPlugin::from_params(params);

@@ -20,6 +20,12 @@ pub enum AudioDecoderError {
     ConfigError(String),
     /// Seek operation failed
     SeekFailed(String),
+    /// Network error during streaming
+    NetworkError(String),
+    /// Buffer underrun while streaming
+    BufferUnderrun,
+    /// Streaming service error (Spotify, Tidal, etc.)
+    ServiceError(String),
 }
 
 impl fmt::Display for AudioDecoderError {
@@ -48,6 +54,15 @@ impl fmt::Display for AudioDecoderError {
             }
             AudioDecoderError::SeekFailed(reason) => {
                 write!(f, "Seek operation failed: {}", reason)
+            }
+            AudioDecoderError::NetworkError(reason) => {
+                write!(f, "Network error: {}", reason)
+            }
+            AudioDecoderError::BufferUnderrun => {
+                write!(f, "Buffer underrun during streaming")
+            }
+            AudioDecoderError::ServiceError(reason) => {
+                write!(f, "Streaming service error: {}", reason)
             }
         }
     }
@@ -111,6 +126,15 @@ pub fn user_friendly_error(error: &AudioDecoderError) -> String {
         }
         AudioDecoderError::SeekFailed(_) => {
             "Failed to seek to the requested position in the audio file.".to_string()
+        }
+        AudioDecoderError::NetworkError(_) => {
+            "Network error while streaming audio. Please check your connection.".to_string()
+        }
+        AudioDecoderError::BufferUnderrun => {
+            "Audio buffer underrun. The network may be too slow for streaming.".to_string()
+        }
+        AudioDecoderError::ServiceError(_) => {
+            "Streaming service error. Please check your account and try again.".to_string()
         }
     }
 }

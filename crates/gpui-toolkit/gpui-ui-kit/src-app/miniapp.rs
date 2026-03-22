@@ -46,7 +46,7 @@ fn current_platform() -> Rc<dyn gpui::Platform> {
             gpui_windows::WindowsPlatform::new(false).expect("failed to create Windows platform"),
         )
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "tvos"))]
     {
         gpui_ios::current_platform(false)
     }

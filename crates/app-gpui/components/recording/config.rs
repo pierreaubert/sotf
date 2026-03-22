@@ -479,7 +479,7 @@ impl PlayerView {
 
     /// Open directory dialog to select recording output directory
     pub(crate) fn browse_recording_directory(&mut self, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state_entity = self.state.clone();
 
@@ -1811,7 +1811,7 @@ impl PlayerView {
 
     /// Open file dialog to browse for calibration file for a specific channel
     fn browse_calibration_file_for_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state_entity = self.state.clone();
 

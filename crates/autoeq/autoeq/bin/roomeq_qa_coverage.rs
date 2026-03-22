@@ -300,9 +300,9 @@ fn scenario_description(name: &str) -> String {
         "large_multi_seat_2_1" => "Large 7x5.5x2.6m, 2.1, 3 seats".to_string(),
         "medium_surround_5_0" => "Medium 5x4x2.5m, 5.0 surround, fullrange".to_string(),
         "medium_surround_5_1" => "Medium 5x4x2.5m, 5.1 surround".to_string(),
-        "medium_surround_5_1_4" => "Medium 5x4x2.5m, 5.1.4 Dolby Atmos".to_string(),
+        "medium_surround_5_1_4" => "Medium 5x4x2.5m, 5.1.4 immersive audio".to_string(),
         "large_surround_5_1" => "Large 7x5.5x2.6m, 5.1 surround".to_string(),
-        "large_surround_5_1_4" => "Large 7x5.5x2.6m, 5.1.4 Dolby Atmos".to_string(),
+        "large_surround_5_1_4" => "Large 7x5.5x2.6m, 5.1.4 immersive audio".to_string(),
         _ => name.to_string(),
     }
 }

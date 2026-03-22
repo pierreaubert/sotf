@@ -217,6 +217,10 @@ struct UpmixerArgs {
     /// Enable upmixer ML detection
     #[arg(long = "upmixer-enable-ml-detection", default_value_t = false)]
     enable_ml_detection: bool,
+
+    /// Enable upmixer low-latency mode (1024 FFT vs 2048)
+    #[arg(long = "upmixer-low-latency", default_value_t = false)]
+    low_latency: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -1577,6 +1581,7 @@ fn create_upmixer_plugin_config(args: &UpmixerArgs) -> Result<PluginConfig, Stri
         "bypass_transient_detection": args.bypass_transient_detection,
         "bypass_all_processing": args.bypass_all_processing,
         "enable_ml_detection": args.enable_ml_detection,
+        "low_latency": args.low_latency,
     });
 
     Ok(PluginConfig {
@@ -2936,7 +2941,7 @@ fn build_rack_mode_plugins(
                         bypass_transient_detection: plugins.upmixer.bypass_transient_detection,
                         bypass_all_processing: plugins.upmixer.bypass_all_processing,
                         enable_ml_detection: plugins.upmixer.enable_ml_detection,
-                        low_latency: false,
+                        low_latency: plugins.upmixer.low_latency,
                         frequency_resolution: 0,
                         multi_source_extraction: false,
                         multi_source_threshold: 0.3,
@@ -3056,6 +3061,7 @@ fn build_rack_mode_plugins(
                         lookahead_ms: 0.0,
                         program_dependent_release: false,
                         measured_auto_makeup: false,
+                        sidechain_external: false,
                     };
                 }
                 log::info!("Rack: Added Compressor plugin");
@@ -3078,6 +3084,7 @@ fn build_rack_mode_plugins(
                         mix: plugins.multiband_compressor.mix as f64,
                         link_channels: !plugins.multiband_compressor.unlink_channels,
                         per_band_lookahead_ms: 0.0,
+                        ms_mode: false,
                         bands: vec![],
                     };
                 }
@@ -3240,6 +3247,9 @@ fn build_rack_mode_plugins(
                         use_captured_profile: plugins.denoiser.use_captured_profile,
                         clear_profile: plugins.denoiser.clear_profile,
                         algorithm: 0,
+                        formant_preservation: false,
+                        formant_strength: 0.5,
+                        multi_resolution: false,
                     };
                 }
                 log::info!("Rack: Added Denoiser plugin");
@@ -3253,6 +3263,7 @@ fn build_rack_mode_plugins(
                         drift_smoothing: plugins.pnd.drift_smoothing as f64,
                         multi_channel_analysis: true,
                         confidence_threshold: 0.5,
+                        phase_vocoder: false,
                     };
                 }
                 log::info!("Rack: Added PND plugin");
@@ -3285,6 +3296,7 @@ fn build_rack_mode_plugins(
                         auto_gain_max_db: 12.0,
                         auto_gain_smoothing_ms: 100.0,
                         auto_gain_loudness_type: 0,
+                        iso_226: false,
                     };
                 }
                 log::info!("Rack: Added FletcherMunson plugin");

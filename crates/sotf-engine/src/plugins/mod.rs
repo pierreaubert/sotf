@@ -551,6 +551,7 @@ sotf_plugins::serde_param_default! {
     fn default_denoiser_spectral_sub_alpha() -> f64 = "spectral_sub_alpha";
     fn default_denoiser_spectral_sub_beta() -> f64 = "spectral_sub_beta";
     fn default_denoiser_algorithm() -> usize = "algorithm";
+    fn default_denoiser_formant_strength() -> f64 = "formant_strength";
 }
 
 fn default_use_nupc() -> bool {
@@ -834,6 +835,8 @@ pub enum PluginSettings {
         program_dependent_release: bool,
         #[serde(default)]
         measured_auto_makeup: bool,
+        #[serde(default)]
+        sidechain_external: bool,
     },
     Limiter {
         threshold_db: f64,
@@ -932,6 +935,8 @@ pub enum PluginSettings {
         link_channels: bool,
         #[serde(default)]
         per_band_lookahead_ms: f64,
+        #[serde(default)]
+        ms_mode: bool,
         #[serde(default)]
         bands: Vec<BandCompressorParams>,
     },
@@ -1054,6 +1059,9 @@ pub enum PluginSettings {
         /// Auto-gain loudness type (0 = Momentary, 1 = ShortTerm)
         #[serde(default)]
         auto_gain_loudness_type: i32,
+        /// Use ISO 226:2003 equal-loudness contours
+        #[serde(default)]
+        iso_226: bool,
     },
     BinauralDecoder {
         sofa_file: String,
@@ -1219,6 +1227,12 @@ pub enum PluginSettings {
         clear_profile: bool,
         #[serde(default = "default_denoiser_algorithm")]
         algorithm: usize,
+        #[serde(default)]
+        formant_preservation: bool,
+        #[serde(default = "default_denoiser_formant_strength")]
+        formant_strength: f64,
+        #[serde(default)]
+        multi_resolution: bool,
     },
     Pnd {
         #[serde(default = "default_pnd_correction_strength")]
@@ -1231,6 +1245,8 @@ pub enum PluginSettings {
         multi_channel_analysis: bool,
         #[serde(default = "default_pnd_confidence_threshold")]
         confidence_threshold: f64,
+        #[serde(default)]
+        phase_vocoder: bool,
     },
     ABCompare {
         /// A/B mix: -1.0 = A only, 0.0 = 50/50, 1.0 = B only
@@ -1728,7 +1744,12 @@ impl PluginSettings {
                     "ambient_boost": ambient_boost,
                     "safety_cap_db": safety_cap_db,
                     "low_latency": low_latency,
-                    "frequency_resolution": frequency_resolution,
+                    "frequency_resolution": match frequency_resolution {
+                        0 => "erb",
+                        1 => "fine_erb",
+                        2 => "per_bin",
+                        _ => "erb",
+                    },
                     "rear_ambient_boost": rear_ambient_boost,
                     "dialogue_weight": dialogue_weight,
                     "voice_freq_min_hz": voice_freq_min_hz,
@@ -1759,6 +1780,7 @@ impl PluginSettings {
                 lookahead_ms,
                 program_dependent_release,
                 measured_auto_makeup,
+                sidechain_external,
             } => PluginConfig::new(
                 "compressor",
                 json!({
@@ -1776,6 +1798,7 @@ impl PluginSettings {
                     "lookahead_ms": lookahead_ms,
                     "program_dependent_release": program_dependent_release,
                     "measured_auto_makeup": measured_auto_makeup,
+                    "sidechain_external": sidechain_external,
                 }),
             ),
             Self::Limiter {
@@ -1879,6 +1902,7 @@ impl PluginSettings {
                 mix,
                 link_channels,
                 per_band_lookahead_ms,
+                ms_mode,
                 bands,
             } => PluginConfig::new(
                 "multiband_compressor",
@@ -1898,6 +1922,7 @@ impl PluginSettings {
                     "mix": mix,
                     "link_channels": link_channels,
                     "per_band_lookahead_ms": per_band_lookahead_ms,
+                    "ms_mode": ms_mode,
                     "bands": bands,
                 }),
             ),
@@ -1997,6 +2022,7 @@ impl PluginSettings {
                 auto_gain_max_db,
                 auto_gain_smoothing_ms,
                 auto_gain_loudness_type,
+                iso_226,
             } => PluginConfig::new(
                 "fletcher_munson",
                 json!({
@@ -2032,6 +2058,7 @@ impl PluginSettings {
                     "auto_gain_max_db": auto_gain_max_db,
                     "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
                     "auto_gain_loudness_type": auto_gain_loudness_type,
+                    "iso_226": iso_226,
                 }),
             ),
             Self::BinauralDecoder {
@@ -2236,6 +2263,9 @@ impl PluginSettings {
                 use_captured_profile,
                 clear_profile,
                 algorithm,
+                formant_preservation,
+                formant_strength,
+                multi_resolution,
             } => PluginConfig::new(
                 "denoiser",
                 json!({
@@ -2269,6 +2299,9 @@ impl PluginSettings {
                     "use_captured_profile": use_captured_profile,
                     "clear_profile": clear_profile,
                     "algorithm": algorithm,
+                    "formant_preservation": formant_preservation,
+                    "formant_strength": formant_strength,
+                    "multi_resolution": multi_resolution,
                 }),
             ),
             Self::Pnd {
@@ -2277,6 +2310,7 @@ impl PluginSettings {
                 drift_smoothing,
                 multi_channel_analysis,
                 confidence_threshold,
+                phase_vocoder,
             } => PluginConfig::new(
                 "pnd",
                 json!({
@@ -2285,6 +2319,7 @@ impl PluginSettings {
                     "drift_smoothing": drift_smoothing,
                     "multi_channel_analysis": multi_channel_analysis,
                     "confidence_threshold": confidence_threshold,
+                    "phase_vocoder": phase_vocoder,
                 }),
             ),
             Self::ABCompare {
@@ -2492,6 +2527,7 @@ impl PluginSettings {
                     lookahead_ms: p(c, "lookahead_ms").default_f64(),
                     program_dependent_release: p(c, "program_dependent_release").default_bool(),
                     measured_auto_makeup: p(c, "measured_auto_makeup").default_bool(),
+                    sidechain_external: p(c, "sidechain_external").default_bool(),
                 }
             }
             PluginType::Limiter => {
@@ -2560,6 +2596,7 @@ impl PluginSettings {
                     mix: p(mc, "mix").default_f64(),
                     link_channels: p(mc, "link_channels").default_bool(),
                     per_band_lookahead_ms: p(mc, "per_band_lookahead_ms").default_f64(),
+                    ms_mode: p(mc, "ms_mode").default_bool(),
                     bands: Vec::new(),
                 }
             }
@@ -2630,6 +2667,7 @@ impl PluginSettings {
                     auto_gain_smoothing_ms: p(fm, "auto_gain_smoothing_ms").default_f64(),
                     auto_gain_loudness_type: pk(fm_specs::PARAMS, "auto_gain_loudness_type")
                         .default_f64() as i32,
+                    iso_226: p(fm, "iso_226").default_bool(),
                 }
             }
             PluginType::BinauralDecoder => {
@@ -2745,6 +2783,9 @@ impl PluginSettings {
                     use_captured_profile: p(d, "use_captured_profile").default_bool(),
                     clear_profile: p(d, "clear_profile").default_bool(),
                     algorithm: p(d, "algorithm").default_usize(),
+                    formant_preservation: p(d, "formant_preservation").default_bool(),
+                    formant_strength: p(d, "formant_strength").default_f64(),
+                    multi_resolution: p(d, "multi_resolution").default_bool(),
                 }
             }
             PluginType::Pnd => {
@@ -2755,6 +2796,7 @@ impl PluginSettings {
                     drift_smoothing: p(pn, "drift_smoothing").default_f64(),
                     multi_channel_analysis: p(pn, "multi_channel_analysis").default_bool(),
                     confidence_threshold: p(pn, "confidence_threshold").default_f64(),
+                    phase_vocoder: p(pn, "phase_vocoder").default_bool(),
                 }
             }
             PluginType::ABCompare => {

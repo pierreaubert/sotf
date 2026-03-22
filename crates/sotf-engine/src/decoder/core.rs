@@ -1,5 +1,6 @@
 use crate::decoder::error::{AudioDecoderError, AudioDecoderResult};
 use crate::decoder::formats::{AudioFormat, SymphoniaDecoder};
+use crate::decoder::source::AudioSource;
 use std::path::Path;
 use std::time::Duration;
 
@@ -167,6 +168,59 @@ pub fn probe_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<(AudioFormat, A
     let spec = decoder.spec().clone();
 
     Ok((format, spec))
+}
+
+/// Create a decoder from an `AudioSource` (file, URL, or service stream).
+///
+/// This is the main entry point for the decoder thread to create decoders
+/// from any supported source type.
+pub fn create_decoder_from_source(source: &AudioSource) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+    match source {
+        AudioSource::File(path) => create_decoder(path),
+        #[cfg(feature = "streaming")]
+        AudioSource::Url {
+            url,
+            format_hint,
+            seekable: _,
+        } => {
+            use symphonia::core::probe::Hint;
+
+            let (http_source, _metadata_rx) = sotf_streaming::HttpMediaSource::open(url)
+                .map_err(|e| AudioDecoderError::NetworkError(e.to_string()))?;
+
+            // Build hint from explicit format_hint or from URL/content-type detection
+            let mut hint = Hint::new();
+            if let Some(fh) = format_hint {
+                hint.with_extension(fh);
+            } else if let Some(detected) = http_source.format_hint() {
+                hint.with_extension(&detected);
+            }
+
+            let decoder = SymphoniaDecoder::from_media_source(
+                Box::new(http_source),
+                hint,
+                url,
+            )?;
+            Ok(Box::new(decoder))
+        }
+        #[cfg(not(feature = "streaming"))]
+        AudioSource::Url { url, .. } => Err(AudioDecoderError::UnsupportedFormat(format!(
+            "HTTP streaming not available (compile with 'streaming' feature): {}",
+            url
+        ))),
+        AudioSource::ServiceStream { service, track_id } => {
+            // Service streams are resolved at a higher level (player/manager) into
+            // either AudioSource::Url (Tidal) or a pre-configured PcmDecoder (Spotify).
+            // If we reach here, the service wasn't configured.
+            Err(AudioDecoderError::ServiceError(format!(
+                "Service {} not configured — cannot stream {}",
+                service, track_id
+            )))
+        }
+        AudioSource::Driver => Err(AudioDecoderError::ConfigError(
+            "Driver source does not use a decoder".to_string(),
+        )),
+    }
 }
 
 #[cfg(test)]

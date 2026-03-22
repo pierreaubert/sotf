@@ -1,3 +1,4 @@
+use sotf_audio::decoder::AudioSource;
 use sotf_audio::engine::PluginConfig;
 use sotf_audio::manager::{AudioEngineManager, StreamingEvent, StreamingState};
 use std::path::PathBuf;
@@ -18,15 +19,15 @@ pub struct PlaybackState {
     /// The UI layer should check this and auto-advance the queue.
     /// Cleared on the next `get_playback_state()` call.
     pub track_ended: bool,
-    /// Set when the engine seamlessly transitioned to a new file (gapless playback).
-    /// Contains the path of the new file. Cleared after being read.
-    pub gapless_transition: Option<PathBuf>,
+    /// Set when the engine seamlessly transitioned to a new source (gapless playback).
+    /// Cleared after being read.
+    pub gapless_transition: Option<AudioSource>,
 }
 
 /// Saved configuration for restarting after a crash.
 #[derive(Clone)]
 struct SavedPlaybackConfig {
-    path: PathBuf,
+    path: PathBuf, // Still PathBuf — only local files go through load_file/probe_file
     plugins: Vec<PluginConfig>,
     output_channels: usize,
     output_device: Option<String>,
@@ -331,18 +332,20 @@ impl Player {
         // Drain any pending streaming events and capture errors / end-of-stream
         let mut last_error: Option<String> = None;
         let mut track_ended = false;
-        let mut gapless_transition: Option<PathBuf> = None;
+        let mut gapless_transition: Option<AudioSource> = None;
         for event in self.manager.drain_events() {
             match event {
                 StreamingEvent::Error(msg) => last_error = Some(msg),
                 StreamingEvent::EndOfStream => track_ended = true,
-                StreamingEvent::GaplessTransition(path) => {
-                    // Update saved config for crash recovery
-                    if let Some(ref mut config) = self.saved_config {
-                        config.path = path.clone();
-                        config.last_position_secs = 0.0;
+                StreamingEvent::GaplessTransition(source) => {
+                    // Update saved config for crash recovery (only for File sources)
+                    if let Some(path) = source.as_path() {
+                        if let Some(ref mut config) = self.saved_config {
+                            config.path = path.to_path_buf();
+                            config.last_position_secs = 0.0;
+                        }
                     }
-                    gapless_transition = Some(path);
+                    gapless_transition = Some(source);
                 }
                 _ => {}
             }

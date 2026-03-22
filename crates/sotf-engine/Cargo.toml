@@ -9,10 +9,11 @@ name = "sotf_audio"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["streaming"]
 hal = ["driver-hal", "sotf-plugins/hal"]
 asio = ["cpal/asio"]
 iamf = ["dep:sotf-iamf", "dep:sotf-plugin-ambisonics"]
+streaming = ["dep:sotf-streaming"]
 
 [dependencies]
 driver-common = { workspace = true }
@@ -41,6 +42,7 @@ math-dsp = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-iamf = { workspace = true, optional = true }
 sotf-plugin-ambisonics = { workspace = true, optional = true }
+sotf-streaming = { workspace = true, optional = true }
 num-complex = { workspace = true }
 
 # TUI framework

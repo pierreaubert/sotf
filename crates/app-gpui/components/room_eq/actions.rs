@@ -157,7 +157,7 @@ impl PlayerView {
     }
 
     pub(crate) fn load_room_eq_from_file(&mut self, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             use crate::app::types::{
                 ChannelMeasurement, RecordingResult, RoomEqDataSource, RoomEqMeasurementsFile,

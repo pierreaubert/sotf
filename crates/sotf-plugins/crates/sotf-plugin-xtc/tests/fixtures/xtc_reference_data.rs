@@ -4,7 +4,7 @@
 //! - Woodworth & Schlosberg (1954): ITD formula for spherical head
 //! - Kuhn (1977): Frequency-dependent ITD measurements
 //! - Shaw (1974): ILD measurements from KEMAR manikin
-//! - Choueiri (2010): BACCH cancellation depth targets
+//! - Choueiri (2010): Crosstalk cancellation depth targets
 //! - Akeroyd (2007): Crosstalk cancellation performance benchmarks
 
 use std::f32::consts::PI;

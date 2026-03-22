@@ -175,7 +175,7 @@ impl PlayerView {
             return;
         };
 
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state_entity = self.state.clone();
 
@@ -225,7 +225,7 @@ impl PlayerView {
     }
 
     fn save_rack_backup(&mut self, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             // Get the current plugin chain
             let plugin_chain = {

@@ -475,7 +475,7 @@ fn test_speaker_configuration_as_str() {
     assert_eq!(SpeakerConfiguration::Surround50.as_str(), "5.0");
     assert_eq!(SpeakerConfiguration::Surround51.as_str(), "5.1");
     assert_eq!(SpeakerConfiguration::Surround71.as_str(), "7.1");
-    assert_eq!(SpeakerConfiguration::Atmos714.as_str(), "7.1.4");
+    assert_eq!(SpeakerConfiguration::Immersive714.as_str(), "7.1.4");
     assert_eq!(SpeakerConfiguration::Custom.as_str(), "Custom");
 }
 
@@ -487,8 +487,8 @@ fn test_speaker_configuration_channel_count() {
     assert_eq!(SpeakerConfiguration::Surround51.channel_count(), 6);
     assert_eq!(SpeakerConfiguration::Surround71.channel_count(), 8);
     assert_eq!(SpeakerConfiguration::Surround91.channel_count(), 10);
-    assert_eq!(SpeakerConfiguration::Atmos714.channel_count(), 12);
-    assert_eq!(SpeakerConfiguration::Atmos916.channel_count(), 16);
+    assert_eq!(SpeakerConfiguration::Immersive714.channel_count(), 12);
+    assert_eq!(SpeakerConfiguration::Immersive916.channel_count(), 16);
 }
 
 #[test]
@@ -499,10 +499,10 @@ fn test_speaker_configuration_default_channel_names() {
     let surround51 = SpeakerConfiguration::Surround51.default_channel_names();
     assert_eq!(surround51, vec!["L", "R", "C", "LFE", "SL", "SR"]);
 
-    let atmos714 = SpeakerConfiguration::Atmos714.default_channel_names();
-    assert_eq!(atmos714.len(), 12);
-    assert!(atmos714.contains(&"TFL"));
-    assert!(atmos714.contains(&"TBR"));
+    let immersive714 = SpeakerConfiguration::Immersive714.default_channel_names();
+    assert_eq!(immersive714.len(), 12);
+    assert!(immersive714.contains(&"TFL"));
+    assert!(immersive714.contains(&"TBR"));
 }
 
 #[test]

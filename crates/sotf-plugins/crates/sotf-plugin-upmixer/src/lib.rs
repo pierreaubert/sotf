@@ -1636,6 +1636,109 @@ ensuring the 2nd eigenvector captures a real source and not noise.",
         plugin
     }
 
+    /// Reallocate all FFT-size-dependent buffers and reset STFT state.
+    /// Called when `low_latency` is toggled at runtime.
+    /// This will cause a brief audio glitch (~20-40ms) as the ring buffers are drained.
+    fn resize_fft(&mut self, new_fft_size: usize) {
+        debug_assert!(new_fft_size.is_power_of_two());
+        let old_fft_size = self.fft_size;
+        if new_fft_size == old_fft_size {
+            return;
+        }
+
+        self.fft_size = new_fft_size;
+        self.hop_size = new_fft_size / 2;
+
+        // Recreate FFT planners
+        let mut planner = RealFftPlanner::<f32>::new();
+        self.fft_forward = planner.plan_fft_forward(new_fft_size);
+        self.fft_inverse = planner.plan_fft_inverse(new_fft_size);
+
+        // Regenerate Hann window
+        self.window = (0..new_fft_size)
+            .map(|i| {
+                0.5 * (1.0
+                    - ((2.0 * std::f32::consts::PI * i as f32) / new_fft_size as f32).cos())
+            })
+            .collect();
+
+        let spectrum_size = new_fft_size / 2 + 1;
+        let zero_complex = Complex::new(0.0, 0.0);
+        let nch = self.num_output_channels;
+
+        // Buffers sized to fft_size
+        self.time_domain_left = vec![0.0; new_fft_size];
+        self.time_domain_right = vec![0.0; new_fft_size];
+        self.output_block = vec![0.0; new_fft_size * nch];
+        self.time_out_channels = vec![vec![0.0; new_fft_size]; nch];
+
+        // Buffers sized to spectrum_size
+        self.freq_domain_left = vec![zero_complex; spectrum_size];
+        self.freq_domain_right = vec![zero_complex; spectrum_size];
+        self.direct = vec![zero_complex; spectrum_size];
+        self.direct_left = vec![zero_complex; spectrum_size];
+        self.direct_right = vec![zero_complex; spectrum_size];
+        self.ambient_left = vec![zero_complex; spectrum_size];
+        self.ambient_right = vec![zero_complex; spectrum_size];
+        self.lfe = vec![zero_complex; spectrum_size];
+        self.temp_freq_out = vec![zero_complex; spectrum_size];
+        self.decorrelation_filter_left = vec![zero_complex; spectrum_size];
+        self.decorrelation_filter_right = vec![zero_complex; spectrum_size];
+        self.lfe_low_gains = vec![Complex::new(1.0, 0.0); spectrum_size];
+        self.mains_high_gains = vec![Complex::new(1.0, 0.0); spectrum_size];
+        self.height_band_gains = vec![0.0; spectrum_size];
+        self.height_band_gains_prev = vec![0.0; spectrum_size];
+        self.height_band_gains_temp = vec![0.0; spectrum_size];
+        self.energy_correction_per_bin = vec![1.0; spectrum_size];
+        self.energy_correction_temp = vec![1.0; spectrum_size];
+        self.energy_correction_prev = vec![1.0; spectrum_size];
+        self.height_freq_weights = vec![0.0; spectrum_size];
+        self.prev_magnitude_spectrum = vec![0.0; spectrum_size];
+        self.height_prev_magnitude = vec![0.0; spectrum_size];
+        self.height_flux_gate = vec![0.0; spectrum_size];
+        self.blended_decorrelation_filters =
+            vec![vec![Complex::new(1.0, 0.0); spectrum_size]; nch];
+        self.prev_decorrelation_strength = -1.0; // Force recompute on next process()
+        self.direct2 = vec![zero_complex; spectrum_size];
+        self.direct2_doa_per_bin = vec![0.0; spectrum_size];
+
+        // Buffers sized to fft_size * 2 (stereo interleaved)
+        self.input_buffer = vec![0.0; new_fft_size * 2];
+        self.temp_input_block = vec![0.0; new_fft_size * 2];
+
+        // Ring buffer (fft_size * 4 frames)
+        let accumulator_frames = new_fft_size * 4;
+        self.output_accumulator = vec![0.0; accumulator_frames * nch];
+        self.output_accumulator_mask = accumulator_frames - 1;
+
+        // HR-path buffers that depend on main fft_size
+        let hop_size = self.hop_size;
+        let hr_fft_size = self.hr_fft_size;
+        self.hr_delay_temp = vec![0.0; new_fft_size * 2];
+        self.hr_delay_buffer =
+            vec![0.0; ((new_fft_size - hop_size) - (hr_fft_size - (hr_fft_size / 2))) * 2];
+        self.hr_delay_cursor = 0;
+        self.hr_output_accumulator = vec![0.0; accumulator_frames * nch];
+        self.hr_output_accumulator_mask = accumulator_frames - 1;
+
+        // Reset all STFT state counters
+        self.input_buffer_fill = 0;
+        self.output_accumulator_fill = 0;
+        self.next_add_position = 0;
+        self.output_read_position = 0;
+        self.hr_input_buffer_fill = 0;
+        self.hr_output_accumulator_fill = 0;
+        self.hr_next_add_position = 0;
+        self.hr_output_read_position = 0;
+        self.latency_filled = 0;
+
+        // Re-initialize all derived state (ERB bands, decorrelation filters, crossover
+        // gains, bin caches, smoothers, MFCC, etc.)
+        let _ = self.initialize(self.sample_rate);
+
+        self.rebuild_cached_parameters();
+    }
+
     /// Try to start the ML inference thread if enabled and model path is set.
     /// Logs a warning and falls back to heuristic if it fails.
     #[cfg(feature = "onnx")]
@@ -2036,9 +2139,14 @@ impl Plugin for UpmixerPlugin {
                 self.try_start_ml_inference();
             }
         } else if id == self.param_low_latency {
-            // low_latency changes the FFT size which requires full buffer reallocation.
-            // This is a construction-only parameter — set via from_params(), not at runtime.
-            return Err("low_latency is a construction-only parameter (requires plugin rebuild)".to_string());
+            let enable = value
+                .as_bool()
+                .ok_or_else(|| "low_latency must be a boolean".to_string())?;
+            if enable != self.low_latency {
+                self.low_latency = enable;
+                let new_fft_size = if enable { 1024 } else { 2048 };
+                self.resize_fft(new_fft_size);
+            }
         } else if id == self.param_bypass_decorrelation {
             let enable = value
                 .as_bool()

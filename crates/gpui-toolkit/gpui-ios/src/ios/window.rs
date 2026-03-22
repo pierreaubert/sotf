@@ -1154,6 +1154,7 @@ impl IosWindow {
                     emit(PlatformInput::KeyDown(gpui::KeyDownEvent {
                         keystroke: gpui::Keystroke::parse("escape").unwrap(),
                         is_held: false,
+                        prefer_character_input: false,
                     }));
                 } else {
                     emit(PlatformInput::KeyUp(gpui::KeyUpEvent {
@@ -1166,6 +1167,7 @@ impl IosWindow {
                     emit(PlatformInput::KeyDown(gpui::KeyDownEvent {
                         keystroke: gpui::Keystroke::parse("space").unwrap(),
                         is_held: false,
+                        prefer_character_input: false,
                     }));
                 } else {
                     emit(PlatformInput::KeyUp(gpui::KeyUpEvent {

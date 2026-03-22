@@ -37,6 +37,8 @@ struct ParamRow {
     midi_assignment: Option<sotf_audio_player_midi::mapping::ParamAssignment>,
     /// Whether this param is the MIDI learn target
     is_learn_target: bool,
+    /// Documentation string for this parameter
+    doc: String,
 }
 
 /// Render a simple table-based parameter list for any plugin
@@ -90,6 +92,7 @@ pub fn render_simple_plugin_view(
                 bool_value,
                 midi_assignment,
                 is_learn_target,
+                doc: desc.doc.clone(),
             });
         }
     }
@@ -112,6 +115,7 @@ pub fn render_simple_plugin_view(
 
     let accent = theme.accent;
     let text_primary = theme.text_primary;
+    let text_muted = theme.text_muted;
     let warning_color = theme.warning;
 
     let mut container = div().flex().flex_col().gap_2();
@@ -152,7 +156,7 @@ pub fn render_simple_plugin_view(
         )
         .column(
             Column::new("name", "Parameter")
-                .width(px(180.0))
+                .width(px(220.0))
                 .sortable(false)
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {
@@ -313,6 +317,17 @@ pub fn render_simple_plugin_view(
                                 .into_any_element()
                         }
                     }
+                }),
+        )
+        .column(
+            Column::new("doc", "Description")
+                .sortable(false)
+                .resizable(false)
+                .cell_render(move |row: &ParamRow, _row_idx, _, _| {
+                    div()
+                        .text_xs()
+                        .text_color(text_muted)
+                        .child(row.doc.clone())
                 }),
         )
         .selection_mode(SelectionMode::Single)

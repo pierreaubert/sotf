@@ -365,13 +365,13 @@ pub enum SpeakerConfiguration {
     Surround51, // 5.1
     Surround71, // 7.1
     Surround91, // 9.1
-    Atmos512,   // 5.1.2
-    Atmos514,   // 5.1.4
-    Atmos712,   // 7.1.2
-    Atmos714,   // 7.1.4
-    Atmos912,   // 9.1.2
-    Atmos914,   // 9.1.4
-    Atmos916,   // 9.1.6
+    Immersive512,   // 5.1.2
+    Immersive514,   // 5.1.4
+    Immersive712,   // 7.1.2
+    Immersive714,   // 7.1.4
+    Immersive912,   // 9.1.2
+    Immersive914,   // 9.1.4
+    Immersive916,   // 9.1.6
     Custom,     // User-defined
 }
 
@@ -384,13 +384,13 @@ impl SpeakerConfiguration {
             SpeakerConfiguration::Surround51 => "5.1",
             SpeakerConfiguration::Surround71 => "7.1",
             SpeakerConfiguration::Surround91 => "9.1",
-            SpeakerConfiguration::Atmos512 => "5.1.2",
-            SpeakerConfiguration::Atmos514 => "5.1.4",
-            SpeakerConfiguration::Atmos712 => "7.1.2",
-            SpeakerConfiguration::Atmos714 => "7.1.4",
-            SpeakerConfiguration::Atmos912 => "9.1.2",
-            SpeakerConfiguration::Atmos914 => "9.1.4",
-            SpeakerConfiguration::Atmos916 => "9.1.6",
+            SpeakerConfiguration::Immersive512 => "5.1.2",
+            SpeakerConfiguration::Immersive514 => "5.1.4",
+            SpeakerConfiguration::Immersive712 => "7.1.2",
+            SpeakerConfiguration::Immersive714 => "7.1.4",
+            SpeakerConfiguration::Immersive912 => "9.1.2",
+            SpeakerConfiguration::Immersive914 => "9.1.4",
+            SpeakerConfiguration::Immersive916 => "9.1.6",
             SpeakerConfiguration::Custom => "Custom",
         }
     }
@@ -403,13 +403,13 @@ impl SpeakerConfiguration {
             SpeakerConfiguration::Surround51,
             SpeakerConfiguration::Surround71,
             SpeakerConfiguration::Surround91,
-            SpeakerConfiguration::Atmos512,
-            SpeakerConfiguration::Atmos514,
-            SpeakerConfiguration::Atmos712,
-            SpeakerConfiguration::Atmos714,
-            SpeakerConfiguration::Atmos912,
-            SpeakerConfiguration::Atmos914,
-            SpeakerConfiguration::Atmos916,
+            SpeakerConfiguration::Immersive512,
+            SpeakerConfiguration::Immersive514,
+            SpeakerConfiguration::Immersive712,
+            SpeakerConfiguration::Immersive714,
+            SpeakerConfiguration::Immersive912,
+            SpeakerConfiguration::Immersive914,
+            SpeakerConfiguration::Immersive916,
             SpeakerConfiguration::Custom,
         ]
     }
@@ -423,13 +423,13 @@ impl SpeakerConfiguration {
             SpeakerConfiguration::Surround51 => 6,
             SpeakerConfiguration::Surround71 => 8,
             SpeakerConfiguration::Surround91 => 10,
-            SpeakerConfiguration::Atmos512 => 8,
-            SpeakerConfiguration::Atmos514 => 10,
-            SpeakerConfiguration::Atmos712 => 10,
-            SpeakerConfiguration::Atmos714 => 12,
-            SpeakerConfiguration::Atmos912 => 12,
-            SpeakerConfiguration::Atmos914 => 14,
-            SpeakerConfiguration::Atmos916 => 16,
+            SpeakerConfiguration::Immersive512 => 8,
+            SpeakerConfiguration::Immersive514 => 10,
+            SpeakerConfiguration::Immersive712 => 10,
+            SpeakerConfiguration::Immersive714 => 12,
+            SpeakerConfiguration::Immersive912 => 12,
+            SpeakerConfiguration::Immersive914 => 14,
+            SpeakerConfiguration::Immersive916 => 16,
             SpeakerConfiguration::Custom => 2,
         }
     }
@@ -445,24 +445,24 @@ impl SpeakerConfiguration {
             SpeakerConfiguration::Surround91 => {
                 vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR"]
             }
-            SpeakerConfiguration::Atmos512 => vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR"],
-            SpeakerConfiguration::Atmos514 => {
+            SpeakerConfiguration::Immersive512 => vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR"],
+            SpeakerConfiguration::Immersive514 => {
                 vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR", "TBL", "TBR"]
             }
-            SpeakerConfiguration::Atmos712 => {
+            SpeakerConfiguration::Immersive712 => {
                 vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "TFL", "TFR"]
             }
-            SpeakerConfiguration::Atmos714 => vec![
+            SpeakerConfiguration::Immersive714 => vec![
                 "L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "TFL", "TFR", "TBL", "TBR",
             ],
-            SpeakerConfiguration::Atmos912 => vec![
+            SpeakerConfiguration::Immersive912 => vec![
                 "L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR",
             ],
-            SpeakerConfiguration::Atmos914 => vec![
+            SpeakerConfiguration::Immersive914 => vec![
                 "L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TBL",
                 "TBR",
             ],
-            SpeakerConfiguration::Atmos916 => vec![
+            SpeakerConfiguration::Immersive916 => vec![
                 "L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TML",
                 "TMR", "TBL", "TBR",
             ],

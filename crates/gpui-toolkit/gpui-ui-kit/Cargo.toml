@@ -36,14 +36,14 @@ gpui_linux = { workspace = true }
 [target.'cfg(target_os = "windows")'.dependencies]
 gpui_windows = { workspace = true }
 
-[target.'cfg(target_os = "ios")'.dependencies]
+[target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
 gpui-ios = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
 rqrr = { workspace = true }
 
-[target.'cfg(not(target_os = "ios"))'.dev-dependencies]
+[target.'cfg(not(any(target_os = "ios", target_os = "tvos")))'.dev-dependencies]
 nokhwa = { workspace = true, features = ["input-native"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]

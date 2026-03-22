@@ -13,6 +13,14 @@
 mod types;
 pub use types::*;
 
+mod audio_sink;
+pub use audio_sink::{AudioSink, SinkConfig, SinkOpenResult, SinkType};
+
+#[cfg(not(target_os = "ios"))]
+mod cpal_sink;
+#[cfg(not(target_os = "ios"))]
+pub use cpal_sink::CpalSink;
+
 #[cfg(not(target_os = "ios"))]
 mod playback_thread;
 #[cfg(not(target_os = "ios"))]

@@ -66,7 +66,7 @@ noise. Boundaries use realistic absorption coefficients (floor 0.3, ceiling
 
 ### Surround (5.0 / 5.1 / 5.1.4)
 
-Speaker placement follows ITU-R BS.775 and Dolby Atmos guidelines. Surround
+Speaker placement follows ITU-R BS.775 and ITU-R BS.2051 guidelines. Surround
 speakers are placed at approximately ±110° behind the listener. Height channels
 (5.1.4) are near ceiling level at ±45° front and ±135° rear.
 
@@ -74,9 +74,9 @@ speakers are placed at approximately ±110° behind the listener. Height channel
 |------|------|----------|------|-----|-------------|
 | `medium_surround_5_0` | 5x4x2.5 m | L, R, C, SL, SR | — | 1 | Fullrange 5.0 |
 | `medium_surround_5_1` | 5x4x2.5 m | L, R, C, SL, SR | 1 | 1 | HP mains + LP sub |
-| `medium_surround_5_1_4` | 5x4x2.5 m | L, R, C, SL, SR, TFL, TFR, TRL, TRR | 1 | 1 | Dolby Atmos |
+| `medium_surround_5_1_4` | 5x4x2.5 m | L, R, C, SL, SR, TFL, TFR, TRL, TRR | 1 | 1 | Immersive audio |
 | `large_surround_5_1` | 7x5.5x2.6 m | L, R, C, SL, SR | 1 | 1 | HP mains + LP sub |
-| `large_surround_5_1_4` | 7x5.5x2.6 m | L, R, C, SL, SR, TFL, TFR, TRL, TRR | 1 | 1 | Dolby Atmos |
+| `large_surround_5_1_4` | 7x5.5x2.6 m | L, R, C, SL, SR, TFL, TFR, TRL, TRR | 1 | 1 | Immersive audio |
 
 Channel abbreviations: L=left, R=right, C=center, SL=surround_left,
 SR=surround_right, TFL=top_front_left, TFR=top_front_right,

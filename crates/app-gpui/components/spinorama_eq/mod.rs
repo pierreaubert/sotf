@@ -1578,7 +1578,7 @@ impl PlayerView {
         let safe_speaker_name = speaker_name.replace([' ', '/', '\\'], "_");
         let default_filename = format!("spinorama_eq_{}.{}", safe_speaker_name, extension);
 
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let state_entity = self.state.clone();
             cx.spawn(async move |_, cx| {

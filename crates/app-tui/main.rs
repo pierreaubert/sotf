@@ -434,7 +434,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.is_playing = false;
                     } else if state.engine_restarted {
                         log::info!("[TUI] Engine auto-restarted after crash, resuming playback");
-                    } else if let Some(_transition_path) = state.gapless_transition {
+                    } else if let Some(_transition_source) = state.gapless_transition {
                         // Gapless transition — engine already playing the new file,
                         // just advance the queue UI to match.
                         log::info!("[TUI] Gapless transition detected");

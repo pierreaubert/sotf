@@ -293,7 +293,7 @@
         },
         "allpass_optimization": {
           "type": "boolean",
-          "description": "Enable per-subwoofer all-pass filter optimization (Dirac Bass Control inspired). When true, optimizes gain + delay + all-pass biquad per sub for improved phase alignment and mode cancellation. Uses DE global optimizer.",
+          "description": "Enable per-subwoofer all-pass filter optimization. When true, optimizes gain + delay + all-pass biquad per sub for improved phase alignment and mode cancellation. Uses DE global optimizer.",
           "default": false
         }
       },
@@ -652,7 +652,7 @@
         },
         "decomposed_correction": {
           "$ref": "#/$defs/DecomposedCorrectionSerdeConfig",
-          "description": "Decomposed correction configuration (Trinnov-inspired). Applies frequency-dependent correction weights based on acoustic decomposition."
+          "description": "Decomposed correction configuration. Applies frequency-dependent correction weights based on acoustic decomposition."
         }
       },
       "additionalProperties": false
@@ -1143,7 +1143,7 @@
     },
     "SpatialRobustnessSerdeConfig": {
       "type": "object",
-      "description": "Spatial robustness configuration. Only corrects features consistent across positions (Dirac-inspired). Uses a correction depth mask based on inter-position variance.",
+      "description": "Spatial robustness configuration. Only corrects features consistent across positions. Uses a correction depth mask based on inter-position variance.",
       "properties": {
         "variance_threshold_db": {
           "type": "number",
@@ -1176,7 +1176,7 @@
     },
     "DecomposedCorrectionSerdeConfig": {
       "type": "object",
-      "description": "Decomposed correction configuration (Trinnov-inspired). When enabled, applies frequency-dependent correction weights: room modes (below Schroeder) get full correction, steady-state response (above Schroeder) gets gentle correction, position-dependent features get reduced correction.",
+      "description": "Decomposed correction configuration. When enabled, applies frequency-dependent correction weights: room modes (below Schroeder) get full correction, steady-state response (above Schroeder) gets gentle correction, position-dependent features get reduced correction.",
       "properties": {
         "schroeder_freq": {
           "type": "number",

@@ -2,7 +2,7 @@
 // Speaker Configuration Module
 // ============================================================================
 //
-// Standard speaker positions based on ITU-R BS.775 and Dolby Atmos specs
+// Standard speaker positions based on ITU-R BS.775 and ITU-R BS.2051 specs
 // Azimuth: 0° = front, +90° = left, -90° = right, ±180° = back
 // Elevation: 0° = ear level, +90° = overhead
 

@@ -11,7 +11,7 @@
 //! The different system services that can load and rasterize fonts.
 
 #[cfg(all(
-    any(target_os = "macos", target_os = "ios"),
+    any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"),
     not(feature = "loader-freetype-default")
 ))]
 pub use crate::loaders::core_text as default;
@@ -20,19 +20,19 @@ pub use crate::loaders::core_text as default;
 pub use crate::loaders::directwrite as default;
 
 #[cfg(any(
-    not(any(target_os = "macos", target_os = "ios", target_family = "windows")),
+    not(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos", target_family = "windows")),
     feature = "loader-freetype-default"
 ))]
 pub use crate::loaders::freetype as default;
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos"))]
 pub mod core_text;
 
 #[cfg(target_family = "windows")]
 pub mod directwrite;
 
 #[cfg(any(
-    not(any(target_os = "macos", target_os = "ios", target_family = "windows")),
+    not(any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "watchos", target_os = "visionos", target_family = "windows")),
     feature = "loader-freetype"
 ))]
 pub mod freetype;

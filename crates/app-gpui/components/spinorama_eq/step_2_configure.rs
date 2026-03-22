@@ -90,7 +90,7 @@ impl PlayerView {
             .on_opt_mode_change({
                 let state = self.state.clone();
                 move |mode, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -102,6 +102,7 @@ impl PlayerView {
                             .spinorama_eq_state
                             .dropdowns
                             .opt_mode_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -122,7 +123,7 @@ impl PlayerView {
             .on_peq_model_change({
                 let state = self.state.clone();
                 move |model, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -135,6 +136,7 @@ impl PlayerView {
                             .spinorama_eq_state
                             .dropdowns
                             .peq_model_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -156,7 +158,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |algo, _window, cx| {
                     use crate::app::types::RoomEqAlgorithm;
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -174,6 +176,7 @@ impl PlayerView {
                             .spinorama_eq_state
                             .dropdowns
                             .algorithm_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -194,150 +197,161 @@ impl PlayerView {
             .on_num_filters_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .num_filters = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_q_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .min_q = value;
+                        cx.notify();
                     });
                 }
             })
             .on_max_q_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .max_q = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_db_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .min_db = value;
+                        cx.notify();
                     });
                 }
             })
             .on_max_db_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .max_db = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_freq_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .min_freq = value;
+                        cx.notify();
                     });
                 }
             })
             .on_max_freq_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .max_freq = value;
+                        cx.notify();
                     });
                 }
             })
             .on_maxeval_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .max_iter = value;
+                        cx.notify();
                     });
                 }
             })
             .on_population_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .population = value;
+                        cx.notify();
                     });
                 }
             })
             .on_de_f_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .de_f = value;
+                        cx.notify();
                     });
                 }
             })
             .on_de_cr_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .de_cr = value;
+                        cx.notify();
                     });
                 }
             })
             .on_strategy_change({
                 let state = self.state.clone();
                 move |strategy, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -350,6 +364,7 @@ impl PlayerView {
                             .spinorama_eq_state
                             .dropdowns
                             .strategy_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -370,46 +385,49 @@ impl PlayerView {
             .on_adaptive_weight_f_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .adaptive_weight_f = value;
+                        cx.notify();
                     });
                 }
             })
             .on_adaptive_weight_cr_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .adaptive_weight_cr = value;
+                        cx.notify();
                     });
                 }
             })
             .on_refine_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .refine = value;
+                        cx.notify();
                     });
                 }
             })
             .on_local_algo_change({
                 let state = self.state.clone();
                 move |algo, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -422,6 +440,7 @@ impl PlayerView {
                             .spinorama_eq_state
                             .dropdowns
                             .local_algo_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -442,7 +461,7 @@ impl PlayerView {
             .on_smooth_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         let cfg = &mut state
                             .app
                             .measurement_state
@@ -452,65 +471,70 @@ impl PlayerView {
                         if value {
                             cfg.psychoacoustic = false;
                         }
+                        cx.notify();
                     });
                 }
             })
             .on_spacing_weight_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .spacing_weight = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_spacing_oct_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .min_spacing_oct = value;
+                        cx.notify();
                     });
                 }
             })
             .on_sample_rate_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .sample_rate = value as u32;
+                        cx.notify();
                     });
                 }
             })
             .on_fir_taps_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .fir_taps = value;
+                        cx.notify();
                     });
                 }
             })
             .on_fir_phase_change({
                 let state = self.state.clone();
                 move |phase, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -523,6 +547,7 @@ impl PlayerView {
                             .spinorama_eq_state
                             .dropdowns
                             .fir_phase_open = false;
+                        cx.notify();
                     });
                 }
             })
@@ -543,46 +568,49 @@ impl PlayerView {
             .on_tolerance_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .tolerance = value;
+                        cx.notify();
                     });
                 }
             })
             .on_atolerance_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .atolerance = value;
+                        cx.notify();
                     });
                 }
             })
             .on_smooth_n_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .smooth_n = value;
+                        cx.notify();
                     });
                 }
             })
             .on_psychoacoustic_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         let cfg = &mut state
                             .app
                             .measurement_state
@@ -592,13 +620,14 @@ impl PlayerView {
                         if value {
                             cfg.smooth = false;
                         }
+                        cx.notify();
                     });
                 }
             })
             .on_asymmetric_loss_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -609,6 +638,7 @@ impl PlayerView {
                         } else {
                             "flat".to_string()
                         };
+                        cx.notify();
                     });
                 }
             });

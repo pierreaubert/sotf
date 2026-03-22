@@ -626,7 +626,7 @@ fn test_downmix_zero_alloc() {
         phase_blend_low_hz: 200.0,
         phase_blend_high_hz: 500.0,
         itu_mode: false,
-        dolby_ltrt: false,
+        matrix_ltrt: false,
     };
     let mut plugin = DownmixPlugin::from_params(params);
     plugin.initialize(SAMPLE_RATE).unwrap();

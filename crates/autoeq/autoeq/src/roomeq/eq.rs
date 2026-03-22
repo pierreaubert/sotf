@@ -688,7 +688,7 @@ fn build_args(
     }
 }
 
-/// Spatial robustness optimization (Dirac-inspired).
+/// Spatial robustness optimization.
 ///
 /// Instead of running multi-objective optimization across all curves, this:
 /// 1. Computes RMS power average across all positions

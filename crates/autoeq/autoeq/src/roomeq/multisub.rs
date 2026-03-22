@@ -2,7 +2,7 @@
 //!
 //! Supports two modes:
 //! - Standard: optimizes gain + delay per subwoofer
-//! - All-pass enhanced (Dirac Bass Control inspired): optimizes gain + delay + all-pass
+//! - All-pass enhanced: optimizes gain + delay + all-pass
 //!   biquad filters per subwoofer. The all-pass filters add phase rotation without
 //!   changing magnitude, improving destructive interference cancellation.
 
@@ -119,7 +119,7 @@ pub struct MultiSubAllPassResult {
 ///
 /// Parameter vector layout: [gains(N), delays(N), ap_freq(N), ap_q(N)]
 ///
-/// Inspired by Dirac Bass Control (Brännmark, Rosencratz & Andersson).
+/// Inspired by Brännmark, Rosencratz & Andersson.
 pub fn optimize_multisub_with_allpass(
     measurements: &[MeasurementSource],
     config: &OptimizerConfig,

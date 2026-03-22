@@ -2,7 +2,7 @@
 // Engine Configuration
 // ============================================================================
 
-use super::PluginConfig;
+use super::{PluginConfig, SinkType};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -58,6 +58,10 @@ pub struct EngineConfig {
     /// Normally these are blocked to prevent feedback loops, but tests need them.
     #[serde(default)]
     pub allow_virtual_output: bool,
+
+    /// Output sink type (cpal, PipeWire, AirPlay, etc.)
+    #[serde(skip)]
+    pub sink_type: SinkType,
 }
 
 fn default_engine_config_version() -> u32 {
@@ -75,6 +79,7 @@ impl Default for EngineConfig {
             output_channels: 2,
             driver_mode: false,
             allow_virtual_output: false,
+            sink_type: SinkType::default(),
             output_device: None,
             plugins: Vec::new(),
             volume: 1.0,

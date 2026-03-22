@@ -91,15 +91,15 @@ pub use spectral_align::{
 mod voice_of_god;
 pub use voice_of_god::{VoGResult, compute_voice_of_god, create_vog_plugins};
 
-// Spatial robustness (Dirac-inspired multi-position analysis)
+// Spatial robustness (multi-position analysis)
 pub mod spatial_robustness;
 pub use spatial_robustness::{SpatialRobustnessResult, analyze_spatial_robustness};
 
-// Mixed-phase correction (Dirac-inspired IIR + short FIR)
+// Mixed-phase correction (IIR + short FIR)
 pub mod mixed_phase;
 pub use mixed_phase::{MixedPhaseConfig, MixedPhaseResult, decompose_phase};
 
-// Decomposed correction (Trinnov-inspired: modes vs reflections vs steady-state)
+// Decomposed correction (modes vs reflections vs steady-state)
 pub mod impulse_analysis;
 pub use impulse_analysis::{
     DecomposedCorrectionConfig, DecomposedCorrectionResult, analyze_decomposed_correction,

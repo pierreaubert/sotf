@@ -1,8 +1,10 @@
+#[cfg(not(any(target_os = "ios", target_os = "tvos")))]
 use souvlaki::MediaControlEvent;
 
 impl PlayerView {
     /// Handle an OS media control event (MPRIS play/pause/next/etc.).
     /// Called from the timer loop inside a `state.update()` closure.
+    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
     fn handle_media_control_event(state: &mut AppState, event: &MediaControlEvent) {
         match event {
             MediaControlEvent::Play => {
