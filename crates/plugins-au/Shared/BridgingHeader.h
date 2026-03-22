@@ -6,9 +6,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-
-// GPUI Bridge for Rust Metal UI
-#include "GPUIBridge.h"
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,13 +41,14 @@ typedef enum {
 // ============================================================================
 
 typedef struct {
-    const char* id;               // Parameter ID (e.g., "band0_freq")
-    const char* name;             // Display name (e.g., "Band 1 Frequency")
+    const char* id;               // Parameter ID (e.g., "threshold_db")
+    const char* name;             // Display name (e.g., "Threshold")
     const char* unit;             // Unit string (e.g., "Hz", "dB")
     double min_value;             // Minimum value
     double max_value;             // Maximum value
     double default_value;         // Default value
     uint32_t steps;               // Number of steps (0 = continuous)
+    bool logarithmic;             // Whether to use logarithmic scaling
 } ParameterInfo;
 
 // ============================================================================
@@ -57,13 +56,6 @@ typedef struct {
 // ============================================================================
 
 /// Create a new plugin instance
-///
-/// @param plugin_type Plugin type name (e.g., "EQ")
-/// @param config_json JSON configuration string
-/// @param sample_rate Sample rate in Hz
-/// @param input_channels Number of input channels
-/// @param output_channels Number of output channels
-/// @return Plugin handle on success, NULL on failure
 PluginHandle* plugin_create(
     const char* plugin_type,
     const char* config_json,
@@ -73,27 +65,16 @@ PluginHandle* plugin_create(
 );
 
 /// Destroy a plugin instance
-///
-/// @param handle Plugin handle (must not be NULL)
 void plugin_destroy(PluginHandle* handle);
 
-/// Reset plugin state (clear buffers, reset filters)
-///
-/// @param handle Plugin handle
-/// @return 0 on success, error code on failure
+/// Reset plugin state
 int plugin_reset(PluginHandle* handle);
 
 // ============================================================================
 // Audio Processing
 // ============================================================================
 
-/// Process audio samples
-///
-/// @param handle Plugin handle
-/// @param input Interleaved input samples
-/// @param output Interleaved output buffer
-/// @param num_frames Number of frames to process
-/// @return 0 on success, error code on failure
+/// Process interleaved audio samples
 int plugin_process(
     PluginHandle* handle,
     const float* input,
@@ -106,62 +87,45 @@ int plugin_process(
 // ============================================================================
 
 /// Get the number of parameters
-///
-/// @param handle Plugin handle
-/// @return Number of parameters
 int plugin_get_parameter_count(const PluginHandle* handle);
 
 /// Get parameter info by index
-///
-/// @param handle Plugin handle
-/// @param index Parameter index
-/// @return Pointer to parameter info, NULL if index out of bounds
-const ParameterInfo* plugin_get_parameter_info(
-    const PluginHandle* handle,
-    size_t index
-);
+const ParameterInfo* plugin_get_parameter_info(const PluginHandle* handle, size_t index);
 
 /// Set a parameter value (normalized 0.0-1.0)
-///
-/// @param handle Plugin handle
-/// @param param_id Parameter ID string
-/// @param normalized_value Normalized value (0.0 = min, 1.0 = max)
-/// @return 0 on success, error code on failure
-int plugin_set_parameter(
-    PluginHandle* handle,
-    const char* param_id,
-    double normalized_value
-);
+int plugin_set_parameter(PluginHandle* handle, const char* param_id, double normalized_value);
 
 /// Get a parameter value (normalized 0.0-1.0)
-///
-/// @param handle Plugin handle
-/// @param param_id Parameter ID string
-/// @return Normalized value, -1.0 on error
-double plugin_get_parameter(
-    const PluginHandle* handle,
-    const char* param_id
-);
+double plugin_get_parameter(const PluginHandle* handle, const char* param_id);
 
 // ============================================================================
 // Plugin Information
 // ============================================================================
 
-/// Get plugin information as JSON string
-///
-/// @param handle Plugin handle
-/// @return JSON string (caller must free with plugin_free_string())
+/// Get plugin information as JSON string (caller must free with plugin_free_string)
 char* plugin_get_info_json(const PluginHandle* handle);
 
 /// Free a string returned by the plugin
-///
-/// @param s String pointer
 void plugin_free_string(char* s);
 
-/// Get last error message
-///
-/// @return Error message string, NULL if no error
+/// Get last error message (NULL if no error)
 const char* plugin_get_last_error(void);
+
+// ============================================================================
+// State Save/Load
+// ============================================================================
+
+/// Save plugin state to JSON bytes (caller must free with plugin_free_state)
+uint8_t* plugin_save_state(const PluginHandle* handle, size_t* out_len);
+
+/// Load plugin state from JSON bytes
+int plugin_load_state(PluginHandle* handle, const uint8_t* data, size_t len);
+
+/// Free state buffer returned by plugin_save_state
+void plugin_free_state(uint8_t* data, size_t len);
+
+/// Get list of available plugin types as JSON array string (caller must free with plugin_free_string)
+char* plugin_available_types(void);
 
 #ifdef __cplusplus
 }

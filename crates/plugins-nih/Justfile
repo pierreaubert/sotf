@@ -1,0 +1,75 @@
+# ----------------------------------------------------------------------
+# plugins-nih: VST3/CLAP wrappers via nih-plug
+# ----------------------------------------------------------------------
+
+[group('lint')]
+lint-nih:
+	cargo check -p plugins-nih
+	cargo clippy -p plugins-nih
+
+# Build VST3 plugin bundle
+[group('build')]
+prod-vst3:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	cargo build --release -p plugins-nih
+	# nih-plug outputs a .dylib; bundle it as VST3
+	BUNDLE_DIR="target/release/SOTF EQ.vst3/Contents"
+	mkdir -p "$BUNDLE_DIR/MacOS"
+	cp target/release/libplugins_nih.dylib "$BUNDLE_DIR/MacOS/SOTF EQ"
+	# Create Info.plist
+	cat > "$BUNDLE_DIR/Info.plist" << 'PLIST'
+	<?xml version="1.0" encoding="UTF-8"?>
+	<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+	<plist version="1.0">
+	<dict>
+		<key>CFBundleName</key>
+		<string>SOTF EQ</string>
+		<key>CFBundleIdentifier</key>
+		<string>org.spinorama.sotf.eq.vst3</string>
+		<key>CFBundleVersion</key>
+		<string>0.5.13</string>
+		<key>CFBundlePackageType</key>
+		<string>BNDL</string>
+		<key>CFBundleExecutable</key>
+		<string>SOTF EQ</string>
+	</dict>
+	</plist>
+	PLIST
+	echo "VST3 bundle: target/release/SOTF EQ.vst3"
+
+# Build CLAP plugin bundle
+[group('build')]
+prod-clap:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	cargo build --release -p plugins-nih
+	BUNDLE_DIR="target/release"
+	cp "$BUNDLE_DIR/libplugins_nih.dylib" "$BUNDLE_DIR/SOTF EQ.clap"
+	echo "CLAP plugin: target/release/SOTF EQ.clap"
+
+# Build both VST3 and CLAP
+[group('build')]
+prod-plugins-nih: prod-vst3 prod-clap
+	@echo "VST3 and CLAP plugins built"
+
+# Install VST3 to system
+[group('build')]
+install-vst3: prod-vst3
+	#!/usr/bin/env bash
+	set -euo pipefail
+	VST3_DIR="$HOME/Library/Audio/Plug-Ins/VST3"
+	mkdir -p "$VST3_DIR"
+	rm -rf "$VST3_DIR/SOTF EQ.vst3"
+	cp -r "target/release/SOTF EQ.vst3" "$VST3_DIR/"
+	echo "VST3 installed to $VST3_DIR/SOTF EQ.vst3"
+
+# Install CLAP to system
+[group('build')]
+install-clap: prod-clap
+	#!/usr/bin/env bash
+	set -euo pipefail
+	CLAP_DIR="$HOME/Library/Audio/Plug-Ins/CLAP"
+	mkdir -p "$CLAP_DIR"
+	cp "target/release/SOTF EQ.clap" "$CLAP_DIR/"
+	echo "CLAP installed to $CLAP_DIR/SOTF EQ.clap"

@@ -27,4 +27,10 @@ qa: qa-autoeq \
 	qa-math \
 	qa-plugins \
 	qa-roomeq \
-	qa-engine
+	qa-engine \
+	qa-bridge \
+	qa-ffi
+
+# Build all native plugin formats (AU + VST3 + CLAP)
+[group('build')]
+prod-native-plugins: prod-plugins-nih build-au-all

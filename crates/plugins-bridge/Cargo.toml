@@ -1,0 +1,48 @@
+[package]
+name = "plugins-bridge"
+description = "Format-agnostic adapter for SOTF audio plugins (AU, VST3, CLAP)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Core plugin infrastructure
+sotf-host = { workspace = true }
+
+# Individual plugin crates (kept lean — no symphonia/cpal/tokio)
+sotf-plugin-ab-compare = { workspace = true }
+sotf-plugin-aec = { workspace = true }
+sotf-plugin-ambisonics = { workspace = true }
+sotf-plugin-band-merge = { workspace = true }
+sotf-plugin-band-split = { workspace = true }
+sotf-plugin-beamformer = { workspace = true }
+sotf-plugin-binaural = { workspace = true }
+sotf-plugin-channel-mute-solo = { workspace = true }
+sotf-plugin-compressor = { workspace = true }
+sotf-plugin-convolution = { workspace = true }
+sotf-plugin-crossfeed = { workspace = true }
+sotf-plugin-crossover = { workspace = true }
+sotf-plugin-delay = { workspace = true }
+sotf-plugin-denoiser = { workspace = true }
+sotf-plugin-downmix = { workspace = true }
+sotf-plugin-eq = { workspace = true }
+sotf-plugin-expander = { workspace = true }
+sotf-plugin-fletcher-munson = { workspace = true }
+sotf-plugin-gain = { workspace = true }
+sotf-plugin-gate = { workspace = true }
+sotf-plugin-limiter = { workspace = true }
+sotf-plugin-loudness-compensation = { workspace = true }
+sotf-plugin-matrix = { workspace = true }
+sotf-plugin-mono-to-stereo = { workspace = true }
+sotf-plugin-multiband-compressor = { workspace = true }
+sotf-plugin-multiband-expander = { workspace = true }
+sotf-plugin-pnd = { workspace = true }
+sotf-plugin-resampler = { workspace = true }
+sotf-plugin-upmixer = { workspace = true, default-features = false }
+sotf-plugin-xtc = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }

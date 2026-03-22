@@ -7,17 +7,46 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		069F33FE6C7621E14D7B50D2 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		0762986804F618379F904F4A /* GateAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C68A3F49BB297EC1CB97C7 /* GateAudioUnit.swift */; };
 		0CAA7A594C1FF20C6976E73D /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		1302C8D8F43B85C5BFF7D44E /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		14C7AE54AA637DCD52A99E48 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		1DD0EB0388CFBE890D7DA482 /* DelayAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BD2889964AD6542E5D891773 /* DelayAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1E4A767480870F1B8B845290 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		205092137DC40B6F55A35F6A /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C42DBA3E8C368B60556A63 /* AppDelegate.swift */; };
-		381004ED317BCBDF397E0BDF /* EQSwiftUIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92ADF055B104CD987CA3E1C /* EQSwiftUIView.swift */; };
+		21F1B26581DD8FCB718DB4FB /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		222AA205D4A06D7E208C0755 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		4354A6F5A7FD00054EBD71C0 /* GainAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29D3F1A3CEC47383E8F17AD4 /* GainAudioUnit.swift */; };
 		4532FE1C25583BBBB877783F /* EQViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4FB5E50EE778B07B255779 /* EQViewController.swift */; };
 		48E7F8B6A223DA8FC429888D /* EQAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DD7BE16A411963C349D2A41D /* EQAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4D41A9D18EC821AF287E8420 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		4F422056E38E00E2D65DA909 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84BDC522A6395C49A62E20CA /* ViewController.swift */; };
-		A02734A2AC2D77B4EB8AFCE4 /* GPUIBridgeStubs.c in Sources */ = {isa = PBXBuildFile; fileRef = B8BEA80E110E668AD8D765CA /* GPUIBridgeStubs.c */; };
+		53C1C28016F534E40AC5D2B6 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		54E5BA442032771BDECF1BBF /* CompressorAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B6F3FAE3B4C7A8813A06F7DB /* CompressorAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		62BB508E5476DA8E96C87BA1 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		68175B14A99E7CA76216AA01 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		72C1FB38A93FDDCF93B0CE99 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		72CFC70EDEC69917327CBFF3 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		7550D5AB525E85287CD023E3 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		7AA23C4CFE936BCD5B12BED1 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		969F5C61744B592134AC5F1F /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		9979878D4D2912BD149FCB0C /* DelayAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4017E4669B2700E9C0A9063B /* DelayAudioUnit.swift */; };
+		A2A7D1DBB2C72ED76E9EFA55 /* LimiterAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F5B0727123B5D4C746DB53 /* LimiterAudioUnit.swift */; };
+		A2E723AD2E26F1108DF833B4 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		A7DEA9CBCBA9FC5F9D83F32E /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 584BB2AEC6B0994DFE571F9F /* Main.storyboard */; };
+		A906695CA0E79B683238E730 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
+		B6BA1F19C1517D5D67221CD4 /* CompressorAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = B251BC66F81685B8B725F553 /* CompressorAudioUnit.swift */; };
 		C2706B2C2CB2896CC756A612 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		CC4CE159F24E227D5B90A1AD /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
+		CE650B4D4DEE6A328DB8F5C3 /* GainAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0D43EAE3E478F712584F82C7 /* GainAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D2041FB5A53E62918754B2DD /* LimiterAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 380AAE23EA83890F36A42573 /* LimiterAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D412ADF950D887B414256A2A /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		DE1CF7A92210BA9F43BE8EB8 /* EQAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 362CB68B363B6FEB4A23FF2B /* EQAudioUnit.swift */; };
+		E6E11A5ECE24956BD6914565 /* GateAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 341D66E33B7AD4BB1C27198F /* GateAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EF14D797688C825F968D8A5C /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		F7E3C62D246925340EB54868 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		FF8B1F4FC01D80119D242B08 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -27,6 +56,41 @@
 			proxyType = 1;
 			remoteGlobalIDString = 7BEB67E9BB65AFCF96BAC5D6;
 			remoteInfo = EQAudioUnit;
+		};
+		0B6B8A0B125D150752F06A88 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 915E564E4F3A2DBFE6217258;
+			remoteInfo = GateAudioUnit;
+		};
+		0C4A0B4D58EC585F7580DC76 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C88189D3A29E75A0A32155A7;
+			remoteInfo = DelayAudioUnit;
+		};
+		644E9E676703D9E32933311A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D1A4212137548F299946D49F;
+			remoteInfo = GainAudioUnit;
+		};
+		7C7A5DC8B48E0F405079F1ED /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 79F449AFDA4FB44349FFD943;
+			remoteInfo = CompressorAudioUnit;
+		};
+		CBAA72FADB5D6C5D7D6A3CD9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 276DEC5F2AEE49D20BB0748F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 378FD01D4213BBDF3E24B54F;
+			remoteInfo = LimiterAudioUnit;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -38,6 +102,11 @@
 			dstSubfolderSpec = 13;
 			files = (
 				48E7F8B6A223DA8FC429888D /* EQAudioUnit.appex in Embed Foundation Extensions */,
+				54E5BA442032771BDECF1BBF /* CompressorAudioUnit.appex in Embed Foundation Extensions */,
+				D2041FB5A53E62918754B2DD /* LimiterAudioUnit.appex in Embed Foundation Extensions */,
+				E6E11A5ECE24956BD6914565 /* GateAudioUnit.appex in Embed Foundation Extensions */,
+				CE650B4D4DEE6A328DB8F5C3 /* GainAudioUnit.appex in Embed Foundation Extensions */,
+				1DD0EB0388CFBE890D7DA482 /* DelayAudioUnit.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -46,26 +115,64 @@
 
 /* Begin PBXFileReference section */
 		07ED0EE6728FED317985601C /* SOTFAudioUnits.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SOTFAudioUnits.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0D43EAE3E478F712584F82C7 /* GainAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GainAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudioKit.framework; path = System/Library/Frameworks/CoreAudioKit.framework; sourceTree = SDKROOT; };
+		29D3F1A3CEC47383E8F17AD4 /* GainAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GainAudioUnit.swift; sourceTree = "<group>"; };
+		341D66E33B7AD4BB1C27198F /* GateAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GateAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		362CB68B363B6FEB4A23FF2B /* EQAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQAudioUnit.swift; sourceTree = "<group>"; };
+		380AAE23EA83890F36A42573 /* LimiterAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LimiterAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		4017E4669B2700E9C0A9063B /* DelayAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayAudioUnit.swift; sourceTree = "<group>"; };
+		44C68A3F49BB297EC1CB97C7 /* GateAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GateAudioUnit.swift; sourceTree = "<group>"; };
 		584BB2AEC6B0994DFE571F9F /* Main.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = Main.storyboard; sourceTree = "<group>"; };
+		663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericRustAudioUnit.swift; sourceTree = "<group>"; };
 		71C42DBA3E8C368B60556A63 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		84BDC522A6395C49A62E20CA /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
 		955BC360164EC7F23C7A4E5C /* BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BridgingHeader.h; sourceTree = "<group>"; };
 		9703D0799FB858F9E2C0A5A4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B251BC66F81685B8B725F553 /* CompressorAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressorAudioUnit.swift; sourceTree = "<group>"; };
+		B6F3FAE3B4C7A8813A06F7DB /* CompressorAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CompressorAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B763619FF8FA710D3366075C /* SOTFAudioUnits.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SOTFAudioUnits.entitlements; sourceTree = "<group>"; };
 		B798524C186472939A9780D0 /* EQAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EQAudioUnit.entitlements; sourceTree = "<group>"; };
-		B8BEA80E110E668AD8D765CA /* GPUIBridgeStubs.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = GPUIBridgeStubs.c; sourceTree = "<group>"; };
 		BC4FB5E50EE778B07B255779 /* EQViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQViewController.swift; sourceTree = "<group>"; };
+		BD2889964AD6542E5D891773 /* DelayAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DelayAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		D07098789949AA46E36FE5FF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		D6D1FA0C6C730E9BBEEEBDF8 /* GPUIBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GPUIBridge.h; sourceTree = "<group>"; };
-		D92ADF055B104CD987CA3E1C /* EQSwiftUIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQSwiftUIView.swift; sourceTree = "<group>"; };
 		DD7BE16A411963C349D2A41D /* EQAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = EQAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0F5B0727123B5D4C746DB53 /* LimiterAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimiterAudioUnit.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0A2339BCC8D987B4BDA3662A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FF8B1F4FC01D80119D242B08 /* AVFoundation.framework in Frameworks */,
+				1302C8D8F43B85C5BFF7D44E /* AudioToolbox.framework in Frameworks */,
+				72CFC70EDEC69917327CBFF3 /* CoreAudioKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		43F43DE0075630E79CC078A7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				68175B14A99E7CA76216AA01 /* AVFoundation.framework in Frameworks */,
+				CC4CE159F24E227D5B90A1AD /* AudioToolbox.framework in Frameworks */,
+				222AA205D4A06D7E208C0755 /* CoreAudioKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		459685D7EFA8012EC5EF6FB4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7AA23C4CFE936BCD5B12BED1 /* AVFoundation.framework in Frameworks */,
+				069F33FE6C7621E14D7B50D2 /* AudioToolbox.framework in Frameworks */,
+				D412ADF950D887B414256A2A /* CoreAudioKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		45CC0181940796D8EAD017EF /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -76,6 +183,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		65E4BC04AFD7AA33572299C4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				62BB508E5476DA8E96C87BA1 /* AVFoundation.framework in Frameworks */,
+				969F5C61744B592134AC5F1F /* AudioToolbox.framework in Frameworks */,
+				21F1B26581DD8FCB718DB4FB /* CoreAudioKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7B99C7E87DD49248EA9F231E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EF14D797688C825F968D8A5C /* AVFoundation.framework in Frameworks */,
+				14C7AE54AA637DCD52A99E48 /* AudioToolbox.framework in Frameworks */,
+				A906695CA0E79B683238E730 /* CoreAudioKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -83,7 +210,13 @@
 			isa = PBXGroup;
 			children = (
 				600BA63CFADF805188A5AC8F /* App */,
+				F501DA7C197771E6B6BA7C8B /* CompressorAudioUnit */,
+				5E4B7F36D35D73948191B167 /* DelayAudioUnit */,
 				CB32BACEBBE16D1C430FDA06 /* EQAudioUnit */,
+				5545D6CE9C63464AF116DA08 /* GainAudioUnit */,
+				C39A78FDFCA19BAF76D589D3 /* GateAudioUnit */,
+				770C78E311B7E68B28AC859C /* GenericAU */,
+				AA15A1BF586E9EB29E5B75EB /* LimiterAudioUnit */,
 				253FD71DE205C0B738E243D6 /* Shared */,
 				B8F25B435506E2241EBD16B2 /* Frameworks */,
 				5228707D442E24ACE180137A /* Products */,
@@ -94,8 +227,6 @@
 			isa = PBXGroup;
 			children = (
 				955BC360164EC7F23C7A4E5C /* BridgingHeader.h */,
-				D6D1FA0C6C730E9BBEEEBDF8 /* GPUIBridge.h */,
-				B8BEA80E110E668AD8D765CA /* GPUIBridgeStubs.c */,
 			);
 			name = Shared;
 			path = Shared;
@@ -104,10 +235,33 @@
 		5228707D442E24ACE180137A /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				B6F3FAE3B4C7A8813A06F7DB /* CompressorAudioUnit.appex */,
+				BD2889964AD6542E5D891773 /* DelayAudioUnit.appex */,
 				DD7BE16A411963C349D2A41D /* EQAudioUnit.appex */,
+				0D43EAE3E478F712584F82C7 /* GainAudioUnit.appex */,
+				341D66E33B7AD4BB1C27198F /* GateAudioUnit.appex */,
+				380AAE23EA83890F36A42573 /* LimiterAudioUnit.appex */,
 				07ED0EE6728FED317985601C /* SOTFAudioUnits.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		5545D6CE9C63464AF116DA08 /* GainAudioUnit */ = {
+			isa = PBXGroup;
+			children = (
+				29D3F1A3CEC47383E8F17AD4 /* GainAudioUnit.swift */,
+			);
+			name = GainAudioUnit;
+			path = GainAudioUnit;
+			sourceTree = "<group>";
+		};
+		5E4B7F36D35D73948191B167 /* DelayAudioUnit */ = {
+			isa = PBXGroup;
+			children = (
+				4017E4669B2700E9C0A9063B /* DelayAudioUnit.swift */,
+			);
+			name = DelayAudioUnit;
+			path = DelayAudioUnit;
 			sourceTree = "<group>";
 		};
 		600BA63CFADF805188A5AC8F /* App */ = {
@@ -122,6 +276,24 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		770C78E311B7E68B28AC859C /* GenericAU */ = {
+			isa = PBXGroup;
+			children = (
+				663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */,
+			);
+			name = GenericAU;
+			path = GenericAU;
+			sourceTree = "<group>";
+		};
+		AA15A1BF586E9EB29E5B75EB /* LimiterAudioUnit */ = {
+			isa = PBXGroup;
+			children = (
+				F0F5B0727123B5D4C746DB53 /* LimiterAudioUnit.swift */,
+			);
+			name = LimiterAudioUnit;
+			path = LimiterAudioUnit;
+			sourceTree = "<group>";
+		};
 		B8F25B435506E2241EBD16B2 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -132,12 +304,20 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		C39A78FDFCA19BAF76D589D3 /* GateAudioUnit */ = {
+			isa = PBXGroup;
+			children = (
+				44C68A3F49BB297EC1CB97C7 /* GateAudioUnit.swift */,
+			);
+			name = GateAudioUnit;
+			path = GateAudioUnit;
+			sourceTree = "<group>";
+		};
 		CB32BACEBBE16D1C430FDA06 /* EQAudioUnit */ = {
 			isa = PBXGroup;
 			children = (
 				B798524C186472939A9780D0 /* EQAudioUnit.entitlements */,
 				362CB68B363B6FEB4A23FF2B /* EQAudioUnit.swift */,
-				D92ADF055B104CD987CA3E1C /* EQSwiftUIView.swift */,
 				BC4FB5E50EE778B07B255779 /* EQViewController.swift */,
 				D07098789949AA46E36FE5FF /* Info.plist */,
 			);
@@ -145,9 +325,54 @@
 			path = EQAudioUnit;
 			sourceTree = "<group>";
 		};
+		F501DA7C197771E6B6BA7C8B /* CompressorAudioUnit */ = {
+			isa = PBXGroup;
+			children = (
+				B251BC66F81685B8B725F553 /* CompressorAudioUnit.swift */,
+			);
+			name = CompressorAudioUnit;
+			path = CompressorAudioUnit;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		378FD01D4213BBDF3E24B54F /* LimiterAudioUnit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 600156C6C9D9DB798AB1024F /* Build configuration list for PBXNativeTarget "LimiterAudioUnit" */;
+			buildPhases = (
+				2D3E8A7B2EF471299EB89B9A /* Sources */,
+				459685D7EFA8012EC5EF6FB4 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LimiterAudioUnit;
+			packageProductDependencies = (
+			);
+			productName = LimiterAudioUnit;
+			productReference = 380AAE23EA83890F36A42573 /* LimiterAudioUnit.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		79F449AFDA4FB44349FFD943 /* CompressorAudioUnit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 10D596142E9E98CDE320B185 /* Build configuration list for PBXNativeTarget "CompressorAudioUnit" */;
+			buildPhases = (
+				54B0459A784F87A84A80571A /* Sources */,
+				7B99C7E87DD49248EA9F231E /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CompressorAudioUnit;
+			packageProductDependencies = (
+			);
+			productName = CompressorAudioUnit;
+			productReference = B6F3FAE3B4C7A8813A06F7DB /* CompressorAudioUnit.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		7BEB67E9BB65AFCF96BAC5D6 /* EQAudioUnit */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 6ADBC98A1D4FF5037A7A4D85 /* Build configuration list for PBXNativeTarget "EQAudioUnit" */;
@@ -166,6 +391,60 @@
 			productReference = DD7BE16A411963C349D2A41D /* EQAudioUnit.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		915E564E4F3A2DBFE6217258 /* GateAudioUnit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6D2B6B72233D16C62F83EA5E /* Build configuration list for PBXNativeTarget "GateAudioUnit" */;
+			buildPhases = (
+				49F1241CFA1833BBDF6D4064 /* Sources */,
+				43F43DE0075630E79CC078A7 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GateAudioUnit;
+			packageProductDependencies = (
+			);
+			productName = GateAudioUnit;
+			productReference = 341D66E33B7AD4BB1C27198F /* GateAudioUnit.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		C88189D3A29E75A0A32155A7 /* DelayAudioUnit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AFE5B917B12DB4F965737240 /* Build configuration list for PBXNativeTarget "DelayAudioUnit" */;
+			buildPhases = (
+				E4A1F7EA5025E44E4D54D9C5 /* Sources */,
+				0A2339BCC8D987B4BDA3662A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DelayAudioUnit;
+			packageProductDependencies = (
+			);
+			productName = DelayAudioUnit;
+			productReference = BD2889964AD6542E5D891773 /* DelayAudioUnit.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		D1A4212137548F299946D49F /* GainAudioUnit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E159F7FF23665811CDEFCA62 /* Build configuration list for PBXNativeTarget "GainAudioUnit" */;
+			buildPhases = (
+				9580C186D5C025CB975D9CA5 /* Sources */,
+				65E4BC04AFD7AA33572299C4 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GainAudioUnit;
+			packageProductDependencies = (
+			);
+			productName = GainAudioUnit;
+			productReference = 0D43EAE3E478F712584F82C7 /* GainAudioUnit.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		E0C3ABF2793D897D35FBA20F /* SOTFAudioUnits */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 9969AED1BE912E80E1A7A510 /* Build configuration list for PBXNativeTarget "SOTFAudioUnits" */;
@@ -178,6 +457,11 @@
 			);
 			dependencies = (
 				731734F9F01E315C8CA1DD4B /* PBXTargetDependency */,
+				69738669A02A536BD5A235E5 /* PBXTargetDependency */,
+				00E3AD7A7CD8CA48C68AC17F /* PBXTargetDependency */,
+				EC19894F2C1260EEB9895D89 /* PBXTargetDependency */,
+				5C564B75A8FB9AA5F6116987 /* PBXTargetDependency */,
+				595F26A3321C0E584D149E4A /* PBXTargetDependency */,
 			);
 			name = SOTFAudioUnits;
 			packageProductDependencies = (
@@ -195,7 +479,22 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					378FD01D4213BBDF3E24B54F = {
+						ProvisioningStyle = Automatic;
+					};
+					79F449AFDA4FB44349FFD943 = {
+						ProvisioningStyle = Automatic;
+					};
 					7BEB67E9BB65AFCF96BAC5D6 = {
+						ProvisioningStyle = Automatic;
+					};
+					915E564E4F3A2DBFE6217258 = {
+						ProvisioningStyle = Automatic;
+					};
+					C88189D3A29E75A0A32155A7 = {
+						ProvisioningStyle = Automatic;
+					};
+					D1A4212137548F299946D49F = {
 						ProvisioningStyle = Automatic;
 					};
 					E0C3ABF2793D897D35FBA20F = {
@@ -204,7 +503,6 @@
 				};
 			};
 			buildConfigurationList = E6708343C3F9AE9D1B35CD5F /* Build configuration list for PBXProject "SOTFAudioUnits" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -214,10 +512,16 @@
 			mainGroup = 12D558F2C2CFE733CC23FD6F;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 5228707D442E24ACE180137A /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				79F449AFDA4FB44349FFD943 /* CompressorAudioUnit */,
+				C88189D3A29E75A0A32155A7 /* DelayAudioUnit */,
 				7BEB67E9BB65AFCF96BAC5D6 /* EQAudioUnit */,
+				D1A4212137548F299946D49F /* GainAudioUnit */,
+				915E564E4F3A2DBFE6217258 /* GateAudioUnit */,
+				378FD01D4213BBDF3E24B54F /* LimiterAudioUnit */,
 				E0C3ABF2793D897D35FBA20F /* SOTFAudioUnits */,
 			);
 		};
@@ -235,6 +539,33 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		2D3E8A7B2EF471299EB89B9A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				72C1FB38A93FDDCF93B0CE99 /* GenericRustAudioUnit.swift in Sources */,
+				A2A7D1DBB2C72ED76E9EFA55 /* LimiterAudioUnit.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		49F1241CFA1833BBDF6D4064 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0762986804F618379F904F4A /* GateAudioUnit.swift in Sources */,
+				53C1C28016F534E40AC5D2B6 /* GenericRustAudioUnit.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		54B0459A784F87A84A80571A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B6BA1F19C1517D5D67221CD4 /* CompressorAudioUnit.swift in Sources */,
+				A2E723AD2E26F1108DF833B4 /* GenericRustAudioUnit.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5EAF30547D020C382F914562 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -249,23 +580,189 @@
 			buildActionMask = 2147483647;
 			files = (
 				DE1CF7A92210BA9F43BE8EB8 /* EQAudioUnit.swift in Sources */,
-				381004ED317BCBDF397E0BDF /* EQSwiftUIView.swift in Sources */,
 				4532FE1C25583BBBB877783F /* EQViewController.swift in Sources */,
-				A02734A2AC2D77B4EB8AFCE4 /* GPUIBridgeStubs.c in Sources */,
+				1E4A767480870F1B8B845290 /* GenericRustAudioUnit.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9580C186D5C025CB975D9CA5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4354A6F5A7FD00054EBD71C0 /* GainAudioUnit.swift in Sources */,
+				7550D5AB525E85287CD023E3 /* GenericRustAudioUnit.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4A1F7EA5025E44E4D54D9C5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9979878D4D2912BD149FCB0C /* DelayAudioUnit.swift in Sources */,
+				F7E3C62D246925340EB54868 /* GenericRustAudioUnit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		00E3AD7A7CD8CA48C68AC17F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 378FD01D4213BBDF3E24B54F /* LimiterAudioUnit */;
+			targetProxy = CBAA72FADB5D6C5D7D6A3CD9 /* PBXContainerItemProxy */;
+		};
+		595F26A3321C0E584D149E4A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C88189D3A29E75A0A32155A7 /* DelayAudioUnit */;
+			targetProxy = 0C4A0B4D58EC585F7580DC76 /* PBXContainerItemProxy */;
+		};
+		5C564B75A8FB9AA5F6116987 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D1A4212137548F299946D49F /* GainAudioUnit */;
+			targetProxy = 644E9E676703D9E32933311A /* PBXContainerItemProxy */;
+		};
+		69738669A02A536BD5A235E5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 79F449AFDA4FB44349FFD943 /* CompressorAudioUnit */;
+			targetProxy = 7C7A5DC8B48E0F405079F1ED /* PBXContainerItemProxy */;
+		};
 		731734F9F01E315C8CA1DD4B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 7BEB67E9BB65AFCF96BAC5D6 /* EQAudioUnit */;
 			targetProxy = 089F3B19040C963429A8C583 /* PBXContainerItemProxy */;
 		};
+		EC19894F2C1260EEB9895D89 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 915E564E4F3A2DBFE6217258 /* GateAudioUnit */;
+			targetProxy = 0B6B8A0B125D150752F06A88 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		103350743E79CFE5AE98F9A3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.GateAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Debug;
+		};
+		1A0BBB3C80D202CBF1927280 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.GateAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Release;
+		};
+		2EF796B4A093B03231E79AE4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.GainAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Release;
+		};
+		3EB7EB5A80F5C9C099C3D2B5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.DelayAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Debug;
+		};
 		5431F247D347DADDB73167EA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -284,6 +781,68 @@
 				SDKROOT = macosx;
 			};
 			name = Debug;
+		};
+		5B13FD411691CA61E9A01ADE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.LimiterAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Release;
+		};
+		8C0B6FC2D5D7149EA8ADA838 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.DelayAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Release;
 		};
 		96BE47B59484B5B23D0AD3E0 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -338,7 +897,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.5.3;
+				MARKETING_VERSION = 0.5.13;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -416,7 +975,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.5.3;
+				MARKETING_VERSION = 0.5.13;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -426,6 +985,37 @@
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
+		};
+		B25826C1D71EB5D4D2C3D2F8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.CompressorAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Debug;
 		};
 		C53F1B913B1FB831A84DB5AE /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -448,7 +1038,103 @@
 					"$(PROJECT_DIR)/Resources",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.EQAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Release;
+		};
+		D3CD097828623BB07DF4F7ED /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.GainAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Debug;
+		};
+		E254B7188DD7DE6AAC1ED470 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.LimiterAudioUnit;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
+			};
+			name = Debug;
+		};
+		EE64A7D1850C2C5926A92957 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				EXTENSION_SAFE_API_ONLY = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Shared",
+				);
+				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Resources",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.CompressorAudioUnit;
 				SDKROOT = macosx;
 				SKIP_INSTALL = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = Shared/BridgingHeader.h;
@@ -476,6 +1162,9 @@
 					"$(PROJECT_DIR)/Resources",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"-lsotf_audio_plugins_ffi",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.spinorama.SOTFAudioUnits.EQAudioUnit;
 				SDKROOT = macosx;
 				SKIP_INSTALL = NO;
@@ -486,6 +1175,24 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		10D596142E9E98CDE320B185 /* Build configuration list for PBXNativeTarget "CompressorAudioUnit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B25826C1D71EB5D4D2C3D2F8 /* Debug */,
+				EE64A7D1850C2C5926A92957 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		600156C6C9D9DB798AB1024F /* Build configuration list for PBXNativeTarget "LimiterAudioUnit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E254B7188DD7DE6AAC1ED470 /* Debug */,
+				5B13FD411691CA61E9A01ADE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		6ADBC98A1D4FF5037A7A4D85 /* Build configuration list for PBXNativeTarget "EQAudioUnit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -495,11 +1202,38 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		6D2B6B72233D16C62F83EA5E /* Build configuration list for PBXNativeTarget "GateAudioUnit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				103350743E79CFE5AE98F9A3 /* Debug */,
+				1A0BBB3C80D202CBF1927280 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		9969AED1BE912E80E1A7A510 /* Build configuration list for PBXNativeTarget "SOTFAudioUnits" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				5431F247D347DADDB73167EA /* Debug */,
 				A699AA1B305C2D0C4E9E4170 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AFE5B917B12DB4F965737240 /* Build configuration list for PBXNativeTarget "DelayAudioUnit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3EB7EB5A80F5C9C099C3D2B5 /* Debug */,
+				8C0B6FC2D5D7149EA8ADA838 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E159F7FF23665811CDEFCA62 /* Build configuration list for PBXNativeTarget "GainAudioUnit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D3CD097828623BB07DF4F7ED /* Debug */,
+				2EF796B4A093B03231E79AE4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -1,0 +1,15 @@
+# ----------------------------------------------------------------------
+# plugins-ffi: C FFI bindings for SOTF audio plugins (AU integration)
+# ----------------------------------------------------------------------
+
+[group('test')]
+test-ffi:
+	cargo test -p plugins-ffi
+
+[group('lint')]
+lint-ffi:
+	cargo check -p plugins-ffi
+	cargo clippy -p plugins-ffi
+
+[group('qa-plugins')]
+qa-ffi: lint-ffi test-ffi

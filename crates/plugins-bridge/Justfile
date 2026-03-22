@@ -1,0 +1,15 @@
+# ----------------------------------------------------------------------
+# plugins-bridge: Format-agnostic adapter for SOTF audio plugins
+# ----------------------------------------------------------------------
+
+[group('test')]
+test-bridge:
+	cargo test -p plugins-bridge
+
+[group('lint')]
+lint-bridge:
+	cargo check -p plugins-bridge
+	cargo clippy -p plugins-bridge
+
+[group('qa-plugins')]
+qa-bridge: lint-bridge test-bridge
