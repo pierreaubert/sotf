@@ -222,6 +222,7 @@ fn config_serialization_roundtrip() {
         strategy: MultiMeasurementStrategy::Minimax,
         weights: None,
         variance_lambda: 2.5,
+        spatial_robustness: None,
     };
 
     let json = serde_json::to_string(&config).unwrap();

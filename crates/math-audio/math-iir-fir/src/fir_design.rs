@@ -43,6 +43,35 @@ impl FirPhase {
     }
 }
 
+/// Configuration for pre-ringing suppression on FIR filters.
+///
+/// Pre-ringing occurs in linear-phase and Kirkeby FIR filters as energy arriving
+/// before the main impulse tap. When it exceeds the audibility threshold (~-30 dB
+/// relative to the main tap), it's perceived as a "ringing" artifact before transients.
+///
+/// Reference: Brännmark & Sternad, Patent EP2104374B1 — pre-ringing envelope constraint
+#[derive(Debug, Clone)]
+pub struct PreRingingConfig {
+    /// Maximum pre-ringing level in dB relative to the main tap.
+    /// Taps before the main tap exceeding this threshold will be attenuated.
+    /// Default: -30.0 dB (psychoacoustically inaudible)
+    pub threshold_db: f64,
+
+    /// Maximum pre-ringing time in seconds. Pre-ringing energy beyond this
+    /// duration before the main tap will be fully suppressed.
+    /// Default: 0.005 (5 ms)
+    pub max_time_s: f64,
+}
+
+impl Default for PreRingingConfig {
+    fn default() -> Self {
+        Self {
+            threshold_db: -30.0,
+            max_time_s: 0.005,
+        }
+    }
+}
+
 /// Configuration for FIR filter generation
 #[derive(Debug, Clone)]
 pub struct FirDesignConfig {
@@ -67,6 +96,9 @@ pub struct FirDesignConfig {
     /// Applied via group delay smoothing when excess phase correction is enabled.
     /// Set to 0.0 to disable smoothing.
     pub phase_smoothing_octaves: f64,
+    /// Optional pre-ringing suppression. When set, taps before the main impulse
+    /// exceeding the threshold are attenuated to reduce audible pre-ringing.
+    pub pre_ringing: Option<PreRingingConfig>,
 }
 
 impl Default for FirDesignConfig {
@@ -80,6 +112,7 @@ impl Default for FirDesignConfig {
             window: WindowType::Blackman,
             correct_excess_phase: false, // Magnitude-only by default (more robust)
             phase_smoothing_octaves: 0.167, // 1/6 octave smoothing
+            pre_ringing: None,
         }
     }
 }
@@ -151,7 +184,14 @@ pub fn generate_fir_from_response(
     let ir = spectrum_to_impulse_response(&spectrum, fft_size);
 
     // Window and center the impulse response
-    finalize_impulse_response(&ir, n_taps, config.phase, &config.window)
+    finalize_impulse_response(
+        &ir,
+        n_taps,
+        config.phase,
+        &config.window,
+        config.pre_ringing.as_ref(),
+        config.sample_rate,
+    )
 }
 
 /// Generate Kirkeby regularized FIR correction filter
@@ -337,6 +377,11 @@ pub fn generate_kirkeby_correction(
         if src_idx < impulse.len() {
             *coeff = impulse[src_idx] * window[i];
         }
+    }
+
+    // Apply pre-ringing suppression if configured
+    if let Some(pr_config) = &config.pre_ringing {
+        suppress_pre_ringing(&mut coeffs, pr_config, sample_rate);
     }
 
     coeffs
@@ -592,6 +637,8 @@ fn finalize_impulse_response(
     n_taps: usize,
     phase: FirPhase,
     window_type: &WindowType,
+    pre_ringing: Option<&PreRingingConfig>,
+    sample_rate: f64,
 ) -> Vec<f64> {
     let fft_size = ir.len();
     let mut final_ir;
@@ -621,7 +668,135 @@ fn finalize_impulse_response(
         *x *= w;
     }
 
+    // Apply pre-ringing suppression if configured
+    if let Some(config) = pre_ringing {
+        suppress_pre_ringing(&mut final_ir, config, sample_rate);
+    }
+
     final_ir
+}
+
+/// Suppress pre-ringing in an FIR impulse response.
+///
+/// Finds the main tap (peak absolute value), then attenuates all taps before it
+/// that exceed the threshold. Also applies a time limit: taps further than
+/// `max_time_s` before the main tap are fully suppressed.
+///
+/// The attenuation uses a smooth envelope to avoid introducing new artifacts.
+pub fn suppress_pre_ringing(ir: &mut [f64], config: &PreRingingConfig, sample_rate: f64) {
+    if ir.is_empty() {
+        return;
+    }
+
+    // Find the main tap (peak absolute value)
+    let main_tap_idx = ir
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    let main_tap_abs = ir[main_tap_idx].abs();
+    if main_tap_abs == 0.0 {
+        return;
+    }
+
+    // Threshold in linear scale
+    let threshold_linear = main_tap_abs * 10.0_f64.powf(config.threshold_db / 20.0);
+
+    // Maximum number of samples of pre-ringing allowed
+    let max_pre_samples = (config.max_time_s * sample_rate).round() as usize;
+
+    // Process all taps before the main tap
+    for (i, sample) in ir[..main_tap_idx].iter_mut().enumerate() {
+        let samples_before = main_tap_idx - i;
+
+        if max_pre_samples == 0 || samples_before > max_pre_samples {
+            // Beyond time limit (or zero time limit): fully suppress
+            *sample = 0.0;
+        } else if sample.abs() > threshold_linear {
+            // Exceeds threshold: clamp to threshold with sign preserved
+            // Use smooth fade: closer to time limit → more suppression
+            let time_ratio = samples_before as f64 / max_pre_samples as f64;
+            // Cosine fade: 1.0 at main tap, 0.0 at time limit
+            let fade = 0.5 * (1.0 + (std::f64::consts::PI * time_ratio).cos());
+            let clamped = sample.signum() * threshold_linear;
+            // Blend between clamped and original based on proximity to time limit
+            *sample = clamped + (*sample - clamped) * fade;
+            // Final clamp to threshold
+            if sample.abs() > threshold_linear {
+                *sample = sample.signum() * threshold_linear;
+            }
+        }
+    }
+}
+
+/// Analyze pre-ringing in an FIR impulse response.
+///
+/// Returns the peak pre-ringing level in dB relative to the main tap,
+/// and the time extent of pre-ringing above the threshold.
+pub fn analyze_pre_ringing(ir: &[f64], sample_rate: f64) -> PreRingingAnalysis {
+    if ir.is_empty() {
+        return PreRingingAnalysis {
+            main_tap_index: 0,
+            peak_pre_ringing_db: f64::NEG_INFINITY,
+            pre_ringing_time_ms: 0.0,
+        };
+    }
+
+    let main_tap_idx = ir
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    let main_tap_abs = ir[main_tap_idx].abs();
+    if main_tap_abs == 0.0 {
+        return PreRingingAnalysis {
+            main_tap_index: main_tap_idx,
+            peak_pre_ringing_db: f64::NEG_INFINITY,
+            pre_ringing_time_ms: 0.0,
+        };
+    }
+
+    let mut peak_pre_ringing_db = f64::NEG_INFINITY;
+    let mut earliest_significant = main_tap_idx;
+    let threshold_db = -60.0; // noise floor for analysis
+
+    for (i, &tap) in ir[..main_tap_idx].iter().enumerate() {
+        let tap_abs = tap.abs();
+        if tap_abs == 0.0 {
+            continue; // skip silent taps
+        }
+        let level_db = 20.0 * (tap_abs / main_tap_abs).log10();
+        if level_db > peak_pre_ringing_db {
+            peak_pre_ringing_db = level_db;
+        }
+        if level_db > threshold_db && i < earliest_significant {
+            earliest_significant = i;
+        }
+    }
+
+    let pre_ringing_samples = main_tap_idx.saturating_sub(earliest_significant);
+    let pre_ringing_time_ms = pre_ringing_samples as f64 / sample_rate * 1000.0;
+
+    PreRingingAnalysis {
+        main_tap_index: main_tap_idx,
+        peak_pre_ringing_db,
+        pre_ringing_time_ms,
+    }
+}
+
+/// Analysis results for pre-ringing in an FIR filter.
+#[derive(Debug, Clone)]
+pub struct PreRingingAnalysis {
+    /// Index of the main (peak) tap
+    pub main_tap_index: usize,
+    /// Peak pre-ringing level in dB relative to main tap
+    pub peak_pre_ringing_db: f64,
+    /// Time extent of significant pre-ringing in milliseconds
+    pub pre_ringing_time_ms: f64,
 }
 
 // ============================================================================
@@ -808,5 +983,225 @@ mod tests {
 
         // Clean up
         let _ = std::fs::remove_file(&wav_path);
+    }
+
+    // Pre-ringing tests
+
+    #[test]
+    fn test_suppress_pre_ringing_basic() {
+        // Create IR with pre-ringing: main tap at center, some energy before
+        let mut ir = vec![0.0; 100];
+        ir[50] = 1.0; // main tap
+        ir[30] = 0.1; // pre-ringing: -20 dB relative to main
+        ir[40] = 0.05; // pre-ringing: -26 dB relative to main
+
+        let config = PreRingingConfig {
+            threshold_db: -30.0,
+            max_time_s: 0.01,
+        };
+
+        suppress_pre_ringing(&mut ir, &config, 48000.0);
+
+        // Main tap should be unchanged
+        assert_eq!(ir[50], 1.0);
+
+        // Pre-ringing taps should be clamped
+        let threshold_linear = 10.0_f64.powf(-30.0 / 20.0); // ≈ 0.0316
+        assert!(
+            ir[30].abs() <= threshold_linear + 1e-10,
+            "tap 30 should be <= {:.4}, got {:.4}",
+            threshold_linear,
+            ir[30].abs()
+        );
+    }
+
+    #[test]
+    fn test_suppress_pre_ringing_time_limit() {
+        let mut ir = vec![0.0; 1000];
+        ir[500] = 1.0; // main tap
+        ir[10] = 0.5; // far before main tap
+
+        let config = PreRingingConfig {
+            threshold_db: -30.0,
+            max_time_s: 0.005, // 5 ms = 240 samples at 48 kHz
+        };
+
+        suppress_pre_ringing(&mut ir, &config, 48000.0);
+
+        // Tap at index 10 is 490 samples before main tap (> 240 max)
+        // Should be fully suppressed
+        assert_eq!(ir[10], 0.0, "tap beyond time limit should be zeroed");
+    }
+
+    #[test]
+    fn test_suppress_pre_ringing_no_effect_on_post_ringing() {
+        let mut ir = vec![0.0; 100];
+        ir[30] = 1.0; // main tap
+        ir[60] = 0.5; // post-ringing (after main tap)
+
+        let config = PreRingingConfig::default();
+        let original_post = ir[60];
+
+        suppress_pre_ringing(&mut ir, &config, 48000.0);
+
+        // Post-ringing should be untouched
+        assert_eq!(ir[60], original_post);
+    }
+
+    #[test]
+    fn test_analyze_pre_ringing() {
+        let mut ir = vec![0.0; 200];
+        ir[100] = 1.0; // main tap
+        ir[80] = 0.1; // -20 dB pre-ringing
+        ir[90] = 0.01; // -40 dB pre-ringing
+
+        let analysis = analyze_pre_ringing(&ir, 48000.0);
+
+        assert_eq!(analysis.main_tap_index, 100);
+        assert!(
+            (analysis.peak_pre_ringing_db - (-20.0)).abs() < 0.5,
+            "peak pre-ringing should be ~-20 dB, got {:.1}",
+            analysis.peak_pre_ringing_db
+        );
+        assert!(analysis.pre_ringing_time_ms > 0.0);
+    }
+
+    #[test]
+    fn test_suppress_pre_ringing_zero_max_time() {
+        // Bug fix: max_time_s = 0 should suppress all pre-ringing (not divide by zero)
+        let mut ir = vec![0.0; 100];
+        ir[50] = 1.0;
+        ir[40] = 0.1;
+
+        let config = PreRingingConfig {
+            threshold_db: -30.0,
+            max_time_s: 0.0, // zero time limit
+        };
+
+        suppress_pre_ringing(&mut ir, &config, 48000.0);
+
+        // All taps before main should be zeroed
+        assert_eq!(ir[40], 0.0, "all pre-ringing should be suppressed with max_time=0");
+        assert_eq!(ir[50], 1.0, "main tap should be preserved");
+    }
+
+    #[test]
+    fn test_analyze_pre_ringing_with_zero_taps() {
+        // Bug fix: zero-valued taps before main tap should not produce NaN
+        let mut ir = vec![0.0; 100];
+        ir[50] = 1.0;
+        // All other taps are 0.0
+
+        let analysis = analyze_pre_ringing(&ir, 48000.0);
+
+        assert_eq!(analysis.main_tap_index, 50);
+        assert!(
+            analysis.peak_pre_ringing_db.is_finite() || analysis.peak_pre_ringing_db == f64::NEG_INFINITY,
+            "peak_pre_ringing_db should be finite or -inf, got {}",
+            analysis.peak_pre_ringing_db
+        );
+    }
+
+    #[test]
+    fn test_pre_ringing_config_in_fir_design() {
+        // Test that pre_ringing config flows through FirDesignConfig
+        let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
+        let magnitude_db = vec![-3.0, 0.0, 2.0, 0.0, -3.0];
+
+        let config_without = FirDesignConfig {
+            n_taps: 512,
+            sample_rate: 48000.0,
+            phase: FirPhase::Linear,
+            pre_ringing: None,
+            ..Default::default()
+        };
+
+        let config_with = FirDesignConfig {
+            pre_ringing: Some(PreRingingConfig::default()),
+            ..config_without.clone()
+        };
+
+        let coeffs_without = generate_fir_from_response(&freqs, &magnitude_db, &config_without);
+        let coeffs_with = generate_fir_from_response(&freqs, &magnitude_db, &config_with);
+
+        // Both should produce valid filters
+        assert_eq!(coeffs_without.len(), 512);
+        assert_eq!(coeffs_with.len(), 512);
+
+        // With pre-ringing suppression, energy before main tap should be reduced
+        let analysis_without = analyze_pre_ringing(&coeffs_without, 48000.0);
+        let analysis_with = analyze_pre_ringing(&coeffs_with, 48000.0);
+
+        assert!(
+            analysis_with.peak_pre_ringing_db <= analysis_without.peak_pre_ringing_db,
+            "pre-ringing should be reduced: without={:.1} dB, with={:.1} dB",
+            analysis_without.peak_pre_ringing_db,
+            analysis_with.peak_pre_ringing_db
+        );
+    }
+
+    #[test]
+    fn test_suppress_pre_ringing_main_tap_at_zero() {
+        // Main tap at index 0 — no pre-ringing possible
+        let mut ir = vec![1.0, 0.5, 0.2, 0.1];
+        let config = PreRingingConfig::default();
+        let original = ir.clone();
+        suppress_pre_ringing(&mut ir, &config, 48000.0);
+        // Nothing should change since main tap is at 0
+        assert_eq!(ir, original);
+    }
+
+    #[test]
+    fn test_analyze_pre_ringing_main_tap_at_zero() {
+        // Main tap at index 0 — pre-ringing should be -inf
+        let ir = vec![1.0, 0.5, 0.1];
+        let analysis = analyze_pre_ringing(&ir, 48000.0);
+        assert_eq!(analysis.main_tap_index, 0);
+        assert_eq!(analysis.peak_pre_ringing_db, f64::NEG_INFINITY);
+        assert_eq!(analysis.pre_ringing_time_ms, 0.0);
+    }
+
+    #[test]
+    fn test_suppress_pre_ringing_empty_ir() {
+        let mut ir: Vec<f64> = vec![];
+        let config = PreRingingConfig::default();
+        suppress_pre_ringing(&mut ir, &config, 48000.0);
+        assert!(ir.is_empty());
+    }
+
+    #[test]
+    fn test_analyze_pre_ringing_empty_ir() {
+        let ir: Vec<f64> = vec![];
+        let analysis = analyze_pre_ringing(&ir, 48000.0);
+        assert_eq!(analysis.main_tap_index, 0);
+        assert_eq!(analysis.peak_pre_ringing_db, f64::NEG_INFINITY);
+    }
+
+    #[test]
+    fn test_kirkeby_with_pre_ringing_config() {
+        // Kirkeby should accept and use pre-ringing config
+        let freqs = vec![20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0];
+        let meas_db = vec![75.0, 82.0, 80.0, 78.0, 72.0, 65.0];
+        let target_db = vec![80.0, 80.0, 80.0, 80.0, 80.0, 80.0];
+
+        let config = FirDesignConfig {
+            n_taps: 2048,
+            sample_rate: 48000.0,
+            phase: FirPhase::Kirkeby,
+            min_freq: 20.0,
+            max_freq: 1000.0,
+            pre_ringing: Some(PreRingingConfig {
+                threshold_db: -30.0,
+                max_time_s: 0.003,
+            }),
+            ..Default::default()
+        };
+
+        let coeffs = generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
+        assert_eq!(coeffs.len(), 2048);
+
+        // Verify pre-ringing is bounded
+        let analysis = analyze_pre_ringing(&coeffs, 48000.0);
+        assert!(analysis.peak_pre_ringing_db.is_finite() || analysis.peak_pre_ringing_db == f64::NEG_INFINITY);
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "math-iir-fir"
-version = "0.4.2"
+version = "0.4.3"
 description = "Math-Audio IIR and FIR filters"
 edition = { workspace = true }
 repository = { workspace = true }

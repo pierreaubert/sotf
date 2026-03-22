@@ -160,6 +160,9 @@ pub enum ProcessingMode {
     PhaseLinear,
     /// Hybrid mode (IIR for bass, FIR for mids/highs) - Variable latency
     Hybrid,
+    /// Mixed-phase mode (IIR for minimum-phase + short FIR for excess phase)
+    /// Requires phase data in measurements. Low latency (~10ms).
+    MixedPhase,
 }
 
 /// Strategy for subwoofer optimization
@@ -519,6 +522,52 @@ pub struct FirConfig {
     /// Set to 0.0 to disable smoothing.
     #[serde(default = "default_phase_smoothing")]
     pub phase_smoothing: f64,
+    /// Pre-ringing suppression configuration.
+    /// When set, FIR filter pre-ringing is constrained to the specified threshold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre_ringing: Option<PreRingingSerdeConfig>,
+}
+
+/// Serializable pre-ringing configuration for JSON config files.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PreRingingSerdeConfig {
+    /// Maximum pre-ringing level in dB relative to main tap. Default: -30.0
+    #[serde(default = "default_pre_ringing_threshold")]
+    pub threshold_db: f64,
+    /// Maximum pre-ringing time in seconds. Default: 0.005 (5 ms)
+    #[serde(default = "default_pre_ringing_time")]
+    pub max_time_s: f64,
+}
+
+fn default_pre_ringing_threshold() -> f64 {
+    -30.0
+}
+fn default_pre_ringing_time() -> f64 {
+    0.005
+}
+
+/// Serializable mixed-phase correction configuration for JSON config files.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MixedPhaseSerdeConfig {
+    /// Maximum FIR length in milliseconds for excess phase correction. Default: 10.0
+    #[serde(default = "default_mixed_phase_fir_length")]
+    pub max_fir_length_ms: f64,
+    /// Pre-ringing threshold in dB. Default: -30.0
+    #[serde(default = "default_pre_ringing_threshold")]
+    pub pre_ringing_threshold_db: f64,
+    /// Minimum spatial correction depth for excess phase correction. Default: 0.5
+    #[serde(default = "default_mixed_phase_spatial_depth")]
+    pub min_spatial_depth: f64,
+    /// Phase smoothing width in octaves. Default: 1/6 octave
+    #[serde(default = "default_mask_smoothing")]
+    pub phase_smoothing_octaves: f64,
+}
+
+fn default_mixed_phase_fir_length() -> f64 {
+    10.0
+}
+fn default_mixed_phase_spatial_depth() -> f64 {
+    0.5
 }
 
 /// Configuration for frequency-based mixed mode crossover
@@ -978,6 +1027,12 @@ pub struct OptimizerConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mixed_config: Option<MixedModeConfig>,
 
+    /// Mixed-phase correction configuration.
+    /// Used when processing_mode = MixedPhase. Decomposes measurement into
+    /// minimum-phase (IIR) and excess phase (short FIR).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mixed_phase: Option<MixedPhaseSerdeConfig>,
+
     /// Loss function type ("flat" or "score")
     #[serde(default = "default_loss_type")]
     pub loss_type: String,
@@ -1164,6 +1219,9 @@ pub enum MultiMeasurementStrategy {
     Minimax,
     /// loss = mean(loss_i) + λ * var(loss_i) — balance quality + consistency
     VariancePenalized,
+    /// Spatial robustness: RMS-average + correction depth mask based on spatial variance.
+    /// Only corrects features consistent across positions (Dirac-inspired).
+    SpatialRobustness,
 }
 
 /// Configuration for multi-measurement optimization
@@ -1178,6 +1236,39 @@ pub struct MultiMeasurementConfig {
     /// Lambda for VariancePenalized (default 1.0). Higher = more consistent across positions.
     #[serde(default = "default_variance_lambda")]
     pub variance_lambda: f64,
+    /// Spatial robustness configuration (used when strategy = SpatialRobustness).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spatial_robustness: Option<SpatialRobustnessSerdeConfig>,
+}
+
+/// Serializable spatial robustness configuration for JSON config files.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialRobustnessSerdeConfig {
+    /// Variance threshold (dB) below which full correction is allowed. Default: 3.0
+    #[serde(default = "default_variance_threshold")]
+    pub variance_threshold_db: f64,
+    /// Transition width (dB) for sigmoid blending. Default: 2.0
+    #[serde(default = "default_transition_width")]
+    pub transition_width_db: f64,
+    /// Minimum correction depth (0.0-1.0). Default: 0.1
+    #[serde(default = "default_min_correction_depth")]
+    pub min_correction_depth: f64,
+    /// Smoothing width in octaves for the correction depth mask. Default: 1/6 octave.
+    #[serde(default = "default_mask_smoothing")]
+    pub mask_smoothing_octaves: f64,
+}
+
+fn default_variance_threshold() -> f64 {
+    3.0
+}
+fn default_transition_width() -> f64 {
+    2.0
+}
+fn default_min_correction_depth() -> f64 {
+    0.1
+}
+fn default_mask_smoothing() -> f64 {
+    1.0 / 6.0
 }
 
 impl Default for MultiMeasurementConfig {
@@ -1186,6 +1277,7 @@ impl Default for MultiMeasurementConfig {
             strategy: MultiMeasurementStrategy::default(),
             weights: None,
             variance_lambda: default_variance_lambda(),
+            spatial_robustness: None,
         }
     }
 }
@@ -1281,6 +1373,7 @@ impl Default for OptimizerConfig {
             processing_mode: ProcessingMode::LowLatency,
             fir: None,
             mixed_config: None,
+            mixed_phase: None,
             seed: None,
             refine: default_refine(),
             local_algo: default_local_algo(),
