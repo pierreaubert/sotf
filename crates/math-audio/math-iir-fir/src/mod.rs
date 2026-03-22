@@ -54,8 +54,9 @@ pub use fir::{
 
 // Re-export FIR design types and functions (frequency response matching)
 pub use fir_design::{
-    FirDesignConfig, FirPhase, generate_fir_from_response, generate_kirkeby_correction,
-    save_fir_to_wav,
+    FirDesignConfig, FirPhase, PreRingingAnalysis, PreRingingConfig, analyze_pre_ringing,
+    generate_fir_from_response, generate_kirkeby_correction, save_fir_to_wav,
+    suppress_pre_ringing,
 };
 
 // Re-export phase smoothing functions
