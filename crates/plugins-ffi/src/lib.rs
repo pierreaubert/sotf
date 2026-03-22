@@ -21,7 +21,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::slice;
 
-use sotf_plugins::{Plugin, ProcessContext};
+use sotf_host::plugin::{Plugin, ProcessContext};
 
 mod parameter_map;
 mod plugin_factory;
@@ -156,6 +156,7 @@ pub extern "C" fn plugin_create(
             config_str,
             input_channels,
             output_channels,
+            sample_rate,
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -482,6 +483,122 @@ pub extern "C" fn plugin_free_string(s: *mut c_char) {
             let _ = CString::from_raw(s);
         }
     }
+}
+
+// ============================================================================
+// State Save/Load
+// ============================================================================
+
+/// Save plugin state to a JSON byte buffer.
+///
+/// # Returns
+/// * Pointer to allocated buffer on success (caller must free with plugin_free_state())
+/// * NULL on error
+///
+/// # Safety
+/// * handle must be a valid plugin handle
+/// * out_len must be a valid pointer to write the buffer length
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_save_state(
+    handle: *const PluginHandle,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if handle.is_null() || out_len.is_null() {
+        return ptr::null_mut();
+    }
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        let handle_ref = &*handle;
+        let state = plugins_bridge::state::save_state(&*handle_ref.plugin);
+        let len = state.len();
+        let ptr = state.as_ptr();
+
+        // Allocate and copy to a buffer the caller can free
+        let buf = libc_malloc(len);
+        if buf.is_null() {
+            return ptr::null_mut();
+        }
+        std::ptr::copy_nonoverlapping(ptr, buf, len);
+        *out_len = len;
+        buf
+    }));
+
+    result.unwrap_or(ptr::null_mut())
+}
+
+/// Load plugin state from a JSON byte buffer.
+///
+/// # Returns
+/// * 0 on success
+/// * Error code on failure
+///
+/// # Safety
+/// * handle must be a valid plugin handle
+/// * data must point to len bytes of valid JSON
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_load_state(
+    handle: *mut PluginHandle,
+    data: *const u8,
+    len: usize,
+) -> c_int {
+    if handle.is_null() || data.is_null() {
+        set_last_error("NULL pointer in plugin_load_state");
+        return PluginError::NullPointer.into();
+    }
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
+        let handle_ref = &mut *handle;
+        let slice = slice::from_raw_parts(data, len);
+
+        match plugins_bridge::state::load_state(&mut *handle_ref.plugin, slice) {
+            Ok(_) => PluginError::Success,
+            Err(e) => {
+                set_last_error(&format!("Failed to load state: {e}"));
+                PluginError::InvalidConfig
+            }
+        }
+    }));
+
+    result
+        .unwrap_or_else(|_| {
+            set_last_error("Panic in plugin_load_state");
+            PluginError::UnknownError
+        })
+        .into()
+}
+
+/// Free a state buffer returned by plugin_save_state().
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_free_state(data: *mut u8, len: usize) {
+    if !data.is_null() && len > 0 {
+        libc_free(data, len);
+    }
+}
+
+/// Get the list of available plugin types as a JSON array string.
+///
+/// # Returns
+/// * JSON array string (caller must free with plugin_free_string())
+/// * NULL on error
+#[unsafe(no_mangle)]
+pub extern "C" fn plugin_available_types() -> *mut c_char {
+    let types = plugins_bridge::factory::available_plugin_types();
+    let json = serde_json::json!(types);
+    match CString::new(json.to_string()) {
+        Ok(s) => s.into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+// Simple allocator wrappers for FFI buffer management
+fn libc_malloc(len: usize) -> *mut u8 {
+    let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
+    unsafe { std::alloc::alloc(layout) }
+}
+
+fn libc_free(ptr: *mut u8, len: usize) {
+    let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
+    unsafe { std::alloc::dealloc(ptr, layout) }
 }
 
 // ============================================================================

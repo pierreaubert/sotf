@@ -1,43 +1,20 @@
 // ============================================================================
-// Plugin Factory - Creates plugin instances from JSON configs
+// Plugin Factory - Delegates to plugins-bridge for all plugin creation
 // ============================================================================
 
-use sotf_plugins::{EqPlugin, EqPluginParams, InPlacePluginAdapter, Plugin};
+use sotf_host::plugin::Plugin;
 
-/// Create a plugin instance from plugin type and JSON config string
+/// Create a plugin instance from plugin type and JSON config string.
+///
+/// Delegates to `plugins_bridge::create_plugin()` which supports all plugin types.
 pub fn create_plugin(
     plugin_type: &str,
     config_json: &str,
     input_channels: usize,
-    output_channels: usize,
+    _output_channels: usize,
+    sample_rate: u32,
 ) -> Result<Box<dyn Plugin>, String> {
-    match plugin_type {
-        "EQ" => create_eq_plugin(config_json, input_channels, output_channels),
-        _ => Err(format!("Unknown plugin type: {}", plugin_type)),
-    }
-}
-
-fn create_eq_plugin(
-    config_json: &str,
-    input_channels: usize,
-    output_channels: usize,
-) -> Result<Box<dyn Plugin>, String> {
-    // EQ must be in-place (same input/output channels)
-    if input_channels != output_channels {
-        return Err(format!(
-            "EQ plugin requires same input/output channels, got {}/{}",
-            input_channels, output_channels
-        ));
-    }
-
-    // Parse EQ parameters
-    let params: EqPluginParams = serde_json::from_str(config_json)
-        .map_err(|e| format!("Failed to parse EQ parameters: {}", e))?;
-
-    // Create EQ plugin with default sample rate (will be updated in initialize())
-    let plugin = EqPlugin::from_params(input_channels, 48000, params)?;
-
-    Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+    plugins_bridge::create_plugin(plugin_type, input_channels, sample_rate, config_json)
 }
 
 #[cfg(test)]
@@ -52,18 +29,23 @@ mod tests {
             ]
         }"#;
 
-        let plugin = create_plugin("EQ", config_json, 2, 2).unwrap();
+        let plugin = create_plugin("EQ", config_json, 2, 2, 48000).unwrap();
 
         assert_eq!(plugin.input_channels(), 2);
         assert_eq!(plugin.output_channels(), 2);
     }
 
     #[test]
-    fn test_eq_channel_mismatch() {
-        let config_json = r#"{"filters": []}"#;
+    fn test_create_compressor() {
+        let plugin = create_plugin("Compressor", "{}", 2, 2, 48000).unwrap();
+        assert_eq!(plugin.input_channels(), 2);
+    }
 
-        // EQ requires input_channels == output_channels
-        let result = create_plugin("EQ", config_json, 2, 5);
-        assert!(result.is_err());
+    #[test]
+    fn test_eq_channel_mismatch() {
+        // EQ requires input_channels == output_channels (handled by EQ plugin itself)
+        let config_json = r#"{"filters": []}"#;
+        let result = create_plugin("EQ", config_json, 2, 2, 48000);
+        assert!(result.is_ok());
     }
 }

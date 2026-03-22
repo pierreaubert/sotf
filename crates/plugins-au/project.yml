@@ -6,10 +6,41 @@ options:
   createIntermediateGroups: true
 
 settings:
-  MARKETING_VERSION: 0.5.3
+  MARKETING_VERSION: 0.5.13
   CURRENT_PROJECT_VERSION: 1
   MACOSX_DEPLOYMENT_TARGET: "15.0"
   SWIFT_VERSION: "6.0"
+
+# Shared settings for all AU extension targets
+targetTemplates:
+  SOTFAudioUnitExtension:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: GenericAU
+        name: GenericAU
+        createIntermediateGroups: true
+      - path: Shared
+        name: Shared
+        createIntermediateGroups: true
+        headerVisibility: public
+    settings:
+      SWIFT_OBJC_BRIDGING_HEADER: Shared/BridgingHeader.h
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGN_STYLE: Automatic
+      LIBRARY_SEARCH_PATHS:
+        - $(PROJECT_DIR)/Resources
+      HEADER_SEARCH_PATHS:
+        - $(PROJECT_DIR)/Shared
+      SKIP_INSTALL: false
+      EXTENSION_SAFE_API_ONLY: true
+      OTHER_LDFLAGS:
+        - -lsotf_audio_plugins_ffi
+    dependencies:
+      - sdk: AVFoundation.framework
+      - sdk: AudioToolbox.framework
+      - sdk: CoreAudioKit.framework
 
 targets:
   # Main app container (required for App Extension)
@@ -29,40 +60,91 @@ targets:
     dependencies:
       - target: EQAudioUnit
         embed: true
+      - target: CompressorAudioUnit
+        embed: true
+      - target: LimiterAudioUnit
+        embed: true
+      - target: GateAudioUnit
+        embed: true
+      - target: GainAudioUnit
+        embed: true
+      - target: DelayAudioUnit
+        embed: true
 
-  # EQ Audio Unit Extension
+  # EQ Audio Unit
   EQAudioUnit:
-    type: app-extension
-    platform: macOS
-    deploymentTarget: "15.0"
+    templates:
+      - SOTFAudioUnitExtension
     sources:
       - path: EQAudioUnit
         name: EQAudioUnit
         createIntermediateGroups: true
-      - path: Shared
-        name: Shared
-        createIntermediateGroups: true
-        headerVisibility: public
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.EQAudioUnit
       INFOPLIST_FILE: EQAudioUnit/Info.plist
       CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
-      SWIFT_OBJC_BRIDGING_HEADER: Shared/BridgingHeader.h
-      CODE_SIGN_IDENTITY: "-"
-      CODE_SIGN_STYLE: Automatic
-      LIBRARY_SEARCH_PATHS:
-        - $(PROJECT_DIR)/Resources
-      HEADER_SEARCH_PATHS:
-        - $(PROJECT_DIR)/Shared
-      SKIP_INSTALL: false
-      EXTENSION_SAFE_API_ONLY: true
-    dependencies:
-      - sdk: AVFoundation.framework
-      - sdk: AudioToolbox.framework
-      - sdk: CoreAudioKit.framework
-      # Note: Rust FFI library (libsotf_audio_plugins_ffi.a) is temporarily disabled
-      # while we get the pure Swift implementation working first.
-      # Uncomment below to enable Rust FFI:
-      # - framework: Resources/libsotf_audio_plugins_ffi.a
-      #   embed: false
-      #   link: true
+
+  # Compressor Audio Unit
+  CompressorAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: CompressorAudioUnit
+        name: CompressorAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.CompressorAudioUnit
+      INFOPLIST_FILE: EQAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+
+  # Limiter Audio Unit
+  LimiterAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: LimiterAudioUnit
+        name: LimiterAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.LimiterAudioUnit
+      INFOPLIST_FILE: EQAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+
+  # Gate Audio Unit
+  GateAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: GateAudioUnit
+        name: GateAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.GateAudioUnit
+      INFOPLIST_FILE: EQAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+
+  # Gain Audio Unit
+  GainAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: GainAudioUnit
+        name: GainAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.GainAudioUnit
+      INFOPLIST_FILE: EQAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+
+  # Delay Audio Unit
+  DelayAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: DelayAudioUnit
+        name: DelayAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.DelayAudioUnit
+      INFOPLIST_FILE: EQAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements

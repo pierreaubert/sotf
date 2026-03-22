@@ -42,11 +42,11 @@ typedef struct PluginHandle PluginHandle;
  */
 typedef struct ParameterInfo {
   /**
-   * Unique parameter ID (e.g., "band0_freq")
+   * Unique parameter ID (e.g., "threshold_db")
    */
   const char *id;
   /**
-   * Human-readable name (e.g., "Band 1 Frequency")
+   * Human-readable name (e.g., "Threshold")
    */
   const char *name;
   /**
@@ -69,6 +69,10 @@ typedef struct ParameterInfo {
    * Number of steps (0 = continuous)
    */
   uint32_t steps;
+  /**
+   * Whether this parameter uses logarithmic scaling
+   */
+  bool logarithmic;
 } ParameterInfo;
 
 /**
@@ -195,5 +199,45 @@ char *plugin_get_info_json(const struct PluginHandle *handle);
  * Free a string returned by the plugin
  */
 void plugin_free_string(char *s);
+
+/**
+ * Save plugin state to a JSON byte buffer.
+ *
+ * # Returns
+ * * Pointer to allocated buffer on success (caller must free with plugin_free_state())
+ * * NULL on error
+ *
+ * # Safety
+ * * handle must be a valid plugin handle
+ * * out_len must be a valid pointer to write the buffer length
+ */
+uint8_t *plugin_save_state(const struct PluginHandle *handle, uintptr_t *out_len);
+
+/**
+ * Load plugin state from a JSON byte buffer.
+ *
+ * # Returns
+ * * 0 on success
+ * * Error code on failure
+ *
+ * # Safety
+ * * handle must be a valid plugin handle
+ * * data must point to len bytes of valid JSON
+ */
+int plugin_load_state(struct PluginHandle *handle, const uint8_t *data, uintptr_t len);
+
+/**
+ * Free a state buffer returned by plugin_save_state().
+ */
+void plugin_free_state(uint8_t *data, uintptr_t len);
+
+/**
+ * Get the list of available plugin types as a JSON array string.
+ *
+ * # Returns
+ * * JSON array string (caller must free with plugin_free_string())
+ * * NULL on error
+ */
+char *plugin_available_types(void);
 
 #endif  /* SOTF_AUDIO_FFI_H */

@@ -15,6 +15,10 @@ import? 'crates/autoeq/Justfile'
 import? 'crates/gpui-toolkit/Justfile'
 import? 'crates/sotf-plugins/Justfile'
 import? 'crates/sotf-engine/Justfile'
+import? 'crates/plugins-bridge/Justfile'
+import? 'crates/plugins-ffi/Justfile'
+import? 'crates/plugins-nih/Justfile'
+import? 'crates/plugins-au/Justfile'
 
 default:
 	just --list
