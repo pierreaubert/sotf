@@ -351,7 +351,34 @@ pub fn optimize_room(
             .speakers
             .values()
             .any(|key| matches!(config.speakers.get(key), Some(SpeakerConfig::Group(_))));
-        if !has_group {
+
+        // The Stereo 2.0 workflow (no subwoofer) doesn't implement per-channel
+        // features like excursion protection, target tilt, or broadband matching.
+        // These are only in process_single_speaker (the generic path). For simple
+        // stereo configs, fall through to the generic path when these features are
+        // active. Multi-channel workflows (2.1, 5.1) have subwoofer/crossover logic
+        // that the generic path cannot replicate, so keep them on their workflows.
+        let use_generic_for_stereo = sys.model == SystemModel::Stereo
+            && sys.subwoofers.is_none()
+            && (config
+                .optimizer
+                .excursion_protection
+                .as_ref()
+                .is_some_and(|e| e.enabled)
+                || config.optimizer.target_tilt.is_some()
+                || config
+                    .optimizer
+                    .broadband_target_matching
+                    .as_ref()
+                    .is_some_and(|b| b.enabled));
+
+        if use_generic_for_stereo {
+            info!(
+                "Stereo 2.0 with excursion/tilt/broadband features, using generic path"
+            );
+        }
+
+        if !has_group && !use_generic_for_stereo {
             let workflow_name = match sys.model {
                 SystemModel::Stereo => {
                     if sys.subwoofers.is_some() {
@@ -1652,96 +1679,96 @@ fn process_single_speaker(
     // ========================================================================
     // Fit shelves/gain to the target curve across the full 20Hz-20kHz range
     // to establish a balanced baseline before fine-grained optimization.
-    let (curve_for_optim, broadband_plugins, bb_mean_shift) = if let Some(bb_config) =
-        &room_config.optimizer.broadband_target_matching
-    {
-        if bb_config.enabled {
-            info!("  Broadband Target Matching enabled...");
-            // 1. Construct a FLAT target at the measurement's mean level.
-            // The tilt is handled exclusively by the EQ optimizer (which subtracts
-            // the tilt curve before optimizing). Including the tilt here would
-            // double-apply it: broadband shelves push toward tilt, then the EQ
-            // normalizer subtracts tilt again, leaving only shelf artifacts.
-            let target = Curve {
-                freq: curve.freq.clone(),
-                spl: Array1::from_elem(curve.freq.len(), mean_spl),
-                phase: None,
-            };
-
-            // 2. Compute alignment across the full audible range (20-20kHz).
-            // The target is flat at mean_spl, so the alignment fits gentle
-            // shelves + gain to correct the measurement's broadband shape.
-            if let Some(result) = spectral_align::compute_target_alignment(
-                &curve,
-                &target,
-                20.0,
-                20000.0,
-                sample_rate,
-            ) {
-                info!(
-                    "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
-                    result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
-                );
-
-                // 3. Create plugins
-                let (eq_plugin, gain_plugin) =
-                    spectral_align::create_alignment_plugins(&result, sample_rate);
-
-                let mut plugins = Vec::new();
-                // NOTE: In the DSP chain, we probably want Gain then EQ, or vice versa.
-                // spectral_align returns them as (Option<EQ>, Option<Gain>).
-                if let Some(g) = gain_plugin {
-                    plugins.push(g);
-                }
-                if let Some(eq) = eq_plugin {
-                    plugins.push(eq);
-                }
-
-                // Simulate the broadband correction on the curve
-                use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
-                let mut filters = Vec::new();
-                if result.lowshelf_gain_db.abs() > 1e-3 {
-                    filters.push(Biquad::new(
-                        BiquadFilterType::Lowshelf,
-                        spectral_align::LOWSHELF_FREQ,
-                        sample_rate,
-                        DEFAULT_Q_HIGH_LOW_SHELF,
-                        result.lowshelf_gain_db,
-                    ));
-                }
-                if result.highshelf_gain_db.abs() > 1e-3 {
-                    filters.push(Biquad::new(
-                        BiquadFilterType::Highshelf,
-                        spectral_align::HIGHSHELF_FREQ,
-                        sample_rate,
-                        DEFAULT_Q_HIGH_LOW_SHELF,
-                        result.highshelf_gain_db,
-                    ));
-                }
-
-                // 1. Gain
-                let mut temp_curve = curve.clone();
-                temp_curve.spl += result.flat_gain_db;
-
-                // 2. Filters
-                let final_curve = if !filters.is_empty() {
-                    let resp =
-                        response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
-                    response::apply_complex_response(&temp_curve, &resp)
-                } else {
-                    temp_curve
+    let (curve_for_optim, broadband_plugins, broadband_biquads, bb_mean_shift) =
+        if let Some(bb_config) = &room_config.optimizer.broadband_target_matching {
+            if bb_config.enabled {
+                info!("  Broadband Target Matching enabled...");
+                // 1. Construct a FLAT target at the measurement's mean level.
+                // The tilt is handled exclusively by the EQ optimizer (which subtracts
+                // the tilt curve before optimizing). Including the tilt here would
+                // double-apply it: broadband shelves push toward tilt, then the EQ
+                // normalizer subtracts tilt again, leaving only shelf artifacts.
+                let target = Curve {
+                    freq: curve.freq.clone(),
+                    spl: Array1::from_elem(curve.freq.len(), mean_spl),
+                    phase: None,
                 };
 
-                (final_curve, plugins, result.flat_gain_db)
+                // 2. Compute alignment across the full audible range (20-20kHz).
+                // The target is flat at mean_spl, so the alignment fits gentle
+                // shelves + gain to correct the measurement's broadband shape.
+                if let Some(result) = spectral_align::compute_target_alignment(
+                    &curve,
+                    &target,
+                    20.0,
+                    20000.0,
+                    sample_rate,
+                ) {
+                    info!(
+                        "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
+                        result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
+                    );
+
+                    // 3. Create plugins
+                    let (eq_plugin, gain_plugin) =
+                        spectral_align::create_alignment_plugins(&result, sample_rate);
+
+                    let mut plugins = Vec::new();
+                    if let Some(g) = gain_plugin {
+                        plugins.push(g);
+                    }
+                    if let Some(eq) = eq_plugin {
+                        plugins.push(eq);
+                    }
+
+                    // Simulate the broadband correction on the curve
+                    use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
+                    let mut filters = Vec::new();
+                    if result.lowshelf_gain_db.abs() > 1e-3 {
+                        filters.push(Biquad::new(
+                            BiquadFilterType::Lowshelf,
+                            spectral_align::LOWSHELF_FREQ,
+                            sample_rate,
+                            DEFAULT_Q_HIGH_LOW_SHELF,
+                            result.lowshelf_gain_db,
+                        ));
+                    }
+                    if result.highshelf_gain_db.abs() > 1e-3 {
+                        filters.push(Biquad::new(
+                            BiquadFilterType::Highshelf,
+                            spectral_align::HIGHSHELF_FREQ,
+                            sample_rate,
+                            DEFAULT_Q_HIGH_LOW_SHELF,
+                            result.highshelf_gain_db,
+                        ));
+                    }
+
+                    // 1. Gain
+                    let mut temp_curve = curve.clone();
+                    temp_curve.spl += result.flat_gain_db;
+
+                    // 2. Filters
+                    let final_curve = if !filters.is_empty() {
+                        let resp = response::compute_peq_complex_response(
+                            &filters,
+                            &curve.freq,
+                            sample_rate,
+                        );
+                        response::apply_complex_response(&temp_curve, &resp)
+                    } else {
+                        temp_curve
+                    };
+
+                    (final_curve, plugins, filters, result.flat_gain_db)
+                } else {
+                    (curve.clone(), Vec::new(), Vec::new(), 0.0)
+                }
             } else {
-                (curve.clone(), Vec::new(), 0.0)
+                (curve.clone(), Vec::new(), Vec::new(), 0.0)
             }
         } else {
-            (curve.clone(), Vec::new(), 0.0)
-        }
-    } else {
-        (curve.clone(), Vec::new(), 0.0)
-    };
+            (curve.clone(), Vec::new(), Vec::new(), 0.0)
+        };
 
     // We must update the mean_spl because the broadband gain shifted it
     let mean_spl = mean_spl + bb_mean_shift;
@@ -2340,28 +2367,28 @@ fn process_single_speaker(
 
             info!("  Optimized {} EQ filters", eq_filters.len());
 
-            // Combine excursion protection filters with EQ filters
+            // Combine excursion protection + broadband + EQ filters
             let mut all_filters = excursion_filters.clone();
+            all_filters.extend(broadband_biquads.iter().cloned());
             all_filters.extend(eq_filters.clone());
 
             let mut chain = output::build_channel_dsp_chain_with_curves(
                 channel_name,
                 None,
-                broadband_plugins, // Add broadband plugins here!
+                broadband_plugins,
                 &all_filters,
                 None,
                 None,
             );
 
-            // Compute final response including all filters (HPF + EQ).
-            // Apply to curve_raw (original measurement) since all_filters already
-            // includes the excursion HPF.
-            // NOTE: broadband biquads are NOT included here — they're in broadband_plugins
-            // which are part of the DSP chain output. The post_score measures the EQ-only
-            // improvement. The QA binary should compare scores within the same loss metric.
+            // Compute final response including all corrections (HPF + broadband + EQ).
+            // Apply to curve_raw (original measurement) since all_filters includes
+            // the excursion HPF and broadband shelves.
+            let mut score_raw = curve_raw.clone();
+            score_raw.spl += bb_mean_shift; // broadband gain
             let all_resp =
-                response::compute_peq_complex_response(&all_filters, &curve_raw.freq, sample_rate);
-            let final_curve = response::apply_complex_response(&curve_raw, &all_resp);
+                response::compute_peq_complex_response(&all_filters, &score_raw.freq, sample_rate);
+            let final_curve = response::apply_complex_response(&score_raw, &all_resp);
 
             // Compute post_score consistently with pre_score (flatness of corrected response)
             // If target tilt is applied, score against the tilt target
@@ -2398,12 +2425,15 @@ fn process_single_speaker(
             // Extend curves to 20 Hz – 20 kHz for display output.
             // Use curve_raw (not HPF-adjusted) since all_filters includes the HPF.
             let display_initial = output::extend_curve_to_full_range(&curve_raw);
+            let mut display_raw_with_bb = display_initial.clone();
+            display_raw_with_bb.spl += bb_mean_shift; // broadband gain
             let display_resp = response::compute_peq_complex_response(
                 &all_filters,
-                &display_initial.freq,
+                &display_raw_with_bb.freq,
                 sample_rate,
             );
-            let display_final = response::apply_complex_response(&display_initial, &display_resp);
+            let display_final =
+                response::apply_complex_response(&display_raw_with_bb, &display_resp);
 
             let mut initial_data: super::types::CurveData = (&display_initial).into();
             initial_data.norm_range = norm_range;
@@ -2532,6 +2562,16 @@ fn optimize_with_schroeder_split(
     // Each sub-pass gets the full maxeval budget. With fewer filters (lower
     // dimensionality) the optimizer converges faster, so the same budget is
     // adequate for each pass independently.
+    // When target_tilt is active, the optimizer works on a tilt-adjusted curve
+    // where following the tilt may require both boosts and cuts. Allow limited
+    // boost (half the configured max) to give the optimizer enough freedom.
+    let low_max_db = if low_config.allow_boost {
+        optimizer.max_db
+    } else if optimizer.target_tilt.is_some() {
+        (optimizer.max_db / 2.0).min(3.0) // limited boost for tilt tracking
+    } else {
+        0.0
+    };
     let low_optimizer = OptimizerConfig {
         num_filters: low_filters,
         min_freq: optimizer.min_freq,
@@ -2539,11 +2579,7 @@ fn optimize_with_schroeder_split(
         min_q: low_config.min_q,
         max_q: low_config.max_q,
         min_db: optimizer.min_db,
-        max_db: if low_config.allow_boost {
-            optimizer.max_db
-        } else {
-            0.0
-        },
+        max_db: low_max_db,
         ..optimizer.clone()
     };
 
