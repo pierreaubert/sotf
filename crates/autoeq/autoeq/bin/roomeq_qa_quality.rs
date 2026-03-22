@@ -27,11 +27,12 @@ use autoeq::loss::{
     calculate_standard_deviation_in_range, regression_slope_per_octave_in_range,
 };
 use autoeq::roomeq::{
-    BroadbandTargetMatchingConfig, CallbackAction, ExcursionProtectionConfig,
-    GroupDelayOptimizationConfig, MixedPhaseSerdeConfig, MultiMeasurementConfig,
-    MultiMeasurementStrategy, PhaseAlignmentConfig, PreRingingSerdeConfig, ProcessingMode,
-    RoomConfig, RoomOptimizationResult, SchroederSplitConfig, SpatialRobustnessSerdeConfig,
-    TargetTiltConfig, TiltType, VoiceOfGodConfig, load_config, merge_json_objects, optimize_room,
+    BroadbandTargetMatchingConfig, CallbackAction, DecomposedCorrectionSerdeConfig,
+    ExcursionProtectionConfig, GroupDelayOptimizationConfig, MixedPhaseSerdeConfig,
+    MultiMeasurementConfig, MultiMeasurementStrategy, PhaseAlignmentConfig,
+    PreRingingSerdeConfig, ProcessingMode, RoomConfig, RoomOptimizationResult,
+    SchroederSplitConfig, SpatialRobustnessSerdeConfig, TargetTiltConfig, TiltType,
+    VoiceOfGodConfig, load_config, merge_json_objects, optimize_room,
 };
 use autoeq::{MeasurementMultiple, MeasurementRef, MeasurementSource};
 
@@ -545,9 +546,14 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
             });
         }
         OptionOverride::DecomposedCorrection => {
-            // DecomposedCorrection is applied at analysis time, not as a config flag.
-            // For QA, we validate that the analysis produces valid weights.
-            // No config change needed — the test harness will call analyze_decomposed_correction directly.
+            config.optimizer.decomposed_correction = Some(DecomposedCorrectionSerdeConfig {
+                schroeder_freq: 200.0,
+                min_mode_q: 3.0,
+                min_mode_prominence_db: 3.0,
+                mode_correction_weight: 1.0,
+                early_reflection_weight: 0.3,
+                steady_state_weight: 0.5,
+            });
         }
     }
 }
@@ -605,7 +611,7 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
             config.optimizer.mixed_phase = None;
         }
         OptionOverride::DecomposedCorrection => {
-            // No config to disable — analysis-only feature
+            config.optimizer.decomposed_correction = None;
         }
     }
 }
@@ -844,6 +850,13 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
             options: vec![OptionOverride::MixedPhaseMode],
+        },
+        // --- D.11: Decomposed correction (Trinnov-inspired mode/steady-state weighting) ---
+        TestCase::OptionEffect {
+            name: "OE decomposed_correction",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+            options: vec![OptionOverride::DecomposedCorrection],
         },
         // ================================================================
         // Part E: Combination tests — multi-option interaction coverage
@@ -1870,8 +1883,23 @@ fn validate_option_effect(
             }
         }
         OptionOverride::DecomposedCorrection => {
-            // DecomposedCorrection is analysis-only, no config change
-            (true, "DecomposedCorrection: analysis-only feature, no optimization change".to_string())
+            // DecomposedCorrection applies frequency-dependent weighting.
+            // It should not make things significantly worse than baseline.
+            let ratio = option_result.combined_post_score / baseline_result.combined_post_score.max(1e-6);
+            if ratio > 2.0 {
+                (false, format!(
+                    "DecomposedCorrection degraded score too much: {:.3} vs baseline {:.3} (ratio {:.2})",
+                    option_result.combined_post_score,
+                    baseline_result.combined_post_score,
+                    ratio,
+                ))
+            } else {
+                (true, format!(
+                    "DecomposedCorrection OK: score {:.3} vs baseline {:.3}",
+                    option_result.combined_post_score,
+                    baseline_result.combined_post_score,
+                ))
+            }
         }
     }
 }

@@ -12,6 +12,7 @@ use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use std::error::Error;
 
+use super::impulse_analysis;
 use super::spatial_robustness::{self, SpatialRobustnessConfig};
 use super::types::{MultiMeasurementConfig, MultiMeasurementStrategy, OptimizerConfig, TargetCurveConfig};
 use crate::optim::MultiObjectiveData;
@@ -82,15 +83,51 @@ fn optimize_channel_eq_inner(
         }
     }
     let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
-    let mut normalized_curve = Curve {
+    let normalized_curve_unsmoothed = Curve {
         freq: curve.freq.clone(),
         spl: &curve.spl - mean_spl,
         phase: curve.phase.clone(),
     };
 
+    // Compute decomposed correction weights BEFORE psychoacoustic smoothing.
+    // Smoothing broadens narrow peaks and reduces their Q, which would cause the
+    // mode detector to miss genuine room modes. The weights must be derived from
+    // the unsmoothed measurement.
+    let decomposed_weights = config.decomposed_correction.as_ref().map(|dc_config| {
+        let dc_analysis_config = impulse_analysis::DecomposedCorrectionConfig {
+            schroeder_freq: dc_config.schroeder_freq,
+            min_mode_q: dc_config.min_mode_q,
+            min_mode_prominence_db: dc_config.min_mode_prominence_db,
+            mode_correction_weight: dc_config.mode_correction_weight,
+            early_reflection_weight: dc_config.early_reflection_weight,
+            steady_state_weight: dc_config.steady_state_weight,
+            ..Default::default()
+        };
+        let result = impulse_analysis::analyze_decomposed_correction(
+            &normalized_curve_unsmoothed.freq,
+            &normalized_curve_unsmoothed.spl,
+            &dc_analysis_config,
+        );
+        log::info!(
+            "  Decomposed correction: {} room modes detected, Schroeder={:.0} Hz",
+            result.room_modes.len(),
+            result.schroeder_freq,
+        );
+        for mode in &result.room_modes {
+            log::info!(
+                "    Mode: {:.1} Hz, Q={:.1}, prominence={:.1} dB",
+                mode.frequency,
+                mode.q,
+                mode.prominence_db,
+            );
+        }
+        result.correction_weights
+    });
+
     // Apply psychoacoustic smoothing if enabled
     // This uses variable smoothing: fine resolution at low frequencies (preserve room modes)
     // and coarse resolution at high frequencies (ignore comb filtering)
+    let mut normalized_curve = normalized_curve_unsmoothed;
     if config.psychoacoustic {
         log::info!("  Applying psychoacoustic smoothing (1/48 oct < 100 Hz, 1/6 oct > 1 kHz)");
         let smoothing_config = crate::read::PsychoacousticSmoothingConfig::default();
@@ -237,9 +274,18 @@ fn optimize_channel_eq_inner(
 
     // Create deviation curve (target - normalized input measurement)
     // This tells the optimizer what correction is needed at each frequency
+    let raw_deviation = &target_curve.spl - &normalized_curve.spl;
+
+    // Apply decomposed correction weights (computed pre-smoothing) to the deviation.
+    let final_deviation = if let Some(weights) = &decomposed_weights {
+        &raw_deviation * weights
+    } else {
+        raw_deviation
+    };
+
     let deviation_curve = Curve {
         freq: normalized_curve.freq.clone(),
-        spl: &target_curve.spl - &normalized_curve.spl,
+        spl: final_deviation,
         phase: None,
     };
 

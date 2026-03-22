@@ -151,14 +151,51 @@ pub fn generate_excess_phase_fir(
     config: &MixedPhaseConfig,
     sample_rate: f64,
 ) -> Vec<f64> {
+    generate_excess_phase_fir_with_depth(freq, residual_phase_deg, config, sample_rate, None)
+}
+
+/// Generate a short FIR filter to correct residual excess phase, optionally
+/// masked by a spatial correction depth array.
+///
+/// When `correction_depth` is provided, the excess phase correction is zeroed
+/// at frequencies where the depth is below `config.min_spatial_depth`. This
+/// prevents the FIR from trying to correct position-dependent phase artifacts.
+pub fn generate_excess_phase_fir_with_depth(
+    freq: &Array1<f64>,
+    residual_phase_deg: &Array1<f64>,
+    config: &MixedPhaseConfig,
+    sample_rate: f64,
+    correction_depth: Option<&Array1<f64>>,
+) -> Vec<f64> {
     let n_taps = (config.max_fir_length_ms / 1000.0 * sample_rate).round() as usize;
     // Ensure odd number of taps for symmetric linear-phase center
     let n_taps = if n_taps.is_multiple_of(2) { n_taps + 1 } else { n_taps };
     let n_taps = n_taps.max(31); // minimum useful length
 
-    // The correction phase is the negation of the residual excess phase
-    // (we want to cancel it out)
-    let correction_phase_deg: Vec<f64> = residual_phase_deg.iter().map(|&p| -p).collect();
+    // The correction phase is the negation of the residual excess phase,
+    // scaled by spatial correction depth where available.
+    let correction_phase_deg: Vec<f64> = if let Some(depth) = correction_depth {
+        assert_eq!(
+            residual_phase_deg.len(),
+            depth.len(),
+            "correction_depth length ({}) must match residual_phase_deg length ({})",
+            depth.len(),
+            residual_phase_deg.len(),
+        );
+        residual_phase_deg
+            .iter()
+            .zip(depth.iter())
+            .map(|(&p, &d)| {
+                if d >= config.min_spatial_depth {
+                    -p
+                } else {
+                    0.0 // Don't correct position-dependent phase
+                }
+            })
+            .collect()
+    } else {
+        residual_phase_deg.iter().map(|&p| -p).collect()
+    };
 
     // Generate FIR with unity magnitude and the correction phase
     // Using Kirkeby-style approach: construct complex spectrum, IFFT
@@ -544,6 +581,73 @@ mod tests {
             estimated_delay > 0.0 && estimated_delay < delay_ms * 3.0,
             "should recover positive delay roughly near {:.1} ms, got {:.2} ms",
             delay_ms, estimated_delay
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "correction_depth length")]
+    fn test_depth_mask_length_mismatch_panics() {
+        // Bug fix: mismatched depth mask length must panic, not silently truncate
+        let n = 32;
+        let freq = Array1::linspace(20.0, 20000.0, n);
+        let residual_phase = Array1::from_elem(n, 5.0);
+        let bad_depth = Array1::from_elem(n / 2, 0.8); // wrong length
+        let config = MixedPhaseConfig::default();
+
+        // This should panic due to length mismatch assertion
+        generate_excess_phase_fir_with_depth(
+            &freq,
+            &residual_phase,
+            &config,
+            48000.0,
+            Some(&bad_depth),
+        );
+    }
+
+    #[test]
+    fn test_depth_mask_zeros_low_depth_frequencies() {
+        // When all depth values are below min_spatial_depth, correction phase is zeroed
+        // → the FIR becomes a near-identity filter (center tap dominates).
+        let n = 32;
+        let freq = Array1::linspace(20.0, 20000.0, n);
+        let residual_phase = Array1::from_elem(n, 30.0); // 30 degrees everywhere
+
+        // All-low depth: everything below min_spatial_depth → no correction
+        let low_depth = Array1::from_elem(n, 0.1);
+        let config = MixedPhaseConfig {
+            min_spatial_depth: 0.5,
+            ..Default::default()
+        };
+
+        let fir_masked = generate_excess_phase_fir_with_depth(
+            &freq,
+            &residual_phase,
+            &config,
+            48000.0,
+            Some(&low_depth),
+        );
+
+        let fir_unmasked = generate_excess_phase_fir_with_depth(
+            &freq,
+            &residual_phase,
+            &config,
+            48000.0,
+            None,
+        );
+
+        // The masked version (zero correction) should be more center-concentrated
+        // (near-identity) than the unmasked version (phase correction applied).
+        let center = fir_masked.len() / 2;
+        let masked_center_ratio = fir_masked[center].abs()
+            / fir_masked.iter().map(|x| x.abs()).sum::<f64>().max(1e-12);
+        let unmasked_center_ratio = fir_unmasked[center].abs()
+            / fir_unmasked.iter().map(|x| x.abs()).sum::<f64>().max(1e-12);
+
+        assert!(
+            masked_center_ratio > unmasked_center_ratio,
+            "masked FIR center ratio ({:.4}) should be more concentrated than unmasked ({:.4})",
+            masked_center_ratio,
+            unmasked_center_ratio,
         );
     }
 }

@@ -549,6 +549,7 @@ fn generate_random_config(
                         name: "MultiSub".to_string(),
                         speaker_name: Some(random_speaker_name()),
                         subwoofers: sub_sources,
+                        allpass_optimization: false,
                     }),
                 );
             }

@@ -106,11 +106,28 @@ pub fn generate_fir_correction(
             _ => return Err(format!("Unknown FIR phase type: {}", fir_config.phase).into()),
         };
 
-        let coeffs = crate::fir::generate_fir_from_response(
-            &correction_curve,
-            sample_rate,
+        // Convert pre-ringing config if present
+        let pre_ringing = fir_config.pre_ringing.as_ref().map(|pr| {
+            math_audio_iir_fir::PreRingingConfig {
+                threshold_db: pr.threshold_db,
+                max_time_s: pr.max_time_s,
+            }
+        });
+
+        let fir_design_config = math_audio_iir_fir::FirDesignConfig {
             n_taps,
-            phase_type,
+            sample_rate,
+            phase: phase_type,
+            pre_ringing,
+            ..Default::default()
+        };
+
+        let freqs: Vec<f64> = correction_curve.freq.to_vec();
+        let magnitude_db: Vec<f64> = correction_curve.spl.to_vec();
+        let coeffs = math_audio_iir_fir::generate_fir_from_response(
+            &freqs,
+            &magnitude_db,
+            &fir_design_config,
         );
         Ok(coeffs)
     }

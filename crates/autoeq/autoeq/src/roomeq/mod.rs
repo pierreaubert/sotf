@@ -70,7 +70,8 @@ pub use output::{
     add_delay_plugin, build_channel_dsp_chain, build_channel_dsp_chain_with_curves,
     build_dba_dsp_chain, build_dba_dsp_chain_with_curves, build_multidriver_dsp_chain,
     build_multidriver_dsp_chain_with_curves, build_multisub_dsp_chain,
-    build_multisub_dsp_chain_with_curves, create_convolution_plugin, create_crossover_plugin,
+    build_multisub_dsp_chain_with_curves, build_multisub_dsp_chain_with_allpass,
+    create_convolution_plugin, create_crossover_plugin,
     create_delay_plugin, create_dsp_chain_output, create_eq_plugin, create_gain_plugin,
     create_gain_plugin_with_invert, save_dsp_chain,
 };

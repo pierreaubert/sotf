@@ -402,6 +402,13 @@ pub struct MultiSubGroup {
 
     /// Measurements for each subwoofer
     pub subwoofers: Vec<MeasurementSource>,
+
+    /// Enable per-subwoofer all-pass filter optimization (Dirac Bass Control inspired).
+    /// When true, optimizes gain + delay + all-pass biquad per sub for improved
+    /// phase alignment and mode cancellation. Uses DE global optimizer.
+    /// Default: false (standard gain + delay only)
+    #[serde(default)]
+    pub allpass_optimization: bool,
 }
 
 impl MultiSubGroup {
@@ -1178,6 +1185,13 @@ pub struct OptimizerConfig {
     /// controls how they are combined during optimization.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_measurement: Option<MultiMeasurementConfig>,
+
+    /// Decomposed correction configuration (Trinnov-inspired).
+    /// When set, applies frequency-dependent correction weights based on acoustic
+    /// decomposition: room modes get aggressive correction, steady-state response
+    /// gets gentle correction, early reflections get reduced correction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decomposed_correction: Option<DecomposedCorrectionSerdeConfig>,
 }
 
 // ============================================================================
@@ -1284,6 +1298,53 @@ impl Default for MultiMeasurementConfig {
 
 fn default_variance_lambda() -> f64 {
     1.0
+}
+
+/// Serializable decomposed correction configuration for JSON config files.
+///
+/// When enabled, applies Trinnov-inspired frequency-dependent correction weights:
+/// room modes (below Schroeder) get full correction, steady-state response
+/// (above Schroeder) gets gentle correction, position-dependent features get reduced correction.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DecomposedCorrectionSerdeConfig {
+    /// Schroeder frequency (Hz). Below: modal, above: statistical.
+    /// Default: 200.0
+    #[serde(default = "default_decomposed_schroeder")]
+    pub schroeder_freq: f64,
+    /// Minimum Q to qualify as a room mode. Default: 3.0
+    #[serde(default = "default_decomposed_min_q")]
+    pub min_mode_q: f64,
+    /// Minimum prominence (dB) for mode detection. Default: 3.0
+    #[serde(default = "default_decomposed_prominence")]
+    pub min_mode_prominence_db: f64,
+    /// Correction weight for detected room modes (0.0-1.0). Default: 1.0
+    #[serde(default = "default_decomposed_mode_weight")]
+    pub mode_correction_weight: f64,
+    /// Correction weight for early reflections (0.0-1.0). Default: 0.3
+    #[serde(default = "default_decomposed_reflection_weight")]
+    pub early_reflection_weight: f64,
+    /// Correction weight for steady-state above Schroeder (0.0-1.0). Default: 0.5
+    #[serde(default = "default_decomposed_steady_weight")]
+    pub steady_state_weight: f64,
+}
+
+fn default_decomposed_schroeder() -> f64 {
+    200.0
+}
+fn default_decomposed_min_q() -> f64 {
+    3.0
+}
+fn default_decomposed_prominence() -> f64 {
+    3.0
+}
+fn default_decomposed_mode_weight() -> f64 {
+    1.0
+}
+fn default_decomposed_reflection_weight() -> f64 {
+    0.3
+}
+fn default_decomposed_steady_weight() -> f64 {
+    0.5
 }
 
 // Default values for OptimizerConfig
@@ -1394,6 +1455,7 @@ impl Default for OptimizerConfig {
             vog: None,
             broadband_target_matching: None,
             multi_measurement: None,
+            decomposed_correction: None,
         }
     }
 }

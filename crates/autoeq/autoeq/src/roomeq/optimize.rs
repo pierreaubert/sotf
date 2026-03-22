@@ -2135,6 +2135,25 @@ fn process_single_speaker(
                 None => super::mixed_phase::MixedPhaseConfig::default(),
             };
 
+            // Compute spatial correction depth mask if multi-measurement data is available.
+            // This prevents the excess phase FIR from correcting position-dependent phase.
+            let spatial_depth = if matches!(source, MeasurementSource::Multiple(_)) {
+                match load::load_source_individual(source) {
+                    Ok(curves) if curves.len() > 1 => {
+                        let sr_config = super::spatial_robustness::SpatialRobustnessConfig::default();
+                        let analysis = super::spatial_robustness::analyze_spatial_robustness(&curves, &sr_config);
+                        info!(
+                            "  Spatial depth for mixed-phase: mean={:.2}",
+                            analysis.correction_depth.iter().sum::<f64>() / analysis.correction_depth.len() as f64,
+                        );
+                        Some(analysis.correction_depth)
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
             let fir_coeffs = if curve_for_optim.phase.is_some() {
                 match super::mixed_phase::decompose_phase(&curve_for_optim, &mp_config) {
                     Ok((_min_phase, _excess, delay_ms, residual)) => {
@@ -2142,11 +2161,12 @@ fn process_single_speaker(
                             "  Mixed-phase: delay={:.2} ms, generating excess phase FIR...",
                             delay_ms
                         );
-                        let coeffs = super::mixed_phase::generate_excess_phase_fir(
+                        let coeffs = super::mixed_phase::generate_excess_phase_fir_with_depth(
                             &curve_for_optim.freq,
                             &residual,
                             &mp_config,
                             sample_rate,
+                            spatial_depth.as_ref(),
                         );
 
                         // Save FIR to WAV
@@ -2989,11 +3009,39 @@ fn process_multisub_group(
     sample_rate: f64,
     _output_dir: &Path,
 ) -> Result<MixedModeResult> {
-    let (result, combined_curve) =
-        multisub::optimize_multisub(&group.subwoofers, &room_config.optimizer, sample_rate)
-            .map_err(|e| AutoeqError::OptimizationFailed {
-                message: format!("Multi-sub optimization failed: {}", e),
-            })?;
+    let (result, combined_curve, allpass_filters) = if group.allpass_optimization {
+        // All-pass enhanced optimization (Dirac Bass Control inspired)
+        info!("  Using all-pass enhanced multi-sub optimization");
+        let ap_result = multisub::optimize_multisub_with_allpass(
+            &group.subwoofers,
+            &room_config.optimizer,
+            sample_rate,
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: format!("Multi-sub all-pass optimization failed: {}", e),
+        })?;
+
+        for (i, (freq, q)) in ap_result.allpass_filters.iter().enumerate() {
+            info!(
+                "  Sub {}: gain={:.1} dB, delay={:.1} ms, all-pass: {:.0} Hz Q={:.2}",
+                i, ap_result.base.gains[i], ap_result.base.delays[i], freq, q
+            );
+        }
+
+        (
+            ap_result.base,
+            ap_result.combined_curve,
+            Some(ap_result.allpass_filters),
+        )
+    } else {
+        // Standard gain + delay optimization
+        let (result, curve) =
+            multisub::optimize_multisub(&group.subwoofers, &room_config.optimizer, sample_rate)
+                .map_err(|e| AutoeqError::OptimizationFailed {
+                    message: format!("Multi-sub optimization failed: {}", e),
+                })?;
+        (result, curve, None)
+    };
 
     info!(
         "  Multi-sub optimization: gains={:?}, delays={:?} ms",
@@ -3032,7 +3080,7 @@ fn process_multisub_group(
         None
     };
 
-    let mut chain = output::build_multisub_dsp_chain_with_curves(
+    let mut chain = output::build_multisub_dsp_chain_with_allpass(
         channel_name,
         &group.name,
         group.subwoofers.len(),
@@ -3042,6 +3090,8 @@ fn process_multisub_group(
         None,
         None,
         driver_display_ref,
+        allpass_filters.as_deref(),
+        sample_rate,
     );
 
     let iir_resp =

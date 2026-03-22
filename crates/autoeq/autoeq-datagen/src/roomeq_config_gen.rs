@@ -228,6 +228,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
                     name: "subs".to_string(),
                     speaker_name: None,
                     subwoofers: sub_sources_objs,
+                    allpass_optimization: false,
                 }),
                 SubwooferStrategy::Mso,
             )
@@ -273,6 +274,7 @@ fn make_optimizer(num_lps: usize) -> OptimizerConfig {
             strategy: MultiMeasurementStrategy::Minimax,
             weights: None,
             variance_lambda: 1.0,
+            spatial_robustness: None,
         })
     } else {
         None

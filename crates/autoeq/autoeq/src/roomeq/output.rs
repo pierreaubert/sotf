@@ -413,6 +413,35 @@ pub fn build_multisub_dsp_chain_with_curves(
     final_curve: Option<&crate::Curve>,
     driver_initial_curves: Option<&[crate::Curve]>,
 ) -> ChannelDspChain {
+    build_multisub_dsp_chain_with_allpass(
+        channel_name,
+        group_name,
+        n_subs,
+        gains,
+        delays,
+        eq_filters,
+        initial_curve,
+        final_curve,
+        driver_initial_curves,
+        None,
+        48000.0, // unused when allpass_filters is None
+    )
+}
+
+/// Build a DSP chain for multi-sub optimization with optional per-sub all-pass filters.
+pub fn build_multisub_dsp_chain_with_allpass(
+    channel_name: &str,
+    group_name: &str,
+    n_subs: usize,
+    gains: &[f64],
+    delays: &[f64],
+    eq_filters: &[Biquad],
+    initial_curve: Option<&crate::Curve>,
+    final_curve: Option<&crate::Curve>,
+    driver_initial_curves: Option<&[crate::Curve]>,
+    allpass_filters: Option<&[(f64, f64)]>,
+    sample_rate: f64,
+) -> ChannelDspChain {
     // Build per-sub chains
     let mut driver_chains = Vec::new();
 
@@ -427,6 +456,20 @@ pub fn build_multisub_dsp_chain_with_curves(
         // Add delay plugin if non-zero
         if i < delays.len() && delays[i].abs() > 0.001 {
             sub_plugins.push(create_delay_plugin(delays[i]));
+        }
+
+        // Add all-pass filter if configured
+        if let Some(ap_filters) = allpass_filters
+            && let Some(&(freq, q)) = ap_filters.get(i)
+        {
+            let ap_biquad = Biquad::new(
+                math_audio_iir_fir::BiquadFilterType::AllPass,
+                freq,
+                sample_rate,
+                q,
+                0.0,
+            );
+            sub_plugins.push(create_eq_plugin(&[ap_biquad]));
         }
 
         let driver_curve = driver_initial_curves
@@ -1177,5 +1220,43 @@ mod tests {
         };
         let extended = extend_curve_to_full_range(&curve);
         assert!(extended.freq.is_empty());
+    }
+
+    #[test]
+    fn test_multisub_allpass_chain_has_eq_plugin_per_sub() {
+        let chain = build_multisub_dsp_chain_with_allpass(
+            "LFE",
+            "subs",
+            2,
+            &[0.0, -3.0],
+            &[0.0, 2.0],
+            &[],
+            None,
+            None,
+            None,
+            Some(&[(60.0, 1.5), (80.0, 2.0)]),
+            96000.0,
+        );
+
+        // Each sub should have an EQ plugin (the all-pass filter)
+        let drivers = chain.drivers.unwrap();
+        assert_eq!(drivers.len(), 2);
+
+        // Sub 0: gain=0 (skipped), delay=0 (skipped), allpass → 1 plugin
+        assert_eq!(
+            drivers[0].plugins.len(),
+            1,
+            "Sub 0 should have 1 plugin (allpass), got {}",
+            drivers[0].plugins.len()
+        );
+        assert_eq!(drivers[0].plugins[0].plugin_type, "eq");
+
+        // Sub 1: gain=-3 (added), delay=2 (added), allpass → 3 plugins
+        assert_eq!(
+            drivers[1].plugins.len(),
+            3,
+            "Sub 1 should have 3 plugins (gain+delay+allpass), got {}",
+            drivers[1].plugins.len()
+        );
     }
 }
