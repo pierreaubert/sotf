@@ -12,8 +12,10 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct InlineMeasurement {
     /// Frequency points in Hz
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub frequencies: Vec<f64>,
     /// Sound Pressure Level in dB
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub magnitude_db: Vec<f64>,
     /// Phase in degrees (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]

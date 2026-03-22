@@ -126,6 +126,13 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         result.add_error(format!("min_q ({}) must be positive", opt.min_q));
     }
 
+    if !(1..=48).contains(&opt.smooth_n) {
+        result.add_error(format!(
+            "smooth_n ({}) must be in range [1..48]",
+            opt.smooth_n
+        ));
+    }
+
     if opt.min_db > opt.max_db {
         result.add_error(format!(
             "min_db ({}) must be less than or equal to max_db ({})",

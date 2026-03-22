@@ -783,7 +783,7 @@ pub struct LowFreqFilterConfig {
 }
 
 fn default_low_freq_max_q() -> f64 {
-    10.0
+    5.0
 }
 
 impl Default for LowFreqFilterConfig {
@@ -1115,6 +1115,13 @@ pub struct OptimizerConfig {
     #[serde(default = "default_psychoacoustic")]
     pub psychoacoustic: bool,
 
+    /// Loss function smoothing resolution as 1/N octave.
+    /// Lower values = broader smoothing = optimizer ignores narrower features.
+    /// Range: 1..48 (1 = 1/1 octave, 2 = 1/2 octave, 48 = 1/48 octave).
+    /// Default: 2 (1/2 octave)
+    #[serde(default = "default_smooth_n")]
+    pub smooth_n: usize,
+
     /// Enable asymmetric loss (peaks penalized 2x more than dips)
     /// When true, the optimizer will prioritize reducing peaks over filling dips,
     /// which is psychoacoustically correct since nulls cannot be fixed with EQ.
@@ -1376,7 +1383,7 @@ fn default_min_q() -> f64 {
     0.5
 }
 fn default_max_q() -> f64 {
-    6.0
+    3.0
 }
 fn default_min_db() -> f64 {
     -12.0
@@ -1404,6 +1411,9 @@ fn default_local_algo() -> String {
 }
 fn default_psychoacoustic() -> bool {
     true // Enable psychoacoustic smoothing by default
+}
+fn default_smooth_n() -> usize {
+    2 // 1/2 octave loss smoothing
 }
 fn default_asymmetric_loss() -> bool {
     true // Enable asymmetric loss by default (peaks penalized more than dips)
@@ -1439,6 +1449,7 @@ impl Default for OptimizerConfig {
             refine: default_refine(),
             local_algo: default_local_algo(),
             psychoacoustic: default_psychoacoustic(),
+            smooth_n: default_smooth_n(),
             asymmetric_loss: default_asymmetric_loss(),
             tolerance: default_tolerance(),
             atolerance: default_atolerance(),

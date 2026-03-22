@@ -239,7 +239,7 @@ fn optimize_channel_eq_inner(
 
         // Smoothing
         smooth: true,
-        smooth_n: 2,
+        smooth_n: config.smooth_n,
 
         // Loss function
         loss: loss_type,
@@ -668,7 +668,7 @@ fn build_args(
         min_spacing_oct: 0.2,
         spacing_weight: 20.0,
         smooth: true,
-        smooth_n: 2,
+        smooth_n: config.smooth_n,
         loss: loss_type,
         tolerance: config.tolerance,
         atolerance: config.atolerance,
