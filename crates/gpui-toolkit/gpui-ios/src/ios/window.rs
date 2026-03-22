@@ -405,6 +405,9 @@ enum TouchState {
     Pending { start_x: f32, start_y: f32 },
     /// Finger has moved beyond the threshold — we are scrolling.
     Scrolling { prev_x: f32, prev_y: f32 },
+    /// GPUI consumed the MouseDown (e.g. a drag handler) — only emit MouseMove,
+    /// no ScrollWheel events, so the element can drive its own drag logic.
+    Dragging,
 }
 
 pub(crate) struct IosWindow {
@@ -768,9 +771,14 @@ impl IosWindow {
 
         let mut ts = self.touch_state.get();
 
-        let emit = |input: PlatformInput| {
+        let emit = |input: PlatformInput| -> DispatchEventResult {
             if let Some(callback) = self.input_callback.borrow_mut().as_mut() {
-                callback(input);
+                callback(input)
+            } else {
+                DispatchEventResult {
+                    propagate: true,
+                    default_prevented: false,
+                }
             }
         };
 
@@ -810,25 +818,65 @@ impl IosWindow {
                         let distance = (dx * dx + dy * dy).sqrt();
 
                         if distance > SCROLL_SLOP {
-                            // Promote to scrolling — emit the first scroll
-                            // delta from the start position.
-                            ts = TouchState::Scrolling {
-                                prev_x: logical_x,
-                                prev_y: logical_y,
-                            };
-                            emit(PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
-                                position,
-                                delta: gpui::ScrollDelta::Pixels(gpui::point(
-                                    gpui::px(dx),
-                                    gpui::px(dy),
-                                )),
-                                modifiers,
-                                touch_phase: gpui::TouchPhase::Started,
-                            }));
+                            // Before promoting to scroll, probe GPUI: send a
+                            // MouseDown at the original touch-down position.
+                            // If a drag-handler (EQ knob, slider, etc.)
+                            // consumes it, enter Dragging mode instead.
+                            let start_pos =
+                                gpui::point(gpui::px(start_x), gpui::px(start_y));
+                            let result = emit(PlatformInput::MouseDown(
+                                gpui::MouseDownEvent {
+                                    button: gpui::MouseButton::Left,
+                                    position: start_pos,
+                                    modifiers,
+                                    click_count: 1,
+                                    first_mouse: false,
+                                },
+                            ));
+
+                            if !result.propagate {
+                                // GPUI consumed the press (drag handler, knob,
+                                // etc.) — stay in drag mode, only emit
+                                // MouseMove so the element drives its own
+                                // interaction.
+                                ts = TouchState::Dragging;
+                            } else {
+                                // Nobody claimed the press — cancel it with a
+                                // MouseUp and fall through to normal scrolling.
+                                emit(PlatformInput::MouseUp(gpui::MouseUpEvent {
+                                    button: gpui::MouseButton::Left,
+                                    position: start_pos,
+                                    modifiers,
+                                    click_count: 1,
+                                }));
+                                ts = TouchState::Scrolling {
+                                    prev_x: logical_x,
+                                    prev_y: logical_y,
+                                };
+                                emit(PlatformInput::ScrollWheel(
+                                    gpui::ScrollWheelEvent {
+                                        position,
+                                        delta: gpui::ScrollDelta::Pixels(
+                                            gpui::point(gpui::px(dx), gpui::px(dy)),
+                                        ),
+                                        modifiers,
+                                        touch_phase: gpui::TouchPhase::Started,
+                                    },
+                                ));
+                            }
                         }
                         // Always emit MouseMove so interactive screens can
                         // track finger position (e.g. drag line in Animations,
                         // gradient control in Shaders).
+                        emit(PlatformInput::MouseMove(gpui::MouseMoveEvent {
+                            position,
+                            modifiers,
+                            pressed_button: Some(gpui::MouseButton::Left),
+                        }));
+                    }
+                    TouchState::Dragging => {
+                        // Element is driving its own drag — only emit
+                        // MouseMove (no ScrollWheel).
                         emit(PlatformInput::MouseMove(gpui::MouseMoveEvent {
                             position,
                             modifiers,
@@ -887,6 +935,17 @@ impl IosWindow {
                             position: tap_pos,
                             modifiers,
                             click_count: tap_count as usize,
+                        }));
+                    }
+                    TouchState::Dragging => {
+                        // Element was driving a drag — just emit MouseUp
+                        // to let it finalize (no scroll, no momentum).
+                        self.velocity_tracker.borrow_mut().reset();
+                        emit(PlatformInput::MouseUp(gpui::MouseUpEvent {
+                            button: gpui::MouseButton::Left,
+                            position,
+                            modifiers,
+                            click_count: 1,
                         }));
                     }
                     TouchState::Scrolling { prev_x, prev_y } => {

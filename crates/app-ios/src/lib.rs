@@ -61,6 +61,9 @@ pub extern "C" fn sotf_ios_start() {
 
     log::info!("sotf_ios_start: registering app callback");
 
+    // Register asset source so SVG icons, fonts, and brand images load correctly.
+    gpui_ios::ios::ffi::set_asset_source(Assets);
+
     gpui_ios::ios::ffi::set_app_callback(Box::new(|cx: &mut gpui::App| {
         log::info!("GPUI app callback: setting up SotF player");
 

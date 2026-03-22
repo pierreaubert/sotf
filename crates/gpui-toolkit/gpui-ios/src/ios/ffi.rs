@@ -221,6 +221,45 @@ fn take_app_callback() -> Option<Box<dyn FnOnce(&mut App)>> {
         .and_then(|cell| unsafe { (*cell.0.get()).take() })
 }
 
+// ── Asset source storage ─────────────────────────────────────────────────────
+
+/// Wrapper that forwards `AssetSource` through a `Box<dyn AssetSource>`,
+/// needed because `with_assets()` takes `impl AssetSource` and the trait
+/// isn't automatically implemented for `Box<dyn AssetSource>`.
+struct BoxedAssetSource(Box<dyn gpui::AssetSource>);
+
+impl gpui::AssetSource for BoxedAssetSource {
+    fn load(&self, path: &str) -> gpui::Result<Option<std::borrow::Cow<'static, [u8]>>> {
+        self.0.load(path)
+    }
+    fn list(&self, path: &str) -> gpui::Result<Vec<gpui::SharedString>> {
+        self.0.list(path)
+    }
+}
+
+struct AssetSourceCell(std::cell::UnsafeCell<Option<Box<dyn gpui::AssetSource>>>);
+unsafe impl Send for AssetSourceCell {}
+unsafe impl Sync for AssetSourceCell {}
+
+static ASSET_SOURCE: OnceLock<AssetSourceCell> = OnceLock::new();
+
+/// Register an asset source (SVG icons, fonts, images) before calling `run_app()`.
+/// Without this, `svg()` elements will fail to load their paths.
+pub fn set_asset_source(source: impl gpui::AssetSource + 'static) {
+    let cell =
+        ASSET_SOURCE.get_or_init(|| AssetSourceCell(std::cell::UnsafeCell::new(None)));
+    unsafe {
+        *cell.0.get() = Some(Box::new(source));
+    }
+}
+
+fn take_asset_source() -> Option<BoxedAssetSource> {
+    ASSET_SOURCE
+        .get()
+        .and_then(|cell| unsafe { (*cell.0.get()).take() })
+        .map(BoxedAssetSource)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_run_demo() {
     run_app();
@@ -237,7 +276,13 @@ pub fn run_app() {
     }
 
     let platform = Rc::new(super::IosPlatform::new());
-    gpui::Application::with_platform(platform).run(|cx: &mut App| {
+    let app = gpui::Application::with_platform(platform);
+    let app = if let Some(assets) = take_asset_source() {
+        app.with_assets(assets)
+    } else {
+        app
+    };
+    app.run(|cx: &mut App| {
         if let Some(cb) = take_app_callback() {
             cb(cx);
         } else {
