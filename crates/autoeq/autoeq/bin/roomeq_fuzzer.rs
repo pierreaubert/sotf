@@ -584,6 +584,7 @@ fn generate_random_config(
             phase: "linear".to_string(),
             correct_excess_phase: false,
             phase_smoothing: 0.167,
+            pre_ringing: None,
         })
     } else {
         None

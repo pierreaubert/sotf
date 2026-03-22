@@ -182,6 +182,7 @@ enum ProcessingMethod {
     Iir,
     Fir,
     Mixed,
+    MixedPhase,
 }
 
 impl ProcessingMethod {
@@ -190,6 +191,7 @@ impl ProcessingMethod {
             ProcessingMethod::Iir => "iir",
             ProcessingMethod::Fir => "fir",
             ProcessingMethod::Mixed => "mixed",
+            ProcessingMethod::MixedPhase => "mixed_phase",
         }
     }
 
@@ -198,6 +200,7 @@ impl ProcessingMethod {
             ProcessingMethod::Iir => ProcessingMode::LowLatency,
             ProcessingMethod::Fir => ProcessingMode::PhaseLinear,
             ProcessingMethod::Mixed => ProcessingMode::Hybrid,
+            ProcessingMethod::MixedPhase => ProcessingMode::MixedPhase,
         }
     }
 
@@ -206,6 +209,8 @@ impl ProcessingMethod {
             ProcessingMethod::Iir => "optimiser-iir.json",
             ProcessingMethod::Fir => "optimiser-fir.json",
             ProcessingMethod::Mixed => "optimiser-mixed.json",
+            // MixedPhase uses IIR config as base (it generates its own FIR internally)
+            ProcessingMethod::MixedPhase => "optimiser-iir.json",
         }
     }
 }
@@ -320,6 +325,7 @@ fn build_test_matrix(
             ProcessingMethod::Iir,
             ProcessingMethod::Fir,
             ProcessingMethod::Mixed,
+            ProcessingMethod::MixedPhase,
         ]
     };
 
@@ -431,10 +437,11 @@ fn apply_qa_overrides(config: &mut RoomConfig, maxeval: usize) {
                     phase: "kirkeby".to_string(),
                     correct_excess_phase: false,
                     phase_smoothing: 0.167,
+                    pre_ringing: None,
                 });
             }
         }
-        ProcessingMode::LowLatency => {}
+        ProcessingMode::LowLatency | ProcessingMode::MixedPhase => {}
     }
 }
 
@@ -541,6 +548,16 @@ fn validate_result(
                 if improved && !has_biquads && !has_fir {
                     failures.push(format!(
                         "channel '{}': Mixed mode but no filters at all",
+                        name
+                    ));
+                }
+            }
+            ProcessingMethod::MixedPhase => {
+                // MixedPhase should always have IIR biquads; FIR is optional
+                // (only generated when phase data is available)
+                if improved && !has_biquads {
+                    failures.push(format!(
+                        "channel '{}': MixedPhase mode but no biquad filters",
                         name
                     ));
                 }

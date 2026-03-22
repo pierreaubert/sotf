@@ -57,7 +57,7 @@ mod dba;
 mod eq;
 mod fir;
 mod group_delay;
-mod multisub;
+pub mod multisub;
 pub mod workflows; // Make public to access from optimize.rs or tests
 
 // Export to external formats (CamillaDSP, APO, EasyEffects, Wavelet, PipeWire)
@@ -89,6 +89,20 @@ pub use spectral_align::{
 // Voice of God (timbre matching between channels)
 mod voice_of_god;
 pub use voice_of_god::{VoGResult, compute_voice_of_god, create_vog_plugins};
+
+// Spatial robustness (Dirac-inspired multi-position analysis)
+pub mod spatial_robustness;
+pub use spatial_robustness::{SpatialRobustnessResult, analyze_spatial_robustness};
+
+// Mixed-phase correction (Dirac-inspired IIR + short FIR)
+pub mod mixed_phase;
+pub use mixed_phase::{MixedPhaseConfig, MixedPhaseResult, decompose_phase};
+
+// Decomposed correction (Trinnov-inspired: modes vs reflections vs steady-state)
+pub mod impulse_analysis;
+pub use impulse_analysis::{
+    DecomposedCorrectionConfig, DecomposedCorrectionResult, analyze_decomposed_correction,
+};
 
 // Utility modules
 mod ir_waveform;

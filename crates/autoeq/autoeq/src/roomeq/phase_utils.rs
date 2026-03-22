@@ -53,7 +53,9 @@ fn hilbert_transform(signal: &[f64]) -> Vec<f64> {
         return Vec::new();
     }
 
-    // Zero-pad to power of 2 for efficiency
+    // Zero-pad to power of 2 for efficiency.
+    // Note: this Hilbert transform operates on log-magnitude data (not time-domain),
+    // so the standard 2x anti-aliasing padding is not needed here.
     let n_fft = n.next_power_of_two();
 
     // Create FFT planner
@@ -411,5 +413,74 @@ mod tests {
             "Residual should be < 1°, got {:.3}°",
             max_residual
         );
+    }
+
+    #[test]
+    fn test_reconstruct_minimum_phase_flat_128() {
+        // Flat magnitude → minimum phase should be near zero
+        let n = 128;
+        let freq = Array1::linspace(20.0, 20000.0, n);
+        let spl = Array1::from_elem(n, 80.0);
+
+        let phase = reconstruct_minimum_phase(&freq, &spl);
+
+        // All values should be finite
+        assert!(phase.iter().all(|p| p.is_finite()), "all phase values should be finite");
+        // Mean should be near zero (edge effects may push individual values higher)
+        let mean = phase.iter().sum::<f64>() / phase.len() as f64;
+        assert!(
+            mean.abs() < 50.0,
+            "Flat response mean phase should be near 0, got {:.1}°",
+            mean
+        );
+    }
+
+    #[test]
+    fn test_reconstruct_minimum_phase_lowpass_256() {
+        // 1st-order lowpass: minimum phase should have significant variation
+        let n = 256;
+        let freq = Array1::linspace(20.0, 20000.0, n);
+        let fc: f64 = 1000.0;
+        let spl: Array1<f64> = freq.map(|&f| {
+            let ratio: f64 = f / fc;
+            -10.0 * (1.0 + ratio * ratio).log10()
+        });
+
+        let phase = reconstruct_minimum_phase(&freq, &spl);
+
+        assert!(phase.iter().all(|p| p.is_finite()), "all phase values should be finite");
+        let range = phase.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+            - phase.iter().cloned().fold(f64::INFINITY, f64::min);
+        assert!(
+            range > 5.0,
+            "phase should have significant variation for lowpass, got {:.1}°",
+            range
+        );
+    }
+
+    #[test]
+    fn test_hilbert_transform_empty_and_single() {
+        let empty = hilbert_transform(&[]);
+        assert!(empty.is_empty());
+
+        let single = hilbert_transform(&[1.0]);
+        assert_eq!(single.len(), 1);
+        assert!(single[0].is_finite());
+    }
+
+    #[test]
+    fn test_estimate_delay_single_element() {
+        let freq = Array1::from_vec(vec![100.0]);
+        let phase = Array1::from_vec(vec![-45.0]);
+        let (delay, residual) = estimate_delay_from_excess_phase(&freq, &phase);
+        assert_eq!(delay, 0.0);
+        assert_eq!(residual.len(), 1);
+    }
+
+    #[test]
+    fn test_unwrap_phase_empty() {
+        let phase = Array1::from_vec(vec![]);
+        let unwrapped = unwrap_phase_degrees(&phase);
+        assert!(unwrapped.is_empty());
     }
 }

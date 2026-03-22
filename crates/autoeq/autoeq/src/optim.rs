@@ -450,6 +450,11 @@ fn compute_multi_objective_fitness(x: &[f64], mo: &MultiObjectiveData) -> f64 {
             let variance = losses.iter().map(|l| (l - mean).powi(2)).sum::<f64>() / n;
             mean + mo.variance_lambda * variance
         }
+        MultiMeasurementStrategy::SpatialRobustness => {
+            // SpatialRobustness uses single-curve optimization on the RMS-averaged curve
+            // and should never reach the multi-objective loss computation.
+            unreachable!("SpatialRobustness strategy should not use multi-objective loss path")
+        }
     }
 }
 

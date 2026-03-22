@@ -281,6 +281,7 @@ mod tests {
             phase: "linear".to_string(),
             correct_excess_phase: false,
             phase_smoothing: 0.167,
+            pre_ringing: None,
         });
         config.min_freq = 50.0;
         config.max_freq = 2000.0;
@@ -309,6 +310,7 @@ mod tests {
             phase: "kirkeby".to_string(),
             correct_excess_phase: false,
             phase_smoothing: 0.167,
+            pre_ringing: None,
         });
         config.min_freq = 20.0;
         config.max_freq = 500.0;
@@ -346,6 +348,7 @@ mod tests {
             phase: "invalid_phase_type".to_string(),
             correct_excess_phase: false,
             phase_smoothing: 0.167,
+            pre_ringing: None,
         });
 
         let result = generate_fir_correction(&measurement, &config, None, 48000.0);

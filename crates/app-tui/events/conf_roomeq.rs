@@ -798,6 +798,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 phase: config.fir.phase.clone(),
                 correct_excess_phase: false,
                 phase_smoothing: 0.167,
+                pre_ringing: None,
             }),
             seed: config.seed,
             mixed_config: if config.mode == RoomEqOptimizationMode::Mixed {

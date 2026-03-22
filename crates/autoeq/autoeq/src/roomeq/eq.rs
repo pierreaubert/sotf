@@ -12,7 +12,8 @@ use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use std::error::Error;
 
-use super::types::{MultiMeasurementConfig, OptimizerConfig, TargetCurveConfig};
+use super::spatial_robustness::{self, SpatialRobustnessConfig};
+use super::types::{MultiMeasurementConfig, MultiMeasurementStrategy, OptimizerConfig, TargetCurveConfig};
 use crate::optim::MultiObjectiveData;
 
 /// Optimize EQ filters for a single channel using autoeq's workflow
@@ -361,6 +362,21 @@ fn optimize_channel_eq_multi_inner(
 ) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
     assert!(!curves.is_empty(), "curves must not be empty");
 
+    // =========================================================================
+    // SpatialRobustness strategy: early return with single-curve optimization
+    // on the RMS-averaged curve, using correction depth mask to scale deviation.
+    // =========================================================================
+    if multi_config.strategy == MultiMeasurementStrategy::SpatialRobustness {
+        return optimize_spatial_robustness(
+            curves,
+            config,
+            multi_config,
+            target_config,
+            sample_rate,
+            callback,
+        );
+    }
+
     // Clamp optimizer frequency range to the measurement data range of the first curve
     let data_min_freq = curves[0].freq[0];
     let data_max_freq = curves[0].freq[curves[0].freq.len() - 1];
@@ -624,4 +640,236 @@ fn build_args(
         seed: config.seed,
         qa: None,
     }
+}
+
+/// Spatial robustness optimization (Dirac-inspired).
+///
+/// Instead of running multi-objective optimization across all curves, this:
+/// 1. Computes RMS power average across all positions
+/// 2. Computes per-frequency spatial variance
+/// 3. Builds a correction depth mask (high correction where consistent, low where variable)
+/// 4. Scales the target deviation by the mask before single-curve optimization
+///
+/// The mask ensures the optimizer focuses filter resources on spatially consistent
+/// features (room modes) and avoids wasting filters on position-dependent effects
+/// (comb filtering from reflections).
+fn optimize_spatial_robustness(
+    curves: &[Curve],
+    config: &OptimizerConfig,
+    multi_config: &MultiMeasurementConfig,
+    target_config: Option<&TargetCurveConfig>,
+    sample_rate: f64,
+    callback: Option<crate::optim::OptimProgressCallback>,
+) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
+    // Build spatial robustness config from serde config or defaults
+    let sr_config = match &multi_config.spatial_robustness {
+        Some(sc) => SpatialRobustnessConfig {
+            variance_threshold_db: sc.variance_threshold_db,
+            transition_width_db: sc.transition_width_db,
+            min_correction_depth: sc.min_correction_depth,
+            mask_smoothing_octaves: sc.mask_smoothing_octaves,
+        },
+        None => SpatialRobustnessConfig::default(),
+    };
+
+    // Analyze spatial robustness
+    let analysis = spatial_robustness::analyze_spatial_robustness(curves, &sr_config);
+
+    log::info!(
+        "  Spatial robustness: {} positions, variance range {:.1}-{:.1} dB",
+        curves.len(),
+        analysis
+            .spatial_variance
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min),
+        analysis
+            .spatial_variance
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max),
+    );
+
+    let mean_depth =
+        analysis.correction_depth.iter().sum::<f64>() / analysis.correction_depth.len() as f64;
+    log::info!(
+        "  Correction depth: mean={:.2}, min={:.2}, max={:.2}",
+        mean_depth,
+        analysis
+            .correction_depth
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min),
+        analysis
+            .correction_depth
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max),
+    );
+
+    // Use the RMS-averaged curve as input to the single-curve optimizer.
+    // The correction depth mask is applied by scaling the deviation curve:
+    // where depth is low, the deviation appears small → optimizer won't place filters there.
+    let averaged_curve = &analysis.averaged_curve;
+
+    // Clamp frequency range
+    let data_min_freq = averaged_curve.freq[0];
+    let data_max_freq = averaged_curve.freq[averaged_curve.freq.len() - 1];
+    let effective_min_freq = config.min_freq.max(data_min_freq);
+    let effective_max_freq = config.max_freq.min(data_max_freq);
+
+    // Normalize by subtracting mean SPL in optimization range
+    let mut sum = 0.0;
+    let mut count = 0;
+    for i in 0..averaged_curve.freq.len() {
+        if averaged_curve.freq[i] >= effective_min_freq
+            && averaged_curve.freq[i] <= effective_max_freq
+        {
+            sum += averaged_curve.spl[i];
+            count += 1;
+        }
+    }
+    let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
+    let mut normalized_curve = Curve {
+        freq: averaged_curve.freq.clone(),
+        spl: &averaged_curve.spl - mean_spl,
+        phase: averaged_curve.phase.clone(),
+    };
+
+    // Apply psychoacoustic smoothing if enabled
+    if config.psychoacoustic {
+        log::info!("  Applying psychoacoustic smoothing to spatially averaged curve");
+        let smoothing_config = crate::read::PsychoacousticSmoothingConfig::default();
+        normalized_curve = crate::read::smooth_psychoacoustic(&normalized_curve, &smoothing_config);
+    }
+
+    // Parse PEQ model
+    let peq_model = PeqModel::from_str(&config.peq_model, true)
+        .map_err(|e| format!("Invalid PEQ model '{}': {}", config.peq_model, e))?;
+
+    // Parse loss type
+    let loss_type = match config.loss_type.as_str() {
+        "flat" => {
+            if config.asymmetric_loss {
+                LossType::SpeakerFlatAsymmetric
+            } else {
+                LossType::SpeakerFlat
+            }
+        }
+        "score" => LossType::SpeakerScore,
+        _ => return Err(format!("Unknown loss type: {}", config.loss_type).into()),
+    };
+
+    // Build target curve
+    let target_curve = match target_config {
+        Some(TargetCurveConfig::Path(path)) => {
+            let target = crate::read::read_curve_from_csv(path)?;
+            crate::read::normalize_and_interpolate_response(&normalized_curve.freq, &target)
+        }
+        Some(TargetCurveConfig::Predefined(name)) => {
+            let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
+            match crate::workflow::build_target_curve(
+                &dummy_args,
+                &normalized_curve.freq,
+                &normalized_curve,
+            ) {
+                Ok(curve) => curve,
+                Err(_) => {
+                    let target =
+                        crate::read::read_curve_from_csv(&std::path::PathBuf::from(name))?;
+                    crate::read::normalize_and_interpolate_response(
+                        &normalized_curve.freq,
+                        &target,
+                    )
+                }
+            }
+        }
+        None => Curve {
+            freq: normalized_curve.freq.clone(),
+            spl: Array1::zeros(normalized_curve.freq.len()),
+            phase: None,
+        },
+    };
+
+    // Compute raw deviation
+    let raw_deviation = &target_curve.spl - &normalized_curve.spl;
+
+    // Apply correction depth mask to deviation.
+    // This is the key spatial robustness step: the deviation at frequencies where the
+    // spatial variance is high gets scaled down, so the optimizer doesn't try to correct
+    // position-dependent features.
+    let masked_deviation = &raw_deviation * &analysis.correction_depth;
+
+    let deviation_curve = Curve {
+        freq: normalized_curve.freq.clone(),
+        spl: masked_deviation,
+        phase: None,
+    };
+
+    let args = build_args(
+        config,
+        effective_min_freq,
+        effective_max_freq,
+        sample_rate,
+        loss_type,
+        peq_model,
+    );
+
+    // Setup objective data with the masked deviation
+    let (objective_data, _use_cea) = setup_objective_data(
+        &args,
+        &normalized_curve,
+        &target_curve,
+        &deviation_curve,
+        &None,
+    )
+    .expect("setup_objective_data should not fail without spin data");
+
+    let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&args);
+    let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
+
+    let opt_result = if let Some(cb) = callback {
+        crate::optim::optimize_filters_with_callback(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data,
+            &args,
+            cb,
+        )
+    } else {
+        crate::optim::optimize_filters(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data,
+            &args,
+        )
+    };
+
+    let (_converged_msg, final_loss) = match opt_result {
+        Ok((msg, loss)) => (msg, loss),
+        Err((msg, loss)) => {
+            eprintln!(
+                "  Warning: spatial robustness optimization did not fully converge: {}",
+                msg
+            );
+            (msg, loss)
+        }
+    };
+
+    let peq = crate::x2peq::x2peq(&x, sample_rate, args.peq_model);
+    let filters: Vec<Biquad> = peq
+        .into_iter()
+        .map(|(_weight, biquad)| biquad)
+        .filter(|b| b.db_gain.abs() >= 0.05)
+        .collect();
+
+    log::info!(
+        "Spatial robustness EQ: {} filters, final loss={:.6}",
+        filters.len(),
+        final_loss
+    );
+
+    Ok((filters, final_loss))
 }

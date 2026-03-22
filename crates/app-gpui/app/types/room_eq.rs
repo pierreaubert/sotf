@@ -1746,6 +1746,7 @@ impl RoomEqState {
                 phase: self.optimizer_config.fir.phase.clone(),
                 correct_excess_phase: false,
                 phase_smoothing: 0.167,
+                pre_ringing: None,
             }),
             seed: self.optimizer_config.seed,
             mixed_config: if self.optimizer_config.mode == RoomEqOptimizationMode::Mixed {

@@ -442,7 +442,8 @@ pub fn optimize_room(
                 );
                 // Workflows only do IIR. If FIR/mixed mode is requested, post-generate
                 // FIR coefficients for each channel from its initial measurement curve.
-                if config.optimizer.processing_mode != ProcessingMode::LowLatency {
+                // MixedPhase handles its own FIR generation internally.
+                if !matches!(config.optimizer.processing_mode, ProcessingMode::LowLatency | ProcessingMode::MixedPhase) {
                     let out_dir = output_dir.unwrap_or(Path::new("."));
                     for (name, ch) in result.channel_results.iter_mut() {
                         if ch.fir_coeffs.is_some() {
@@ -699,7 +700,7 @@ pub fn optimize_room(
         // Post-generate FIR coefficients for channels that need them but don't have them
         // (e.g., speaker groups that only support IIR internally)
         let fir_coeffs = if fir_coeffs.is_none()
-            && config.optimizer.processing_mode != ProcessingMode::LowLatency
+            && !matches!(config.optimizer.processing_mode, ProcessingMode::LowLatency | ProcessingMode::MixedPhase)
         {
             post_generate_fir(
                 &channel_name,
@@ -2063,6 +2064,184 @@ fn process_single_speaker(
                 mean_spl,
                 arrival_time_ms,
                 Some(coeffs),
+            ))
+        }
+        ProcessingMode::MixedPhase => {
+            // Mixed-phase correction: IIR for minimum-phase + short FIR for excess phase
+            // Step 1: Run standard IIR optimization (same as LowLatency)
+            let optimization_curve = if let Some(ref tilt_curve) = target_tilt_curve {
+                Curve {
+                    freq: curve_for_optim.freq.clone(),
+                    spl: &curve_for_optim.spl - &tilt_curve.spl,
+                    phase: curve_for_optim.phase.clone(),
+                }
+            } else {
+                curve_for_optim.clone()
+            };
+
+            let effective_target = if target_tilt_curve.is_some() {
+                None
+            } else {
+                room_config.target_curve.as_ref()
+            };
+
+            let (eq_filters, _opt_loss) = optimize_eq_maybe_multi(
+                source,
+                &optimization_curve,
+                &clamped_optimizer,
+                effective_target,
+                sample_rate,
+                channel_name,
+                callback,
+            )?;
+
+            info!("  IIR stage: {} filters", eq_filters.len());
+
+            // Step 2: Decompose phase and generate excess phase FIR
+            let mp_config = match &room_config.optimizer.mixed_phase {
+                Some(sc) => super::mixed_phase::MixedPhaseConfig {
+                    max_fir_length_ms: sc.max_fir_length_ms,
+                    pre_ringing_threshold_db: sc.pre_ringing_threshold_db,
+                    min_spatial_depth: sc.min_spatial_depth,
+                    phase_smoothing_octaves: sc.phase_smoothing_octaves,
+                },
+                None => super::mixed_phase::MixedPhaseConfig::default(),
+            };
+
+            let fir_coeffs = if curve_for_optim.phase.is_some() {
+                match super::mixed_phase::decompose_phase(&curve_for_optim, &mp_config) {
+                    Ok((_min_phase, _excess, delay_ms, residual)) => {
+                        info!(
+                            "  Mixed-phase: delay={:.2} ms, generating excess phase FIR...",
+                            delay_ms
+                        );
+                        let coeffs = super::mixed_phase::generate_excess_phase_fir(
+                            &curve_for_optim.freq,
+                            &residual,
+                            &mp_config,
+                            sample_rate,
+                        );
+
+                        // Save FIR to WAV
+                        let filename = format!("{}_excess_phase_fir.wav", channel_name);
+                        let wav_path = output_dir.join(&filename);
+                        if let Err(e) =
+                            crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
+                        {
+                            warn!("Failed to save excess phase FIR WAV: {}", e);
+                        } else {
+                            info!("  Saved excess phase FIR to {}", wav_path.display());
+                        }
+
+                        Some((coeffs, filename))
+                    }
+                    Err(e) => {
+                        warn!(
+                            "  Mixed-phase decomposition failed for '{}': {}. Using IIR only.",
+                            channel_name, e
+                        );
+                        None
+                    }
+                }
+            } else {
+                info!(
+                    "  No phase data for '{}', using IIR only (skipping excess phase FIR).",
+                    channel_name
+                );
+                None
+            };
+
+            // Build DSP chain (same pattern as LowLatency)
+            let mut chain = output::build_channel_dsp_chain_with_curves(
+                channel_name,
+                None,
+                broadband_plugins,
+                &eq_filters,
+                None,
+                None,
+            );
+
+            // Add convolution plugin for excess phase FIR if generated
+            let returned_fir = if let Some((ref coeffs, ref filename)) = fir_coeffs {
+                let convolution_plugin = output::create_convolution_plugin(filename);
+                chain.plugins.push(convolution_plugin);
+                Some(coeffs.clone())
+            } else {
+                None
+            };
+
+            // Compute final response (IIR + optional FIR)
+            let eq_resp =
+                crate::response::compute_peq_complex_response(&eq_filters, &curve.freq, sample_rate);
+            let after_eq = crate::response::apply_complex_response(&curve_for_optim, &eq_resp);
+
+            let final_curve = if let Some((ref coeffs, _)) = fir_coeffs {
+                let fir_resp =
+                    crate::response::compute_fir_complex_response(coeffs, &after_eq.freq, sample_rate);
+                crate::response::apply_complex_response(&after_eq, &fir_resp)
+            } else {
+                after_eq
+            };
+
+            // Score
+            let post_freqs_f32: Vec<f32> = final_curve.freq.iter().map(|&f| f as f32).collect();
+            let post_spl_f32: Vec<f32> = final_curve.spl.iter().map(|&s| s as f32).collect();
+            let mean_final = compute_average_response(
+                &post_freqs_f32,
+                &post_spl_f32,
+                Some((min_freq as f32, max_freq as f32)),
+            ) as f64;
+            let normalized_final_spl = &final_curve.spl - mean_final;
+            let post_score = crate::loss::flat_loss(
+                &final_curve.freq,
+                &normalized_final_spl,
+                min_freq,
+                max_freq,
+            );
+
+            info!(
+                "  Mixed-phase result: pre={:.6}, post={:.6}",
+                pre_score, post_score
+            );
+
+            let display_initial = output::extend_curve_to_full_range(&curve_raw);
+            let display_eq_resp = crate::response::compute_peq_complex_response(
+                &eq_filters,
+                &display_initial.freq,
+                sample_rate,
+            );
+            let display_after_eq =
+                crate::response::apply_complex_response(&display_initial, &display_eq_resp);
+            let display_final = if let Some((ref coeffs, _)) = fir_coeffs {
+                let fir_resp = crate::response::compute_fir_complex_response(
+                    coeffs,
+                    &display_after_eq.freq,
+                    sample_rate,
+                );
+                crate::response::apply_complex_response(&display_after_eq, &fir_resp)
+            } else {
+                display_after_eq
+            };
+
+            let mut initial_data: super::types::CurveData = (&display_initial).into();
+            initial_data.norm_range = norm_range;
+            let mut final_data: super::types::CurveData = (&display_final).into();
+            final_data.norm_range = norm_range;
+
+            chain.initial_curve = Some(initial_data.clone());
+            chain.final_curve = Some(final_data.clone());
+            chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
+
+            Ok((
+                chain,
+                pre_score,
+                post_score,
+                curve_raw.clone(),
+                final_curve,
+                eq_filters,
+                mean_spl,
+                arrival_time_ms,
+                returned_fir,
             ))
         }
         ProcessingMode::LowLatency => {

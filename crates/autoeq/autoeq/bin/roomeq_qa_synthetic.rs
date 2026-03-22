@@ -17,8 +17,9 @@ use std::time::Instant;
 
 use autoeq::iir::{Biquad, BiquadFilterType};
 use autoeq::roomeq::{
-    BroadbandTargetMatchingConfig, CallbackAction, ExcursionProtectionConfig, ProcessingMode,
-    RoomConfig, SchroederSplitConfig, optimize_room,
+    BroadbandTargetMatchingConfig, CallbackAction, ExcursionProtectionConfig,
+    MultiMeasurementConfig, MultiMeasurementStrategy, ProcessingMode, RoomConfig,
+    SchroederSplitConfig, SpatialRobustnessSerdeConfig, optimize_room,
 };
 use autoeq::roomeq::synthetic::{generate_flat_curve, generate_harman_tilt_curve, generate_scenario};
 use autoeq::{Curve, MeasurementSource};
@@ -121,6 +122,40 @@ fn option_schroeder(config: &mut RoomConfig) {
         ..Default::default()
     });
 }
+fn option_spatial_robustness(config: &mut RoomConfig) {
+    config.optimizer.multi_measurement = Some(MultiMeasurementConfig {
+        strategy: MultiMeasurementStrategy::SpatialRobustness,
+        spatial_robustness: Some(SpatialRobustnessSerdeConfig {
+            variance_threshold_db: 3.0,
+            transition_width_db: 2.0,
+            min_correction_depth: 0.1,
+            mask_smoothing_octaves: 1.0 / 6.0,
+        }),
+        ..Default::default()
+    });
+}
+fn option_pre_ringing(config: &mut RoomConfig) {
+    use autoeq::roomeq::PreRingingSerdeConfig;
+    // Enable FIR with pre-ringing control
+    config.optimizer.processing_mode = ProcessingMode::PhaseLinear;
+    if config.optimizer.fir.is_none() {
+        config.optimizer.fir = Some(autoeq::roomeq::FirConfig {
+            taps: 2048,
+            phase: "kirkeby".to_string(),
+            correct_excess_phase: false,
+            phase_smoothing: 0.167,
+            pre_ringing: Some(PreRingingSerdeConfig {
+                threshold_db: -30.0,
+                max_time_s: 0.005,
+            }),
+        });
+    } else if let Some(ref mut fir) = config.optimizer.fir {
+        fir.pre_ringing = Some(PreRingingSerdeConfig {
+            threshold_db: -30.0,
+            max_time_s: 0.005,
+        });
+    }
+}
 
 const OPTIONS: &[OptionDef] = &[
     OptionDef { name: "psychoacoustic", apply: option_psychoacoustic },
@@ -128,6 +163,8 @@ const OPTIONS: &[OptionDef] = &[
     OptionDef { name: "broadband", apply: option_broadband },
     OptionDef { name: "excursion", apply: option_excursion },
     OptionDef { name: "schroeder", apply: option_schroeder },
+    OptionDef { name: "spatial_robustness", apply: option_spatial_robustness },
+    OptionDef { name: "pre_ringing", apply: option_pre_ringing },
 ];
 
 // ---------------------------------------------------------------------------
@@ -211,6 +248,7 @@ fn run_single_test(
         ProcessingMode::LowLatency => "IIR",
         ProcessingMode::PhaseLinear => "FIR",
         ProcessingMode::Hybrid => "Mixed",
+        ProcessingMode::MixedPhase => "MixedPhase",
     };
     let options_str = if option_names.is_empty() {
         "baseline".to_string()
@@ -325,6 +363,7 @@ fn main() -> Result<()> {
         ProcessingMode::LowLatency,
         ProcessingMode::PhaseLinear,
         ProcessingMode::Hybrid,
+        ProcessingMode::MixedPhase,
     ];
 
     let flat_target = generate_flat_curve(20.0, 20000.0, 200);
