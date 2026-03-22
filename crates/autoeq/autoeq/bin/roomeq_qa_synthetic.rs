@@ -25,6 +25,7 @@ use autoeq::roomeq::{
 use autoeq::roomeq::synthetic::{
     generate_cardioid_scenario, generate_channel_curve, generate_dba_scenario,
     generate_flat_curve, generate_harman_tilt_curve, generate_multisub_scenario,
+    generate_speaker_rolloff_curve, generate_subwoofer_rolloff_curve,
     generate_scenario,
 };
 use autoeq::roomeq::{
@@ -307,14 +308,15 @@ fn option_decomposed_correction(config: &mut RoomConfig) {
     });
 }
 
-// Options tested on synthetic data.
-// Note: broadband and excursion are excluded because they require real speaker
-// rolloff curves. Broadband matching on a flat curve has no broadband error to
-// correct. Excursion detection on a flat curve picks a bogus F3 and inserts a
-// HPF that creates a massive deficit the optimizer cannot recover.
+// All options tested on synthetic data.
+// Broadband and excursion require speaker rolloff curves (not flat) — the
+// synthetic scenarios now use generate_speaker_rolloff_curve / generate_subwoofer_rolloff_curve
+// which provide a realistic -12 dB/oct rolloff around 80 Hz.
 const OPTIONS: &[OptionDef] = &[
     OptionDef { name: "psychoacoustic", apply: option_psychoacoustic },
     OptionDef { name: "asymmetric_loss", apply: option_asymmetric },
+    OptionDef { name: "broadband", apply: option_broadband },
+    OptionDef { name: "excursion", apply: option_excursion },
     OptionDef { name: "schroeder", apply: option_schroeder },
     OptionDef { name: "spatial_robustness", apply: option_spatial_robustness },
     OptionDef { name: "pre_ringing", apply: option_pre_ringing },
@@ -719,7 +721,7 @@ fn build_multichannel_config(
         match sub_topo.name {
             "single_sub" => {
                 let sub_curve = generate_channel_curve(
-                    &generate_flat_curve(20.0, 200.0, 100),
+                    &generate_subwoofer_rolloff_curve(20.0, 200.0, 100, 80.0, -6.0),
                     &bass_modes,
                     0.0,
                     difficulty.noise_rms * 0.3,
@@ -943,6 +945,9 @@ fn main() -> Result<()> {
     let harman_target = generate_harman_tilt_curve(20.0, 20000.0, 200);
     let targets: Vec<(&str, &Curve)> = vec![("flat", &flat_target), ("harman", &harman_target)];
 
+    // Speaker rolloff: 0 dB above 80 Hz, -12 dB/oct below (realistic 2nd-order highpass)
+    let speaker_rolloff = generate_speaker_rolloff_curve(20.0, 20000.0, 200, 80.0, -12.0);
+
     let option_combos = generate_option_combos();
     let ms_option_combos = generate_ms_option_combos();
 
@@ -1010,9 +1015,16 @@ fn main() -> Result<()> {
             .collect();
 
         for &(target_name, target) in &targets {
+            // Combine target shape with speaker rolloff so that broadband/excursion
+            // options see a realistic low-frequency limit in the measurement.
+            let speaker_base = Curve {
+                freq: target.freq.clone(),
+                spl: &target.spl + &speaker_rolloff.spl,
+                phase: None,
+            };
             let scenario = generate_scenario(
                 &format!("{}/{}", difficulty.name, target_name),
-                target,
+                &speaker_base,
                 &modes_biquad,
                 difficulty.noise_rms * 0.3,
                 difficulty.noise_rms * 0.7,
@@ -1092,7 +1104,7 @@ fn main() -> Result<()> {
     // ====================================================================
     // Multi-channel topology tests
     // ====================================================================
-    let base_fullrange = generate_flat_curve(20.0, 20000.0, 200);
+    let base_fullrange = generate_speaker_rolloff_curve(20.0, 20000.0, 200, 80.0, -6.0);
 
     for layout in ALL_LAYOUTS {
         let topos = sub_topos_for_layout(layout);

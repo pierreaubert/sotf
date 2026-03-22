@@ -53,6 +53,82 @@ pub fn generate_harman_tilt_curve(min_freq: f64, max_freq: f64, n_points: usize)
     }
 }
 
+/// Generate a speaker-like rolloff curve: 0 dB above `crossover_freq`, rolling off
+/// at `slope_db_per_oct` dB/octave below it (negative slope = highpass rolloff).
+///
+/// Models a real main speaker that is flat in-band but loses output below its
+/// low-frequency limit. Log-spaced frequency points.
+pub fn generate_speaker_rolloff_curve(
+    min_freq: f64,
+    max_freq: f64,
+    n_points: usize,
+    crossover_freq: f64,
+    slope_db_per_oct: f64,
+) -> Curve {
+    assert!(n_points >= 2);
+    let log_min = min_freq.log10();
+    let log_max = max_freq.log10();
+    let freq: Vec<f64> = (0..n_points)
+        .map(|i| 10.0_f64.powf(log_min + (log_max - log_min) * i as f64 / (n_points - 1) as f64))
+        .collect();
+
+    let spl: Vec<f64> = freq
+        .iter()
+        .map(|&f| {
+            if f >= crossover_freq {
+                0.0
+            } else {
+                // octaves below crossover (negative value)
+                slope_db_per_oct * (crossover_freq / f).log2()
+            }
+        })
+        .collect();
+
+    Curve {
+        freq: Array1::from(freq),
+        spl: Array1::from(spl),
+        phase: None,
+    }
+}
+
+/// Generate a subwoofer-like rolloff curve: 0 dB below `crossover_freq`, rolling off
+/// at `slope_db_per_oct` dB/octave above it (negative slope = lowpass rolloff).
+///
+/// Models a real subwoofer that is flat in its passband but loses output above its
+/// upper limit. Log-spaced frequency points.
+pub fn generate_subwoofer_rolloff_curve(
+    min_freq: f64,
+    max_freq: f64,
+    n_points: usize,
+    crossover_freq: f64,
+    slope_db_per_oct: f64,
+) -> Curve {
+    assert!(n_points >= 2);
+    let log_min = min_freq.log10();
+    let log_max = max_freq.log10();
+    let freq: Vec<f64> = (0..n_points)
+        .map(|i| 10.0_f64.powf(log_min + (log_max - log_min) * i as f64 / (n_points - 1) as f64))
+        .collect();
+
+    let spl: Vec<f64> = freq
+        .iter()
+        .map(|&f| {
+            if f <= crossover_freq {
+                0.0
+            } else {
+                // octaves above crossover (negative value)
+                slope_db_per_oct * (f / crossover_freq).log2()
+            }
+        })
+        .collect();
+
+    Curve {
+        freq: Array1::from(freq),
+        spl: Array1::from(spl),
+        phase: None,
+    }
+}
+
 /// Add Gaussian noise (in dB domain) with configurable RMS and deterministic seed.
 ///
 /// Uses a simple xorshift64 PRNG with Box-Muller transform for reproducibility

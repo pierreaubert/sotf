@@ -1679,12 +1679,31 @@ fn process_single_speaker(
     // ========================================================================
     // Broadband Target Matching (v2.1)
     // ========================================================================
-    // Fit shelves/gain to the target curve across the full 20Hz-20kHz range
+    // Fit shelves/gain to the target curve within the speaker's passband
     // to establish a balanced baseline before fine-grained optimization.
+    // The lower bound is the speaker's F3 (-3 dB point) so we don't try
+    // to shelf-correct the natural rolloff below it.
     let (curve_for_optim, broadband_plugins, broadband_biquads, bb_mean_shift) =
         if let Some(bb_config) = &room_config.optimizer.broadband_target_matching {
             if bb_config.enabled {
                 info!("  Broadband Target Matching enabled...");
+
+                // Detect F3 to avoid shelf-correcting below the speaker's rolloff.
+                // A low-shelf at 200 Hz extends gain well below F3 — on a speaker
+                // that rolls off at -12 dB/oct below 80 Hz, the partial shelf boost
+                // worsens the response shape rather than correcting it.
+                let detected_f3 = match excursion::detect_f3(&curve, None) {
+                    Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 => {
+                        info!(
+                            "  Broadband: detected speaker F3={:.1}Hz",
+                            f3_result.f3_hz
+                        );
+                        Some(f3_result.f3_hz)
+                    }
+                    _ => None,
+                };
+                let bb_min_freq = detected_f3.unwrap_or(min_freq);
+
                 // 1. Construct a FLAT target at the measurement's mean level.
                 // The tilt is handled exclusively by the EQ optimizer (which subtracts
                 // the tilt curve before optimizing). Including the tilt here would
@@ -1696,16 +1715,29 @@ fn process_single_speaker(
                     phase: None,
                 };
 
-                // 2. Compute alignment across the full audible range (20-20kHz).
+                // 2. Compute alignment within the speaker's passband (F3 to 20kHz).
                 // The target is flat at mean_spl, so the alignment fits gentle
                 // shelves + gain to correct the measurement's broadband shape.
-                if let Some(result) = spectral_align::compute_target_alignment(
+                if let Some(mut result) = spectral_align::compute_target_alignment(
                     &curve,
                     &target,
-                    20.0,
+                    bb_min_freq,
                     20000.0,
                     sample_rate,
                 ) {
+                    // Suppress the low-shelf when a rolloff is detected below the
+                    // shelf frequency: the shelf response extends to DC and would
+                    // partially boost the rolloff region, creating a worse shape
+                    // than leaving it uncorrected.
+                    if let Some(f3) = detected_f3 {
+                        if f3 < spectral_align::LOWSHELF_FREQ {
+                            info!(
+                                "  Broadband: suppressing low-shelf (F3={:.1}Hz < shelf={:.1}Hz)",
+                                f3, spectral_align::LOWSHELF_FREQ
+                            );
+                            result.lowshelf_gain_db = 0.0;
+                        }
+                    }
                     info!(
                         "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
                         result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
