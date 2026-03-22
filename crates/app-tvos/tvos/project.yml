@@ -1,0 +1,44 @@
+name: SotFTV
+options:
+  bundleIdPrefix: org.spinorama
+  deploymentTarget:
+    tvOS: "15.0"
+  xcodeVersion: "15.0"
+
+settings:
+  base:
+    SWIFT_OBJC_BRIDGING_HEADER: SotFTV/BridgingHeader.h
+    # Only build for arm64 (our Rust lib is arm64-only)
+    EXCLUDED_ARCHS[sdk=appletvsimulator*]: x86_64
+
+targets:
+  SotFTV:
+    type: application
+    platform: tvOS
+    sources:
+      - SotFTV
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.sotf.tv
+        INFOPLIST_FILE: SotFTV/Info.plist
+        SWIFT_VERSION: "5.10"
+        LIBRARY_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/lib"
+        ENABLE_USER_SCRIPT_SANDBOXING: false
+        DEAD_CODE_STRIPPING: false
+        OTHER_LDFLAGS:
+          - "-L$(PROJECT_DIR)/lib"
+          - "-force_load"
+          - "$(PROJECT_DIR)/lib/libsotf_tvos.a"
+          - "-framework Metal"
+          - "-framework MetalKit"
+          - "-framework QuartzCore"
+          - "-framework CoreText"
+          - "-framework CoreGraphics"
+          - "-framework CoreFoundation"
+          - "-framework UIKit"
+          - "-framework Foundation"
+          - "-framework AVFoundation"
+          - "-framework AudioToolbox"
+          - "-lc++"
+          - "-lsqlite3"
