@@ -33,6 +33,8 @@ fn make_objective(deviation: Array1<f64>) -> ObjectiveData {
         penalty_w_mingain: 0.0,
         integrality: None,
         multi_objective: None,
+        smooth: false,
+        smooth_n: 3,
     }
 }
 

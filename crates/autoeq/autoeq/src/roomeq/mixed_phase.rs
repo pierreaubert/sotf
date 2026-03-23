@@ -529,8 +529,6 @@ mod tests {
     fn test_phase_only_fir_produces_real_output() {
         // The IFFT output should be real-valued (imaginary parts ≈ 0)
         // This verifies conjugate symmetry construction including the Nyquist fix
-        use num_complex::Complex64;
-        use rustfft::FftPlanner;
 
         let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
         let phase_deg = vec![0.0, -30.0, -60.0, -30.0, 0.0];

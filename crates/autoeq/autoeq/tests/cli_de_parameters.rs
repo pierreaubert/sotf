@@ -42,6 +42,8 @@ fn create_test_objective_data() -> autoeq::optim::ObjectiveData {
         penalty_w_mingain: 0.0,
         integrality: None,
         multi_objective: None,
+        smooth: false,
+        smooth_n: 3,
     }
 }
 
