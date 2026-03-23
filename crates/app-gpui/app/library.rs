@@ -273,19 +273,13 @@ impl App {
         self.library_state.library.get_directory_tree_items()
     }
 
-    /// Toggle directory expansion
+    /// Toggle directory expansion (lazily loads children on first expand)
     pub fn toggle_directory_expansion(&mut self) {
         let tree_items = self.get_directory_tree_items();
-        if let Some((path, level, _)) = tree_items.get(self.selected_directory_index)
-            && *level == 0
-            && let Some(dir_info) = self
-                .library_state
+        if let Some((path, _level, _)) = tree_items.get(self.selected_directory_index) {
+            self.library_state
                 .library
-                .directories
-                .iter_mut()
-                .find(|d| d.path == *path)
-        {
-            dir_info.expanded = !dir_info.expanded;
+                .toggle_directory_expanded(path);
         }
     }
 }

@@ -12,7 +12,7 @@
 //! +------------------+--------------------------------------------+------------------+
 
 use super::common::{
-    render_knob, render_section_title, render_toggle, render_transfer_curve_with_level,
+    render_interactive_transfer_curve, render_knob, render_section_title, render_toggle,
     render_vertical_slider_with_ticks,
 };
 use super::level_meters::render_gr_meter;
@@ -78,14 +78,22 @@ pub fn render_limiter_plugin(
             theme,
         ));
 
-    // === CENTER COLUMN: Sliders (top) + Transfer curve (bottom) ===
-    let transfer_curve = render_transfer_curve_with_level(
+    // === CENTER COLUMN: Sliders (top) + Interactive transfer curve (bottom) ===
+    let transfer_curve = render_interactive_transfer_curve(
+        entity.clone(),
+        plugin_idx,
         state.threshold_db,
         f64::INFINITY,
         0.0,
-        true,
+        true, // is_limiter
         TRANSFER_CURVE_SIZE,
         input_level,
+        0,    // threshold param idx
+        0,    // ratio param idx (unused for limiter)
+        pk(LM, "threshold").min_f64(),
+        pk(LM, "threshold").max_f64(),
+        1.0,  // ratio min (unused)
+        20.0, // ratio max (unused)
         theme,
     );
 

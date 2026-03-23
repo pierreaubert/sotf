@@ -369,7 +369,18 @@ fn render_group(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
 ) -> impl IntoElement {
-    let mut col = div().flex().flex_col().gap_2();
+    // Wrap group in a subtle bordered container for visual separation
+    let mut col = div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .when(!group.title.is_empty(), |d| {
+            d.rounded_xl()
+                .bg(theme.background_secondary)
+                .border_1()
+                .border_color(theme.border)
+                .p_3()
+        });
     if !group.title.is_empty() {
         col = col.child(render_section_title(group.title, theme));
     }

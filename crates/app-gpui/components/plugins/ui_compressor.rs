@@ -14,7 +14,7 @@
 //! +------------------+--------------------------------------------+------------------+
 
 use super::common::{
-    render_knob, render_section_title, render_toggle, render_transfer_curve_with_level,
+    render_interactive_transfer_curve, render_knob, render_section_title, render_toggle,
     render_vertical_slider_with_ticks,
 };
 use super::level_meters::render_gr_meter;
@@ -110,14 +110,22 @@ pub fn render_compressor_plugin(
             theme,
         ));
 
-    // === CENTER COLUMN: Transfer curve (top) + Sliders (bottom) ===
-    let transfer_curve = render_transfer_curve_with_level(
+    // === CENTER COLUMN: Interactive transfer curve (top) + Sliders (bottom) ===
+    let transfer_curve = render_interactive_transfer_curve(
+        entity.clone(),
+        plugin_idx,
         state.threshold_db,
         state.ratio,
         state.knee_db,
         false,
         TRANSFER_CURVE_SIZE,
         input_level,
+        0, // threshold param idx
+        1, // ratio param idx
+        pk(CP, "threshold").min_f64(),
+        pk(CP, "threshold").max_f64(),
+        pk(CP, "ratio").min_f64(),
+        pk(CP, "ratio").max_f64(),
         theme,
     );
 

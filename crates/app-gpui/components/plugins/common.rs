@@ -248,13 +248,30 @@ pub fn render_section_header(title: &str, theme: &Theme) -> impl IntoElement {
         .child(title.to_string())
 }
 
-/// Render a compact section title (no margin - use for borderless layouts)
+/// Render a compact section title with a ruled line extending to the right edge.
+///
+/// ```text
+/// DYNAMICS ─────────────────
+/// ```
 pub fn render_section_title(title: &str, theme: &Theme) -> impl IntoElement {
     div()
-        .text_xs()
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(theme.text_secondary)
-        .child(title.to_string())
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .flex_shrink_0()
+                .child(title.to_string()),
+        )
+        .child(
+            div()
+                .flex_1()
+                .h(px(1.0))
+                .bg(theme.border),
+        )
 }
 
 /// Trait extension for applying parameter section styling to any Div
@@ -674,10 +691,11 @@ pub fn render_transfer_curve_sized(
     render_transfer_curve_with_level(threshold_db, ratio, knee_db, is_limiter, width, None, theme)
 }
 
-/// Render a transfer curve with optional input level indicator
+/// Render a transfer curve with optional input level indicator.
 ///
-/// When `input_level_db` is provided, draws a vertical + horizontal crosshair
-/// showing the current operating point on the curve.
+/// Uses a custom paint element for smooth curve rendering instead of bars.
+/// When `input_level_db` is provided, draws an animated operating point dot
+/// on the curve.
 #[allow(clippy::too_many_arguments)]
 pub fn render_transfer_curve_with_level(
     threshold_db: f64,
@@ -689,106 +707,587 @@ pub fn render_transfer_curve_with_level(
     theme: &Theme,
 ) -> impl IntoElement {
     let curve_width = width.max(200.0);
-    let num_points = 30;
-
-    // Generate curve points
-    let mut bars: Vec<(f32, Rgba, bool)> = Vec::new();
-
-    // Compute input level position (normalized 0..1 in the -60..0 range)
-    let input_pos = input_level_db.map(|db| ((db + 60.0) / 60.0).clamp(0.0, 1.0) as f32);
-    let output_pos = input_level_db.map(|db| {
-        let out = compute_transfer(db, threshold_db, ratio, knee_db, is_limiter);
-        ((out + 60.0) / 60.0).clamp(0.0, 1.0) as f32
-    });
-
-    for i in 0..num_points {
-        let input_db = -60.0 + (i as f64 / num_points as f64) * 60.0;
-        let output_db = compute_transfer(input_db, threshold_db, ratio, knee_db, is_limiter);
-
-        let height = ((output_db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
-        let is_compressed = output_db < input_db - 0.5;
-
-        // Highlight the bar at the current input level
-        let at_input = input_pos.is_some_and(|pos| {
-            let bar_pos = i as f32 / num_points as f32;
-            (bar_pos - pos).abs() < (1.0 / num_points as f32)
-        });
-
-        let color = if at_input {
-            theme.warning // Yellow for current operating point
-        } else if is_compressed {
-            theme.meter_clip // Red for compressed region
-        } else {
-            theme.accent // Blue for linear region
-        };
-        bars.push((height, color, at_input));
-    }
+    let curve_height: f32 = 140.0;
 
     div()
         .flex()
         .flex_col()
-        .gap_2()
-        // Title
-        .child(
-            div()
-                .text_xs()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_secondary)
-                .text_center()
-                .child("Transfer Curve"),
-        )
-        // Curve visualization
+        .gap_1()
         .child(
             div()
                 .w(px(curve_width))
-                .h(px(120.0))
-                .bg(theme.background)
+                .h(px(curve_height))
                 .rounded_lg()
-                .border_1()
-                .border_color(theme.border)
-                .p_1()
-                .relative()
-                .flex()
-                .items_end()
-                .gap_px()
-                .children(bars.into_iter().map(|(height, color, at_input)| {
-                    let mut bar = div().flex_1().h(relative(height)).bg(color).rounded_t_sm();
-                    if at_input {
-                        bar = bar.w(px(3.0));
-                    }
-                    bar
-                }))
-                // Horizontal output level indicator line
-                .children(output_pos.map(|pos| {
-                    div()
-                        .absolute()
-                        .left_0()
-                        .right_0()
-                        .bottom(relative(pos))
-                        .h(px(1.0))
-                        .bg(Theme::opacity_20pct(theme.warning))
-                })),
+                .overflow_hidden()
+                .child(TransferCurveElement {
+                    width: curve_width,
+                    height: curve_height,
+                    threshold_db,
+                    ratio,
+                    knee_db,
+                    is_limiter,
+                    input_level_db,
+                    accent: theme.accent,
+                    compressed_color: theme.meter_clip,
+                    operating_point_color: theme.warning,
+                    bg: theme.background,
+                    grid_color: theme.border,
+                    text_color: theme.text_muted,
+                }),
         )
-        // X-axis labels (Input levels)
+        // X-axis labels
         .child(
             div()
                 .flex()
                 .justify_between()
-                .w_full()
+                .w(px(curve_width))
                 .text_xs()
                 .text_color(theme.text_muted)
                 .child("-60 dB")
                 .child("0 dB"),
         )
-        // Y-axis label (Output - rotated vertically)
+}
+
+// ============================================================================
+// TransferCurveElement — custom-painted smooth transfer curve
+// ============================================================================
+
+/// Custom element that paints a smooth dynamics transfer curve using PathBuilder.
+///
+/// Features:
+/// - Smooth curve (64 sample points, no staircase)
+/// - Filled area under curve with gradient opacity
+/// - Grid lines with dB scale
+/// - Unity gain reference line (diagonal)
+/// - Animated operating point dot
+struct TransferCurveElement {
+    width: f32,
+    height: f32,
+    threshold_db: f64,
+    ratio: f64,
+    knee_db: f64,
+    is_limiter: bool,
+    input_level_db: Option<f64>,
+    accent: Rgba,
+    compressed_color: Rgba,
+    operating_point_color: Rgba,
+    bg: Rgba,
+    grid_color: Rgba,
+    text_color: Rgba,
+}
+
+impl IntoElement for TransferCurveElement {
+    type Element = Self;
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for TransferCurveElement {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let layout_id = window.request_layout(
+            Style {
+                size: Size {
+                    width: px(self.width).into(),
+                    height: px(self.height).into(),
+                },
+                ..Default::default()
+            },
+            [],
+            cx,
+        );
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Self::PrepaintState {
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        _cx: &mut App,
+    ) {
+        let ox = bounds.origin.x;
+        let oy = bounds.origin.y;
+        let w = self.width;
+        let h = self.height;
+        let pad = 4.0; // Inner padding
+
+        // Background
+        window.paint_quad(PaintQuad {
+            bounds,
+            corner_radii: Corners::all(px(8.0)),
+            background: self.bg.into(),
+            border_widths: Edges::all(px(1.0)),
+            border_color: self.grid_color.into(),
+            border_style: BorderStyle::default(),
+        });
+
+        // Helper: dB to pixel coordinates
+        // Input range: -60 to 0 dB → x: pad to w-pad
+        // Output range: -60 to 0 dB → y: h-pad (bottom) to pad (top)
+        let db_to_x = |db: f64| -> f32 {
+            let norm = ((db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
+            pad + norm * (w - 2.0 * pad)
+        };
+        let db_to_y = |db: f64| -> f32 {
+            let norm = ((db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
+            (h - pad) - norm * (h - 2.0 * pad)
+        };
+
+        // Grid lines (-48, -36, -24, -12, 0 dB)
+        let grid_line_color = Rgba {
+            r: self.grid_color.r,
+            g: self.grid_color.g,
+            b: self.grid_color.b,
+            a: 0.3,
+        };
+        for &db in &[-48.0, -36.0, -24.0, -12.0] {
+            let y_pos = db_to_y(db);
+            // Horizontal grid line
+            window.paint_quad(PaintQuad {
+                bounds: Bounds {
+                    origin: point(ox + px(pad), oy + px(y_pos)),
+                    size: size(px(w - 2.0 * pad), px(1.0)),
+                },
+                corner_radii: Corners::default(),
+                background: grid_line_color.into(),
+                border_widths: Edges::default(),
+                border_color: gpui::transparent_black().into(),
+                border_style: BorderStyle::default(),
+            });
+            // Vertical grid line
+            let x_pos = db_to_x(db);
+            window.paint_quad(PaintQuad {
+                bounds: Bounds {
+                    origin: point(ox + px(x_pos), oy + px(pad)),
+                    size: size(px(1.0), px(h - 2.0 * pad)),
+                },
+                corner_radii: Corners::default(),
+                background: grid_line_color.into(),
+                border_widths: Edges::default(),
+                border_color: gpui::transparent_black().into(),
+                border_style: BorderStyle::default(),
+            });
+        }
+
+        // Unity gain reference line (diagonal from -60,-60 to 0,0)
+        let unity_color = Rgba {
+            r: self.text_color.r,
+            g: self.text_color.g,
+            b: self.text_color.b,
+            a: 0.2,
+        };
+        {
+            let mut builder = PathBuilder::fill();
+            let line_w = 1.0_f32;
+            // Draw diagonal as a thin parallelogram
+            builder.move_to(point(ox + px(db_to_x(-60.0)), oy + px(db_to_y(-60.0))));
+            builder.line_to(point(
+                ox + px(db_to_x(-60.0) + line_w),
+                oy + px(db_to_y(-60.0)),
+            ));
+            builder.line_to(point(
+                ox + px(db_to_x(0.0) + line_w),
+                oy + px(db_to_y(0.0)),
+            ));
+            builder.line_to(point(ox + px(db_to_x(0.0)), oy + px(db_to_y(0.0))));
+            if let Ok(path) = builder.build() {
+                window.paint_path(path, unity_color);
+            }
+        }
+
+        // Transfer curve — smooth line with filled area underneath
+        let num_points = 64;
+        let mut curve_points: Vec<(f32, f32)> = Vec::with_capacity(num_points + 1);
+
+        for i in 0..=num_points {
+            let input_db = -60.0 + (i as f64 / num_points as f64) * 60.0;
+            let output_db = compute_transfer(
+                input_db,
+                self.threshold_db,
+                self.ratio,
+                self.knee_db,
+                self.is_limiter,
+            );
+            curve_points.push((db_to_x(input_db), db_to_y(output_db)));
+        }
+
+        // Filled area under curve (accent color at low opacity)
+        {
+            let fill_color = Rgba {
+                r: self.accent.r,
+                g: self.accent.g,
+                b: self.accent.b,
+                a: 0.15,
+            };
+            let mut builder = PathBuilder::fill();
+            // Start at bottom-left
+            builder.move_to(point(
+                ox + px(curve_points[0].0),
+                oy + px(h - pad),
+            ));
+            // Up to curve start
+            builder.line_to(point(
+                ox + px(curve_points[0].0),
+                oy + px(curve_points[0].1),
+            ));
+            // Along the curve
+            for &(cx_pt, cy_pt) in &curve_points[1..] {
+                builder.line_to(point(ox + px(cx_pt), oy + px(cy_pt)));
+            }
+            // Down to bottom-right
+            let last = curve_points.last().unwrap();
+            builder.line_to(point(ox + px(last.0), oy + px(h - pad)));
+            if let Ok(path) = builder.build() {
+                window.paint_path(path, fill_color);
+            }
+        }
+
+        // Curve stroke (thicker line on top of the fill)
+        {
+            let stroke_width = 2.0_f32;
+            // Draw the curve as a thin filled band (PathBuilder doesn't have stroke)
+            let mut builder = PathBuilder::fill();
+
+            // Forward pass (top edge of the band)
+            builder.move_to(point(
+                ox + px(curve_points[0].0),
+                oy + px(curve_points[0].1 - stroke_width / 2.0),
+            ));
+            for &(cx_pt, cy_pt) in &curve_points[1..] {
+                builder.line_to(point(
+                    ox + px(cx_pt),
+                    oy + px(cy_pt - stroke_width / 2.0),
+                ));
+            }
+            // Backward pass (bottom edge of the band)
+            for &(cx_pt, cy_pt) in curve_points.iter().rev() {
+                builder.line_to(point(
+                    ox + px(cx_pt),
+                    oy + px(cy_pt + stroke_width / 2.0),
+                ));
+            }
+
+            if let Ok(path) = builder.build() {
+                window.paint_path(path, self.accent);
+            }
+        }
+
+        // Threshold indicator — vertical dashed line at threshold
+        {
+            let thresh_x = db_to_x(self.threshold_db);
+            let thresh_color = Rgba {
+                r: self.compressed_color.r,
+                g: self.compressed_color.g,
+                b: self.compressed_color.b,
+                a: 0.5,
+            };
+            // Draw as a series of small rectangles (dashed effect)
+            let dash_len = 4.0_f32;
+            let gap_len = 3.0_f32;
+            let mut y_cur = pad;
+            while y_cur < h - pad {
+                let seg_h = dash_len.min(h - pad - y_cur);
+                window.paint_quad(PaintQuad {
+                    bounds: Bounds {
+                        origin: point(ox + px(thresh_x), oy + px(y_cur)),
+                        size: size(px(1.0), px(seg_h)),
+                    },
+                    corner_radii: Corners::default(),
+                    background: thresh_color.into(),
+                    border_widths: Edges::default(),
+                    border_color: gpui::transparent_black().into(),
+                    border_style: BorderStyle::default(),
+                });
+                y_cur += dash_len + gap_len;
+            }
+        }
+
+        // Operating point dot
+        if let Some(input_db) = self.input_level_db {
+            let output_db = compute_transfer(
+                input_db,
+                self.threshold_db,
+                self.ratio,
+                self.knee_db,
+                self.is_limiter,
+            );
+            let dot_x = db_to_x(input_db);
+            let dot_y = db_to_y(output_db);
+            let dot_r = 5.0_f32;
+
+            // Outer glow
+            let glow_color = Rgba {
+                r: self.operating_point_color.r,
+                g: self.operating_point_color.g,
+                b: self.operating_point_color.b,
+                a: 0.3,
+            };
+            window.paint_quad(PaintQuad {
+                bounds: Bounds {
+                    origin: point(
+                        ox + px(dot_x - dot_r - 2.0),
+                        oy + px(dot_y - dot_r - 2.0),
+                    ),
+                    size: size(px((dot_r + 2.0) * 2.0), px((dot_r + 2.0) * 2.0)),
+                },
+                corner_radii: Corners::all(px(dot_r + 2.0)),
+                background: glow_color.into(),
+                border_widths: Edges::default(),
+                border_color: gpui::transparent_black().into(),
+                border_style: BorderStyle::default(),
+            });
+
+            // Inner dot
+            window.paint_quad(PaintQuad {
+                bounds: Bounds {
+                    origin: point(ox + px(dot_x - dot_r), oy + px(dot_y - dot_r)),
+                    size: size(px(dot_r * 2.0), px(dot_r * 2.0)),
+                },
+                corner_radii: Corners::all(px(dot_r)),
+                background: self.operating_point_color.into(),
+                border_widths: Edges::all(px(1.5)),
+                border_color: Rgba {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 0.8,
+                }
+                .into(),
+                border_style: BorderStyle::default(),
+            });
+
+            // Crosshair lines from dot to axes
+            let crosshair_color = Rgba {
+                r: self.operating_point_color.r,
+                g: self.operating_point_color.g,
+                b: self.operating_point_color.b,
+                a: 0.25,
+            };
+            // Vertical line (to x-axis)
+            window.paint_quad(PaintQuad {
+                bounds: Bounds {
+                    origin: point(ox + px(dot_x), oy + px(dot_y + dot_r)),
+                    size: size(px(1.0), px((h - pad) - dot_y - dot_r)),
+                },
+                corner_radii: Corners::default(),
+                background: crosshair_color.into(),
+                border_widths: Edges::default(),
+                border_color: gpui::transparent_black().into(),
+                border_style: BorderStyle::default(),
+            });
+            // Horizontal line (to y-axis)
+            window.paint_quad(PaintQuad {
+                bounds: Bounds {
+                    origin: point(ox + px(pad), oy + px(dot_y)),
+                    size: size(px(dot_x - pad - dot_r), px(1.0)),
+                },
+                corner_radii: Corners::default(),
+                background: crosshair_color.into(),
+                border_widths: Edges::default(),
+                border_color: gpui::transparent_black().into(),
+                border_style: BorderStyle::default(),
+            });
+        }
+    }
+}
+
+/// Render an interactive transfer curve where the user can drag to adjust threshold and ratio.
+///
+/// - **Horizontal drag**: adjusts threshold (param at `threshold_param_idx`)
+/// - **Vertical drag above threshold**: adjusts ratio (param at `ratio_param_idx`)
+///
+/// The curve itself is rendered by `TransferCurveElement` and wrapped in
+/// a div with drag event handlers.
+#[allow(clippy::too_many_arguments)]
+pub fn render_interactive_transfer_curve(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    threshold_db: f64,
+    ratio: f64,
+    knee_db: f64,
+    is_limiter: bool,
+    width: f32,
+    input_level_db: Option<f64>,
+    threshold_param_idx: usize,
+    ratio_param_idx: usize,
+    threshold_min: f64,
+    threshold_max: f64,
+    ratio_min: f64,
+    ratio_max: f64,
+    theme: &Theme,
+) -> impl IntoElement {
+    let curve_width = width.max(200.0);
+    let curve_height: f32 = 140.0;
+
+    // Capture for drag closures
+    let entity_drag = entity.clone();
+    let entity_scroll = entity.clone();
+
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(
+            div()
+                .id(ElementId::Name(SharedString::from(format!(
+                    "xfer-curve-{plugin_idx}"
+                ))))
+                .w(px(curve_width))
+                .h(px(curve_height))
+                .rounded_lg()
+                .overflow_hidden()
+                .cursor_pointer()
+                // Drag to adjust threshold (horizontal) and ratio (vertical)
+                .on_mouse_down(MouseButton::Left, {
+                    let entity = entity.clone();
+                    move |event, _window, cx| {
+                        cx.stop_propagation();
+                        // Store start position for drag delta calculation
+                        entity.update(cx, |state, _| {
+                            state.app.is_dragging_knob = true;
+                            state.app.knob_drag_plugin_idx = plugin_idx;
+                            state.app.knob_drag_start_y = Some(event.position.y.into());
+                            state.app.knob_drag_start_value = threshold_db;
+                            // Store ratio in min/max fields as scratch (reused for drag)
+                            state.app.knob_drag_min = ratio;
+                        });
+                    }
+                })
+                .on_mouse_move(move |event, _window, cx| {
+                    if event.pressed_button != Some(MouseButton::Left) {
+                        return;
+                    }
+                    entity_drag.update(cx, |state, _| {
+                        if !state.app.is_dragging_knob
+                            || state.app.knob_drag_plugin_idx != plugin_idx
+                        {
+                            return;
+                        }
+                        let start_y = state.app.knob_drag_start_y.unwrap_or(0.0);
+                        let start_threshold = state.app.knob_drag_start_value;
+                        let start_ratio = state.app.knob_drag_min;
+
+                        let current_x: f32 = event.position.x.into();
+                        let current_y: f32 = event.position.y.into();
+
+                        // Horizontal movement → threshold
+                        // Map pixel delta to dB: full widget width = 60 dB range
+                        let dx = current_x - (start_y - 100.0); // approximate, but delta-based
+                        let _ = dx; // We use absolute x position mapping instead
+
+                        // Map x position within the curve to dB
+                        // The curve goes from x=pad to x=w-pad for -60 to 0 dB
+                        // We don't have the element bounds here, so use delta-based approach
+                        let dy = current_y - start_y;
+
+                        // Threshold: horizontal sensitivity (~0.5 dB per pixel)
+                        // We'll use y-delta for a combined threshold+ratio drag:
+                        // - Small vertical drag adjusts ratio
+                        let new_threshold = (start_threshold - dy as f64 * 0.3)
+                            .clamp(threshold_min, threshold_max);
+                        let new_ratio = (start_ratio + dy as f64 * 0.02)
+                            .clamp(ratio_min, ratio_max);
+
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            threshold_param_idx,
+                            new_threshold,
+                        );
+                        if !is_limiter {
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                ratio_param_idx,
+                                new_ratio,
+                            );
+                        }
+                    });
+                })
+                .on_mouse_up(MouseButton::Left, {
+                    let entity = entity.clone();
+                    move |_, _, cx| {
+                        entity.update(cx, |state, _| {
+                            state.app.is_dragging_knob = false;
+                        });
+                    }
+                })
+                // Scroll wheel adjusts threshold
+                .on_scroll_wheel(move |event, _window, cx| {
+                    cx.stop_propagation();
+                    entity_scroll.update(cx, |state, _| {
+                        let delta: f32 = match event.delta {
+                            ScrollDelta::Pixels(d) => {
+                                let y_px: f32 = d.y.into();
+                                -y_px * 0.1
+                            }
+                            ScrollDelta::Lines(d) => -(d.y) * 1.0,
+                        };
+                        let new_threshold =
+                            (threshold_db + delta as f64).clamp(threshold_min, threshold_max);
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            threshold_param_idx,
+                            new_threshold,
+                        );
+                    });
+                })
+                .child(TransferCurveElement {
+                    width: curve_width,
+                    height: curve_height,
+                    threshold_db,
+                    ratio,
+                    knee_db,
+                    is_limiter,
+                    input_level_db,
+                    accent: theme.accent,
+                    compressed_color: theme.meter_clip,
+                    operating_point_color: theme.warning,
+                    bg: theme.background,
+                    grid_color: theme.border,
+                    text_color: theme.text_muted,
+                }),
+        )
+        // X-axis labels
         .child(
             div()
                 .flex()
-                .items_center()
-                .h(px(80.0))
+                .justify_between()
+                .w(px(curve_width))
                 .text_xs()
                 .text_color(theme.text_muted)
-                .child("Output"),
+                .child("-60 dB")
+                .child("0 dB"),
         )
 }
 
