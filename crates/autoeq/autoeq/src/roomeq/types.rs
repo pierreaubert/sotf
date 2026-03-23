@@ -690,6 +690,118 @@ impl Default for TargetTiltConfig {
 }
 
 // ============================================================================
+// Unified Target Response Configuration (replaces target_tilt + broadband)
+// ============================================================================
+
+/// Target response shape preset.
+///
+/// Defines the overall shape of the corrected in-room frequency response.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TargetShape {
+    /// Flat in-room response (no tilt)
+    #[default]
+    Flat,
+    /// Harman preferred in-room curve (-0.8 dB/octave from 1 kHz reference)
+    Harman,
+    /// Custom slope specified by `slope_db_per_octave`
+    Custom,
+    /// Load target curve from external CSV file (`curve_path` must be set)
+    File,
+}
+
+/// User preference adjustments layered on top of the target shape.
+///
+/// These are additive dB adjustments relative to the target.
+/// Example: shape=Harman + bass_shelf_db=+3 means Harman curve
+/// with an extra 3 dB bass boost below 200 Hz.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UserPreference {
+    /// Bass shelf boost/cut in dB (applied below `bass_shelf_freq`)
+    #[serde(default)]
+    pub bass_shelf_db: f64,
+
+    /// Bass shelf frequency in Hz
+    #[serde(default = "default_bass_shelf_freq")]
+    pub bass_shelf_freq: f64,
+
+    /// Treble shelf boost/cut in dB (applied above `treble_shelf_freq`)
+    #[serde(default)]
+    pub treble_shelf_db: f64,
+
+    /// Treble shelf frequency in Hz
+    #[serde(default = "default_treble_shelf_freq")]
+    pub treble_shelf_freq: f64,
+}
+
+impl Default for UserPreference {
+    fn default() -> Self {
+        Self {
+            bass_shelf_db: 0.0,
+            bass_shelf_freq: default_bass_shelf_freq(),
+            treble_shelf_db: 0.0,
+            treble_shelf_freq: default_treble_shelf_freq(),
+        }
+    }
+}
+
+fn default_treble_shelf_freq() -> f64 {
+    8000.0
+}
+
+/// Unified target response configuration for room correction.
+///
+/// Defines both the target shape (what the corrected response should look like)
+/// and user preference adjustments (bass/treble tweaks on top).
+/// All processing stages (broadband pre-correction, EQ optimization, scoring)
+/// use this single target, eliminating double-application bugs.
+///
+/// Replaces the legacy `target_tilt` + `broadband_target_matching` combination.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TargetResponseConfig {
+    /// Target shape preset
+    #[serde(default)]
+    pub shape: TargetShape,
+
+    /// Slope in dB per octave (used when shape == Custom).
+    /// Negative = downward tilt toward high frequencies.
+    #[serde(default = "default_tilt_slope")]
+    pub slope_db_per_octave: f64,
+
+    /// Reference frequency where target shape equals 0 dB (Hz)
+    #[serde(default = "default_tilt_reference_freq")]
+    pub reference_freq: f64,
+
+    /// Path to custom target curve CSV (used when shape == File)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve_path: Option<std::path::PathBuf>,
+
+    /// User preference adjustments (layered ON TOP of the target shape)
+    #[serde(default)]
+    pub preference: UserPreference,
+
+    /// Enable broadband pre-correction (shelf+gain fit before fine EQ).
+    /// When true, fits gentle shelves to align the measurement with the
+    /// target shape BEFORE the optimizer places narrow PEQ filters.
+    /// Default: false (only enabled when explicitly set or via legacy migration)
+    #[serde(default)]
+    pub broadband_precorrection: bool,
+}
+
+impl Default for TargetResponseConfig {
+    fn default() -> Self {
+        Self {
+            shape: TargetShape::Flat,
+            slope_db_per_octave: 0.0,
+            reference_freq: default_tilt_reference_freq(),
+            curve_path: None,
+            preference: UserPreference::default(),
+            broadband_precorrection: false,
+        }
+    }
+}
+
+// ============================================================================
 // Excursion Protection Configuration
 // ============================================================================
 
@@ -1152,8 +1264,11 @@ pub struct OptimizerConfig {
     // ========================================================================
     // Scenario B (WITHOUT Subwoofers) Configuration
     // ========================================================================
-    /// Target curve tilt configuration
-    /// Default: flat (no tilt)
+    /// Unified target response configuration (preferred over legacy target_tilt + broadband)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_response: Option<TargetResponseConfig>,
+
+    /// Legacy target curve tilt configuration — migrated to `target_response` at load time
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_tilt: Option<TargetTiltConfig>,
 
@@ -1462,7 +1577,8 @@ impl Default for OptimizerConfig {
             tolerance: default_tolerance(),
             atolerance: default_atolerance(),
             allow_delay: None,
-            // Scenario B configs
+            target_response: None,
+            // Scenario B configs (legacy)
             target_tilt: None,
             excursion_protection: None,
             schroeder_split: None,
@@ -1485,6 +1601,73 @@ impl OptimizerConfig {
     /// - Default: false for IIR mode, true for FIR and mixed modes
     pub fn allow_delay(&self) -> bool {
         self.allow_delay.unwrap_or(self.mode != "iir")
+    }
+
+    /// Migrate legacy `target_tilt` + `broadband_target_matching` into `target_response`.
+    ///
+    /// If `target_response` is already set, legacy fields are ignored.
+    /// Otherwise, legacy fields are converted and the originals cleared.
+    pub fn migrate_target_config(&mut self) {
+        if self.target_response.is_some() {
+            // New format takes precedence — warn if legacy fields are also set
+            if self.target_tilt.is_some() {
+                log::warn!(
+                    "Both target_response and target_tilt are set; \
+                     target_tilt is ignored. Use target_response exclusively."
+                );
+            }
+            if self.broadband_target_matching.as_ref().is_some_and(|b| b.enabled) {
+                log::warn!(
+                    "Both target_response and broadband_target_matching are set; \
+                     broadband_target_matching is ignored. \
+                     Set target_response.broadband_precorrection instead."
+                );
+            }
+            self.target_tilt = None;
+            self.broadband_target_matching = None;
+            return;
+        }
+
+        // Nothing to migrate
+        if self.target_tilt.is_none() && self.broadband_target_matching.is_none() {
+            return;
+        }
+
+        let tilt = self.target_tilt.take();
+        let bb = self.broadband_target_matching.take();
+
+        let (shape, slope) = match tilt.as_ref() {
+            Some(t) if t.tilt_type == TiltType::Harman => (TargetShape::Harman, -0.8),
+            Some(t) if t.tilt_type == TiltType::Custom => {
+                (TargetShape::Custom, t.slope_db_per_octave)
+            }
+            Some(t)
+                if t.tilt_type == TiltType::Flat
+                    && (t.slope_db_per_octave.abs() > 1e-6
+                        || t.bass_shelf_db.abs() > 1e-6) =>
+            {
+                // Legacy promotion: Flat with non-zero slope/shelf → Custom
+                (TargetShape::Custom, t.slope_db_per_octave)
+            }
+            _ => (TargetShape::Flat, 0.0),
+        };
+
+        self.target_response = Some(TargetResponseConfig {
+            shape,
+            slope_db_per_octave: slope,
+            reference_freq: tilt.as_ref().map(|t| t.reference_freq).unwrap_or(1000.0),
+            curve_path: None,
+            preference: UserPreference {
+                bass_shelf_db: tilt.as_ref().map(|t| t.bass_shelf_db).unwrap_or(0.0),
+                bass_shelf_freq: tilt
+                    .as_ref()
+                    .map(|t| t.bass_shelf_freq)
+                    .unwrap_or(default_bass_shelf_freq()),
+                treble_shelf_db: 0.0,
+                treble_shelf_freq: default_treble_shelf_freq(),
+            },
+            broadband_precorrection: bb.as_ref().map(|b| b.enabled).unwrap_or(false),
+        });
     }
 }
 

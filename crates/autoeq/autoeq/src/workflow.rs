@@ -1931,4 +1931,65 @@ mod tests {
             "fixed low-pass gain should stay at its fixed bound"
         );
     }
+
+    /// Regression test: gain lower bound must be -3*max_db (not -6*max_db).
+    /// Bug: gain_lower was -6*max_db, creating a [-72,+12] search space instead
+    /// of [-36,+12], wasting optimizer effort on unreachable gain values.
+    #[test]
+    fn setup_bounds_gain_lower_is_minus_3x_max_db() {
+        let args = Args {
+            num_filters: 3,
+            min_freq: 20.0,
+            max_freq: 20000.0,
+            min_q: 0.5,
+            max_q: 10.0,
+            min_db: 1.0, // min gain magnitude (constraint, not bound)
+            max_db: 12.0,
+            ..Args::parse_from(["autoeq-test"])
+        };
+        let (lower, upper) = setup_bounds(&args);
+        // PK model: 3 params per filter [freq, q, gain]
+        // Check gain lower bound for each filter
+        for i in 0..args.num_filters {
+            let gain_lower = lower[i * 3 + 2];
+            let gain_upper = upper[i * 3 + 2];
+            assert!(
+                (gain_lower - (-36.0)).abs() < 1e-9,
+                "filter {} gain lower bound should be -3*max_db=-36, got {}",
+                i,
+                gain_lower
+            );
+            assert!(
+                (gain_upper - 12.0).abs() < 1e-9,
+                "filter {} gain upper bound should be max_db=12, got {}",
+                i,
+                gain_upper
+            );
+        }
+    }
+
+    /// Verify gain bounds scale correctly with different max_db values.
+    #[test]
+    fn setup_bounds_gain_scales_with_max_db() {
+        for max_db in [4.0, 6.0, 12.0] {
+            let args = Args {
+                num_filters: 1,
+                min_freq: 100.0,
+                max_freq: 10000.0,
+                min_q: 0.5,
+                max_q: 5.0,
+                min_db: 1.0,
+                max_db,
+                ..Args::parse_from(["autoeq-test"])
+            };
+            let (lower, _upper) = setup_bounds(&args);
+            let gain_lower = lower[2]; // gain is 3rd param
+            let expected = -3.0 * max_db;
+            assert!(
+                (gain_lower - expected).abs() < 1e-9,
+                "max_db={}: gain_lower should be {}, got {}",
+                max_db, expected, gain_lower
+            );
+        }
+    }
 }

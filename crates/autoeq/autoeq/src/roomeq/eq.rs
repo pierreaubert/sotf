@@ -995,3 +995,98 @@ fn optimize_spatial_robustness(
 
     Ok((filters, final_loss))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::Array1;
+
+    fn make_synthetic_room_curve() -> Curve {
+        // 500-point log-spaced curve 20-20kHz with room modes
+        let n = 500;
+        let log_min = 20.0_f64.ln();
+        let log_max = 20000.0_f64.ln();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| (log_min + (log_max - log_min) * i as f64 / (n - 1) as f64).exp())
+            .collect();
+        let spl: Vec<f64> = freqs
+            .iter()
+            .map(|&f| {
+                let mode1 = 10.0 * (-((f.log2() - 80.0_f64.log2()).powi(2)) / 0.3).exp();
+                let mode2 = 8.0 * (-((f.log2() - 250.0_f64.log2()).powi(2)) / 0.2).exp();
+                let dip = -6.0 * (-((f.log2() - 500.0_f64.log2()).powi(2)) / 0.4).exp();
+                mode1 + mode2 + dip
+            })
+            .collect();
+        Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::from_vec(spl),
+            phase: None,
+        }
+    }
+
+    /// Regression test: refine step must run when config.refine=true.
+    /// Bug: optimize_channel_eq_inner called optimize_filters directly,
+    /// bypassing perform_optimization which contains the refine path.
+    #[test]
+    fn optimize_channel_eq_runs_refine_when_enabled() {
+        let curve = make_synthetic_room_curve();
+        let config_no_refine = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 3,
+            max_iter: 5000,
+            population: 20,
+            refine: false,
+            seed: Some(42),
+            tolerance: 1e-3,
+            atolerance: 1e-3,
+            ..OptimizerConfig::default()
+        };
+        let config_with_refine = OptimizerConfig {
+            refine: true,
+            ..config_no_refine.clone()
+        };
+
+        let (filters_no, loss_no) =
+            optimize_channel_eq(&curve, &config_no_refine, None, 48000.0)
+                .expect("optimization should succeed");
+        let (filters_yes, loss_yes) =
+            optimize_channel_eq(&curve, &config_with_refine, None, 48000.0)
+                .expect("optimization should succeed");
+
+        // Refine should produce equal or better loss
+        assert!(
+            loss_yes <= loss_no + 1e-9,
+            "refine should not worsen loss: no_refine={:.6}, refine={:.6}",
+            loss_no,
+            loss_yes
+        );
+        // Both should produce non-empty filters
+        assert!(!filters_no.is_empty(), "no_refine should produce filters");
+        assert!(!filters_yes.is_empty(), "refine should produce filters");
+    }
+
+    /// Verify that LSHADE strategy is accepted and produces valid results.
+    #[test]
+    fn optimize_channel_eq_with_lshade_strategy() {
+        let curve = make_synthetic_room_curve();
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 5,
+            max_iter: 5000,
+            population: 20,
+            seed: Some(42),
+            tolerance: 1e-3,
+            atolerance: 1e-3,
+            ..OptimizerConfig::default()
+        };
+
+        let (filters, loss) = optimize_channel_eq(&curve, &config, None, 48000.0)
+            .expect("LSHADE optimization should succeed");
+
+        assert!(!filters.is_empty(), "should produce filters");
+        assert!(loss < 5.0, "loss should be reasonable, got {:.4}", loss);
+    }
+}

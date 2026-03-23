@@ -27,7 +27,7 @@ use autoeq::loss::{
     calculate_standard_deviation_in_range, regression_slope_per_octave_in_range,
 };
 use autoeq::roomeq::{
-    BroadbandTargetMatchingConfig, CallbackAction, DecomposedCorrectionSerdeConfig,
+    CallbackAction, DecomposedCorrectionSerdeConfig,
     ExcursionProtectionConfig, GroupDelayOptimizationConfig, MixedPhaseSerdeConfig,
     MultiMeasurementConfig, MultiMeasurementStrategy, PhaseAlignmentConfig,
     PreRingingSerdeConfig, ProcessingMode, RoomConfig, RoomOptimizationResult,
@@ -50,8 +50,8 @@ const SAMPLE_RATE: f64 = 48000.0;
 
 const SEED: u64 = 42;
 
-/// DE maxeval for QA. With default population ~84, this gives ~595 generations
-/// before the 5000-gen floor, but LSHADE typically converges in ~300 generations.
+/// DE maxeval for QA. LSHADE with tolerance=1e-3 converges in ~100-300 generations,
+/// so we don't need many evaluations. The tolerance does the early stopping.
 const QA_MAXEVAL: usize = 50_000;
 
 /// Base config directories
@@ -79,10 +79,14 @@ const PSYCHOACOUSTIC_SCORE_TOLERANCE: f64 = 2.0;
 // ---------------------------------------------------------------------------
 
 /// Override optimizer settings for QA: use autoeq:de with LSHADE strategy and fixed seed.
+/// Uses relaxed tolerance (1e-3) for fast convergence — LSHADE typically converges
+/// in ~100-300 generations, making QA fast while still using a proper global optimizer.
 fn apply_qa_overrides(config: &mut RoomConfig) {
     config.optimizer.algorithm = "autoeq:de".to_string();
     config.optimizer.strategy = "lshade".to_string();
     config.optimizer.max_iter = QA_MAXEVAL;
+    config.optimizer.tolerance = 1e-3;
+    config.optimizer.atolerance = 1e-3;
     config.optimizer.refine = true;
     config.optimizer.seed = Some(SEED);
 }
@@ -433,11 +437,9 @@ impl std::fmt::Display for OptionOverride {
 fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
     match option {
         OptionOverride::TargetTilt { slope_db_per_octave } => {
-            config.optimizer.target_tilt = Some(TargetTiltConfig {
-                tilt_type: TiltType::Custom,
-                slope_db_per_octave: *slope_db_per_octave,
-                ..TargetTiltConfig::default()
-            });
+            let existing = config.optimizer.target_response.get_or_insert_with(Default::default);
+            existing.shape = autoeq::roomeq::TargetShape::Custom;
+            existing.slope_db_per_octave = *slope_db_per_octave;
         }
         OptionOverride::ExcursionProtection => {
             config.optimizer.excursion_protection = Some(ExcursionProtectionConfig {
@@ -471,8 +473,8 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
             config.optimizer.psychoacoustic = true;
         }
         OptionOverride::BroadbandTargetMatching => {
-            config.optimizer.broadband_target_matching =
-                Some(BroadbandTargetMatchingConfig { enabled: true });
+            let existing = config.optimizer.target_response.get_or_insert_with(Default::default);
+            existing.broadband_precorrection = true;
         }
         OptionOverride::PhaseAlignment => {
             config.optimizer.phase_alignment = Some(PhaseAlignmentConfig::default());
@@ -562,6 +564,7 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
 fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
     match option {
         OptionOverride::TargetTilt { .. } => {
+            config.optimizer.target_response = None;
             config.optimizer.target_tilt = None;
         }
         OptionOverride::ExcursionProtection => {
@@ -577,6 +580,9 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
             config.optimizer.psychoacoustic = false;
         }
         OptionOverride::BroadbandTargetMatching => {
+            if let Some(ref mut tr) = config.optimizer.target_response {
+                tr.broadband_precorrection = false;
+            }
             config.optimizer.broadband_target_matching = None;
         }
         OptionOverride::PhaseAlignment => {
