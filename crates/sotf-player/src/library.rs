@@ -208,6 +208,10 @@ pub struct DirectoryInfo {
     pub last_scanned: Option<SystemTime>,
     pub expanded: bool,
     pub subdirectories: Vec<DirectoryInfo>,
+    /// Whether subdirectories have been loaded from disk.
+    /// When false, `subdirectories` is empty but the directory may have children on disk.
+    #[serde(default)]
+    pub children_loaded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -241,6 +245,8 @@ pub struct Track {
     pub edition: Option<String>,
     pub is_favorite: bool,
     pub play_count: usize,
+    /// Stable UUID v5 for cross-instance identity (P2P sync, federation).
+    pub uuid: Option<String>,
 }
 
 impl Track {
@@ -268,6 +274,8 @@ pub struct Album {
     pub edition: Option<String>,
     pub dynamic_range: Option<f64>,
     pub is_favorite: bool,
+    /// Stable UUID v5 for cross-instance identity (P2P sync, federation).
+    pub uuid: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -465,6 +473,8 @@ pub struct MusicLibrary {
     pub directories: Vec<DirectoryInfo>,
     pub albums: Vec<Album>,
     db: Option<MusicDatabase>,
+    /// Cached directory stats for lazy loading of subdirectories.
+    dir_stats_cache: HashMap<PathBuf, (usize, usize)>,
 }
 
 impl MusicLibrary {
@@ -500,9 +510,8 @@ impl MusicLibrary {
             })?;
 
         Ok(Self {
-            directories: Vec::new(),
-            albums: Vec::new(),
             db: Some(db),
+            ..Default::default()
         })
     }
 
@@ -515,9 +524,8 @@ impl MusicLibrary {
         let db = MusicDatabase::open_secondary(&db_path)?;
 
         Ok(Self {
-            directories: Vec::new(),
-            albums: Vec::new(),
             db: Some(db),
+            ..Default::default()
         })
     }
 
@@ -531,9 +539,8 @@ impl MusicLibrary {
         let db = MusicDatabase::open(db_path)?;
 
         Ok(Self {
-            directories: Vec::new(),
-            albums: Vec::new(),
             db: Some(db),
+            ..Default::default()
         })
     }
 
@@ -548,9 +555,8 @@ impl MusicLibrary {
         let db = MusicDatabase::open_for_testing(db_path)?;
 
         Ok(Self {
-            directories: Vec::new(),
-            albums: Vec::new(),
             db: Some(db),
+            ..Default::default()
         })
     }
 
@@ -573,7 +579,9 @@ impl MusicLibrary {
 
             // Compute directory stats from the loaded albums
             // This gives us stats for every directory that contains tracks
-            let stats_map = compute_directory_stats(&self.albums);
+            // Cache it for lazy loading of subdirectories later
+            self.dir_stats_cache = compute_directory_stats(&self.albums);
+            let stats_map = &self.dir_stats_cache;
 
             // Load previously scanned directories with their stats
             let mut scanned_dirs = db.get_scanned_directories()?;
@@ -629,25 +637,24 @@ impl MusicLibrary {
 
             let t_before_tree = std::time::Instant::now();
 
-            // Build directory info structures for filtered directories
-            // Only build tree from what exists on disk NOW (don't include dirs that were in DB but deleted)
+            // Build shallow directory nodes — no recursive filesystem walk.
+            // Subdirectories are loaded lazily when the user expands a node.
+            // Aggregate stats are computed from the in-memory stats_map.
             for (canonical_path, _original_path, _track_count, _album_count, last_scan) in
                 filtered_dirs
             {
                 let last_scanned =
                     Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(last_scan));
 
-                // Build directory tree from disk
-                // Stats will be computed from the albums in the database
-                let mut dir_info = build_directory_tree_from_disk(
+                let (tracks, albums) =
+                    compute_aggregate_stats_for_path(&canonical_path, &stats_map);
+
+                let dir_info = build_directory_shallow(
                     canonical_path,
-                    0, // Will be updated from stats_map
-                    0, // Will be updated from stats_map
+                    tracks,
+                    albums,
                     last_scanned,
                 );
-
-                // Update stats from the computed map
-                update_directory_stats_from_map(&mut dir_info, &stats_map);
 
                 self.directories.push(dir_info);
             }
@@ -702,6 +709,39 @@ impl MusicLibrary {
         self.directories.push(build_directory_info(path));
 
         Ok(true) // New directory added, scan needed
+    }
+
+    /// Toggle a directory's expanded state, lazily loading children on first expand.
+    pub fn toggle_directory_expanded(&mut self, target_path: &Path) -> bool {
+        fn toggle_recursive(
+            directories: &mut [DirectoryInfo],
+            target_path: &Path,
+            stats_map: &HashMap<PathBuf, (usize, usize)>,
+        ) -> bool {
+            for dir in directories {
+                if dir.path == target_path {
+                    dir.expanded = !dir.expanded;
+                    if dir.expanded && !dir.children_loaded {
+                        load_children_from_disk(dir, stats_map);
+                    }
+                    return true;
+                }
+                if dir.expanded
+                    && toggle_recursive(&mut dir.subdirectories, target_path, stats_map)
+                {
+                    return true;
+                }
+            }
+            false
+        }
+
+        let stats_clone = self.dir_stats_cache.clone();
+        toggle_recursive(&mut self.directories, target_path, &stats_clone)
+    }
+
+    /// Refresh the directory stats cache (e.g., after a scan).
+    pub fn refresh_dir_stats_cache(&mut self) {
+        self.dir_stats_cache = compute_directory_stats(&self.albums);
     }
 
     /// Get filtered, filtered, merged, and sorted albums
@@ -1029,52 +1069,20 @@ impl MusicLibrary {
             stats.1 = albums.len();
         }
 
-        // Helper to update directory info recursively
-        fn update_dir_info(
-            info: &mut DirectoryInfo,
-            stats: &HashMap<PathBuf, (usize, usize)>,
-            scan_time: SystemTime,
-        ) {
-            // Aggregate stats from this directory and all subdirectories
-            // Or does stats already contain aggregated data?
-            // If scan_directory walks everything, we can just look up the path in stats?
-            // But scan_directory might not have entries for intermediate directories if they have no files directly?
-
-            // Let's assume stats contains counts for each directory that has files.
-            // We want the count to be recursive (files in this dir + subdirs).
-
-            // Actually, let's make scan_directory populate stats for every directory it encounters.
-
-            // For now, let's just try to update from the map if it exists
-            // But we need to aggregate for the tree view?
-            // Usually "tracks in this folder" means recursive.
-
-            // Let's do a post-order traversal to aggregate counts
-            let mut my_files = 0;
-            let mut my_albums = 0;
-
-            // First recurse
-            for subdir in &mut info.subdirectories {
-                update_dir_info(subdir, stats, scan_time);
-                my_files += subdir.file_count;
-                my_albums += subdir.album_count;
-            }
-
-            // Then add own files (from stats map)
-            if let Some((files, albums)) = stats.get(&info.path) {
-                my_files += files;
-                my_albums += albums;
-            }
-
-            info.file_count = my_files;
-            info.album_count = my_albums;
-            info.last_scanned = Some(scan_time);
-        }
-
-        // Update directory info with file counts and scan time
+        // Update directory stats using aggregate computation (no tree walk needed)
         for dir_info in &mut self.directories {
-            update_dir_info(dir_info, &dir_stats, scan_time);
+            let (tracks, albums) =
+                compute_aggregate_stats_for_path(&dir_info.path, &dir_stats);
+            dir_info.file_count = tracks;
+            dir_info.album_count = albums;
+            dir_info.last_scanned = Some(scan_time);
+            // Reset children so they get fresh stats on next expand
+            dir_info.subdirectories.clear();
+            dir_info.children_loaded = false;
         }
+
+        // Update the stats cache for lazy loading
+        self.dir_stats_cache = dir_stats;
 
         // Merge with existing albums if we have a database
         if let Some(db) = &self.db
@@ -1331,6 +1339,7 @@ impl MusicLibrary {
                                     edition: metadata.edition.clone(),
                                     dynamic_range: None,
                                     is_favorite: false,
+                                    uuid: None,
                                 }
                             });
 
@@ -1360,6 +1369,7 @@ impl MusicLibrary {
                                 is_favorite: false,
                                 play_count: 0,
                                 source: None,
+                                uuid: None,
                             };
 
                             album.tracks.push(track);
@@ -1686,62 +1696,91 @@ fn get_file_mtime(path: &Path) -> Option<u64> {
         .map(|duration| duration.as_secs())
 }
 
-/// Build directory info recursively without stats (for new directories)
+/// Build directory info without recursion (shallow — children loaded on demand).
 fn build_directory_info(path: PathBuf) -> DirectoryInfo {
-    let mut subdirectories = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&path) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            if entry.path().is_dir() {
-                subdirectories.push(build_directory_info(entry.path()));
-            }
-        }
-    }
-    // Sort subdirectories by name
-    subdirectories.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
-
     DirectoryInfo {
         path,
         file_count: 0,
         album_count: 0,
         last_scanned: None,
         expanded: false,
-        subdirectories,
+        subdirectories: Vec::new(),
+        children_loaded: false,
     }
 }
 
-/// Build directory tree from disk (for loading from database)
-/// Computes subdirectory stats from the albums and tracks in the database
-fn build_directory_tree_from_disk(
+/// Build a shallow directory node for loading from database.
+/// Does NOT recurse into subdirectories — they are loaded lazily on expand.
+fn build_directory_shallow(
     path: PathBuf,
     file_count: usize,
     album_count: usize,
     last_scanned: Option<SystemTime>,
 ) -> DirectoryInfo {
-    let mut subdirectories = Vec::new();
-
-    // Read immediate subdirectories from disk
-    if let Ok(entries) = std::fs::read_dir(&path) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let entry_path = entry.path();
-            if entry_path.is_dir() {
-                // Recursively build subdirectory tree
-                // Stats will be 0 for subdirectories (they need to be scanned)
-                subdirectories.push(build_directory_tree_from_disk(entry_path, 0, 0, None));
-            }
-        }
-    }
-
-    // Sort subdirectories by name
-    subdirectories.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
-
     DirectoryInfo {
         path,
         file_count,
         album_count,
         last_scanned,
         expanded: false,
-        subdirectories,
+        subdirectories: Vec::new(),
+        children_loaded: false,
     }
+}
+
+/// Load immediate children of a directory from disk (one level only).
+/// Computes aggregate stats for each child from the stats_map.
+pub fn load_children_from_disk(
+    dir_info: &mut DirectoryInfo,
+    stats_map: &HashMap<PathBuf, (usize, usize)>,
+) {
+    if dir_info.children_loaded {
+        return;
+    }
+    dir_info.children_loaded = true;
+
+    let mut subdirectories = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir_info.path) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            // Use file_type() from DirEntry — avoids extra stat syscall on most platforms
+            let is_dir = entry
+                .file_type()
+                .map(|ft| ft.is_dir())
+                .unwrap_or(false);
+            if is_dir {
+                let child_path = entry.path();
+                let (tracks, albums) = compute_aggregate_stats_for_path(&child_path, stats_map);
+                subdirectories.push(DirectoryInfo {
+                    path: child_path,
+                    file_count: tracks,
+                    album_count: albums,
+                    last_scanned: None,
+                    expanded: false,
+                    subdirectories: Vec::new(),
+                    children_loaded: false,
+                });
+            }
+        }
+    }
+    subdirectories.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
+    dir_info.subdirectories = subdirectories;
+}
+
+/// Compute aggregate stats (track count, album count) for a directory and all its descendants.
+/// Iterates the stats_map in memory — no disk I/O.
+fn compute_aggregate_stats_for_path(
+    root: &Path,
+    stats_map: &HashMap<PathBuf, (usize, usize)>,
+) -> (usize, usize) {
+    let mut total_tracks = 0;
+    let mut total_albums = 0;
+    for (dir, (tracks, albums)) in stats_map {
+        if dir.starts_with(root) {
+            total_tracks += tracks;
+            total_albums += albums;
+        }
+    }
+    (total_tracks, total_albums)
 }
 
 /// Compute directory stats from albums in the library
@@ -1750,35 +1789,38 @@ fn build_directory_tree_from_disk(
 fn compute_directory_stats(albums: &[Album]) -> HashMap<PathBuf, (usize, usize)> {
     let mut dir_track_counts: HashMap<PathBuf, usize> = HashMap::new();
     let mut dir_album_sets: HashMap<PathBuf, std::collections::HashSet<String>> = HashMap::new();
+    // Cache canonicalize() results — many tracks share the same parent directory
+    let mut canonical_cache: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
 
     for album in albums {
-        // Album is now uniquely identified by title alone
         let album_key = album.title.clone();
 
         for track in &album.tracks {
-            // Get the parent directory of this track
             if let Some(parent) = track.path.parent() {
                 let parent_buf = parent.to_path_buf();
 
-                // Count tracks for this directory (using original path)
                 *dir_track_counts.entry(parent_buf.clone()).or_insert(0) += 1;
 
-                // Add album to set for this directory (to count unique albums)
                 dir_album_sets
                     .entry(parent_buf.clone())
                     .or_default()
                     .insert(album_key.clone());
 
-                // Also add entry for canonicalized path if different
-                // This ensures matching works regardless of symlinks or case sensitivity
-                if let Ok(canonical) = parent_buf.canonicalize() {
-                    if canonical != parent_buf {
-                        *dir_track_counts.entry(canonical.clone()).or_insert(0) += 1;
-                        dir_album_sets
-                            .entry(canonical)
-                            .or_default()
-                            .insert(album_key.clone());
-                    }
+                // Use cached canonicalize result
+                let canonical = canonical_cache
+                    .entry(parent_buf.clone())
+                    .or_insert_with(|| {
+                        parent_buf
+                            .canonicalize()
+                            .ok()
+                            .filter(|c| *c != parent_buf)
+                    });
+                if let Some(canonical) = canonical.clone() {
+                    *dir_track_counts.entry(canonical.clone()).or_insert(0) += 1;
+                    dir_album_sets
+                        .entry(canonical)
+                        .or_default()
+                        .insert(album_key.clone());
                 }
             }
         }
@@ -1792,32 +1834,6 @@ fn compute_directory_stats(albums: &[Album]) -> HashMap<PathBuf, (usize, usize)>
     }
 
     result
-}
-
-/// Update directory info with stats computed from albums
-/// Recursively aggregates stats from subdirectories
-fn update_directory_stats_from_map(
-    dir_info: &mut DirectoryInfo,
-    stats_map: &HashMap<PathBuf, (usize, usize)>,
-) {
-    // First, recursively update all subdirectories
-    for subdir in &mut dir_info.subdirectories {
-        update_directory_stats_from_map(subdir, stats_map);
-    }
-
-    // Then compute this directory's stats
-    // Start with direct files in this directory
-    let (mut my_tracks, mut my_albums) = stats_map.get(&dir_info.path).cloned().unwrap_or((0, 0));
-
-    // Add stats from all subdirectories
-    for subdir in &dir_info.subdirectories {
-        my_tracks += subdir.file_count;
-        my_albums += subdir.album_count;
-    }
-
-    // Update this directory's stats
-    dir_info.file_count = my_tracks;
-    dir_info.album_count = my_albums;
 }
 
 /// Common album art file names to look for (case-insensitive)
@@ -2309,6 +2325,7 @@ mod tests {
             is_favorite: false,
             play_count: 0,
             source: None,
+            uuid: None,
         }
     }
 
@@ -2328,6 +2345,7 @@ mod tests {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         });
 
         lib.albums.push(Album {
@@ -2341,6 +2359,7 @@ mod tests {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         });
 
         lib.albums.push(Album {
@@ -2354,6 +2373,7 @@ mod tests {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         });
 
         // Search by artist (case insensitive)
@@ -2395,6 +2415,7 @@ mod tests {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         });
 
         // Test various case combinations
@@ -2430,6 +2451,7 @@ mod tests {
             directories: Vec::new(),
             albums: Vec::new(),
             db: Some(MusicDatabase::open_for_testing(&db_path).unwrap()),
+            dir_stats_cache: HashMap::new(),
         };
 
         // Load from database
@@ -2469,6 +2491,7 @@ mod tests {
             directories: Vec::new(),
             albums: Vec::new(),
             db: Some(MusicDatabase::open_for_testing(&db_path).unwrap()),
+            dir_stats_cache: HashMap::new(),
         };
 
         lib.load_from_database().unwrap();
@@ -2597,6 +2620,7 @@ mod tests {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
@@ -2604,6 +2628,7 @@ mod tests {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         }
     }
 

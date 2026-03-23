@@ -33,6 +33,7 @@ fn test_track(path: PathBuf, title: &str, artist: &str) -> Track {
         is_favorite: false,
         play_count: 0,
         source: None,
+        uuid: None,
     }
 }
 
@@ -76,6 +77,7 @@ fn test_track_with_metadata(
         is_favorite: false,
         play_count: 0,
         source: None,
+        uuid: None,
     }
 }
 
@@ -92,6 +94,7 @@ fn test_album(title: &str, year: Option<u32>, tracks: Vec<Track>) -> Album {
         edition: None,
         dynamic_range: None,
         is_favorite: false,
+        uuid: None,
     }
 }
 
@@ -568,6 +571,7 @@ fn test_update_existing_album() {
         edition: None,
         dynamic_range: None,
         is_favorite: false,
+        uuid: None,
     };
 
     db.save_albums(&[updated_album])

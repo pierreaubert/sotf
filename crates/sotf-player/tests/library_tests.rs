@@ -226,6 +226,7 @@ fn test_search_library_integration() {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
@@ -233,6 +234,7 @@ fn test_search_library_integration() {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         },
         sotf_audio_player::Album {
             id: None,
@@ -264,6 +266,7 @@ fn test_search_library_integration() {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
@@ -271,6 +274,7 @@ fn test_search_library_integration() {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         },
     ];
 
@@ -374,6 +378,7 @@ fn test_album_channel_type_detection() {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             },
             sotf_audio_player::Track {
                 path: PathBuf::from("track2.wav"),
@@ -401,6 +406,7 @@ fn test_album_channel_type_detection() {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             },
         ],
         album_art_path: None,
@@ -409,6 +415,7 @@ fn test_album_channel_type_detection() {
         edition: None,
         dynamic_range: None,
         is_favorite: false,
+        uuid: None,
     };
 
     let channel_type = stereo_album.channel_type();
@@ -449,6 +456,7 @@ fn test_album_channel_type_detection() {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             },
             sotf_audio_player::Track {
                 path: PathBuf::from("track2.wav"),
@@ -476,6 +484,7 @@ fn test_album_channel_type_detection() {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             },
         ],
         album_art_path: None,
@@ -484,6 +493,7 @@ fn test_album_channel_type_detection() {
         edition: None,
         dynamic_range: None,
         is_favorite: false,
+        uuid: None,
     };
 
     let channel_type = multichannel_album.channel_type();
@@ -524,6 +534,7 @@ fn test_album_channel_type_detection() {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             },
             sotf_audio_player::Track {
                 path: PathBuf::from("track2.wav"),
@@ -551,6 +562,7 @@ fn test_album_channel_type_detection() {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             },
         ],
         album_art_path: None,
@@ -559,6 +571,7 @@ fn test_album_channel_type_detection() {
         edition: None,
         dynamic_range: None,
         is_favorite: false,
+        uuid: None,
     };
 
     let channel_type = mixed_album.channel_type();

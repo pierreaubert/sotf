@@ -39,6 +39,7 @@ fn test_multiple_concurrent_writers() {
                     edition: None,
                     dynamic_range: None,
                     is_favorite: false,
+                    uuid: None,
                 };
 
                 if let Err(e) = db.save_albums(&[album]) {

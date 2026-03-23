@@ -147,7 +147,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 18;
+        const LATEST_VERSION: i64 = 19;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -1295,6 +1295,140 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 19: Library federation tables + stable UUIDs
+        migrations.insert(
+            19,
+            Migration {
+                description: "Add library federation tables (library_sources, track_sources, album_sources) and UUID columns",
+                apply: |db| {
+                    // Sources registry: one row per configured library provider
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS library_sources (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            source_id TEXT NOT NULL UNIQUE,
+                            source_type TEXT NOT NULL,
+                            display_name TEXT NOT NULL,
+                            config_json TEXT,
+                            last_sync_at INTEGER,
+                            is_enabled INTEGER NOT NULL DEFAULT 1,
+                            priority INTEGER NOT NULL DEFAULT 0,
+                            created_at INTEGER NOT NULL,
+                            updated_at INTEGER NOT NULL
+                        )",
+                        [],
+                    )?;
+
+                    // Seed the default local source with highest priority
+                    let now = current_timestamp();
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO library_sources (source_id, source_type, display_name, priority, created_at, updated_at)
+                         VALUES ('local', 'local', 'Local Files', 100, ?1, ?1)",
+                        params![now],
+                    )?;
+
+                    // Track <-> source junction (a track can exist in multiple sources)
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS track_sources (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            track_id INTEGER NOT NULL,
+                            source_id INTEGER NOT NULL,
+                            external_id TEXT NOT NULL,
+                            source_path TEXT,
+                            audio_source_json TEXT,
+                            FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+                            FOREIGN KEY(source_id) REFERENCES library_sources(id) ON DELETE CASCADE,
+                            UNIQUE(source_id, external_id)
+                        )",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_track_sources_track ON track_sources(track_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_track_sources_source ON track_sources(source_id)",
+                        [],
+                    )?;
+
+                    // Album <-> source junction
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS album_sources (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            album_id INTEGER NOT NULL,
+                            source_id INTEGER NOT NULL,
+                            external_id TEXT NOT NULL,
+                            FOREIGN KEY(album_id) REFERENCES albums(id) ON DELETE CASCADE,
+                            FOREIGN KEY(source_id) REFERENCES library_sources(id) ON DELETE CASCADE,
+                            UNIQUE(source_id, external_id)
+                        )",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_album_sources_album ON album_sources(album_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_album_sources_source ON album_sources(source_id)",
+                        [],
+                    )?;
+
+                    // Stable UUIDs for P2P readiness
+                    db.conn.execute(
+                        "ALTER TABLE albums ADD COLUMN uuid TEXT",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "ALTER TABLE tracks ADD COLUMN uuid TEXT",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_albums_uuid ON albums(uuid) WHERE uuid IS NOT NULL",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_uuid ON tracks(uuid) WHERE uuid IS NOT NULL",
+                        [],
+                    )?;
+
+                    // Backfill: link all existing tracks to the local source
+                    let local_source_id: i64 = db.conn.query_row(
+                        "SELECT id FROM library_sources WHERE source_id = 'local'",
+                        [],
+                        |row| row.get(0),
+                    )?;
+
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO track_sources (track_id, source_id, external_id, source_path)
+                         SELECT id, ?1, path, path FROM tracks",
+                        params![local_source_id],
+                    )?;
+
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO album_sources (album_id, source_id, external_id)
+                         SELECT id, ?1, CAST(id AS TEXT) FROM albums",
+                        params![local_source_id],
+                    )?;
+
+                    let track_count: i64 = db.conn.query_row(
+                        "SELECT COUNT(*) FROM track_sources",
+                        [],
+                        |row| row.get(0),
+                    )?;
+                    let album_count: i64 = db.conn.query_row(
+                        "SELECT COUNT(*) FROM album_sources",
+                        [],
+                        |row| row.get(0),
+                    )?;
+                    log::info!(
+                        "Federation migration: created source tables, linked {} tracks and {} albums to local source",
+                        track_count, album_count
+                    );
+
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -1416,7 +1550,7 @@ impl MusicDatabase {
         // but we don't use it - artist is now derived from tracks
         let mut albums_stmt = self.conn.prepare(
             "SELECT id, title, year, album_art_path, album_art_thumbnail,
-                    COALESCE(is_favorite, 0)
+                    COALESCE(is_favorite, 0), uuid
              FROM albums ORDER BY title",
         )?;
 
@@ -1429,6 +1563,7 @@ impl MusicDatabase {
                 row.get::<_, Option<String>>(3)?,  // album_art_path
                 row.get::<_, Option<Vec<u8>>>(4)?, // album_art_thumbnail
                 row.get::<_, i64>(5)?,             // is_favorite
+                row.get::<_, Option<String>>(6)?,  // uuid
             ))
         })?;
 
@@ -1452,7 +1587,7 @@ impl MusicDatabase {
                     replay_gain, replay_peak, album_gain, album_peak, waveform,
                     genre, composer, disc_number, conductor, performer,
                     isrc, album_artist, ensemble,
-                    COALESCE(is_favorite, 0)
+                    COALESCE(is_favorite, 0), uuid
              FROM tracks
              WHERE album_id = ?1
              ORDER BY disc_number, track_number",
@@ -1460,7 +1595,7 @@ impl MusicDatabase {
 
         albums.reserve(album_data.len());
 
-        for (album_id, title, year, album_art_path, album_art_thumbnail, album_is_favorite) in
+        for (album_id, title, year, album_art_path, album_art_thumbnail, album_is_favorite, album_uuid) in
             album_data
         {
             let tracks = tracks_stmt
@@ -1494,6 +1629,7 @@ impl MusicDatabase {
                         is_favorite: is_fav,
                         play_count,
                         source: None,
+                        uuid: row.get::<_, Option<String>>(22)?,
                     })
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;
@@ -1511,6 +1647,7 @@ impl MusicDatabase {
                 edition: None,
                 dynamic_range: None,
                 is_favorite: album_is_favorite != 0,
+                uuid: album_uuid,
             });
         }
 
