@@ -487,7 +487,7 @@ pub fn setup_bounds(args: &crate::cli::Args) -> (Vec<f64>, Vec<f64>) {
     let mut upper_bounds = Vec::with_capacity(num_params);
 
     let spacing = 1.0; // Overlap factor - allows adjacent filters to overlap
-    let gain_lower = -6.0 * args.max_db;
+    let gain_lower = (-3.0 * args.max_db).min(args.min_db);
     let q_lower = args.min_q.max(0.1);
     let range = (args.max_freq.log10() - args.min_freq.log10()) / (args.num_filters as f64);
 

@@ -70,24 +70,54 @@ type MixedModeResult = (
 
 /// Detect passband and compute mean SPL for normalization
 ///
-/// Finds the -3 dB points relative to the peak SPL, then computes the
-/// average response within that passband.
+/// Smooths the measurement at 1 octave to eliminate room mode dips, then
+/// finds the -10 dB points relative to the median SPL. Validates the result
+/// against 2-octave smoothing to ensure stability.
 fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f64) {
     let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
     let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
 
-    // find_db_point uses an absolute threshold, so compute peak - 3 dB
-    let peak_spl = spl_f32.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    if peak_spl < -100.0 {
-        // Measurement is essentially silence — passband detection is undefined
+    if spl_f32.is_empty() {
         return (None, 0.0);
     }
-    let threshold = peak_spl - 3.0;
 
-    let f_low = find_db_point(&freqs_f32, &spl_f32, threshold, true).unwrap_or(freqs_f32[0]);
-    let f_high = find_db_point(&freqs_f32, &spl_f32, threshold, false)
+    // Smooth at 1 octave to filter out room modes and comb filtering
+    let smoothed_1oct = crate::read::smooth_one_over_n_octave(curve, 1);
+    let spl_1oct: Vec<f32> = smoothed_1oct.spl.iter().map(|&s| s as f32).collect();
+
+    // Use median of smoothed SPL as reference (robust to residual peaks/nulls)
+    let mut sorted_spl: Vec<f32> = spl_1oct.clone();
+    sorted_spl.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median_spl = sorted_spl[sorted_spl.len() / 2];
+
+    if median_spl < -100.0 {
+        return (None, 0.0);
+    }
+
+    let threshold = median_spl - 10.0;
+    let f_low_1 =
+        find_db_point(&freqs_f32, &spl_1oct, threshold, true).unwrap_or(freqs_f32[0]);
+    let f_high_1 = find_db_point(&freqs_f32, &spl_1oct, threshold, false)
         .unwrap_or(freqs_f32[freqs_f32.len() - 1]);
 
+    // Validate against double-smoothed (1 oct applied twice ≈ 2 oct effective).
+    // If the passband differs significantly, the 1-oct result is unstable;
+    // use the wider estimate.
+    let spl_2oct: Vec<f32> = {
+        let double_smooth = crate::read::smooth_one_over_n_octave(&smoothed_1oct, 1);
+        double_smooth.spl.iter().map(|&s| s as f32).collect()
+    };
+
+    let f_low_2 =
+        find_db_point(&freqs_f32, &spl_2oct, threshold, true).unwrap_or(freqs_f32[0]);
+    let f_high_2 = find_db_point(&freqs_f32, &spl_2oct, threshold, false)
+        .unwrap_or(freqs_f32[freqs_f32.len() - 1]);
+
+    // Use the wider (more conservative) passband from the two estimates
+    let f_low = f_low_1.min(f_low_2);
+    let f_high = f_high_1.max(f_high_2);
+
+    // Compute mean on the original (unsmoothed) curve within the detected passband
     let norm_range_f32 = Some((f_low, f_high));
     let mean = compute_average_response(&freqs_f32, &spl_f32, norm_range_f32) as f64;
 
@@ -562,7 +592,24 @@ pub fn optimize_room(
 
     // Process each speaker sequentially so we can report progress.
     // Wrap callback in Arc<Mutex> so we can create per-speaker OptimProgressCallbacks.
-    let max_iterations = config.optimizer.max_iter;
+    //
+    // Compute actual DE generation budget for accurate progress display.
+    // The DE callback reports generation numbers, not function evals.
+    // Formula mirrors optim_de::derive_de_budget.
+    let params_per_filter = match config.optimizer.peq_model.as_str() {
+        "free" | "ls-pk-hs" => 4,
+        _ => 3,
+    };
+    let n_params = config.optimizer.num_filters * params_per_filter;
+    let n_free = n_params.max(1); // all params are free in standard EQ
+    let desired_pop = config.optimizer.population.max(1).min(config.optimizer.max_iter.max(1));
+    let pop_multiplier = desired_pop.div_ceil(n_free).max(4);
+    let population_size = pop_multiplier * n_free;
+    let max_iterations = (config.optimizer.max_iter.saturating_sub(population_size) / population_size).max(5000);
+    info!(
+        "DE budget: {} params, population_size={}, max_generations={} (from max_iter={}, floor=5000)",
+        n_params, population_size, max_iterations, config.optimizer.max_iter
+    );
     let callback_shared: Arc<Mutex<Option<RoomOptimizationCallback>>> =
         Arc::new(Mutex::new(callback));
 

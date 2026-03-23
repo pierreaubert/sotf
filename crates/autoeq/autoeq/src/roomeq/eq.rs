@@ -219,7 +219,7 @@ fn optimize_channel_eq_inner(
 
         // Algorithm
         algo: config.algorithm.clone(),
-        strategy: "currenttobest1bin".to_string(),
+        strategy: config.strategy.clone(),
         algo_list: false,
         strategy_list: false,
 
@@ -305,7 +305,7 @@ fn optimize_channel_eq_inner(
     // Generate initial guess
     let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
 
-    // Perform optimization
+    // Perform global optimization
     let opt_result = if let Some(cb) = callback {
         crate::optim::optimize_filters_with_callback(
             &mut x,
@@ -326,12 +326,47 @@ fn optimize_channel_eq_inner(
     };
 
     // Handle result - optimizer returns Result<(String, f64), (String, f64)>
-    let (_converged_msg, final_loss) = match opt_result {
+    let (converged_msg, global_loss) = match opt_result {
         Ok((msg, loss)) => (msg, loss),
         Err((msg, loss)) => {
-            eprintln!("  Warning: optimization did not fully converge: {}", msg);
+            log::warn!("  Global optimization did not fully converge: {}", msg);
             (msg, loss)
         }
+    };
+    log::info!("  Global optimizer result: {} (loss={:.6})", converged_msg, global_loss);
+
+    // Local refinement (COBYLA) to polish the global solution
+    let final_loss = if config.refine {
+        log::info!(
+            "  Running local refinement ({}) from global loss={:.6}",
+            config.local_algo,
+            global_loss
+        );
+        let local_result = crate::optim::optimize_filters_with_algo_override(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            objective_data.clone(),
+            &args,
+            Some(&config.local_algo),
+        );
+        match local_result {
+            Ok((_msg, loss)) => {
+                log::info!(
+                    "  Local refinement: {:.6} -> {:.6} (improved {:.6})",
+                    global_loss,
+                    loss,
+                    global_loss - loss
+                );
+                loss
+            }
+            Err((msg, loss)) => {
+                log::warn!("  Local refinement did not converge: {}", msg);
+                loss
+            }
+        }
+    } else {
+        global_loss
     };
 
     // Convert params to Biquad filters using autoeq's x2peq
@@ -589,7 +624,14 @@ fn optimize_channel_eq_multi_inner(
     let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&args);
     let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
 
-    // Run optimization
+    // Clone objective data for potential local refinement
+    let primary_for_refine = if config.refine {
+        Some(primary.clone())
+    } else {
+        None
+    };
+
+    // Run global optimization
     let opt_result = if let Some(cb) = callback {
         crate::optim::optimize_filters_with_callback(
             &mut x,
@@ -603,15 +645,49 @@ fn optimize_channel_eq_multi_inner(
         crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, primary, &args)
     };
 
-    let (_converged_msg, final_loss) = match opt_result {
+    let (_converged_msg, global_loss) = match opt_result {
         Ok((msg, loss)) => (msg, loss),
         Err((msg, loss)) => {
-            eprintln!(
-                "  Warning: multi-measurement optimization did not fully converge: {}",
+            log::warn!(
+                "  Multi-measurement global optimization did not fully converge: {}",
                 msg
             );
             (msg, loss)
         }
+    };
+
+    // Local refinement (COBYLA) to polish the global solution
+    let final_loss = if let Some(refine_data) = primary_for_refine {
+        log::info!(
+            "  Running local refinement ({}) from global loss={:.6}",
+            config.local_algo,
+            global_loss
+        );
+        let local_result = crate::optim::optimize_filters_with_algo_override(
+            &mut x,
+            &lower_bounds,
+            &upper_bounds,
+            refine_data,
+            &args,
+            Some(&config.local_algo),
+        );
+        match local_result {
+            Ok((_msg, loss)) => {
+                log::info!(
+                    "  Local refinement: {:.6} -> {:.6} (improved {:.6})",
+                    global_loss,
+                    loss,
+                    global_loss - loss
+                );
+                loss
+            }
+            Err((msg, loss)) => {
+                log::warn!("  Local refinement did not converge: {}", msg);
+                loss
+            }
+        }
+    } else {
+        global_loss
     };
 
     let peq = crate::x2peq::x2peq(&x, sample_rate, args.peq_model);
@@ -656,7 +732,7 @@ fn build_args(
         min_db: config.min_db,
         max_db: config.max_db,
         algo: config.algorithm.clone(),
-        strategy: "currenttobest1bin".to_string(),
+        strategy: config.strategy.clone(),
         algo_list: false,
         strategy_list: false,
         peq_model,

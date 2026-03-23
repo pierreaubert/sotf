@@ -41,6 +41,9 @@ fn count_free_dimensions(lower_bounds: &[f64], upper_bounds: &[f64]) -> usize {
         .max(1)
 }
 
+/// Minimum number of DE generations to ensure adequate exploration.
+const MIN_DE_GENERATIONS: usize = 5000;
+
 fn derive_de_budget(
     lower_bounds: &[f64],
     upper_bounds: &[f64],
@@ -51,7 +54,8 @@ fn derive_de_budget(
     let desired_population = population.max(1).min(maxeval.max(1));
     let pop_multiplier = desired_population.div_ceil(n_free).max(4);
     let population_size = pop_multiplier * n_free;
-    let max_iter = maxeval.saturating_sub(population_size) / population_size;
+    let max_iter =
+        (maxeval.saturating_sub(population_size) / population_size).max(MIN_DE_GENERATIONS);
     (pop_multiplier, population_size, max_iter)
 }
 
@@ -541,7 +545,7 @@ mod tests {
     }
 
     #[test]
-    fn setup_de_common_keeps_estimated_evaluations_within_budget() {
+    fn setup_de_common_enforces_minimum_generations() {
         let lower_bounds = vec![-1.0, -1.0];
         let upper_bounds = vec![1.0, 1.0];
         let setup = setup_de_common(
@@ -553,19 +557,28 @@ mod tests {
             true,
         );
 
-        let n_free = lower_bounds
-            .iter()
-            .zip(upper_bounds.iter())
-            .filter(|(lo, hi)| **hi > **lo)
-            .count();
-        let estimated_nfev = setup.pop_multiplier * n_free * (setup.max_iter + 1);
-
-        assert!(
-            estimated_nfev <= 55,
-            "estimated DE evaluations should stay within maxeval: estimated_nfev={}, maxeval=55",
-            estimated_nfev
-        );
         assert_eq!(setup.population_size, 20);
-        assert_eq!(setup.max_iter, 1);
+        // Even with tiny maxeval, the floor guarantees MIN_DE_GENERATIONS
+        assert_eq!(setup.max_iter, MIN_DE_GENERATIONS);
+    }
+
+    #[test]
+    fn setup_de_common_respects_large_maxeval() {
+        let lower_bounds = vec![-1.0, -1.0, -1.0];
+        let upper_bounds = vec![1.0, 1.0, 1.0];
+        let setup = setup_de_common(
+            &lower_bounds,
+            &upper_bounds,
+            test_objective_data(),
+            20,
+            1_000_000,
+            true,
+        );
+
+        // With large maxeval, computed generations should exceed MIN_DE_GENERATIONS
+        assert!(setup.max_iter >= MIN_DE_GENERATIONS);
+        // Check actual generation count: (1_000_000 - pop_size) / pop_size
+        let expected = (1_000_000 - setup.population_size) / setup.population_size;
+        assert_eq!(setup.max_iter, expected);
     }
 }

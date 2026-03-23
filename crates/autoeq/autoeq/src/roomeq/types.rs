@@ -1048,6 +1048,10 @@ pub struct OptimizerConfig {
     #[serde(default = "default_algorithm")]
     pub algorithm: String,
 
+    /// DE mutation strategy (e.g., "currenttobest1bin", "lshade", "best1bin")
+    #[serde(default = "default_strategy")]
+    pub strategy: String,
+
     /// Number of PEQ filters per channel
     #[serde(default = "default_num_filters")]
     pub num_filters: usize,
@@ -1361,6 +1365,9 @@ fn default_loss_type() -> String {
 fn default_algorithm() -> String {
     "autoeq:de".to_string()
 }
+fn default_strategy() -> String {
+    "lshade".to_string()
+}
 fn default_peq_model() -> String {
     "pk".to_string()
 }
@@ -1430,6 +1437,7 @@ impl Default for OptimizerConfig {
         Self {
             loss_type: default_loss_type(),
             algorithm: default_algorithm(),
+            strategy: default_strategy(),
             num_filters: default_num_filters(),
             min_q: default_min_q(),
             max_q: default_max_q(),
