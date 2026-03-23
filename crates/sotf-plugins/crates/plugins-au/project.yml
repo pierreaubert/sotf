@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
 
 settings:
-  MARKETING_VERSION: 0.5.13
+  MARKETING_VERSION: 0.5.14
   CURRENT_PROJECT_VERSION: 1
   MACOSX_DEPLOYMENT_TARGET: "15.0"
   SWIFT_VERSION: "6.0"
@@ -94,8 +94,8 @@ targets:
         createIntermediateGroups: true
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.CompressorAudioUnit
-      INFOPLIST_FILE: EQAudioUnit/Info.plist
-      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+      INFOPLIST_FILE: CompressorAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: CompressorAudioUnit/CompressorAudioUnit.entitlements
 
   # Limiter Audio Unit
   LimiterAudioUnit:
@@ -107,8 +107,8 @@ targets:
         createIntermediateGroups: true
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.LimiterAudioUnit
-      INFOPLIST_FILE: EQAudioUnit/Info.plist
-      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+      INFOPLIST_FILE: LimiterAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: LimiterAudioUnit/LimiterAudioUnit.entitlements
 
   # Gate Audio Unit
   GateAudioUnit:
@@ -120,8 +120,8 @@ targets:
         createIntermediateGroups: true
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.GateAudioUnit
-      INFOPLIST_FILE: EQAudioUnit/Info.plist
-      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+      INFOPLIST_FILE: GateAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: GateAudioUnit/GateAudioUnit.entitlements
 
   # Gain Audio Unit
   GainAudioUnit:
@@ -133,8 +133,8 @@ targets:
         createIntermediateGroups: true
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.GainAudioUnit
-      INFOPLIST_FILE: EQAudioUnit/Info.plist
-      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+      INFOPLIST_FILE: GainAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: GainAudioUnit/GainAudioUnit.entitlements
 
   # Delay Audio Unit
   DelayAudioUnit:
@@ -146,5 +146,5 @@ targets:
         createIntermediateGroups: true
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.DelayAudioUnit
-      INFOPLIST_FILE: EQAudioUnit/Info.plist
-      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+      INFOPLIST_FILE: DelayAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: DelayAudioUnit/DelayAudioUnit.entitlements

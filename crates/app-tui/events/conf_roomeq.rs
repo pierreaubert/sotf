@@ -936,6 +936,8 @@ fn spawn_room_eq_optimization(app: &mut App) {
             multi_measurement: None,
             smooth_n: config.smooth_n,
             decomposed_correction: None,
+            strategy: "lshade".to_string(),
+            target_response: None,
         };
 
         let room_config = RoomConfig {

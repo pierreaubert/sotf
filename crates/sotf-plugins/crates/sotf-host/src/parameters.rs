@@ -62,6 +62,30 @@ impl ParameterValue {
         }
     }
 
+    /// Parse a string value into a ParameterValue.
+    ///
+    /// Detection order: Bool ("true"/"false") → Int (no decimal point) → Float → String.
+    /// Values containing a decimal point are never parsed as Int, preventing
+    /// type mismatches when Float values happen to be whole numbers (e.g. "-18.0").
+    pub fn parse(value: &str) -> Self {
+        if value == "true" {
+            return Self::Bool(true);
+        }
+        if value == "false" {
+            return Self::Bool(false);
+        }
+        // Only try integer when the string has no decimal point.
+        if !value.contains('.') {
+            if let Ok(i) = value.parse::<i32>() {
+                return Self::Int(i);
+            }
+        }
+        if let Ok(f) = value.parse::<f32>() {
+            return Self::Float(f);
+        }
+        Self::String(value.to_string())
+    }
+
     /// Get as string, returns None if not a string
     pub fn as_string(&self) -> Option<&str> {
         match self {
@@ -259,5 +283,55 @@ impl Parameter {
             (ParameterValue::String(_), ParameterValue::String(_)) => Ok(()),
             _ => Err("Parameter type mismatch".to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_float_with_decimal() {
+        assert_eq!(ParameterValue::parse("-18.0"), ParameterValue::Float(-18.0));
+        assert_eq!(ParameterValue::parse("0.0"), ParameterValue::Float(0.0));
+        assert_eq!(ParameterValue::parse("1.5"), ParameterValue::Float(1.5));
+        assert_eq!(ParameterValue::parse("-0.5"), ParameterValue::Float(-0.5));
+    }
+
+    #[test]
+    fn parse_int_without_decimal() {
+        assert_eq!(ParameterValue::parse("42"), ParameterValue::Int(42));
+        assert_eq!(ParameterValue::parse("-18"), ParameterValue::Int(-18));
+        assert_eq!(ParameterValue::parse("0"), ParameterValue::Int(0));
+    }
+
+    #[test]
+    fn parse_bool() {
+        assert_eq!(ParameterValue::parse("true"), ParameterValue::Bool(true));
+        assert_eq!(ParameterValue::parse("false"), ParameterValue::Bool(false));
+    }
+
+    #[test]
+    fn parse_string_fallback() {
+        assert_eq!(
+            ParameterValue::parse("[{\"state\":\"normal\"}]"),
+            ParameterValue::String("[{\"state\":\"normal\"}]".to_string())
+        );
+        assert_eq!(
+            ParameterValue::parse("hello"),
+            ParameterValue::String("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_scientific_notation_as_float() {
+        assert_eq!(ParameterValue::parse("1.5e2"), ParameterValue::Float(150.0));
+    }
+
+    #[test]
+    fn parse_decimal_point_prevents_int() {
+        // "100.0" must parse as Float, not Int
+        assert_eq!(ParameterValue::parse("100.0"), ParameterValue::Float(100.0));
+        assert_eq!(ParameterValue::parse("1.0"), ParameterValue::Float(1.0));
     }
 }

@@ -2,6 +2,50 @@
 # plugins-au: macOS Audio Unit v3 plugins
 # ----------------------------------------------------------------------
 
+au_dir := "crates/sotf-plugins/crates/plugins-au"
+plugin_crates_dir := "crates/sotf-plugins/crates"
+
+# Sync AU Info.plist versions from Cargo.toml (called automatically before builds)
+[group('build-macos')]
+sync-au-versions:
+	#!/usr/bin/env bash
+	set -eo pipefail
+	AU_DIR="{{au_dir}}"
+	CRATES="{{plugin_crates_dir}}"
+
+	cargo_version() {
+		local ver
+		ver=$(grep '^version' "$1/Cargo.toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+		# Handle version.workspace = true
+		if [ -z "$ver" ] || echo "$ver" | grep -q "workspace"; then
+			ver=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+		fi
+		echo "$ver"
+	}
+
+	WS_VERSION=$(cargo_version .)
+
+	echo "Syncing AU versions from Cargo.toml..."
+
+	# AU extension name → plugin crate name
+	AU_NAMES=(  EQAudioUnit         CompressorAudioUnit     LimiterAudioUnit     GateAudioUnit     GainAudioUnit     DelayAudioUnit)
+	CRATE_NAMES=(sotf-plugin-eq     sotf-plugin-compressor  sotf-plugin-limiter  sotf-plugin-gate  sotf-plugin-gain  sotf-plugin-delay)
+
+	for i in "${!AU_NAMES[@]}"; do
+		au="${AU_NAMES[$i]}"
+		crate="${CRATE_NAMES[$i]}"
+		version=$(cargo_version "$CRATES/$crate")
+		plist="$AU_DIR/$au/Info.plist"
+		if [ -f "$plist" ]; then
+			plutil -replace CFBundleShortVersionString -string "$version" "$plist"
+			echo "  $au → $version"
+		fi
+	done
+
+	# App container MARKETING_VERSION in project.yml
+	sed -i '' "s/MARKETING_VERSION: .*/MARKETING_VERSION: $WS_VERSION/" "$AU_DIR/project.yml"
+	echo "  project.yml MARKETING_VERSION → $WS_VERSION"
+
 # Build Rust FFI library for Audio Units (universal binary)
 [group('build-macos')]
 build-au-ffi:
@@ -19,7 +63,7 @@ build-au-ffi:
 
 # Generate Xcode project and build all AU extensions
 [group('build-macos')]
-build-au-xcode: build-au-ffi
+build-au-xcode: sync-au-versions build-au-ffi
 	#!/usr/bin/env bash
 	set -euo pipefail
 	cd crates/sotf-plugins/crates/plugins-au

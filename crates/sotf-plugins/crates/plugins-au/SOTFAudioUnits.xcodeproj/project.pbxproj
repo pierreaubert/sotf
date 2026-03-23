@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		069D03F06DC906A69D726B7C /* LimiterViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1447E3F9F03477A6FA414DC /* LimiterViewController.swift */; };
 		069F33FE6C7621E14D7B50D2 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		0762986804F618379F904F4A /* GateAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C68A3F49BB297EC1CB97C7 /* GateAudioUnit.swift */; };
 		0CAA7A594C1FF20C6976E73D /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
@@ -26,18 +27,22 @@
 		54E5BA442032771BDECF1BBF /* CompressorAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B6F3FAE3B4C7A8813A06F7DB /* CompressorAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		62BB508E5476DA8E96C87BA1 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		68175B14A99E7CA76216AA01 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		6D1DD5E44CCE03814ED291ED /* DelayViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC009CE78DC1FEAF730DDEC8 /* DelayViewController.swift */; };
 		72C1FB38A93FDDCF93B0CE99 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		72CFC70EDEC69917327CBFF3 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		7550D5AB525E85287CD023E3 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
 		7AA23C4CFE936BCD5B12BED1 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		7DBE9498F288C09AF043DA24 /* CompressorViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F84F775148978093A4924846 /* CompressorViewController.swift */; };
 		969F5C61744B592134AC5F1F /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		9979878D4D2912BD149FCB0C /* DelayAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4017E4669B2700E9C0A9063B /* DelayAudioUnit.swift */; };
 		A2A7D1DBB2C72ED76E9EFA55 /* LimiterAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F5B0727123B5D4C746DB53 /* LimiterAudioUnit.swift */; };
 		A2E723AD2E26F1108DF833B4 /* GenericRustAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */; };
+		A5973D941C069715B32BE24E /* GainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F1A54794105DD6AA1901B4 /* GainViewController.swift */; };
 		A7DEA9CBCBA9FC5F9D83F32E /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 584BB2AEC6B0994DFE571F9F /* Main.storyboard */; };
 		A906695CA0E79B683238E730 /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		B6BA1F19C1517D5D67221CD4 /* CompressorAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = B251BC66F81685B8B725F553 /* CompressorAudioUnit.swift */; };
 		C2706B2C2CB2896CC756A612 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
+		C8A32B3B76193E425AA9DFAE /* GateViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 616C27B2D26892F80ED2E2B2 /* GateViewController.swift */; };
 		CC4CE159F24E227D5B90A1AD /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		CE650B4D4DEE6A328DB8F5C3 /* GainAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0D43EAE3E478F712584F82C7 /* GainAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D2041FB5A53E62918754B2DD /* LimiterAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 380AAE23EA83890F36A42573 /* LimiterAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -114,32 +119,48 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		05173AAC98E0A8B7E8C1A8AF /* CompressorAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CompressorAudioUnit.entitlements; sourceTree = "<group>"; };
 		07ED0EE6728FED317985601C /* SOTFAudioUnits.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SOTFAudioUnits.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0D43EAE3E478F712584F82C7 /* GainAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GainAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1F6CA7EDC36C5C48C817CDF2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudioKit.framework; path = System/Library/Frameworks/CoreAudioKit.framework; sourceTree = SDKROOT; };
+		21ED5ABB772DB77BEBADBAE8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		220E6E0026D28AE161841FD2 /* GateAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GateAudioUnit.entitlements; sourceTree = "<group>"; };
 		29D3F1A3CEC47383E8F17AD4 /* GainAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GainAudioUnit.swift; sourceTree = "<group>"; };
+		33F64EDDFBD95752DA855F23 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		341D66E33B7AD4BB1C27198F /* GateAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GateAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		362CB68B363B6FEB4A23FF2B /* EQAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQAudioUnit.swift; sourceTree = "<group>"; };
 		380AAE23EA83890F36A42573 /* LimiterAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LimiterAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4017E4669B2700E9C0A9063B /* DelayAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayAudioUnit.swift; sourceTree = "<group>"; };
 		44C68A3F49BB297EC1CB97C7 /* GateAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GateAudioUnit.swift; sourceTree = "<group>"; };
+		519F62FF003C73F203EA2A2C /* DelayAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DelayAudioUnit.entitlements; sourceTree = "<group>"; };
 		584BB2AEC6B0994DFE571F9F /* Main.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = Main.storyboard; sourceTree = "<group>"; };
+		5E19E71C7AD1876500A8949B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		616C27B2D26892F80ED2E2B2 /* GateViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GateViewController.swift; sourceTree = "<group>"; };
 		663F32EE51A98F4EE012708A /* GenericRustAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericRustAudioUnit.swift; sourceTree = "<group>"; };
 		71C42DBA3E8C368B60556A63 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		84BDC522A6395C49A62E20CA /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
 		955BC360164EC7F23C7A4E5C /* BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BridgingHeader.h; sourceTree = "<group>"; };
 		9703D0799FB858F9E2C0A5A4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9D92961E925B0A0984AD58B0 /* sotf_audio_plugin_ffi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sotf_audio_plugin_ffi.h; sourceTree = "<group>"; };
+		A1447E3F9F03477A6FA414DC /* LimiterViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimiterViewController.swift; sourceTree = "<group>"; };
 		B251BC66F81685B8B725F553 /* CompressorAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressorAudioUnit.swift; sourceTree = "<group>"; };
 		B6F3FAE3B4C7A8813A06F7DB /* CompressorAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CompressorAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B763619FF8FA710D3366075C /* SOTFAudioUnits.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SOTFAudioUnits.entitlements; sourceTree = "<group>"; };
 		B798524C186472939A9780D0 /* EQAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EQAudioUnit.entitlements; sourceTree = "<group>"; };
+		BC009CE78DC1FEAF730DDEC8 /* DelayViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DelayViewController.swift; sourceTree = "<group>"; };
 		BC4FB5E50EE778B07B255779 /* EQViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQViewController.swift; sourceTree = "<group>"; };
 		BD2889964AD6542E5D891773 /* DelayAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DelayAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		C487B29D2A8843C4E312521F /* GainAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GainAudioUnit.entitlements; sourceTree = "<group>"; };
 		D07098789949AA46E36FE5FF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D7E9D3C71E99E0E68BB4AA71 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DD7BE16A411963C349D2A41D /* EQAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = EQAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		DDFD405D39771E00EF3BDB25 /* LimiterAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LimiterAudioUnit.entitlements; sourceTree = "<group>"; };
 		F0F5B0727123B5D4C746DB53 /* LimiterAudioUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimiterAudioUnit.swift; sourceTree = "<group>"; };
+		F7F1A54794105DD6AA1901B4 /* GainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GainViewController.swift; sourceTree = "<group>"; };
+		F84F775148978093A4924846 /* CompressorViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressorViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -227,6 +248,7 @@
 			isa = PBXGroup;
 			children = (
 				955BC360164EC7F23C7A4E5C /* BridgingHeader.h */,
+				9D92961E925B0A0984AD58B0 /* sotf_audio_plugin_ffi.h */,
 			);
 			name = Shared;
 			path = Shared;
@@ -249,7 +271,10 @@
 		5545D6CE9C63464AF116DA08 /* GainAudioUnit */ = {
 			isa = PBXGroup;
 			children = (
+				C487B29D2A8843C4E312521F /* GainAudioUnit.entitlements */,
 				29D3F1A3CEC47383E8F17AD4 /* GainAudioUnit.swift */,
+				F7F1A54794105DD6AA1901B4 /* GainViewController.swift */,
+				5E19E71C7AD1876500A8949B /* Info.plist */,
 			);
 			name = GainAudioUnit;
 			path = GainAudioUnit;
@@ -258,7 +283,10 @@
 		5E4B7F36D35D73948191B167 /* DelayAudioUnit */ = {
 			isa = PBXGroup;
 			children = (
+				519F62FF003C73F203EA2A2C /* DelayAudioUnit.entitlements */,
 				4017E4669B2700E9C0A9063B /* DelayAudioUnit.swift */,
+				BC009CE78DC1FEAF730DDEC8 /* DelayViewController.swift */,
+				33F64EDDFBD95752DA855F23 /* Info.plist */,
 			);
 			name = DelayAudioUnit;
 			path = DelayAudioUnit;
@@ -288,7 +316,10 @@
 		AA15A1BF586E9EB29E5B75EB /* LimiterAudioUnit */ = {
 			isa = PBXGroup;
 			children = (
+				1F6CA7EDC36C5C48C817CDF2 /* Info.plist */,
+				DDFD405D39771E00EF3BDB25 /* LimiterAudioUnit.entitlements */,
 				F0F5B0727123B5D4C746DB53 /* LimiterAudioUnit.swift */,
+				A1447E3F9F03477A6FA414DC /* LimiterViewController.swift */,
 			);
 			name = LimiterAudioUnit;
 			path = LimiterAudioUnit;
@@ -307,7 +338,10 @@
 		C39A78FDFCA19BAF76D589D3 /* GateAudioUnit */ = {
 			isa = PBXGroup;
 			children = (
+				220E6E0026D28AE161841FD2 /* GateAudioUnit.entitlements */,
 				44C68A3F49BB297EC1CB97C7 /* GateAudioUnit.swift */,
+				616C27B2D26892F80ED2E2B2 /* GateViewController.swift */,
+				D7E9D3C71E99E0E68BB4AA71 /* Info.plist */,
 			);
 			name = GateAudioUnit;
 			path = GateAudioUnit;
@@ -328,7 +362,10 @@
 		F501DA7C197771E6B6BA7C8B /* CompressorAudioUnit */ = {
 			isa = PBXGroup;
 			children = (
+				05173AAC98E0A8B7E8C1A8AF /* CompressorAudioUnit.entitlements */,
 				B251BC66F81685B8B725F553 /* CompressorAudioUnit.swift */,
+				F84F775148978093A4924846 /* CompressorViewController.swift */,
+				21ED5ABB772DB77BEBADBAE8 /* Info.plist */,
 			);
 			name = CompressorAudioUnit;
 			path = CompressorAudioUnit;
@@ -545,6 +582,7 @@
 			files = (
 				72C1FB38A93FDDCF93B0CE99 /* GenericRustAudioUnit.swift in Sources */,
 				A2A7D1DBB2C72ED76E9EFA55 /* LimiterAudioUnit.swift in Sources */,
+				069D03F06DC906A69D726B7C /* LimiterViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -553,6 +591,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0762986804F618379F904F4A /* GateAudioUnit.swift in Sources */,
+				C8A32B3B76193E425AA9DFAE /* GateViewController.swift in Sources */,
 				53C1C28016F534E40AC5D2B6 /* GenericRustAudioUnit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -562,6 +601,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B6BA1F19C1517D5D67221CD4 /* CompressorAudioUnit.swift in Sources */,
+				7DBE9498F288C09AF043DA24 /* CompressorViewController.swift in Sources */,
 				A2E723AD2E26F1108DF833B4 /* GenericRustAudioUnit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -590,6 +630,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4354A6F5A7FD00054EBD71C0 /* GainAudioUnit.swift in Sources */,
+				A5973D941C069715B32BE24E /* GainViewController.swift in Sources */,
 				7550D5AB525E85287CD023E3 /* GenericRustAudioUnit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -599,6 +640,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9979878D4D2912BD149FCB0C /* DelayAudioUnit.swift in Sources */,
+				6D1DD5E44CCE03814ED291ED /* DelayViewController.swift in Sources */,
 				F7E3C62D246925340EB54868 /* GenericRustAudioUnit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -642,7 +684,7 @@
 		103350743E79CFE5AE98F9A3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GateAudioUnit/GateAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -650,7 +692,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = GateAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -673,7 +715,7 @@
 		1A0BBB3C80D202CBF1927280 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GateAudioUnit/GateAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -681,7 +723,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = GateAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -704,7 +746,7 @@
 		2EF796B4A093B03231E79AE4 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GainAudioUnit/GainAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -712,7 +754,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = GainAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -735,7 +777,7 @@
 		3EB7EB5A80F5C9C099C3D2B5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = DelayAudioUnit/DelayAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -743,7 +785,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = DelayAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -785,7 +827,7 @@
 		5B13FD411691CA61E9A01ADE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = LimiterAudioUnit/LimiterAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -793,7 +835,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = LimiterAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -816,7 +858,7 @@
 		8C0B6FC2D5D7149EA8ADA838 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = DelayAudioUnit/DelayAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -824,7 +866,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = DelayAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -897,7 +939,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.5.13;
+				MARKETING_VERSION = 0.5.14;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -975,7 +1017,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.5.13;
+				MARKETING_VERSION = 0.5.14;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -989,7 +1031,7 @@
 		B25826C1D71EB5D4D2C3D2F8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = CompressorAudioUnit/CompressorAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -997,7 +1039,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = CompressorAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1051,7 +1093,7 @@
 		D3CD097828623BB07DF4F7ED /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GainAudioUnit/GainAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1059,7 +1101,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = GainAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1082,7 +1124,7 @@
 		E254B7188DD7DE6AAC1ED470 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = LimiterAudioUnit/LimiterAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1090,7 +1132,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = LimiterAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1113,7 +1155,7 @@
 		EE64A7D1850C2C5926A92957 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = EQAudioUnit/EQAudioUnit.entitlements;
+				CODE_SIGN_ENTITLEMENTS = CompressorAudioUnit/CompressorAudioUnit.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1121,7 +1163,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/Shared",
 				);
-				INFOPLIST_FILE = EQAudioUnit/Info.plist;
+				INFOPLIST_FILE = CompressorAudioUnit/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

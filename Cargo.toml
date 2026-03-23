@@ -67,16 +67,16 @@ members = [
     "crates/sotf-cast",
     "crates/3rdparties/sofa-reader",
     "crates/gpui-toolkit/gpui-ios",
+    # iOS/tvOS app shells — compile on macOS (cargo check) but only link for iOS/tvOS targets
+    "crates/gpui-toolkit/gpui-ui-kit/ios",
+    "crates/app-ios",
+    "crates/app-tvos",
 ]
 exclude = [
     "crates/3rdparties/psm",
     "crates/3rdparties/zed-font-kit",
     "crates/3rdparties/coreaudio-rs",
     "crates/3rdparties/mach2",
-    # iOS/tvOS crates require target_os = ios/tvos — cannot compile on macOS
-    "crates/gpui-toolkit/gpui-ui-kit/ios",
-    "crates/app-ios",
-    "crates/app-tvos",
 ]
 resolver = "3"
 
@@ -171,7 +171,7 @@ autoeq = { version = "0.4", path = "crates/autoeq/autoeq" }
 
 # using git version
 gpui-d3rs = { version = "0.6", path = "crates/gpui-toolkit/gpui-d3rs" }
-gpui-px = { version = "0.6", path = "crates/gpui-toolkit/gpui-px" }
+gpui-px = { version = "0.6", path = "crates/gpui-toolkit/gpui-px", default-features = false }
 gpui-autoeq = { version = "0.6", path = "crates/gpui-toolkit/gpui-autoeq" }
 gpui-ui-kit = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }

@@ -131,35 +131,6 @@ impl Drop for ProcessingThread {
     }
 }
 
-/// Parse a string value into a ParameterValue
-/// Tries to detect the type intelligently:
-/// - "true"/"false" -> Bool
-/// - Integer string -> Int
-/// - Float string -> Float
-/// - JSON object/array -> String (for complex types like Vec<ChannelState>)
-/// - Otherwise -> String
-fn parse_parameter_value(value: &str) -> sotf_plugins::ParameterValue {
-    // Try boolean
-    if value == "true" {
-        return sotf_plugins::ParameterValue::Bool(true);
-    }
-    if value == "false" {
-        return sotf_plugins::ParameterValue::Bool(false);
-    }
-
-    // Try integer
-    if let Ok(i) = value.parse::<i32>() {
-        return sotf_plugins::ParameterValue::Int(i);
-    }
-
-    // Try float
-    if let Ok(f) = value.parse::<f32>() {
-        return sotf_plugins::ParameterValue::Float(f);
-    }
-
-    // Treat as string (for JSON or other complex types)
-    sotf_plugins::ParameterValue::String(value.to_string())
-}
 
 /// Processing state
 struct ProcessingState {
@@ -355,7 +326,7 @@ fn handle_processing_command(
             );
 
             // Parse string value to ParameterValue
-            let param_value = parse_parameter_value(&value);
+            let param_value = sotf_plugins::ParameterValue::parse(&value);
 
             match state
                 .host
@@ -701,14 +672,19 @@ fn run_processing_thread(
 // Plugin Factory
 // ============================================================================
 
-/// Build a plugin host from configs
+/// Build a plugin host from configs.
+///
+/// Plugins that fail to create or have channel mismatches are skipped rather
+/// than aborting the entire chain. The second element of the returned tuple
+/// contains warnings about skipped plugins.
 pub fn build_plugin_host(
     configs: &[PluginConfig],
     sample_rate: u32,
     channels: usize,
-) -> Result<PluginHost, String> {
+) -> Result<(PluginHost, Vec<String>), String> {
     let mut host = PluginHost::new(channels, sample_rate);
     let mut current_channels = channels;
+    let mut warnings: Vec<String> = Vec::new();
 
     for (i, config) in configs.iter().enumerate() {
         log::info!(
@@ -726,12 +702,15 @@ pub fn build_plugin_host(
             Ok(plugin) => {
                 // Check channel compatibility
                 if plugin.input_channels() != current_channels {
-                    return Err(format!(
-                        "Plugin '{}' expects {} input channels, but chain provides {}",
+                    let msg = format!(
+                        "Plugin '{}' skipped: expects {} input channels, but chain provides {}",
                         config.plugin_type,
                         plugin.input_channels(),
                         current_channels
-                    ));
+                    );
+                    log::warn!("[Processing Thread] {}", msg);
+                    warnings.push(msg);
+                    continue;
                 }
 
                 // Update current channel count for next plugin
@@ -747,22 +726,22 @@ pub fn build_plugin_host(
                 host.add_plugin(plugin)?;
             }
             Err(e) => {
-                return Err(format!(
-                    "Failed to create plugin '{}': {}",
-                    config.plugin_type, e
-                ));
+                let msg = format!("Plugin '{}' skipped: {}", config.plugin_type, e);
+                log::warn!("[Processing Thread] {}", msg);
+                warnings.push(msg);
             }
         }
     }
 
     log::info!(
-        "[Processing Thread] Plugin chain loaded: {} plugins, {}ch -> {}ch",
-        configs.len(),
+        "[Processing Thread] Plugin chain loaded: {} plugins ({}ch -> {}ch), {} skipped",
+        configs.len() - warnings.len(),
         channels,
-        host.output_channels()
+        host.output_channels(),
+        warnings.len()
     );
 
-    Ok(host)
+    Ok((host, warnings))
 }
 
 /// Build a plugin host from a graph config (DAG topology).
@@ -770,50 +749,83 @@ pub fn build_plugin_host(
 /// Unlike `build_plugin_host` which chains plugins linearly, this uses
 /// `DawHost::add_node()` + `add_edge()` to create arbitrary graph topologies
 /// needed for multi-driver crossover setups.
+///
+/// Nodes that fail to create are skipped, and edges referencing them are dropped.
 pub fn build_plugin_graph_host(
     config: &super::types::PluginGraphConfig,
     sample_rate: u32,
     channels: usize,
-) -> Result<PluginHost, String> {
+) -> Result<(PluginHost, Vec<String>), String> {
     use sotf_plugins::GraphEdge;
     use std::collections::HashMap;
 
     let mut host = PluginHost::new(channels, sample_rate);
     let mut id_map: HashMap<usize, usize> = HashMap::new();
+    let mut warnings: Vec<String> = Vec::new();
 
     for node_config in &config.nodes {
-        let plugin = create_plugin(
+        match create_plugin(
             &node_config.plugin_type,
             &node_config.parameters,
             node_config.input_channels,
             sample_rate,
-        )?;
-        let host_id =
-            host.add_node(format!("node_{}", node_config.id), plugin)?;
-        id_map.insert(node_config.id, host_id);
+        ) {
+            Ok(plugin) => {
+                let host_id =
+                    host.add_node(format!("node_{}", node_config.id), plugin)?;
+                id_map.insert(node_config.id, host_id);
+            }
+            Err(e) => {
+                let msg = format!(
+                    "Graph node {} ('{}') skipped: {}",
+                    node_config.id, node_config.plugin_type, e
+                );
+                log::warn!("[Processing Thread] {}", msg);
+                warnings.push(msg);
+            }
+        }
     }
 
     for edge in &config.edges {
-        let from = *id_map
-            .get(&edge.from_node)
-            .ok_or_else(|| format!("Edge references unknown from_node {}", edge.from_node))?;
-        let to = *id_map
-            .get(&edge.to_node)
-            .ok_or_else(|| format!("Edge references unknown to_node {}", edge.to_node))?;
+        let from = match id_map.get(&edge.from_node) {
+            Some(&id) => id,
+            None => {
+                let msg = format!(
+                    "Edge {}->{} skipped: from_node {} was not loaded",
+                    edge.from_node, edge.to_node, edge.from_node
+                );
+                log::warn!("[Processing Thread] {}", msg);
+                warnings.push(msg);
+                continue;
+            }
+        };
+        let to = match id_map.get(&edge.to_node) {
+            Some(&id) => id,
+            None => {
+                let msg = format!(
+                    "Edge {}->{} skipped: to_node {} was not loaded",
+                    edge.from_node, edge.to_node, edge.to_node
+                );
+                log::warn!("[Processing Thread] {}", msg);
+                warnings.push(msg);
+                continue;
+            }
+        };
         host.add_edge(GraphEdge::new(from, to))?;
     }
 
     host.build()?;
 
     log::info!(
-        "[Processing Thread] Plugin graph loaded: {} nodes, {} edges, {}ch -> {}ch",
-        config.nodes.len(),
+        "[Processing Thread] Plugin graph loaded: {} nodes, {} edges ({}ch -> {}ch), {} warnings",
+        id_map.len(),
         config.edges.len(),
         channels,
-        host.output_channels()
+        host.output_channels(),
+        warnings.len()
     );
 
-    Ok(host)
+    Ok((host, warnings))
 }
 
 /// Create a plugin from configuration
@@ -1395,7 +1407,14 @@ mod tests {
             let channels = input_channels_for(&plugin_type);
 
             match build_plugin_host(std::slice::from_ref(&config), sample_rate, channels) {
-                Ok(_) => {}
+                Ok((_host, warnings)) => {
+                    assert!(
+                        warnings.is_empty(),
+                        "build_plugin_host warnings for '{}': {:?}",
+                        config.plugin_type,
+                        warnings
+                    );
+                }
                 Err(e) => panic!(
                     "build_plugin_host failed for '{}': {}",
                     config.plugin_type, e
@@ -1434,7 +1453,7 @@ mod tests {
             let config = settings.to_plugin_config(sample_rate as f64);
             let in_channels = input_channels_for(&plugin_type);
 
-            let mut host =
+            let (mut host, _warnings) =
                 build_plugin_host(std::slice::from_ref(&config), sample_rate, in_channels)
                     .unwrap_or_else(|e| panic!("build failed for '{}': {}", config.plugin_type, e));
 
@@ -1509,13 +1528,14 @@ mod tests {
             let config = PluginConfig::new("matrix", matrix_params);
 
             // Chain starts with 1 channel (mono WAV file)
-            let host = build_plugin_host(std::slice::from_ref(&config), sample_rate, 1)
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "build_plugin_host failed for 1→{} matrix targeting ch{}: {}",
-                        hw_channels, target_ch, e
-                    )
-                });
+            let (host, _warnings) =
+                build_plugin_host(std::slice::from_ref(&config), sample_rate, 1)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "build_plugin_host failed for 1→{} matrix targeting ch{}: {}",
+                            hw_channels, target_ch, e
+                        )
+                    });
 
             // Verify the chain expanded to the correct output channel count
             assert_eq!(
@@ -1543,8 +1563,9 @@ mod tests {
         });
 
         let config = PluginConfig::new("matrix", matrix_params);
-        let host = build_plugin_host(std::slice::from_ref(&config), sample_rate, 4)
-            .expect("build_plugin_host failed for 2×2 matrix on 4ch chain");
+        let (host, _warnings) =
+            build_plugin_host(std::slice::from_ref(&config), sample_rate, 4)
+                .expect("build_plugin_host failed for 2×2 matrix on 4ch chain");
 
         // Should have been resized to 4×4
         assert_eq!(
@@ -1568,8 +1589,9 @@ mod tests {
         });
 
         let config = PluginConfig::new("matrix", matrix_params);
-        let mut host = build_plugin_host(std::slice::from_ref(&config), sample_rate, 1)
-            .expect("build_plugin_host failed");
+        let (mut host, _warnings) =
+            build_plugin_host(std::slice::from_ref(&config), sample_rate, 1)
+                .expect("build_plugin_host failed");
 
         assert_eq!(host.output_channels(), 2);
 

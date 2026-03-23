@@ -7,6 +7,18 @@ import AVFoundation
 import AudioToolbox
 import CoreAudioKit
 
+// MARK: - Render State (shared between main thread and render thread via pointer)
+
+/// Mutable render state shared with the real-time render block via UnsafeMutablePointer.
+/// The render block captures a pointer to this; allocateRenderResources updates the fields.
+private struct RenderState {
+    var handle: OpaquePointer?
+    var channels: Int
+    var scratchIn: UnsafeMutablePointer<Float>?
+    var scratchOut: UnsafeMutablePointer<Float>?
+    var scratchCapacity: Int
+}
+
 /// Base AUAudioUnit that delegates all processing to a Rust plugin via FFI.
 ///
 /// Subclasses must override:
@@ -26,89 +38,102 @@ open class GenericRustAudioUnit: AUAudioUnit {
     /// Display name shown in DAW
     open class var pluginName: String { "SOTF Plugin" }
 
-    /// Number of input channels
-    open class var inputChannelCount: UInt32 { 2 }
-
-    /// Number of output channels
-    open class var outputChannelCount: UInt32 { 2 }
-
     // MARK: - Properties
 
-    private var rustHandle: OpaquePointer?
-    private var inputFormat: AVAudioFormat
-    private var outputFormat: AVAudioFormat
     private var inputBus: AUAudioUnitBus
     private var outputBus: AUAudioUnitBus
     private var _inputBusArray: AUAudioUnitBusArray!
     private var _outputBusArray: AUAudioUnitBusArray!
     private var _parameterTree: AUParameterTree?
     private var auParameters: [AUParameter] = []
-    private var _maxFramesToRender: UInt32 = 512
+    private var _maxFramesToRender: UInt32 = 4096
 
-    /// Pre-allocated scratch buffers for interleave/deinterleave
-    private var scratchInput: UnsafeMutablePointer<Float>?
-    private var scratchOutput: UnsafeMutablePointer<Float>?
-    private var scratchCapacity: Int = 0
+    /// Current Rust plugin configuration — used to detect when re-creation is needed
+    private var rustSampleRate: UInt32 = 0
+
+    /// Heap-allocated render state shared with the render block via pointer.
+    /// The render block captures `renderStatePtr` once; allocateRenderResources
+    /// updates the pointed-to struct so the render thread always sees current values.
+    private let renderStatePtr: UnsafeMutablePointer<RenderState>
 
     // MARK: - Initialization
 
     public override init(componentDescription: AudioComponentDescription,
                         options: AudioComponentInstantiationOptions = []) throws {
-        let inCh = type(of: self).inputChannelCount
-        let outCh = type(of: self).outputChannelCount
+        // Allocate render state on the heap
+        renderStatePtr = .allocate(capacity: 1)
+        renderStatePtr.initialize(to: RenderState(
+            handle: nil, channels: 0, scratchIn: nil, scratchOut: nil, scratchCapacity: 0
+        ))
 
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: inCh) else {
+        // Start with a default stereo format; the host will set the actual format before rendering
+        guard let defaultFormat = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2) else {
+            renderStatePtr.deallocate()
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(kAudioUnitErr_FormatNotSupported))
         }
 
-        self.inputFormat = format
-        self.outputFormat = format
+        inputBus = try AUAudioUnitBus(format: defaultFormat)
+        outputBus = try AUAudioUnitBus(format: defaultFormat)
 
-        inputBus = try AUAudioUnitBus(format: format)
-        outputBus = try AUAudioUnitBus(format: format)
-        inputBus.maximumChannelCount = inCh
-        outputBus.maximumChannelCount = outCh
+        // Allow any channel count up to 64
+        inputBus.maximumChannelCount = 64
+        outputBus.maximumChannelCount = 64
 
         try super.init(componentDescription: componentDescription, options: options)
 
         _inputBusArray = AUAudioUnitBusArray(audioUnit: self, busType: .input, busses: [inputBus])
         _outputBusArray = AUAudioUnitBusArray(audioUnit: self, busType: .output, busses: [outputBus])
 
-        // Create Rust plugin
-        let pluginType = type(of: self).pluginType
-        let sampleRate = UInt32(format.sampleRate)
-
-        rustHandle = pluginType.withCString { typePtr in
-            "{}".withCString { configPtr in
-                plugin_create(typePtr, configPtr, sampleRate, Int(inCh), Int(outCh))
-            }
-        }
-
-        if rustHandle == nil {
-            let error = plugin_get_last_error()
-            let msg = error != nil ? String(cString: error!) : "Unknown error"
-            NSLog("SOTF: Failed to create \(pluginType) plugin: \(msg)")
-        }
-
+        // Create initial Rust plugin with default format
+        let channels = Int(defaultFormat.channelCount)
+        let sampleRate = UInt32(defaultFormat.sampleRate)
+        createRustPlugin(channels: channels, sampleRate: sampleRate)
         buildParameterTree()
     }
 
     deinit {
-        if let handle = rustHandle {
+        let state = renderStatePtr.pointee
+        if let handle = state.handle {
             plugin_destroy(handle)
         }
-        if let scratch = scratchInput {
-            scratch.deallocate()
+        state.scratchIn?.deallocate()
+        state.scratchOut?.deallocate()
+        renderStatePtr.deallocate()
+    }
+
+    // MARK: - Rust Plugin Lifecycle
+
+    private func createRustPlugin(channels: Int, sampleRate: UInt32) {
+        // Destroy old handle if present
+        if let handle = renderStatePtr.pointee.handle {
+            plugin_destroy(handle)
+            renderStatePtr.pointee.handle = nil
         }
-        if let scratch = scratchOutput {
-            scratch.deallocate()
+
+        let pluginType = type(of: self).pluginType
+
+        let handle = pluginType.withCString { typePtr in
+            "{}".withCString { configPtr in
+                plugin_create(typePtr, configPtr, sampleRate, channels, channels)
+            }
+        }
+
+        if let handle = handle {
+            _ = plugin_reset(handle)
+            renderStatePtr.pointee.handle = handle
+            renderStatePtr.pointee.channels = channels
+            rustSampleRate = sampleRate
+        } else {
+            let error = plugin_get_last_error()
+            let msg = error != nil ? String(cString: error!) : "Unknown error"
+            NSLog("SOTF: Failed to create \(pluginType) plugin (\(channels)ch, \(sampleRate)Hz): \(msg)")
         }
     }
 
     // MARK: - Parameter Tree
 
     private func buildParameterTree() {
-        guard let handle = rustHandle else { return }
+        guard let handle = renderStatePtr.pointee.handle else { return }
 
         let paramCount = plugin_get_parameter_count(handle)
         guard paramCount > 0 else { return }
@@ -150,18 +175,35 @@ open class GenericRustAudioUnit: AUAudioUnit {
         auParameters = params
         _parameterTree = AUParameterTree.createTree(withChildren: params)
 
-        // Parameter observation: sync to Rust plugin
         _parameterTree?.implementorValueObserver = { [weak self] param, value in
             self?.syncParameterToRust(param: param, value: value)
         }
 
         _parameterTree?.implementorValueProvider = { [weak self] param -> AUValue in
-            return self?.readParameterFromRust(param: param) ?? param.value
+            // Never access param.value here — it re-enters this callback (infinite recursion)
+            return self?.readParameterFromRust(param: param) ?? param.minValue
+        }
+
+        _parameterTree?.implementorStringFromValueCallback = { param, valuePtr in
+            let value = valuePtr?.pointee ?? param.minValue
+            if param.unit == .hertz {
+                return String(format: "%.1f Hz", value)
+            } else if param.unit == .decibels {
+                return String(format: "%.1f dB", value)
+            } else if param.unit == .milliseconds {
+                return String(format: "%.1f ms", value)
+            } else if param.unit == .percent {
+                return String(format: "%.0f%%", value)
+            }
+            if value == value.rounded() && param.maxValue - param.minValue < 1000 {
+                return String(format: "%.0f", value)
+            }
+            return String(format: "%.2f", value)
         }
     }
 
     private func syncParameterToRust(param: AUParameter, value: AUValue) {
-        guard let handle = rustHandle else { return }
+        guard let handle = renderStatePtr.pointee.handle else { return }
 
         let paramId = param.identifier
         let normalized = Double(normalize(value: value, param: param))
@@ -172,25 +214,25 @@ open class GenericRustAudioUnit: AUAudioUnit {
     }
 
     private func readParameterFromRust(param: AUParameter) -> AUValue {
-        guard let handle = rustHandle else { return param.value }
+        // Never access param.value in this method — it triggers implementorValueProvider
+        // which calls back into this method, causing infinite recursion.
+        guard let handle = renderStatePtr.pointee.handle else { return param.minValue }
 
         let paramId = param.identifier
         let normalized = paramId.withCString { idPtr in
             plugin_get_parameter(handle, idPtr)
         }
 
-        if normalized < 0 { return param.value }
+        if normalized < 0 { return param.minValue }
         return denormalize(normalized: Float(normalized), param: param)
     }
 
-    /// Normalize a raw value to 0-1 based on the parameter's min/max
     private func normalize(value: AUValue, param: AUParameter) -> Float {
         let range = param.maxValue - param.minValue
         guard range > 0 else { return 0 }
         return (value - param.minValue) / range
     }
 
-    /// Denormalize a 0-1 value to the parameter's min/max range
     private func denormalize(normalized: Float, param: AUParameter) -> AUValue {
         return param.minValue + normalized * (param.maxValue - param.minValue)
     }
@@ -210,35 +252,34 @@ open class GenericRustAudioUnit: AUAudioUnit {
         set { _maxFramesToRender = newValue }
     }
 
+    /// All current AU plugins are in-place effects: any channel count, input == output.
+    /// [-1, -1] means "any N channels, same on input and output".
     public override var channelCapabilities: [NSNumber]? {
-        let inCh = type(of: self).inputChannelCount
-        let outCh = type(of: self).outputChannelCount
-        return [NSNumber(value: inCh), NSNumber(value: outCh)]
+        return [NSNumber(value: -1), NSNumber(value: -1)]
     }
 
     public override func allocateRenderResources() throws {
         try super.allocateRenderResources()
 
-        // Re-initialize Rust plugin with actual sample rate
-        if let handle = rustHandle {
-            let sr = UInt32(inputBus.format.sampleRate)
-            plugin_reset(handle)
-            // plugin_reset clears state; sample rate is set at creation
+        // Read the actual format the host has set on our buses
+        let channels = Int(inputBus.format.channelCount)
+        let sampleRate = UInt32(inputBus.format.sampleRate)
+
+        // Re-create Rust plugin if format changed
+        if channels != renderStatePtr.pointee.channels || sampleRate != rustSampleRate {
+            createRustPlugin(channels: channels, sampleRate: sampleRate)
         }
 
-        // Pre-allocate scratch buffers
+        // Pre-allocate scratch buffers for interleave/deinterleave
         let maxFrames = Int(maximumFramesToRender)
-        let inCh = Int(type(of: self).inputChannelCount)
-        let outCh = Int(type(of: self).outputChannelCount)
-        let maxCh = max(inCh, outCh)
-        let needed = maxFrames * maxCh
+        let needed = maxFrames * max(channels, 1)
 
-        if needed > scratchCapacity {
-            scratchInput?.deallocate()
-            scratchOutput?.deallocate()
-            scratchInput = .allocate(capacity: needed)
-            scratchOutput = .allocate(capacity: needed)
-            scratchCapacity = needed
+        if needed > renderStatePtr.pointee.scratchCapacity {
+            renderStatePtr.pointee.scratchIn?.deallocate()
+            renderStatePtr.pointee.scratchOut?.deallocate()
+            renderStatePtr.pointee.scratchIn = .allocate(capacity: needed)
+            renderStatePtr.pointee.scratchOut = .allocate(capacity: needed)
+            renderStatePtr.pointee.scratchCapacity = needed
         }
     }
 
@@ -249,11 +290,9 @@ open class GenericRustAudioUnit: AUAudioUnit {
     // MARK: - Audio Processing
 
     public override var internalRenderBlock: AUInternalRenderBlock {
-        let handle = rustHandle
-        let inCh = Int(type(of: self).inputChannelCount)
-        let outCh = Int(type(of: self).outputChannelCount)
-        let scratchIn = scratchInput
-        let scratchOut = scratchOutput
+        // Capture the POINTER, not the values. The pointed-to struct is updated
+        // by allocateRenderResources, so the render thread always sees current state.
+        let statePtr = renderStatePtr
 
         return { (
             actionFlags,
@@ -264,8 +303,14 @@ open class GenericRustAudioUnit: AUAudioUnit {
             realtimeEventListHead,
             pullInputBlock
         ) in
-            guard let pullInputBlock = pullInputBlock, let handle = handle else {
+            let state = statePtr.pointee
+            guard let pullInputBlock = pullInputBlock, let handle = state.handle else {
                 return kAudioUnitErr_NoConnection
+            }
+
+            let channels = state.channels
+            guard channels > 0 else {
+                return kAudioUnitErr_Uninitialized
             }
 
             // Pull input audio
@@ -273,27 +318,26 @@ open class GenericRustAudioUnit: AUAudioUnit {
             let status = pullInputBlock(&pullFlags, timestamp, frameCount, 0, outputData)
             guard status == noErr else { return status }
 
-            guard let scratchIn = scratchIn, let scratchOut = scratchOut else {
+            guard let scratchIn = state.scratchIn, let scratchOut = state.scratchOut else {
                 return kAudioUnitErr_Uninitialized
             }
 
             let frames = Int(frameCount)
             let outputBufferList = UnsafeMutableAudioBufferListPointer(outputData)
 
-            // Interleave input from AU's non-interleaved buffers
-            if outputBufferList.count == 1 && outputBufferList[0].mNumberChannels == UInt32(inCh) {
-                // Already interleaved (some hosts do this)
+            // Interleave input from AU's deinterleaved buffers
+            if outputBufferList.count == 1 && outputBufferList[0].mNumberChannels == UInt32(channels) {
                 if let mData = outputBufferList[0].mData {
                     let src = mData.assumingMemoryBound(to: Float.self)
-                    scratchIn.update(from: src, count: frames * inCh)
+                    scratchIn.update(from: src, count: frames * channels)
                 }
             } else {
-                // Non-interleaved: interleave manually
-                for ch in 0..<min(Int(outputBufferList.count), inCh) {
+                let bufCount = min(Int(outputBufferList.count), channels)
+                for ch in 0..<bufCount {
                     guard let mData = outputBufferList[ch].mData else { continue }
                     let src = mData.assumingMemoryBound(to: Float.self)
                     for frame in 0..<frames {
-                        scratchIn[frame * inCh + ch] = src[frame]
+                        scratchIn[frame * channels + ch] = src[frame]
                     }
                 }
             }
@@ -302,20 +346,19 @@ open class GenericRustAudioUnit: AUAudioUnit {
             let result = plugin_process(handle, scratchIn, scratchOut, frames)
             guard result == 0 else { return OSStatus(kAudioUnitErr_FailedInitialization) }
 
-            // Deinterleave output back to AU's non-interleaved buffers
-            if outputBufferList.count == 1 && outputBufferList[0].mNumberChannels == UInt32(outCh) {
-                // Already interleaved
+            // Deinterleave output back to AU's buffers
+            if outputBufferList.count == 1 && outputBufferList[0].mNumberChannels == UInt32(channels) {
                 if let mData = outputBufferList[0].mData {
                     let dst = mData.assumingMemoryBound(to: Float.self)
-                    dst.update(from: scratchOut, count: frames * outCh)
+                    dst.update(from: scratchOut, count: frames * channels)
                 }
             } else {
-                // Non-interleaved: deinterleave
-                for ch in 0..<min(Int(outputBufferList.count), outCh) {
+                let bufCount = min(Int(outputBufferList.count), channels)
+                for ch in 0..<bufCount {
                     guard let mData = outputBufferList[ch].mData else { continue }
                     let dst = mData.assumingMemoryBound(to: Float.self)
                     for frame in 0..<frames {
-                        dst[frame] = scratchOut[frame * outCh + ch]
+                        dst[frame] = scratchOut[frame * channels + ch]
                     }
                 }
             }
@@ -328,7 +371,7 @@ open class GenericRustAudioUnit: AUAudioUnit {
 
     public override var fullState: [String: Any]? {
         get {
-            guard let handle = rustHandle else { return nil }
+            guard let handle = renderStatePtr.pointee.handle else { return nil }
 
             var len: Int = 0
             guard let data = plugin_save_state(handle, &len), len > 0 else { return nil }
@@ -345,7 +388,6 @@ open class GenericRustAudioUnit: AUAudioUnit {
                 "sotf_state": buffer,
             ]
 
-            // Also store individual parameter values for host compatibility
             for param in auParameters {
                 state[param.identifier] = param.value
             }
@@ -353,23 +395,20 @@ open class GenericRustAudioUnit: AUAudioUnit {
             return state
         }
         set {
-            guard let state = newValue, let handle = rustHandle else { return }
+            guard let state = newValue, let _ = renderStatePtr.pointee.handle else { return }
 
-            // Try SOTF state blob first
             if let data = state["sotf_state"] as? Data {
                 data.withUnsafeBytes { bytes in
                     guard let ptr = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-                    plugin_load_state(handle, ptr, bytes.count)
+                    plugin_load_state(renderStatePtr.pointee.handle, ptr, bytes.count)
                 }
 
-                // Sync AU parameters from Rust state
                 for param in auParameters {
                     param.value = readParameterFromRust(param: param)
                 }
                 return
             }
 
-            // Fallback: load individual parameter values
             for param in auParameters {
                 if let value = state[param.identifier] as? Float {
                     param.value = value

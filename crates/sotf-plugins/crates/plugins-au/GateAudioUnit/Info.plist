@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>SOTF EQ</string>
+	<string>SOTF Gate</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -17,7 +17,7 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5.65</string>
+	<string>0.5.4</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
@@ -30,21 +30,21 @@
 			<array>
 				<dict>
 					<key>description</key>
-					<string>SOTF Parametric EQ</string>
+					<string>SOTF Gate</string>
 					<key>factoryFunction</key>
-					<string>EQAudioUnit.EQViewController</string>
+					<string>GateAudioUnit.GateViewController</string>
 					<key>manufacturer</key>
 					<string>SOTF</string>
 					<key>name</key>
-					<string>SOTF: Parametric EQ</string>
+					<string>SOTF: Gate</string>
 					<key>sandboxSafe</key>
 					<true/>
 					<key>subtype</key>
-					<string>SOEQ</string>
+					<string>SOGT</string>
 					<key>tags</key>
 					<array>
 						<string>Effects</string>
-						<string>EQ</string>
+						<string>Dynamics</string>
 					</array>
 					<key>type</key>
 					<string>aufx</string>
@@ -56,7 +56,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.AudioUnit-UI</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>$(PRODUCT_MODULE_NAME).EQViewController</string>
+		<string>GateAudioUnit.GateViewController</string>
 	</dict>
 </dict>
 </plist>

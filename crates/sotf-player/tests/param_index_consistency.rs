@@ -295,6 +295,73 @@ fn test_engine_key_consistency_all_plugins() {
 }
 
 // ---------------------------------------------------------------------------
+// Roundtrip: engine_value_string -> ParameterValue::parse must preserve type
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_engine_value_string_roundtrip_all_plugins() {
+    use sotf_audio_player::param_specs::ParamType;
+    use sotf_plugins::ParameterValue;
+
+    for pt in PluginType::all() {
+        let name = pt.name();
+        let settings = default(&pt);
+        let specs = settings.param_specs();
+
+        for (i, spec) in specs.iter().enumerate() {
+            if spec.update_mode == UpdateMode::Structural || is_file(&spec.param_type) {
+                continue;
+            }
+
+            let Some((key, value_str)) = settings.engine_param_at(i) else {
+                continue;
+            };
+
+            let parsed = ParameterValue::parse(&value_str);
+
+            match spec.param_type {
+                ParamType::Float { .. } => {
+                    assert!(
+                        matches!(parsed, ParameterValue::Float(_)),
+                        "{} param {} ({}): '{}' parsed as {:?}, expected Float",
+                        name, i, key, value_str, parsed
+                    );
+                }
+                ParamType::Int { .. } | ParamType::Choice { .. } => {
+                    assert!(
+                        matches!(parsed, ParameterValue::Int(_)),
+                        "{} param {} ({}): '{}' parsed as {:?}, expected Int",
+                        name, i, key, value_str, parsed
+                    );
+                }
+                ParamType::Bool { .. } => {
+                    assert!(
+                        matches!(parsed, ParameterValue::Bool(_)),
+                        "{} param {} ({}): '{}' parsed as {:?}, expected Bool",
+                        name, i, key, value_str, parsed
+                    );
+                }
+                ParamType::FilePath => {}
+            }
+
+            // Also test with whole-number edge cases that previously triggered
+            // the Float-as-Int mismatch bug.
+            if matches!(spec.param_type, ParamType::Float { .. }) {
+                for test_val in [spec.min_f64(), spec.max_f64(), 0.0, 1.0, -1.0] {
+                    let test_str = spec.engine_value_string(test_val);
+                    let test_parsed = ParameterValue::parse(&test_str);
+                    assert!(
+                        matches!(test_parsed, ParameterValue::Float(_)),
+                        "{} param {} ({}): value {} -> '{}' parsed as {:?}, expected Float",
+                        name, i, key, test_val, test_str, test_parsed
+                    );
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Misc
 // ---------------------------------------------------------------------------
 

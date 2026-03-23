@@ -476,7 +476,10 @@ fn run_manager_thread(
         );
 
         match host_result {
-            Ok(host) => {
+            Ok((host, build_warnings)) => {
+                for w in &build_warnings {
+                    log::warn!("[Manager Thread] Initial plugin load: {}", w);
+                }
                 ensure_output_channel_capacity(
                     host.output_channels(),
                     config.output_channels,
@@ -995,10 +998,25 @@ fn apply_plugin_update(
 
     log::debug!("[Manager Thread] Building plugin host locally...");
 
-    let host = build_plugin_host(&plugins, sample_rate, input_channels).map_err(|e| {
-        log::error!("[Manager Thread] Local build failed: {}", e);
-        ConfigError::ProcessingError { reason: e }
-    })?;
+    let (host, build_warnings) =
+        build_plugin_host(&plugins, sample_rate, input_channels).map_err(|e| {
+            log::error!("[Manager Thread] Local build failed: {}", e);
+            ConfigError::ProcessingError { reason: e }
+        })?;
+
+    for w in &build_warnings {
+        log::warn!("[Manager Thread] {}", w);
+    }
+    // Surface build warnings in engine state so the UI can display them
+    if !build_warnings.is_empty() {
+        let mut new_state = (**state.load()).clone();
+        new_state.last_error = Some(format!(
+            "{} plugin(s) skipped: {}",
+            build_warnings.len(),
+            build_warnings.join("; ")
+        ));
+        state.store(Arc::new(new_state));
+    }
 
     log::debug!(
         "[Manager Thread] Local build successful in {:?}, output channels: {}",
@@ -1145,11 +1163,24 @@ fn apply_plugin_graph_update(
         sample_rate
     );
 
-    let host =
+    let (host, build_warnings) =
         build_plugin_graph_host(&graph_config, sample_rate, input_channels).map_err(|e| {
             log::error!("[Manager Thread] Graph build failed: {}", e);
             ConfigError::ProcessingError { reason: e }
         })?;
+
+    for w in &build_warnings {
+        log::warn!("[Manager Thread] {}", w);
+    }
+    if !build_warnings.is_empty() {
+        let mut new_state = (**state.load()).clone();
+        new_state.last_error = Some(format!(
+            "{} graph node(s) skipped: {}",
+            build_warnings.len(),
+            build_warnings.join("; ")
+        ));
+        state.store(Arc::new(new_state));
+    }
 
     let output_channels = host.output_channels();
 

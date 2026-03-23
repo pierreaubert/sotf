@@ -9,16 +9,42 @@ use super::{
 use crate::engine::PluginConfig;
 use serde::{Deserialize, Serialize};
 
-/// Versioned wrapper for plugin presets
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Versioned wrapper for plugin presets (used for saving)
+#[derive(Debug, Clone, Serialize)]
 struct PluginPreset {
-    #[serde(default = "default_plugin_preset_version")]
     version: u32,
     plugins: Vec<Plugin>,
 }
 
+/// Lenient versioned wrapper for plugin presets (used for loading).
+/// Plugins are raw JSON values so that individual plugin deserialization
+/// failures don't reject the entire file.
+#[derive(Debug, Clone, Deserialize)]
+struct PluginPresetRaw {
+    #[serde(default = "default_plugin_preset_version")]
+    version: u32,
+    plugins: Vec<serde_json::Value>,
+}
+
 fn default_plugin_preset_version() -> u32 {
     2
+}
+
+/// Extract a human-readable plugin type name from a raw JSON plugin value.
+fn plugin_type_from_raw(raw: &serde_json::Value) -> String {
+    // PluginSettings is an externally tagged enum, so the settings field is
+    // either a string like "LoudnessMonitor" or an object like {"Gain": {...}}
+    if let Some(settings) = raw.get("settings") {
+        if let Some(s) = settings.as_str() {
+            return s.to_string();
+        }
+        if let Some(obj) = settings.as_object() {
+            if let Some(key) = obj.keys().next() {
+                return key.clone();
+            }
+        }
+    }
+    "unknown".to_string()
 }
 
 #[derive(Debug, Default, Clone)]
@@ -812,20 +838,23 @@ impl PluginChain {
         Ok(())
     }
 
-    /// Load the plugin chain from a JSON file
+    /// Load the plugin chain from a JSON file.
+    ///
+    /// Individual plugins that fail to deserialize are skipped (not fatal).
+    /// The returned `Vec<String>` contains warnings about skipped plugins.
     ///
     /// # Arguments
     /// * `presets_dir` - Directory containing the preset files
     /// * `filename` - The preset filename (with or without .json extension)
     ///
     /// # Returns
-    /// * Ok(()) on success
-    /// * Err if the file doesn't exist or loading fails
+    /// * `Ok(warnings)` — chain loaded, possibly with skipped plugins listed in warnings
+    /// * `Err` — file not found or entire JSON is unparseable
     pub fn load_from_file(
         &mut self,
         presets_dir: &std::path::Path,
         filename: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         // Auto-append .json if not already present
         let path = std::path::Path::new(filename);
         let final_filename = if path.extension().and_then(|e| e.to_str()) == Some("json") {
@@ -847,18 +876,40 @@ impl PluginChain {
         let json = std::fs::read_to_string(&full_path)?;
         log::debug!("Read {} bytes from file", json.len());
 
-        // Try to load as versioned preset first
-        let mut preset: PluginPreset = match serde_json::from_str(&json) {
+        // Parse as raw JSON so individual plugin failures don't reject the file.
+        let raw_preset: PluginPresetRaw = match serde_json::from_str(&json) {
             Ok(p) => p,
             Err(_) => {
-                // Fall back to loading as legacy format (direct Vec<Plugin>)
+                // Fall back to loading as legacy format (direct JSON array)
                 log::info!("Loading legacy plugin preset format (no version field)");
-                let plugins: Vec<Plugin> = serde_json::from_str(&json)?;
-                PluginPreset {
+                let plugins: Vec<serde_json::Value> = serde_json::from_str(&json)?;
+                PluginPresetRaw {
                     version: 0, // Mark as legacy
                     plugins,
                 }
             }
+        };
+
+        // Deserialize each plugin individually, skipping failures
+        let mut loaded_plugins = Vec::new();
+        let mut warnings = Vec::new();
+
+        for (i, raw) in raw_preset.plugins.iter().enumerate() {
+            match serde_json::from_value::<Plugin>(raw.clone()) {
+                Ok(plugin) => loaded_plugins.push(plugin),
+                Err(e) => {
+                    let ptype = plugin_type_from_raw(raw);
+                    let msg = format!("Plugin {} ('{}') skipped: {}", i, ptype, e);
+                    log::warn!("{}", msg);
+                    warnings.push(msg);
+                }
+            }
+        }
+
+        // Build a typed preset for migration
+        let mut preset = PluginPreset {
+            version: raw_preset.version,
+            plugins: loaded_plugins,
         };
 
         // Check if migration is needed
@@ -915,11 +966,12 @@ impl PluginChain {
         self.ensure_default_rack();
 
         log::info!(
-            "Loaded plugin chain from {} ({} plugins)",
+            "Loaded plugin chain from {} ({} plugins, {} skipped)",
             full_path.display(),
-            self.plugins.len()
+            self.plugins.len(),
+            warnings.len()
         );
-        Ok(())
+        Ok(warnings)
     }
 
     /// Apply all necessary migrations to bring a plugin preset to the latest version

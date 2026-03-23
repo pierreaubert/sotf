@@ -8,16 +8,18 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = []
+default = ["gpu-2d", "gpu-3d"]
 hal = ["sotf-engine/hal", "sotf-player/hal", "driver-hal"]
 onnx = ["sotf-plugins/onnx"]
+gpu-2d = ["gpui-px/gpu-2d"]
+gpu-3d = ["gpui-px/gpu-3d"]
 
 [dependencies]
 # GPUI framework
 gpui = { workspace = true }
 gpui-autoeq = { workspace = true }
 gpui-ui-kit = { workspace = true }
-gpui-px = { workspace = true }
+gpui-px = { workspace = true, features = ["gpui"] }
 
 # Force naga termcolor feature to fix WriteColor trait compilation error
 naga = { version = "28", features = ["termcolor"] }

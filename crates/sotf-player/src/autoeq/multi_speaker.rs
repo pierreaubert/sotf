@@ -288,6 +288,7 @@ pub fn run_multi_speaker_optimization(
         optimizer: OptimizerConfig {
             loss_type: format!("{:?}", config.args.loss).to_lowercase(),
             algorithm: config.args.algo.clone(),
+            strategy: config.args.strategy.clone(),
             num_filters: config.args.num_filters,
             min_q: config.args.min_q,
             max_q: config.args.max_q,
@@ -322,6 +323,7 @@ pub fn run_multi_speaker_optimization(
             multi_measurement: None,
             mixed_phase: None,
             decomposed_correction: None,
+            target_response: None,
         },
         recording_config: None,
     };
@@ -450,6 +452,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
     OptimizerConfig {
         loss_type: format!("{:?}", args.loss).to_lowercase(),
         algorithm: args.algo.clone(),
+        strategy: args.strategy.clone(),
         num_filters: args.num_filters,
         min_q: args.min_q,
         max_q: args.max_q,
@@ -484,6 +487,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         broadband_target_matching: None,
         multi_measurement: None,
         decomposed_correction: None,
+        target_response: None,
     }
 }
 

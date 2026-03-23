@@ -1022,11 +1022,28 @@ impl App {
                 .chain
                 .load_from_file(&presets_dir, &preset_name)
             {
-                Ok(_) => {
+                Ok(warnings) => {
                     self.plugin_state.pending_plugin_update =
                         Some(crate::app::types::PluginUpdateType::Structural);
                     self.sync_spectrum_visible();
-                    log::info!("Restored plugin preset: {}", preset_name);
+                    if warnings.is_empty() {
+                        log::info!("Restored plugin preset: {}", preset_name);
+                    } else {
+                        log::warn!(
+                            "Restored plugin preset '{}' with {} skipped plugin(s)",
+                            preset_name,
+                            warnings.len()
+                        );
+                        for w in &warnings {
+                            log::warn!("  {}", w);
+                        }
+                        self.ui_state.toast_message =
+                            Some(crate::app::ToastMessage::warning(format!(
+                                "Preset '{}': {} plugin(s) skipped",
+                                preset_name,
+                                warnings.len()
+                            )));
+                    }
                 }
                 Err(e) => {
                     log::warn!("Could not restore preset '{}': {}", preset_name, e);

@@ -348,7 +348,7 @@ pub extern "C" fn plugin_get_parameter_info(
         handle_ref
             .parameter_map
             .get_info(index)
-            .map(|info| &info as *const ParameterInfo)
+            .map(|info| info as *const ParameterInfo)
             .unwrap_or(ptr::null())
     }
 }

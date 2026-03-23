@@ -425,7 +425,7 @@ impl App {
             .plugin_chain
             .load_from_file(&presets_dir, &self.plugin_file_input)
         {
-            Ok(_) => {
+            Ok(warnings) => {
                 // Update BinauralDecoder input channels after loading
                 self.plugin_chain.update_channel_dependent_plugins();
 
@@ -436,7 +436,18 @@ impl App {
                     format!("{}.json", self.plugin_file_input)
                 };
 
-                self.status_message = Some(format!("Loaded preset: {}", filename));
+                if warnings.is_empty() {
+                    self.status_message = Some(format!("Loaded preset: {}", filename));
+                } else {
+                    self.status_message = Some(format!(
+                        "Loaded preset: {} ({} plugin(s) skipped)",
+                        filename,
+                        warnings.len()
+                    ));
+                    for w in &warnings {
+                        log::warn!("{}", w);
+                    }
+                }
                 self.request_plugin_update();
                 self.last_loaded_preset = Some(filename);
             }
@@ -522,16 +533,34 @@ impl App {
                 .plugin_chain
                 .load_from_file(&presets_dir, &preset_filename)
             {
-                Ok(_) => {
+                Ok(warnings) => {
                     // Update BinauralDecoder input channels after loading
                     self.plugin_chain.update_channel_dependent_plugins();
 
-                    log::info!(
-                        "Successfully loaded preset: {} ({} plugins)",
-                        preset_filename,
-                        self.plugin_chain.len()
-                    );
-                    self.status_message = Some(format!("Loaded preset: {}", preset_filename));
+                    if warnings.is_empty() {
+                        log::info!(
+                            "Successfully loaded preset: {} ({} plugins)",
+                            preset_filename,
+                            self.plugin_chain.len()
+                        );
+                        self.status_message =
+                            Some(format!("Loaded preset: {}", preset_filename));
+                    } else {
+                        log::warn!(
+                            "Loaded preset: {} ({} plugins, {} skipped)",
+                            preset_filename,
+                            self.plugin_chain.len(),
+                            warnings.len()
+                        );
+                        for w in &warnings {
+                            log::warn!("  {}", w);
+                        }
+                        self.status_message = Some(format!(
+                            "Loaded preset: {} ({} plugin(s) skipped)",
+                            preset_filename,
+                            warnings.len()
+                        ));
+                    }
                     self.request_plugin_update();
                     self.last_loaded_preset = Some(preset_filename);
                 }

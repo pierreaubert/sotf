@@ -737,8 +737,9 @@ impl PluginController {
         &mut self,
         presets_dir: &Path,
         filename: &str,
-    ) -> Result<(PluginUpdateEffect, String), String> {
-        self.chain
+    ) -> Result<(PluginUpdateEffect, String, Vec<String>), String> {
+        let warnings = self
+            .chain
             .load_from_file(presets_dir, filename)
             .map_err(|e| format!("Error loading: {}", e))?;
 
@@ -751,7 +752,7 @@ impl PluginController {
         };
         self.last_loaded_preset = Some(filename_with_ext.clone());
 
-        Ok((PluginUpdateEffect::Structural, filename_with_ext))
+        Ok((PluginUpdateEffect::Structural, filename_with_ext, warnings))
     }
 
     /// Save the plugin chain to the selected preset file. Returns the filename used.
@@ -775,11 +776,12 @@ impl PluginController {
         Ok(preset_filename)
     }
 
-    /// Load the selected preset. Returns `Structural` effect and preset filename on success.
+    /// Load the selected preset. Returns `Structural` effect, preset filename, plugin count,
+    /// and any warnings about skipped plugins.
     pub fn load_selected_preset(
         &mut self,
         presets_dir: &Path,
-    ) -> Result<(PluginUpdateEffect, String, usize), String> {
+    ) -> Result<(PluginUpdateEffect, String, usize, Vec<String>), String> {
         if self.available_presets.is_empty() {
             return Err("No presets available".to_string());
         }
@@ -790,7 +792,8 @@ impl PluginController {
             .cloned()
             .ok_or_else(|| "Invalid preset index".to_string())?;
 
-        self.chain
+        let warnings = self
+            .chain
             .load_from_file(presets_dir, &preset_filename)
             .map_err(|e| format!("Error loading preset: {}", e))?;
 
@@ -802,6 +805,7 @@ impl PluginController {
             PluginUpdateEffect::Structural,
             preset_filename,
             plugin_count,
+            warnings,
         ))
     }
 

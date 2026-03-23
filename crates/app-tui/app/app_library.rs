@@ -672,13 +672,29 @@ impl App {
             // Use the plugin chain's own load method
             if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
                 match self.plugin_chain.load_from_file(&presets_dir, preset_name) {
-                    Ok(_) => {
+                    Ok(warnings) => {
                         // Update BinauralDecoder input channels after loading
                         self.plugin_chain.update_channel_dependent_plugins();
 
                         self.last_loaded_preset = Some(preset_name.clone());
                         self.request_plugin_update();
-                        log::info!("Restored plugin preset: {}", preset_name);
+                        if warnings.is_empty() {
+                            log::info!("Restored plugin preset: {}", preset_name);
+                        } else {
+                            log::warn!(
+                                "Restored preset '{}' with {} skipped plugin(s)",
+                                preset_name,
+                                warnings.len()
+                            );
+                            for w in &warnings {
+                                log::warn!("  {}", w);
+                            }
+                            self.status_message = Some(format!(
+                                "Preset '{}': {} plugin(s) skipped",
+                                preset_name,
+                                warnings.len()
+                            ));
+                        }
                     }
                     Err(e) => {
                         log::warn!("Could not restore preset '{}': {}", preset_name, e);

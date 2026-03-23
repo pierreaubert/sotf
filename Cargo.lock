@@ -819,7 +819,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.15"
+version = "0.4.16"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -2534,6 +2534,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if 1.0.4",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "dasp_sample"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4016,6 +4029,17 @@ dependencies = [
  "serde_json",
  "smol",
  "uuid",
+]
+
+[[package]]
+name = "gpui-ui-kit-ios-showcase"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-ios",
+ "gpui-ui-kit",
+ "log",
+ "oslog",
 ]
 
 [[package]]
@@ -7162,6 +7186,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "oslog"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80d2043d1f61d77cb2f4b1f7b7b2295f40507f5f8e9d1c8bf10a1ca5f97a3969"
+dependencies = [
+ "cc",
+ "dashmap",
+ "log",
+]
+
+[[package]]
 name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10169,6 +10204,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-ios"
+version = "0.5.2"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "gpui-ios",
+ "gpui-ui-kit",
+ "log",
+ "oslog",
+ "parking_lot",
+ "rust-embed",
+ "serde_json",
+ "sotf-engine",
+ "sotf-gpui",
+ "sotf-player",
+]
+
+[[package]]
 name = "sotf-midi"
 version = "0.1.3"
 dependencies = [
@@ -10830,6 +10883,24 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "walkdir",
+]
+
+[[package]]
+name = "sotf-tvos"
+version = "0.5.2"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "gpui-ios",
+ "gpui-ui-kit",
+ "log",
+ "oslog",
+ "parking_lot",
+ "rust-embed",
+ "serde_json",
+ "sotf-engine",
+ "sotf-gpui",
+ "sotf-player",
 ]
 
 [[package]]

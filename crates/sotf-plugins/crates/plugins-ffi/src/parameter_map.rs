@@ -35,19 +35,9 @@ pub struct ParameterInfo {
 /// Parameter mapping for a plugin, backed by plugins-bridge ParamBridge.
 pub struct ParameterMap {
     bridge: ParamBridge,
-    /// Cached C-compatible info structs (leaked CStrings for FFI safety)
-    cached_infos: Vec<CachedParamInfo>,
-}
-
-struct CachedParamInfo {
-    id: *const c_char,
-    name: *const c_char,
-    unit: *const c_char,
-    min_value: f64,
-    max_value: f64,
-    default_value: f64,
-    steps: u32,
-    logarithmic: bool,
+    /// Cached C-compatible info structs (leaked CStrings for FFI safety).
+    /// Stored as `ParameterInfo` directly so we can return stable pointers via `get_info()`.
+    cached_infos: Vec<ParameterInfo>,
 }
 
 impl ParameterMap {
@@ -56,16 +46,15 @@ impl ParameterMap {
         let specs = get_param_specs(plugin_type);
         let bridge = ParamBridge::new(specs);
 
-        // Pre-build cached C-compatible info structs
+        // Pre-build cached C-compatible info structs from static ParamSpec
         let mut cached_infos = Vec::with_capacity(bridge.count());
         for i in 0..bridge.count() {
             if let Some(info) = bridge.info(i) {
-                // Leak CStrings intentionally for FFI safety — they live as long as the ParameterMap
                 let id = CString::new(info.id).unwrap().into_raw() as *const c_char;
                 let name = CString::new(info.name).unwrap().into_raw() as *const c_char;
                 let unit = CString::new(info.unit).unwrap().into_raw() as *const c_char;
 
-                cached_infos.push(CachedParamInfo {
+                cached_infos.push(ParameterInfo {
                     id,
                     name,
                     unit,
@@ -78,8 +67,14 @@ impl ParameterMap {
             }
         }
 
-        // Also add parameters from Plugin::parameters() that aren't in ParamSpec
-        // (for plugins without PARAMS arrays, fallback to the plugin's own parameter list)
+        // Expand per-band templates for plugins with dynamic bands (EQ, multiband, etc.)
+        // Band parameters use "band_N_field" naming convention matching the Rust plugin's
+        // set_parameter/get_parameter interface.
+        if let Some((template, max_bands)) = get_band_template(plugin_type) {
+            expand_band_params(&mut cached_infos, template, max_bands);
+        }
+
+        // Fallback: if no static specs produced params, use Plugin::parameters()
         if cached_infos.is_empty() {
             for param in plugin.parameters() {
                 let (min, max, default) = match (&param.min_value, &param.max_value, &param.default_value) {
@@ -100,7 +95,7 @@ impl ParameterMap {
                 let name = CString::new(param.name.clone()).unwrap().into_raw() as *const c_char;
                 let unit = CString::new(param.unit.clone()).unwrap().into_raw() as *const c_char;
 
-                cached_infos.push(CachedParamInfo {
+                cached_infos.push(ParameterInfo {
                     id,
                     name,
                     unit,
@@ -125,17 +120,12 @@ impl ParameterMap {
     }
 
     /// Get parameter info by index.
-    pub fn get_info(&self, index: usize) -> Option<ParameterInfo> {
-        self.cached_infos.get(index).map(|cached| ParameterInfo {
-            id: cached.id,
-            name: cached.name,
-            unit: cached.unit,
-            min_value: cached.min_value,
-            max_value: cached.max_value,
-            default_value: cached.default_value,
-            steps: cached.steps,
-            logarithmic: cached.logarithmic,
-        })
+    ///
+    /// Returns a reference to the cached info, which is valid for the lifetime of this ParameterMap.
+    /// This is critical for FFI safety — callers can convert the reference to a raw pointer that
+    /// remains valid as long as the PluginHandle (and thus this ParameterMap) is alive.
+    pub fn get_info(&self, index: usize) -> Option<&ParameterInfo> {
+        self.cached_infos.get(index)
     }
 
     /// Set parameter value (normalized 0.0-1.0).
@@ -154,13 +144,13 @@ impl ParameterMap {
 
         // Fallback: direct set using raw parameter system
         // Denormalize using cached info
-        if let Some(pos) = self.cached_infos.iter().position(|c| {
-            let id = unsafe { std::ffi::CStr::from_ptr(c.id).to_str().unwrap_or("") };
+        if let Some(pos) = self.cached_infos.iter().position(|info| {
+            let id = unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") };
             id == param_id
         }) {
-            let cached = &self.cached_infos[pos];
-            let raw = cached.min_value
-                + (normalized_value * (cached.max_value - cached.min_value));
+            let info = &self.cached_infos[pos];
+            let raw = info.min_value
+                + (normalized_value * (info.max_value - info.min_value));
             let id = sotf_host::parameters::ParameterId(param_id.to_string());
             let value = sotf_host::parameters::ParameterValue::Float(raw as f32);
             plugin.set_parameter(id, value)
@@ -177,12 +167,12 @@ impl ParameterMap {
         }
 
         // Fallback: direct get using raw parameter system
-        let pos = self.cached_infos.iter().position(|c| {
-            let id = unsafe { std::ffi::CStr::from_ptr(c.id).to_str().unwrap_or("") };
+        let pos = self.cached_infos.iter().position(|info| {
+            let id = unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") };
             id == param_id
         })?;
 
-        let cached = &self.cached_infos[pos];
+        let info = &self.cached_infos[pos];
         let id = sotf_host::parameters::ParameterId(param_id.to_string());
         let value = plugin.get_parameter(&id)?;
         let raw = match value {
@@ -191,11 +181,11 @@ impl ParameterMap {
             sotf_host::parameters::ParameterValue::Bool(b) => if b { 1.0 } else { 0.0 },
             _ => return None,
         };
-        let range = cached.max_value - cached.min_value;
+        let range = info.max_value - info.min_value;
         if range.abs() < f64::EPSILON {
             return Some(0.0);
         }
-        Some(((raw - cached.min_value) / range).clamp(0.0, 1.0))
+        Some(((raw - info.min_value) / range).clamp(0.0, 1.0))
     }
 }
 
@@ -214,6 +204,102 @@ impl Drop for ParameterMap {
                     drop(CString::from_raw(info.unit as *mut c_char));
                 }
             }
+        }
+    }
+}
+
+/// Get the band template and max band count for plugins with per-band parameters.
+/// Returns None for plugins without dynamic bands.
+fn get_band_template(
+    plugin_type: &str,
+) -> Option<(&'static [sotf_host::param_specs::ParamSpec], usize)> {
+    use sotf_plugins::param_specs::*;
+
+    match plugin_type {
+        "EQ" | "eq" => Some((eq::BAND_TEMPLATE, 20)),
+        "MultibandCompressor" | "multiband_compressor" => {
+            Some((multiband_compressor::BAND_TEMPLATE, 5))
+        }
+        "MultibandExpander" | "multiband_expander" => {
+            Some((multiband_expander::BAND_TEMPLATE, 5))
+        }
+        _ => None,
+    }
+}
+
+/// Expand a per-band ParamSpec template into concrete ParameterInfo entries.
+///
+/// For each band 0..max_bands, creates parameters with IDs like "band_0_frequency",
+/// "band_1_q", etc. — matching the naming convention used by the Rust plugins'
+/// set_parameter/get_parameter implementations.
+fn expand_band_params(
+    cached_infos: &mut Vec<ParameterInfo>,
+    template: &[sotf_host::param_specs::ParamSpec],
+    max_bands: usize,
+) {
+    use sotf_host::param_specs::ParamType;
+
+    for band_idx in 0..max_bands {
+        for spec in template {
+            let band_id = format!("band_{}_{}", band_idx, spec.engine_key);
+            let band_name = format!("Band {} {}", band_idx + 1, spec.name);
+
+            let (min, max, default, steps, logarithmic) = match spec.param_type {
+                ParamType::Float {
+                    default,
+                    min,
+                    max,
+                    step,
+                } => {
+                    let steps = if step > 0.0 {
+                        ((max - min) / step) as u32
+                    } else {
+                        0
+                    };
+                    (min as f64, max as f64, default as f64, steps, false)
+                }
+                ParamType::Int {
+                    default,
+                    min,
+                    max,
+                    step,
+                } => (
+                    min as f64,
+                    max as f64,
+                    default as f64,
+                    ((max - min) / step) as u32,
+                    false,
+                ),
+                ParamType::Bool { default, .. } => {
+                    (0.0, 1.0, if default { 1.0 } else { 0.0 }, 1, false)
+                }
+                ParamType::Choice {
+                    default_index,
+                    labels,
+                } => (
+                    0.0,
+                    (labels.len().saturating_sub(1)) as f64,
+                    default_index as f64,
+                    labels.len().saturating_sub(1) as u32,
+                    false,
+                ),
+                ParamType::FilePath => continue, // skip file paths for AU
+            };
+
+            let id = CString::new(band_id).unwrap().into_raw() as *const c_char;
+            let name = CString::new(band_name).unwrap().into_raw() as *const c_char;
+            let unit = CString::new(spec.unit).unwrap().into_raw() as *const c_char;
+
+            cached_infos.push(ParameterInfo {
+                id,
+                name,
+                unit,
+                min_value: min,
+                max_value: max,
+                default_value: default,
+                steps,
+                logarithmic,
+            });
         }
     }
 }
@@ -259,7 +345,8 @@ mod tests {
     fn test_parameter_map_eq() {
         let plugin = plugins_bridge::create_plugin("EQ", 2, 48000, "{}").unwrap();
         let param_map = ParameterMap::from_plugin(&*plugin, "EQ");
-        assert!(param_map.count() > 0);
+        // 2 global (max_filters, tdf2) + 20 bands × 4 params (frequency, q, gain_db, filter_type)
+        assert_eq!(param_map.count(), 2 + 20 * 4);
     }
 
     #[test]

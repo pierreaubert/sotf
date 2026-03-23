@@ -470,7 +470,16 @@ impl ParamSpec {
     /// Float: raw number, Int: integer, Bool: "true"/"false", Choice: index as integer.
     pub fn engine_value_string(&self, value: f64) -> String {
         match self.param_type {
-            ParamType::Float { .. } => format!("{}", value),
+            ParamType::Float { .. } => {
+                let s = format!("{}", value);
+                // Ensure float strings always contain a decimal point so
+                // ParameterValue::parse() classifies them as Float, not Int.
+                if s.contains('.') || s.contains('e') || s.contains('E') {
+                    s
+                } else {
+                    format!("{}.0", s)
+                }
+            }
             ParamType::Int { .. } => format!("{}", value as i64),
             ParamType::Bool { .. } => {
                 if value > 0.5 {

@@ -390,6 +390,9 @@ fn default_atolerance() -> f64 {
 fn default_smooth_n() -> usize {
     6
 }
+fn default_strategy() -> String {
+    "lshade".to_string()
+}
 
 // Re-export shared algorithm type from player crate
 pub use sotf_audio_player::room_eq_types::RoomEqAlgorithm;
@@ -787,6 +790,9 @@ pub struct RoomEqOptimizerConfig {
     pub multi_speaker_mode: MultiSpeakerMode,
     /// Optimization algorithm (e.g., "autoeq:de", "nlopt:cobyla", "nlopt:neldermead")
     pub algorithm: String,
+    /// DE mutation strategy (e.g., "currenttobest1bin", "lshade", "best1bin")
+    #[serde(default = "default_strategy")]
+    pub strategy: String,
     /// Number of PEQ filters per channel
     pub num_filters: usize,
     /// Minimum Q factor
@@ -886,6 +892,7 @@ impl Default for RoomEqOptimizerConfig {
             fir: RoomEqFirConfig::default(),
             multi_speaker_mode: MultiSpeakerMode::Combined,
             algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
             num_filters: 7,
             min_q: 0.5,
             max_q: 6.0,
@@ -935,6 +942,7 @@ impl RoomEqOptimizerConfig {
     pub fn import_from_backend(&mut self, backend: &BackendOptimizerConfig) {
         // Core optimizer parameters
         self.algorithm = backend.algorithm.clone();
+        self.strategy = backend.strategy.clone();
         self.num_filters = backend.num_filters;
         self.min_q = backend.min_q;
         self.max_q = backend.max_q;
@@ -1906,6 +1914,7 @@ impl RoomEqState {
         let optimizer = BackendOptimizerConfig {
             loss_type: self.optimizer_config.loss_type.clone(),
             algorithm,
+            strategy: self.optimizer_config.strategy.clone(),
             num_filters: self.optimizer_config.num_filters,
             min_q: self.optimizer_config.min_q,
             max_q: self.optimizer_config.max_q,
@@ -2090,6 +2099,7 @@ impl RoomEqState {
             },
             smooth_n: self.optimizer_config.smooth_n,
             decomposed_correction: None,
+            target_response: None,
         };
 
         log::info!(

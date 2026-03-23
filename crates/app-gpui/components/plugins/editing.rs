@@ -297,11 +297,20 @@ impl PluginEditingManager for App {
             .plugin_state
             .load_from_file(&presets_dir, &self.input_state.plugin_file_input)
         {
-            Ok((effect, filename)) => {
-                self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                    "Loaded preset: {}",
-                    filename
-                )));
+            Ok((effect, filename, warnings)) => {
+                if warnings.is_empty() {
+                    self.ui_state.toast_message = Some(ToastMessage::success(format!(
+                        "Loaded preset: {}",
+                        filename
+                    )));
+                } else {
+                    self.ui_state.toast_message = Some(ToastMessage::warning(format!(
+                        "Loaded preset: {} ({} plugin(s) skipped: {})",
+                        filename,
+                        warnings.len(),
+                        warnings.join("; ")
+                    )));
+                }
                 self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
                 self.sync_spectrum_visible();
             }
@@ -321,11 +330,21 @@ impl PluginEditingManager for App {
         };
 
         match self.plugin_state.load_selected_preset(&presets_dir) {
-            Ok((effect, filename, plugin_count)) => {
-                self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                    "Loaded preset: {} ({} plugins)",
-                    filename, plugin_count
-                )));
+            Ok((effect, filename, plugin_count, warnings)) => {
+                if warnings.is_empty() {
+                    self.ui_state.toast_message = Some(ToastMessage::success(format!(
+                        "Loaded preset: {} ({} plugins)",
+                        filename, plugin_count
+                    )));
+                } else {
+                    self.ui_state.toast_message = Some(ToastMessage::warning(format!(
+                        "Loaded preset: {} ({} plugins, {} skipped: {})",
+                        filename,
+                        plugin_count,
+                        warnings.len(),
+                        warnings.join("; ")
+                    )));
+                }
                 self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
                 self.sync_spectrum_visible();
             }
