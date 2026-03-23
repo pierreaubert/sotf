@@ -5,7 +5,7 @@
 //! that IIR/FIR/Mixed modes converge to similar frequency responses,
 //! and that each optimizer option has its expected effect.
 //!
-//! Uses COBYLA (fast, deterministic) instead of DE for speed.
+//! Uses autoeq:de with LSHADE strategy and fixed seed for deterministic results.
 //! Test cases run in parallel for maximum throughput.
 //!
 //! Usage:
@@ -41,8 +41,6 @@ use autoeq::{MeasurementMultiple, MeasurementRef, MeasurementSource};
 // ---------------------------------------------------------------------------
 
 /// Monotonicity tolerance: variation may be at most 20% worse than baseline.
-/// COBYLA is a local optimizer so sensitivity to search space changes is higher
-/// than global optimizers. Allow wider tolerance for the fast QA mode.
 const MONOTONICITY_TOLERANCE: f64 = 1.20;
 
 /// Cross-mode ratio: max score / min score must be <= 5.0.
@@ -52,8 +50,9 @@ const SAMPLE_RATE: f64 = 48000.0;
 
 const SEED: u64 = 42;
 
-/// COBYLA maxeval for QA (fast mode). Enough to find bugs, not to get best results.
-const QA_MAXEVAL: usize = 1000;
+/// DE maxeval for QA. With default population ~84, this gives ~595 generations
+/// before the 5000-gen floor, but LSHADE typically converges in ~300 generations.
+const QA_MAXEVAL: usize = 50_000;
 
 /// Base config directories
 const FEM_DIR: &str = "data_tests/roomeq/generated/fem";
@@ -62,7 +61,7 @@ const OPTIM_CONFIG_DIR: &str = "data_tests/roomeq/generated/optimiser-config";
 // Cross-mode convergence thresholds
 /// Maximum dB difference between any two modes' final curves in passband.
 /// Generous limit: IIR/FIR/Mixed use fundamentally different correction
-/// mechanisms and COBYLA at 1000 maxeval won't fully converge.
+/// mechanisms so some divergence is expected.
 const CROSS_MODE_FR_MAX_DIFF_DB: f64 = 18.0;
 /// Score ratio limit for cross-mode convergence (reuse existing)
 const CROSS_MODE_SCORE_RATIO_LIMIT: f64 = 3.0;
@@ -76,14 +75,15 @@ const OPTION_SCORE_TOLERANCE: f64 = 1.20;
 const PSYCHOACOUSTIC_SCORE_TOLERANCE: f64 = 2.0;
 
 // ---------------------------------------------------------------------------
-// QA config overrides (fast mode: cobyla, low iterations)
+// QA config overrides (autoeq:de with LSHADE, fixed seed)
 // ---------------------------------------------------------------------------
 
-/// Override optimizer settings for fast QA: use COBYLA with low maxeval, no refinement.
+/// Override optimizer settings for QA: use autoeq:de with LSHADE strategy and fixed seed.
 fn apply_qa_overrides(config: &mut RoomConfig) {
-    config.optimizer.algorithm = "cobyla".to_string();
+    config.optimizer.algorithm = "autoeq:de".to_string();
+    config.optimizer.strategy = "lshade".to_string();
     config.optimizer.max_iter = QA_MAXEVAL;
-    config.optimizer.refine = false;
+    config.optimizer.refine = true;
     config.optimizer.seed = Some(SEED);
 }
 
@@ -1652,19 +1652,10 @@ fn run_option_effect_test(
     }
 
     // Combo-level check: combined result should still converge (post < pre).
-    // For high-interaction combos (4+ options), COBYLA at 1000 maxeval may not
-    // converge because conflicting constraints (excursion HPF + schroeder split
-    // + tilt + psychoacoustic) create a very constrained search space. Allow a
-    // small regression margin for large combos.
-    let has_broadband_in_combo = options
-        .iter()
-        .any(|o| matches!(o, OptionOverride::BroadbandTargetMatching));
-    let convergence_margin = if options.len() >= 6 && has_broadband_in_combo {
-        // Kitchen-sink combos with broadband shelves: broadband globally shifts
-        // the curve, and COBYLA at 1000 maxeval may not converge when combined
-        // with tilt, excursion, schroeder, and psychoacoustic.
-        option_result.combined_pre_score * 1.5
-    } else if options.len() >= 4 {
+    // For high-interaction combos (4+ options), conflicting constraints
+    // (excursion HPF + schroeder split + tilt + psychoacoustic) create a
+    // very constrained search space. Allow a small regression margin.
+    let convergence_margin = if options.len() >= 4 {
         option_result.combined_pre_score * 0.15 // 15% regression tolerance
     } else {
         0.0
@@ -2047,7 +2038,7 @@ fn validate_schroeder_split(
                     low_boosts += 1;
                 }
                 // Below Schroeder: Q must stay within configured low_max_q.
-                // Allow 20% tolerance since COBYLA may not perfectly enforce bounds.
+                // Allow 20% tolerance for optimizer bound enforcement.
                 if bq.q > low_max_q * 1.2 {
                     q_violations.push(format!(
                         "{} f{}({:.0}Hz): Q={:.1}>{:.1}",
@@ -2445,7 +2436,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    println!("=== RoomEQ QA: Convergence, Monotonicity & Invariants (fast: cobyla, parallel) ===");
+    println!("=== RoomEQ QA: Convergence, Monotonicity & Invariants (DE/LSHADE, seed={}, parallel) ===", SEED);
 
     let project_root = find_project_root()?;
     let fem_dir = project_root.join(FEM_DIR);
