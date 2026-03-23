@@ -8,6 +8,9 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+// GPUI AU rendering FFI
+#include "gpui_au_ffi.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

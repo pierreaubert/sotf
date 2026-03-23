@@ -702,7 +702,9 @@ impl RenderOnce for VerticalSlider {
         } else {
             theme.accent
         };
-        let thumb_height = if selected { 6.0 } else { 4.0 };
+        let thumb_height = if selected { 8.0 } else { 6.0 };
+        // Thumb extends beyond the track edges for a proper grab affordance
+        let thumb_overhang: f32 = 3.0;
         let scale_color = if selected {
             theme.text_secondary
         } else {
@@ -945,17 +947,17 @@ impl RenderOnce for VerticalSlider {
                 .rounded_b_md(),
         );
 
-        // Thumb indicator
+        // Thumb indicator — extends beyond track edges for a visible grab handle
         track = track.child(
             div()
                 .absolute()
-                .left_0()
-                .right_0()
+                .left(px(-thumb_overhang))
+                .w(px(track_width + thumb_overhang * 2.0))
                 .bottom(relative(normalized))
                 .h(px(thumb_height))
                 .bg(thumb_color)
-                .rounded_sm()
-                .when(selected, |d| d.shadow_sm()),
+                .rounded_md()
+                .shadow_sm(),
         );
 
         // Peak marker (optional) - thick horizontal line at peak position

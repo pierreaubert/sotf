@@ -4,6 +4,7 @@ import AudioToolbox
 
 public class LimiterViewController: AUViewController, AUAudioUnitFactory {
     nonisolated(unsafe) private var audioUnit: LimiterAudioUnit?
+    private var gpuiView: GPUIAUView?
 
     public nonisolated func createAudioUnit(with componentDescription: AudioComponentDescription) throws -> AUAudioUnit {
         let unit = try LimiterAudioUnit(componentDescription: componentDescription, options: [])
@@ -13,20 +14,16 @@ public class LimiterViewController: AUViewController, AUAudioUnitFactory {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1.0).cgColor
 
-        let label = NSTextField(labelWithString: "SOTF: Limiter\nUse host controls for parameters")
-        label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
-        label.textColor = NSColor(calibratedWhite: 0.7, alpha: 1.0)
-        label.alignment = .center
-        label.maximumNumberOfLines = 0
-        label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
-
+        let gpui = GPUIAUView(pluginType: "Limiter")
+        gpui.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(gpui)
         NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            gpui.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            gpui.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            gpui.topAnchor.constraint(equalTo: view.topAnchor),
+            gpui.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        gpuiView = gpui
     }
 }

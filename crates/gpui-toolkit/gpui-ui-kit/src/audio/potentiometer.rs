@@ -22,6 +22,195 @@ use crate::scale::Scale;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
+use std::f32::consts::PI;
+
+// ============================================================================
+// KnobArcElement — custom-painted value arc around the potentiometer
+// ============================================================================
+
+/// Custom element that paints an arc indicating the current knob value.
+///
+/// The arc sweeps from the start angle (7:30 position) clockwise to the
+/// current value angle. It is rendered as a filled annular sector using
+/// `PathBuilder`, sitting just outside the knob circle.
+struct KnobArcElement {
+    /// Total size of the container (matches knob_container)
+    container_size: f32,
+    /// Offset of the knob within the container
+    knob_offset: f32,
+    /// Knob diameter
+    knob_size: f32,
+    /// Normalized value [0, 1]
+    normalized: f32,
+    /// Arc color (typically the plugin accent color)
+    arc_color: Rgba,
+    /// Arc thickness in pixels
+    arc_width: f32,
+}
+
+impl IntoElement for KnobArcElement {
+    type Element = Self;
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for KnobArcElement {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let layout_id = window.request_layout(
+            Style {
+                size: Size {
+                    width: px(self.container_size).into(),
+                    height: px(self.container_size).into(),
+                },
+                ..Default::default()
+            },
+            [],
+            cx,
+        );
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Self::PrepaintState {
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        _cx: &mut App,
+    ) {
+        if self.normalized < 0.005 {
+            return; // Nothing to draw at zero
+        }
+
+        let origin_x = bounds.origin.x;
+        let origin_y = bounds.origin.y;
+
+        let center_x = self.knob_offset + self.knob_size / 2.0;
+        let center_y = self.knob_offset + self.knob_size / 2.0;
+
+        // Arc sits just outside the knob border (2px border + 1px gap)
+        let outer_radius = self.knob_size / 2.0 + 1.0;
+        let inner_radius = outer_radius - self.arc_width;
+
+        // Angle range: 135° (7:30) to 405° (4:30) — 270° sweep with dead zone at bottom
+        let start_rad: f32 = PI * 0.75;
+        let end_rad: f32 = PI * 2.25;
+        let value_rad = start_rad + (end_rad - start_rad) * self.normalized;
+
+        // Build the annular sector as a filled path:
+        // outer arc from start_rad to value_rad, then inner arc back
+        let segments = 48; // Enough segments for smooth curve
+        let angle_span = value_rad - start_rad;
+        let actual_segments = ((segments as f32 * (angle_span / (end_rad - start_rad)))
+            .ceil()
+            .max(4.0)) as usize;
+
+        let mut builder = PathBuilder::fill();
+
+        // Outer arc: start → value (clockwise)
+        let outer_start_x = center_x + outer_radius * start_rad.cos();
+        let outer_start_y = center_y + outer_radius * start_rad.sin();
+        builder.move_to(point(
+            origin_x + px(outer_start_x),
+            origin_y + px(outer_start_y),
+        ));
+
+        for i in 1..=actual_segments {
+            let t = i as f32 / actual_segments as f32;
+            let angle = start_rad + angle_span * t;
+            let x = center_x + outer_radius * angle.cos();
+            let y = center_y + outer_radius * angle.sin();
+            builder.line_to(point(origin_x + px(x), origin_y + px(y)));
+        }
+
+        // Inner arc: value → start (counter-clockwise, closing the shape)
+        for i in 0..=actual_segments {
+            let t = 1.0 - (i as f32 / actual_segments as f32);
+            let angle = start_rad + angle_span * t;
+            let x = center_x + inner_radius * angle.cos();
+            let y = center_y + inner_radius * angle.sin();
+            builder.line_to(point(origin_x + px(x), origin_y + px(y)));
+        }
+
+        if let Ok(path) = builder.build() {
+            window.paint_path(path, self.arc_color);
+        }
+
+        // Also paint the unfilled (track) portion as a dimmed arc
+        let remaining_span = end_rad - value_rad;
+        if remaining_span > 0.01 {
+            let track_color = Rgba {
+                r: self.arc_color.r,
+                g: self.arc_color.g,
+                b: self.arc_color.b,
+                a: 0.12,
+            };
+            let remain_segments = ((segments as f32 * (remaining_span / (end_rad - start_rad)))
+                .ceil()
+                .max(4.0)) as usize;
+
+            let mut track_builder = PathBuilder::fill();
+
+            let track_start_x = center_x + outer_radius * value_rad.cos();
+            let track_start_y = center_y + outer_radius * value_rad.sin();
+            track_builder.move_to(point(
+                origin_x + px(track_start_x),
+                origin_y + px(track_start_y),
+            ));
+
+            for i in 1..=remain_segments {
+                let t = i as f32 / remain_segments as f32;
+                let angle = value_rad + remaining_span * t;
+                let x = center_x + outer_radius * angle.cos();
+                let y = center_y + outer_radius * angle.sin();
+                track_builder.line_to(point(origin_x + px(x), origin_y + px(y)));
+            }
+
+            for i in 0..=remain_segments {
+                let t = 1.0 - (i as f32 / remain_segments as f32);
+                let angle = value_rad + remaining_span * t;
+                let x = center_x + inner_radius * angle.cos();
+                let y = center_y + inner_radius * angle.sin();
+                track_builder.line_to(point(origin_x + px(x), origin_y + px(y)));
+            }
+
+            if let Ok(path) = track_builder.build() {
+                window.paint_path(path, track_color);
+            }
+        }
+    }
+}
 
 /// Theme colors for potentiometer styling
 #[derive(Debug, Clone, ComponentTheme)]
@@ -137,6 +326,8 @@ pub struct Potentiometer {
     selected: bool,
     disabled: bool,
     theme: Option<PotentiometerTheme>,
+    /// Override accent color for the value arc (e.g., plugin-specific color)
+    accent_color: Option<Rgba>,
     on_change: Option<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>,
     on_drag_start: Option<Box<dyn Fn(f32, f64, &mut Window, &mut App) + 'static>>,
     on_select: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
@@ -160,6 +351,7 @@ impl Potentiometer {
             selected: false,
             disabled: false,
             theme: None,
+            accent_color: None,
             on_change: None,
             on_drag_start: None,
             on_select: None,
@@ -241,6 +433,14 @@ impl Potentiometer {
     /// Set theme colors
     pub fn theme(mut self, theme: PotentiometerTheme) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// Set a custom accent color for the value arc (overrides theme accent).
+    ///
+    /// Use this to match the plugin's type color (e.g., blue for EQ, red for compressor).
+    pub fn accent_color(mut self, color: Rgba) -> Self {
+        self.accent_color = Some(color);
         self
     }
 
@@ -767,6 +967,25 @@ impl RenderOnce for Potentiometer {
                 );
             }
         }
+
+        // Value arc — painted behind tick marks, around the knob
+        let arc_color = self.accent_color.unwrap_or(theme.accent);
+        let arc_width = match self.size {
+            PotentiometerSize::Xs => 2.5,
+            PotentiometerSize::Sm => 3.0,
+            PotentiometerSize::Md => 3.5,
+            PotentiometerSize::Lg => 4.0,
+        };
+        knob_container = knob_container.child(
+            div().absolute().inset_0().child(KnobArcElement {
+                container_size,
+                knob_offset,
+                knob_size,
+                normalized,
+                arc_color,
+                arc_width,
+            }),
+        );
 
         // Knob circle (offset to center in larger container)
         // Use major_tick_color for border to match ticks and labels

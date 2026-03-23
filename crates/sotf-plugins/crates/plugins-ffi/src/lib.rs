@@ -15,6 +15,11 @@
 // FFI functions necessarily dereference raw pointers from C callers
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+// Re-export gpui-au FFI symbols so they're included in this staticlib.
+// Without this, the linker would strip gpui-au's #[no_mangle] functions
+// since nothing in plugins-ffi directly references them.
+pub use gpui_au::ffi as gpui_au_ffi;
+
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_double, c_int};
 use std::panic::{self, AssertUnwindSafe};

@@ -8,12 +8,15 @@ The `gpui-toolkit` workspace contains several related crates for building GPUI a
 
 | Crate | Purpose | Documentation |
 |-------|---------|---------------|
+| `gpui-au` | macOS Audio Unit platform backend — embeds GPUI inside AUv3 ViewControllers via Metal/wgpu | [lib.rs](gpui-au/src/lib.rs) |
+| `gpui-autoeq` | Reusable GPUI form component for EQ optimization parameters | [AGENTS.md](gpui-autoeq/AGENTS.md) |
 | `gpui-d3rs` | Low-level D3.js-inspired visualization primitives | [README](gpui-d3rs/README.md) |
+| `gpui-ios` | iOS platform backend (Metal rendering, touch, text) | [README](gpui-ios/README.md), [AGENTS.md](gpui-ios/AGENTS.md) |
 | `gpui-px` | High-level Plotly Express-style charting API | [README](gpui-px/README.md) |
 | `gpui-themes` | Theme editor and management infrastructure | [AGENTS.md](gpui-themes/AGENTS.md) |
 | `gpui-ui-kit` | Reusable UI components (buttons, forms, layout) | [lib.rs](gpui-ui-kit/src/lib.rs) |
 | `gpui-ui-kit-macros` | Procedural macros for theme derivation | [README](gpui-ui-kit-macros/README.md) |
-| `gpui-ios` | iOS platform backend (Metal rendering, touch, text) | [README](gpui-ios/README.md), [AGENTS.md](gpui-ios/AGENTS.md) |
+| `figma/` | Figma-to-GPUI design system rules and Code Connect mappings | [DESIGN_SYSTEM_RULES.md](figma/DESIGN_SYSTEM_RULES.md), [CODE_CONNECT_MAPPINGS.md](figma/CODE_CONNECT_MAPPINGS.md) |
 
 **Key Principle**: All crates use GPUI's native `div()`-based rendering, not HTML/SVG. Components return `impl IntoElement`.
 

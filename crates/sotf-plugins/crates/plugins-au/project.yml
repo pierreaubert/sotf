@@ -41,6 +41,8 @@ targetTemplates:
       - sdk: AVFoundation.framework
       - sdk: AudioToolbox.framework
       - sdk: CoreAudioKit.framework
+      - sdk: Metal.framework
+      - sdk: QuartzCore.framework
 
 targets:
   # Main app container (required for App Extension)

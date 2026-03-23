@@ -46,6 +46,21 @@ sync-au-versions:
 	sed -i '' "s/MARKETING_VERSION: .*/MARKETING_VERSION: $WS_VERSION/" "$AU_DIR/project.yml"
 	echo "  project.yml MARKETING_VERSION → $WS_VERSION"
 
+# Build GPUI AU rendering library (universal binary)
+[group('build-macos')]
+build-au-gpui:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "Building gpui-au for x86_64 + aarch64..."
+	cargo build --release -p gpui-au --target x86_64-apple-darwin
+	cargo build --release -p gpui-au --target aarch64-apple-darwin
+	mkdir -p crates/sotf-plugins/crates/plugins-au/Resources
+	lipo -create \
+		target/x86_64-apple-darwin/release/libgpui_au.a \
+		target/aarch64-apple-darwin/release/libgpui_au.a \
+		-output crates/sotf-plugins/crates/plugins-au/Resources/libsotf_gpui_au.a
+	echo "Universal GPUI AU library: crates/sotf-plugins/crates/plugins-au/Resources/libsotf_gpui_au.a"
+
 # Build Rust FFI library for Audio Units (universal binary)
 [group('build-macos')]
 build-au-ffi:
