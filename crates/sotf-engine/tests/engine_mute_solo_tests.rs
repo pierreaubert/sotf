@@ -11,6 +11,7 @@ use std::time::Duration;
 
 #[test]
 fn test_engine_with_mute_solo_plugin() {
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Create a config with ChannelMuteSolo plugin (using BlackHole device)
@@ -42,6 +43,7 @@ fn test_engine_with_mute_solo_plugin() {
 
 #[test]
 fn test_mute_channel_via_parameter_update() {
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Create a config with ChannelMuteSolo plugin (using BlackHole device)
@@ -92,6 +94,7 @@ fn test_mute_channel_via_parameter_update() {
 
 #[test]
 fn test_solo_channel_via_parameter_update() {
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Create a config with ChannelMuteSolo plugin (using BlackHole device)
@@ -142,6 +145,7 @@ fn test_solo_channel_via_parameter_update() {
 
 #[test]
 fn test_multiple_mute_solo_updates() {
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Create a config with ChannelMuteSolo plugin (using BlackHole device)
@@ -233,6 +237,7 @@ fn test_multiple_mute_solo_updates() {
 
 #[test]
 fn test_multichannel_selective_muting() {
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Create a 6-channel (5.1) config with upmixer and ChannelMuteSolo plugin (using BlackHole device)
@@ -320,6 +325,7 @@ fn test_multichannel_selective_muting() {
 
 #[test]
 fn test_zero_dropout_rapid_updates() {
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Create a config with ChannelMuteSolo plugin (using BlackHole device)

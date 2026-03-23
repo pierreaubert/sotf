@@ -273,6 +273,7 @@ fn create_test_album(track_count: usize) -> Album {
             edition: None,
             is_favorite: false,
             play_count: 0,
+            source: None,
         })
         .collect();
 

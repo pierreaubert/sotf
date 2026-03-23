@@ -276,6 +276,7 @@ pub const EQ_EXPORT_FORMAT_OPTIONS: &[(&str, &str, &str)] = &[
     #[cfg(target_os = "linux")]
     ("easyeffects", "EasyEffects", ".json"),
     ("wavelet", "Wavelet GraphicEQ", ".txt"),
+    ("roon", "Roon DSP", ".json"),
 ];
 
 /// Get file extension for export format
@@ -311,6 +312,7 @@ pub fn format_peq_export(
         #[cfg(target_os = "linux")]
         "easyeffects" => Ok(math_audio_iir_fir::peq_format_easyeffects(comment, &peq)),
         "wavelet" => Ok(math_audio_iir_fir::peq_format_wavelet(comment, &peq, sample_rate as f64)),
+        "roon" => Ok(math_audio_iir_fir::peq_format_roon(comment, &peq)),
         _ => Err(format!("Unknown export format: {format}")),
     }
 }

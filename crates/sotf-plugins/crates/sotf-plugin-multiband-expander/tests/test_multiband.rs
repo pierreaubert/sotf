@@ -40,7 +40,7 @@ fn test_multiband_expander_processes_audio() {
         })
         .collect();
 
-    let input_rms: f32 = (buffer.iter().map(|x| x * x).sum::<f32>() / num_frames as f32).sqrt();
+    let _input_rms: f32 = (buffer.iter().map(|x| x * x).sum::<f32>() / num_frames as f32).sqrt();
 
     // Process in blocks
     let block_size = 1024;

@@ -234,6 +234,7 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         refine: true,
         local_algo: "cobyla".to_string(),
         psychoacoustic: true,
+        smooth_n: 2,
         asymmetric_loss: true,
         tolerance: 1e-5,
         atolerance: 1e-5,
@@ -467,6 +468,7 @@ use sotf_audio_player_gpui::{ChannelOptResult, DspChainOutput, ChannelDspChain, 
 /// Simulate the channel-to-filter mapping logic from apply_room_eq_to_player.
 /// Given channel names in output order and a DSP output HashMap, returns
 /// the ordered list of channel names as they would be mapped to audio indices.
+#[allow(dead_code)]
 fn build_per_channel_order(
     channel_result_names: &[&str],
     dsp_channels: &std::collections::HashMap<String, ChannelDspChain>,

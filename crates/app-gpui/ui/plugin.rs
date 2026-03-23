@@ -1,6 +1,7 @@
 // Macro for quick-add plugin handlers - reduces boilerplate for identical patterns
 macro_rules! quick_add_plugin_handler {
     ($fn_name:ident, $action:ty, $plugin_type:expr) => {
+        #[allow(dead_code)]
         fn $fn_name(&mut self, _: &$action, _: &mut Window, cx: &mut Context<Self>) {
             self.state.update(cx, |state, _cx| {
                 if state.app.is_plugin_available(&$plugin_type) {

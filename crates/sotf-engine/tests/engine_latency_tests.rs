@@ -11,19 +11,16 @@
 mod common;
 
 use common::{create_test_wav, test_engine_config};
+use serial_test::serial;
 use sotf_audio::engine::{AudioEngine, PlaybackState};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
-
-/// Serialize all latency tests to avoid thread starvation when 15 tests each
-/// spawn a multi-threaded audio engine simultaneously.
-static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// Test: Play to audible latency
 /// Measures how long it takes from play() call to actual audio output
 #[test]
+#[serial]
 fn test_play_to_audible_latency() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -58,8 +55,9 @@ fn test_play_to_audible_latency() {
 /// Test: Pause latency
 /// Measures how long pause() takes to stop audio output
 #[test]
+#[serial]
 fn test_pause_latency() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -86,8 +84,9 @@ fn test_pause_latency() {
 /// Test: Resume latency
 /// Measures how long resume() takes to restart audio output
 #[test]
+#[serial]
 fn test_resume_latency() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -123,8 +122,9 @@ fn test_resume_latency() {
 /// Test: Stop latency
 /// Measures how long stop() takes to halt playback
 #[test]
+#[serial]
 fn test_stop_latency() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -152,8 +152,9 @@ fn test_stop_latency() {
 /// Test: Seek latency
 /// Measures how long seek() takes to complete
 #[test]
+#[serial]
 fn test_seek_latency() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -189,8 +190,9 @@ fn test_seek_latency() {
 /// Test: Seek position accuracy
 /// Verifies that position is accurate after seeking
 #[test]
+#[serial]
 fn test_seek_position_accuracy() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -228,8 +230,9 @@ fn test_seek_position_accuracy() {
 /// Test: Position monotonicity
 /// Verifies that position always increases during playback (never goes backwards)
 #[test]
+#[serial]
 fn test_position_monotonic() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -259,8 +262,9 @@ fn test_position_monotonic() {
 /// Test: Underrun monitoring
 /// Verifies underrun counter works correctly
 #[test]
+#[serial]
 fn test_underrun_monitoring() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -291,8 +295,9 @@ fn test_underrun_monitoring() {
 /// Test: Rapid play/pause cycles
 /// Stress test for rapid state transitions
 #[test]
+#[serial]
 fn test_rapid_play_pause_cycles() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -324,8 +329,9 @@ fn test_rapid_play_pause_cycles() {
 /// Test: Rapid seek cycles
 /// Stress test for rapid seeking
 #[test]
+#[serial]
 fn test_rapid_seek_cycles() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -352,8 +358,9 @@ fn test_rapid_seek_cycles() {
 /// Test: Volume change latency
 /// Measures how quickly volume changes take effect
 #[test]
+#[serial]
 fn test_volume_change_latency() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -378,8 +385,9 @@ fn test_volume_change_latency() {
 /// Test: Mute/unmute latency
 /// Measures how quickly mute takes effect
 #[test]
+#[serial]
 fn test_mute_latency() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -416,8 +424,9 @@ fn test_mute_latency() {
 /// Test: Long duration playback stability
 /// Verifies engine handles long playback without major issues
 #[test]
+#[serial]
 fn test_long_duration_playback() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -444,8 +453,9 @@ fn test_long_duration_playback() {
 /// Test: Multiple sequential tracks
 /// Tests engine behavior with sequential track playback
 #[test]
+#[serial]
 fn test_sequential_tracks() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -484,8 +494,9 @@ fn test_sequential_tracks() {
 /// Test: End of stream handling
 /// Verifies correct behavior when playback reaches end
 #[test]
+#[serial]
 fn test_end_of_stream() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();

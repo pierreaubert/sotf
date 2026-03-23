@@ -6,13 +6,9 @@
 // on the hot path. They use a custom GlobalAlloc wrapper to count allocations.
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::Mutex;
+use serial_test::serial;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-// Tests must run sequentially because COUNTING_ENABLED is process-global:
-// a parallel test's warm-up allocations would be counted by another test's
-// assert_no_allocs. Each test acquires this lock at entry.
-static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 use sotf_plugins::{
     ABComparePlugin, AutoGain, AutoGainParams, BandMergePlugin, BandSplitPlugin,
@@ -50,14 +46,6 @@ unsafe impl GlobalAlloc for CountingAlloc {
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;
 
-/// Acquire the test serialization lock. Call at the top of every `#[test]`.
-///
-/// Returns a guard that holds `TEST_MUTEX` for the test's lifetime, preventing
-/// parallel warm-up allocations from being counted by another test's
-/// `assert_no_allocs`.
-fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
-    TEST_MUTEX.lock().unwrap()
-}
 
 /// Run a closure and assert it performs zero heap allocations.
 fn assert_no_allocs<F: FnOnce()>(label: &str, f: F) {
@@ -95,8 +83,9 @@ fn generate_test_buffer(num_frames: usize, channels: usize) -> Vec<f32> {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_eq_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, vec![]));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -122,8 +111,9 @@ fn test_eq_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_gain_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = GainPlugin::new(2, -3.0);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -148,8 +138,9 @@ fn test_gain_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_compressor_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = CompressorPlugin::new(2, -20.0, 4.0, 10.0, 100.0, 6.0, 0.0);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -174,8 +165,9 @@ fn test_compressor_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_upmixer_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = UpmixerPlugin::new(
         2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
     );
@@ -204,8 +196,9 @@ fn test_upmixer_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_xtc_zero_alloc() {
-    let _lock = serial_guard();
+
     let params = XtcPluginParams::default();
     let mut plugin = XtcPlugin::new(params, SAMPLE_RATE).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
@@ -232,8 +225,9 @@ fn test_xtc_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_resampler_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = ResamplerPlugin::new(2, 44100, 48000, BUFFER_SIZE).unwrap();
     plugin.initialize(44100).unwrap();
 
@@ -259,8 +253,9 @@ fn test_resampler_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_convolution_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = ConvolutionPlugin::new(2, SAMPLE_RATE);
 
     let temp_dir = tempfile::tempdir().unwrap();
@@ -304,8 +299,9 @@ fn test_convolution_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_binaural_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = BinauralDecoderPlugin::new(
         2,
         1024,
@@ -343,8 +339,9 @@ fn test_binaural_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_limiter_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = LimiterPlugin::new(2, -1.0, 50.0, 5.0, false);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -369,8 +366,9 @@ fn test_limiter_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_gate_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = GatePlugin::new(2, -40.0, 10.0, 1.0, 10.0, 100.0);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -395,8 +393,9 @@ fn test_gate_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_ab_compare_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = ABComparePlugin::new(2).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -422,8 +421,9 @@ fn test_ab_compare_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_denoiser_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = DenoiserPlugin::new(2, false);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -448,8 +448,9 @@ fn test_denoiser_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_pnd_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = PndPlugin::new(2);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -475,8 +476,9 @@ fn test_pnd_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_band_merge_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = BandMergePlugin::new(2, 2).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -502,8 +504,9 @@ fn test_band_merge_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_band_split_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = BandSplitPlugin::new(2, 1000.0, "LR24").unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -529,8 +532,9 @@ fn test_band_split_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_channel_mute_solo_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = ChannelMuteSoloPlugin::new(2, true);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -555,8 +559,9 @@ fn test_channel_mute_solo_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_crossfeed_zero_alloc() {
-    let _lock = serial_guard();
+
     let params = CrossfeedPluginParams {
         mode: CrossfeedMode::Bauer,
         enabled: true,
@@ -587,8 +592,9 @@ fn test_crossfeed_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_crossover_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -614,8 +620,9 @@ fn test_crossover_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_downmix_zero_alloc() {
-    let _lock = serial_guard();
+
     let params = DownmixPluginParams {
         input_channels: 6,
         center_gain_db: 0.0,
@@ -653,8 +660,9 @@ fn test_downmix_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_expander_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = ExpanderPlugin::new(2);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -679,8 +687,9 @@ fn test_expander_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_fletcher_munson_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = FletcherMunsonPlugin::new(2);
     InPlacePlugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
@@ -705,8 +714,9 @@ fn test_fletcher_munson_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_loudness_compensation_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = LoudnessCompensationPlugin::new(2, 200.0, 3.0, 6000.0, 2.0);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -731,8 +741,9 @@ fn test_loudness_compensation_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_matrix_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = MatrixPlugin::new(2, 2);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -758,8 +769,9 @@ fn test_matrix_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_mono_to_stereo_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = MonoToStereoPlugin::new();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -785,8 +797,9 @@ fn test_mono_to_stereo_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_multiband_compressor_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = MultibandCompressorPlugin::new(2);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -811,8 +824,9 @@ fn test_multiband_compressor_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_multiband_expander_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = MultibandExpanderPlugin::new(2);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -837,8 +851,9 @@ fn test_multiband_expander_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_loudness_monitor_zero_alloc() {
-    let _lock = serial_guard();
+
     let mut plugin = LoudnessMonitorPlugin::new(2).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
@@ -864,8 +879,9 @@ fn test_loudness_monitor_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_spectrum_analyzer_zero_alloc() {
-    let _lock = serial_guard();
+
     let config = SpectrumConfig {
         num_bins: 30,
         min_freq: 20.0,
@@ -897,8 +913,9 @@ fn test_spectrum_analyzer_zero_alloc() {
 }
 
 #[test]
+#[serial]
 fn test_auto_gain_zero_alloc() {
-    let _lock = serial_guard();
+
     let params = AutoGainParams::default();
     let mut plugin = AutoGain::new(2, SAMPLE_RATE, params).unwrap();
 

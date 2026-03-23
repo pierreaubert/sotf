@@ -33,7 +33,7 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .structural()
     .doc("Crossover split frequency"),
-    ParamSpec::choice("Type", "type", 0, CROSSOVER_TYPES, "General")
+    ParamSpec::choice("Type", "crossover_type", 0, CROSSOVER_TYPES, "General")
         .structural()
         .doc("Filter slope (24 or 48 dB/oct)"),
 ];

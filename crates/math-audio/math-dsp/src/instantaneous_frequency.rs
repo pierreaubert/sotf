@@ -350,7 +350,7 @@ mod tests {
             .map(|i| {
                 let t = i as f32 / sample_rate;
                 let duration = num_samples as f32 / sample_rate;
-                let inst_freq = f_start + (f_end - f_start) * t / duration;
+                let _inst_freq = f_start + (f_end - f_start) * t / duration;
                 let phase =
                     2.0 * std::f32::consts::PI * (f_start * t + (f_end - f_start) * t * t / (2.0 * duration));
                 phase.sin()

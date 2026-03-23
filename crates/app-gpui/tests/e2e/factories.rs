@@ -117,6 +117,7 @@ impl TrackBuilder {
             edition: None,
             is_favorite: self.is_favorite,
             play_count: self.play_count,
+            source: None,
         }
     }
 }

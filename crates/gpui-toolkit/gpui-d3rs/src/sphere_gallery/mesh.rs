@@ -348,7 +348,10 @@ mod tests {
                 ..Default::default()
             };
             let center = grid_to_surface(0.0, 0.0, &config);
-            let edge = grid_to_surface(1.0, 0.0, &config);
+            // Use a corner point (1,1) so both u and v are non-zero.
+            // Cylindrical wraps only on v, so (1,0) has the same height
+            // as the center — a true edge needs v != 0.
+            let edge = grid_to_surface(1.0, 1.0, &config);
             assert!(
                 center.y > edge.y,
                 "{}: center.y={} should be > edge.y={}",

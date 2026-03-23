@@ -977,11 +977,23 @@ impl PluginChain {
                     tdf2,
                 } => {
                     if *channels != current_channels {
+                        // If per-channel filters exist but don't match the new channel
+                        // count, disable per-channel mode (the per-channel config was
+                        // for a different layout and can't be applied here).
+                        let ch_filters_match = channel_filters
+                            .as_ref()
+                            .map_or(true, |cf| cf.len() == current_channels);
+                        let (new_channel_filters, new_per_channel_mode) =
+                            if *per_channel_mode && !ch_filters_match {
+                                (None, false)
+                            } else {
+                                (channel_filters.clone(), *per_channel_mode)
+                            };
                         updated_settings = Some(PluginSettings::EQ {
                             channels: current_channels,
                             filters: filters.clone(),
-                            channel_filters: channel_filters.clone(),
-                            per_channel_mode: *per_channel_mode,
+                            channel_filters: new_channel_filters,
+                            per_channel_mode: new_per_channel_mode,
                             max_filters: *max_filters,
                             tdf2: *tdf2,
                         });

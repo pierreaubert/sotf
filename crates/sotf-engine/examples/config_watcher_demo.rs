@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Send SIGTERM or Ctrl-C to shutdown");
     println!();
 
-    engine.play(audio_file)?;
+    engine.play(std::path::PathBuf::from(audio_file))?;
 
     // Monitor playback
     for i in 0..600 {

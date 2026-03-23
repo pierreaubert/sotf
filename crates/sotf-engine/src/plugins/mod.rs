@@ -585,7 +585,7 @@ sotf_plugins::serde_param_default! {
 }
 
 fn default_band_split_crossover_type() -> String {
-    let spec = pk(band_split_specs::PARAMS, "type");
+    let spec = pk(band_split_specs::PARAMS, "crossover_type");
     spec.choice_labels()[spec.default_usize()].to_string()
 }
 

@@ -107,7 +107,7 @@ fn test_gate_hysteresis_prevents_chatter() {
 
     // Process in blocks
     let block_size = 1024;
-    let ctx = ProcessContext {
+    let _ctx = ProcessContext {
         sample_rate: sr,
         num_frames: block_size,
     };

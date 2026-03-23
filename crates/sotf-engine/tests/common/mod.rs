@@ -3,6 +3,8 @@
 //!
 //! All tests should use a virtual audio device (BlackHole or SotF HAL driver)
 //! to avoid playing sound on real audio devices during testing.
+//! Tests that need a device use `skip_without_device!()` to gracefully skip
+//! when no virtual device is available (e.g. in sandboxed CI environments).
 
 #![allow(dead_code)] // Test utilities may not be used in all test files
 
@@ -57,30 +59,62 @@ pub fn find_virtual_device() -> Option<String> {
     None
 }
 
+/// Get the cached virtual device name, or `None` if unavailable.
+pub fn get_virtual_device() -> Option<String> {
+    VIRTUAL_DEVICE.get_or_init(find_virtual_device).clone()
+}
+
+/// Skip the current test if no virtual audio device is available.
+///
+/// Prints a diagnostic message so the skip is visible in test output,
+/// similar to `#[ignore]` but detected at runtime.
+///
+/// Usage:
+/// ```ignore
+/// #[test]
+/// #[serial]
+/// fn my_audio_test() {
+///     skip_without_device!();
+///     // ... rest of the test
+/// }
+/// ```
+macro_rules! skip_without_device {
+    () => {
+        match $crate::common::get_virtual_device() {
+            Some(_) => {}
+            None => {
+                eprintln!(
+                    "SKIPPED: {} — no virtual audio device found (install BlackHole or set AEQ_E2E_DEVICE)",
+                    module_path!()
+                );
+                return;
+            }
+        }
+    };
+}
+pub(crate) use skip_without_device;
+
 /// Get the virtual device name, panicking if not available.
 ///
-/// This ensures all tests use a virtual audio device instead of real speakers.
-/// Supports both SotF HAL driver and BlackHole.
+/// Prefer `skip_without_device!()` in tests instead. This function is kept
+/// for call sites that genuinely need a device name and cannot skip.
 pub fn require_virtual_device() -> String {
-    VIRTUAL_DEVICE
-        .get_or_init(find_virtual_device)
-        .clone()
-        .expect(
-            "\n\n\
-            ╔═══════════════════════════════════════════════════════════════════════╗\n\
-            ║  AUDIO ENGINE TESTS REQUIRE A VIRTUAL AUDIO DEVICE                    ║\n\
-            ╠═══════════════════════════════════════════════════════════════════════╣\n\
-            ║  No virtual audio device found (BlackHole or SotF HAL).               ║\n\
-            ║                                                                       ║\n\
-            ║  Tests use virtual devices to avoid playing sound on real speakers.   ║\n\
-            ║                                                                       ║\n\
-            ║  Options:                                                             ║\n\
-            ║  1. Install BlackHole: brew install blackhole-2ch                     ║\n\
-            ║     or from: https://existential.audio/blackhole/                     ║\n\
-            ║  2. Install the SotF HAL driver                                       ║\n\
-            ║  3. Set AEQ_E2E_DEVICE='Your Device Name' to use a specific device   ║\n\
-            ╚═══════════════════════════════════════════════════════════════════════╝\n\n",
-        )
+    get_virtual_device().expect(
+        "\n\n\
+        ╔═══════════════════════════════════════════════════════════════════════╗\n\
+        ║  AUDIO ENGINE TESTS REQUIRE A VIRTUAL AUDIO DEVICE                    ║\n\
+        ╠═══════════════════════════════════════════════════════════════════════╣\n\
+        ║  No virtual audio device found (BlackHole or SotF HAL).               ║\n\
+        ║                                                                       ║\n\
+        ║  Tests use virtual devices to avoid playing sound on real speakers.   ║\n\
+        ║                                                                       ║\n\
+        ║  Options:                                                             ║\n\
+        ║  1. Install BlackHole: brew install blackhole-2ch                     ║\n\
+        ║     or from: https://existential.audio/blackhole/                     ║\n\
+        ║  2. Install the SotF HAL driver                                       ║\n\
+        ║  3. Set AEQ_E2E_DEVICE='Your Device Name' to use a specific device   ║\n\
+        ╚═══════════════════════════════════════════════════════════════════════╝\n\n",
+    )
 }
 
 /// Backwards compatibility alias for require_virtual_device
@@ -94,8 +128,9 @@ pub fn find_blackhole_device() -> Option<String> {
 }
 
 /// Get the virtual device name as an Option for PlaybackThread tests.
+/// Returns `None` if no virtual device is available (skips gracefully).
 pub fn virtual_device_option() -> Option<String> {
-    Some(require_virtual_device())
+    get_virtual_device()
 }
 
 /// Backwards compatibility alias
@@ -105,7 +140,19 @@ pub fn blackhole_device_option() -> Option<String> {
 
 /// Create an EngineConfig configured for testing with a virtual audio device.
 ///
-/// Panics if no virtual device (SotF HAL or BlackHole) is available.
+/// Returns `None` if no virtual device is available.
+pub fn try_test_engine_config() -> Option<EngineConfig> {
+    let device = get_virtual_device()?;
+    let mut config = EngineConfig::default();
+    config.output_device = Some(device);
+    config.allow_virtual_output = true;
+    Some(config)
+}
+
+/// Create an EngineConfig configured for testing with a virtual audio device.
+///
+/// Panics if no virtual device is available. Prefer `try_test_engine_config()`
+/// combined with `skip_without_device!()` in tests.
 pub fn test_engine_config() -> EngineConfig {
     let mut config = EngineConfig::default();
     config.output_device = Some(require_virtual_device());

@@ -109,6 +109,7 @@ driver-hal = { workspace = true, optional = true }
 [dev-dependencies]
 rand = { workspace = true }
 criterion = { workspace = true }
+serial_test = { workspace = true }
 proptest = "1.5"
 sofa-reader = { workspace = true }
 

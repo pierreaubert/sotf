@@ -71,7 +71,7 @@ fn test_decoder_load_and_decode() {
     let path = temp_file.path().to_path_buf();
 
     // Send play command
-    decoder.send_command(DecoderCommand::Play(path)).unwrap();
+    decoder.send_command(DecoderCommand::Play(path.into())).unwrap();
 
     // Wait for frames
     let mut frame_count = 0;
@@ -124,7 +124,7 @@ fn test_decoder_pause_resume() {
     let temp_file = create_test_wav(5.0, 48000); // 5 seconds
     let path = temp_file.path().to_path_buf();
 
-    decoder.send_command(DecoderCommand::Play(path)).unwrap();
+    decoder.send_command(DecoderCommand::Play(path.into())).unwrap();
 
     // Receive some frames
     std::thread::sleep(Duration::from_millis(100));
@@ -171,7 +171,7 @@ fn test_decoder_seek() {
     let temp_file = create_test_wav(2.0, 48000); // 2 seconds
     let path = temp_file.path().to_path_buf();
 
-    decoder.send_command(DecoderCommand::Play(path)).unwrap();
+    decoder.send_command(DecoderCommand::Play(path.into())).unwrap();
 
     // Let it play a bit and drain initial frames
     std::thread::sleep(Duration::from_millis(100));
@@ -216,7 +216,7 @@ fn test_decoder_resampling() {
     let temp_file = create_test_wav(0.1, source_sr);
     let path = temp_file.path().to_path_buf();
 
-    decoder.send_command(DecoderCommand::Play(path)).unwrap();
+    decoder.send_command(DecoderCommand::Play(path.into())).unwrap();
 
     // Receive frames and verify they're at target sample rate
     std::thread::sleep(Duration::from_millis(200));
@@ -254,7 +254,7 @@ fn test_decoder_stop() {
     let temp_file = create_test_wav(1.0, 48000);
     let path = temp_file.path().to_path_buf();
 
-    decoder.send_command(DecoderCommand::Play(path)).unwrap();
+    decoder.send_command(DecoderCommand::Play(path.into())).unwrap();
     std::thread::sleep(Duration::from_millis(100));
 
     // Stop
@@ -281,7 +281,7 @@ fn test_decoder_invalid_file() {
     // Try to play non-existent file
     let invalid_path = PathBuf::from("/nonexistent/file.wav");
     decoder
-        .send_command(DecoderCommand::Play(invalid_path))
+        .send_command(DecoderCommand::Play(invalid_path.into()))
         .unwrap();
 
     // Should receive an error event
@@ -311,7 +311,7 @@ fn test_decoder_shutdown() {
     let temp_file = create_test_wav(1.0, 48000);
     let path = temp_file.path().to_path_buf();
 
-    decoder.send_command(DecoderCommand::Play(path)).unwrap();
+    decoder.send_command(DecoderCommand::Play(path.into())).unwrap();
     std::thread::sleep(Duration::from_millis(50));
 
     // Shutdown
@@ -359,7 +359,7 @@ fn test_decoder_multiple_files() {
     // Play first file
     let temp_file1 = create_test_wav(0.1, 48000);
     decoder
-        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf()))
+        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf().into()))
         .unwrap();
 
     // Wait for end of stream
@@ -375,7 +375,7 @@ fn test_decoder_multiple_files() {
     // Play second file
     let temp_file2 = create_test_wav(0.1, 48000);
     decoder
-        .send_command(DecoderCommand::Play(temp_file2.path().to_path_buf()))
+        .send_command(DecoderCommand::Play(temp_file2.path().to_path_buf().into()))
         .unwrap();
 
     // Should receive frames from second file
@@ -397,14 +397,14 @@ fn test_decoder_play_flushes_previous_source() {
 
     let temp_file1 = create_test_wav(2.0, 48000);
     decoder
-        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf()))
+        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf().into()))
         .unwrap();
     std::thread::sleep(Duration::from_millis(100));
     let _ = message_rx.try_iter().count();
 
     let temp_file2 = create_test_wav(2.0, 48000);
     decoder
-        .send_command(DecoderCommand::Play(temp_file2.path().to_path_buf()))
+        .send_command(DecoderCommand::Play(temp_file2.path().to_path_buf().into()))
         .unwrap();
 
     let timeout = Duration::from_secs(2);
@@ -436,14 +436,14 @@ fn test_decoder_play_at_flushes_previous_source() {
 
     let temp_file1 = create_test_wav(2.0, 48000);
     decoder
-        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf()))
+        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf().into()))
         .unwrap();
     std::thread::sleep(Duration::from_millis(100));
     let _ = message_rx.try_iter().count();
 
     let temp_file2 = create_test_wav(2.0, 48000);
     decoder
-        .send_command(DecoderCommand::PlayAt(temp_file2.path().to_path_buf(), 0.5))
+        .send_command(DecoderCommand::PlayAt(temp_file2.path().to_path_buf().into(), 0.5))
         .unwrap();
 
     let timeout = Duration::from_secs(2);
@@ -476,7 +476,7 @@ fn test_decoder_frame_size_consistency() {
 
     let temp_file = create_test_wav(0.5, 48000);
     decoder
-        .send_command(DecoderCommand::Play(temp_file.path().to_path_buf()))
+        .send_command(DecoderCommand::Play(temp_file.path().to_path_buf().into()))
         .unwrap();
 
     std::thread::sleep(Duration::from_millis(300));

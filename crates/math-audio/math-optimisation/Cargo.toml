@@ -44,11 +44,11 @@ plotly_static = ["dep:plotly_static"]
 [target.'cfg(all(target_os = "windows", target_arch="aarch64"))'.dependencies]
 
 [[bin]]
-name = "plot_de"
+name = "plot-de"
 path = "bin/plot_de.rs"
 
 [[bin]]
-name = "benchmark_convergence"
+name = "benchmark-convergence"
 path = "bench/benchmark_convergence.rs"
 
 [[bin]]

@@ -1,6 +1,6 @@
 use super::app_impl::App;
 use super::types::{LibraryViewMode, QueueEntry, QueueItem, TreeItem};
-use std::path::PathBuf;
+
 
 impl App {
     /// Get the flattened tree items for rendering (returns artist names or album indices)

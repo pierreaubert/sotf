@@ -14,7 +14,7 @@ name = "d3rs"
 
 [features]
 default = ["gpui", "gpu-2d", "gpu-3d"]
-gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:smol"]
+gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:smol", "dep:gpui_macos"]
 spinorama = ["dep:autoeq", "dep:autoeq-cea2034", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
 gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "gpui"]
 gpu-2d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "dep:fontdue", "gpui"]

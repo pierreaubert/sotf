@@ -33,6 +33,7 @@ fn create_test_album(title: &str, artist: &str, composer: Option<&str>) -> Album
             edition: None,
             is_favorite: false,
             play_count: 0,
+            source: None,
         }],
         album_art_path: None,
         album_art_thumbnail: None,

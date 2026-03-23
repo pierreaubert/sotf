@@ -3673,6 +3673,64 @@ pub fn peq_format_wavelet(comment: &str, peq: &Peq, sample_rate: f64) -> String 
     out
 }
 
+/// Format a PEQ as a Roon DSP parametric EQ preset (JSON).
+///
+/// Roon's parametric EQ uses a JSON object with a `bands` array. Each band has a
+/// filter type, frequency, gain, Q factor, and enabled flag. Roon supports up to 20 bands.
+///
+/// The output can be used as reference for manual entry in Roon's DSP Engine UI.
+pub fn peq_format_roon(comment: &str, peq: &Peq) -> String {
+    use std::fmt::Write;
+
+    fn roon_type(ft: BiquadFilterType) -> &'static str {
+        match ft {
+            BiquadFilterType::Peak | BiquadFilterType::PeakMatched => "Peak/Dip",
+            BiquadFilterType::Lowshelf | BiquadFilterType::LowshelfOrf => "Low Shelf",
+            BiquadFilterType::Highshelf | BiquadFilterType::HighshelfOrf => "High Shelf",
+            BiquadFilterType::Lowpass => "Low Pass",
+            BiquadFilterType::Highpass | BiquadFilterType::HighpassVariableQ => "High Pass",
+            BiquadFilterType::Bandpass => "Band Pass",
+            BiquadFilterType::Notch => "Band Stop",
+            BiquadFilterType::AllPass => "Band Stop",
+        }
+    }
+
+    let preamp = peq_preamp_gain(peq);
+    let mut bands = String::new();
+
+    for (i, (_, iir)) in peq.iter().enumerate().take(20) {
+        if i > 0 {
+            write!(bands, ",\n").unwrap();
+        }
+        write!(
+            bands,
+            r#"    {{
+      "type": "{ft}",
+      "frequency": {freq},
+      "gain": {gain},
+      "q": {q},
+      "enabled": true
+    }}"#,
+            ft = roon_type(iir.filter_type),
+            freq = iir.freq,
+            gain = iir.db_gain,
+            q = iir.q,
+        )
+        .unwrap();
+    }
+
+    format!(
+        r#"// {comment}
+// Roon DSP Parametric EQ preset (preamp: {preamp:.2} dB)
+{{
+  "bands": [
+{bands}
+  ],
+  "is_enabled": true
+}}"#
+    )
+}
+
 #[cfg(test)]
 mod format_tests {
     use super::*;

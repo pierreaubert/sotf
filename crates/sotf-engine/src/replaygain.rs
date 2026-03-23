@@ -9,6 +9,18 @@ use std::path::Path;
 ///
 /// Decodes the file and feeds frames to [`ReplayGainAnalyzer`].
 pub fn analyze_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainInfo> {
+    analyze_file_limited(path, None)
+}
+
+/// Analyze an audio file with an optional sample limit.
+///
+/// When `max_samples` is `Some(n)`, decoding stops after processing at least `n`
+/// interleaved samples (e.g. 131072 ≈ 0.5 MB of f32 data). This is useful for
+/// fast approximate analysis in tests.
+pub fn analyze_file_limited<P: AsRef<Path>>(
+    path: P,
+    max_samples: Option<usize>,
+) -> AudioDecoderResult<ReplayGainInfo> {
     log::info!(
         "[Replay Gain] Analyze : {}",
         path.as_ref().to_str().unwrap()
@@ -20,6 +32,7 @@ pub fn analyze_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainInf
     let mut analyzer = ReplayGainAnalyzer::new(spec.channels as u32, spec.sample_rate)
         .map_err(AudioDecoderError::ConfigError)?;
 
+    let mut total_samples = 0usize;
     while let Some(decoded) = decoder.decode_next()? {
         if decoded.is_empty() {
             continue;
@@ -27,6 +40,12 @@ pub fn analyze_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainInf
         analyzer
             .add_frames_f32(&decoded.samples)
             .map_err(AudioDecoderError::DecodingFailed)?;
+        total_samples += decoded.samples.len();
+        if let Some(limit) = max_samples {
+            if total_samples >= limit {
+                break;
+            }
+        }
     }
 
     analyzer

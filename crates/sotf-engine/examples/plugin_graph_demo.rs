@@ -89,6 +89,7 @@ fn linear_chain_example() -> Result<(), String> {
 /// - Stream merging at Gain4
 fn parallel_diamond_example() -> Result<(), String> {
     let mut graph = DawHost::new(2, 48000);
+    #[allow(deprecated)]
     graph.set_parallel_enabled(true); // Enable parallel processing
 
     // Create nodes

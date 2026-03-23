@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         watch_config: false, // Disable config watching for demo
         driver_mode: false,
         allow_virtual_output: false,
+        sink_type: Default::default(),
     };
 
     println!("Creating audio engine...");
@@ -55,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Play the file
     println!("Playing: {}", audio_file);
-    engine.play(audio_file)?;
+    engine.play(std::path::PathBuf::from(audio_file))?;
 
     // Monitor playback
     for i in 0..100 {

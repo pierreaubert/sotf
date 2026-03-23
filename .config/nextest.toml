@@ -4,12 +4,16 @@
 [profile.default]
 # Default settings
 
-# Test groups allow limiting parallelism for specific tests
-# Loopback tests require exclusive access to BlackHole audio device
-[test-groups.loopback]
+# Test groups allow limiting parallelism for specific tests.
+# Audio engine tests require exclusive access to the virtual audio device
+# (BlackHole / SotF HAL) — running them in parallel causes device contention.
+[test-groups.audio-device]
 max-threads = 1
 
 [[profile.default.overrides]]
-# Match all loopback test files - they need exclusive audio device access
-filter = 'test(loopback)'
-test-group = 'loopback'
+# All engine integration tests that use the audio device must run serially.
+# Binary names: engine_latency_tests, engine_manager_tests, engine_stress_tests,
+# engine_playback_tests, engine_mute_solo_tests, engine_allocation_tests,
+# e2e_audio, test_*_loopback, and any future engine_* test binaries.
+filter = 'binary(/^engine_/) | binary(/loopback/) | binary(e2e_audio)'
+test-group = 'audio-device'

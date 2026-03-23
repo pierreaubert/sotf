@@ -352,7 +352,7 @@ fn param_range(spec: &ParamSpec) -> (f64, f64) {
 mod tests {
     use super::*;
     use crate::layout::{ControllerLayout, PhysicalControl, PhysicalControlKind};
-    use sotf_host::param_specs::compressor;
+    use sotf_plugin_compressor::params as compressor;
 
     fn tiny_layout() -> ControllerLayout {
         ControllerLayout {

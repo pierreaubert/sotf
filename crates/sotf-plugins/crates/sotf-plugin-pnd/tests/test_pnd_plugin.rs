@@ -118,10 +118,6 @@ fn test_pnd_known_drift_correction() {
 
     // Process in blocks
     let block_size = 1024;
-    let context = ProcessContext {
-        sample_rate: sr,
-        num_frames: block_size,
-    };
     for pos in (0..total_frames).step_by(block_size) {
         let end = (pos + block_size).min(total_frames);
         let nf = end - pos;

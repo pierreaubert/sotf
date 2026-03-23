@@ -182,7 +182,6 @@ mod tests {
         // Simulate: target from broadside (same on both mics) + noise from side (opposite phase)
         let num_samples = 2000;
         let mut error_power = 0.0f32;
-        let mut signal_power = 0.0f32;
 
         for i in 0..num_samples {
             let t = i as f32 / 48000.0;
@@ -198,7 +197,6 @@ mod tests {
             // Measure in last quarter (after convergence)
             if i >= num_samples * 3 / 4 {
                 error_power += (output - target).powi(2);
-                signal_power += target.powi(2);
             }
         }
 

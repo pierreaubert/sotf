@@ -51,8 +51,8 @@ fn test_upmixer_parameter_sync_deep() {
     let mut settings = PluginSettings::default_for(&PluginType::Upmixer);
     let descriptors = settings.get_descriptors();
 
-    // Upmixer is expected to have 39 parameters currently (0-38)
-    assert_eq!(descriptors.len(), 39);
+    // Upmixer is expected to have 43 parameters currently (0-42)
+    assert_eq!(descriptors.len(), 43);
 
     for i in 0..descriptors.len() {
         // Just verify it doesn't return false for known editable params
@@ -66,8 +66,8 @@ fn test_crossfeed_parameter_sync_deep() {
     let mut settings = PluginSettings::default_for(&PluginType::Crossfeed);
     let descriptors = settings.get_descriptors();
 
-    // Crossfeed is expected to have 16 parameters (0-15)
-    assert_eq!(descriptors.len(), 16);
+    // Crossfeed is expected to have 17 parameters (0-16)
+    assert_eq!(descriptors.len(), 17);
 
     for i in 0..descriptors.len() {
         let res = settings.adjust_param(i, 1.0);
@@ -84,8 +84,8 @@ fn test_eq_filter_limit() {
     let descriptors = settings.get_descriptors();
     assert_eq!(descriptors[0].name, "Max Filters");
 
-    // Initial descriptors count: 1 (Max Filters) + 5 * 4 (filters) = 21
-    assert_eq!(descriptors.len(), 21);
+    // Initial descriptors count: 2 (Max Filters + TDF2) + 5 * 4 (filters) = 22
+    assert_eq!(descriptors.len(), 22);
 
     // Change Max Filters to 3
     settings.adjust_param(0, -2.0);
@@ -100,8 +100,8 @@ fn test_eq_filter_limit() {
     }
 
     let descriptors = settings.get_descriptors();
-    // New count: 1 (Max Filters) + 3 * 4 (filters) = 13
-    assert_eq!(descriptors.len(), 13);
+    // New count: 2 (Max Filters + TDF2) + 3 * 4 (filters) = 14
+    assert_eq!(descriptors.len(), 14);
 
     // Change Max Filters to 6 (add one)
     settings.adjust_param(0, 3.0);
@@ -116,8 +116,8 @@ fn test_eq_filter_limit() {
     }
 
     let descriptors = settings.get_descriptors();
-    // New count: 1 (Max Filters) + 6 * 4 (filters) = 25
-    assert_eq!(descriptors.len(), 25);
+    // New count: 2 (Max Filters + TDF2) + 6 * 4 (filters) = 26
+    assert_eq!(descriptors.len(), 26);
 
     // Verify we can edit the new filter (index 21-24)
     let res = settings.adjust_param(21, 10.0); // Frequency of 6th filter
@@ -129,8 +129,8 @@ fn test_delay_parameter_sync_deep() {
     let mut settings = PluginSettings::default_for(&PluginType::Delay);
     let descriptors = settings.get_descriptors();
 
-    // Delay has 3 parameters: delay_ms, feedback, mix
-    assert_eq!(descriptors.len(), 3);
+    // Delay has 6 parameters: delay_ms, feedback, mix, lfo_rate_hz, lfo_depth_ms, allpass_feedback
+    assert_eq!(descriptors.len(), 6);
 
     // Verify all params are editable
     for i in 0..descriptors.len() {
@@ -142,6 +142,9 @@ fn test_delay_parameter_sync_deep() {
     assert_eq!(descriptors[0].name, "Delay");
     assert_eq!(descriptors[1].name, "Feedback");
     assert_eq!(descriptors[2].name, "Mix");
+    assert_eq!(descriptors[3].name, "LFO Rate");
+    assert_eq!(descriptors[4].name, "LFO Depth");
+    assert_eq!(descriptors[5].name, "Allpass Feedback");
 }
 
 #[test]
@@ -199,9 +202,9 @@ fn test_crossfeed_mode_cycling() {
 fn test_out_of_range_parameter_index() {
     let settings = PluginSettings::default_for(&PluginType::Gain);
 
-    // Gain has only 1 parameter (index 0)
+    // Gain has 2 parameters (gain_db, smoothing_ms)
     let descriptors = settings.get_descriptors();
-    assert_eq!(descriptors.len(), 1);
+    assert_eq!(descriptors.len(), 2);
 
     // Out of range index should return None for param_value
     assert_eq!(settings.param_value(99), None);

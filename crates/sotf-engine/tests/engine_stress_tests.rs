@@ -5,18 +5,17 @@
 
 mod common;
 
+use serial_test::serial;
 use sotf_audio::engine::{AudioEngine, PlaybackState, PluginConfig};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-/// Serialize all stress tests to avoid thread starvation when multiple tests
-/// each spawn a multi-threaded audio engine simultaneously.
-static TEST_LOCK: Mutex<()> = Mutex::new(());
-
 #[test]
+#[serial]
 fn stress_rapid_play_stop() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -36,8 +35,10 @@ fn stress_rapid_play_stop() {
 }
 
 #[test]
+#[serial]
 fn stress_rapid_pause_resume() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -64,8 +65,10 @@ fn stress_rapid_pause_resume() {
 }
 
 #[test]
+#[serial]
 fn stress_rapid_seek() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -86,8 +89,10 @@ fn stress_rapid_seek() {
 }
 
 #[test]
+#[serial]
 fn stress_rapid_volume_changes() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -107,8 +112,10 @@ fn stress_rapid_volume_changes() {
 }
 
 #[test]
+#[serial]
 fn stress_rapid_mute_toggle() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -127,8 +134,10 @@ fn stress_rapid_mute_toggle() {
 }
 
 #[test]
+#[serial]
 fn stress_concurrent_state_queries() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = Arc::new(Mutex::new(AudioEngine::new(config).unwrap()));
 
@@ -166,8 +175,10 @@ fn stress_concurrent_state_queries() {
 }
 
 #[test]
+#[serial]
 fn stress_concurrent_commands() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = Arc::new(Mutex::new(AudioEngine::new(config).unwrap()));
 
@@ -231,8 +242,10 @@ fn stress_concurrent_commands() {
 }
 
 #[test]
+#[serial]
 fn stress_plugin_chain_updates() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -264,8 +277,10 @@ fn stress_plugin_chain_updates() {
 }
 
 #[test]
+#[serial]
 fn stress_long_playback() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -294,8 +309,10 @@ fn stress_long_playback() {
 }
 
 #[test]
+#[serial]
 fn stress_many_short_files() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -317,8 +334,10 @@ fn stress_many_short_files() {
 }
 
 #[test]
+#[serial]
 fn stress_seek_to_extremes() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -340,8 +359,10 @@ fn stress_seek_to_extremes() {
 }
 
 #[test]
+#[serial]
 fn stress_bypass_toggle() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -368,8 +389,10 @@ fn stress_bypass_toggle() {
 }
 
 #[test]
+#[serial]
 fn stress_interleaved_operations() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -412,8 +435,10 @@ fn stress_interleaved_operations() {
 }
 
 #[test]
+#[serial]
 fn stress_rapid_engine_recreation() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     // Create and destroy engines rapidly
     for _ in 0..10 {
         let config = common::test_engine_config();
@@ -430,8 +455,10 @@ fn stress_rapid_engine_recreation() {
 }
 
 #[test]
+#[serial]
 fn stress_position_polling() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -448,8 +475,10 @@ fn stress_position_polling() {
 }
 
 #[test]
+#[serial]
 fn stress_state_polling() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -467,8 +496,10 @@ fn stress_state_polling() {
 }
 
 #[test]
+#[serial]
 fn stress_empty_plugin_chain_updates() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -497,8 +528,10 @@ fn stress_empty_plugin_chain_updates() {
 }
 
 #[test]
+#[serial]
 fn stress_volume_extremes() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -515,8 +548,10 @@ fn stress_volume_extremes() {
 }
 
 #[test]
+#[serial]
 fn stress_different_sample_rates() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let sample_rates = [44100, 48000, 88200, 96000];
 
     for &sr in &sample_rates {
@@ -542,8 +577,10 @@ fn stress_different_sample_rates() {
 }
 
 #[test]
+#[serial]
 fn stress_mixed_sample_rate_files() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    common::skip_without_device!();
+
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 

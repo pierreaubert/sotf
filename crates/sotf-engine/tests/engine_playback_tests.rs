@@ -13,6 +13,7 @@ use std::time::Duration;
 
 #[test]
 fn test_playback_thread_creation() {
+    common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -37,6 +38,7 @@ fn test_playback_thread_creation() {
 
 #[test]
 fn test_playback_send_commands() {
+    common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -69,6 +71,7 @@ fn test_playback_send_commands() {
 
 #[test]
 fn test_playback_volume_commands() {
+    common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -95,6 +98,7 @@ fn test_playback_volume_commands() {
 
 #[test]
 fn test_playback_shutdown() {
+    common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -121,6 +125,7 @@ fn test_playback_shutdown() {
 
 #[test]
 fn test_playback_receives_frames() {
+    common::skip_without_device!();
     let (message_tx, message_rx) = channel();
     let (event_tx, event_rx) = channel();
 
@@ -164,6 +169,7 @@ fn test_playback_receives_frames() {
 #[test]
 #[ignore = "Underrun detection requires real audio hardware with timing constraints"]
 fn test_playback_detects_underrun() {
+    common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
     let (event_tx, event_rx) = channel();
 
@@ -207,6 +213,7 @@ fn test_playback_detects_underrun() {
 
 #[test]
 fn test_playback_handles_eos() {
+    common::skip_without_device!();
     let (message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -237,6 +244,7 @@ fn test_playback_handles_eos() {
 
 #[test]
 fn test_playback_handles_flush() {
+    common::skip_without_device!();
     let (message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -274,6 +282,7 @@ fn test_playback_handles_flush() {
 
 #[test]
 fn test_playback_channel_update() {
+    common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -300,6 +309,7 @@ fn test_playback_channel_update() {
 
 #[test]
 fn test_playback_rapid_volume_changes() {
+    common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -327,6 +337,7 @@ fn test_playback_rapid_volume_changes() {
 
 #[test]
 fn test_playback_rapid_mute_toggle() {
+    common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -355,6 +366,7 @@ fn test_playback_rapid_mute_toggle() {
 
 #[test]
 fn test_playback_mixed_commands() {
+    common::skip_without_device!();
     let (message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 
@@ -392,6 +404,7 @@ fn test_playback_mixed_commands() {
 
 #[test]
 fn test_playback_different_sample_rates() {
+    common::skip_without_device!();
     // Ensure BlackHole is available before running tests
     let _device = common::require_blackhole_device();
 
@@ -434,6 +447,7 @@ fn test_playback_different_sample_rates() {
 
 #[test]
 fn test_playback_different_channel_counts() {
+    common::skip_without_device!();
     // Ensure BlackHole is available before running tests
     let _device = common::require_blackhole_device();
 
@@ -476,6 +490,7 @@ fn test_playback_different_channel_counts() {
 
 #[test]
 fn test_playback_drop_cleanup() {
+    common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
     let (event_tx, _event_rx) = channel();
 

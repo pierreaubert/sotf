@@ -175,10 +175,11 @@ fn test_processing_message_flush() {
 #[test]
 fn test_decoder_command_play() {
     let path = PathBuf::from("/path/to/file.flac");
-    let cmd = DecoderCommand::Play(path.clone());
+    let source = sotf_audio::decoder::AudioSource::File(path.clone());
+    let cmd = DecoderCommand::Play(source);
 
-    if let DecoderCommand::Play(p) = cmd {
-        assert_eq!(p, path);
+    if let DecoderCommand::Play(s) = cmd {
+        assert_eq!(s.as_path().unwrap(), path.as_path());
     } else {
         panic!("Expected Play command");
     }

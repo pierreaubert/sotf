@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_white_noise_low_model_order() {
-        let sample_rate = 48000.0_f32;
+        let _sample_rate = 48000.0_f32;
         // Generate pseudo-random noise using a simple LCG
         let mut rng_state: u64 = 12345;
         let signal: Vec<f32> = (0..512)

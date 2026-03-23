@@ -188,6 +188,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                 edition: None,
                 is_favorite: false,
                 play_count: 0,
+                source: None,
             };
 
             let album = sotf_audio_player::library::Album {
@@ -230,14 +231,14 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
             .view
             .update(self.driver.cx, |view, _, cx| {
                 view.state.update(cx, |state, _cx| {
-                    // Get the path of the track to play
-                    if let Some(path) = state.app.play_selected_queue_item() {
+                    // Get the source of the track to play
+                    if let Some(source) = state.app.play_selected_queue_item() {
                         let sample_rate = 48000.0;
                         let plugins = state.app.plugin_state.chain.to_plugin_configs(sample_rate);
                         let output_channels = state.app.plugin_state.chain.output_channels();
 
-                        if let Err(e) = state.player.lock().load_and_play(
-                            path,
+                        if let Err(e) = state.player.lock().load_and_play_source(
+                            source,
                             plugins,
                             output_channels,
                             state

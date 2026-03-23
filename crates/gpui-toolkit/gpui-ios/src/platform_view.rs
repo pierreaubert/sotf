@@ -51,6 +51,7 @@ pub trait PlatformViewFactory: Send + Sync {
 }
 
 pub struct PlatformViewRegistry {
+    #[allow(dead_code)]
     factories: Mutex<HashMap<String, Box<dyn PlatformViewFactory>>>,
     views: Mutex<HashMap<PlatformViewId, PlatformViewBounds>>,
 }

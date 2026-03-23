@@ -79,8 +79,12 @@ generate-ml-dataset-ava:
 # ----------------------------------------------------------------------
 
 [group('test')]
+check:
+	RUST_MIN_STACK=16777216 cargo check --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d"
+
+[group('test')]
 test:
-	RUST_MIN_STACK=16777216 cargo check --workspace  --lib --bins --tests --examples
+	RUST_MIN_STACK=16777216 cargo test --workspace  --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d"
 
 [group('test')]
 test-negative:
@@ -93,7 +97,7 @@ test-proptest:
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest: test-negative test-proptest
-	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples --features="qa, onnx, hal"
+	AEQ_E2E_DEVICE='BlackHole 64ch' RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d"
 
 # ----------------------------------------------------------------------
 # LINT
@@ -227,7 +231,7 @@ tui:
 
 [group('build')]
 gpui:
-	cargo run --release --bin SotF -p sotf-gpui --features "onnx,hal"
+	cargo run --release --bin SotF -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d"
 
 # ----------------------------------------------------------------------
 # CLEAN
@@ -244,10 +248,6 @@ clean:
 
 dev:
 	cargo build --workspace
-	cargo build --bin autoeq
-	cargo build --bin plot-functions
-	cargo build --bin benchmark-convergence
-	cargo build --bin benchmark-autoeq-speaker
 
 # ----------------------------------------------------------------------
 # UPDATE

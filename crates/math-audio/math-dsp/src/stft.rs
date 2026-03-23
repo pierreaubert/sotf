@@ -202,6 +202,7 @@ pub struct DualWindowStft {
     /// Window read buffer
     window_buf: Vec<f32>,
     /// COLA normalization factor
+    #[allow(dead_code)]
     cola_norm: Vec<f32>,
 }
 

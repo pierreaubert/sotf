@@ -32,6 +32,7 @@ fn test_track(path: PathBuf, title: &str, artist: &str) -> Track {
         edition: None,
         is_favorite: false,
         play_count: 0,
+        source: None,
     }
 }
 
@@ -74,6 +75,7 @@ fn test_track_with_metadata(
         edition: None,
         is_favorite: false,
         play_count: 0,
+        source: None,
     }
 }
 

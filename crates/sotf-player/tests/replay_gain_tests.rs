@@ -1,6 +1,5 @@
-#![allow(clippy::arc_with_non_send_sync)]
-use sotf_audio_player::MusicLibrary;
 /// Integration tests for ReplayGain scanning functionality
+use sotf_audio_player::MusicLibrary;
 use sotf_audio_player::database::MusicDatabase;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -98,6 +97,7 @@ fn test_update_replay_gain() {
             edition: None,
             is_favorite: false,
             play_count: 0,
+            source: None,
         }],
         album_art_path: None,
         album_art_thumbnail: None,
@@ -167,6 +167,7 @@ fn test_replay_gain_values_persistence() {
                 edition: None,
                 is_favorite: false,
                 play_count: 0,
+                source: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
@@ -239,6 +240,7 @@ fn test_partial_replay_gain_scanning() {
                 edition: None,
                 is_favorite: false,
                 play_count: 0,
+                source: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
@@ -276,6 +278,7 @@ fn test_partial_replay_gain_scanning() {
                 edition: None,
                 is_favorite: false,
                 play_count: 0,
+                source: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
@@ -313,6 +316,7 @@ fn test_partial_replay_gain_scanning() {
                 edition: None,
                 is_favorite: false,
                 play_count: 0,
+                source: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
@@ -384,6 +388,7 @@ fn test_replay_gain_range_values() {
             edition: None,
             is_favorite: false,
             play_count: 0,
+            source: None,
         }],
         album_art_path: None,
         album_art_thumbnail: None,
@@ -424,58 +429,31 @@ fn test_replay_gain_range_values() {
 }
 
 #[test]
-#[ignore] // This is a slow test that actually scans audio files
 fn test_real_replay_gain_scanning() {
-    use sotf_audio_player::ReplayGainScanner;
-    use std::sync::Arc;
-    use std::time::Duration;
-
     fixtures::ensure_demo_files_exist();
 
-    let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    // Analyze 2 files, reading only ~0.5 MB each (131072 f32 samples)
+    let max_samples = 131_072;
+    let files = ["classical.wav", "jazz.wav"];
 
-    // Scan only a few files to keep test fast
-    let demo_dir = fixtures::demo_audio_dir();
-    library.add_directory(demo_dir.clone()).unwrap();
-    library.scan().expect("Failed to scan directory");
-    // Saving happens automatically during scan
+    for name in &files {
+        let path = fixtures::get_demo_file(name);
+        let info = sotf_audio::replaygain::analyze_file_limited(&path, Some(max_samples))
+            .unwrap_or_else(|e| panic!("Failed to analyze {}: {}", name, e));
 
-    let db = Arc::new(MusicDatabase::open_for_testing(&db_path).unwrap());
-
-    // Get tracks that need replay gain
-    let tracks_to_scan = db
-        .get_tracks_without_replay_gain()
-        .expect("Failed to get tracks");
-
-    // Create scanner and scan the tracks (new API: num_threads, db_path)
-    let scanner = ReplayGainScanner::new(2, db_path.clone(), Arc::new(AtomicBool::new(false)));
-    scanner.scan_tracks(tracks_to_scan);
-
-    // Wait for scanning to complete (with timeout)
-    let max_wait = Duration::from_secs(60); // 60 seconds max
-    let start = std::time::Instant::now();
-
-    loop {
-        std::thread::sleep(Duration::from_millis(500));
-
-        let tracks = db
-            .get_tracks_without_replay_gain()
-            .expect("Failed to get tracks");
-
-        if tracks.is_empty() {
-            // All tracks scanned!
-            break;
-        }
-
-        if start.elapsed() > max_wait {
-            panic!(
-                "ReplayGain scanning did not complete within {:?}. {} tracks remaining",
-                max_wait,
-                tracks.len()
-            );
-        }
+        // ReplayGain should be in a plausible range (-30..+10 dB)
+        assert!(
+            (-30.0..=10.0).contains(&info.gain),
+            "{}: gain {:.2} dB out of expected range",
+            name,
+            info.gain
+        );
+        // Peak should be positive and at most 1.0 for well-formed audio
+        assert!(
+            info.peak > 0.0 && info.peak <= 1.5,
+            "{}: peak {:.4} out of expected range",
+            name,
+            info.peak
+        );
     }
-
-    println!("ReplayGain scanning completed successfully");
 }

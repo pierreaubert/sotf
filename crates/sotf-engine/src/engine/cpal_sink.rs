@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 
 /// Max input channels for the stack-allocated downmix coefficient arrays.
+#[allow(dead_code)]
 const MAX_DOWNMIX_CH: usize = 16;
 
 fn is_virtual_output_device_name(name: &str) -> bool {

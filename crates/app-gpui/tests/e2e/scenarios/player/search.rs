@@ -136,6 +136,7 @@ fn create_empty_track() -> Track {
         edition: None,
         is_favorite: false,
         play_count: 0,
+        source: None,
     }
 }
 

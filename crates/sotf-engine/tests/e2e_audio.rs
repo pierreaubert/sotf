@@ -20,13 +20,11 @@ use sotf_audio::signal_recorder::record_and_analyze;
 use sotf_audio::signals::{gen_log_sweep, gen_pink_noise, gen_tone};
 use std::env;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use serial_test::serial;
 use std::time::Duration;
 
 mod common;
 
-// Serialize all e2e tests — they share a single loopback device
-static DEVICE_LOCK: Mutex<()> = Mutex::new(());
 
 // ============================================================================
 // Test Configuration
@@ -217,13 +215,13 @@ fn sweep_loopback(
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_loopback_tone() {
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1). Set AEQ_E2E=1 to run.");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let config = get_test_config();
     let device = require_test_device();
@@ -289,13 +287,13 @@ fn test_loopback_tone() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_loopback_sweep_accuracy() {
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let config = get_test_config();
     let device = require_test_device();
@@ -335,13 +333,13 @@ fn test_loopback_sweep_accuracy() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_loopback_pink_noise() {
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let config = get_test_config();
     let device = require_test_device();
@@ -401,13 +399,13 @@ fn test_loopback_pink_noise() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_loopback_multi_channel() {
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let device = require_test_device();
     let max_ch = device_max_channels(&device);
@@ -492,13 +490,13 @@ fn test_loopback_multi_channel() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_loopback_multi_sample_rate() {
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let device = require_test_device();
     let supported_rates = device_supported_sample_rates(&device);
@@ -634,13 +632,14 @@ fn upmixer_plugin(speaker_config: &str) -> PluginConfig {
 }
 
 #[test]
+#[serial]
 fn test_upmixer_insert_and_config_change_during_playback() {
+    common::skip_without_device!();
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let device = require_test_device();
     let max_ch = device_max_channels(&device);
@@ -760,13 +759,13 @@ fn test_upmixer_insert_and_config_change_during_playback() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_upmixer_sequential_songs() {
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let device = require_test_device();
 
@@ -867,13 +866,13 @@ fn test_upmixer_sequential_songs() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_upmixer_dynamic_add_remove() {
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let device = require_test_device();
 
@@ -964,13 +963,13 @@ fn test_upmixer_dynamic_add_remove() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_stress_rapid_track_changes_with_natural_eos() {
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let device = require_test_device();
     let sample_rate = 48000u32;
@@ -1106,13 +1105,13 @@ fn test_stress_rapid_track_changes_with_natural_eos() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_stress_rapid_skip_with_plugin_changes() {
     if !should_run_e2e_tests() {
         eprintln!("Skipping test (AEQ_E2E!=1)");
         return;
     }
     let _ = env_logger::try_init();
-    let _lock = DEVICE_LOCK.lock().unwrap();
 
     let device = require_test_device();
     let sample_rate = 48000u32;
