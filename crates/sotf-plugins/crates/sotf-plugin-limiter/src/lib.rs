@@ -643,8 +643,8 @@ mod tests {
         // at Nyquist causes overshoots between samples
         let frames = 2048;
         let mut b = vec![0.0f32; frames];
-        for i in 0..frames {
-            b[i] = if i % 2 == 0 { 0.8 } else { -0.8 };
+        for (i, sample) in b.iter_mut().enumerate() {
+            *sample = if i % 2 == 0 { 0.8 } else { -0.8 };
         }
         let ctx = ProcessContext {
             sample_rate: 48000,
@@ -710,8 +710,8 @@ mod tests {
 
         let frames = 4096;
         let mut b = vec![0.0f32; frames];
-        for i in 0..frames {
-            b[i] = 0.9 * (i as f32 * 0.1).sin();
+        for (i, sample) in b.iter_mut().enumerate() {
+            *sample = 0.9 * (i as f32 * 0.1).sin();
         }
         let ctx = ProcessContext {
             sample_rate: 48000,
@@ -787,8 +787,8 @@ mod tests {
         let num_frames = 4096;
         let make_signal = || {
             let mut buf = vec![0.0f32; num_frames];
-            for i in 0..num_frames {
-                buf[i] = 0.9 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr as f32).sin();
+            for (i, sample) in buf.iter_mut().enumerate() {
+                *sample = 0.9 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr as f32).sin();
             }
             buf
         };

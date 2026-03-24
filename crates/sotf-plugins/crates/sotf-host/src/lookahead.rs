@@ -64,10 +64,9 @@ impl LookaheadBuffer {
         debug_assert_eq!(output.len(), self.channels);
 
         let base = self.pos * self.channels;
-        for ch in 0..self.channels {
-            output[ch] = self.buffer[base + ch];
-            self.buffer[base + ch] = input[ch];
-        }
+        let buf_slice = &mut self.buffer[base..base + self.channels];
+        output[..self.channels].copy_from_slice(buf_slice);
+        buf_slice.copy_from_slice(&input[..self.channels]);
         self.pos = (self.pos + 1) % self.delay;
     }
 

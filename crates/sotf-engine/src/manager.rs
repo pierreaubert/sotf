@@ -866,12 +866,11 @@ impl AudioEngineManager {
             && current_state == StreamingState::Playing
         {
             let mut last_source = self.last_seen_source.lock().unwrap();
-            if let Some(ref current) = engine_state.current_source {
-                if last_source.as_ref() != Some(current) {
+            if let Some(ref current) = engine_state.current_source
+                && last_source.as_ref() != Some(current) {
                     *last_source = Some(current.clone());
                     return Some(StreamingEvent::GaplessTransition(current.clone()));
                 }
-            }
         }
 
         if engine_state.playback_state == PlaybackState::Stopped {

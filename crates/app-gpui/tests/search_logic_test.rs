@@ -34,6 +34,7 @@ fn create_test_album(title: &str, artist: &str, composer: Option<&str>) -> Album
             is_favorite: false,
             play_count: 0,
             source: None,
+            uuid: None,
         }],
         album_art_path: None,
         album_art_thumbnail: None,
@@ -41,6 +42,7 @@ fn create_test_album(title: &str, artist: &str, composer: Option<&str>) -> Album
         edition: None,
         dynamic_range: None,
         is_favorite: false,
+        uuid: None,
     }
 }
 

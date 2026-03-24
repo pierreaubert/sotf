@@ -4,6 +4,14 @@
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
+/// Standard multiband crossover presets: (freq1, freq2, freq3, freq4).
+/// Shared by multiband compressor and expander.
+pub const CROSSOVER_PRESETS: &[(f32, f32, f32, f32)] = &[
+    (200.0, 2000.0, 8000.0, 12000.0),
+    (100.0, 3000.0, 8000.0, 12000.0),
+    (250.0, 4000.0, 10000.0, 14000.0),
+];
+
 /// A single Linkwitz-Riley 4th-order crossover point.
 ///
 /// Splits a signal into low and high bands with -24 dB/octave slopes.
@@ -187,6 +195,7 @@ impl MultibandLr4Crossover {
         self.crossovers[0].process_frame(input, bands[0], &mut self.scratch);
 
         // Middle splits: carry → low (band i) + high (carry forward)
+        #[allow(clippy::needless_range_loop)] // Can't use iterators: multiple &mut self fields
         for i in 1..self.crossovers.len() {
             self.carry.copy_from_slice(&self.scratch);
             self.crossovers[i].process_frame(&self.carry, bands[i], &mut self.scratch);
@@ -260,9 +269,9 @@ mod tests {
         let mut mb = MultibandLr4Crossover::new(&[500.0, 5000.0], 48000, 1);
         assert_eq!(mb.num_bands(), 3);
 
-        let mut band0 = vec![0.0f32; 1];
-        let mut band1 = vec![0.0f32; 1];
-        let mut band2 = vec![0.0f32; 1];
+        let mut band0 = [0.0f32; 1];
+        let mut band1 = [0.0f32; 1];
+        let mut band2 = [0.0f32; 1];
 
         for i in 0..10000 {
             let sample = (i as f32 * 0.01).sin();

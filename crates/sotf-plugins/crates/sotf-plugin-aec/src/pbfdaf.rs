@@ -94,8 +94,8 @@ impl Pbfdaf {
         debug_assert!(reference.len() >= b);
 
         // FFT reference block (zero-padded to fft_size)
-        for i in 0..b {
-            self.fft_buf[i] = Complex::new(reference[i], 0.0);
+        for (dst, &src) in self.fft_buf[..b].iter_mut().zip(&reference[..b]) {
+            *dst = Complex::new(src, 0.0);
         }
         for i in b..self.fft_size {
             self.fft_buf[i] = Complex::new(0.0, 0.0);
@@ -126,9 +126,9 @@ impl Pbfdaf {
 
         // Extract error: e = mic - y (take last B samples for overlap-save)
         let inv_n = 1.0 / self.fft_size as f32;
-        for i in 0..b {
+        for (i, (err, &m)) in self.error_buf[..b].iter_mut().zip(&mic[..b]).enumerate() {
             let echo_est = self.output_buf[b + i].re * inv_n;
-            self.error_buf[i] = mic[i] - echo_est;
+            *err = m - echo_est;
         }
 
         // FFT error for weight update

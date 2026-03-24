@@ -34,6 +34,7 @@ members = [
     "crates/sotf-plugins/crates/sotf-plugin-upmixer",
     "crates/sotf-plugins/crates/sotf-plugin-xtc",
     "crates/sotf-plugins",
+    "crates/sotf-types",
     "crates/sotf-engine",
     "crates/sotf-player",
     "crates/sotf-tools",
@@ -65,8 +66,10 @@ members = [
     "crates/sotf-services",
     "crates/sotf-dlna",
     "crates/sotf-cast",
+    "crates/sotf-federation",
     "crates/3rdparties/sofa-reader",
     "crates/gpui-toolkit/gpui-ios",
+    "crates/gpui-toolkit/gpui-au",
     # iOS/tvOS app shells — compile on macOS (cargo check) but only link for iOS/tvOS targets
     "crates/gpui-toolkit/gpui-ui-kit/ios",
     "crates/app-ios",
@@ -176,6 +179,7 @@ gpui-autoeq = { version = "0.6", path = "crates/gpui-toolkit/gpui-autoeq" }
 gpui-ui-kit = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
 gpui-ios = { version = "0.6", path = "crates/gpui-toolkit/gpui-ios" }
+gpui-au = { version = "0.6", path = "crates/gpui-toolkit/gpui-au" }
 
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }
@@ -217,7 +221,9 @@ sotf-mpd = { path = "crates/sotf-mpd" }
 sotf-services = { path = "crates/sotf-services", default-features = false }
 sotf-dlna = { path = "crates/sotf-dlna" }
 sotf-cast = { path = "crates/sotf-cast" }
+sotf-federation = { path = "crates/sotf-federation" }
 sotf-engine = { path = "crates/sotf-engine", default-features = false }
+sotf-types = { path = "crates/sotf-types" }
 sotf-player = { path = "crates/sotf-player" }
 sotf-midi = { path = "crates/sotf-midi" }
 sotf-plugins = { path = "crates/sotf-plugins", default-features = false }
@@ -287,7 +293,7 @@ spec_math = "0.1"
 approx = "0.5"
 unicode-normalization = "0.1"
 # toml = "0.8"
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 lazy_static = "1.4"
 bincode = { version = "2.0.1", features = ["serde"] }
 

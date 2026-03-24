@@ -6,7 +6,7 @@ pub mod params;
 
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_dsp::stft::{RealFftProcessor, generate_hann_window};
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use sotf_host::lr4_crossover::Lr4Crossover;
 use realfft::RealFftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
@@ -22,11 +22,7 @@ use sotf_host::smoothing::{LogSmoother, Smoother};
 use std::any::Any;
 use std::sync::Arc;
 
-pub const CROSSOVER_PRESETS: &[(f32, f32, f32, f32)] = &[
-    (200.0, 2000.0, 8000.0, 12000.0),
-    (100.0, 3000.0, 8000.0, 12000.0),
-    (250.0, 4000.0, 10000.0, 14000.0),
-];
+pub use sotf_host::lr4_crossover::CROSSOVER_PRESETS;
 
 fn default_true() -> bool {
     true
@@ -154,47 +150,6 @@ impl MultibandExpanderData {
         {
             mut_xovers.copy_from_slice(xovers);
         }
-    }
-}
-
-struct CrossoverPoint {
-    lowpass: Vec<Vec<Biquad>>,
-    highpass: Vec<Vec<Biquad>>,
-    freq: f32,
-}
-
-impl CrossoverPoint {
-    fn new(channels: usize, freq: f32, sr: u32) -> Self {
-        let q = 1.0 / std::f64::consts::SQRT_2;
-        let mut lp = Vec::with_capacity(channels);
-        let mut hp = Vec::with_capacity(channels);
-        for _ in 0..channels {
-            lp.push(vec![
-                Biquad::new(BiquadFilterType::Lowpass, freq as f64, sr as f64, q, 0.0),
-                Biquad::new(BiquadFilterType::Lowpass, freq as f64, sr as f64, q, 0.0),
-            ]);
-            hp.push(vec![
-                Biquad::new(BiquadFilterType::Highpass, freq as f64, sr as f64, q, 0.0),
-                Biquad::new(BiquadFilterType::Highpass, freq as f64, sr as f64, q, 0.0),
-            ]);
-        }
-        Self {
-            lowpass: lp,
-            highpass: hp,
-            freq,
-        }
-    }
-    fn process_lowpass(&mut self, ch: usize, mut s: f32) -> f32 {
-        for f in &mut self.lowpass[ch] {
-            s = f.process(s as f64) as f32;
-        }
-        s
-    }
-    fn process_highpass(&mut self, ch: usize, mut s: f32) -> f32 {
-        for f in &mut self.highpass[ch] {
-            s = f.process(s as f64) as f32;
-        }
-        s
     }
 }
 
@@ -473,7 +428,7 @@ pub struct MultibandExpanderPlugin {
     /// Processing mode: "time_domain" or "spectral"
     processing_mode: String,
     band_params: Vec<BandExpanderParams>,
-    crossover_points: Vec<CrossoverPoint>,
+    crossover_points: Vec<Lr4Crossover>,
     band_expanders: Vec<BandExpander>,
     band_buffers: Vec<f32>,
     band_levels_db: Vec<f32>,
@@ -822,7 +777,7 @@ impl MultibandExpanderPlugin {
         for i in 0..(self.num_bands - 1) {
             let f = self.xover_smoothers[i].target();
             self.crossover_points
-                .push(CrossoverPoint::new(self.channels, f, self.sample_rate));
+                .push(Lr4Crossover::new(f, self.sample_rate, self.channels));
         }
     }
 
@@ -923,10 +878,10 @@ impl MultibandExpanderPlugin {
         let mut band_info = [BandInfo {
             th: 0.0, rat: 1.0, kn: 0.0, rg: 0.0, hys: 0.0, hs: 0, bypass: false, active: true, solo: false,
         }; MAX_MB_BANDS];
-        for b in 0..self.num_bands {
+        for (b, info) in band_info.iter_mut().enumerate().take(self.num_bands) {
             let bp = self.band_params.get(b);
             let hold_ms = bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms);
-            band_info[b] = BandInfo {
+            *info = BandInfo {
                 th: bp.and_then(|p| p.threshold_db).unwrap_or(self.threshold_db),
                 rat: bp.and_then(|p| p.ratio).unwrap_or(self.ratio),
                 kn: bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db),
@@ -1716,19 +1671,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         // 1. Update crossovers
         for i in 0..(self.num_bands - 1) {
             let freq = self.xover_smoothers[i].next_n(nf);
-            if (freq - self.crossover_points[i].freq).abs() > 1.0 {
-                self.crossover_points[i].freq = freq;
-                let q = 1.0 / std::f64::consts::SQRT_2;
-                let sr = self.sample_rate as f64;
-                for ch in 0..self.channels {
-                    for f in &mut self.crossover_points[i].lowpass[ch] {
-                        *f = Biquad::new(BiquadFilterType::Lowpass, freq as f64, sr, q, 0.0);
-                    }
-                    for f in &mut self.crossover_points[i].highpass[ch] {
-                        *f = Biquad::new(BiquadFilterType::Highpass, freq as f64, sr, q, 0.0);
-                    }
-                }
-            }
+            self.crossover_points[i].set_frequency(freq);
         }
 
         // 2. Perform Crossover Splitting
@@ -1737,9 +1680,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 let idx = frame * self.channels + ch;
                 let mut rem = buffer[idx];
                 for xidx in 0..(self.num_bands - 1) {
-                    let low = self.crossover_points[xidx].process_lowpass(ch, rem);
+                    let (low, high) = self.crossover_points[xidx].process(rem, ch);
                     self.band_buffers[xidx * stride + idx] = low;
-                    rem = self.crossover_points[xidx].process_highpass(ch, rem);
+                    rem = high;
                 }
                 self.band_buffers[(self.num_bands - 1) * stride + idx] = rem;
             }

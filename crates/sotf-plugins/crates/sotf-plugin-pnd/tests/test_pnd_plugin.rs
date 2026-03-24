@@ -110,9 +110,9 @@ fn test_pnd_known_drift_correction() {
     let total_frames = sr as usize * 2;
     let drift_freq = 440.0 * 1.01;
     let mut input = vec![0.0f32; total_frames];
-    for i in 0..total_frames {
+    for (i, sample) in input.iter_mut().enumerate() {
         let t = i as f32 / sr as f32;
-        input[i] = (2.0 * std::f32::consts::PI * drift_freq * t).sin() * 0.5;
+        *sample = (2.0 * std::f32::consts::PI * drift_freq * t).sin() * 0.5;
     }
     let mut output = vec![0.0f32; total_frames];
 

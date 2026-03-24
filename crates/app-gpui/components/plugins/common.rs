@@ -883,7 +883,7 @@ impl Element for TransferCurveElement {
                 corner_radii: Corners::default(),
                 background: grid_line_color.into(),
                 border_widths: Edges::default(),
-                border_color: gpui::transparent_black().into(),
+                border_color: gpui::transparent_black(),
                 border_style: BorderStyle::default(),
             });
             // Vertical grid line
@@ -896,7 +896,7 @@ impl Element for TransferCurveElement {
                 corner_radii: Corners::default(),
                 background: grid_line_color.into(),
                 border_widths: Edges::default(),
-                border_color: gpui::transparent_black().into(),
+                border_color: gpui::transparent_black(),
                 border_style: BorderStyle::default(),
             });
         }
@@ -1027,7 +1027,7 @@ impl Element for TransferCurveElement {
                     corner_radii: Corners::default(),
                     background: thresh_color.into(),
                     border_widths: Edges::default(),
-                    border_color: gpui::transparent_black().into(),
+                    border_color: gpui::transparent_black(),
                     border_style: BorderStyle::default(),
                 });
                 y_cur += dash_len + gap_len;
@@ -1065,7 +1065,7 @@ impl Element for TransferCurveElement {
                 corner_radii: Corners::all(px(dot_r + 2.0)),
                 background: glow_color.into(),
                 border_widths: Edges::default(),
-                border_color: gpui::transparent_black().into(),
+                border_color: gpui::transparent_black(),
                 border_style: BorderStyle::default(),
             });
 
@@ -1095,38 +1095,45 @@ impl Element for TransferCurveElement {
                 b: self.operating_point_color.b,
                 a: 0.25,
             };
-            // Vertical line (to x-axis)
-            window.paint_quad(PaintQuad {
-                bounds: Bounds {
-                    origin: point(ox + px(dot_x), oy + px(dot_y + dot_r)),
-                    size: size(px(1.0), px((h - pad) - dot_y - dot_r)),
-                },
-                corner_radii: Corners::default(),
-                background: crosshair_color.into(),
-                border_widths: Edges::default(),
-                border_color: gpui::transparent_black().into(),
-                border_style: BorderStyle::default(),
-            });
-            // Horizontal line (to y-axis)
-            window.paint_quad(PaintQuad {
-                bounds: Bounds {
-                    origin: point(ox + px(pad), oy + px(dot_y)),
-                    size: size(px(dot_x - pad - dot_r), px(1.0)),
-                },
-                corner_radii: Corners::default(),
-                background: crosshair_color.into(),
-                border_widths: Edges::default(),
-                border_color: gpui::transparent_black().into(),
-                border_style: BorderStyle::default(),
-            });
+            // Vertical line (to x-axis) — only draw if there's space below the dot
+            let vert_line_h = (h - pad) - dot_y - dot_r;
+            if vert_line_h > 1.0 {
+                window.paint_quad(PaintQuad {
+                    bounds: Bounds {
+                        origin: point(ox + px(dot_x), oy + px(dot_y + dot_r)),
+                        size: size(px(1.0), px(vert_line_h)),
+                    },
+                    corner_radii: Corners::default(),
+                    background: crosshair_color.into(),
+                    border_widths: Edges::default(),
+                    border_color: gpui::transparent_black(),
+                    border_style: BorderStyle::default(),
+                });
+            }
+            // Horizontal line (to y-axis) — only draw if there's space left of the dot
+            let horiz_line_w = dot_x - pad - dot_r;
+            if horiz_line_w > 1.0 {
+                window.paint_quad(PaintQuad {
+                    bounds: Bounds {
+                        origin: point(ox + px(pad), oy + px(dot_y)),
+                        size: size(px(horiz_line_w), px(1.0)),
+                    },
+                    corner_radii: Corners::default(),
+                    background: crosshair_color.into(),
+                    border_widths: Edges::default(),
+                    border_color: gpui::transparent_black(),
+                    border_style: BorderStyle::default(),
+                });
+            }
         }
     }
 }
 
 /// Render an interactive transfer curve where the user can drag to adjust threshold and ratio.
 ///
-/// - **Horizontal drag**: adjusts threshold (param at `threshold_param_idx`)
-/// - **Vertical drag above threshold**: adjusts ratio (param at `ratio_param_idx`)
+/// - **Vertical drag**: adjusts threshold (param at `threshold_param_idx`)
+/// - **Horizontal drag**: adjusts ratio (param at `ratio_param_idx`)
+/// - **Scroll wheel**: adjusts threshold
 ///
 /// The curve itself is rendered by `TransferCurveElement` and wrapped in
 /// a div with drag event handlers.
@@ -1175,13 +1182,17 @@ pub fn render_interactive_transfer_curve(
                     move |event, _window, cx| {
                         cx.stop_propagation();
                         // Store start position for drag delta calculation
+                        let start_x: f32 = event.position.x.into();
+                        let start_y: f32 = event.position.y.into();
                         entity.update(cx, |state, _| {
                             state.app.is_dragging_knob = true;
                             state.app.knob_drag_plugin_idx = plugin_idx;
-                            state.app.knob_drag_start_y = Some(event.position.y.into());
+                            state.app.knob_drag_start_y = Some(start_y);
                             state.app.knob_drag_start_value = threshold_db;
-                            // Store ratio in min/max fields as scratch (reused for drag)
-                            state.app.knob_drag_min = ratio;
+                            // Reuse knob_drag fields as scratch storage for the drag:
+                            // knob_drag_min = start_x, knob_drag_max = start ratio
+                            state.app.knob_drag_min = start_x as f64;
+                            state.app.knob_drag_max = ratio;
                         });
                     }
                 })
@@ -1196,36 +1207,30 @@ pub fn render_interactive_transfer_curve(
                             return;
                         }
                         let start_y = state.app.knob_drag_start_y.unwrap_or(0.0);
+                        let start_x = state.app.knob_drag_min as f32;
                         let start_threshold = state.app.knob_drag_start_value;
-                        let start_ratio = state.app.knob_drag_min;
+                        let start_ratio = state.app.knob_drag_max;
 
                         let current_x: f32 = event.position.x.into();
                         let current_y: f32 = event.position.y.into();
 
-                        // Horizontal movement → threshold
-                        // Map pixel delta to dB: full widget width = 60 dB range
-                        let dx = current_x - (start_y - 100.0); // approximate, but delta-based
-                        let _ = dx; // We use absolute x position mapping instead
-
-                        // Map x position within the curve to dB
-                        // The curve goes from x=pad to x=w-pad for -60 to 0 dB
-                        // We don't have the element bounds here, so use delta-based approach
                         let dy = current_y - start_y;
+                        let dx = current_x - start_x;
 
-                        // Threshold: horizontal sensitivity (~0.5 dB per pixel)
-                        // We'll use y-delta for a combined threshold+ratio drag:
-                        // - Small vertical drag adjusts ratio
+                        // Vertical drag → threshold (drag up = higher threshold)
                         let new_threshold = (start_threshold - dy as f64 * 0.3)
                             .clamp(threshold_min, threshold_max);
-                        let new_ratio = (start_ratio + dy as f64 * 0.02)
-                            .clamp(ratio_min, ratio_max);
 
                         state.app.set_plugin_param(
                             plugin_idx,
                             threshold_param_idx,
                             new_threshold,
                         );
+
+                        // Horizontal drag → ratio (drag right = higher ratio)
                         if !is_limiter {
+                            let new_ratio = (start_ratio + dx as f64 * 0.05)
+                                .clamp(ratio_min, ratio_max);
                             state.app.set_plugin_param(
                                 plugin_idx,
                                 ratio_param_idx,

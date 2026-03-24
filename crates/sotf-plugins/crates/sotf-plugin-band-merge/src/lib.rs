@@ -153,8 +153,8 @@ impl Plugin for BandMergePlugin {
         // Check per-band parameters using prefix parsing (no heap allocation)
         if let Some(rest) = id.0.strip_prefix("band_") {
             if let Some(idx_str) = rest.strip_suffix("_gain_db") {
-                if let Ok(i) = idx_str.parse::<usize>() {
-                    if i < self.num_bands {
+                if let Ok(i) = idx_str.parse::<usize>()
+                    && i < self.num_bands {
                         let v = value
                             .as_float()
                             .ok_or_else(|| format!("band_{}_gain_db must be a float", i))?;
@@ -165,10 +165,9 @@ impl Plugin for BandMergePlugin {
                         }
                         return Ok(());
                     }
-                }
-            } else if let Some(idx_str) = rest.strip_suffix("_mute") {
-                if let Ok(i) = idx_str.parse::<usize>() {
-                    if i < self.num_bands {
+            } else if let Some(idx_str) = rest.strip_suffix("_mute")
+                && let Ok(i) = idx_str.parse::<usize>()
+                    && i < self.num_bands {
                         let v = value
                             .as_bool()
                             .ok_or_else(|| format!("band_{}_mute must be a bool", i))?;
@@ -176,8 +175,6 @@ impl Plugin for BandMergePlugin {
                         self.rebuild_cached_parameters();
                         return Ok(());
                     }
-                }
-            }
         }
         Err(format!("Unknown parameter: {}", id))
     }
@@ -190,18 +187,15 @@ impl Plugin for BandMergePlugin {
         }
         if let Some(rest) = id.0.strip_prefix("band_") {
             if let Some(idx_str) = rest.strip_suffix("_gain_db") {
-                if let Ok(i) = idx_str.parse::<usize>() {
-                    if i < self.num_bands {
+                if let Ok(i) = idx_str.parse::<usize>()
+                    && i < self.num_bands {
                         return Some(ParameterValue::Float(self.band_gains_db[i]));
                     }
-                }
-            } else if let Some(idx_str) = rest.strip_suffix("_mute") {
-                if let Ok(i) = idx_str.parse::<usize>() {
-                    if i < self.num_bands {
+            } else if let Some(idx_str) = rest.strip_suffix("_mute")
+                && let Ok(i) = idx_str.parse::<usize>()
+                    && i < self.num_bands {
                         return Some(ParameterValue::Bool(self.band_mutes[i]));
                     }
-                }
-            }
         }
         None
     }

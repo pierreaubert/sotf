@@ -118,6 +118,7 @@ impl TrackBuilder {
             is_favorite: self.is_favorite,
             play_count: self.play_count,
             source: None,
+            uuid: None,
         }
     }
 }
@@ -181,6 +182,7 @@ impl AlbumBuilder {
             edition: None,
             dynamic_range: None,
             is_favorite: self.is_favorite,
+            uuid: None,
         }
     }
 }

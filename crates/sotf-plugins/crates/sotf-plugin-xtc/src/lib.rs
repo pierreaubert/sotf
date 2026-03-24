@@ -46,6 +46,7 @@ use arc_swap::ArcSwap;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
+use math_audio_dsp::stft::generate_hann_window;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
@@ -55,7 +56,6 @@ use sotf_host::simd::{
     window_mul_simd,
 };
 use std::any::Any;
-use std::f32::consts::PI;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -438,13 +438,8 @@ impl XtcPlugin {
         let fft_forward = planner.plan_fft_forward(fft_size);
         let fft_inverse = planner.plan_fft_inverse(fft_size);
 
-        // Create Hann window (periodic form for STFT)
-        let analysis_window: Vec<f32> = (0..fft_size)
-            .map(|i| {
-                let x = i as f32 / fft_size as f32;
-                0.5 * (1.0 - (2.0 * PI * x).cos())
-            })
-            .collect();
+        // Periodic Hann window for STFT
+        let analysis_window = generate_hann_window(fft_size);
 
         // Combined scale factor: COLA normalization / FFT size
         // For 75% overlap dual-windowing Hann, Sum(w^2) = 1.5.

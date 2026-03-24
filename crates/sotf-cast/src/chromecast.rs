@@ -327,14 +327,13 @@ fn handle_stream_request(
     let wav_header = build_wav_header(sample_rate, channels, u32::MAX);
 
     // Send HTTP response with WAV content
-    let response = format!(
-        "HTTP/1.1 200 OK\r\n\
+    let response = "HTTP/1.1 200 OK\r\n\
          Content-Type: audio/wav\r\n\
          Transfer-Encoding: chunked\r\n\
          Connection: keep-alive\r\n\
          Access-Control-Allow-Origin: *\r\n\
          \r\n"
-    );
+        .to_string();
 
     if stream.write_all(response.as_bytes()).is_err() {
         return;

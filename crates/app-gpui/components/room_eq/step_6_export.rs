@@ -19,7 +19,7 @@ impl PlayerView {
             .room_eq_state
             .dsp_output
             .as_ref()
-            .map_or(true, |dsp| dsp.is_rack_compatible());
+            .is_none_or(|dsp| dsp.is_rack_compatible());
 
         let mut stack = VStack::new()
             .spacing(StackSpacing::Md)

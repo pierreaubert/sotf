@@ -137,6 +137,7 @@ fn create_empty_track() -> Track {
         is_favorite: false,
         play_count: 0,
         source: None,
+        uuid: None,
     }
 }
 
@@ -152,6 +153,7 @@ fn create_empty_album() -> Album {
         edition: None,
         dynamic_range: None,
         is_favorite: false,
+        uuid: None,
     }
 }
 

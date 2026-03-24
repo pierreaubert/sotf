@@ -313,27 +313,27 @@ impl PlayerView {
                                 && position > 0.0
                                 && (duration - position) < 10.0;
 
-                            if near_end {
-                                if let Some(next_track) = state.app.queue.peek_next_track() {
-                                    let next_ch =
-                                        next_track.channels.unwrap_or(2) as usize;
-                                    let current_ch = state
-                                        .app
-                                        .playback
-                                        .current_queue_index
-                                        .and_then(|idx| state.app.queue.get(idx))
-                                        .and_then(|item| item.current_track())
-                                        .and_then(|t| t.channels)
-                                        .unwrap_or(2)
-                                        as usize;
+                            if near_end
+                                && let Some(next_track) = state.app.queue.peek_next_track()
+                            {
+                                let next_ch =
+                                    next_track.channels.unwrap_or(2) as usize;
+                                let current_ch = state
+                                    .app
+                                    .playback
+                                    .current_queue_index
+                                    .and_then(|idx| state.app.queue.get(idx))
+                                    .and_then(|item| item.current_track())
+                                    .and_then(|t| t.channels)
+                                    .unwrap_or(2)
+                                    as usize;
 
-                                    // Only gapless when channel count matches (engine constraint)
-                                    if next_ch == current_ch {
-                                        let _ = state
-                                            .player
-                                            .lock()
-                                            .queue_next(next_track.path.clone());
-                                    }
+                                // Only gapless when channel count matches (engine constraint)
+                                if next_ch == current_ch {
+                                    let _ = state
+                                        .player
+                                        .lock()
+                                        .queue_next(next_track.path.clone());
                                 }
                             }
                         }

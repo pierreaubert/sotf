@@ -985,3 +985,44 @@ fn test_albums_by_composer() {
         .expect("Failed to get albums");
     assert_eq!(album_ids.len(), 2, "Should find 2 albums by Mozart");
 }
+
+// ---- Federation / Migration 19 tests ----
+
+#[test]
+fn test_uuid_null_by_default() {
+    let (_temp_dir, db_path) = fixtures::temp_database();
+    let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+
+    let albums = vec![test_album(
+        "No UUID Album",
+        Some(2024),
+        vec![test_track(
+            fixtures::get_demo_file("rock.wav"),
+            "Track",
+            "Artist",
+        )],
+    )];
+    db.save_albums(&albums).expect("Failed to save");
+
+    let loaded = db.load_library().expect("Failed to load");
+    assert_eq!(loaded[0].uuid, None, "Album uuid should be None by default");
+    assert_eq!(
+        loaded[0].tracks[0].uuid, None,
+        "Track uuid should be None by default"
+    );
+}
+
+#[test]
+fn test_migration_19_in_history() {
+    let (_temp_dir, db_path) = fixtures::temp_database();
+    let db = MusicDatabase::open_for_testing(&db_path).unwrap();
+
+    let history = db.get_migration_history().expect("Failed to get history");
+    let versions: Vec<i64> = history.iter().map(|(v, _, _)| *v).collect();
+    assert!(
+        versions.contains(&19),
+        "Migration 19 should be in history, got: {:?}",
+        versions
+    );
+}
+

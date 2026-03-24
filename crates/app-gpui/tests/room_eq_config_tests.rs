@@ -250,6 +250,8 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         broadband_target_matching: None,
         multi_measurement: None,
         decomposed_correction: None,
+        strategy: "lshade".to_string(),
+        target_response: None,
     }
 }
 
@@ -554,12 +556,10 @@ fn extract_filter_freqs(
     for name in channel_result_names {
         if let Some(chain) = dsp_output.channels.get(name) {
             for plugin in &chain.plugins {
-                if plugin.plugin_type == "EQ" {
-                    if let Some(filters) = plugin.parameters.get("filters").and_then(|f| f.as_array()) {
-                        for f in filters {
-                            if let Some(freq) = f.get("frequency").and_then(|v| v.as_f64()) {
-                                freqs.push(freq);
-                            }
+                if plugin.plugin_type == "EQ" && let Some(filters) = plugin.parameters.get("filters").and_then(|f| f.as_array()) {
+                    for f in filters {
+                        if let Some(freq) = f.get("frequency").and_then(|v| v.as_f64()) {
+                            freqs.push(freq);
                         }
                     }
                 }

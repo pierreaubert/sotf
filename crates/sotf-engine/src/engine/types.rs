@@ -3,11 +3,15 @@
 // ============================================================================
 
 use crate::decoder::AudioSource;
-use serde::{Deserialize, Serialize};
 use sotf_plugins::PluginHost;
 use std::any::Any;
-use std::path::PathBuf;
 use std::sync::Arc;
+
+// Re-export shared types from sotf-types
+pub use sotf_types::{
+    AudioEngineState, AudioFrame, PlaybackState,
+    PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
+};
 
 // ============================================================================
 // Plugin Data Cache - Lock-free(ish) shared cache for analyzer data
@@ -20,56 +24,6 @@ pub type PluginDataVec = Vec<Option<Arc<dyn Any + Send + Sync>>>;
 /// The processing thread writes after each frame; the UI reads without
 /// blocking the audio pipeline via lock-free ArcSwap.
 pub type PluginDataCache = Arc<arc_swap::ArcSwap<PluginDataVec>>;
-
-// ============================================================================
-// Audio Frame - The unit of audio data passed between threads
-// ============================================================================
-
-/// A chunk of interleaved audio samples
-#[derive(Clone, Debug)]
-pub struct AudioFrame {
-    /// Interleaved samples: [L0, R0, L1, R1, ...] for stereo
-    pub data: Vec<f32>,
-    /// Number of frames (not samples!)
-    pub num_frames: usize,
-    /// Number of channels
-    pub num_channels: usize,
-    /// Sample rate
-    pub sample_rate: u32,
-}
-
-impl AudioFrame {
-    /// Create a new audio frame
-    pub fn new(data: Vec<f32>, num_frames: usize, num_channels: usize, sample_rate: u32) -> Self {
-        debug_assert_eq!(data.len(), num_frames * num_channels);
-        Self {
-            data,
-            num_frames,
-            num_channels,
-            sample_rate,
-        }
-    }
-
-    /// Create an empty (silent) audio frame
-    pub fn silent(num_frames: usize, num_channels: usize, sample_rate: u32) -> Self {
-        Self {
-            data: vec![0.0; num_frames * num_channels],
-            num_frames,
-            num_channels,
-            sample_rate,
-        }
-    }
-
-    /// Total number of samples (frames × channels)
-    pub fn num_samples(&self) -> usize {
-        self.num_frames * self.num_channels
-    }
-
-    /// Clear the frame (set to silence)
-    pub fn clear(&mut self) {
-        self.data.fill(0.0);
-    }
-}
 
 // ============================================================================
 // Queue Messages - Messages passed through queues
@@ -265,72 +219,6 @@ pub enum ManagerResponse {
 }
 
 // ============================================================================
-// State - Engine and playback state
-// ============================================================================
-
-/// Playback state
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PlaybackState {
-    Stopped,
-    Playing,
-    Paused,
-}
-
-/// Complete audio engine state
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AudioEngineState {
-    /// Current playback state
-    pub playback_state: PlaybackState,
-    /// Currently playing source
-    pub current_source: Option<AudioSource>,
-    /// Currently playing file path (convenience accessor, populated for File sources)
-    pub current_file: Option<PathBuf>,
-    /// Current position in seconds
-    pub position: f64,
-    /// Total duration in seconds (if known)
-    pub duration: Option<f64>,
-    /// Sample rate
-    pub sample_rate: u32,
-    /// Number of channels
-    pub num_channels: usize,
-    /// Output volume (linear)
-    pub volume: f32,
-    /// Muted flag
-    pub muted: bool,
-    /// Processing bypassed flag
-    pub processing_bypassed: bool,
-    /// Number of buffer underruns
-    pub underruns: u64,
-    /// Total plugin chain latency in samples (for position compensation)
-    pub plugin_latency_samples: usize,
-    /// Last error message, if any
-    pub last_error: Option<String>,
-    /// Seek in progress flag
-    pub seeking: bool,
-}
-
-impl Default for AudioEngineState {
-    fn default() -> Self {
-        Self {
-            playback_state: PlaybackState::Stopped,
-            current_source: None,
-            current_file: None,
-            position: 0.0,
-            duration: None,
-            sample_rate: 48000,
-            num_channels: 2,
-            volume: 1.0,
-            muted: false,
-            processing_bypassed: false,
-            underruns: 0,
-            plugin_latency_samples: 0,
-            last_error: None,
-            seeking: false,
-        }
-    }
-}
-
-// ============================================================================
 // Thread Events - Events sent from threads to manager
 // ============================================================================
 
@@ -360,53 +248,3 @@ pub enum ThreadEvent {
     PluginLatencyUpdate(usize),
 }
 
-// ============================================================================
-// Plugin Configuration
-// ============================================================================
-
-/// Plugin configuration for serialization/deserialization
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PluginConfig {
-    /// Plugin type identifier
-    pub plugin_type: String,
-    /// Plugin parameters
-    pub parameters: serde_json::Value,
-}
-
-impl PluginConfig {
-    /// Create a new plugin config
-    pub fn new(plugin_type: impl Into<String>, parameters: serde_json::Value) -> Self {
-        Self {
-            plugin_type: plugin_type.into(),
-            parameters,
-        }
-    }
-}
-
-/// Graph-based plugin configuration for DAG processing.
-///
-/// Unlike `Vec<PluginConfig>` (linear chain), this supports parallel paths
-/// needed for multi-driver crossover setups.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PluginGraphConfig {
-    pub nodes: Vec<PluginGraphNodeConfig>,
-    pub edges: Vec<PluginGraphEdgeConfig>,
-}
-
-/// A node in the plugin graph
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PluginGraphNodeConfig {
-    /// Unique node ID (used to reference in edges)
-    pub id: usize,
-    pub plugin_type: String,
-    pub parameters: serde_json::Value,
-    /// Number of input channels this node expects
-    pub input_channels: usize,
-}
-
-/// An edge connecting two nodes in the plugin graph
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PluginGraphEdgeConfig {
-    pub from_node: usize,
-    pub to_node: usize,
-}

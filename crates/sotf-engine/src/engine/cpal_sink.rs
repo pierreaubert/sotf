@@ -73,6 +73,12 @@ pub struct CpalSink {
     last_callback_check: std::time::Instant,
 }
 
+impl Default for CpalSink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CpalSink {
     pub fn new() -> Self {
         Self {
@@ -330,11 +336,10 @@ impl AudioSink for CpalSink {
         let device = self.device.as_ref().ok_or("No device")?;
 
         // Pause old stream
-        if let Some(ref stream) = self.stream {
-            if let Err(e) = stream.pause() {
+        if let Some(ref stream) = self.stream
+            && let Err(e) = stream.pause() {
                 log::warn!("[CpalSink] Failed to pause old stream: {}", e);
             }
-        }
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         let mut stream_config = StreamConfig {

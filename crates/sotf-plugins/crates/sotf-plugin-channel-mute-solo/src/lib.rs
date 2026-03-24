@@ -312,34 +312,31 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
             }
         } else if let Some(rest) = id.0.strip_prefix("mute_") {
             // Per-channel mute: mute_0, mute_1, ...
-            if let Ok(ch) = rest.parse::<usize>() {
-                if ch < self.channels {
+            if let Ok(ch) = rest.parse::<usize>()
+                && ch < self.channels {
                     self.channel_states[ch].muted = value.as_bool().unwrap_or(false);
                     self.update_smoother_targets();
                     self.rebuild_cached_parameters();
                     return Ok(());
                 }
-            }
             Err(format!("Invalid channel index in {}", id))
         } else if let Some(rest) = id.0.strip_prefix("solo_") {
-            if let Ok(ch) = rest.parse::<usize>() {
-                if ch < self.channels {
+            if let Ok(ch) = rest.parse::<usize>()
+                && ch < self.channels {
                     self.channel_states[ch].soloed = value.as_bool().unwrap_or(false);
                     self.update_smoother_targets();
                     self.rebuild_cached_parameters();
                     return Ok(());
                 }
-            }
             Err(format!("Invalid channel index in {}", id))
         } else if let Some(rest) = id.0.strip_prefix("dim_") {
-            if let Ok(ch) = rest.parse::<usize>() {
-                if ch < self.channels {
+            if let Ok(ch) = rest.parse::<usize>()
+                && ch < self.channels {
                     self.channel_states[ch].dimmed = value.as_bool().unwrap_or(false);
                     self.update_smoother_targets();
                     self.rebuild_cached_parameters();
                     return Ok(());
                 }
-            }
             Err(format!("Invalid channel index in {}", id))
         } else {
             Err(format!("Unknown parameter: {}", id))

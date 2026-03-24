@@ -3936,6 +3936,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-au"
+version = "0.6.1"
+dependencies = [
+ "anyhow",
+ "block",
+ "core-foundation 0.10.0",
+ "core-foundation-sys 0.7.0",
+ "core-graphics 0.24.0",
+ "core-text",
+ "env_logger",
+ "futures",
+ "gpui",
+ "gpui_wgpu",
+ "log",
+ "objc",
+ "parking_lot",
+ "pathfinder_geometry",
+ "raw-window-handle 0.6.2",
+ "smallvec",
+ "uuid",
+ "wgpu",
+ "zed-font-kit",
+]
+
+[[package]]
 name = "gpui-autoeq"
 version = "0.6.4"
 dependencies = [
@@ -7767,6 +7792,7 @@ name = "plugins-ffi"
 version = "0.5.14"
 dependencies = [
  "cbindgen 0.29.2",
+ "gpui-au",
  "log",
  "plugins-bridge",
  "serde",
@@ -10087,6 +10113,7 @@ dependencies = [
  "sotf-plugin-ambisonics",
  "sotf-plugins",
  "sotf-streaming",
+ "sotf-types",
  "symphonia",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3",
@@ -10103,6 +10130,19 @@ dependencies = [
  "tokio",
  "walkdir",
  "which 8.0.2",
+]
+
+[[package]]
+name = "sotf-federation"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "sotf-engine",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -10901,6 +10941,15 @@ dependencies = [
  "sotf-engine",
  "sotf-gpui",
  "sotf-player",
+]
+
+[[package]]
+name = "sotf-types"
+version = "0.5.14"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -490,23 +490,20 @@ impl InPlacePlugin for GatePlugin {
                 self.update_coefficients();
             }
         } else if id == self.param_range_db {
-            if let Some(v) = value.as_float() {
-                if v.is_finite() {
+            if let Some(v) = value.as_float()
+                && v.is_finite() {
                     self.range_db = v.max(0.0);
                 }
-            }
         } else if id == self.param_hysteresis_db {
-            if let Some(v) = value.as_float() {
-                if v.is_finite() {
+            if let Some(v) = value.as_float()
+                && v.is_finite() {
                     self.hysteresis_db = v.max(0.0);
                 }
-            }
         } else if id == self.param_knee_db {
-            if let Some(v) = value.as_float() {
-                if v.is_finite() {
+            if let Some(v) = value.as_float()
+                && v.is_finite() {
                     self.knee_db = v.max(0.0);
                 }
-            }
         } else if id == self.param_lookahead {
             let v = value.as_float().unwrap_or(0.0);
             if v.is_finite() {
@@ -749,8 +746,8 @@ mod tests {
 
         let num_frames = 9600; // 200ms
         let mut buf_low = vec![0.0f32; num_frames];
-        for i in 0..num_frames {
-            buf_low[i] =
+        for (i, sample) in buf_low.iter_mut().enumerate() {
+            *sample =
                 amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr as f32).sin();
         }
 
@@ -787,8 +784,8 @@ mod tests {
         p_high.initialize(sr).unwrap();
 
         let mut buf_high = vec![0.0f32; num_frames];
-        for i in 0..num_frames {
-            buf_high[i] =
+        for (i, sample) in buf_high.iter_mut().enumerate() {
+            *sample =
                 amplitude * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin();
         }
 

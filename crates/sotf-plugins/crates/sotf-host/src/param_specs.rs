@@ -500,6 +500,21 @@ impl ParamSpec {
             _ => &[],
         }
     }
+
+    /// Get the default label for a Choice parameter as a String.
+    /// Panics if not a Choice param or if the default index is out of range.
+    pub fn default_choice_label(&self) -> String {
+        match self.param_type {
+            ParamType::Choice {
+                default_index,
+                labels,
+            } => labels[default_index].to_string(),
+            _ => panic!(
+                "default_choice_label called on non-Choice param '{}'",
+                self.engine_key
+            ),
+        }
+    }
 }
 
 /// Look up a `ParamSpec` by its `engine_key` within a PARAMS slice.
@@ -585,6 +600,93 @@ macro_rules! serde_param_default {
         fn $fn_name() -> f32 {
             $crate::param_specs::find_by_key($params, $key).default_f32()
         }
+    };
+    (@one $params:expr, $fn_name:ident, String, $key:literal) => {
+        fn $fn_name() -> String {
+            $crate::param_specs::find_by_key($params, $key).default_choice_label()
+        }
+    };
+}
+
+// ============================================================================
+// Shared Multiband Crossover Params
+// ============================================================================
+
+/// Builds a `&[ParamSpec]` array with the 6 standard multiband crossover params
+/// (bands, preset, crossover 1-4) followed by plugin-specific params.
+///
+/// ```ignore
+/// pub const GLOBAL_PARAMS: &[ParamSpec] = multiband_global_params![
+///     ParamSpec::float("Threshold", "threshold", ...),
+///     // more plugin-specific params...
+/// ];
+/// ```
+#[macro_export]
+macro_rules! multiband_global_params {
+    ($($extra:expr),* $(,)?) => {
+        &[
+            $crate::param_specs::ParamSpec::int("Bands", "num_bands", 3, 2, 5, 1, "", "Global")
+                .structural()
+                .setup()
+                .doc("Number of frequency bands"),
+            $crate::param_specs::ParamSpec::int("Preset", "crossover_preset", 1, 0, 3, 1, "", "Global")
+                .structural()
+                .setup()
+                .doc("Crossover frequency preset"),
+            $crate::param_specs::ParamSpec::float(
+                "Crossover 1",
+                "crossover_freq_1",
+                200.0,
+                20.0,
+                500.0,
+                10.0,
+                "Hz",
+                "Global",
+            )
+            .structural()
+            .setup()
+            .doc("Low/mid split frequency"),
+            $crate::param_specs::ParamSpec::float(
+                "Crossover 2",
+                "crossover_freq_2",
+                2000.0,
+                500.0,
+                5000.0,
+                50.0,
+                "Hz",
+                "Global",
+            )
+            .structural()
+            .setup()
+            .doc("Mid/high split frequency"),
+            $crate::param_specs::ParamSpec::float(
+                "Crossover 3",
+                "crossover_freq_3",
+                8000.0,
+                5000.0,
+                15000.0,
+                100.0,
+                "Hz",
+                "Global",
+            )
+            .structural()
+            .setup()
+            .doc("High/air split frequency"),
+            $crate::param_specs::ParamSpec::float(
+                "Crossover 4",
+                "crossover_freq_4",
+                12000.0,
+                10000.0,
+                18000.0,
+                100.0,
+                "Hz",
+                "Global",
+            )
+            .structural()
+            .setup()
+            .doc("Band 4/5 split frequency"),
+            $($extra),*
+        ]
     };
 }
 

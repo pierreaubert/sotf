@@ -1351,8 +1351,8 @@ mod tests {
         // Process enough samples to complete the transition (~5ms at 48kHz = 240 samples)
         let num_frames = 512;
         let mut buf = vec![0.0f32; num_frames];
-        for i in 0..num_frames {
-            buf[i] = (i as f32 * 0.1).sin() * 0.5;
+        for (i, sample) in buf.iter_mut().enumerate() {
+            *sample = (i as f32 * 0.1).sin() * 0.5;
         }
         p.process_in_place(
             &mut buf,

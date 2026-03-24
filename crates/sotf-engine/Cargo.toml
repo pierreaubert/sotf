@@ -19,6 +19,7 @@ streaming = ["dep:sotf-streaming"]
 driver-common = { workspace = true }
 tokio = { workspace = true }
 ndarray = { workspace = true }
+sotf-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

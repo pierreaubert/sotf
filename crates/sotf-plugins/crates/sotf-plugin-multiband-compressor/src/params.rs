@@ -8,6 +8,7 @@
 //! Multiband Compressor has dynamic per-band params, so there is no static
 //! `Params` struct or `PluginParamDef` impl here.
 
+use sotf_host::multiband_global_params;
 use sotf_host::param_specs::ParamSpec;
 use sotf_host::plugin_layout::*;
 
@@ -16,67 +17,8 @@ use sotf_host::plugin_layout::*;
 // ============================================================================
 
 /// Global params for multiband compressor.
-pub const GLOBAL_PARAMS: &[ParamSpec] = &[
-    ParamSpec::int("Bands", "num_bands", 3, 2, 5, 1, "", "Global")
-        .structural()
-        .setup()
-        .doc("Number of frequency bands"),
-    ParamSpec::int("Preset", "crossover_preset", 1, 0, 3, 1, "", "Global")
-        .structural()
-        .setup()
-        .doc("Crossover frequency preset"),
-    ParamSpec::float(
-        "Crossover 1",
-        "crossover_freq_1",
-        200.0,
-        20.0,
-        500.0,
-        10.0,
-        "Hz",
-        "Global",
-    )
-    .structural()
-    .setup()
-    .doc("Low/mid split frequency"),
-    ParamSpec::float(
-        "Crossover 2",
-        "crossover_freq_2",
-        2000.0,
-        500.0,
-        5000.0,
-        50.0,
-        "Hz",
-        "Global",
-    )
-    .structural()
-    .setup()
-    .doc("Mid/high split frequency"),
-    ParamSpec::float(
-        "Crossover 3",
-        "crossover_freq_3",
-        8000.0,
-        5000.0,
-        15000.0,
-        100.0,
-        "Hz",
-        "Global",
-    )
-    .structural()
-    .setup()
-    .doc("High/air split frequency"),
-    ParamSpec::float(
-        "Crossover 4",
-        "crossover_freq_4",
-        12000.0,
-        10000.0,
-        18000.0,
-        100.0,
-        "Hz",
-        "Global",
-    )
-    .structural()
-    .setup()
-    .doc("Band 4/5 split frequency"),
+/// First 6 entries are the shared multiband crossover params (bands, preset, crossover 1-4).
+pub const GLOBAL_PARAMS: &[ParamSpec] = multiband_global_params![
     ParamSpec::float(
         "Threshold",
         "threshold",

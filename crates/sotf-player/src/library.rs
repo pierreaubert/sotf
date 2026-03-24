@@ -647,7 +647,7 @@ impl MusicLibrary {
                     Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(last_scan));
 
                 let (tracks, albums) =
-                    compute_aggregate_stats_for_path(&canonical_path, &stats_map);
+                    compute_aggregate_stats_for_path(&canonical_path, stats_map);
 
                 let dir_info = build_directory_shallow(
                     canonical_path,

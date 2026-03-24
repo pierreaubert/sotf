@@ -115,9 +115,9 @@ impl SuperdirectiveBeamformer {
         (0..self.spectrum_size)
             .map(|k| {
                 let mut sum = Complex::new(0.0, 0.0);
-                for m in 0..num_mics {
-                    if k < stft_channels[m].len() && m < self.weights[k].len() {
-                        sum += self.weights[k][m].conj() * stft_channels[m][k];
+                for (m, ch) in stft_channels.iter().enumerate().take(num_mics) {
+                    if k < ch.len() && m < self.weights[k].len() {
+                        sum += self.weights[k][m].conj() * ch[k];
                     }
                 }
                 sum

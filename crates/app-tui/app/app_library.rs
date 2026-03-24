@@ -513,27 +513,9 @@ impl App {
     }
 
     pub fn toggle_directory_expansion(&mut self) {
-        // Find which directory in the tree we're selecting
         let tree_items = self.get_directory_tree_items();
         if let Some((path, _, _)) = tree_items.get(self.selected_directory_index) {
-            // Helper to find and toggle directory recursively
-            fn toggle_recursive(
-                directories: &mut [sotf_audio_player::DirectoryInfo],
-                target_path: &std::path::Path,
-            ) -> bool {
-                for dir in directories {
-                    if dir.path == target_path {
-                        dir.expanded = !dir.expanded;
-                        return true;
-                    }
-                    if dir.expanded && toggle_recursive(&mut dir.subdirectories, target_path) {
-                        return true;
-                    }
-                }
-                false
-            }
-
-            toggle_recursive(&mut self.library.directories, path);
+            self.library.toggle_directory_expanded(path);
         }
     }
 

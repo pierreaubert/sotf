@@ -35,6 +35,12 @@ pub struct RnnoiseBackend {
     avg_reduction_db: f32,
 }
 
+impl Default for RnnoiseBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RnnoiseBackend {
     pub fn new() -> Self {
         Self {
@@ -133,11 +139,7 @@ impl DenoiserBackend for RnnoiseBackend {
 
         // Read from ring buffer into interleaved output
         let ch_count = channels.min(self.channels);
-        let available = if self.output_write_pos > self.output_read_pos {
-            self.output_write_pos - self.output_read_pos
-        } else {
-            0
-        };
+        let available = self.output_write_pos.saturating_sub(self.output_read_pos);
         let to_write = num_frames.min(available);
 
         if ch_count > 0 {

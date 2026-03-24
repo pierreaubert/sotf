@@ -226,16 +226,17 @@ fn test_crossover_zero_alloc() {
     let mut plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
-    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
+    let input = generate_test_buffer(BUFFER_SIZE, 2);
+    let mut output = vec![0.0f32; BUFFER_SIZE * plugin.output_channels()];
     let ctx = ProcessContext {
         sample_rate: SAMPLE_RATE,
         num_frames: BUFFER_SIZE,
     };
 
-    plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    plugin.process(&input, &mut output, &ctx).unwrap();
 
     assert_no_allocs("CrossoverPlugin", || {
-        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+        plugin.process(&input, &mut output, &ctx).unwrap();
     });
 }
 

@@ -502,19 +502,17 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         let near_end =
                             duration > 0.0 && position > 0.0 && (duration - position) < 10.0;
 
-                        if near_end {
-                            if let Some(next_track) = app.peek_next_track() {
-                                let next_ch = next_track.channels.unwrap_or(2) as usize;
-                                let current_ch = app
-                                    .current_track()
-                                    .and_then(|t| t.channels)
-                                    .unwrap_or(2)
-                                    as usize;
+                        if near_end && let Some(next_track) = app.peek_next_track() {
+                            let next_ch = next_track.channels.unwrap_or(2) as usize;
+                            let current_ch = app
+                                .current_track()
+                                .and_then(|t| t.channels)
+                                .unwrap_or(2)
+                                as usize;
 
-                                // Only gapless when channel count matches (engine constraint)
-                                if next_ch == current_ch {
-                                    let _ = player.queue_next(next_track.path.clone());
-                                }
+                            // Only gapless when channel count matches (engine constraint)
+                            if next_ch == current_ch {
+                                let _ = player.queue_next(next_track.path.clone());
                             }
                         }
                     }

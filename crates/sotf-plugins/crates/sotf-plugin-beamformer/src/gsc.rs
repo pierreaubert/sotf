@@ -91,8 +91,8 @@ impl GscBeamformer {
 
         // 1. Fixed beamformer output: uniform delay-and-sum
         let mut fbf_output = 0.0f32;
-        for i in 0..m {
-            fbf_output += mic_samples[i] * self.fbf_weights[i];
+        for (&sample, &weight) in mic_samples[..m].iter().zip(&self.fbf_weights[..m]) {
+            fbf_output += sample * weight;
         }
         fbf_output /= m as f32;
 
@@ -106,8 +106,8 @@ impl GscBeamformer {
         }
 
         // Store references in delay lines
-        for r in 0..num_refs {
-            self.reference_buffers[r][self.ref_write_pos] = references[r];
+        for (buf, &ref_val) in self.reference_buffers[..num_refs].iter_mut().zip(&references) {
+            buf[self.ref_write_pos] = ref_val;
         }
 
         // 3. NLMS adaptive noise canceller

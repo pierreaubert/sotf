@@ -373,10 +373,7 @@ sotf_plugins::serde_param_default! {
     compressor_specs::PARAMS;
     fn default_compressor_link_channels() -> bool = "link_channels";
     fn default_compressor_sidechain_hpf_hz() -> f64 = "sidechain_hpf_hz";
-}
-
-fn default_compressor_detection_mode() -> String {
-    "Peak".to_string()
+    fn default_compressor_detection_mode() -> String = "detection_mode";
 }
 
 sotf_plugins::serde_param_default! {
@@ -447,10 +444,7 @@ sotf_plugins::serde_param_default! {
     fn default_expander_mix() -> f64 = "mix";
     fn default_expander_link_channels() -> bool = "link_channels";
     fn default_expander_sidechain_hpf_hz() -> f64 = "sidechain_hpf_hz";
-}
-
-fn default_expander_detection_mode() -> String {
-    "Peak".to_string()
+    fn default_expander_detection_mode() -> String = "detection_mode";
 }
 
 sotf_plugins::serde_param_default! {
@@ -488,10 +482,7 @@ sotf_plugins::serde_param_default! {
     fn default_mb_expander_hold_ms() -> f64 = "hold";
     fn default_mb_expander_mix() -> f64 = "mix";
     fn default_mb_expander_link_channels() -> bool = "link_channels";
-}
-
-fn default_mb_expander_detection_mode() -> String {
-    "Peak".to_string()
+    fn default_mb_expander_detection_mode() -> String = "detection_mode";
 }
 
 sotf_plugins::serde_param_default! {
@@ -515,10 +506,7 @@ sotf_plugins::serde_param_default! {
     fn default_xtc_spectral_normalization() -> bool = "spectral_normalization";
     fn default_xtc_room_reflections_enabled() -> bool = "room_reflections_enabled";
     fn default_xtc_pinna_model_enabled() -> bool = "pinna_model_enabled";
-}
-
-fn default_xtc_head_tracking_smooth_s() -> f64 {
-    pk(xtc_specs::PARAMS, "head_tracking_smooth_s").default_f64()
+    fn default_xtc_head_tracking_smooth_s() -> f64 = "head_tracking_smooth_s";
 }
 
 sotf_plugins::serde_param_default! {
@@ -554,8 +542,9 @@ sotf_plugins::serde_param_default! {
     fn default_denoiser_formant_strength() -> f64 = "formant_strength";
 }
 
-fn default_use_nupc() -> bool {
-    true
+sotf_plugins::serde_param_default! {
+    convolution_specs::PARAMS;
+    fn default_use_nupc() -> bool = "use_nupc";
 }
 
 sotf_plugins::serde_param_default! {
@@ -584,9 +573,9 @@ sotf_plugins::serde_param_default! {
     fn default_band_split_frequency() -> f64 = "frequency";
 }
 
-fn default_band_split_crossover_type() -> String {
-    let spec = pk(band_split_specs::PARAMS, "crossover_type");
-    spec.choice_labels()[spec.default_usize()].to_string()
+sotf_plugins::serde_param_default! {
+    band_split_specs::PARAMS;
+    fn default_band_split_crossover_type() -> String = "crossover_type";
 }
 
 sotf_plugins::serde_param_default! {
@@ -651,15 +640,11 @@ sotf_plugins::serde_param_default! {
     fn default_beamformer_type() -> usize = "beamformer_type";
 }
 
-fn default_ambisonics_order() -> usize {
-    pk(ambisonics_specs::PARAMS, "order").default_usize()
-}
-fn default_ambisonics_target_layout() -> String {
-    // Default choice index 0 maps to "5.1"
-    "5.1".to_string()
-}
-fn default_ambisonics_max_re() -> bool {
-    pk(ambisonics_specs::PARAMS, "max_re_weighting").default_bool()
+sotf_plugins::serde_param_default! {
+    ambisonics_specs::PARAMS;
+    fn default_ambisonics_order() -> usize = "order";
+    fn default_ambisonics_target_layout() -> String = "target_layout";
+    fn default_ambisonics_max_re() -> bool = "max_re_weighting";
 }
 
 sotf_plugins::serde_param_default! {
@@ -668,17 +653,12 @@ sotf_plugins::serde_param_default! {
     fn default_cms_fade_ms() -> f64 = "fade_ms";
 }
 
-fn default_spectrum_num_bins() -> usize {
-    pk(spectrum_specs::PARAMS, "num_bins").default_usize()
-}
-fn default_spectrum_min_freq() -> f32 {
-    pk(spectrum_specs::PARAMS, "min_freq").default_f64() as f32
-}
-fn default_spectrum_max_freq() -> f32 {
-    pk(spectrum_specs::PARAMS, "max_freq").default_f64() as f32
-}
-fn default_spectrum_smoothing() -> f32 {
-    pk(spectrum_specs::PARAMS, "smoothing").default_f64() as f32
+sotf_plugins::serde_param_default! {
+    spectrum_specs::PARAMS;
+    fn default_spectrum_num_bins() -> usize = "num_bins";
+    fn default_spectrum_min_freq() -> f32 = "min_freq";
+    fn default_spectrum_max_freq() -> f32 = "max_freq";
+    fn default_spectrum_smoothing() -> f32 = "smoothing";
 }
 fn default_spectrum_tilt_correction() -> SpectralTiltCorrection {
     SpectralTiltCorrection::None

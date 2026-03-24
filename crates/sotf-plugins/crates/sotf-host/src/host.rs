@@ -1835,11 +1835,11 @@ mod tests {
         });
 
         // Simulate early return inside a scope
-        let result: Result<(), String> = (|| {
+        let result: Result<(), String> = {
             let _guard = BufferGuard::take(&mut slot);
             // Simulate error that would cause early return
             Err("simulated error".into())
-        })();
+        };
 
         assert!(result.is_err());
         assert!(
@@ -1901,11 +1901,9 @@ mod tests {
             id: crate::parameters::ParameterId,
             val: crate::parameters::ParameterValue,
         ) -> Result<(), String> {
-            if id.0 == "gain" {
-                if let crate::parameters::ParameterValue::Float(v) = val {
-                    self.gain = v;
-                    return Ok(());
-                }
+            if id.0 == "gain" && let crate::parameters::ParameterValue::Float(v) = val {
+                self.gain = v;
+                return Ok(());
             }
             Err(format!("unknown parameter: {}", id.0))
         }

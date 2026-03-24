@@ -613,7 +613,7 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             let s = value
                 .as_string()
                 .ok_or_else(|| "auto_gain_position must be a string".to_string())?;
-            let pos = AutoGainPosition::from_str_lossy(&s);
+            let pos = AutoGainPosition::from_str_lossy(s);
             self.auto_gain_position = pos;
             let want_enabled = pos != AutoGainPosition::Disabled;
             if want_enabled && self.auto_gain.is_none() {

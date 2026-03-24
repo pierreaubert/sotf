@@ -128,19 +128,19 @@ impl CastDiscovery {
 
             match tokio::time::timeout(remaining, socket.recv_from(&mut buf)).await {
                 Ok(Ok((len, from))) => {
-                    if let Some(device) = parse_mdns_response(&buf[..len], from, device_type) {
-                        if !devices.iter().any(|d: &CastDevice| {
+                    if let Some(device) = parse_mdns_response(&buf[..len], from, device_type)
+                        && !devices.iter().any(|d: &CastDevice| {
                             d.address == device.address && d.port == device.port
-                        }) {
-                            log::debug!(
-                                "[Cast Discovery] Found {} device: {} at {}:{}",
-                                device.device_type,
-                                device.name,
-                                device.address,
-                                device.port,
-                            );
-                            devices.push(device);
-                        }
+                        })
+                    {
+                        log::debug!(
+                            "[Cast Discovery] Found {} device: {} at {}:{}",
+                            device.device_type,
+                            device.name,
+                            device.address,
+                            device.port,
+                        );
+                        devices.push(device);
                     }
                 }
                 Ok(Err(e)) => {
@@ -300,14 +300,14 @@ fn parse_mdns_response(
             }
             12 => {
                 // PTR record: extract instance name
-                if name.is_empty() {
-                    if let Some(decoded) = decode_dns_name(data, pos) {
-                        // Instance name is the first label (before the service type)
-                        if let Some(dot) = decoded.find('.') {
-                            name = decoded[..dot].to_string();
-                        } else {
-                            name = decoded;
-                        }
+                if name.is_empty()
+                    && let Some(decoded) = decode_dns_name(data, pos)
+                {
+                    // Instance name is the first label (before the service type)
+                    if let Some(dot) = decoded.find('.') {
+                        name = decoded[..dot].to_string();
+                    } else {
+                        name = decoded;
                     }
                 }
             }
@@ -318,10 +318,8 @@ fn parse_mdns_response(
     }
 
     // Fall back to sender IP if no A record
-    if address == Ipv4Addr::UNSPECIFIED {
-        if let SocketAddr::V4(v4) = from {
-            address = *v4.ip();
-        }
+    if address == Ipv4Addr::UNSPECIFIED && let SocketAddr::V4(v4) = from {
+        address = *v4.ip();
     }
 
     // Need at least a port to be useful

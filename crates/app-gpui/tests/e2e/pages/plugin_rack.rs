@@ -189,6 +189,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                 is_favorite: false,
                 play_count: 0,
                 source: None,
+                uuid: None,
             };
 
             let album = sotf_audio_player::library::Album {
@@ -202,6 +203,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                 edition: None,
                 dynamic_range: None,
                 is_favorite: false,
+                uuid: None,
             };
 
             app.queue

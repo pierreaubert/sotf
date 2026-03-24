@@ -388,7 +388,8 @@ fn benchmark_crossover(c: &mut Criterion) {
         let mut plugin = CrossoverPlugin::new(CHANNELS, "LR24", 1000.0, "low").unwrap();
         plugin.initialize(SAMPLE_RATE).unwrap();
 
-        let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        let mut output = vec![0.0f32; BUFFER_SIZE * plugin.output_channels()];
         let context = ProcessContext {
             sample_rate: SAMPLE_RATE,
             num_frames: BUFFER_SIZE,
@@ -397,7 +398,7 @@ fn benchmark_crossover(c: &mut Criterion) {
         group.bench_function("lr24_lowpass", |b| {
             b.iter(|| {
                 plugin
-                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .process(black_box(&input), black_box(&mut output), black_box(&context))
                     .unwrap();
             })
         });
@@ -408,7 +409,8 @@ fn benchmark_crossover(c: &mut Criterion) {
         let mut plugin = CrossoverPlugin::new(CHANNELS, "LR48", 1000.0, "low").unwrap();
         plugin.initialize(SAMPLE_RATE).unwrap();
 
-        let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        let mut output = vec![0.0f32; BUFFER_SIZE * plugin.output_channels()];
         let context = ProcessContext {
             sample_rate: SAMPLE_RATE,
             num_frames: BUFFER_SIZE,
@@ -417,7 +419,7 @@ fn benchmark_crossover(c: &mut Criterion) {
         group.bench_function("lr48_lowpass", |b| {
             b.iter(|| {
                 plugin
-                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .process(black_box(&input), black_box(&mut output), black_box(&context))
                     .unwrap();
             })
         });
@@ -428,7 +430,8 @@ fn benchmark_crossover(c: &mut Criterion) {
         let mut plugin = CrossoverPlugin::new(channels, "LR24", 1000.0, "low").unwrap();
         plugin.initialize(SAMPLE_RATE).unwrap();
 
-        let mut buffer = generate_test_buffer(BUFFER_SIZE, channels);
+        let input = generate_test_buffer(BUFFER_SIZE, channels);
+        let mut output = vec![0.0f32; BUFFER_SIZE * plugin.output_channels()];
         let context = ProcessContext {
             sample_rate: SAMPLE_RATE,
             num_frames: BUFFER_SIZE,
@@ -437,7 +440,7 @@ fn benchmark_crossover(c: &mut Criterion) {
         group.bench_function(format!("lr24_{}ch", channels), |b| {
             b.iter(|| {
                 plugin
-                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .process(black_box(&input), black_box(&mut output), black_box(&context))
                     .unwrap();
             })
         });

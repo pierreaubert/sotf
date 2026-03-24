@@ -390,12 +390,10 @@ impl Plugin for BeamformerPlugin {
                 // Write output
                 let available = self.available_output();
                 let to_write = nf.min(available);
-                for i in 0..to_write {
-                    output[i] = self.pop_output();
+                for out in &mut output[..to_write] {
+                    *out = self.pop_output();
                 }
-                for i in to_write..nf {
-                    output[i] = 0.0;
-                }
+                output[to_write..nf].fill(0.0);
             }
         }
 

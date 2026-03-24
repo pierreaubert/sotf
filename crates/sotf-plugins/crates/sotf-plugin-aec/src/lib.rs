@@ -282,8 +282,8 @@ impl Plugin for AecPlugin {
                 let error = self.aec.process(&self.mic_buffer, &self.ref_buffer);
                 let error_len = error.len();
                 // Copy to output ring (we can index output_buffer directly)
-                for j in 0..error_len {
-                    self.output_buffer[self.output_write_pos] = error[j];
+                for &sample in &error[..error_len] {
+                    self.output_buffer[self.output_write_pos] = sample;
                     self.output_write_pos =
                         (self.output_write_pos + 1) % self.output_buffer.len();
                 }
@@ -294,13 +294,11 @@ impl Plugin for AecPlugin {
         // Write available output
         let available = self.available_output();
         let to_write = nf.min(available);
-        for i in 0..to_write {
-            output[i] = self.pop_output();
+        for out in &mut output[..to_write] {
+            *out = self.pop_output();
         }
         // Zero-fill if not enough output yet (initial latency)
-        for i in to_write..nf {
-            output[i] = 0.0;
-        }
+        output[to_write..nf].fill(0.0);
 
         Ok(nf)
     }

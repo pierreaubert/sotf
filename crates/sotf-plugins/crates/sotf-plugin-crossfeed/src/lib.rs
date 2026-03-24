@@ -1088,9 +1088,11 @@ mod tests {
 
     #[test]
     fn test_itd_delay() {
-        let mut params = CrossfeedPluginParams::default();
-        params.mode = CrossfeedMode::Bauer;
-        params.itd_delay_ms = 0.5; // 0.5ms = 24 samples at 48kHz
+        let params = CrossfeedPluginParams {
+            mode: CrossfeedMode::Bauer,
+            itd_delay_ms: 0.5, // 0.5ms = 24 samples at 48kHz
+            ..CrossfeedPluginParams::default()
+        };
         let mut p = CrossfeedPlugin::new(params).unwrap();
         p.initialize(48000).unwrap();
 
@@ -1124,9 +1126,11 @@ mod tests {
     #[test]
     fn test_itd_delay_zero() {
         // With itd_delay_ms = 0, delay line should be transparent
-        let mut params = CrossfeedPluginParams::default();
-        params.mode = CrossfeedMode::Bauer;
-        params.itd_delay_ms = 0.0;
+        let params = CrossfeedPluginParams {
+            mode: CrossfeedMode::Bauer,
+            itd_delay_ms: 0.0,
+            ..CrossfeedPluginParams::default()
+        };
         let mut p = CrossfeedPlugin::new(params).unwrap();
         p.initialize(48000).unwrap();
 
@@ -1170,11 +1174,13 @@ mod tests {
         // Helper: process an L-only impulse and find the frame where R channel
         // first exceeds a threshold.
         let find_r_onset = |itd_ms: f32| -> usize {
-            let mut params = CrossfeedPluginParams::default();
-            params.mode = CrossfeedMode::Bauer;
-            params.bauer_feed_db = 6.0;
-            params.itd_delay_ms = itd_ms;
-            params.mix = 1.0;
+            let params = CrossfeedPluginParams {
+                mode: CrossfeedMode::Bauer,
+                bauer_feed_db: 6.0,
+                itd_delay_ms: itd_ms,
+                mix: 1.0,
+                ..CrossfeedPluginParams::default()
+            };
             let mut p = CrossfeedPlugin::new(params).unwrap();
             p.initialize(sr).unwrap();
 
@@ -1224,8 +1230,10 @@ mod tests {
 
     #[test]
     fn test_disabled_passthrough() {
-        let mut params = CrossfeedPluginParams::default();
-        params.enabled = false;
+        let params = CrossfeedPluginParams {
+            enabled: false,
+            ..CrossfeedPluginParams::default()
+        };
         let mut p = CrossfeedPlugin::new(params).unwrap();
         p.initialize(48000).unwrap();
 

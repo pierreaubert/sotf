@@ -274,6 +274,7 @@ fn create_test_album(track_count: usize) -> Album {
             is_favorite: false,
             play_count: 0,
             source: None,
+            uuid: None,
         })
         .collect();
 
@@ -288,6 +289,7 @@ fn create_test_album(track_count: usize) -> Album {
         edition: None,
         dynamic_range: None,
         is_favorite: false,
+        uuid: None,
     }
 }
 

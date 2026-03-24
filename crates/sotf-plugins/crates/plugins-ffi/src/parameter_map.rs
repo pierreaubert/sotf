@@ -256,7 +256,7 @@ fn expand_band_params(
                     } else {
                         0
                     };
-                    (min as f64, max as f64, default as f64, steps, false)
+                    (min, max, default, steps, false)
                 }
                 ParamType::Int {
                     default,

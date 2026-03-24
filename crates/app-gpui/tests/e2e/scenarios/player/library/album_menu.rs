@@ -45,6 +45,7 @@ impl TestScenario for AlbumContextMenuScenario {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         };
 
         driver.update_app(|app, _| {
@@ -232,6 +233,7 @@ impl TestScenario for AlbumNoDuplicateScenario {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         };
 
         driver.update_app(|app, _| {

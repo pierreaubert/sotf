@@ -75,11 +75,10 @@ impl ParameterValue {
             return Self::Bool(false);
         }
         // Only try integer when the string has no decimal point.
-        if !value.contains('.') {
-            if let Ok(i) = value.parse::<i32>() {
+        if !value.contains('.')
+            && let Ok(i) = value.parse::<i32>() {
                 return Self::Int(i);
             }
-        }
         if let Ok(f) = value.parse::<f32>() {
             return Self::Float(f);
         }

@@ -38,11 +38,10 @@ fn plugin_type_from_raw(raw: &serde_json::Value) -> String {
         if let Some(s) = settings.as_str() {
             return s.to_string();
         }
-        if let Some(obj) = settings.as_object() {
-            if let Some(key) = obj.keys().next() {
+        if let Some(obj) = settings.as_object()
+            && let Some(key) = obj.keys().next() {
                 return key.clone();
             }
-        }
     }
     "unknown".to_string()
 }
@@ -1034,7 +1033,7 @@ impl PluginChain {
                         // for a different layout and can't be applied here).
                         let ch_filters_match = channel_filters
                             .as_ref()
-                            .map_or(true, |cf| cf.len() == current_channels);
+                            .is_none_or(|cf| cf.len() == current_channels);
                         let (new_channel_filters, new_per_channel_mode) =
                             if *per_channel_mode && !ch_filters_match {
                                 (None, false)

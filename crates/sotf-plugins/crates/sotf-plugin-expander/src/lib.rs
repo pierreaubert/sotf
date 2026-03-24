@@ -968,8 +968,8 @@ mod tests {
         let num_frames = 4800;
         let amplitude = 10.0_f32.powf(-10.0 / 20.0); // ~0.316
         let mut buf = vec![0.0f32; num_frames];
-        for i in 0..num_frames {
-            buf[i] = amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin();
+        for (i, sample) in buf.iter_mut().enumerate() {
+            *sample = amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin();
         }
 
         let ctx = ProcessContext {

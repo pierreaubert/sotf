@@ -98,11 +98,11 @@ fn test_gate_hysteresis_prevents_chatter() {
     let switch_period = sr as usize / 10; // 100ms
 
     let mut buffer = vec![0.0f32; num_frames];
-    for i in 0..num_frames {
+    for (i, sample) in buffer.iter_mut().enumerate() {
         let cycle = i / switch_period;
-        let amp = if cycle % 2 == 0 { amp_high } else { amp_low };
+        let amp = if cycle.is_multiple_of(2) { amp_high } else { amp_low };
         let t = i as f32 / sr as f32;
-        buffer[i] = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * amp;
+        *sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * amp;
     }
 
     // Process in blocks

@@ -15,6 +15,7 @@ mod tests {
             last_scanned: None,
             expanded: false,
             subdirectories: vec![],
+            children_loaded: false,
         }
     }
 
@@ -218,6 +219,7 @@ mod tests {
                 bit_depth: None,
                 sample_rate: None,
                 source: None,
+                uuid: None,
             });
         }
         Album {
@@ -231,6 +233,7 @@ mod tests {
             edition: None,
             dynamic_range: None,
             is_favorite: false,
+            uuid: None,
         }
     }
 

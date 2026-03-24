@@ -205,7 +205,7 @@ impl AirPlaySender {
 
         // Send complete packets
         while self.pcm_buf.len() >= PACKET_SIZE {
-            self.send_rtp_packet(&self.pcm_buf[..PACKET_SIZE].to_vec())?;
+            self.send_rtp_packet(&self.pcm_buf[..PACKET_SIZE])?;
             self.pcm_buf.drain(..PACKET_SIZE);
         }
 
@@ -392,10 +392,8 @@ impl AirPlaySender {
         );
 
         // Check for RTSP error
-        if let Some(status_line) = response.lines().next() {
-            if !status_line.contains("200") {
-                return Err(format!("RTSP error: {}", status_line));
-            }
+        if let Some(status_line) = response.lines().next() && !status_line.contains("200") {
+            return Err(format!("RTSP error: {}", status_line));
         }
 
         Ok(response)

@@ -222,8 +222,8 @@ impl ConvolutionPlugin {
                         let mut block = state.partitions[ir_ch][p].clone();
                         state.fft_inverse.process(&mut block);
                         let scale = 1.0 / FFT_SIZE as f32;
-                        for i in 0..PARTITION_SIZE {
-                            ir_data.push(block[i].re * scale);
+                        for sample in &block[..PARTITION_SIZE] {
+                            ir_data.push(sample.re * scale);
                         }
                     }
                     self.nupc_engines
@@ -897,9 +897,9 @@ mod tests {
     /// Parallel partition sum produces the same output as the sequential path.
     ///
     /// Strategy: build two plugins with the same IR that is long enough to have
-    /// >= 8 partitions (so the parallel code path is exercised for the first
+    /// \>= 8 partitions (so the parallel code path is exercised for the first
     /// plugin), then verify the outputs are bit-for-bit identical.  The second
-    /// plugin uses a short IR (< 8 partitions → sequential path) with a single-
+    /// plugin uses a short IR (\< 8 partitions, sequential path) with a single-
     /// sample Dirac that is analytically equivalent to the identity, so we check
     /// the long-IR plugin produces finite, energy-preserving output.
     ///
@@ -986,8 +986,8 @@ mod tests {
         let ir_len = PARTITION_SIZE * 4;
         let mut ir_data = vec![0.0f32; ir_len];
         // Exponentially decaying impulse response
-        for i in 0..ir_len {
-            ir_data[i] = (-(i as f32) / 500.0).exp() * 0.1;
+        for (i, sample) in ir_data.iter_mut().enumerate() {
+            *sample = (-(i as f32) / 500.0).exp() * 0.1;
         }
         let ir = vec![ir_data];
         let mut plugin = make_plugin_with_ir(channels, sr, ir);

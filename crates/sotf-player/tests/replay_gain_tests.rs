@@ -11,7 +11,7 @@ fn test_replay_gain_scanner_creation() {
     use sotf_audio_player::ReplayGainScanner;
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let _db = Arc::new(MusicDatabase::open_for_testing(&db_path).expect("Failed to open database"));
+    let _db = std::rc::Rc::new(MusicDatabase::open_for_testing(&db_path).expect("Failed to open database"));
 
     // Create scanner (new API: num_threads, db_path)
     let scanner = ReplayGainScanner::new(2, db_path.clone(), Arc::new(AtomicBool::new(false)));
