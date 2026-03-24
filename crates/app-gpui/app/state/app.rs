@@ -206,6 +206,10 @@ pub struct App {
     pub seen_hints: Vec<String>,
     /// Currently displayed contextual hint (None if no hint active).
     pub current_hint: Option<crate::components::dialogs::tutorial::ContextualHint>,
+
+    // Federation & Server configuration
+    pub federation_sources: Vec<sotf_audio_player::federation_config::FederationSourceEntry>,
+    pub server_config: sotf_audio_player::federation_config::ServerConfig,
 }
 
 /// GPUI-compatible state wrapper
@@ -305,6 +309,9 @@ impl App {
             tutorial_completed: false,
             seen_hints: Vec::new(),
             current_hint: None,
+
+            federation_sources: Vec::new(),
+            server_config: sotf_audio_player::federation_config::ServerConfig::default(),
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts

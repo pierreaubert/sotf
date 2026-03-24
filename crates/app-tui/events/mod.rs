@@ -15,9 +15,11 @@ pub mod search;
 
 pub mod conf;
 pub mod conf_directories;
+pub mod conf_federation;
 pub mod conf_headphoneeq;
 pub mod conf_recordings;
 pub mod conf_roomeq;
+pub mod conf_servers;
 pub mod conf_spinoramaeq;
 
 pub use conf_headphoneeq::poll_headphone_eq_optimization;
@@ -100,7 +102,9 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         | InputMode::ConfigureRecording
         | InputMode::ConfigureRoomEq
         | InputMode::ConfigureHeadphoneEq
-        | InputMode::ConfigureSpinoramaEq => conf::handle_configure_mode(app, key),
+        | InputMode::ConfigureSpinoramaEq
+        | InputMode::ConfigureFederationSources
+        | InputMode::ConfigureServers => conf::handle_configure_mode(app, key),
         InputMode::Normal => handle_normal_mode(app, key),
     }
 }

@@ -94,6 +94,12 @@ impl PlayerView {
             crate::app::SettingsTab::Misc => {
                 self.render_plugins_settings_content(cx).into_any_element()
             }
+            crate::app::SettingsTab::Federation => self
+                .render_federation_settings_content(cx)
+                .into_any_element(),
+            crate::app::SettingsTab::Servers => self
+                .render_servers_settings_content(cx)
+                .into_any_element(),
             crate::app::SettingsTab::ReleaseChannel => self
                 .render_release_channel_settings_content(cx)
                 .into_any_element(),
@@ -168,6 +174,14 @@ impl PlayerView {
                             (
                                 translations.settings_tab_misc,
                                 crate::app::SettingsTab::Misc,
+                            ),
+                            (
+                                translations.settings_tab_federation,
+                                crate::app::SettingsTab::Federation,
+                            ),
+                            (
+                                translations.settings_tab_servers,
+                                crate::app::SettingsTab::Servers,
                             ),
                             (
                                 translations.settings_tab_release_channel,

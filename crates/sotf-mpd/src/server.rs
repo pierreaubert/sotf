@@ -4,11 +4,12 @@
 //
 // Listens on a TCP port (default 6600) and handles MPD client sessions.
 // Each client gets its own task. Supports command lists.
+// Optional TLS via the `tls` feature.
 
 use crate::handler::{PlayerAdapter, handle_command};
 use crate::protocol::{self, MpdCommand, MpdResponse, MPD_VERSION};
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
 /// MPD server configuration.
@@ -17,6 +18,10 @@ pub struct MpdServerConfig {
     pub bind_address: String,
     /// Port to listen on (default 6600).
     pub port: u16,
+    /// Enable TLS (requires `tls` feature). Default: true.
+    pub tls_enabled: bool,
+    /// Optional password for MPD authentication.
+    pub password: Option<String>,
 }
 
 impl Default for MpdServerConfig {
@@ -24,6 +29,8 @@ impl Default for MpdServerConfig {
         Self {
             bind_address: "0.0.0.0".to_string(),
             port: 6600,
+            tls_enabled: true,
+            password: None,
         }
     }
 }
@@ -32,46 +39,104 @@ impl Default for MpdServerConfig {
 pub struct MpdServer {
     config: MpdServerConfig,
     adapter: Arc<dyn PlayerAdapter>,
+    #[cfg(feature = "tls")]
+    tls_acceptor: Option<tokio_rustls::TlsAcceptor>,
 }
 
 impl MpdServer {
+    #[must_use]
     pub fn new(adapter: Arc<dyn PlayerAdapter>) -> Self {
         Self {
             config: MpdServerConfig::default(),
             adapter,
+            #[cfg(feature = "tls")]
+            tls_acceptor: None,
         }
     }
 
+    #[must_use]
     pub fn with_config(config: MpdServerConfig, adapter: Arc<dyn PlayerAdapter>) -> Self {
-        Self { config, adapter }
+        Self {
+            config,
+            adapter,
+            #[cfg(feature = "tls")]
+            tls_acceptor: None,
+        }
+    }
+
+    /// Set the TLS acceptor for encrypted connections.
+    ///
+    /// When set and `config.tls_enabled` is true, all connections are TLS-wrapped.
+    #[cfg(feature = "tls")]
+    pub fn set_tls_acceptor(&mut self, acceptor: tokio_rustls::TlsAcceptor) {
+        self.tls_acceptor = Some(acceptor);
     }
 
     /// Start the MPD server. This runs until the cancellation token is triggered.
+    ///
+    /// # Errors
+    /// Returns an error if the server cannot bind to the configured address.
     pub async fn run(&self, cancel: tokio::sync::watch::Receiver<bool>) -> Result<(), String> {
         let addr = format!("{}:{}", self.config.bind_address, self.config.port);
         let listener = TcpListener::bind(&addr)
             .await
-            .map_err(|e| format!("Failed to bind to {}: {}", addr, e))?;
+            .map_err(|e| format!("Failed to bind to {addr}: {e}"))?;
 
-        log::info!("[MPD] Listening on {}", addr);
+        let tls_mode = self.tls_mode_label();
+        log::info!("[MPD] Listening on {addr} ({tls_mode})");
 
         loop {
             tokio::select! {
                 accept_result = listener.accept() => {
                     match accept_result {
                         Ok((stream, peer)) => {
-                            log::debug!("[MPD] New connection from {}", peer);
+                            log::debug!("[MPD] New connection from {peer}");
                             let adapter = Arc::clone(&self.adapter);
                             let cancel = cancel.clone();
+                            let password = self.config.password.clone();
+
+                            #[cfg(feature = "tls")]
+                            let tls_acceptor = if self.config.tls_enabled {
+                                self.tls_acceptor.clone()
+                            } else {
+                                None
+                            };
+
                             tokio::spawn(async move {
-                                if let Err(e) = handle_session(stream, adapter, cancel).await {
-                                    log::debug!("[MPD] Session error from {}: {}", peer, e);
+                                let result = {
+                                    #[cfg(feature = "tls")]
+                                    {
+                                        if let Some(acceptor) = tls_acceptor {
+                                            match sotf_tls::tls_accept(&acceptor, stream).await {
+                                                Ok(tls_stream) => {
+                                                    let (reader, writer) = tokio::io::split(tls_stream);
+                                                    handle_session(reader, writer, adapter, cancel, password).await
+                                                }
+                                                Err(e) => {
+                                                    log::debug!("[MPD] TLS handshake failed from {peer}: {e}");
+                                                    return;
+                                                }
+                                            }
+                                        } else {
+                                            let (reader, writer) = stream.into_split();
+                                            handle_session(reader, writer, adapter, cancel, password).await
+                                        }
+                                    }
+                                    #[cfg(not(feature = "tls"))]
+                                    {
+                                        let (reader, writer) = stream.into_split();
+                                        handle_session(reader, writer, adapter, cancel, password).await
+                                    }
+                                };
+
+                                if let Err(e) = result {
+                                    log::debug!("[MPD] Session error from {peer}: {e}");
                                 }
-                                log::debug!("[MPD] Connection closed from {}", peer);
+                                log::debug!("[MPD] Connection closed from {peer}");
                             });
                         }
                         Err(e) => {
-                            log::warn!("[MPD] Accept error: {}", e);
+                            log::warn!("[MPD] Accept error: {e}");
                         }
                     }
                 }
@@ -83,6 +148,16 @@ impl MpdServer {
         }
 
         Ok(())
+    }
+
+    fn tls_mode_label(&self) -> &'static str {
+        #[cfg(feature = "tls")]
+        {
+            if self.config.tls_enabled && self.tls_acceptor.is_some() {
+                return "TLS";
+            }
+        }
+        "plain"
     }
 }
 
@@ -98,18 +173,24 @@ async fn wait_for_cancel(cancel: &tokio::sync::watch::Receiver<bool>) {
     }
 }
 
-/// Handle a single client session.
-async fn handle_session(
-    stream: tokio::net::TcpStream,
+/// Handle a single client session over any async stream.
+async fn handle_session<R, W>(
+    reader: R,
+    mut writer: W,
     adapter: Arc<dyn PlayerAdapter>,
     cancel: tokio::sync::watch::Receiver<bool>,
-) -> Result<(), String> {
-    let (reader, mut writer) = stream.into_split();
+    password: Option<String>,
+) -> Result<(), String>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
     let mut reader = BufReader::new(reader);
     let mut line_buf = String::new();
+    let mut authenticated = password.is_none(); // no password = auto-authenticated
 
     // Send greeting
-    let greeting = format!("OK MPD {}\n", MPD_VERSION);
+    let greeting = format!("OK MPD {MPD_VERSION}\n");
     writer
         .write_all(greeting.as_bytes())
         .await
@@ -128,7 +209,7 @@ async fn handle_session(
                     Ok(0) => break, // EOF
                     Ok(_) => {}
                     Err(e) => {
-                        return Err(format!("Read error: {}", e));
+                        return Err(format!("Read error: {e}"));
                     }
                 }
             }
@@ -142,7 +223,7 @@ async fn handle_session(
             continue;
         }
 
-        log::trace!("[MPD] <- {}", line);
+        log::trace!("[MPD] <- {line}");
 
         // Parse the command
         let cmd = match protocol::parse_command(line) {
@@ -157,6 +238,50 @@ async fn handle_session(
                 continue;
             }
         };
+
+        // Handle password command before auth check
+        if let MpdCommand::Password(ref pw) = cmd {
+            if let Some(ref expected) = password {
+                if pw == expected {
+                    authenticated = true;
+                    writer
+                        .write_all(b"OK\n")
+                        .await
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    let err = protocol::MpdError::new(
+                        protocol::MpdErrorCode::Password,
+                        "password",
+                        "incorrect password",
+                    );
+                    writer
+                        .write_all(err.format().as_bytes())
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+            } else {
+                // No password configured, accept anything
+                writer
+                    .write_all(b"OK\n")
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            continue;
+        }
+
+        // Require authentication for non-password commands (except ping/close)
+        if !authenticated && !matches!(cmd, MpdCommand::Ping | MpdCommand::Close) {
+            let err = protocol::MpdError::new(
+                protocol::MpdErrorCode::Permission,
+                line.split_whitespace().next().unwrap_or("unknown"),
+                "you don't have permission for this command",
+            );
+            writer
+                .write_all(err.format().as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
+            continue;
+        }
 
         // Handle command list mode
         match &cmd {

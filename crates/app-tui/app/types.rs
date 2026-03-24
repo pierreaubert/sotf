@@ -29,6 +29,8 @@ pub enum ConfigureSubScreen {
     RoomEq,
     HeadphoneEq,
     SpinoramaEq,
+    FederationSources,
+    Servers,
 }
 
 /// Step in the Spinorama EQ wizard (TUI-specific: 5 steps)
@@ -466,6 +468,10 @@ pub enum InputMode {
     ConfigureHeadphoneEq,
     /// Configure sub-screen: Spinorama EQ
     ConfigureSpinoramaEq,
+    /// Configure sub-screen: Federation Sources
+    ConfigureFederationSources,
+    /// Configure sub-screen: Servers
+    ConfigureServers,
 }
 
 impl InputMode {
@@ -479,10 +485,12 @@ impl InputMode {
                 | InputMode::ConfigureRoomEq
                 | InputMode::ConfigureHeadphoneEq
                 | InputMode::ConfigureSpinoramaEq
+                | InputMode::ConfigureFederationSources
+                | InputMode::ConfigureServers
         )
     }
 
-    /// Returns true for the 5 configure sub-screens only (not the tab bar)
+    /// Returns true for configure sub-screens only (not the tab bar)
     pub fn is_configure_sub_screen(self) -> bool {
         matches!(
             self,
@@ -491,6 +499,8 @@ impl InputMode {
                 | InputMode::ConfigureRoomEq
                 | InputMode::ConfigureHeadphoneEq
                 | InputMode::ConfigureSpinoramaEq
+                | InputMode::ConfigureFederationSources
+                | InputMode::ConfigureServers
         )
     }
 
@@ -502,6 +512,8 @@ impl InputMode {
             ConfigureSubScreen::RoomEq => InputMode::ConfigureRoomEq,
             ConfigureSubScreen::HeadphoneEq => InputMode::ConfigureHeadphoneEq,
             ConfigureSubScreen::SpinoramaEq => InputMode::ConfigureSpinoramaEq,
+            ConfigureSubScreen::FederationSources => InputMode::ConfigureFederationSources,
+            ConfigureSubScreen::Servers => InputMode::ConfigureServers,
         }
     }
 
@@ -513,6 +525,8 @@ impl InputMode {
             InputMode::ConfigureRoomEq => Some(ConfigureSubScreen::RoomEq),
             InputMode::ConfigureHeadphoneEq => Some(ConfigureSubScreen::HeadphoneEq),
             InputMode::ConfigureSpinoramaEq => Some(ConfigureSubScreen::SpinoramaEq),
+            InputMode::ConfigureFederationSources => Some(ConfigureSubScreen::FederationSources),
+            InputMode::ConfigureServers => Some(ConfigureSubScreen::Servers),
             _ => None,
         }
     }
@@ -615,3 +629,147 @@ impl QueueEntry {
         }
     }
 }
+
+// ============================================================================
+// Federation & Server TUI state
+// ============================================================================
+
+use sotf_audio_player::federation_config::{
+    ConnectionStatus, FederationSourceEntry, ServerConfig,
+};
+use std::collections::HashMap;
+
+/// TUI state for the Federation Sources configuration screen.
+#[derive(Debug, Clone)]
+pub struct FederationTuiState {
+    pub sources: Vec<FederationSourceEntry>,
+    pub statuses: HashMap<String, ConnectionStatus>,
+    pub selected_idx: usize,
+    pub mode: FederationMode,
+    pub edit: Option<FederationEditState>,
+}
+
+impl Default for FederationTuiState {
+    fn default() -> Self {
+        Self {
+            sources: Vec::new(),
+            statuses: HashMap::new(),
+            selected_idx: 0,
+            mode: FederationMode::List,
+            edit: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FederationMode {
+    List,
+    EditSource,
+    AddSource,
+}
+
+#[derive(Debug, Clone)]
+pub struct FederationEditState {
+    pub source: FederationSourceEntry,
+    /// Field index within the source-specific connection fields
+    /// 0..N are connection fields, N is display_name, N+1 is priority, N+2 is enabled
+    pub selected_field: usize,
+    pub editing_value: bool,
+    pub edit_buffer: String,
+    pub is_new: bool,
+}
+
+impl FederationEditState {
+    pub fn new(source: FederationSourceEntry, is_new: bool) -> Self {
+        Self {
+            source,
+            selected_field: 0,
+            editing_value: false,
+            edit_buffer: String::new(),
+            is_new,
+        }
+    }
+
+    /// Total number of editable fields (connection fields + name + priority)
+    pub fn field_count(&self) -> usize {
+        self.source.connection.field_names().len() + 2
+    }
+
+    /// Get label for the field at the given index
+    pub fn field_label(&self, index: usize) -> &str {
+        let conn_fields = self.source.connection.field_names();
+        if index < conn_fields.len() {
+            conn_fields[index]
+        } else if index == conn_fields.len() {
+            "Display Name"
+        } else {
+            "Priority"
+        }
+    }
+
+    /// Get value for the field at the given index
+    pub fn field_value(&self, index: usize) -> String {
+        let conn_fields = self.source.connection.field_names();
+        if index < conn_fields.len() {
+            self.source.connection.field_value(index)
+        } else if index == conn_fields.len() {
+            self.source.display_name.clone()
+        } else {
+            self.source.priority.to_string()
+        }
+    }
+
+    /// Set value for the field at the given index
+    pub fn set_field_value(&mut self, index: usize, value: &str) {
+        let conn_field_count = self.source.connection.field_names().len();
+        if index < conn_field_count {
+            self.source.connection.set_field_value(index, value);
+        } else if index == conn_field_count {
+            self.source.display_name = value.to_string();
+        } else if let Ok(p) = value.parse() {
+            self.source.priority = p;
+        }
+    }
+}
+
+/// TUI state for the Servers configuration screen.
+#[derive(Debug, Clone)]
+pub struct ServersTuiState {
+    pub config: ServerConfig,
+    pub selected_section: ServerSection,
+    pub selected_field: usize,
+    pub editing_value: bool,
+    pub edit_buffer: String,
+    pub tls_fingerprint: Option<String>,
+}
+
+impl Default for ServersTuiState {
+    fn default() -> Self {
+        Self {
+            config: ServerConfig::default(),
+            selected_section: ServerSection::Mpd,
+            selected_field: 0,
+            editing_value: false,
+            edit_buffer: String::new(),
+            tls_fingerprint: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerSection {
+    Mpd,
+    Dlna,
+}
+
+/// Source type names for the "Add Source" selection.
+pub const SOURCE_TYPE_NAMES: &[(&str, &str)] = &[
+    ("subsonic", "Subsonic"),
+    ("mpd", "MPD"),
+    ("dlna", "DLNA"),
+    ("peer", "Peer (SotF)"),
+];
+
+/// Index of the selected source type when in AddSource mode
+pub static ADD_SOURCE_TYPE_IDX: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);

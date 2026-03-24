@@ -12,11 +12,13 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 fn configure_sub_screen_prev(s: ConfigureSubScreen) -> ConfigureSubScreen {
     match s {
-        ConfigureSubScreen::Directories => ConfigureSubScreen::SpinoramaEq,
+        ConfigureSubScreen::Directories => ConfigureSubScreen::Servers,
         ConfigureSubScreen::Recording => ConfigureSubScreen::Directories,
         ConfigureSubScreen::RoomEq => ConfigureSubScreen::Recording,
         ConfigureSubScreen::HeadphoneEq => ConfigureSubScreen::RoomEq,
         ConfigureSubScreen::SpinoramaEq => ConfigureSubScreen::HeadphoneEq,
+        ConfigureSubScreen::FederationSources => ConfigureSubScreen::SpinoramaEq,
+        ConfigureSubScreen::Servers => ConfigureSubScreen::FederationSources,
     }
 }
 
@@ -26,7 +28,9 @@ fn configure_sub_screen_next(s: ConfigureSubScreen) -> ConfigureSubScreen {
         ConfigureSubScreen::Recording => ConfigureSubScreen::RoomEq,
         ConfigureSubScreen::RoomEq => ConfigureSubScreen::HeadphoneEq,
         ConfigureSubScreen::HeadphoneEq => ConfigureSubScreen::SpinoramaEq,
-        ConfigureSubScreen::SpinoramaEq => ConfigureSubScreen::Directories,
+        ConfigureSubScreen::SpinoramaEq => ConfigureSubScreen::FederationSources,
+        ConfigureSubScreen::FederationSources => ConfigureSubScreen::Servers,
+        ConfigureSubScreen::Servers => ConfigureSubScreen::Directories,
     }
 }
 
@@ -62,6 +66,12 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
                 InputMode::ConfigureSpinoramaEq => {
                     super::conf_spinoramaeq::handle_spinorama_keys(app, key)
                 }
+                InputMode::ConfigureFederationSources => {
+                    super::conf_federation::handle_federation_keys(app, key)
+                }
+                InputMode::ConfigureServers => {
+                    super::conf_servers::handle_server_keys(app, key)
+                }
                 _ => None,
             };
         }
@@ -80,6 +90,12 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
                 }
                 InputMode::ConfigureSpinoramaEq => {
                     super::conf_spinoramaeq::handle_spinorama_keys(app, key)
+                }
+                InputMode::ConfigureFederationSources => {
+                    super::conf_federation::handle_federation_keys(app, key)
+                }
+                InputMode::ConfigureServers => {
+                    super::conf_servers::handle_server_keys(app, key)
                 }
                 _ => None,
             };
@@ -102,6 +118,8 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
             super::conf_headphoneeq::handle_headphone_eq_keys(app, key)
         }
         InputMode::ConfigureSpinoramaEq => super::conf_spinoramaeq::handle_spinorama_keys(app, key),
+        InputMode::ConfigureFederationSources => super::conf_federation::handle_federation_keys(app, key),
+        InputMode::ConfigureServers => super::conf_servers::handle_server_keys(app, key),
         _ => None,
     }
 }
@@ -136,6 +154,8 @@ pub(super) fn handle_tab_bar_keys(app: &mut App, key: KeyEvent) -> Option<Player
         KeyCode::Char('3') => enter_sub_screen(app, ConfigureSubScreen::RoomEq),
         KeyCode::Char('4') => enter_sub_screen(app, ConfigureSubScreen::HeadphoneEq),
         KeyCode::Char('5') => enter_sub_screen(app, ConfigureSubScreen::SpinoramaEq),
+        KeyCode::Char('6') => enter_sub_screen(app, ConfigureSubScreen::FederationSources),
+        KeyCode::Char('7') => enter_sub_screen(app, ConfigureSubScreen::Servers),
         _ => {}
     }
     None

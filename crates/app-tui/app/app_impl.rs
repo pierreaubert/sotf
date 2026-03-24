@@ -190,6 +190,11 @@ pub struct App {
     pub room_eq: super::types::RoomEqTuiState,
     // Recording wizard state
     pub recording: super::types::RecordingTuiState,
+
+    // Federation Sources configuration state
+    pub federation_state: super::types::FederationTuiState,
+    // Server configuration state
+    pub server_state: super::types::ServersTuiState,
 }
 
 impl App {
@@ -332,6 +337,8 @@ impl App {
             headphone_eq: super::types::HeadphoneEqTuiState::default(),
             room_eq: super::types::RoomEqTuiState::default(),
             recording: super::types::RecordingTuiState::default(),
+            federation_state: super::types::FederationTuiState::default(),
+            server_state: super::types::ServersTuiState::default(),
         }
     }
 

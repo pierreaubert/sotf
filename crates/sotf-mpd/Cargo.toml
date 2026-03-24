@@ -7,6 +7,12 @@ edition.workspace = true
 [dependencies]
 log = { workspace = true }
 tokio = { workspace = true, features = ["net", "io-util", "macros", "sync"] }
+sotf-tls = { workspace = true, optional = true }
+tokio-rustls = { version = "0.26", optional = true }
+
+[features]
+default = []
+tls = ["dep:sotf-tls", "dep:tokio-rustls"]
 
 [dev-dependencies]
 env_logger = { workspace = true }

@@ -7,6 +7,8 @@ pub enum SettingsTab {
     Keybindings,
     AudioDevice,
     Misc,
+    Federation,
+    Servers,
     ReleaseChannel,
 }
 

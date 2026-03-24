@@ -114,27 +114,37 @@ pub(crate) fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
         (
             ConfigureSubScreen::Directories,
             "1",
-            "Directories   – Music library folders",
+            "Directories        – Music library folders",
         ),
         (
             ConfigureSubScreen::Recording,
             "2",
-            "Recording     – Measure impulse responses",
+            "Recording          – Measure impulse responses",
         ),
         (
             ConfigureSubScreen::RoomEq,
             "3",
-            "Room EQ       – Optimize room correction filters",
+            "Room EQ            – Optimize room correction filters",
         ),
         (
             ConfigureSubScreen::HeadphoneEq,
             "4",
-            "Headphone EQ  – Target-curve EQ for headphones",
+            "Headphone EQ       – Target-curve EQ for headphones",
         ),
         (
             ConfigureSubScreen::SpinoramaEq,
             "5",
-            "Spinorama EQ  – Speaker EQ from spinorama data",
+            "Spinorama EQ       – Speaker EQ from spinorama data",
+        ),
+        (
+            ConfigureSubScreen::FederationSources,
+            "6",
+            "Library Sources    – Remote libraries (Subsonic, MPD, DLNA, Peer)",
+        ),
+        (
+            ConfigureSubScreen::Servers,
+            "7",
+            "Servers            – MPD and DLNA server settings",
         ),
     ];
 
@@ -218,6 +228,8 @@ pub(crate) fn draw_configure_modal(f: &mut Frame, app: &App) {
         ConfigureSubScreen::RoomEq => " Room EQ ",
         ConfigureSubScreen::HeadphoneEq => " Headphone EQ ",
         ConfigureSubScreen::SpinoramaEq => " Spinorama EQ ",
+        ConfigureSubScreen::FederationSources => " Library Sources ",
+        ConfigureSubScreen::Servers => " Servers ",
     };
 
     let outer = Block::default()
@@ -251,6 +263,8 @@ pub(crate) fn draw_configure_modal(f: &mut Frame, app: &App) {
         ConfigureSubScreen::RoomEq => draw_room_eq_screen(f, inner, app),
         ConfigureSubScreen::HeadphoneEq => draw_headphone_eq_screen(f, inner, app),
         ConfigureSubScreen::SpinoramaEq => draw_spinorama_eq_screen(f, inner, app),
+        ConfigureSubScreen::FederationSources => draw_federation_screen(f, inner, app),
+        ConfigureSubScreen::Servers => draw_servers_screen(f, inner, app),
     }
 }
 

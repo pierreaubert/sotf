@@ -19,9 +19,12 @@ pub use app_impl::App;
 pub use parameters::{TuiEditablePlugin, TuiParamDescriptor, TuiParamSpec, TuiParamType};
 pub use types::{
     ArtistNode, ChannelConflictChoice, ChannelFilter, ChannelGroup, ChannelInfo,
-    ConfigureSubScreen, FilePickerMode, FilePickerOrigin, HEADPHONE_TARGET_PRESETS,
+    ConfigureSubScreen, FederationEditState, FederationMode, FederationTuiState,
+    FilePickerMode, FilePickerOrigin, HEADPHONE_TARGET_PRESETS,
     HeadphoneEqStep, HeadphoneEqTuiState, InputMode, LibrarySortOrder, LibraryViewMode,
     MatrixEditMode, PendingParameterUpdate, QueueEntry, QueueItem, RecordingTuiState,
-    ReplayGainMode, RoomEqTuiState, Screen, SpinUpdateSubStep, SpinoramaEqTuiState, SpinoramaStep,
-    TreeItem,
+    ReplayGainMode, RoomEqTuiState, Screen, ServerSection, ServersTuiState,
+    SpinUpdateSubStep, SpinoramaEqTuiState, SpinoramaStep, TreeItem,
 };
+// Allow access to types submodule for full detail (SOURCE_TYPE_NAMES, etc.)
+pub(crate) use types::{ADD_SOURCE_TYPE_IDX, SOURCE_TYPE_NAMES};
