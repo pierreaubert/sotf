@@ -5,20 +5,22 @@
 pub mod params;
 
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
+use math_audio_iir_fir::{peq_butterworth_highpass, Biquad};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
-use crate::params::PARAMS as GT;
+use crate::params::{HPF_ORDERS, PARAMS as GT};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use sotf_host::LookaheadBuffer;
+use sotf_host::{DetectionMode, LevelDetector, LookaheadBuffer};
 use std::any::Any;
-use std::f32::consts::PI;
 use std::sync::Arc;
 
 const MAX_LOOKAHEAD_MS: f32 = 20.0;
+const DB_CONVERSION_FACTOR: f32 = 20.0;
+const EPSILON: f32 = 1e-10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatePluginParams {
@@ -38,6 +40,12 @@ pub struct GatePluginParams {
     pub link_channels: bool,
     #[serde(default = "default_sidechain_hpf_hz")]
     pub sidechain_hpf_hz: f32,
+    #[serde(default = "default_sidechain_hpf_order")]
+    pub sidechain_hpf_order: String,
+    #[serde(default = "default_detection_mode")]
+    pub detection_mode: String,
+    #[serde(default = "default_sidechain_external")]
+    pub sidechain_external: bool,
     /// Maximum attenuation in dB (0 = unlimited). Caps how much the gate attenuates.
     #[serde(default = "default_range_db")]
     pub range_db: f32,
@@ -75,6 +83,15 @@ fn default_link_channels() -> bool {
 }
 fn default_sidechain_hpf_hz() -> f32 {
     pk(GT, "sidechain_hpf_hz").default_f64() as f32
+}
+fn default_sidechain_hpf_order() -> String {
+    HPF_ORDERS[0].to_string()
+}
+fn default_detection_mode() -> String {
+    "peak".to_string()
+}
+fn default_sidechain_external() -> bool {
+    pk(GT, "sidechain_external").default_bool()
 }
 fn default_range_db() -> f32 {
     80.0
@@ -135,6 +152,14 @@ pub struct GatePlugin {
     link_channels: bool,
     param_sidechain_hpf_hz: ParameterId,
     sidechain_hpf_hz: f32,
+    param_sidechain_hpf_order: ParameterId,
+    /// 0 = 2nd order (-12dB/oct), 1 = 4th order (-24dB/oct)
+    sidechain_hpf_order_index: usize,
+    param_detection_mode: ParameterId,
+    /// 0 = Peak, 1 = RMS
+    detection_mode_index: usize,
+    param_sidechain_external: ParameterId,
+    sidechain_external: bool,
     param_range_db: ParameterId,
     range_db: f32,
     param_hysteresis_db: ParameterId,
@@ -149,9 +174,10 @@ pub struct GatePlugin {
     hold_counter: Vec<usize>,
     attack_coeff: f32,
     release_coeff: f32,
-    sidechain_hpf_prev_input: Vec<f32>,
-    sidechain_hpf_prev_output: Vec<f32>,
-    sidechain_hpf_alpha: f32,
+    /// Butterworth HPF biquad sections per channel (empty when HPF disabled)
+    sidechain_hpf_biquads: Vec<Vec<Biquad>>,
+    /// Level detectors for peak/RMS detection
+    level_detectors: Vec<LevelDetector>,
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
     /// Gain reduction envelope in dB (positive value)
@@ -192,6 +218,12 @@ impl GatePlugin {
             link_channels: true,
             param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
             sidechain_hpf_hz: 0.0,
+            param_sidechain_hpf_order: ParameterId::from("sidechain_hpf_order"),
+            sidechain_hpf_order_index: 0,
+            param_detection_mode: ParameterId::from("detection_mode"),
+            detection_mode_index: 0,
+            param_sidechain_external: ParameterId::from("sidechain_external"),
+            sidechain_external: false,
             param_range_db: ParameterId::from("range_db"),
             range_db: default_range_db(),
             param_hysteresis_db: ParameterId::from("hysteresis_db"),
@@ -209,9 +241,10 @@ impl GatePlugin {
             hold_counter: vec![0; channels],
             attack_coeff: 0.0,
             release_coeff: 0.0,
-            sidechain_hpf_prev_input: vec![0.0; channels],
-            sidechain_hpf_prev_output: vec![0.0; channels],
-            sidechain_hpf_alpha: 0.0,
+            sidechain_hpf_biquads: Vec::new(),
+            level_detectors: (0..channels)
+                .map(|_| LevelDetector::new(DetectionMode::Peak, sr))
+                .collect(),
             threshold_smoother: Smoother::new(threshold_db, 5.0, sr),
             mix_smoother: Smoother::new(1.0, 5.0, sr),
             cache: RealTimeCache::new(GateData::new(channels)),
@@ -220,6 +253,20 @@ impl GatePlugin {
         };
         p.rebuild_cached_parameters();
         p
+    }
+
+    fn sidechain_hpf_order_string(&self) -> String {
+        match self.sidechain_hpf_order_index {
+            1 => "4th".to_string(),
+            _ => "2nd".to_string(),
+        }
+    }
+
+    fn detection_mode_string(&self) -> String {
+        match self.detection_mode_index {
+            0 => "peak".to_string(),
+            _ => "rms".to_string(),
+        }
     }
 
     fn rebuild_cached_parameters(&mut self) {
@@ -298,6 +345,30 @@ impl GatePlugin {
             .with_description("High-pass filter frequency for sidechain (Hz)")
             .with_group("Sidechain")
             .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_string(
+                "sidechain_hpf_order",
+                "Sidechain HPF Order",
+                self.sidechain_hpf_order_string(),
+            )
+            .with_description("Butterworth HPF slope (2nd = -12dB/oct, 4th = -24dB/oct)")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_string(
+                "detection_mode",
+                "Detection Mode",
+                self.detection_mode_string(),
+            )
+            .with_description("Level detection mode: peak or rms")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "sidechain_external",
+                "External Sidechain",
+                self.sidechain_external,
+            )
+            .with_description("Use external sidechain signal from extra input channels")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float("range_db", "Range", self.range_db, 0.0, 120.0)
                 .with_description("Maximum attenuation in dB (0 = unlimited)")
                 .with_group("Dynamics")
@@ -335,11 +406,34 @@ impl GatePlugin {
         p.mix = params.mix.clamp(0.0, 1.0);
         p.link_channels = params.link_channels;
         p.sidechain_hpf_hz = params.sidechain_hpf_hz.max(0.0);
+
+        // HPF order
+        p.sidechain_hpf_order_index = match params.sidechain_hpf_order.as_str() {
+            "4th" => 1,
+            _ => 0, // "2nd" or any unknown
+        };
+
+        // Detection mode
+        p.detection_mode_index = match params.detection_mode.as_str() {
+            "rms" => 1,
+            _ => 0, // "peak" or any unknown
+        };
+        if p.detection_mode_index == 1 {
+            let mode = DetectionMode::Rms { window_ms: 10.0 };
+            for det in &mut p.level_detectors {
+                det.set_mode(mode);
+            }
+        }
+
+        // External sidechain
+        p.sidechain_external = params.sidechain_external;
+
         p.range_db = params.range_db.max(0.0);
         p.hysteresis_db = params.hysteresis_db.max(0.0);
         p.knee_db = params.knee_db.max(0.0);
         p.lookahead_ms = params.lookahead_ms.clamp(0.0, MAX_LOOKAHEAD_MS);
         p.update_lookahead_delay();
+        p.rebuild_cached_parameters();
         p
     }
 
@@ -361,13 +455,13 @@ impl GatePlugin {
                 (threshold - input_db) * slope
             }
         } else if input_db > threshold + knee / 2.0 {
-            // Above knee zone — no attenuation
+            // Above knee zone -- no attenuation
             0.0
         } else if input_db < threshold - knee / 2.0 {
-            // Below knee zone — full gate
+            // Below knee zone -- full gate
             (threshold - input_db) * slope
         } else {
-            // Within knee zone — quadratic transition (ported from expander)
+            // Within knee zone -- quadratic transition (ported from expander)
             let below = threshold + knee / 2.0 - input_db;
             let kf = below / knee;
             kf * kf * (knee / 2.0) * slope
@@ -384,10 +478,10 @@ impl GatePlugin {
         }
         let close_threshold = threshold - self.hysteresis_db;
         if self.gate_open[ch] {
-            // Gate is open — only close if below close threshold
+            // Gate is open -- only close if below close threshold
             input_db >= close_threshold
         } else {
-            // Gate is closed — only open if above open threshold
+            // Gate is closed -- only open if above open threshold
             input_db >= threshold
         }
     }
@@ -395,35 +489,66 @@ impl GatePlugin {
     fn update_coefficients(&mut self) {
         self.attack_coeff = (-1.0 / (self.attack_ms * 0.001 * self.sample_rate as f32)).exp();
         self.release_coeff = (-1.0 / (self.release_ms * 0.001 * self.sample_rate as f32)).exp();
+    }
+
+    /// Rebuild the Butterworth HPF biquad chain from current freq/order/sample_rate.
+    fn rebuild_sidechain_hpf(&mut self) {
         let fc = self.sidechain_hpf_hz.max(0.0);
         if fc > 0.0 && self.sample_rate > 0 {
-            let dt = 1.0 / self.sample_rate as f32;
-            let rc = 1.0 / (2.0 * PI * fc);
-            self.sidechain_hpf_alpha = rc / (rc + dt);
+            let order = match self.sidechain_hpf_order_index {
+                1 => 4,
+                _ => 2,
+            };
+            let peq = peq_butterworth_highpass(order, fc as f64, self.sample_rate as f64);
+            // One set of biquad sections per channel (each needs independent state)
+            let sections: Vec<Biquad> = peq.into_iter().map(|(_, bq)| bq).collect();
+            self.sidechain_hpf_biquads = (0..self.channels)
+                .map(|_| sections.clone())
+                .collect();
         } else {
-            self.sidechain_hpf_alpha = 0.0;
+            self.sidechain_hpf_biquads.clear();
+        }
+    }
+
+    /// Detect level for one sample on a channel, using either peak or RMS mode.
+    #[inline]
+    fn detect_level(&mut self, channel: usize, filtered: f32) -> f32 {
+        if self.detection_mode_index == 0 {
+            // Peak mode: use abs() directly
+            filtered.abs()
+        } else {
+            // RMS mode: use LevelDetector
+            self.level_detectors[channel].process_linear(filtered)
         }
     }
 
     #[inline]
-    fn apply_sidechain_filter(&mut self, ch: usize, sample: f32) -> f32 {
-        if self.sidechain_hpf_alpha <= 0.0 {
+    fn apply_sidechain_filter(&mut self, channel: usize, sample: f32) -> f32 {
+        if channel >= self.sidechain_hpf_biquads.len() {
             return sample;
         }
-        let y = self.sidechain_hpf_alpha
-            * (self.sidechain_hpf_prev_output[ch] + sample - self.sidechain_hpf_prev_input[ch]);
-        self.sidechain_hpf_prev_input[ch] = sample;
-        self.sidechain_hpf_prev_output[ch] = y;
-        y
+        let biquads: &mut [Biquad] = &mut self.sidechain_hpf_biquads[channel];
+        let mut x = sample as f64;
+        for bq in biquads.iter_mut() {
+            x = bq.process(x);
+        }
+        x as f32
     }
 }
 
 impl InPlacePlugin for GatePlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Gate", "1.1.0", "SotF")
+        PluginInfo::new("Gate", "1.2.0", "SotF")
     }
     fn channels(&self) -> usize {
         self.channels
+    }
+    fn input_channels(&self) -> usize {
+        if self.sidechain_external {
+            self.channels * 2
+        } else {
+            self.channels
+        }
     }
     fn parameters(&self) -> Vec<Parameter> {
         self.cached_parameters.clone()
@@ -487,8 +612,45 @@ impl InPlacePlugin for GatePlugin {
                 .unwrap_or(pk(GT, "sidechain_hpf_hz").default_f64() as f32);
             if v.is_finite() {
                 self.sidechain_hpf_hz = v.max(0.0);
-                self.update_coefficients();
+                self.rebuild_sidechain_hpf();
             }
+        } else if id == self.param_sidechain_hpf_order {
+            let new_index = if let Some(s) = value.as_string() {
+                match s {
+                    "4th" => 1,
+                    _ => 0,
+                }
+            } else if let Some(v) = value.as_float() {
+                (v as usize).min(1)
+            } else {
+                0
+            };
+            self.sidechain_hpf_order_index = new_index;
+            self.rebuild_sidechain_hpf();
+        } else if id == self.param_detection_mode {
+            let new_index = if let Some(s) = value.as_string() {
+                match s {
+                    "rms" | "RMS" => 1,
+                    _ => 0,
+                }
+            } else if let Some(v) = value.as_float() {
+                (v as usize).min(1)
+            } else {
+                0
+            };
+            self.detection_mode_index = new_index;
+            let mode = if new_index == 1 {
+                DetectionMode::Rms { window_ms: 10.0 }
+            } else {
+                DetectionMode::Peak
+            };
+            for det in &mut self.level_detectors {
+                det.set_mode(mode);
+            }
+        } else if id == self.param_sidechain_external {
+            self.sidechain_external = value
+                .as_bool()
+                .unwrap_or(pk(GT, "sidechain_external").default_bool());
         } else if id == self.param_range_db {
             if let Some(v) = value.as_float()
                 && v.is_finite() {
@@ -531,6 +693,12 @@ impl InPlacePlugin for GatePlugin {
             Some(ParameterValue::Bool(self.link_channels))
         } else if id == &self.param_sidechain_hpf_hz {
             Some(ParameterValue::Float(self.sidechain_hpf_hz))
+        } else if id == &self.param_sidechain_hpf_order {
+            Some(ParameterValue::String(self.sidechain_hpf_order_string()))
+        } else if id == &self.param_detection_mode {
+            Some(ParameterValue::String(self.detection_mode_string()))
+        } else if id == &self.param_sidechain_external {
+            Some(ParameterValue::Bool(self.sidechain_external))
         } else if id == &self.param_range_db {
             Some(ParameterValue::Float(self.range_db))
         } else if id == &self.param_hysteresis_db {
@@ -546,8 +714,20 @@ impl InPlacePlugin for GatePlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.update_coefficients();
+        self.rebuild_sidechain_hpf();
         self.threshold_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
+
+        // Reinitialize level detectors with new sample rate
+        let mode = if self.detection_mode_index == 1 {
+            DetectionMode::Rms { window_ms: 10.0 }
+        } else {
+            DetectionMode::Peak
+        };
+        self.level_detectors = (0..self.channels)
+            .map(|_| LevelDetector::new(mode, sample_rate))
+            .collect();
+
         let max_samples =
             (MAX_LOOKAHEAD_MS * 0.001 * sample_rate as f32).round() as usize;
         for buf in &mut self.lookahead_buffers {
@@ -560,8 +740,11 @@ impl InPlacePlugin for GatePlugin {
         self.envelope.fill(0.0);
         self.hold_counter.fill(0);
         self.gate_open.fill(false);
-        self.sidechain_hpf_prev_input.fill(0.0);
-        self.sidechain_hpf_prev_output.fill(0.0);
+        // Rebuild biquads to reset their internal state
+        self.rebuild_sidechain_hpf();
+        for det in &mut self.level_detectors {
+            det.reset();
+        }
         for buf in &mut self.lookahead_buffers {
             buf.reset();
         }
@@ -575,6 +758,14 @@ impl InPlacePlugin for GatePlugin {
         let num_frames = context.num_frames;
         let hs = (self.hold_ms * 0.001 * self.sample_rate as f32) as usize;
         let use_lookahead = self.lookahead_ms > 0.0;
+        let use_ext_sc = self.sidechain_external;
+        // When external sidechain is active, the buffer stride is channels*2
+        // (audio channels followed by sidechain channels per frame).
+        let stride = if use_ext_sc {
+            self.channels * 2
+        } else {
+            self.channels
+        };
 
         // Block-based smoothing: advance once per block
         let thresh = self.threshold_smoother.next_n(num_frames);
@@ -582,17 +773,20 @@ impl InPlacePlugin for GatePlugin {
 
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
+                let frame_start = frame * stride;
+                let sc_offset = if use_ext_sc { self.channels } else { 0 };
+
                 let mut det = 0.0f32;
                 for ch in 0..self.channels {
-                    let idx = frame * self.channels + ch;
-                    let filtered = self.apply_sidechain_filter(ch, buffer[idx]);
-                    let level = filtered.abs();
+                    let sc_idx = frame_start + sc_offset + ch;
+                    let filtered = self.apply_sidechain_filter(ch, buffer[sc_idx]);
+                    let level = self.detect_level(ch, filtered);
                     det = det.max(level);
                     // Update monitoring
-                    self.monitoring_levels[ch] = 20.0 * fast_log10(level.max(1e-10));
+                    self.monitoring_levels[ch] = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
                 }
 
-                let idb = 20.0 * fast_log10(det.max(1e-10));
+                let idb = DB_CONVERSION_FACTOR * fast_log10(det.max(EPSILON));
                 let atten_target = self.calculate_gate_attenuation(idb, thresh);
 
                 // Detection with hysteresis (channel 0 is master for linked)
@@ -614,10 +808,10 @@ impl InPlacePlugin for GatePlugin {
                     self.release_coeff
                 };
                 self.envelope[0] = target + coeff * (self.envelope[0] - target);
-                let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[0] / 20.0);
+                let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[0] / DB_CONVERSION_FACTOR);
 
                 for ch in 0..self.channels {
-                    let idx = frame * self.channels + ch;
+                    let idx = frame_start + ch;
                     if use_lookahead {
                         let delayed = self.lookahead_buffers[ch].push(buffer[idx]);
                         buffer[idx] = delayed * gain;
@@ -628,11 +822,15 @@ impl InPlacePlugin for GatePlugin {
             }
         } else {
             for frame in 0..num_frames {
+                let frame_start = frame * stride;
+                let sc_offset = if use_ext_sc { self.channels } else { 0 };
+
                 for ch in 0..self.channels {
-                    let idx = frame * self.channels + ch;
-                    let filtered = self.apply_sidechain_filter(ch, buffer[idx]);
-                    let level_abs = filtered.abs();
-                    self.monitoring_levels[ch] = 20.0 * fast_log10(level_abs.max(1e-10));
+                    let idx = frame_start + ch;
+                    let sc_idx = frame_start + sc_offset + ch;
+                    let filtered = self.apply_sidechain_filter(ch, buffer[sc_idx]);
+                    let level_abs = self.detect_level(ch, filtered);
+                    self.monitoring_levels[ch] = DB_CONVERSION_FACTOR * fast_log10(level_abs.max(EPSILON));
                     let idb = self.monitoring_levels[ch];
                     let atten_target = self.calculate_gate_attenuation(idb, thresh);
 
@@ -654,7 +852,7 @@ impl InPlacePlugin for GatePlugin {
                         self.release_coeff
                     };
                     self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
-                    let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[ch] / 20.0);
+                    let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[ch] / DB_CONVERSION_FACTOR);
                     if use_lookahead {
                         let delayed = self.lookahead_buffers[ch].push(buffer[idx]);
                         buffer[idx] = delayed * gain;
@@ -736,6 +934,9 @@ mod tests {
                 mix: 1.0,
                 link_channels: false,
                 sidechain_hpf_hz: 200.0,
+                sidechain_hpf_order: "2nd".to_string(),
+                detection_mode: "peak".to_string(),
+                sidechain_external: false,
                 range_db: 80.0,
                 hysteresis_db: 0.0,
                 knee_db: 0.0,
@@ -775,6 +976,9 @@ mod tests {
                 mix: 1.0,
                 link_channels: false,
                 sidechain_hpf_hz: 200.0,
+                sidechain_hpf_order: "2nd".to_string(),
+                detection_mode: "peak".to_string(),
+                sidechain_external: false,
                 range_db: 80.0,
                 hysteresis_db: 0.0,
                 knee_db: 0.0,
@@ -803,13 +1007,13 @@ mod tests {
         );
     }
 
-    /// Hysteresis test: a signal that oscillates ±2 dB around the threshold should
+    /// Hysteresis test: a signal that oscillates +/-2 dB around the threshold should
     /// not cause the gate to "chatter" (rapidly open and close).
     ///
     /// Setup:
     ///   threshold = -20 dB, hysteresis = 4 dB
-    ///   → open threshold  = -20 dB
-    ///   → close threshold = -24 dB
+    ///   -> open threshold  = -20 dB
+    ///   -> close threshold = -24 dB
     ///
     /// The test signal alternates every 100 samples between -18 dBFS and -22 dBFS.
     /// Both levels are between -24 dB and -20 dB when the gate is open, so once
@@ -834,6 +1038,9 @@ mod tests {
                 mix: 1.0,
                 link_channels: false,
                 sidechain_hpf_hz: 0.0,
+                sidechain_hpf_order: "2nd".to_string(),
+                detection_mode: "peak".to_string(),
+                sidechain_external: false,
                 range_db: 80.0,
                 knee_db: 0.0,
                 lookahead_ms: 0.0,
@@ -887,10 +1094,10 @@ mod tests {
 
         // With hysteresis the gate should open once and stay open: 0 or at most 1
         // transition (the initial opening) throughout the steady-state region.
-        // Without hysteresis we would expect ~2 * (num_frames / 100) ≈ 190 transitions.
+        // Without hysteresis we would expect ~2 * (num_frames / 100) ~ 190 transitions.
         assert!(
             transitions <= 2,
-            "Gate with hysteresis=4dB should not chatter on a ±2dB oscillating signal, \
+            "Gate with hysteresis=4dB should not chatter on a +/-2dB oscillating signal, \
              but observed {transitions} open/closed transitions in steady-state"
         );
     }

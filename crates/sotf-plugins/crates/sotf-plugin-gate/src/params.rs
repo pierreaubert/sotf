@@ -15,6 +15,13 @@ use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
 // ============================================================================
+// Detection Mode / HPF Order Constants
+// ============================================================================
+
+pub const DETECTION_MODES: &[&str] = &["Peak", "RMS"];
+pub const HPF_ORDERS: &[&str] = &["2nd", "4th"];
+
+// ============================================================================
 // Parameter Specifications
 // ============================================================================
 
@@ -66,6 +73,34 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .setup()
     .doc("High-pass on detector input"),
+    ParamSpec::choice(
+        "HPF Order",
+        "sidechain_hpf_order",
+        0,
+        HPF_ORDERS,
+        "Sidechain",
+    )
+    .setup()
+    .doc("Sidechain HPF filter order"),
+    ParamSpec::choice(
+        "Detection",
+        "detection_mode",
+        0,
+        DETECTION_MODES,
+        "Sidechain",
+    )
+    .setup()
+    .doc("Level detection mode"),
+    ParamSpec::bool_labeled(
+        "Ext Sidechain",
+        "sidechain_external",
+        false,
+        "On",
+        "Off",
+        "Sidechain",
+    )
+    .setup()
+    .doc("Use external sidechain input"),
     ParamSpec::float("Range", "range_db", 80.0, 0.0, 120.0, 1.0, "dB", "Dynamics")
         .doc("Max attenuation when gate closed"),
     ParamSpec::float(
@@ -99,11 +134,14 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 /// Gate: idx 0=threshold, 1=ratio, 2=attack, 3=hold, 4=release, 5=mix, 6=link, 7=sidechain_hpf,
-/// 8=range_db, 9=hysteresis_db, 10=knee_db, 11=lookahead_ms
+/// 8=sidechain_hpf_order, 9=detection_mode, 10=sidechain_external,
+/// 11=range_db, 12=hysteresis_db, 13=knee_db, 14=lookahead_ms
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::toggle(6), // link_channels
-        ControlSpec::knob(7),   // sidechain_hpf_hz
+        ControlSpec::toggle(6),  // link_channels
+        ControlSpec::knob(7),    // sidechain_hpf_hz
+        ControlSpec::selector(8), // sidechain_hpf_order
+        ControlSpec::selector(9), // detection_mode
     ],
     main: &[
         ControlGroup {
@@ -164,6 +202,12 @@ pub struct Params {
     pub link_channels: bool,
     #[serde(default = "d_sidechain_hpf_hz")]
     pub sidechain_hpf_hz: f64,
+    #[serde(default = "d_sidechain_hpf_order")]
+    pub sidechain_hpf_order: String,
+    #[serde(default = "d_detection_mode")]
+    pub detection_mode: String,
+    #[serde(default = "d_sidechain_external")]
+    pub sidechain_external: bool,
     #[serde(default = "d_range_db")]
     pub range_db: f64,
     #[serde(default = "d_hysteresis_db")]
@@ -198,6 +242,15 @@ fn d_link_channels() -> bool {
 fn d_sidechain_hpf_hz() -> f64 {
     pk(PARAMS, "sidechain_hpf_hz").default_f64()
 }
+fn d_sidechain_hpf_order() -> String {
+    HPF_ORDERS[0].to_string()
+}
+fn d_detection_mode() -> String {
+    DETECTION_MODES[0].to_string()
+}
+fn d_sidechain_external() -> bool {
+    pk(PARAMS, "sidechain_external").default_bool()
+}
 fn d_range_db() -> f64 {
     pk(PARAMS, "range_db").default_f64()
 }
@@ -222,6 +275,9 @@ impl Default for Params {
             mix: d_mix(),
             link_channels: d_link_channels(),
             sidechain_hpf_hz: d_sidechain_hpf_hz(),
+            sidechain_hpf_order: d_sidechain_hpf_order(),
+            detection_mode: d_detection_mode(),
+            sidechain_external: d_sidechain_external(),
             range_db: d_range_db(),
             hysteresis_db: d_hysteresis_db(),
             knee_db: d_knee_db(),
@@ -250,10 +306,23 @@ impl PluginParamDef for Params {
             5 => Some(self.mix),
             6 => Some(if self.link_channels { 1.0 } else { 0.0 }),
             7 => Some(self.sidechain_hpf_hz),
-            8 => Some(self.range_db),
-            9 => Some(self.hysteresis_db),
-            10 => Some(self.knee_db),
-            11 => Some(self.lookahead_ms),
+            8 => Some(
+                HPF_ORDERS
+                    .iter()
+                    .position(|&m| m.eq_ignore_ascii_case(&self.sidechain_hpf_order))
+                    .unwrap_or(0) as f64,
+            ),
+            9 => Some(
+                DETECTION_MODES
+                    .iter()
+                    .position(|&m| m.eq_ignore_ascii_case(&self.detection_mode))
+                    .unwrap_or(0) as f64,
+            ),
+            10 => Some(if self.sidechain_external { 1.0 } else { 0.0 }),
+            11 => Some(self.range_db),
+            12 => Some(self.hysteresis_db),
+            13 => Some(self.knee_db),
+            14 => Some(self.lookahead_ms),
             _ => None,
         }
     }
@@ -268,10 +337,23 @@ impl PluginParamDef for Params {
             5 => self.mix = value,
             6 => self.link_channels = value > 0.5,
             7 => self.sidechain_hpf_hz = value,
-            8 => self.range_db = value,
-            9 => self.hysteresis_db = value,
-            10 => self.knee_db = value,
-            11 => self.lookahead_ms = value,
+            8 => {
+                let idx = value as usize;
+                if let Some(&label) = HPF_ORDERS.get(idx) {
+                    self.sidechain_hpf_order = label.to_string();
+                }
+            }
+            9 => {
+                let idx = value as usize;
+                if let Some(&label) = DETECTION_MODES.get(idx) {
+                    self.detection_mode = label.to_string();
+                }
+            }
+            10 => self.sidechain_external = value > 0.5,
+            11 => self.range_db = value,
+            12 => self.hysteresis_db = value,
+            13 => self.knee_db = value,
+            14 => self.lookahead_ms = value,
             _ => {}
         }
     }
@@ -314,6 +396,9 @@ mod tests {
         assert_eq!(original.mix, restored.mix);
         assert_eq!(original.link_channels, restored.link_channels);
         assert_eq!(original.sidechain_hpf_hz, restored.sidechain_hpf_hz);
+        assert_eq!(original.sidechain_hpf_order, restored.sidechain_hpf_order);
+        assert_eq!(original.detection_mode, restored.detection_mode);
+        assert_eq!(original.sidechain_external, restored.sidechain_external);
         assert_eq!(original.range_db, restored.range_db);
         assert_eq!(original.hysteresis_db, restored.hysteresis_db);
         assert_eq!(original.knee_db, restored.knee_db);
@@ -333,6 +418,12 @@ mod tests {
         assert_eq!(
             p.sidechain_hpf_hz,
             pk(PARAMS, "sidechain_hpf_hz").default_f64()
+        );
+        assert_eq!(p.sidechain_hpf_order, HPF_ORDERS[0]);
+        assert_eq!(p.detection_mode, DETECTION_MODES[0]);
+        assert_eq!(
+            p.sidechain_external,
+            pk(PARAMS, "sidechain_external").default_bool()
         );
         assert_eq!(p.range_db, pk(PARAMS, "range_db").default_f64());
         assert_eq!(
