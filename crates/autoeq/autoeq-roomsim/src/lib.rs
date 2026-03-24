@@ -35,6 +35,10 @@ mod adaptive;
 mod loaders;
 mod worker_detect;
 
+// Computation modules
+pub mod room_modes;
+pub mod acoustics;
+
 // Re-export BEM types for external use
 pub use bem_solver::{BemAssemblyMethod, BemConfig, BemResult, BemSolverMethod, FmmConfig};
 pub use scattering_objects::{BoxObject, CylinderObject, ScatteringObjectConfig, SphereObject};
@@ -1429,218 +1433,58 @@ pub struct RoomMode {
 /// - Oblique modes: Standing waves between all three pairs of walls (n,m,p)
 ///
 /// Formula: f = (c/2) * sqrt((n/Lx)² + (m/Ly)² + (p/Lz)²)
+/// Calculate room modes (implementation in room_modes module)
 pub fn calculate_room_modes(
-    length_x: f64, // Room width (x dimension)
-    length_y: f64, // Room depth (y dimension)
-    length_z: f64, // Room height (z dimension)
+    length_x: f64,
+    length_y: f64,
+    length_z: f64,
     speed_of_sound: f64,
     max_frequency: f64,
     max_order: u32,
 ) -> Vec<RoomMode> {
-    let mut modes = Vec::new();
-    let c = speed_of_sound;
-
-    for n in 0..=max_order {
-        for m in 0..=max_order {
-            for p in 0..=max_order {
-                // Skip the (0,0,0) mode
-                if n == 0 && m == 0 && p == 0 {
-                    continue;
-                }
-
-                // Calculate mode frequency
-                let nx = n as f64 / length_x;
-                let my = m as f64 / length_y;
-                let pz = p as f64 / length_z;
-                let freq = (c / 2.0) * (nx * nx + my * my + pz * pz).sqrt();
-
-                if freq > max_frequency {
-                    continue;
-                }
-
-                // Determine mode type
-                let zero_count = [n, m, p].iter().filter(|&&x| x == 0).count();
-                let mode_type = match zero_count {
-                    2 => "axial",
-                    1 => "tangential",
-                    0 => "oblique",
-                    _ => continue, // Shouldn't happen
-                };
-
-                // Generate description
-                let description = match (n, m, p) {
-                    (n, 0, 0) if n > 0 => format!("{},0,0 - Length mode (X)", n),
-                    (0, m, 0) if m > 0 => format!("0,{},0 - Width mode (Y)", m),
-                    (0, 0, p) if p > 0 => format!("0,0,{} - Height mode (Z)", p),
-                    (n, m, 0) => format!("{},{},0 - Floor tangential", n, m),
-                    (n, 0, p) => format!("{},0,{} - Side tangential", n, p),
-                    (0, m, p) => format!("0,{},{} - Front tangential", m, p),
-                    (n, m, p) => format!("{},{},{} - Oblique", n, m, p),
-                };
-
-                modes.push(RoomMode {
-                    frequency: freq,
-                    indices: [n, m, p],
-                    mode_type: mode_type.to_string(),
-                    description,
-                });
-            }
-        }
-    }
-
-    // Sort by frequency
-    modes.sort_by(|a, b| a.frequency.partial_cmp(&b.frequency).unwrap());
-
-    modes
+    room_modes::calculate_room_modes(
+        length_x,
+        length_y,
+        length_z,
+        speed_of_sound,
+        max_frequency,
+        max_order,
+    )
 }
 
-/// Calculate modal pressure at a point from room mode superposition
-///
-/// The pressure field is represented as a sum of standing wave modes:
-/// p(x,y,z,f) = Σ A_nmp * cos(n*π*x/Lx) * cos(m*π*y/Ly) * cos(p*π*z/Lz) * H(f, f_nmp)
-///
-/// Where:
-/// - A_nmp is the mode amplitude (depends on source position)
-/// - H(f, f_nmp) is the modal transfer function (resonant response)
-/// - f_nmp is the mode frequency
-///
-/// The transfer function H(f, f_nmp) = 1 / (1 - (f/f_nmp)² + j*f/(f_nmp*Q))
-/// where Q is the modal damping factor.
-///
-/// Reference: Kuttruff, "Room Acoustics", Chapter 3 - Modal expansion of room Green's function
-///
-/// G_modal = (c²/V) Σ [ε * Ψ(rs) * Ψ(r) / (ω² - ωₙ² + j*δₙ*ω)]
-///
-/// This has units of 1/m, matching the free-field Green's function G = e^(ikr)/(4πr).
+/// Calculate modal pressure at a point (implementation in room_modes module)
 #[allow(clippy::too_many_arguments)]
 pub fn calculate_modal_pressure(
     source: &Point3D,
     listener: &Point3D,
     frequency: f64,
-    room_width: f64,  // Lx
-    room_depth: f64,  // Ly
-    room_height: f64, // Lz
+    room_width: f64,
+    room_depth: f64,
+    room_height: f64,
     speed_of_sound: f64,
     max_mode_order: u32,
-    modal_damping: f64, // Q factor
+    modal_damping: f64,
 ) -> Complex64 {
-    let volume = room_width * room_depth * room_height;
-
-    // Direct source-listener distance for phase
-    let r = source.distance_to(listener).max(0.1);
-    let omega = 2.0 * PI * frequency;
-    let omega_sq = omega * omega;
-    let k = omega / speed_of_sound;
-    let c_sq = speed_of_sound * speed_of_sound;
-
-    // Modal Green's function prefactor: c²/V (units: m²/s² / m³ = m⁻¹ when divided by ω²)
-    let prefactor = c_sq / volume;
-
-    let mut modal_sum = Complex64::new(0.0, 0.0);
-
-    for n in 0..=max_mode_order {
-        for m in 0..=max_mode_order {
-            for p in 0..=max_mode_order {
-                // Skip DC mode (0,0,0)
-                if n == 0 && m == 0 && p == 0 {
-                    continue;
-                }
-
-                // Calculate mode angular frequency
-                // ωₙ = c * π * sqrt((n/Lx)² + (m/Ly)² + (p/Lz)²)
-                let nx = n as f64 / room_width;
-                let my = m as f64 / room_depth;
-                let pz = p as f64 / room_height;
-                let omega_n = speed_of_sound * PI * (nx * nx + my * my + pz * pz).sqrt();
-                let omega_n_sq = omega_n * omega_n;
-
-                // Mode frequency for filtering
-                let mode_freq = omega_n / (2.0 * PI);
-
-                // Skip modes far from the frequency of interest (2 octaves)
-                if mode_freq > frequency * 4.0 || mode_freq < frequency / 4.0 {
-                    continue;
-                }
-
-                // Calculate mode shape at source position
-                // Ψ(r) = cos(nπx/Lx) * cos(mπy/Ly) * cos(pπz/Lz)
-                let source_mode = (n as f64 * PI * source.x / room_width).cos()
-                    * (m as f64 * PI * source.y / room_depth).cos()
-                    * (p as f64 * PI * source.z / room_height).cos();
-
-                // Calculate mode shape at listener position
-                let listener_mode = (n as f64 * PI * listener.x / room_width).cos()
-                    * (m as f64 * PI * listener.y / room_depth).cos()
-                    * (p as f64 * PI * listener.z / room_height).cos();
-
-                // Neumann factor: ε = 1 if index is 0, else 2
-                let epsilon = |i: u32| if i == 0 { 1.0 } else { 2.0 };
-                let mode_norm = epsilon(n) * epsilon(m) * epsilon(p);
-
-                // Modal transfer function (Kuttruff Eq. 3.27):
-                // H(ω) = 1 / (ωₙ² - ω² - j*2*δₙ*ω)
-                // where δₙ = ωₙ/(2*Q) is the damping coefficient
-                // The factor of 2 comes from expressing damping in terms of Q
-                //
-                // Units: 1/(rad/s)² = s²/rad²
-                let delta_n = omega_n / (2.0 * modal_damping);
-                let denominator = Complex64::new(omega_n_sq - omega_sq, -2.0 * delta_n * omega);
-                let transfer_function = Complex64::new(1.0, 0.0) / denominator;
-
-                // Add mode contribution
-                // Ψ(rs) * Ψ(r) is dimensionless (product of cosines)
-                // mode_norm is dimensionless (Neumann factors)
-                let mode_amplitude = mode_norm * source_mode * listener_mode;
-                modal_sum += transfer_function * mode_amplitude;
-            }
-        }
-    }
-
-    // Apply prefactor c²/V
-    // Final units: (m²/s²) / m³ * (s²/rad²) = m⁻¹/rad² = 1/m (treating radians as dimensionless)
-    // This matches the Green's function units
-    modal_sum *= prefactor;
-
-    // Add phase term to match Green's function form e^(ikr)
-    let phase = Complex64::new(0.0, k * r).exp();
-
-    modal_sum * phase
+    room_modes::calculate_modal_pressure(
+        source,
+        listener,
+        frequency,
+        room_width,
+        room_depth,
+        room_height,
+        speed_of_sound,
+        max_mode_order,
+        modal_damping,
+    )
 }
 
-/// Calculate hybrid crossover weight for blending modal and ISM responses
-///
-/// Returns a weight from 0 to 1 where:
-/// - 0 = use only modal analysis
-/// - 1 = use only ISM
-///
-/// The crossover uses a smooth cosine transition centered at Schroeder frequency.
+/// Calculate hybrid crossover weight (implementation in room_modes module)
 pub fn hybrid_crossover_weight(
     frequency: f64,
     schroeder_frequency: f64,
     crossover_width_octaves: f64,
 ) -> f64 {
-    if schroeder_frequency <= 0.0 {
-        return 1.0; // Use ISM if no valid Schroeder frequency
-    }
-
-    // Calculate distance from Schroeder frequency in octaves
-    let octaves_from_schroeder = (frequency / schroeder_frequency).log2();
-
-    // Crossover region: +/- crossover_width_octaves around Schroeder
-    let half_width = crossover_width_octaves / 2.0;
-
-    if octaves_from_schroeder < -half_width {
-        // Well below Schroeder: use modal only
-        0.0
-    } else if octaves_from_schroeder > half_width {
-        // Well above Schroeder: use ISM only
-        1.0
-    } else {
-        // In crossover region: smooth blend using cosine
-        let t = (octaves_from_schroeder + half_width) / crossover_width_octaves;
-        // Cosine interpolation for smooth transition
-        (1.0 - (t * PI).cos()) / 2.0
-    }
+    room_modes::hybrid_crossover_weight(frequency, schroeder_frequency, crossover_width_octaves)
 }
 
 // ============================================================================
@@ -1668,21 +1512,9 @@ pub struct RoomAcoustics {
     pub critical_distance: f64,
 }
 
-/// Calculate RT60 using Sabine's formula
-///
-/// RT60 = 0.161 * V / A
-///
-/// Where:
-/// - V = room volume (m³)
-/// - A = total absorption (sabins, m²) = Σ(αᵢ * Sᵢ)
-///
-/// Valid for rooms with average absorption < 0.2
+/// Calculate RT60 using Sabine's formula (implementation in acoustics module)
 pub fn rt60_sabine(volume: f64, total_absorption: f64) -> f64 {
-    if total_absorption > 0.0 {
-        0.161 * volume / total_absorption
-    } else {
-        f64::INFINITY // No absorption = infinite reverberation
-    }
+    acoustics::rt60_sabine(volume, total_absorption)
 }
 
 /// Calculate RT60 using Eyring's formula

@@ -153,7 +153,7 @@ pub fn apply_known_eq(curve: &Curve, filters: &[Biquad], _sample_rate: f64) -> C
 
     for filter in filters {
         let response = filter.np_log_result(&curve.freq);
-        spl = spl + &response;
+        spl += &response;
     }
 
     Curve {

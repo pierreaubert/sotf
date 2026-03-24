@@ -664,7 +664,7 @@ mod tests {
         // The optimizer may still produce filters (it always tries at least 1),
         // but the resulting AP group delay should be modest.
         let mut max_ap_gd_ms = 0.0_f64;
-        for &f in freqs.iter().filter(|&&f| f >= 30.0 && f <= 200.0) {
+        for &f in freqs.iter().filter(|&&f| (30.0..=200.0).contains(&f)) {
             let mut total = 0.0;
             for filter in &filters {
                 total += compute_ap_gd_analytic(filter, f);
@@ -724,7 +724,7 @@ mod tests {
         let range_indices: Vec<usize> = freqs
             .iter()
             .enumerate()
-            .filter(|&(_, &f)| f >= 30.0 && f <= 200.0)
+            .filter(|&(_, &f)| (30.0..=200.0).contains(&f))
             .map(|(i, _)| i)
             .collect();
 

@@ -471,7 +471,7 @@ mod tests {
         let depth = correction_depth_mask(&freq, &variance, &config);
         for &d in depth.iter() {
             assert!(d.is_finite(), "depth should be finite");
-            assert!(d >= 0.0 && d <= 1.0, "depth should be in [0, 1], got {}", d);
+            assert!((0.0..=1.0).contains(&d), "depth should be in [0, 1], got {}", d);
         }
     }
 }

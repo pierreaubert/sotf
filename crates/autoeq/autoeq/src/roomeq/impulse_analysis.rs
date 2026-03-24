@@ -468,7 +468,7 @@ mod tests {
 
         assert_eq!(result.schroeder_freq, 200.0);
         assert!(!result.correction_weights.iter().any(|w| w.is_nan()));
-        assert!(result.correction_weights.iter().all(|&w| w >= 0.0 && w <= 1.0));
+        assert!(result.correction_weights.iter().all(|&w| (0.0..=1.0).contains(&w)));
     }
 
     #[test]
