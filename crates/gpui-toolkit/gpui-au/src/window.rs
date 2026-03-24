@@ -44,15 +44,33 @@ thread_local! {
     pub(crate) static PENDING_VIEW: RefCell<Option<PendingViewInfo>> = const { RefCell::new(None) };
 }
 
-/// Wrapper for a raw pointer to make it Send+Sync for OnceLock.
+/// Wrapper for a raw pointer to make it Send+Sync for Mutex storage.
 /// SAFETY: The pointer is only accessed from the main thread.
-pub(crate) struct AuWindowPtr(pub *const AuWindow);
+struct AuWindowPtr(*const AuWindow);
 unsafe impl Send for AuWindowPtr {}
 unsafe impl Sync for AuWindowPtr {}
 
 /// Global window pointer, used by `gpui_au_request_frame` to find the window.
 /// Single-instance: only one AU GPUI window per process (each AU appex is its own process).
-pub(crate) static AU_WINDOW: std::sync::OnceLock<AuWindowPtr> = std::sync::OnceLock::new();
+/// Uses Mutex instead of OnceLock to support view destruction and re-creation (common in DAWs).
+static AU_WINDOW: std::sync::Mutex<Option<AuWindowPtr>> = std::sync::Mutex::new(None);
+
+/// Get a reference to the current AU window, if any.
+/// Returns None if no window is registered or the pointer is null.
+pub(crate) fn au_window() -> Option<&'static AuWindow> {
+    let guard = AU_WINDOW.lock().ok()?;
+    guard
+        .as_ref()
+        .filter(|p| !p.0.is_null())
+        .map(|p| unsafe { &*p.0 })
+}
+
+/// Unregister the current AU window (called during destroy).
+pub(crate) fn unregister_au_window() {
+    if let Ok(mut guard) = AU_WINDOW.lock() {
+        *guard = None;
+    }
+}
 
 pub(crate) struct AuWindow {
     /// The NSView we render into (owned by the Swift AUViewController)
@@ -81,11 +99,17 @@ impl AuWindow {
     /// The NSView must have been set in the PENDING_VIEW thread-local by
     /// `gpui_au_create` before calling `app.run()` / `open_window()`.
     pub fn new(_handle: AnyWindowHandle, _params: WindowParams) -> anyhow::Result<Self> {
+        use crate::helpers::nslog;
+        nslog("SOTF AuWindow::new: entry\0");
+
         let view_info = PENDING_VIEW.with(|pv| pv.borrow_mut().take());
         let (ns_view, width, height, scale) = match view_info {
-            Some(info) => (info.ns_view, info.width, info.height, info.scale),
+            Some(info) => {
+                nslog("SOTF AuWindow::new: PENDING_VIEW found\0");
+                (info.ns_view, info.width, info.height, info.scale)
+            }
             None => {
-                log::warn!("GPUI AU: No pending view info — creating window without renderer");
+                nslog("SOTF AuWindow::new: No PENDING_VIEW — creating without renderer\0");
                 return Ok(Self {
                     view: std::ptr::null_mut(),
                     bounds: Cell::new(Bounds {
@@ -112,7 +136,7 @@ impl AuWindow {
         };
 
         // Configure the NSView with a CAMetalLayer for wgpu rendering.
-        // wantsLayer=true alone creates a regular CALayer; wgpu needs CAMetalLayer.
+        nslog("SOTF AuWindow::new: setting up CAMetalLayer\0");
         unsafe {
             let _: () = msg_send![ns_view, setWantsLayer: true];
 
@@ -150,6 +174,7 @@ impl AuWindow {
         };
 
         // Initialize wgpu renderer (Metal backend)
+        nslog("SOTF AuWindow::new: initializing wgpu renderer\0");
         let pixel_w = (width * scale) as i32;
         let pixel_h = (height * scale) as i32;
 
@@ -176,19 +201,23 @@ impl AuWindow {
             raw_window_handle: window_handle.as_raw(),
         };
 
+        nslog("SOTF AuWindow::new: creating wgpu surface\0");
         match (|| -> anyhow::Result<WgpuRenderer> {
             let surface = unsafe { metal_instance.create_surface_unsafe(target)? };
+            nslog("SOTF AuWindow::new: surface created, creating WgpuContext\0");
             let context = WgpuContext::new(metal_instance, &surface)?;
+            nslog("SOTF AuWindow::new: WgpuContext created, creating WgpuRenderer\0");
             let mut gpu_context: Option<WgpuContext> = Some(context);
             drop(surface);
             WgpuRenderer::new(&mut gpu_context, &au_window, config)
         })() {
             Ok(renderer) => {
-                log::info!("GPUI AU: wgpu renderer created (Metal) for {}x{} @{:.1}x", width, height, scale);
+                nslog("SOTF AuWindow::new: wgpu renderer created OK\0");
                 *au_window.renderer.lock() = Some(renderer);
             }
             Err(e) => {
-                log::error!("GPUI AU: Failed to create wgpu renderer: {e:#}");
+                let msg = format!("SOTF AuWindow::new: wgpu renderer FAILED: {e:#}\0");
+                nslog(&msg);
             }
         }
 
@@ -198,9 +227,13 @@ impl AuWindow {
     /// Register this window in the global AU_WINDOW slot.
     /// Called from AuPlatform::open_window after Boxing.
     pub(crate) fn register_global(boxed: &AuWindow) {
+        use crate::helpers::nslog;
         let ptr: *const AuWindow = boxed;
-        let _ = AU_WINDOW.set(AuWindowPtr(ptr));
-        log::info!("GPUI AU: Window registered at {:p}", ptr);
+        if let Ok(mut guard) = AU_WINDOW.lock() {
+            *guard = Some(AuWindowPtr(ptr));
+        }
+        let msg = format!("SOTF AuWindow: registered at {:p}\0", ptr);
+        nslog(&msg);
     }
 
     /// Request a frame render (called from Swift via FFI)

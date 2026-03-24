@@ -46,6 +46,7 @@ fn find_device(
 }
 
 #[test]
+#[ignore = "requires BlackHole loopback audio routing configured on the host"]
 fn test_eq_sweep_loopback_verification() {
     // 1. Setup Devices
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];

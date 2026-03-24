@@ -1,28 +1,17 @@
 //! C-compatible FFI functions for embedding GPUI in macOS Audio Unit ViewControllers.
 
-use crate::window::{AuWindowPtr, PendingViewInfo, PENDING_VIEW, AU_WINDOW};
-use gpui::{point, px, MouseButton, PlatformInput, RequestFrameOptions};
+use crate::helpers::nslog;
+use crate::window::{au_window, PendingViewInfo, PENDING_VIEW};
+use gpui::{
+    div, point, px, rgb, App, AppCell, AppContext, Context, ElementId,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement, PlatformInput, Render,
+    RequestFrameOptions, StatefulInteractiveElement as _, Styled, Window, WindowOptions,
+};
 use objc::runtime::Object;
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::rc::Rc;
 use std::sync::Once;
-
-/// Helper to log via NSLog (always visible in Console.app, unlike Rust's log crate).
-/// The message must be a null-terminated string.
-fn nslog(msg: &str) {
-    use objc::{class, msg_send, sel, sel_impl};
-    unsafe {
-        let ns_string: *mut Object =
-            msg_send![class!(NSString), stringWithUTF8String: msg.as_ptr()];
-        #[link(name = "Foundation", kind = "framework")]
-        unsafe extern "C" {
-            fn NSLog(format: *mut Object, ...);
-        }
-        let fmt: *mut Object =
-            msg_send![class!(NSString), stringWithUTF8String: c"%@".as_ptr()];
-        NSLog(fmt, ns_string);
-    }
-}
 
 static INIT_LOGGER: Once = Once::new();
 
@@ -34,9 +23,60 @@ fn init_logger() {
     });
 }
 
+// ── Root View ────────────────────────────────────────────────────────────────
+
+struct AuRootView {
+    plugin_type: String,
+    click_count: usize,
+}
+
+impl Render for AuRootView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let click_count = self.click_count;
+        let plugin_type = self.plugin_type.clone();
+
+        div()
+            .size_full()
+            .bg(rgb(0x1a1a2e))
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .text_color(rgb(0xffffff))
+                    .text_xl()
+                    .child(format!("SOTF: {plugin_type}")),
+            )
+            .child(
+                div()
+                    .id(ElementId::Name("click-target".into()))
+                    .mt(px(16.0))
+                    .px(px(16.0))
+                    .py(px(8.0))
+                    .bg(rgb(0x3366ff))
+                    .text_color(rgb(0xffffff))
+                    .child(format!("Clicks: {click_count}"))
+                    .on_click(cx.listener(|this, _event, _window, _cx| {
+                        this.click_count += 1;
+                    })),
+            )
+    }
+}
+
+// ── Context ──────────────────────────────────────────────────────────────────
+
 /// Opaque context handle passed to/from Swift.
 pub struct AuContext {
     _plugin_type: String,
+    /// Prevents GPUI's AppCell from being deallocated after Application::run() returns.
+    ///
+    /// Application::run(self, callback) consumes self and the callback's captured Rc<AppCell>
+    /// is dropped after the callback completes. Since AuPlatform::run() calls the callback
+    /// immediately (unlike macOS/iOS platforms which block or defer), all Rc references would
+    /// reach zero and AppCell would be deallocated. This clone keeps the refcount positive
+    /// for the lifetime of the AU plugin view.
+    _app_cell: Rc<AppCell>,
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -78,6 +118,7 @@ pub extern "C" fn gpui_au_create(
     nslog(&msg);
 
     // Store the NSView info in a thread-local so AuWindow::new() can read it
+    // during the open_window() call inside app.run().
     PENDING_VIEW.with(|pv| {
         *pv.borrow_mut() = Some(PendingViewInfo {
             ns_view,
@@ -87,12 +128,48 @@ pub extern "C" fn gpui_au_create(
         });
     });
 
-    // TODO: Initialize GPUI Application with Metal rendering here.
-    // For now, just verify the FFI pipeline works end-to-end.
-    nslog("SOTF gpui_au_create: FFI working, GPUI init deferred\0");
+    nslog("SOTF gpui_au_create: creating GPUI Application\0");
+    let platform = Rc::new(crate::AuPlatform::new());
+    let app = gpui::Application::with_platform(platform);
+
+    // SAFETY: Application is `pub struct Application(Rc<AppCell>)` — a single-field newtype.
+    // AppCell is pub (doc(hidden)). We clone the Rc to keep AppCell alive after run() consumes
+    // Application. Without this, AppCell is deallocated when run() returns because AuPlatform::run()
+    // calls the callback immediately (unlike macOS which blocks on [NSApp run]).
+    let app_cell: Rc<AppCell> = unsafe {
+        let rc: &Rc<AppCell> = std::mem::transmute(&app);
+        rc.clone()
+    };
+    nslog("SOTF gpui_au_create: Rc<AppCell> cloned for lifetime management\0");
+
+    let pt = plugin_type_str.clone();
+    app.run(move |cx: &mut App| {
+        nslog("SOTF gpui_au_create: inside app.run callback\0");
+        match cx.open_window(
+            WindowOptions {
+                window_bounds: None,
+                ..Default::default()
+            },
+            |_window, cx| {
+                cx.new(|_| AuRootView {
+                    plugin_type: pt,
+                    click_count: 0,
+                })
+            },
+        ) {
+            Ok(_handle) => nslog("SOTF gpui_au_create: window opened OK\0"),
+            Err(e) => {
+                let msg = format!("SOTF gpui_au_create: open_window FAILED: {e:#}\0");
+                nslog(&msg);
+            }
+        }
+    });
+
+    nslog("SOTF gpui_au_create: app.run() returned, context ready\0");
 
     let context = Box::new(AuContext {
         _plugin_type: plugin_type_str,
+        _app_cell: app_cell,
     });
     Box::into_raw(context)
 }
@@ -101,10 +178,12 @@ pub extern "C" fn gpui_au_create(
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_au_destroy(context: *mut AuContext) {
     if !context.is_null() {
-        log::info!("gpui_au_destroy");
+        nslog("SOTF gpui_au_destroy: cleaning up\0");
+        crate::window::unregister_au_window();
         unsafe {
             drop(Box::from_raw(context));
         }
+        nslog("SOTF gpui_au_destroy: done\0");
     }
 }
 
@@ -117,8 +196,7 @@ pub extern "C" fn gpui_au_request_frame(context: *mut AuContext) {
     if context.is_null() {
         return;
     }
-    if let Some(AuWindowPtr(window_ptr)) = AU_WINDOW.get().filter(|p| !p.0.is_null()) {
-        let window = unsafe { &**window_ptr };
+    if let Some(window) = au_window() {
         let cb = window.request_frame_callback.borrow_mut().take();
         if let Some(mut cb) = cb {
             cb(RequestFrameOptions::default());
@@ -133,8 +211,7 @@ pub extern "C" fn gpui_au_resize(context: *mut AuContext, width: f32, height: f3
     if context.is_null() {
         return;
     }
-    if let Some(AuWindowPtr(window_ptr)) = AU_WINDOW.get().filter(|p| !p.0.is_null()) {
-        let window = unsafe { &**window_ptr };
+    if let Some(window) = au_window() {
         window.handle_resize(width, height, scale);
     }
 }
@@ -233,9 +310,7 @@ pub extern "C" fn gpui_au_scroll_wheel(
 }
 
 fn dispatch_to_window(event: PlatformInput) {
-    if let Some(AuWindowPtr(window_ptr)) = AU_WINDOW.get().filter(|p| !p.0.is_null()) {
-        let window = unsafe { &**window_ptr };
+    if let Some(window) = au_window() {
         window.dispatch_input(event);
     }
 }
-

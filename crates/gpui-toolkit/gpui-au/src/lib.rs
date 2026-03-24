@@ -20,6 +20,7 @@ pub use gpui;
 mod dispatcher;
 mod display;
 pub mod ffi;
+mod helpers;
 mod platform;
 mod text_system;
 mod window;

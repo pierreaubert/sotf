@@ -82,10 +82,12 @@ impl Platform for AuPlatform {
     }
 
     fn run(&self, on_finish_launching: Box<dyn 'static + FnOnce()>) {
+        use crate::helpers::nslog;
+        nslog("SOTF AuPlatform::run: calling on_finish_launching immediately\0");
         // AU extensions don't own the application event loop.
         // Call on_finish_launching immediately — the host DAW's run loop is already active.
         on_finish_launching();
-        log::info!("GPUI AU: Platform::run() completed (no event loop — host owns NSApp)");
+        nslog("SOTF AuPlatform::run: on_finish_launching completed\0");
     }
 
     fn quit(&self) {
@@ -118,8 +120,11 @@ impl Platform for AuPlatform {
         handle: AnyWindowHandle,
         options: WindowParams,
     ) -> anyhow::Result<Box<dyn PlatformWindow>> {
+        use crate::helpers::nslog;
+        nslog("SOTF AuPlatform::open_window: entry\0");
         let window = Box::new(AuWindow::new(handle, options)?);
         AuWindow::register_global(&window);
+        nslog("SOTF AuPlatform::open_window: done\0");
         Ok(window)
     }
 

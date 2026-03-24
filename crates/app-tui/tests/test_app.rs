@@ -130,6 +130,7 @@ mod tests {
             create_test_directory_info("/test/dir0/subdir1"),
             create_test_directory_info("/test/dir0/subdir2"),
         ];
+        app.library.directories[0].children_loaded = true;
 
         // Initially collapsed - tree has 2 items
         assert_eq!(app.get_directory_tree_items().len(), 2);
@@ -165,6 +166,7 @@ mod tests {
             create_test_directory_info("/test/dir0/subdir1"),
             create_test_directory_info("/test/dir0/subdir2"),
         ];
+        app.library.directories[0].children_loaded = true;
 
         // Collapsed - should only show root
         let tree_items = app.get_directory_tree_items();
