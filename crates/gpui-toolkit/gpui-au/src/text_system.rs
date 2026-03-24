@@ -625,9 +625,8 @@ fn apply_features_and_fallbacks(
         let mut keys = vec![kCTFontFeatureSettingsAttribute];
         let mut values = vec![feature_array as *const _];
 
-        if let Some(fallbacks) = fallbacks {
-            if !fallbacks.fallback_list().is_empty() {
-                let fallback_array =
+        if let Some(fallbacks) = fallbacks.filter(|f| !f.fallback_list().is_empty()) {
+            let fallback_array =
                     CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
                 for user_fallback in fallbacks.fallback_list() {
                     let name = CFString::from(user_fallback.as_str());
@@ -641,7 +640,7 @@ fn apply_features_and_fallbacks(
                         fn CFLocaleCopyPreferredLanguages() -> *const std::ffi::c_void;
                     }
                     core_foundation::array::CFArray::wrap_under_create_rule(
-                        unsafe { CFLocaleCopyPreferredLanguages() as _ },
+                        CFLocaleCopyPreferredLanguages() as _,
                     )
                 };
                 let default_fallbacks = CTFontCopyDefaultCascadeListForLanguages(
@@ -655,9 +654,8 @@ fn apply_features_and_fallbacks(
                         CFArrayAppendValue(fallback_array, desc.as_concrete_TypeRef() as _);
                     }
                 }
-                keys.push(kCTFontCascadeListAttribute);
-                values.push(fallback_array as *const _);
-            }
+            keys.push(kCTFontCascadeListAttribute);
+            values.push(fallback_array as *const _);
         }
 
         let attrs = CFDictionaryCreate(

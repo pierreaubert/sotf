@@ -10,6 +10,10 @@
 #![cfg(target_os = "macos")]
 // FFI functions necessarily dereference raw pointers from C callers
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
+// objc msg_send! macro generates cfg(cargo-clippy) checks
+#![allow(unexpected_cfgs)]
+// Callback RefCell<Option<Box<dyn FnMut(...)>>> patterns are inherent to platform trait impls
+#![allow(clippy::type_complexity)]
 
 pub use gpui;
 

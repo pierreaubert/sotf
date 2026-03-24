@@ -1,18 +1,41 @@
 //! C-compatible FFI functions for embedding GPUI in macOS Audio Unit ViewControllers.
 
 use crate::window::{AuWindowPtr, PendingViewInfo, PENDING_VIEW, AU_WINDOW};
-use crate::AuPlatform;
-use gpui::{
-    div, point, px, rgb, size, App, AppContext, IntoElement, MouseButton, ParentElement,
-    PlatformInput, Render, RequestFrameOptions, Styled, WindowOptions,
-};
+use gpui::{point, px, MouseButton, PlatformInput, RequestFrameOptions};
 use objc::runtime::Object;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::rc::Rc;
+use std::sync::Once;
+
+/// Helper to log via NSLog (always visible in Console.app, unlike Rust's log crate).
+/// The message must be a null-terminated string.
+fn nslog(msg: &str) {
+    use objc::{class, msg_send, sel, sel_impl};
+    unsafe {
+        let ns_string: *mut Object =
+            msg_send![class!(NSString), stringWithUTF8String: msg.as_ptr()];
+        #[link(name = "Foundation", kind = "framework")]
+        unsafe extern "C" {
+            fn NSLog(format: *mut Object, ...);
+        }
+        let fmt: *mut Object =
+            msg_send![class!(NSString), stringWithUTF8String: c"%@".as_ptr()];
+        NSLog(fmt, ns_string);
+    }
+}
+
+static INIT_LOGGER: Once = Once::new();
+
+fn init_logger() {
+    INIT_LOGGER.call_once(|| {
+        let _ = env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Info)
+            .try_init();
+    });
+}
 
 /// Opaque context handle passed to/from Swift.
-struct AuContext {
+pub struct AuContext {
     _plugin_type: String,
 }
 
@@ -30,8 +53,11 @@ pub extern "C" fn gpui_au_create(
     scale: f32,
     plugin_type: *const c_char,
 ) -> *mut AuContext {
+    init_logger();
+    nslog("SOTF gpui_au_create: entry\0");
+
     if ns_view.is_null() || plugin_type.is_null() {
-        log::error!("gpui_au_create: null pointer argument");
+        nslog("SOTF gpui_au_create: null pointer argument!\0");
         return std::ptr::null_mut();
     }
 
@@ -39,19 +65,19 @@ pub extern "C" fn gpui_au_create(
         match CStr::from_ptr(plugin_type).to_str() {
             Ok(s) => s.to_string(),
             Err(_) => {
-                log::error!("gpui_au_create: invalid UTF-8 in plugin_type");
+                nslog("SOTF gpui_au_create: invalid UTF-8\0");
                 return std::ptr::null_mut();
             }
         }
     };
 
-    log::info!(
-        "gpui_au_create: plugin={}, size={}x{} @{:.1}x",
-        plugin_type_str, width, height, scale
+    let msg = format!(
+        "SOTF gpui_au_create: plugin={}, size={}x{} @{:.1}x, view={:p}\0",
+        plugin_type_str, width, height, scale, ns_view
     );
+    nslog(&msg);
 
     // Store the NSView info in a thread-local so AuWindow::new() can read it
-    // during AuPlatform::open_window() → AuWindow::new()
     PENDING_VIEW.with(|pv| {
         *pv.borrow_mut() = Some(PendingViewInfo {
             ns_view,
@@ -61,25 +87,9 @@ pub extern "C" fn gpui_au_create(
         });
     });
 
-    let platform = Rc::new(AuPlatform::new());
-    let app = gpui::Application::with_platform(platform);
-
-    let pt = plugin_type_str.clone();
-
-    app.run(move |cx: &mut App| {
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds {
-                    origin: Default::default(),
-                    size: size(px(width), px(height)),
-                })),
-                ..Default::default()
-            },
-            move |_window, cx| cx.new(|_cx| AuPluginView { plugin_type: pt }),
-        )
-        .expect("Failed to open GPUI AU window");
-        cx.activate(true);
-    });
+    // TODO: Initialize GPUI Application with Metal rendering here.
+    // For now, just verify the FFI pipeline works end-to-end.
+    nslog("SOTF gpui_au_create: FFI working, GPUI init deferred\0");
 
     let context = Box::new(AuContext {
         _plugin_type: plugin_type_str,
@@ -107,14 +117,12 @@ pub extern "C" fn gpui_au_request_frame(context: *mut AuContext) {
     if context.is_null() {
         return;
     }
-    if let Some(AuWindowPtr(window_ptr)) = AU_WINDOW.get() {
-        if !window_ptr.is_null() {
-            let window = unsafe { &**window_ptr };
-            let cb = window.request_frame_callback.borrow_mut().take();
-            if let Some(mut cb) = cb {
-                cb(RequestFrameOptions::default());
-                window.request_frame_callback.borrow_mut().replace(cb);
-            }
+    if let Some(AuWindowPtr(window_ptr)) = AU_WINDOW.get().filter(|p| !p.0.is_null()) {
+        let window = unsafe { &**window_ptr };
+        let cb = window.request_frame_callback.borrow_mut().take();
+        if let Some(mut cb) = cb {
+            cb(RequestFrameOptions::default());
+            window.request_frame_callback.borrow_mut().replace(cb);
         }
     }
 }
@@ -125,11 +133,9 @@ pub extern "C" fn gpui_au_resize(context: *mut AuContext, width: f32, height: f3
     if context.is_null() {
         return;
     }
-    if let Some(AuWindowPtr(window_ptr)) = AU_WINDOW.get() {
-        if !window_ptr.is_null() {
-            let window = unsafe { &**window_ptr };
-            window.handle_resize(width, height, scale);
-        }
+    if let Some(AuWindowPtr(window_ptr)) = AU_WINDOW.get().filter(|p| !p.0.is_null()) {
+        let window = unsafe { &**window_ptr };
+        window.handle_resize(width, height, scale);
     }
 }
 
@@ -227,45 +233,9 @@ pub extern "C" fn gpui_au_scroll_wheel(
 }
 
 fn dispatch_to_window(event: PlatformInput) {
-    if let Some(AuWindowPtr(window_ptr)) = AU_WINDOW.get() {
-        if !window_ptr.is_null() {
-            let window = unsafe { &**window_ptr };
-            window.dispatch_input(event);
-        }
+    if let Some(AuWindowPtr(window_ptr)) = AU_WINDOW.get().filter(|p| !p.0.is_null()) {
+        let window = unsafe { &**window_ptr };
+        window.dispatch_input(event);
     }
 }
 
-// ── Placeholder GPUI View ─────────────────────────────────────────────────────
-
-struct AuPluginView {
-    plugin_type: String,
-}
-
-impl Render for AuPluginView {
-    fn render(
-        &mut self,
-        _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
-    ) -> impl IntoElement {
-        div()
-            .size_full()
-            .bg(rgb(0x1a1a1e))
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .child(
-                div()
-                    .text_color(rgb(0x60a0ff))
-                    .text_xl()
-                    .child(format!("SOTF: {}", self.plugin_type)),
-            )
-            .child(
-                div()
-                    .text_color(rgb(0x666666))
-                    .text_sm()
-                    .mt_2()
-                    .child("GPUI rendering active"),
-            )
-    }
-}

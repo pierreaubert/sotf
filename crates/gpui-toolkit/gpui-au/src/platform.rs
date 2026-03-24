@@ -33,7 +33,7 @@ struct AuPlatformState {
     background_executor: BackgroundExecutor,
     foreground_executor: ForegroundExecutor,
     text_system: Arc<dyn PlatformTextSystem>,
-    finish_launching: Option<Box<dyn FnOnce()>>,
+    _finish_launching: Option<Box<dyn FnOnce()>>,
 }
 
 impl Default for AuPlatform {
@@ -51,7 +51,7 @@ impl AuPlatform {
             background_executor: BackgroundExecutor::new(dispatcher.clone()),
             foreground_executor: ForegroundExecutor::new(dispatcher),
             text_system,
-            finish_launching: None,
+            _finish_launching: None,
         }))
     }
 }
@@ -138,7 +138,7 @@ impl Platform for AuPlatform {
                 return WindowAppearance::Light;
             }
             let dark_name: *mut objc::runtime::Object =
-                msg_send![class!(NSString), stringWithUTF8String: "NSAppearanceNameDarkAqua\0".as_ptr()];
+                msg_send![class!(NSString), stringWithUTF8String: c"NSAppearanceNameDarkAqua".as_ptr()];
             let is_dark: bool = msg_send![appearance_name, isEqualToString: dark_name];
             if is_dark {
                 WindowAppearance::Dark

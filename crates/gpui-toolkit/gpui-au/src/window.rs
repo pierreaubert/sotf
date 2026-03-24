@@ -181,7 +181,7 @@ impl AuWindow {
             let context = WgpuContext::new(metal_instance, &surface)?;
             let mut gpu_context: Option<WgpuContext> = Some(context);
             drop(surface);
-            Ok(WgpuRenderer::new(&mut gpu_context, &au_window, config)?)
+            WgpuRenderer::new(&mut gpu_context, &au_window, config)
         })() {
             Ok(renderer) => {
                 log::info!("GPUI AU: wgpu renderer created (Metal) for {}x{} @{:.1}x", width, height, scale);
@@ -197,13 +197,14 @@ impl AuWindow {
 
     /// Register this window in the global AU_WINDOW slot.
     /// Called from AuPlatform::open_window after Boxing.
-    pub(crate) fn register_global(boxed: &Box<AuWindow>) {
-        let ptr: *const AuWindow = &**boxed;
+    pub(crate) fn register_global(boxed: &AuWindow) {
+        let ptr: *const AuWindow = boxed;
         let _ = AU_WINDOW.set(AuWindowPtr(ptr));
         log::info!("GPUI AU: Window registered at {:p}", ptr);
     }
 
     /// Request a frame render (called from Swift via FFI)
+    #[allow(dead_code)]
     pub fn request_frame(&self) {
         let cb = self.request_frame_callback.borrow_mut().take();
         if let Some(mut cb) = cb {
@@ -339,7 +340,7 @@ impl PlatformWindow for AuWindow {
                 return WindowAppearance::Light;
             }
             let dark_aqua: *mut Object =
-                msg_send![class!(NSString), stringWithUTF8String: "NSAppearanceNameDarkAqua\0".as_ptr()];
+                msg_send![class!(NSString), stringWithUTF8String: c"NSAppearanceNameDarkAqua".as_ptr()];
             let is_dark: bool = msg_send![name, isEqualToString: dark_aqua];
             if is_dark {
                 WindowAppearance::Dark

@@ -1,11 +1,5 @@
 // GPUIAUView.swift
 // NSView subclass that hosts GPUI rendering via Metal for Audio Unit plugin UIs.
-//
-// This view:
-// 1. Creates a GPUI rendering context via FFI (gpui_au_create)
-// 2. Drives frame rendering via NSTimer
-// 3. Forwards mouse/keyboard events to GPUI via FFI
-// 4. Handles resize notifications
 
 import AppKit
 
@@ -19,7 +13,9 @@ public class GPUIAUView: NSView {
         self.pluginType = pluginType
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(calibratedRed: 0.1, green: 0.1, blue: 0.12, alpha: 1.0).cgColor
+        // Red background so we can visually confirm the view is in the hierarchy
+        layer?.backgroundColor = NSColor.red.cgColor
+        NSLog("SOTF GPUIAUView: init pluginType=\(pluginType)")
     }
 
     @available(*, unavailable)
@@ -31,23 +27,37 @@ public class GPUIAUView: NSView {
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        NSLog("SOTF GPUIAUView: viewDidMoveToWindow, window=\(window != nil), bounds=\(bounds)")
 
         if window != nil && gpuiContext == nil {
-            initializeGPUI()
+            tryInitializeGPUI()
         } else if window == nil {
             teardownGPUI()
         }
     }
 
-    private func initializeGPUI() {
+    public override func layout() {
+        super.layout()
+        NSLog("SOTF GPUIAUView: layout, bounds=\(bounds), gpuiContext=\(gpuiContext != nil)")
+
+        if window != nil && gpuiContext == nil {
+            tryInitializeGPUI()
+        }
+    }
+
+    private func tryInitializeGPUI() {
+        guard gpuiContext == nil else { return }
+
         let scale = Float(window?.backingScaleFactor ?? 2.0)
         let width = Float(bounds.width)
         let height = Float(bounds.height)
 
-        guard width > 0 && height > 0 else {
-            // View not yet sized — will be called again after layout
+        guard width > 1 && height > 1 else {
+            NSLog("SOTF GPUIAUView: skipping init, size too small: \(width)x\(height)")
             return
         }
+
+        NSLog("SOTF GPUIAUView: creating GPUI context for \(pluginType) at \(width)x\(height) @\(scale)x")
 
         gpuiContext = pluginType.withCString { typePtr in
             gpui_au_create(
@@ -60,11 +70,15 @@ public class GPUIAUView: NSView {
         }
 
         if gpuiContext != nil {
-            // 60 FPS render timer on the main run loop
+            NSLog("SOTF GPUIAUView: context created OK, starting render timer")
+            // Change background to dark once GPUI is initialized
+            layer?.backgroundColor = NSColor(calibratedRed: 0.1, green: 0.1, blue: 0.12, alpha: 1.0).cgColor
             renderTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
                 guard let self = self, let ctx = self.gpuiContext else { return }
                 gpui_au_request_frame(ctx)
             }
+        } else {
+            NSLog("SOTF GPUIAUView: gpui_au_create returned NULL!")
         }
     }
 
@@ -101,23 +115,10 @@ public class GPUIAUView: NSView {
     // MARK: - Mouse Events
 
     public override var acceptsFirstResponder: Bool { true }
-
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    private func buttonIndex(for event: NSEvent) -> Int32 {
-        switch event.type {
-        case .rightMouseDown, .rightMouseUp, .rightMouseDragged:
-            return 1
-        case .otherMouseDown, .otherMouseUp, .otherMouseDragged:
-            return 2
-        default:
-            return 0
-        }
-    }
 
     private func localPoint(for event: NSEvent) -> (Float, Float) {
         let point = convert(event.locationInWindow, from: nil)
-        // GPUI uses top-left origin; NSView uses bottom-left
         return (Float(point.x), Float(bounds.height - point.y))
     }
 
@@ -168,8 +169,6 @@ public class GPUIAUView: NSView {
         let (x, y) = localPoint(for: event)
         gpui_au_scroll_wheel(ctx, x, y, Float(event.scrollingDeltaX), Float(event.scrollingDeltaY))
     }
-
-    // MARK: - Tracking Area (for mouseMoved events)
 
     public override func updateTrackingAreas() {
         super.updateTrackingAreas()
