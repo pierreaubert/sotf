@@ -1,0 +1,27 @@
+[package]
+name = "sotf-tls"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "TLS infrastructure for SotF — self-signed certs, TOFU trust store, server/client helpers"
+
+[dependencies]
+rustls = "0.23"
+tokio-rustls = "0.26"
+rcgen = "0.13"
+sha2 = "0.10"
+base64 = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true, features = ["net"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util"] }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
