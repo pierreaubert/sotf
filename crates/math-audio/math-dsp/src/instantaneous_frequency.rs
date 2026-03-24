@@ -62,14 +62,17 @@ pub fn analytic_signal(signal: &[f32]) -> Vec<Complex<f32>> {
     // Negative frequencies: zero
     full_spectrum[0] = fft.freq_buffer[0];
 
-    for i in 1..spectrum_size - 1 {
-        full_spectrum[i] = fft.freq_buffer[i] * 2.0;
+    for (dst, &src) in full_spectrum[1..spectrum_size - 1]
+        .iter_mut()
+        .zip(&fft.freq_buffer[1..spectrum_size - 1])
+    {
+        *dst = src * 2.0;
     }
 
     // Nyquist bin exists only for even FFT sizes; for odd sizes, the last bin
     // is a positive-frequency bin and should be doubled
     if spectrum_size > 1 {
-        if fft_size % 2 == 0 {
+        if fft_size.is_multiple_of(2) {
             full_spectrum[spectrum_size - 1] = fft.freq_buffer[spectrum_size - 1];
         } else {
             full_spectrum[spectrum_size - 1] = fft.freq_buffer[spectrum_size - 1] * 2.0;

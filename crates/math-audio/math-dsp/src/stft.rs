@@ -23,6 +23,18 @@ pub fn generate_hann_window(size: usize) -> Vec<f32> {
         .collect()
 }
 
+/// Generate a symmetric Hann window of the given size.
+/// Uses N-1 divisor — suitable for spectral analysis (zero at endpoints).
+pub fn generate_hann_window_symmetric(size: usize) -> Vec<f32> {
+    if size <= 1 {
+        return vec![1.0; size];
+    }
+    let n_minus_1 = (size as f32) - 1.0;
+    (0..size)
+        .map(|i| 0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / n_minus_1).cos()))
+        .collect()
+}
+
 /// Generate a sqrt(Hann) window for WOLA (Weighted Overlap-Add) processing.
 /// When used as both analysis and synthesis window, the product is Hann,
 /// which has perfect COLA at 50% overlap.
@@ -238,13 +250,13 @@ pub fn design_dual_windows(
     let mut cola_sum = vec![0.0f32; hop_size];
     for k in 0..num_overlaps {
         let shift = k * hop_size;
-        for n in 0..hop_size {
+        for (n, cola_val) in cola_sum.iter_mut().enumerate() {
             let ana_idx = n + shift;
             if ana_idx < analysis_size {
                 // Check if this falls within the synthesis window support
                 let syn_idx = ana_idx.wrapping_sub(offset);
                 if syn_idx < synthesis_size {
-                    cola_sum[n] += w_a[ana_idx] * w_s_raw[syn_idx];
+                    *cola_val += w_a[ana_idx] * w_s_raw[syn_idx];
                 }
             }
         }
@@ -445,6 +457,34 @@ mod tests {
                 sum
             );
         }
+    }
+
+    #[test]
+    fn test_symmetric_hann_endpoints_are_zero() {
+        let window = generate_hann_window_symmetric(256);
+        assert!(window[0].abs() < 1e-7, "First sample should be 0");
+        assert!(window[255].abs() < 1e-7, "Last sample should be 0");
+        // Peak at center
+        assert!((window[128] - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_symmetric_hann_no_nan_for_small_sizes() {
+        // size=0: empty
+        let w0 = generate_hann_window_symmetric(0);
+        assert!(w0.is_empty());
+
+        // size=1: should be [1.0], not NaN
+        let w1 = generate_hann_window_symmetric(1);
+        assert_eq!(w1.len(), 1);
+        assert!(w1[0].is_finite(), "size=1 produced non-finite: {}", w1[0]);
+        assert!((w1[0] - 1.0).abs() < 1e-6);
+
+        // size=2: endpoints [0, 0] by symmetric formula
+        let w2 = generate_hann_window_symmetric(2);
+        assert_eq!(w2.len(), 2);
+        assert!(w2[0].is_finite());
+        assert!(w2[1].is_finite());
     }
 
     #[test]

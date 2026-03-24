@@ -83,6 +83,9 @@ pub struct LMIntermediate {
 // Config
 // ---------------------------------------------------------------------------
 
+/// Progress callback type for the LM solver.
+pub type LMCallback = Box<dyn FnMut(&LMIntermediate) -> LMCallbackAction>;
+
 /// Configuration for the LM solver.
 pub struct LMConfig {
     /// Maximum iterations (default 100).
@@ -102,7 +105,7 @@ pub struct LMConfig {
     /// Print progress to stderr.
     pub disp: bool,
     /// Optional progress callback.
-    pub callback: Option<Box<dyn FnMut(&LMIntermediate) -> LMCallbackAction>>,
+    pub callback: Option<LMCallback>,
 }
 
 /// Fluent builder for [`LMConfig`].
@@ -115,7 +118,7 @@ pub struct LMConfigBuilder {
     x0: Option<Array1<f64>>,
     weights: Option<Array1<f64>>,
     disp: bool,
-    callback: Option<Box<dyn FnMut(&LMIntermediate) -> LMCallbackAction>>,
+    callback: Option<LMCallback>,
 }
 
 impl LMConfigBuilder {

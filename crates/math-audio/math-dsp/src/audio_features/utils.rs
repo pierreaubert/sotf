@@ -6,7 +6,9 @@
 use ndarray::{Array, Array1, Array2, arr1, s};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
-use std::f32::consts::PI;
+
+use crate::analysis::plan_fft_forward;
+use crate::stft::generate_hann_window;
 
 /// Normalize a value from [min, max] to [-1, 1].
 pub fn normalize(value: f32, min_value: f32, max_value: f32) -> f32 {
@@ -83,14 +85,9 @@ pub fn stft(signal: &[f32], window_length: usize, hop_length: usize) -> Array2<f
     let signal = reflect_pad(signal, window_length / 2);
 
     // Periodic Hann window
-    let mut hann_window = Array::zeros(window_length + 1);
-    for n in 0..window_length {
-        hann_window[[n]] = 0.5 - 0.5 * f32::cos(2. * n as f32 * PI / (window_length as f32));
-    }
-    hann_window = hann_window.slice_move(s![0..window_length]);
+    let hann_window = Array::from_vec(generate_hann_window(window_length));
 
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(window_length);
+    let fft = plan_fft_forward(window_length);
 
     for (window, mut stft_col) in signal
         .windows(window_length)

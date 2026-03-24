@@ -166,10 +166,10 @@ impl RtpghiProcessor {
 
         // Build max-heap ordered by magnitude
         let mut heap = BinaryHeap::new();
-        for k in 0..spectrum_size {
-            if log_mag[k] > self.log_mag_tol {
+        for (k, &mag) in log_mag.iter().enumerate() {
+            if mag > self.log_mag_tol {
                 heap.push(HeapEntry {
-                    magnitude: log_mag[k],
+                    magnitude: mag,
                     bin: k,
                 });
             }

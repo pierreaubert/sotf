@@ -24,11 +24,16 @@ thread_local! {
     static FFT_PLANNER: RefCell<FftPlanner<f32>> = RefCell::new(FftPlanner::new());
 }
 
-fn plan_fft_forward(size: usize) -> Arc<dyn rustfft::Fft<f32>> {
+/// Get a cached forward FFT plan for the given size (f32).
+///
+/// Uses a thread-local planner so repeated calls with the same size
+/// return the same plan without recomputing twiddle factors.
+pub fn plan_fft_forward(size: usize) -> Arc<dyn rustfft::Fft<f32>> {
     FFT_PLANNER.with(|p| p.borrow_mut().plan_fft_forward(size))
 }
 
-fn plan_fft_inverse(size: usize) -> Arc<dyn rustfft::Fft<f32>> {
+/// Get a cached inverse FFT plan for the given size (f32).
+pub fn plan_fft_inverse(size: usize) -> Arc<dyn rustfft::Fft<f32>> {
     FFT_PLANNER.with(|p| p.borrow_mut().plan_fft_inverse(size))
 }
 
@@ -528,10 +533,8 @@ fn compute_welch_spectrum_internal(
     let mut phase_real_sum = vec![0.0_f32; num_bins];
     let mut phase_imag_sum = vec![0.0_f32; num_bins];
 
-    // Precompute Hann window
-    let hann_window: Vec<f32> = (0..fft_size)
-        .map(|i| 0.5 * (1.0 - ((2.0 * PI * i as f32) / (fft_size as f32 - 1.0)).cos()))
-        .collect();
+    // Precompute symmetric Hann window (N-1 divisor for spectral analysis)
+    let hann_window = crate::stft::generate_hann_window_symmetric(fft_size);
 
     let window_power: f32 = hann_window.iter().map(|&w| w * w).sum();
     let scale_factor = 2.0 / window_power;
@@ -611,9 +614,7 @@ fn compute_single_fft_spectrum_internal(
     let window_scale_factor = if no_window {
         1.0
     } else {
-        let hann_window: Vec<f32> = (0..fft_size)
-            .map(|i| 0.5 * (1.0 - ((2.0 * PI * i as f32) / (fft_size as f32 - 1.0)).cos()))
-            .collect();
+        let hann_window = crate::stft::generate_hann_window_symmetric(fft_size);
 
         for (i, sample) in windowed.iter_mut().enumerate() {
             *sample *= hann_window[i];

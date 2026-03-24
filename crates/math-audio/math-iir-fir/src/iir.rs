@@ -3420,7 +3420,7 @@ pub fn peq_format_easyeffects(comment: &str, peq: &Peq) -> String {
 
     for (i, (_, iir)) in peq.iter().enumerate().take(30) {
         if i > 0 {
-            write!(bands, ",\n").unwrap();
+            writeln!(bands, ",").unwrap();
         }
         write!(
             bands,
@@ -3700,7 +3700,7 @@ pub fn peq_format_roon(comment: &str, peq: &Peq) -> String {
 
     for (i, (_, iir)) in peq.iter().enumerate().take(20) {
         if i > 0 {
-            write!(bands, ",\n").unwrap();
+            writeln!(bands, ",").unwrap();
         }
         write!(
             bands,
