@@ -373,6 +373,7 @@ sotf_plugins::serde_param_default! {
     compressor_specs::PARAMS;
     fn default_compressor_link_channels() -> bool = "link_channels";
     fn default_compressor_sidechain_hpf_hz() -> f64 = "sidechain_hpf_hz";
+    fn default_compressor_sidechain_hpf_order() -> String = "sidechain_hpf_order";
     fn default_compressor_detection_mode() -> String = "detection_mode";
 }
 
@@ -808,6 +809,8 @@ pub enum PluginSettings {
         link_channels: bool,
         #[serde(default = "default_compressor_sidechain_hpf_hz")]
         sidechain_hpf_hz: f64,
+        #[serde(default = "default_compressor_sidechain_hpf_order")]
+        sidechain_hpf_order: String,
         #[serde(default = "default_compressor_detection_mode")]
         detection_mode: String,
         #[serde(default)]
@@ -1757,6 +1760,7 @@ impl PluginSettings {
                 auto_makeup,
                 link_channels,
                 sidechain_hpf_hz,
+                sidechain_hpf_order,
                 detection_mode,
                 lookahead_ms,
                 program_dependent_release,
@@ -1775,6 +1779,7 @@ impl PluginSettings {
                     "auto_makeup": auto_makeup,
                     "link_channels": link_channels,
                     "sidechain_hpf_hz": sidechain_hpf_hz,
+                    "sidechain_hpf_order": sidechain_hpf_order,
                     "detection_mode": detection_mode,
                     "lookahead_ms": lookahead_ms,
                     "program_dependent_release": program_dependent_release,
@@ -2504,6 +2509,7 @@ impl PluginSettings {
                     auto_makeup: p(c, "auto_makeup").default_bool(),
                     link_channels: p(c, "link_channels").default_bool(),
                     sidechain_hpf_hz: p(c, "sidechain_hpf_hz").default_f64(),
+                    sidechain_hpf_order: default_compressor_sidechain_hpf_order(),
                     detection_mode: default_compressor_detection_mode(),
                     lookahead_ms: p(c, "lookahead_ms").default_f64(),
                     program_dependent_release: p(c, "program_dependent_release").default_bool(),

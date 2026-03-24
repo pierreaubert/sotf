@@ -90,6 +90,22 @@ fn index_to_detection_mode(index: f64) -> String {
     detection_modes().get(idx).unwrap_or(&"Peak").to_string()
 }
 
+fn hpf_orders() -> &'static [&'static str] {
+    param_specs::find_by_key(param_specs::compressor::PARAMS, "sidechain_hpf_order").choice_labels()
+}
+
+fn hpf_order_to_index(order: &str) -> f64 {
+    hpf_orders()
+        .iter()
+        .position(|&m| m == order)
+        .unwrap_or(0) as f64
+}
+
+fn index_to_hpf_order(index: f64) -> String {
+    let idx = index as usize;
+    hpf_orders().get(idx).unwrap_or(&"2nd").to_string()
+}
+
 fn ambisonics_layouts() -> &'static [&'static str] {
     param_specs::find_by_key(param_specs::ambisonics::PARAMS, "target_layout").choice_labels()
 }
@@ -337,6 +353,7 @@ impl_param_accessors! {
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             knee_db: f64, makeup_gain_db: f64, mix: f64,
             auto_makeup: bool, link_channels: bool, sidechain_hpf_hz: f64,
+            sidechain_hpf_order: [str hpf_order_to_index, index_to_hpf_order],
             detection_mode: [str detection_mode_to_index, index_to_detection_mode],
             lookahead_ms: f64, program_dependent_release: bool, measured_auto_makeup: bool,
             sidechain_external: bool,
@@ -663,8 +680,11 @@ impl PluginSettings {
                         serde_json::to_value(preset).unwrap_or_default()
                     )),
                     Self::Compressor {
+                        sidechain_hpf_order, ..
+                    } if index == 10 => Some(sidechain_hpf_order.clone()),
+                    Self::Compressor {
                         detection_mode, ..
-                    } if index == 10 => Some(detection_mode.clone()),
+                    } if index == 11 => Some(detection_mode.clone()),
                     Self::Expander {
                         detection_mode, ..
                     } if index == 13 => Some(detection_mode.clone()),
