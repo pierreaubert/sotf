@@ -19,6 +19,12 @@ log = { workspace = true }
 
 # GPUI AU rendering (linked into the same staticlib to avoid duplicate Rust runtime symbols)
 gpui-au = { workspace = true }
+gpui = { workspace = true }
+
+# Plugin UI infrastructure
+plugins-gpui = { path = "../plugins-gpui" }
+sotf-plugin-eq = { workspace = true, features = ["gpui-ui"] }
+math-iir-fir = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.build-dependencies]
 cbindgen = { workspace = true }

@@ -8,19 +8,66 @@ public class GPUIAUView: NSView {
     private var gpuiContext: UnsafeMutableRawPointer?
     private var renderTimer: Timer?
     private let pluginType: String
+    /// Atomic parameter cache for thread-safe UI rendering.
+    private let paramCache: UnsafeMutableRawPointer?
+    /// Reference to the AU for parameter writes through AUParameterTree.
+    private weak var audioUnit: GenericRustAudioUnit?
 
-    public init(pluginType: String) {
+    public init(pluginType: String, audioUnit: GenericRustAudioUnit? = nil) {
         self.pluginType = pluginType
+        self.audioUnit = audioUnit
+
+        // Create atomic param cache if we have an AU with parameters
+        if let au = audioUnit, let tree = au.parameterTree {
+            let count = tree.allParameters.count
+            self.paramCache = au_param_cache_create(count)
+            // Initialize cache with current parameter values
+            for (i, param) in tree.allParameters.enumerated() {
+                let denormalized = GPUIAUView.denormalizeParam(param)
+                au_param_cache_write(self.paramCache, i, denormalized)
+            }
+        } else {
+            self.paramCache = nil
+        }
+
         super.init(frame: .zero)
         wantsLayer = true
-        // Red background so we can visually confirm the view is in the hierarchy
         layer?.backgroundColor = NSColor.red.cgColor
-        NSLog("SOTF GPUIAUView: init pluginType=\(pluginType)")
+        NSLog("SOTF GPUIAUView: init pluginType=\(pluginType), hasAU=\(audioUnit != nil)")
+
+        // Observe AU parameter changes to update the cache
+        if let au = audioUnit {
+            setupParameterObservation(au)
+        }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    // MARK: - Parameter Observation
+
+    /// Wire AU parameter tree observer to push values into the atomic cache.
+    private func setupParameterObservation(_ au: GenericRustAudioUnit) {
+        guard let cache = paramCache, let tree = au.parameterTree else { return }
+
+        // The implementorValueObserver is already set by GenericRustAudioUnit
+        // to sync to Rust. We add a token-based observer for the UI cache.
+        let allParams = tree.allParameters
+        for (i, param) in allParams.enumerated() {
+            let idx = i
+            param.token(byAddingParameterObserver: { [weak self] _, value in
+                guard let cache = self?.paramCache else { return }
+                // Denormalize: AU parameters store AUValue (already denormalized in our setup)
+                au_param_cache_write(cache, idx, Double(value))
+            })
+        }
+    }
+
+    /// Denormalize an AU parameter value to its real-world value.
+    private static func denormalizeParam(_ param: AUParameter) -> Double {
+        return Double(param.value)
     }
 
     // MARK: - GPUI Lifecycle
@@ -38,8 +85,6 @@ public class GPUIAUView: NSView {
 
     public override func layout() {
         super.layout()
-        NSLog("SOTF GPUIAUView: layout, bounds=\(bounds), gpuiContext=\(gpuiContext != nil)")
-
         if window != nil && gpuiContext == nil {
             tryInitializeGPUI()
         }
@@ -60,18 +105,35 @@ public class GPUIAUView: NSView {
         NSLog("SOTF GPUIAUView: creating GPUI context for \(pluginType) at \(width)x\(height) @\(scale)x")
 
         gpuiContext = pluginType.withCString { typePtr in
-            gpui_au_create(
-                Unmanaged.passUnretained(self).toOpaque(),
-                width,
-                height,
-                scale,
-                typePtr
-            )
+            if let cache = self.paramCache, let au = self.audioUnit {
+                // Real plugin UI with thread-safe parameter bridge
+                let userdata = Unmanaged.passUnretained(au).toOpaque()
+                return gpui_au_create_with_plugin(
+                    Unmanaged.passUnretained(self).toOpaque(),
+                    width,
+                    height,
+                    scale,
+                    typePtr,
+                    cache,
+                    gpuiSetParamCallback,
+                    gpuiResetParamCallback,
+                    userdata
+                )
+            } else {
+                // Placeholder UI (no AU available)
+                NSLog("SOTF GPUIAUView: no AU available, using placeholder UI")
+                return gpui_au_create(
+                    Unmanaged.passUnretained(self).toOpaque(),
+                    width,
+                    height,
+                    scale,
+                    typePtr
+                )
+            }
         }
 
         if gpuiContext != nil {
             NSLog("SOTF GPUIAUView: context created OK, starting render timer")
-            // Change background to dark once GPUI is initialized
             layer?.backgroundColor = NSColor(calibratedRed: 0.1, green: 0.1, blue: 0.12, alpha: 1.0).cgColor
             renderTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
                 guard let self = self, let ctx = self.gpuiContext else { return }
@@ -94,6 +156,9 @@ public class GPUIAUView: NSView {
 
     deinit {
         teardownGPUI()
+        if let cache = paramCache {
+            au_param_cache_destroy(cache)
+        }
     }
 
     // MARK: - Resize
@@ -181,5 +246,35 @@ public class GPUIAUView: NSView {
             owner: self,
             userInfo: nil
         ))
+    }
+}
+
+// MARK: - C Callbacks for GPUI → AUParameterTree
+
+/// Called by GPUI when the user changes a parameter via the UI.
+/// Routes through AUParameterTree for thread-safe dispatch to the audio plugin.
+private func gpuiSetParamCallback(userdata: UnsafeMutableRawPointer?, paramIndex: Int, value: Double) {
+    guard let ud = userdata else { return }
+    let au = Unmanaged<GenericRustAudioUnit>.fromOpaque(ud).takeUnretainedValue()
+    guard let tree = au.parameterTree else { return }
+    let allParams = tree.allParameters
+    guard paramIndex < allParams.count else { return }
+    let param = allParams[paramIndex]
+    // Set via AUParameterTree — this triggers implementorValueObserver → plugin_set_parameter
+    param.value = AUValue(value)
+}
+
+/// Called by GPUI when the user resets a parameter to its default.
+private func gpuiResetParamCallback(userdata: UnsafeMutableRawPointer?, paramIndex: Int) {
+    guard let ud = userdata else { return }
+    let au = Unmanaged<GenericRustAudioUnit>.fromOpaque(ud).takeUnretainedValue()
+    guard let tree = au.parameterTree else { return }
+    let allParams = tree.allParameters
+    guard paramIndex < allParams.count else { return }
+    let param = allParams[paramIndex]
+    // Reset to AU default value
+    let info = plugin_get_parameter_info(au.pluginHandle, paramIndex)
+    if let info = info {
+        param.value = AUValue(info.pointee.default_value)
     }
 }

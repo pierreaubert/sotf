@@ -10,6 +10,7 @@ path = "src/lib.rs"
 
 [features]
 qa = ["sotf-host/qa"]
+gpui-ui = ["dep:plugins-gpui", "dep:gpui", "dep:gpui-px", "dep:gpui-ui-kit", "dep:sotf-midi"]
 
 [[bin]]
 name = "qa-eq"
@@ -22,3 +23,10 @@ math-iir-fir = { workspace = true }
 serde = { workspace = true }
 rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
+
+# GPUI UI (optional, behind gpui-ui feature)
+plugins-gpui = { workspace = true, optional = true }
+gpui = { workspace = true, optional = true }
+gpui-px = { workspace = true, features = ["gpui"], optional = true }
+gpui-ui-kit = { workspace = true, optional = true }
+sotf-midi = { workspace = true, optional = true }

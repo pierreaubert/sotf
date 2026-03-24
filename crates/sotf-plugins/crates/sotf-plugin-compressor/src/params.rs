@@ -19,6 +19,7 @@ use sotf_host::plugin_params::PluginParamDef;
 // ============================================================================
 
 pub const DETECTION_MODES: &[&str] = &["Peak", "RMS"];
+pub const HPF_ORDERS: &[&str] = &["2nd", "4th"];
 
 // ============================================================================
 // Parameter Specifications
@@ -88,6 +89,15 @@ pub const PARAMS: &[ParamSpec] = &[
     .setup()
     .doc("High-pass on detector input"),
     ParamSpec::choice(
+        "Sidechain HPF Order",
+        "sidechain_hpf_order",
+        0,
+        HPF_ORDERS,
+        "Sidechain",
+    )
+    .setup()
+    .doc("Butterworth HPF slope (2nd = -12dB/oct, 4th = -24dB/oct)"),
+    ParamSpec::choice(
         "Detection Mode",
         "detection_mode",
         0,
@@ -140,7 +150,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::toggle(8),    // link_channels
         ControlSpec::knob(9),      // sidechain_hpf_hz
-        ControlSpec::selector(10), // detection_mode
+        ControlSpec::selector(10), // sidechain_hpf_order
+        ControlSpec::selector(11), // detection_mode
     ],
     main: &[
         ControlGroup {
@@ -156,15 +167,15 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             controls: &[
                 ControlSpec::slider(2),  // attack
                 ControlSpec::slider(3),  // release
-                ControlSpec::knob(11),   // lookahead_ms
-                ControlSpec::toggle(12), // program_dependent_release
+                ControlSpec::knob(12),   // lookahead_ms
+                ControlSpec::toggle(13), // program_dependent_release
             ],
         },
     ],
     output: &[
         ControlSpec::meter(-30.0, 0.0), // GR meter
         ControlSpec::toggle(7),         // auto_makeup
-        ControlSpec::toggle(13),        // measured_auto_makeup
+        ControlSpec::toggle(14),        // measured_auto_makeup
         ControlSpec::knob(5),           // makeup_gain
         ControlSpec::knob(6),           // mix
     ],
@@ -210,6 +221,8 @@ pub struct Params {
     pub link_channels: bool,
     #[serde(default = "d_sidechain_hpf_hz")]
     pub sidechain_hpf_hz: f64,
+    #[serde(default = "d_sidechain_hpf_order")]
+    pub sidechain_hpf_order: String,
     #[serde(default = "d_detection_mode")]
     pub detection_mode: String,
     #[serde(default = "d_lookahead_ms")]
@@ -252,6 +265,9 @@ fn d_link_channels() -> bool {
 fn d_sidechain_hpf_hz() -> f64 {
     pk(PARAMS, "sidechain_hpf_hz").default_f64()
 }
+fn d_sidechain_hpf_order() -> String {
+    HPF_ORDERS[0].to_string()
+}
 fn d_detection_mode() -> String {
     DETECTION_MODES[0].to_string()
 }
@@ -281,6 +297,7 @@ impl Default for Params {
             auto_makeup: d_auto_makeup(),
             link_channels: d_link_channels(),
             sidechain_hpf_hz: d_sidechain_hpf_hz(),
+            sidechain_hpf_order: d_sidechain_hpf_order(),
             detection_mode: d_detection_mode(),
             lookahead_ms: d_lookahead_ms(),
             program_dependent_release: d_program_dependent_release(),
@@ -313,19 +330,25 @@ impl PluginParamDef for Params {
             8 => Some(if self.link_channels { 1.0 } else { 0.0 }),
             9 => Some(self.sidechain_hpf_hz),
             10 => Some(
+                HPF_ORDERS
+                    .iter()
+                    .position(|&m| m.eq_ignore_ascii_case(&self.sidechain_hpf_order))
+                    .unwrap_or(0) as f64,
+            ),
+            11 => Some(
                 DETECTION_MODES
                     .iter()
                     .position(|&m| m.eq_ignore_ascii_case(&self.detection_mode))
                     .unwrap_or(0) as f64,
             ),
-            11 => Some(self.lookahead_ms),
-            12 => Some(if self.program_dependent_release {
+            12 => Some(self.lookahead_ms),
+            13 => Some(if self.program_dependent_release {
                 1.0
             } else {
                 0.0
             }),
-            13 => Some(if self.measured_auto_makeup { 1.0 } else { 0.0 }),
-            14 => Some(if self.sidechain_external { 1.0 } else { 0.0 }),
+            14 => Some(if self.measured_auto_makeup { 1.0 } else { 0.0 }),
+            15 => Some(if self.sidechain_external { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -344,14 +367,20 @@ impl PluginParamDef for Params {
             9 => self.sidechain_hpf_hz = value,
             10 => {
                 let idx = value as usize;
+                if let Some(&label) = HPF_ORDERS.get(idx) {
+                    self.sidechain_hpf_order = label.to_string();
+                }
+            }
+            11 => {
+                let idx = value as usize;
                 if let Some(&label) = DETECTION_MODES.get(idx) {
                     self.detection_mode = label.to_string();
                 }
             }
-            11 => self.lookahead_ms = value,
-            12 => self.program_dependent_release = value > 0.5,
-            13 => self.measured_auto_makeup = value > 0.5,
-            14 => self.sidechain_external = value > 0.5,
+            12 => self.lookahead_ms = value,
+            13 => self.program_dependent_release = value > 0.5,
+            14 => self.measured_auto_makeup = value > 0.5,
+            15 => self.sidechain_external = value > 0.5,
             _ => {}
         }
     }
@@ -396,6 +425,7 @@ mod tests {
         assert_eq!(original.auto_makeup, restored.auto_makeup);
         assert_eq!(original.link_channels, restored.link_channels);
         assert_eq!(original.sidechain_hpf_hz, restored.sidechain_hpf_hz);
+        assert_eq!(original.sidechain_hpf_order, restored.sidechain_hpf_order);
         assert_eq!(original.detection_mode, restored.detection_mode);
         assert_eq!(original.lookahead_ms, restored.lookahead_ms);
         assert_eq!(
@@ -428,6 +458,7 @@ mod tests {
             p.sidechain_hpf_hz,
             pk(PARAMS, "sidechain_hpf_hz").default_f64()
         );
+        assert_eq!(p.sidechain_hpf_order, HPF_ORDERS[0]);
         assert_eq!(p.detection_mode, DETECTION_MODES[0]);
         assert_eq!(p.lookahead_ms, pk(PARAMS, "lookahead_ms").default_f64());
         assert_eq!(

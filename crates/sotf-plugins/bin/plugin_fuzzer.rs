@@ -530,6 +530,7 @@ impl PluginFuzzer for CompressorFuzzer {
             auto_makeup,
             link_channels,
             sidechain_hpf_hz,
+            sidechain_hpf_order: "2nd".to_string(),
             detection_mode: "peak".to_string(),
             lookahead_ms: 0.0,
             program_dependent_release: false,

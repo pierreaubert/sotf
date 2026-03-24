@@ -26,6 +26,7 @@ mod text_system;
 mod window;
 
 pub use platform::AuPlatform;
+pub use window::{PENDING_VIEW, PendingViewInfo, au_window};
 pub(crate) use dispatcher::AuDispatcher;
 pub(crate) use display::AuDisplay;
 pub(crate) use text_system::AuTextSystem;

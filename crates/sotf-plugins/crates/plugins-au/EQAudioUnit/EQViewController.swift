@@ -21,7 +21,7 @@ public class EQViewController: AUViewController, AUAudioUnitFactory {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.blue.cgColor
 
-        let gpui = GPUIAUView(pluginType: "EQ")
+        let gpui = GPUIAUView(pluginType: "EQ", audioUnit: audioUnit)
         gpui.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(gpui)
         NSLayoutConstraint.activate([

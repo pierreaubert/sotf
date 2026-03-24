@@ -19,6 +19,7 @@ fn main() {
         auto_makeup: false,
         link_channels: true,
         sidechain_hpf_hz: 0.0,
+        sidechain_hpf_order: "2nd".to_string(),
         detection_mode: "peak".to_string(),
         lookahead_ms: 0.0,
         program_dependent_release: false,

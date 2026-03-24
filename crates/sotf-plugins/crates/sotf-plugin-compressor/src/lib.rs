@@ -23,16 +23,16 @@
 pub mod params;
 
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
+use math_audio_iir_fir::{peq_butterworth_highpass, Biquad};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
-use crate::params::PARAMS as CP;
+use crate::params::{HPF_ORDERS, PARAMS as CP};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use sotf_host::{DetectionMode, DualRelease, LevelDetector, LookaheadBuffer, MeasuredMakeup};
-use std::f32::consts::PI;
 
 use std::any::Any;
 use std::sync::Arc;
@@ -93,6 +93,10 @@ pub fn default_link_channels() -> bool {
 
 pub fn default_sidechain_hpf_hz() -> f32 {
     pk(CP, "sidechain_hpf_hz").default_f64() as f32
+}
+
+fn default_sidechain_hpf_order() -> String {
+    HPF_ORDERS[0].to_string()
 }
 
 fn default_detection_mode() -> String {
@@ -172,6 +176,8 @@ pub struct CompressorPluginParams {
     pub link_channels: bool,
     #[serde(default = "default_sidechain_hpf_hz")]
     pub sidechain_hpf_hz: f32,
+    #[serde(default = "default_sidechain_hpf_order")]
+    pub sidechain_hpf_order: String,
     #[serde(default = "default_detection_mode")]
     pub detection_mode: String,
     #[serde(default = "default_lookahead_ms")]
@@ -225,6 +231,10 @@ pub struct CompressorPlugin {
     param_sidechain_hpf_hz: ParameterId,
     sidechain_hpf_hz: f32,
 
+    param_sidechain_hpf_order: ParameterId,
+    /// 0 = 2nd order (-12dB/oct), 1 = 4th order (-24dB/oct)
+    sidechain_hpf_order_index: usize,
+
     param_detection_mode: ParameterId,
     /// 0 = Peak, 1 = RMS
     detection_mode_index: usize,
@@ -247,11 +257,10 @@ pub struct CompressorPlugin {
     envelope: Vec<f32>,
     /// Buffer for monitoring gain reduction without allocations
     monitoring_levels: Vec<f32>,
-    sidechain_hpf_prev_input: Vec<f32>,
-    sidechain_hpf_prev_output: Vec<f32>,
+    /// Butterworth HPF biquad sections per channel (empty when HPF disabled)
+    sidechain_hpf_biquads: Vec<Vec<Biquad>>,
     attack_coeff: f32,
     release_coeff: f32,
-    sidechain_hpf_alpha: f32,
 
     // Smoothing
     threshold_smoother: Smoother,
@@ -318,6 +327,9 @@ impl CompressorPlugin {
             param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
             sidechain_hpf_hz: 80.0,
 
+            param_sidechain_hpf_order: ParameterId::from("sidechain_hpf_order"),
+            sidechain_hpf_order_index: 0, // 2nd order
+
             param_detection_mode: ParameterId::from("detection_mode"),
             detection_mode_index: 0, // Peak
 
@@ -337,11 +349,9 @@ impl CompressorPlugin {
 
             envelope: vec![0.0; channels],
             monitoring_levels: vec![0.0; channels],
-            sidechain_hpf_prev_input: vec![0.0; channels],
-            sidechain_hpf_prev_output: vec![0.0; channels],
+            sidechain_hpf_biquads: Vec::new(),
             attack_coeff: 0.0,
             release_coeff: 0.0,
-            sidechain_hpf_alpha: 0.0,
 
             threshold_smoother: Smoother::new(threshold_db, DEFAULT_SMOOTHING_TIME_MS, sample_rate),
             makeup_gain_smoother: Smoother::new(
@@ -382,6 +392,13 @@ impl CompressorPlugin {
         self.makeup_gain_smoother
             .set_time(time_ms, self.sample_rate);
         self
+    }
+
+    fn sidechain_hpf_order_string(&self) -> String {
+        match self.sidechain_hpf_order_index {
+            1 => "4th".to_string(),
+            _ => "2nd".to_string(),
+        }
     }
 
     fn detection_mode_string(&self) -> String {
@@ -482,6 +499,14 @@ impl CompressorPlugin {
             .with_group("Sidechain")
             .with_importance(ParameterImportance::FineTuning),
             Parameter::new_string(
+                "sidechain_hpf_order",
+                "Sidechain HPF Order",
+                self.sidechain_hpf_order_string(),
+            )
+            .with_description("Butterworth HPF slope (2nd = -12dB/oct, 4th = -24dB/oct)")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_string(
                 "detection_mode",
                 "Detection Mode",
                 self.detection_mode_string(),
@@ -542,6 +567,12 @@ impl CompressorPlugin {
         plugin.auto_makeup = params.auto_makeup;
         plugin.link_channels = params.link_channels;
         plugin.sidechain_hpf_hz = params.sidechain_hpf_hz.max(0.0);
+
+        // HPF order
+        plugin.sidechain_hpf_order_index = match params.sidechain_hpf_order.as_str() {
+            "4th" => 1,
+            _ => 0, // "2nd" or any unknown
+        };
 
         // Detection mode
         plugin.detection_mode_index = match params.detection_mode.as_str() {
@@ -611,19 +642,14 @@ impl CompressorPlugin {
         }
     }
 
-    /// Update coefficients when parameters change
+    /// Update envelope coefficients when timing parameters change.
+    ///
+    /// NOTE: Does NOT rebuild sidechain HPF biquads — call `rebuild_sidechain_hpf()`
+    /// separately when HPF frequency or order changes, to avoid resetting filter
+    /// state on unrelated parameter adjustments (attack, release).
     fn update_coefficients(&mut self) {
         self.attack_coeff = Self::time_to_coeff(self.attack_ms, self.sample_rate);
         self.release_coeff = Self::time_to_coeff(self.release_ms, self.sample_rate);
-
-        let fc = self.sidechain_hpf_hz.max(0.0);
-        if fc > 0.0 && self.sample_rate > 0 {
-            let dt = 1.0 / self.sample_rate as f32;
-            let rc = 1.0 / (2.0 * PI * fc);
-            self.sidechain_hpf_alpha = rc / (rc + dt);
-        } else {
-            self.sidechain_hpf_alpha = 0.0;
-        }
 
         // Update dual release times
         for dr in &mut self.dual_release {
@@ -632,6 +658,25 @@ impl CompressorPlugin {
                 self.release_ms * DUAL_RELEASE_SLOW_MULTIPLIER,
                 self.sample_rate,
             );
+        }
+    }
+
+    /// Rebuild the Butterworth HPF biquad chain from current freq/order/sample_rate.
+    fn rebuild_sidechain_hpf(&mut self) {
+        let fc = self.sidechain_hpf_hz.max(0.0);
+        if fc > 0.0 && self.sample_rate > 0 {
+            let order = match self.sidechain_hpf_order_index {
+                1 => 4,
+                _ => 2,
+            };
+            let peq = peq_butterworth_highpass(order, fc as f64, self.sample_rate as f64);
+            // One set of biquad sections per channel (each needs independent state)
+            let sections: Vec<Biquad> = peq.into_iter().map(|(_, bq)| bq).collect();
+            self.sidechain_hpf_biquads = (0..self.channels)
+                .map(|_| sections.clone())
+                .collect();
+        } else {
+            self.sidechain_hpf_biquads.clear();
         }
     }
 
@@ -649,18 +694,15 @@ impl CompressorPlugin {
 
     #[inline]
     fn apply_sidechain_filter(&mut self, channel: usize, sample: f32) -> f32 {
-        if self.sidechain_hpf_alpha <= 0.0 {
+        if channel >= self.sidechain_hpf_biquads.len() {
             return sample;
         }
-
-        let prev_in = self.sidechain_hpf_prev_input[channel];
-        let prev_out = self.sidechain_hpf_prev_output[channel];
-        let alpha = self.sidechain_hpf_alpha;
-
-        let y = alpha * (prev_out + sample - prev_in);
-        self.sidechain_hpf_prev_input[channel] = sample;
-        self.sidechain_hpf_prev_output[channel] = y;
-        y
+        let biquads: &mut [Biquad] = &mut self.sidechain_hpf_biquads[channel];
+        let mut x = sample as f64;
+        for bq in biquads.iter_mut() {
+            x = bq.process(x);
+        }
+        x as f32
     }
 
     #[inline]
@@ -798,8 +840,21 @@ impl InPlacePlugin for CompressorPlugin {
                 .unwrap_or(pk(CP, "sidechain_hpf_hz").default_f64() as f32);
             if val.is_finite() {
                 self.sidechain_hpf_hz = val.max(0.0);
-                self.update_coefficients();
+                self.rebuild_sidechain_hpf();
             }
+        } else if id == self.param_sidechain_hpf_order {
+            let new_index = if let Some(s) = value.as_string() {
+                match s {
+                    "4th" => 1,
+                    _ => 0,
+                }
+            } else if let Some(v) = value.as_float() {
+                (v as usize).min(1)
+            } else {
+                0
+            };
+            self.sidechain_hpf_order_index = new_index;
+            self.rebuild_sidechain_hpf();
         } else if id == self.param_detection_mode {
             // Accept either String("peak"/"rms") or Float(0.0/1.0) for choice param
             let new_index = if let Some(s) = value.as_string() {
@@ -872,6 +927,8 @@ impl InPlacePlugin for CompressorPlugin {
             Some(ParameterValue::Bool(self.link_channels))
         } else if id == &self.param_sidechain_hpf_hz {
             Some(ParameterValue::Float(self.sidechain_hpf_hz))
+        } else if id == &self.param_sidechain_hpf_order {
+            Some(ParameterValue::String(self.sidechain_hpf_order_string()))
         } else if id == &self.param_detection_mode {
             Some(ParameterValue::String(self.detection_mode_string()))
         } else if id == &self.param_lookahead_ms {
@@ -894,6 +951,7 @@ impl InPlacePlugin for CompressorPlugin {
         self.makeup_gain_smoother
             .set_time(self.smoothing_time_ms, sample_rate);
         self.update_coefficients();
+        self.rebuild_sidechain_hpf();
 
         // Reinitialize level detectors with new sample rate
         let mode = if self.detection_mode_index == 1 {
@@ -936,8 +994,8 @@ impl InPlacePlugin for CompressorPlugin {
 
     fn reset(&mut self) {
         self.envelope.fill(0.0);
-        self.sidechain_hpf_prev_input.fill(0.0);
-        self.sidechain_hpf_prev_output.fill(0.0);
+        // Rebuild biquads to reset their internal state
+        self.rebuild_sidechain_hpf();
         for det in &mut self.level_detectors {
             det.reset();
         }
@@ -1136,6 +1194,7 @@ impl InPlacePlugin for CompressorPlugin {
 mod tests {
     use crate::*;
     use sotf_host::*;
+    use std::f32::consts::PI;
 
     #[test]
     fn test_compressor_creation() {
@@ -1507,6 +1566,7 @@ mod tests {
             auto_makeup: false,
             link_channels: true,
             sidechain_hpf_hz: 80.0,
+            sidechain_hpf_order: "4th".to_string(),
             detection_mode: "rms".to_string(),
             lookahead_ms: 5.0,
             program_dependent_release: true,
@@ -1516,6 +1576,7 @@ mod tests {
         let mut plugin = CompressorPlugin::from_params(2, params);
         plugin.initialize(48000).unwrap();
 
+        assert_eq!(plugin.sidechain_hpf_order_index, 1); // 4th order
         assert_eq!(plugin.detection_mode_index, 1);
         assert_eq!(plugin.lookahead_ms, 5.0);
         assert!(plugin.program_dependent_release);
@@ -1528,6 +1589,7 @@ mod tests {
         // Deserialize with no new fields — defaults should apply
         let json = r#"{"threshold_db": -20.0}"#;
         let params: CompressorPluginParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.sidechain_hpf_order, "2nd");
         assert_eq!(params.detection_mode, "peak");
         assert_eq!(params.lookahead_ms, 0.0);
         assert!(!params.program_dependent_release);
@@ -1768,5 +1830,100 @@ mod tests {
         assert_no_allocs("CompressorPlugin::process with all features", || {
             plugin.process(&input, &mut output, &ctx).unwrap();
         });
+    }
+
+    #[test]
+    fn test_attack_change_preserves_hpf_state() {
+        // Changing attack must NOT reset sidechain HPF biquad state.
+        // Process a DC-heavy signal through the HPF, then change attack.
+        // If biquad state resets, the HPF output jumps discontinuously.
+        let mut compressor = CompressorPlugin::new(1, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0)
+            .with_smoothing_time(0.0);
+        compressor.initialize(48000).unwrap();
+        compressor
+            .set_parameter(
+                ParameterId::from("sidechain_hpf_hz"),
+                ParameterValue::Float(80.0),
+            )
+            .unwrap();
+        compressor.link_channels = false;
+
+        // Process 500 frames of a low-frequency signal to prime the HPF state
+        let num_frames = 500;
+        let mut buffer: Vec<f32> = (0..num_frames)
+            .map(|i| 0.5 * (2.0 * PI * 30.0 * i as f32 / 48000.0).sin())
+            .collect();
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        compressor.process_in_place(&mut buffer, &ctx).unwrap();
+
+        // Snapshot the HPF state by processing one more frame
+        let probe_sample = 0.5_f32 * (2.0 * PI * 30.0 * 500.0 / 48000.0).sin();
+        let mut buf_before = vec![probe_sample];
+        let ctx1 = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 1,
+        };
+        compressor.process_in_place(&mut buf_before, &ctx1).unwrap();
+        let output_before = buf_before[0];
+
+        // Now change attack — this should NOT reset HPF biquads
+        compressor
+            .set_parameter(
+                ParameterId::from("attack"),
+                ParameterValue::Float(10.0),
+            )
+            .unwrap();
+
+        // Process same probe sample again
+        let probe_sample2 = 0.5_f32 * (2.0 * PI * 30.0 * 501.0 / 48000.0).sin();
+        let mut buf_after = vec![probe_sample2];
+        compressor.process_in_place(&mut buf_after, &ctx1).unwrap();
+        let output_after = buf_after[0];
+
+        // If HPF state was reset, output_after would jump significantly.
+        // With preserved state, consecutive samples should be close.
+        let diff = (output_after - output_before).abs();
+        assert!(
+            diff < 0.05,
+            "HPF output jumped after attack change: before={output_before}, after={output_after}, diff={diff} — \
+             biquad state likely reset"
+        );
+    }
+
+    #[test]
+    fn test_hpf_order_parameter() {
+        let mut compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0);
+        compressor.initialize(48000).unwrap();
+
+        // Default is 2nd order
+        assert_eq!(
+            compressor.get_parameter(&ParameterId::from("sidechain_hpf_order")),
+            Some(ParameterValue::String("2nd".to_string()))
+        );
+
+        // Set to 4th order
+        compressor
+            .set_parameter(
+                ParameterId::from("sidechain_hpf_order"),
+                ParameterValue::String("4th".to_string()),
+            )
+            .unwrap();
+        assert_eq!(compressor.sidechain_hpf_order_index, 1);
+        assert_eq!(
+            compressor.get_parameter(&ParameterId::from("sidechain_hpf_order")),
+            Some(ParameterValue::String("4th".to_string()))
+        );
+
+        // Set back to 2nd order via string
+        compressor
+            .set_parameter(
+                ParameterId::from("sidechain_hpf_order"),
+                ParameterValue::String("2nd".to_string()),
+            )
+            .unwrap();
+        assert_eq!(compressor.sidechain_hpf_order_index, 0);
     }
 }

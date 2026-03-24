@@ -128,6 +128,45 @@ impl ParameterMap {
         self.cached_infos.get(index)
     }
 
+    /// Get the param_id string for a given index.
+    pub fn param_id_at(&self, index: usize) -> Option<&str> {
+        self.cached_infos.get(index).map(|info| {
+            // SAFETY: id was created from CString::into_raw and is valid for the lifetime of self
+            unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") }
+        })
+    }
+
+    /// Get denormalized parameter value by index.
+    ///
+    /// Returns the raw value in parameter units (Hz, dB, etc.).
+    pub fn get_denormalized_by_index(&self, plugin: &dyn Plugin, index: usize) -> Option<f64> {
+        let info = self.cached_infos.get(index)?;
+        let param_id = unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") };
+        let normalized = self.get_normalized(plugin, param_id)?;
+        Some(info.min_value + normalized * (info.max_value - info.min_value))
+    }
+
+    /// Set denormalized parameter value by index.
+    ///
+    /// Takes the raw value in parameter units (Hz, dB, etc.) and normalizes internally.
+    pub fn set_denormalized_by_index(
+        &self,
+        plugin: &mut dyn Plugin,
+        index: usize,
+        value: f64,
+    ) -> Result<(), String> {
+        let info = self.cached_infos.get(index)
+            .ok_or_else(|| format!("Parameter index {index} out of range"))?;
+        let param_id = unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") };
+        let range = info.max_value - info.min_value;
+        let normalized = if range.abs() < f64::EPSILON {
+            0.0
+        } else {
+            ((value - info.min_value) / range).clamp(0.0, 1.0)
+        };
+        self.set_normalized(plugin, param_id, normalized)
+    }
+
     /// Set parameter value (normalized 0.0-1.0).
     pub fn set_normalized(
         &self,

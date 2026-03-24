@@ -30,6 +30,15 @@ typedef enum PluginError {
 } PluginError;
 
 /**
+ * Thread-safe parameter value cache using atomics.
+ *
+ * Each parameter is stored as an `AtomicU64` holding the bit representation
+ * of an `f64` value. Reads and writes use `Relaxed` ordering since we only
+ * need eventual consistency for UI display (no ordering constraints).
+ */
+typedef struct AtomicParamCache AtomicParamCache;
+
+/**
  * Opaque handle to a plugin instance
  *
  * This is passed to Swift/Objective-C code and must not be dereferenced
@@ -74,6 +83,24 @@ typedef struct ParameterInfo {
    */
   bool logarithmic;
 } ParameterInfo;
+
+/**
+ * C function pointer type for parameter writes.
+ *
+ * Called when the GPUI UI changes a parameter. The Swift side implements this
+ * by setting the value on the `AUParameterTree`, which triggers the standard
+ * AU parameter observation flow → `plugin_set_parameter()`.
+ *
+ * Arguments: `(userdata, param_index, denormalized_value)`
+ */
+typedef void (*SetParamCallback)(void*, uintptr_t, double);
+
+/**
+ * C function pointer type for parameter reset (to default).
+ *
+ * Arguments: `(userdata, param_index)`
+ */
+typedef void (*ResetParamCallback)(void*, uintptr_t);
 
 /**
  * Get the last error message
@@ -239,5 +266,52 @@ void plugin_free_state(uint8_t *data, uintptr_t len);
  * * NULL on error
  */
 char *plugin_available_types(void);
+
+/**
+ * Create a GPUI AU context with a real plugin UI.
+ *
+ * Unlike `gpui_au_create` (which shows a placeholder), this function creates
+ * an `AuHostState` that reads parameters from an `AtomicParamCache` and writes
+ * them through callbacks to the AU `AUParameterTree` — fully thread-safe.
+ *
+ * # Safety
+ * - `ns_view` must be a valid NSView pointer
+ * - `plugin_type` must be a valid C string
+ * - `param_cache` must be a valid pointer from `au_param_cache_create()`
+ * - `set_param_cb` / `reset_param_cb` must be valid function pointers
+ * - `cb_userdata` must remain valid for the lifetime of the returned context
+ */
+AuContext *gpui_au_create_with_plugin(void *ns_view,
+                                      float width,
+                                      float height,
+                                      float scale,
+                                      const char *plugin_type,
+                                      struct AtomicParamCache *param_cache,
+                                      SetParamCallback set_param_cb,
+                                      ResetParamCallback reset_param_cb,
+                                      void *cb_userdata);
+
+/**
+ * Create a new atomic parameter cache.
+ */
+struct AtomicParamCache *au_param_cache_create(uintptr_t count);
+
+/**
+ * Write a denormalized parameter value into the cache.
+ *
+ * Called from Swift's `implementorValueObserver` on the AU main thread
+ * whenever a parameter changes (from host automation, MIDI, or UI).
+ */
+void au_param_cache_write(struct AtomicParamCache *cache, uintptr_t index, double value);
+
+/**
+ * Read a denormalized parameter value from the cache.
+ */
+double au_param_cache_read(const struct AtomicParamCache *cache, uintptr_t index);
+
+/**
+ * Destroy a parameter cache.
+ */
+void au_param_cache_destroy(struct AtomicParamCache *cache);
 
 #endif  /* SOTF_AUDIO_FFI_H */

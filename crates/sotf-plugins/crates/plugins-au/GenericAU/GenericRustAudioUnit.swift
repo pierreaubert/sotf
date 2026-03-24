@@ -56,6 +56,14 @@ open class GenericRustAudioUnit: AUAudioUnit {
     /// updates the pointed-to struct so the render thread always sees current values.
     private let renderStatePtr: UnsafeMutablePointer<RenderState>
 
+    /// Public access to the Rust PluginHandle for GPUI UI rendering.
+    /// Returns the raw pointer as `UnsafeMutableRawPointer?` for passing to
+    /// `gpui_au_create_with_plugin()`. Valid as long as this AU instance is alive.
+    public var pluginHandle: UnsafeMutableRawPointer? {
+        guard let handle = renderStatePtr.pointee.handle else { return nil }
+        return UnsafeMutableRawPointer(handle)
+    }
+
     // MARK: - Initialization
 
     public override init(componentDescription: AudioComponentDescription,

@@ -33,7 +33,7 @@ use std::{
 /// Thread-local storage for the NSView pointer + dimensions,
 /// set by `gpui_au_create` before calling `app.run()` so that
 /// `AuWindow::new()` can read it during `open_window()`.
-pub(crate) struct PendingViewInfo {
+pub struct PendingViewInfo {
     pub ns_view: *mut Object,
     pub width: f32,
     pub height: f32,
@@ -41,7 +41,7 @@ pub(crate) struct PendingViewInfo {
 }
 
 thread_local! {
-    pub(crate) static PENDING_VIEW: RefCell<Option<PendingViewInfo>> = const { RefCell::new(None) };
+    pub static PENDING_VIEW: RefCell<Option<PendingViewInfo>> = const { RefCell::new(None) };
 }
 
 /// Wrapper for a raw pointer to make it Send+Sync for Mutex storage.
@@ -57,7 +57,7 @@ static AU_WINDOW: std::sync::Mutex<Option<AuWindowPtr>> = std::sync::Mutex::new(
 
 /// Get a reference to the current AU window, if any.
 /// Returns None if no window is registered or the pointer is null.
-pub(crate) fn au_window() -> Option<&'static AuWindow> {
+pub fn au_window() -> Option<&'static AuWindow> {
     let guard = AU_WINDOW.lock().ok()?;
     guard
         .as_ref()

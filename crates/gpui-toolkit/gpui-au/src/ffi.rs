@@ -79,6 +79,16 @@ pub struct AuContext {
     _app_cell: Rc<AppCell>,
 }
 
+impl AuContext {
+    /// Create a new AU context (for use by external crates like plugins-ffi).
+    pub fn new(plugin_type: String, app_cell: Rc<AppCell>) -> Self {
+        Self {
+            _plugin_type: plugin_type,
+            _app_cell: app_cell,
+        }
+    }
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 /// Create a GPUI context embedded in an NSView.

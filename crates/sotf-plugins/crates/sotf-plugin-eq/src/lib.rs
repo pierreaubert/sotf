@@ -4,6 +4,9 @@
 
 pub mod params;
 
+#[cfg(feature = "gpui-ui")]
+pub mod ui;
+
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use math_audio_iir_fir::{Biquad, BiquadCoefficients};
 use rubato::{Fft, FixedSync, Resampler};

@@ -1,0 +1,22 @@
+[package]
+name = "plugins-gpui"
+description = "Common GPUI rendering infrastructure for SOTF audio plugin UIs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# GPUI rendering
+gpui = { workspace = true }
+gpui-px = { workspace = true, features = ["gpui"] }
+gpui-ui-kit = { workspace = true }
+
+# Audio math (Biquad for EQ response curves, etc.)
+math-iir-fir = { workspace = true }
+
+# Plugin infrastructure (ParamSpec, PluginLayout)
+sotf-host = { workspace = true }
+
+# MIDI controller mapping overlay
+sotf-midi = { workspace = true }

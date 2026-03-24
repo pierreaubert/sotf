@@ -21,6 +21,9 @@
 pub use gpui_au::ffi as gpui_au_ffi;
 
 use std::ffi::{CStr, CString};
+use std::rc::Rc;
+
+use gpui::AppContext as _;
 use std::os::raw::{c_char, c_double, c_int};
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
@@ -28,6 +31,8 @@ use std::slice;
 
 use sotf_host::plugin::{Plugin, ProcessContext};
 
+mod au_host;
+pub mod param_cache;
 mod parameter_map;
 mod plugin_factory;
 
@@ -604,6 +609,107 @@ fn libc_malloc(len: usize) -> *mut u8 {
 fn libc_free(ptr: *mut u8, len: usize) {
     let layout = std::alloc::Layout::from_size_align(len, 1).unwrap();
     unsafe { std::alloc::dealloc(ptr, layout) }
+}
+
+// ============================================================================
+// GPUI AU Plugin View (with real plugin UI instead of placeholder)
+// ============================================================================
+
+/// Create a GPUI AU context with a real plugin UI.
+///
+/// Unlike `gpui_au_create` (which shows a placeholder), this function creates
+/// an `AuHostState` that reads parameters from an `AtomicParamCache` and writes
+/// them through callbacks to the AU `AUParameterTree` — fully thread-safe.
+///
+/// # Safety
+/// - `ns_view` must be a valid NSView pointer
+/// - `plugin_type` must be a valid C string
+/// - `param_cache` must be a valid pointer from `au_param_cache_create()`
+/// - `set_param_cb` / `reset_param_cb` must be valid function pointers
+/// - `cb_userdata` must remain valid for the lifetime of the returned context
+#[unsafe(no_mangle)]
+pub extern "C" fn gpui_au_create_with_plugin(
+    ns_view: *mut std::ffi::c_void,
+    width: f32,
+    height: f32,
+    scale: f32,
+    plugin_type: *const c_char,
+    param_cache: *mut param_cache::AtomicParamCache,
+    set_param_cb: au_host::SetParamCallback,
+    reset_param_cb: au_host::ResetParamCallback,
+    cb_userdata: *mut std::ffi::c_void,
+) -> *mut gpui_au::ffi::AuContext {
+    if ns_view.is_null() || plugin_type.is_null() || param_cache.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let plugin_type_str = unsafe {
+        match CStr::from_ptr(plugin_type).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return std::ptr::null_mut(),
+        }
+    };
+
+    // Wrap the cache pointer in Arc (we take ownership of the FFI allocation)
+    let cache = unsafe {
+        // SAFETY: param_cache was created by au_param_cache_create, we take ownership
+        std::sync::Arc::from_raw(param_cache as *const param_cache::AtomicParamCache)
+    };
+    // Keep an extra Arc ref so the cache outlives both the GPUI view and the FFI caller
+    let cache_for_ffi = cache.clone();
+    // Leak the FFI copy back so au_param_cache_write/destroy still work
+    // Intentionally leak: the FFI caller still needs au_param_cache_write/destroy to work
+    let _ = std::sync::Arc::into_raw(cache_for_ffi);
+
+    // Store the NSView info for AuWindow::new()
+    gpui_au::PENDING_VIEW.with(|pv| {
+        *pv.borrow_mut() = Some(gpui_au::PendingViewInfo {
+            ns_view: ns_view.cast(),
+            width,
+            height,
+            scale,
+        });
+    });
+
+    let platform = Rc::new(gpui_au::AuPlatform::new());
+    let app = gpui::Application::with_platform(platform);
+
+    // Clone Rc<AppCell> to keep GPUI alive after run() returns
+    let app_cell: Rc<gpui::AppCell> = unsafe {
+        let rc: &Rc<gpui::AppCell> = std::mem::transmute(&app);
+        rc.clone()
+    };
+
+    let pt = plugin_type_str.clone();
+    app.run(move |cx: &mut gpui::App| {
+        match cx.open_window(
+            gpui::WindowOptions {
+                window_bounds: None,
+                ..Default::default()
+            },
+            |_window, cx| {
+                let entity = cx.new(|_| {
+                    au_host::AuHostState::new(
+                        cache.clone(),
+                        set_param_cb,
+                        reset_param_cb,
+                        cb_userdata,
+                        pt,
+                    )
+                });
+                entity.update(cx, |state: &mut au_host::AuHostState, _| {
+                    state.set_entity(entity.clone());
+                });
+                entity
+            },
+        ) {
+            Ok(_handle) => {}
+            Err(_e) => {}
+        }
+    });
+
+    let context = Box::new(gpui_au::ffi::AuContext::new(plugin_type_str, app_cell));
+    Box::into_raw(context)
 }
 
 // ============================================================================
