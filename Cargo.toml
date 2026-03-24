@@ -44,6 +44,7 @@ members = [
     "crates/sotf-midi",
     "crates/sotf-plugins/crates/plugins-bridge",
     "crates/sotf-plugins/crates/plugins-ffi",
+    "crates/sotf-plugins/crates/plugins-gpui",
     "crates/sotf-plugins/crates/plugins-nih",
     "crates/systemwide/crates/driver-common",
     "crates/systemwide/crates/driver-hal",
@@ -67,6 +68,7 @@ members = [
     "crates/sotf-dlna",
     "crates/sotf-cast",
     "crates/sotf-federation",
+    "crates/sotf-tls",
     "crates/3rdparties/sofa-reader",
     "crates/gpui-toolkit/gpui-ios",
     "crates/gpui-toolkit/gpui-au",
@@ -222,11 +224,13 @@ sotf-services = { path = "crates/sotf-services", default-features = false }
 sotf-dlna = { path = "crates/sotf-dlna" }
 sotf-cast = { path = "crates/sotf-cast" }
 sotf-federation = { path = "crates/sotf-federation" }
+sotf-tls = { path = "crates/sotf-tls" }
 sotf-engine = { path = "crates/sotf-engine", default-features = false }
 sotf-types = { path = "crates/sotf-types" }
 sotf-player = { path = "crates/sotf-player" }
 sotf-midi = { path = "crates/sotf-midi" }
 sotf-plugins = { path = "crates/sotf-plugins", default-features = false }
+plugins-gpui = { path = "crates/sotf-plugins/crates/plugins-gpui" }
 driver-common = { path = "crates/systemwide/crates/driver-common" }
 driver-hal = { path = "crates/systemwide/crates/driver-hal" }  # macOS only
 

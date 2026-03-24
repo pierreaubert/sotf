@@ -3069,6 +3069,7 @@ fn build_rack_mode_plugins(
                         auto_makeup: plugins.compressor.auto_makeup,
                         link_channels: !plugins.compressor.unlink_channels,
                         sidechain_hpf_hz: plugins.compressor.sidechain_hpf_hz as f64,
+                        sidechain_hpf_order: "2nd".to_string(),
                         detection_mode: "peak".to_string(),
                         lookahead_ms: 0.0,
                         program_dependent_release: false,

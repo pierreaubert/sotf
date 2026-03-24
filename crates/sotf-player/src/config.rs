@@ -211,6 +211,47 @@ pub fn get_gpui_log_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("sotf_gpui_player.log"))
 }
 
+/// Get the path to the server configuration file
+pub fn get_server_config_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("servers.json"))
+}
+
+/// Load server configuration from disk.
+///
+/// # Errors
+/// Returns an error if the file exists but cannot be read or parsed.
+pub fn load_server_config()
+-> Result<crate::federation_config::ServerConfig, Box<dyn std::error::Error>> {
+    if let Some(path) = get_server_config_path() {
+        if path.exists() {
+            crate::security::validate_config_read_path(&path)?;
+            let json = std::fs::read_to_string(&path)?;
+            Ok(serde_json::from_str(&json)?)
+        } else {
+            Ok(crate::federation_config::ServerConfig::default())
+        }
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
+/// Save server configuration to disk.
+///
+/// # Errors
+/// Returns an error if the config directory cannot be determined or the file cannot be written.
+pub fn save_server_config(
+    config: &crate::federation_config::ServerConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = get_server_config_path() {
+        crate::security::validate_write_path(&path)?;
+        let json = serde_json::to_string_pretty(config)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
 /// Save TUI app configuration to disk
 pub fn save_app_config(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = get_tui_state_path() {

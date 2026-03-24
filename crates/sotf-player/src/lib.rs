@@ -16,6 +16,7 @@ pub mod config;
 /// - Bliss audio analysis (`bliss`)
 /// - Music recommendation engine (`recommendation`)
 pub mod controllers;
+pub mod federation_config;
 pub mod database;
 pub mod headphone_eq_types;
 pub mod level_meter;

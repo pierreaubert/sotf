@@ -3942,7 +3942,7 @@ dependencies = [
  "anyhow",
  "block",
  "core-foundation 0.10.0",
- "core-foundation-sys 0.7.0",
+ "core-foundation-sys 0.8.7",
  "core-graphics 0.24.0",
  "core-text",
  "env_logger",
@@ -7444,6 +7444,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
 
 [[package]]
+name = "pem"
+version = "3.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
+dependencies = [
+ "base64 0.22.1",
+ "serde_core",
+]
+
+[[package]]
 name = "pem-rfc7468"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7792,13 +7802,29 @@ name = "plugins-ffi"
 version = "0.5.14"
 dependencies = [
  "cbindgen 0.29.2",
+ "gpui",
  "gpui-au",
  "log",
+ "math-iir-fir",
  "plugins-bridge",
+ "plugins-gpui",
  "serde",
  "serde_json",
  "sotf-host",
+ "sotf-plugin-eq",
  "sotf-plugins",
+]
+
+[[package]]
+name = "plugins-gpui"
+version = "0.5.14"
+dependencies = [
+ "gpui",
+ "gpui-px",
+ "gpui-ui-kit",
+ "math-iir-fir",
+ "sotf-host",
+ "sotf-midi",
 ]
 
 [[package]]
@@ -8612,6 +8638,19 @@ dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
  "wasm_sync",
+]
+
+[[package]]
+name = "rcgen"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
+dependencies = [
+ "pem",
+ "ring",
+ "rustls-pki-types",
+ "time",
+ "yasna",
 ]
 
 [[package]]
@@ -10287,7 +10326,9 @@ version = "0.1.0"
 dependencies = [
  "env_logger",
  "log",
+ "sotf-tls",
  "tokio",
+ "tokio-rustls 0.26.4",
 ]
 
 [[package]]
@@ -10439,6 +10480,7 @@ version = "0.5.7"
 dependencies = [
  "criterion",
  "math-dsp",
+ "math-iir-fir",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10524,10 +10566,15 @@ name = "sotf-plugin-eq"
 version = "0.5.65"
 dependencies = [
  "audioadapter-buffers",
+ "gpui",
+ "gpui-px",
+ "gpui-ui-kit",
  "math-iir-fir",
+ "plugins-gpui",
  "rubato",
  "serde",
  "sotf-host",
+ "sotf-midi",
 ]
 
 [[package]]
@@ -10837,6 +10884,24 @@ dependencies = [
  "reqwest 0.13.2",
  "symphonia-core",
  "url",
+]
+
+[[package]]
+name = "sotf-tls"
+version = "0.5.14"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "log",
+ "rcgen",
+ "rustls 0.23.37",
+ "serde",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -14475,6 +14540,15 @@ name = "y4m"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5a4b21e1a62b67a2970e6831bc091d7b87e119e7f9791aef9702e3bef04448"
+
+[[package]]
+name = "yasna"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
+dependencies = [
+ "time",
+]
 
 [[package]]
 name = "yazi"

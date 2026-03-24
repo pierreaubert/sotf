@@ -8,6 +8,7 @@ use crate::config;
 
 // Sub-modules for database functionality
 mod analysis;
+mod federation;
 mod library;
 mod metadata;
 mod playback;
