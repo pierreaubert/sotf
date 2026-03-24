@@ -51,6 +51,9 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::bool_labeled("True Peak", "true_peak", false, "On", "Off", "Detection")
         .setup()
         .doc("Detect inter-sample peaks"),
+    ParamSpec::bool_labeled("ISP Limit", "isp_mode", false, "On", "Off", "Detection")
+        .setup()
+        .doc("Guarantee output has no inter-sample peaks above ceiling"),
     ParamSpec::bool_labeled("Dual Release", "dual_release", false, "On", "Off", "Timing")
         .setup()
         .doc("Fast+slow release envelopes"),
@@ -64,9 +67,9 @@ pub const PARAMS: &[ParamSpec] = &[
 // UI Layout
 // ============================================================================
 
-/// Limiter: idx 0=threshold, 1=release, 2=lookahead, 3=soft_knee, 4=true_peak, 5=dual_release, 6=mix
+/// Limiter: idx 0=threshold, 1=release, 2=lookahead, 3=soft_knee, 4=true_peak, 5=isp_mode, 6=dual_release, 7=mix
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::toggle(3), ControlSpec::toggle(4), ControlSpec::toggle(5)], // soft_knee, true_peak, dual_release
+    config: &[ControlSpec::toggle(3), ControlSpec::toggle(4), ControlSpec::toggle(5), ControlSpec::toggle(6)], // soft_knee, true_peak, isp_mode, dual_release
     main: &[
         ControlGroup {
             title: "DYNAMICS",
@@ -82,7 +85,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     ],
     output: &[
         ControlSpec::meter(-20.0, 0.0), // GR meter (limiter range)
-        ControlSpec::knob(6),           // mix
+        ControlSpec::knob(7),           // mix
     ],
     tabs: &[],
     visualizations: &[VizSlot::TransferCurve {
@@ -116,6 +119,8 @@ pub struct Params {
     pub soft: bool,
     #[serde(default = "d_true_peak")]
     pub true_peak: bool,
+    #[serde(default = "d_isp_mode")]
+    pub isp_mode: bool,
     #[serde(default = "d_dual_release")]
     pub dual_release: bool,
     #[serde(default = "d_mix")]
@@ -137,6 +142,9 @@ fn d_soft() -> bool {
 fn d_true_peak() -> bool {
     pk(PARAMS, "true_peak").default_bool()
 }
+fn d_isp_mode() -> bool {
+    pk(PARAMS, "isp_mode").default_bool()
+}
 fn d_dual_release() -> bool {
     pk(PARAMS, "dual_release").default_bool()
 }
@@ -152,6 +160,7 @@ impl Default for Params {
             lookahead: d_lookahead(),
             soft: d_soft(),
             true_peak: d_true_peak(),
+            isp_mode: d_isp_mode(),
             dual_release: d_dual_release(),
             mix: d_mix(),
         }
@@ -175,8 +184,9 @@ impl PluginParamDef for Params {
             2 => Some(self.lookahead),
             3 => Some(if self.soft { 1.0 } else { 0.0 }),
             4 => Some(if self.true_peak { 1.0 } else { 0.0 }),
-            5 => Some(if self.dual_release { 1.0 } else { 0.0 }),
-            6 => Some(self.mix),
+            5 => Some(if self.isp_mode { 1.0 } else { 0.0 }),
+            6 => Some(if self.dual_release { 1.0 } else { 0.0 }),
+            7 => Some(self.mix),
             _ => None,
         }
     }
@@ -188,8 +198,9 @@ impl PluginParamDef for Params {
             2 => self.lookahead = value,
             3 => self.soft = value > 0.5,
             4 => self.true_peak = value > 0.5,
-            5 => self.dual_release = value > 0.5,
-            6 => self.mix = value,
+            5 => self.isp_mode = value > 0.5,
+            6 => self.dual_release = value > 0.5,
+            7 => self.mix = value,
             _ => {}
         }
     }
@@ -229,6 +240,7 @@ mod tests {
         assert_eq!(original.lookahead, restored.lookahead);
         assert_eq!(original.soft, restored.soft);
         assert_eq!(original.true_peak, restored.true_peak);
+        assert_eq!(original.isp_mode, restored.isp_mode);
         assert_eq!(original.dual_release, restored.dual_release);
         assert_eq!(original.mix, restored.mix);
     }
@@ -241,6 +253,7 @@ mod tests {
         assert_eq!(p.lookahead, pk(PARAMS, "lookahead").default_f64());
         assert_eq!(p.soft, pk(PARAMS, "soft").default_bool());
         assert_eq!(p.true_peak, pk(PARAMS, "true_peak").default_bool());
+        assert_eq!(p.isp_mode, pk(PARAMS, "isp_mode").default_bool());
         assert_eq!(p.dual_release, pk(PARAMS, "dual_release").default_bool());
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64());
     }

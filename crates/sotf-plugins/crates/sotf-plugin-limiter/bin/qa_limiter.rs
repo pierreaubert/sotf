@@ -14,6 +14,7 @@ fn main() {
         lookahead_ms: 5.0,
         soft: false,
         true_peak: false,
+        isp_mode: false,
         dual_release: false,
         mix: 1.0,
         feed_forward: false,

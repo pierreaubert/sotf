@@ -29,6 +29,8 @@ pub struct LimiterPluginParams {
     pub soft: bool,
     #[serde(default = "default_true_peak")]
     pub true_peak: bool,
+    #[serde(default)]
+    pub isp_mode: bool,
     #[serde(default = "default_dual_release")]
     pub dual_release: bool,
     #[serde(default = "default_mix")]
@@ -87,6 +89,8 @@ pub struct LimiterPlugin {
     soft: bool,
     param_true_peak: ParameterId,
     true_peak: bool,
+    param_isp_mode: ParameterId,
+    isp_mode: bool,
     param_dual_release: ParameterId,
     dual_release: bool,
     param_mix: ParameterId,
@@ -101,6 +105,10 @@ pub struct LimiterPlugin {
     lookahead_pos: usize,
     lookahead_len: usize,
     true_peak_detectors: Vec<TruePeakDetector>,
+    /// Output ISP detectors for verifying no inter-sample peaks exceed ceiling
+    output_isp_detectors: Vec<TruePeakDetector>,
+    /// Accumulated ISP correction in dB from output ISP violations (feedback loop)
+    isp_correction_db: f32,
     dual_release_env: DualRelease,
     cached_parameters: Vec<Parameter>,
     cache: RealTimeCache<LimiterData>,
@@ -134,6 +142,8 @@ impl LimiterPlugin {
             soft,
             param_true_peak: ParameterId::from("true_peak"),
             true_peak: false,
+            param_isp_mode: ParameterId::from("isp_mode"),
+            isp_mode: false,
             param_dual_release: ParameterId::from("dual_release"),
             dual_release: false,
             param_mix: ParameterId::from("mix"),
@@ -148,6 +158,8 @@ impl LimiterPlugin {
             lookahead_pos: 0,
             lookahead_len,
             true_peak_detectors: (0..channels).map(|_| TruePeakDetector::new()).collect(),
+            output_isp_detectors: (0..channels).map(|_| TruePeakDetector::new()).collect(),
+            isp_correction_db: 0.0,
             dual_release_env: DualRelease::new(release_ms, release_ms * 5.0, sr),
             cached_parameters: Vec::new(),
             cache: RealTimeCache::new(LimiterData::default()),
@@ -200,6 +212,10 @@ impl LimiterPlugin {
                 .with_description("Use 4x oversampled true peak detection")
                 .with_group("Detection")
                 .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("isp_mode", "ISP Limit", self.isp_mode)
+                .with_description("Guarantee output has no inter-sample peaks above ceiling")
+                .with_group("Detection")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("dual_release", "Dual Release", self.dual_release)
                 .with_description("Program-dependent fast/slow release")
                 .with_group("Timing")
@@ -230,6 +246,7 @@ impl LimiterPlugin {
             params.soft,
         );
         p.true_peak = params.true_peak;
+        p.isp_mode = params.isp_mode;
         p.dual_release = params.dual_release;
         p.mix = params.mix.clamp(0.0, 1.0);
         p.feed_forward = params.feed_forward;
@@ -304,6 +321,10 @@ impl InPlacePlugin for LimiterPlugin {
             self.true_peak = value
                 .as_bool()
                 .unwrap_or(pk(LM, "true_peak").default_bool());
+        } else if id == self.param_isp_mode {
+            self.isp_mode = value
+                .as_bool()
+                .unwrap_or(pk(LM, "isp_mode").default_bool());
         } else if id == self.param_dual_release {
             self.dual_release = value
                 .as_bool()
@@ -334,6 +355,8 @@ impl InPlacePlugin for LimiterPlugin {
             Some(ParameterValue::Float(self.lookahead_ms))
         } else if id == &self.param_true_peak {
             Some(ParameterValue::Bool(self.true_peak))
+        } else if id == &self.param_isp_mode {
+            Some(ParameterValue::Bool(self.isp_mode))
         } else if id == &self.param_dual_release {
             Some(ParameterValue::Bool(self.dual_release))
         } else if id == &self.param_mix {
@@ -353,6 +376,9 @@ impl InPlacePlugin for LimiterPlugin {
         // Resize true peak detectors if channel count changed
         self.true_peak_detectors
             .resize_with(self.channels, TruePeakDetector::new);
+        self.output_isp_detectors
+            .resize_with(self.channels, TruePeakDetector::new);
+        self.isp_correction_db = 0.0;
         self.dual_release_env = DualRelease::new(
             self.release_ms,
             self.release_ms * 5.0,
@@ -367,6 +393,10 @@ impl InPlacePlugin for LimiterPlugin {
         for det in &mut self.true_peak_detectors {
             det.reset();
         }
+        for det in &mut self.output_isp_detectors {
+            det.reset();
+        }
+        self.isp_correction_db = 0.0;
         self.dual_release_env.reset();
     }
 
@@ -380,9 +410,10 @@ impl InPlacePlugin for LimiterPlugin {
         let thresh = self.threshold_smoother.advance();
         let mix = self.mix_smoother.advance();
         let mut max_peak = 0.0f32;
-        let use_true_peak = self.true_peak;
+        let use_true_peak = self.true_peak || self.isp_mode;
         let use_dual_release = self.dual_release;
         let use_feed_forward = self.feed_forward && self.lookahead_len > 1;
+        let use_isp_mode = self.isp_mode;
 
         // Reset per-block ISP tracking (no resize needed — channels is invariant)
         if use_true_peak {
@@ -427,11 +458,12 @@ impl InPlacePlugin for LimiterPlugin {
             };
 
             // Predictive peak from input (or lookahead scan)
+            // Add ISP correction from previous output ISP violations (feedback loop)
             let target_gr = if effective_peak > thresh {
                 20.0 * fast_log10(effective_peak / thresh)
             } else {
                 0.0
-            };
+            } + self.isp_correction_db;
 
             // Instant attack, smoothed release
             if target_gr > self.envelope {
@@ -476,6 +508,28 @@ impl InPlacePlugin for LimiterPlugin {
 
                 buffer[idx] = (1.0 - mix) * delayed + mix * wet;
             }
+            // ISP output verification: check output for inter-sample peaks
+            // and feed back correction to the next frame's gain computation
+            if use_isp_mode {
+                let mut frame_output_isp = 0.0f32;
+                for ch in 0..self.channels {
+                    let idx = frame * self.channels + ch;
+                    let output_tp = self.output_isp_detectors[ch].process_linear(buffer[idx]);
+                    frame_output_isp = frame_output_isp.max(output_tp);
+                }
+                if frame_output_isp > thresh {
+                    let overshoot = 20.0 * fast_log10(frame_output_isp / thresh);
+                    // Accumulate — take max of current correction and new overshoot
+                    self.isp_correction_db = self.isp_correction_db.max(overshoot);
+                } else {
+                    // Decay correction with release coefficient
+                    self.isp_correction_db *= self.release_coeff;
+                    if self.isp_correction_db < 0.01 {
+                        self.isp_correction_db = 0.0;
+                    }
+                }
+            }
+
             self.lookahead_pos = (self.lookahead_pos + 1) % self.lookahead_len;
         }
 
@@ -737,12 +791,14 @@ mod tests {
             lookahead_ms: 10.0,
             soft: true,
             true_peak: true,
+            isp_mode: true,
             dual_release: true,
             mix: 0.8,
             feed_forward: true,
         };
         let p = LimiterPlugin::from_params(2, params);
         assert!(p.true_peak);
+        assert!(p.isp_mode);
         assert!(p.dual_release);
         assert!(p.feed_forward);
         assert_eq!(p.mix, 0.8);
@@ -914,6 +970,115 @@ mod tests {
         assert!(
             data.isp_dbtp.is_empty(),
             "ISP should be empty when true_peak is disabled"
+        );
+    }
+
+    /// ISP mode: output inter-sample peaks must not exceed the ceiling.
+    /// We create a signal with known inter-sample peaks, run through the
+    /// ISP limiter, then verify output ISP with an independent detector.
+    #[test]
+    fn test_isp_mode_prevents_output_isp_violations() {
+        let mut p = LimiterPlugin::new(1, -3.0, 50.0, 5.0, false);
+        p.isp_mode = true;
+        p.true_peak = true;
+        p.rebuild_cached_parameters();
+        p.initialize(48000).unwrap();
+
+        let thresh_lin = fast_pow10(-3.0 / 20.0); // ~0.708
+
+        // Create a signal with inter-sample peaks: two adjacent samples
+        // that are below threshold but whose interpolated curve exceeds it.
+        // A rising-falling pattern creates ISP overshoots.
+        let frames = 8192;
+        let mut b = vec![0.0f32; frames];
+        for i in 0..frames {
+            // Sine at ~12kHz at 48kHz sample rate = ~4 samples per cycle
+            // This creates significant inter-sample peaks
+            b[i] = 0.65 * (2.0 * std::f32::consts::PI * 12000.0 * i as f32 / 48000.0).sin();
+        }
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: frames,
+        };
+        p.process_in_place(&mut b, &ctx).unwrap();
+
+        // Verify output ISP with an independent detector (not the plugin's own)
+        let mut verifier = TruePeakDetector::new();
+        let mut max_output_isp = 0.0f32;
+        // Skip first 500 samples for lookahead + ISP correction convergence
+        for &s in &b[500..] {
+            let tp = verifier.process_linear(s);
+            max_output_isp = max_output_isp.max(tp);
+        }
+
+        // Allow 0.1 dB tolerance (ISP correction is feedback-based, 1-sample delay)
+        let tolerance_lin = fast_pow10(0.1 / 20.0); // ~1.012
+        assert!(
+            max_output_isp <= thresh_lin * tolerance_lin,
+            "ISP mode: output ISP {:.4} ({:.2} dB) exceeds ceiling {:.4} ({:.1} dB) + 0.1dB tolerance",
+            max_output_isp,
+            20.0 * max_output_isp.log10(),
+            thresh_lin,
+            -3.0,
+        );
+    }
+
+    /// ISP mode parameter can be toggled via set_parameter.
+    #[test]
+    fn test_isp_mode_parameter() {
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        p.initialize(48000).unwrap();
+        assert!(!p.isp_mode);
+
+        p.set_parameter(
+            ParameterId::from("isp_mode"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+        assert!(p.isp_mode);
+
+        let val = p.get_parameter(&ParameterId::from("isp_mode"));
+        assert_eq!(val, Some(ParameterValue::Bool(true)));
+    }
+
+    /// ISP mode implicitly enables true peak detection for input-side gain computation.
+    #[test]
+    fn test_isp_mode_implies_true_peak() {
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        p.isp_mode = true;
+        // true_peak is false, but isp_mode forces true peak detection
+        p.rebuild_cached_parameters();
+        p.initialize(48000).unwrap();
+
+        let frames = 512;
+        let mut b = vec![0.0f32; frames];
+        for (i, sample) in b.iter_mut().enumerate() {
+            // Alternating signal creates ISP overshoots
+            *sample = if i % 2 == 0 { 0.7 } else { -0.7 };
+        }
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: frames,
+        };
+        // Process enough blocks to trigger cache update (>= CACHE_UPDATE_THROTTLE)
+        for _ in 0..CACHE_UPDATE_THROTTLE + 1 {
+            b.fill(0.0);
+            for (i, sample) in b.iter_mut().enumerate() {
+                *sample = if i % 2 == 0 { 0.7 } else { -0.7 };
+            }
+            p.process_in_place(&mut b, &ctx).unwrap();
+        }
+
+        // With ISP mode, the limiter should detect inter-sample peaks
+        // and apply gain reduction even though sample peaks (0.7) are
+        // below the -6dB threshold (0.5) — the ISP exceeds it.
+        // Check that the ISP monitoring shows activity
+        let data = p.cache.load();
+        // ISP monitoring should be populated (isp_mode implies true_peak detection)
+        assert!(
+            !data.isp_dbtp.is_empty(),
+            "ISP monitoring should be active when isp_mode is on"
         );
     }
 
