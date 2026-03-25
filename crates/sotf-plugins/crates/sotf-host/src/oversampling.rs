@@ -342,6 +342,160 @@ pub fn planar_to_interleaved(
     }
 }
 
+// ============================================================================
+// OversampledPlugin — Generic wrapper that oversamples any InPlacePlugin
+// ============================================================================
+
+use crate::parameters::{Parameter, ParameterId, ParameterValue};
+use crate::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use std::any::Any;
+use std::sync::Arc;
+
+/// Wraps any `InPlacePlugin` with transparent oversampling.
+///
+/// The inner plugin processes audio at `factor × sample_rate`. The wrapper
+/// handles upsampling before and downsampling after `process_in_place()`.
+///
+/// This enables any plugin to be oversampled without modifying its internals:
+/// ```ignore
+/// let saturator = SaturationPlugin::new(2);
+/// let oversampled = OversampledPlugin::new(saturator, 4, 2)?; // 4x, stereo
+/// ```
+pub struct OversampledPlugin<P: InPlacePlugin> {
+    inner: P,
+    oversampler: Oversampler,
+    factor: u32,
+    channels: usize,
+    sample_rate: u32,
+    /// Pre-allocated interleaved buffer for oversampled processing
+    os_interleaved: Vec<f32>,
+}
+
+impl<P: InPlacePlugin> OversampledPlugin<P> {
+    /// Create a new oversampled plugin wrapper.
+    ///
+    /// `factor` must be 2 or 4. The inner plugin will be initialized at
+    /// `sample_rate * factor` when `initialize()` is called.
+    pub fn new(inner: P, factor: u32, channels: usize) -> Result<Self, String> {
+        let oversampler = Oversampler::new(factor, channels)?;
+        // Pre-allocate for max expected oversampled block: 8192 * factor * channels
+        let os_buf_size = 8192 * factor as usize * channels;
+        Ok(Self {
+            inner,
+            oversampler,
+            factor,
+            channels,
+            sample_rate: 48000,
+            os_interleaved: vec![0.0; os_buf_size],
+        })
+    }
+
+    /// Access the inner plugin.
+    pub fn inner(&self) -> &P {
+        &self.inner
+    }
+
+    /// Mutably access the inner plugin.
+    pub fn inner_mut(&mut self) -> &mut P {
+        &mut self.inner
+    }
+}
+
+impl<P: InPlacePlugin> InPlacePlugin for OversampledPlugin<P> {
+    fn info(&self) -> PluginInfo {
+        let mut info = self.inner.info();
+        info.name = format!("{}({}x)", info.name, self.factor);
+        info
+    }
+
+    fn channels(&self) -> usize {
+        self.channels
+    }
+
+    fn parameters(&self) -> Vec<Parameter> {
+        self.inner.parameters()
+    }
+
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.inner.set_parameter(id, value)
+    }
+
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        self.inner.get_parameter(id)
+    }
+
+    fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.sample_rate = sample_rate;
+        // Initialize inner plugin at the oversampled rate
+        let os_rate = sample_rate * self.factor;
+        self.inner.initialize(os_rate)?;
+        self.oversampler.reset();
+        Ok(())
+    }
+
+    fn reset(&mut self) {
+        self.inner.reset();
+        self.oversampler.reset();
+    }
+
+    fn process_in_place(
+        &mut self,
+        buffer: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        let nf = context.num_frames;
+        let nc = self.channels;
+        let factor = self.factor as usize;
+
+        // The oversampler's callback receives planar buffers at the OS rate.
+        // We need to convert to interleaved, call inner.process_in_place, then
+        // convert back to planar.
+        let os_context = ProcessContext {
+            sample_rate: context.sample_rate * self.factor,
+            num_frames: 0, // will be set per-chunk inside callback
+        };
+
+        let inner = &mut self.inner;
+        let os_interleaved = &mut self.os_interleaved;
+
+        self.oversampler
+            .process(buffer, nf, |planar, os_frames| {
+                let total_os = os_frames * nc;
+                // Ensure buffer is large enough
+                if os_interleaved.len() < total_os {
+                    os_interleaved.resize(total_os, 0.0);
+                }
+                // Convert planar → interleaved
+                planar_to_interleaved(planar, &mut os_interleaved[..total_os], os_frames, nc);
+                // Process at oversampled rate
+                let ctx = ProcessContext {
+                    sample_rate: os_context.sample_rate,
+                    num_frames: os_frames,
+                };
+                let _ = inner.process_in_place(&mut os_interleaved[..total_os], &ctx);
+                // Convert interleaved → planar (back)
+                interleaved_to_planar(&os_interleaved[..total_os], planar, os_frames, nc);
+            })
+            .map_err(|e| e.to_string())?;
+
+        Ok(nf)
+    }
+
+    fn latency_samples(&self) -> usize {
+        // Oversampler latency + inner plugin's latency (scaled to 1x rate)
+        let inner_latency_1x = self.inner.latency_samples() / self.factor as usize;
+        self.oversampler.latency_samples() + inner_latency_1x
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        self.inner.get_data()
+    }
+
+    fn preferred_oversampling(&self) -> Option<u32> {
+        None // Already oversampled — don't request more
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,6 +648,63 @@ mod tests {
         assert_eq!(os.residual_frames, 0);
         assert_eq!(os.residual_out_frames, 0);
         assert_eq!(os.residual_out_read, 0);
+    }
+
+    #[test]
+    fn test_oversampled_plugin_latency() {
+        use crate::plugin::{InPlacePlugin, PluginInfo, ProcessContext};
+        use crate::parameters::{Parameter, ParameterId, ParameterValue};
+
+        /// Trivial passthrough plugin for testing
+        struct PassthroughPlugin;
+        impl InPlacePlugin for PassthroughPlugin {
+            fn info(&self) -> PluginInfo { PluginInfo::new("Test", "1.0", "Test") }
+            fn channels(&self) -> usize { 2 }
+            fn parameters(&self) -> Vec<Parameter> { vec![] }
+            fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> crate::plugin::PluginResult<()> { Ok(()) }
+            fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> { None }
+            fn process_in_place(&mut self, _buffer: &mut [f32], context: &ProcessContext) -> crate::plugin::PluginResult<usize> {
+                Ok(context.num_frames)
+            }
+        }
+
+        let os = OversampledPlugin::new(PassthroughPlugin, 2, 2).unwrap();
+        // Should have non-zero latency from the oversampler
+        assert!(os.latency_samples() > 0, "Oversampled plugin should have latency");
+    }
+
+    #[test]
+    fn test_oversampled_plugin_processes_audio() {
+        use crate::plugin::{InPlacePlugin, PluginInfo, ProcessContext};
+        use crate::parameters::{Parameter, ParameterId, ParameterValue};
+
+        /// Plugin that doubles all samples (to verify processing happens at OS rate)
+        struct DoublerPlugin;
+        impl InPlacePlugin for DoublerPlugin {
+            fn info(&self) -> PluginInfo { PluginInfo::new("Doubler", "1.0", "Test") }
+            fn channels(&self) -> usize { 1 }
+            fn parameters(&self) -> Vec<Parameter> { vec![] }
+            fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> crate::plugin::PluginResult<()> { Ok(()) }
+            fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> { None }
+            fn process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext) -> crate::plugin::PluginResult<usize> {
+                for s in buffer[..context.num_frames].iter_mut() { *s *= 2.0; }
+                Ok(context.num_frames)
+            }
+        }
+
+        let mut os = OversampledPlugin::new(DoublerPlugin, 2, 1).unwrap();
+        os.initialize(48000).unwrap();
+
+        // Feed a few blocks to prime the oversampler pipeline
+        let ctx = ProcessContext { sample_rate: 48000, num_frames: 256 };
+        let mut buf = vec![0.5f32; 256];
+        os.process_in_place(&mut buf, &ctx).unwrap();
+
+        // After pipeline is primed, output should be ~doubled (accounting for resampler delay)
+        let mut buf2 = vec![0.5f32; 256];
+        os.process_in_place(&mut buf2, &ctx).unwrap();
+        let max = buf2.iter().copied().fold(0.0f32, f32::max);
+        assert!(max > 0.8, "Doubler through oversampler should produce amplified output: max={max}");
     }
 
     #[test]

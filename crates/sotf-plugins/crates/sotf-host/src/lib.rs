@@ -58,7 +58,7 @@ pub use envelope_follower::EnvelopeFollower;
 pub use lookahead::LookaheadBuffer;
 pub use lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
 pub use lufs_target::LufsTarget;
-pub use oversampling::{Oversampler, interleaved_to_planar, planar_to_interleaved};
+pub use oversampling::{Oversampler, OversampledPlugin, interleaved_to_planar, planar_to_interleaved};
 pub use true_peak::TruePeakDetector;
 pub use analyzer_loudness_monitor::{LoudnessMonitor, LoudnessMonitorPlugin};
 pub use analyzer_spectrum::{
