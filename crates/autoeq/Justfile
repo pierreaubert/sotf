@@ -26,9 +26,7 @@ examples-autoeq:
 
 [group('publish')]
 publish-autoeq:
-	cd crates/autoeq-cea2034 && cargo publish
 	cd crates/autoeq && cargo publish
-	cd crates/autoeq-roomsim && cargo publish
 
 [group('demo')]
 demo-headphone-loss:
@@ -212,22 +210,6 @@ qa-roomeq-small-stereo-51: ensure-venv
 		                   ./data_generated/roomeq/generated/$algo/medium_surround_5_1/dsp_$method.json; \
 	  done \
 	done
-
-# ----------------------------------------------------------------------
-# GENERATE ROOMEQ DATA (BEM/FEM simulation → CSV + config.json)
-# Re-run after modifying scenarios to regenerate multi-LP measurements
-# ----------------------------------------------------------------------
-
-[group('generate')]
-generate-roomeq-data-fem:
-	cargo run --bin generate-roomeq-data --release -- --solver fem --output-dir ./data_tests/roomeq/generated
-
-[group('generate')]
-generate-roomeq-data-bem:
-	cargo run --bin generate-roomeq-data --release -- --solver bem --output-dir ./data_tests/roomeq/generated
-
-[group('generate')]
-generate-roomeq-data: generate-roomeq-data-fem generate-roomeq-data-bem
 
 # ----------------------------------------------------------------------
 # QA ROOMEQ — Multi-Measurement (5 listening positions per speaker)

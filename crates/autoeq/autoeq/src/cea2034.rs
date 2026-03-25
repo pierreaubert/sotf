@@ -1,4 +1,4 @@
-#![doc = include_str!("../README.md")]
+//! CEA2034 (Spinorama) speaker measurement metrics
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -738,7 +738,7 @@ pub async fn compute_cea2034_metrics(
 #[cfg(test)]
 mod pir_helpers_tests {
     use super::{compute_pir_from_lw_er_sp, pressure2spl, spl2pressure};
-    use crate::Curve;
+    use super::Curve;
     use ndarray::Array1;
     use std::collections::HashMap;
 

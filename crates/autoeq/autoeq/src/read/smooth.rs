@@ -1,4 +1,4 @@
-use autoeq_cea2034::Curve;
+use crate::cea2034::Curve;
 use ndarray::Array1;
 
 /// Psychoacoustic variable smoothing configuration
@@ -46,7 +46,7 @@ impl Default for PsychoacousticSmoothingConfig {
 /// # Example
 /// ```
 /// use autoeq::read::{smooth_psychoacoustic, PsychoacousticSmoothingConfig};
-/// use autoeq_cea2034::Curve;
+/// use crate::cea2034::Curve;
 /// use ndarray::Array1;
 ///
 /// // Create a dummy curve
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn smooth_one_over_n_octave_basic_monotonic() {
-        use autoeq_cea2034::Curve;
+        use crate::cea2034::Curve;
         // Simple check: with N large, window small -> output close to input
         let freqs = Array1::from(vec![100.0, 200.0, 400.0, 800.0]);
         let vals = Array1::from(vec![0.0, 1.0, 0.0, -1.0]);

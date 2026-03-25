@@ -25,12 +25,14 @@ macro_rules! qa_println {
 }
 
 // Re-export external crate functionality
-pub use autoeq_cea2034 as cea2034;
 pub use math_audio_iir_fir as iir;
 pub use math_audio_optimisation as de;
 
-// Re-export types from CEA2034 crate to ensure type compatibility
-pub use autoeq_cea2034::{Curve, DirectivityCurve, DirectivityData};
+/// CEA2034 (Spinorama) speaker measurement metrics
+pub mod cea2034;
+
+// Re-export types from CEA2034 module to ensure type compatibility
+pub use cea2034::{Curve, DirectivityCurve, DirectivityData};
 
 /// Error types for autoeq operations.
 pub mod error;
