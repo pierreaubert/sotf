@@ -28,6 +28,7 @@ pub mod replaygain;
 pub mod rtpghi;
 pub mod simd;
 pub mod signals;
+pub mod fdn;
 pub mod stft;
 pub mod tonal_transient;
 pub mod waveform;

@@ -45,15 +45,7 @@ examples-testfunctions:
 # ----------------------------------------------------------------------
 
 [group('qa-math')]
-qa-math: qa-fem qa-bem
-
-[group('qa-math')]
-qa-fem:
-	cargo run --release --bin qa-suite -p math-fem --features="cli native parallel"
-
-[group('qa-math')]
-qa-bem:
-	cargo run --release --bin qa-suite -p math-bem --features="native cli parallel"
+qa-math:
 
 # ----------------------------------------------------------------------
 # PUBLISH MATH
@@ -64,10 +56,4 @@ publish-math:
 	cd crates/math-test-functions && cargo publish
 	cd crates/math-optimisation && cargo publish
 	cd crates/math-iir-fir && cargo publish
-	cd crates/math-solvers && cargo publish
-	cd crates/math-wave && cargo publish
-	cd crates/math-convex-hull && cargo publish
-	cd crates/math-xem-common && cargo publish
-	cd crates/math-bem && cargo publish
-	cd crates/math-fem && cargo publish
 
