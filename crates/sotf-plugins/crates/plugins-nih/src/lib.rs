@@ -23,15 +23,3 @@ impl PluginBridgeWrapper {
     }
 }
 
-// Wave 1: EQ plugin (single cdylib exports one VST3 + one CLAP)
-sotf_nih_plugin!(
-    SotfEq,
-    plugin_type: "EQ",
-    name: "SOTF: Parametric EQ",
-    clap_id: "org.spinorama.sotf.eq",
-    vst3_class_id: *b"SotfEqPlugin0001",
-    channels: 2
-);
-
-nih_plug::nih_export_clap!(SotfEq);
-nih_plug::nih_export_vst3!(SotfEq);

@@ -25,6 +25,10 @@ pub struct MvdrBeamformer {
     noise_threshold: f32,
     /// Frame counter for initial learning period
     frame_count: usize,
+    /// Pre-allocated weight buffer: [bin][mic]
+    pub weights_buf: Vec<Vec<Complex<f32>>>,
+    /// Pre-allocated beamformed output buffer: [bin]
+    pub output_buf: Vec<Complex<f32>>,
 }
 
 impl MvdrBeamformer {
@@ -45,6 +49,8 @@ impl MvdrBeamformer {
             alpha: 0.95,
             noise_threshold: 0.01,
             frame_count: 0,
+            weights_buf: vec![vec![Complex::new(0.0, 0.0); num_mics]; spectrum_size],
+            output_buf: vec![Complex::new(0.0, 0.0); spectrum_size],
         }
     }
 
@@ -93,46 +99,48 @@ impl MvdrBeamformer {
     ///
     /// # Returns
     /// Beamforming weights per bin: [bin][mic]
-    pub fn compute_weights(&self, steering: &[Vec<Complex<f32>>]) -> Vec<Vec<Complex<f32>>> {
+    /// Compute MVDR weights into the pre-allocated weights_buf.
+    /// Returns a reference to the internal buffer.
+    pub fn compute_weights(&mut self, steering: &[Vec<Complex<f32>>]) -> &[Vec<Complex<f32>>] {
         let m = self.num_mics;
 
-        steering
-            .iter()
-            .enumerate()
-            .map(|(k, d_vec)| {
-                if k >= self.spectrum_size || d_vec.len() != m {
-                    return vec![Complex::new(0.0, 0.0); m];
+        for (k, d_vec) in steering.iter().enumerate() {
+            if k >= self.spectrum_size || d_vec.len() != m {
+                self.weights_buf[k].fill(Complex::new(0.0, 0.0));
+                continue;
+            }
+
+            // Build steering vector as column matrix
+            let d = DMatrix::from_fn(m, 1, |i, _| d_vec[i]);
+
+            // Diagonal loading: R_loaded = R + σ*I
+            let trace: f32 = (0..m).map(|i| self.noise_cov[k][(i, i)].re).sum();
+            let sigma = self.diag_load * trace / m as f32;
+            let r_loaded = &self.noise_cov[k]
+                + DMatrix::identity(m, m).map(|x: f64| Complex::new(x as f32 * sigma, 0.0));
+
+            // Compute R^{-1} d
+            let r_inv_d = match r_loaded.clone().try_inverse() {
+                Some(r_inv) => &r_inv * &d,
+                None => d.clone(), // Fallback to delay-and-sum
+            };
+
+            // Compute d^H R^{-1} d (scalar)
+            let d_h = d.adjoint();
+            let denom = (&d_h * &r_inv_d)[(0, 0)];
+
+            // w = R^{-1} d / (d^H R^{-1} d)
+            if denom.norm_sqr() > 1e-20 {
+                let w = &r_inv_d / denom;
+                for i in 0..m {
+                    self.weights_buf[k][i] = w[(i, 0)];
                 }
-
-                // Build steering vector as column matrix
-                let d = DMatrix::from_fn(m, 1, |i, _| d_vec[i]);
-
-                // Diagonal loading: R_loaded = R + σ*I
-                let trace: f32 = (0..m).map(|i| self.noise_cov[k][(i, i)].re).sum();
-                let sigma = self.diag_load * trace / m as f32;
-                let r_loaded = &self.noise_cov[k]
-                    + DMatrix::identity(m, m).map(|x: f64| Complex::new(x as f32 * sigma, 0.0));
-
-                // Compute R^{-1} d
-                let r_inv_d = match r_loaded.clone().try_inverse() {
-                    Some(r_inv) => &r_inv * &d,
-                    None => d.clone(), // Fallback to delay-and-sum
-                };
-
-                // Compute d^H R^{-1} d (scalar)
-                let d_h = d.adjoint();
-                let denom = (&d_h * &r_inv_d)[(0, 0)];
-
-                // w = R^{-1} d / (d^H R^{-1} d)
-                if denom.norm_sqr() > 1e-20 {
-                    let w = &r_inv_d / denom;
-                    (0..m).map(|i| w[(i, 0)]).collect()
-                } else {
-                    // Fallback: uniform weights
-                    vec![Complex::new(1.0 / m as f32, 0.0); m]
-                }
-            })
-            .collect()
+            } else {
+                // Fallback: uniform weights
+                self.weights_buf[k].fill(Complex::new(1.0 / m as f32, 0.0));
+            }
+        }
+        &self.weights_buf
     }
 
     /// Apply beamforming weights to produce single-channel output.
@@ -143,24 +151,26 @@ impl MvdrBeamformer {
     ///
     /// # Returns
     /// Single-channel STFT output
-    pub fn apply_weights(
+    /// Apply beamforming weights in-place, writing to the pre-allocated output buffer.
+    /// Returns a slice of the output.
+    pub fn apply_weights_into(
+        &mut self,
         stft_channels: &[Vec<Complex<f32>>],
         weights: &[Vec<Complex<f32>>],
-    ) -> Vec<Complex<f32>> {
-        let spectrum_size = weights.len();
+    ) -> &[Complex<f32>] {
+        let spectrum_size = weights.len().min(self.spectrum_size);
         let num_mics = stft_channels.len();
 
-        (0..spectrum_size)
-            .map(|k| {
-                let mut sum = Complex::new(0.0, 0.0);
-                for m in 0..num_mics {
-                    if k < stft_channels[m].len() && m < weights[k].len() {
-                        sum += weights[k][m].conj() * stft_channels[m][k];
-                    }
+        for k in 0..spectrum_size {
+            let mut sum = Complex::new(0.0, 0.0);
+            for m in 0..num_mics {
+                if k < stft_channels[m].len() && m < weights[k].len() {
+                    sum += weights[k][m].conj() * stft_channels[m][k];
                 }
-                sum
-            })
-            .collect()
+            }
+            self.output_buf[k] = sum;
+        }
+        &self.output_buf[..spectrum_size]
     }
 
     /// Reset noise covariance to identity.
@@ -169,6 +179,10 @@ impl MvdrBeamformer {
             .map(|x: f64| Complex::new(x as f32, 0.0));
         self.noise_cov = vec![identity; self.spectrum_size];
         self.frame_count = 0;
+        for w in &mut self.weights_buf {
+            w.fill(Complex::new(0.0, 0.0));
+        }
+        self.output_buf.fill(Complex::new(0.0, 0.0));
     }
 }
 
@@ -185,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_mvdr_weights_no_nan() {
-        let bf = MvdrBeamformer::new(2, 8);
+        let mut bf = MvdrBeamformer::new(2, 8);
         let steering: Vec<Vec<Complex<f32>>> = (0..8)
             .map(|_| vec![Complex::new(1.0, 0.0), Complex::new(0.7, 0.7)])
             .collect();
@@ -215,9 +229,10 @@ mod tests {
             vec![Complex::new(0.5, 0.0), Complex::new(0.5, 0.0)],
         ];
 
-        let output = MvdrBeamformer::apply_weights(&stft_channels, &weights);
+        let mut bf = MvdrBeamformer::new(2, 2);
+        let output = bf.apply_weights_into(&stft_channels, &weights);
         assert_eq!(output.len(), 2);
-        for c in &output {
+        for c in output {
             assert!(c.re.is_finite() && c.im.is_finite());
         }
     }

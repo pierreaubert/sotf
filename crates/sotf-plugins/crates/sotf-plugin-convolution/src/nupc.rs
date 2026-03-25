@@ -238,13 +238,81 @@ impl PartitionLevel {
     }
 }
 
+// ============================================================================
+// Time-Domain Head — Zero-Latency Direct Convolution
+// ============================================================================
+
+/// Direct time-domain FIR convolution for the first N taps of the IR.
+///
+/// Provides zero additional latency by processing samples immediately.
+/// Used in combination with FFT-based partition levels for the IR tail.
+struct TimeDomainHead {
+    /// First N samples of the IR (reversed for direct convolution)
+    ir_taps: Vec<f32>,
+    /// Circular input history buffer
+    history: Vec<f32>,
+    /// Write position in history
+    pos: usize,
+    /// Number of taps
+    n_taps: usize,
+}
+
+impl TimeDomainHead {
+    fn new(ir: &[f32], n_taps: usize) -> Self {
+        let n = n_taps.min(ir.len());
+        // Reverse the IR for direct convolution: y[n] = sum(h[k] * x[n-k])
+        let mut ir_taps = vec![0.0; n];
+        for (i, tap) in ir_taps.iter_mut().enumerate() {
+            *tap = ir[i];
+        }
+        Self {
+            ir_taps,
+            history: vec![0.0; n],
+            pos: 0,
+            n_taps: n,
+        }
+    }
+
+    #[inline]
+    fn process_sample(&mut self, sample: f32) -> f32 {
+        self.history[self.pos] = sample;
+        let mut output = 0.0;
+        let mut read = self.pos;
+        for &tap in &self.ir_taps {
+            output += tap * self.history[read];
+            if read == 0 {
+                read = self.n_taps - 1;
+            } else {
+                read -= 1;
+            }
+        }
+        self.pos = (self.pos + 1) % self.n_taps;
+        output
+    }
+
+    fn reset(&mut self) {
+        self.history.fill(0.0);
+        self.pos = 0;
+    }
+}
+
+// ============================================================================
+// NUPC Engine
+// ============================================================================
+
 /// Non-Uniform Partitioned Convolution engine.
 ///
 /// Uses progressively larger block sizes for efficient long-IR convolution
 /// while maintaining low latency from the smallest block size.
+/// Optionally includes a time-domain head for zero-latency processing
+/// of the first few taps.
 pub struct NupcEngine {
     levels: Vec<PartitionLevel>,
     min_block: usize,
+    /// Optional time-domain head for zero-latency first taps
+    td_head: Option<TimeDomainHead>,
+    /// Number of IR samples handled by the time-domain head
+    td_head_len: usize,
 }
 
 impl NupcEngine {
@@ -262,7 +330,46 @@ impl NupcEngine {
             .map(|spec| PartitionLevel::new(spec, ir, &mut planner))
             .collect();
 
-        Self { levels, min_block }
+        Self {
+            levels,
+            min_block,
+            td_head: None,
+            td_head_len: 0,
+        }
+    }
+
+    /// Create with a time-domain head for zero-latency processing.
+    ///
+    /// The first `head_taps` samples of the IR are processed in the time domain
+    /// (zero latency). The remaining IR is handled by the FFT levels.
+    /// The FFT partition plan starts at offset `head_taps` into the IR.
+    pub fn new_with_head(ir: &[f32], min_block: usize, head_taps: usize) -> Self {
+        let head_len = head_taps.min(ir.len());
+        if head_len == 0 {
+            return Self::new(ir, min_block);
+        }
+
+        let td_head = TimeDomainHead::new(ir, head_len);
+
+        // Build FFT levels for the tail (IR starting at head_len)
+        let tail = if head_len < ir.len() {
+            &ir[head_len..]
+        } else {
+            &[]
+        };
+        let specs = plan_partitions(tail.len(), min_block);
+        let mut planner = FftPlanner::new();
+        let levels: Vec<PartitionLevel> = specs
+            .iter()
+            .map(|spec| PartitionLevel::new(spec, tail, &mut planner))
+            .collect();
+
+        Self {
+            levels,
+            min_block,
+            td_head: Some(td_head),
+            td_head_len: head_len,
+        }
     }
 
     /// Process a single sample through all partition levels.
@@ -271,10 +378,20 @@ impl NupcEngine {
     /// The output is the sum of contributions from all levels.
     pub fn process_sample(&mut self, sample: f32) -> f32 {
         let mut output = 0.0;
+        // Time-domain head: zero-latency direct convolution of first taps
+        if let Some(ref mut head) = self.td_head {
+            output += head.process_sample(sample);
+        }
+        // FFT levels: handle the remaining IR tail
         for level in &mut self.levels {
             output += level.push_sample(sample);
         }
         output
+    }
+
+    /// Returns the number of IR samples handled by the time-domain head (0 if disabled).
+    pub fn head_taps(&self) -> usize {
+        self.td_head_len
     }
 
     /// Process a block of samples.
@@ -286,6 +403,9 @@ impl NupcEngine {
 
     /// Reset all internal state.
     pub fn reset(&mut self) {
+        if let Some(ref mut head) = self.td_head {
+            head.reset();
+        }
         for level in &mut self.levels {
             level.reset();
         }

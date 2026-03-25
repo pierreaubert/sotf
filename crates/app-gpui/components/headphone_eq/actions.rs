@@ -284,6 +284,7 @@ impl PlayerView {
                     channel_filters: None,
                     per_channel_mode: false,
                     max_filters: 10, tdf2: false,
+                topology: 0.0,
                 };
 
                 // Add to chain (insert before Matrix for proper ordering)

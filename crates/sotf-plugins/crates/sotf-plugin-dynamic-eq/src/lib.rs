@@ -723,6 +723,51 @@ impl InPlacePlugin for DynamicEqPlugin {
                 self.mix = v.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);
             }
+        } else if let Some(rest) = id.0.strip_prefix("band_") {
+            // Per-band parameters: band_N_field
+            if let Some(sep) = rest.find('_') {
+                let b_idx = rest[..sep].parse::<usize>().unwrap_or(0);
+                let field = &rest[sep + 1..];
+                if b_idx < self.bands.len() {
+                    let band = &mut self.bands[b_idx];
+                    match field {
+                        "frequency" | "freq" => {
+                            if let Some(v) = value.as_float() {
+                                band.frequency = v.clamp(20.0, 20000.0);
+                            }
+                        }
+                        "q" => {
+                            if let Some(v) = value.as_float() {
+                                band.q = v.clamp(0.1, 10.0);
+                            }
+                        }
+                        "gain" => {
+                            if let Some(v) = value.as_float() {
+                                band.target_gain_db = v.clamp(-24.0, 24.0);
+                            }
+                        }
+                        "threshold" => {
+                            if let Some(v) = value.as_float() {
+                                band.band_threshold = v.clamp(-60.0, 0.0);
+                                band.use_band_threshold = true;
+                            }
+                        }
+                        "ratio" => {
+                            if let Some(v) = value.as_float() {
+                                band.band_ratio = v.clamp(1.0, 20.0);
+                                band.use_band_ratio = true;
+                            }
+                        }
+                        "active" => {
+                            band.active = value.as_bool().unwrap_or(true);
+                        }
+                        "solo" => {
+                            band.solo = value.as_bool().unwrap_or(false);
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -745,6 +790,28 @@ impl InPlacePlugin for DynamicEqPlugin {
             Some(ParameterValue::Bool(self.link_channels))
         } else if id == &self.param_mix {
             Some(ParameterValue::Float(self.mix))
+        } else if let Some(rest) = id.0.strip_prefix("band_") {
+            if let Some(sep) = rest.find('_') {
+                let b_idx = rest[..sep].parse::<usize>().unwrap_or(0);
+                let field = &rest[sep + 1..];
+                if b_idx < self.bands.len() {
+                    let band = &self.bands[b_idx];
+                    match field {
+                        "frequency" | "freq" => Some(ParameterValue::Float(band.frequency)),
+                        "q" => Some(ParameterValue::Float(band.q)),
+                        "gain" => Some(ParameterValue::Float(band.target_gain_db)),
+                        "threshold" => Some(ParameterValue::Float(band.band_threshold)),
+                        "ratio" => Some(ParameterValue::Float(band.band_ratio)),
+                        "active" => Some(ParameterValue::Bool(band.active)),
+                        "solo" => Some(ParameterValue::Bool(band.solo)),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             None
         }

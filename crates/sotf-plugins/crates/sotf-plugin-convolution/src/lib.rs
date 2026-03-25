@@ -37,6 +37,14 @@ pub struct ConvolutionPluginParams {
     /// Use Non-Uniform Partitioned Convolution for long IRs
     #[serde(default = "default_use_nupc")]
     pub use_nupc: bool,
+    #[serde(default)]
+    pub zero_latency_head: bool,
+    #[serde(default = "default_head_taps")]
+    pub head_taps: usize,
+}
+
+fn default_head_taps() -> usize {
+    128
 }
 
 fn default_use_nupc() -> bool {
@@ -76,6 +84,8 @@ pub struct ConvolutionPlugin {
     /// When use_nupc is true, per-channel NUPC engines for low-latency convolution
     nupc_engines: Vec<nupc::NupcEngine>,
     use_nupc: bool,
+    zero_latency_head: bool,
+    head_taps: usize,
 }
 
 impl ConvolutionPlugin {
@@ -102,6 +112,8 @@ impl ConvolutionPlugin {
             cached_parameters: Vec::new(),
             nupc_engines: Vec::new(),
             use_nupc: false,
+            zero_latency_head: false,
+            head_taps: 128,
         };
         p.rebuild_cached_parameters();
         p
@@ -141,6 +153,8 @@ impl ConvolutionPlugin {
     ) -> Result<Self, String> {
         let mut plugin = Self::new(channels, sample_rate);
         plugin.use_nupc = params.use_nupc;
+        plugin.zero_latency_head = params.zero_latency_head;
+        plugin.head_taps = params.head_taps;
         if !params.ir_file.is_empty() {
             let _ = plugin.load_ir(&params.ir_file);
         }
@@ -226,8 +240,14 @@ impl ConvolutionPlugin {
                             ir_data.push(sample.re * scale);
                         }
                     }
-                    self.nupc_engines
-                        .push(nupc::NupcEngine::new(&ir_data, PARTITION_SIZE));
+                    if self.zero_latency_head && self.head_taps > 0 {
+                        self.nupc_engines.push(
+                            nupc::NupcEngine::new_with_head(&ir_data, PARTITION_SIZE, self.head_taps),
+                        );
+                    } else {
+                        self.nupc_engines
+                            .push(nupc::NupcEngine::new(&ir_data, PARTITION_SIZE));
+                    }
                 }
                 log::info!(
                     "[Convolution] NUPC engines built: {} channels, latency={} samples",

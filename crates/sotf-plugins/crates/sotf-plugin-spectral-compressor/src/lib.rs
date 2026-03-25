@@ -15,15 +15,17 @@
 pub mod params;
 
 use math_audio_dsp::stft::{generate_hann_window, RealFftProcessor};
+use math_audio_dsp::tonal_transient::TonalTransientSeparator;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
+use sotf_host::delta_monitor::DeltaMonitor;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
-use crate::params::PARAMS as SC;
+use crate::params::{TARGET_MODES, PARAMS as SC};
 
 // ============================================================================
 // FFT size helpers
@@ -174,6 +176,16 @@ struct StftState {
     freq_scratch: Vec<Complex<f32>>,
     /// Scratch for envelope values after median + smoothing [num_bins]
     gains_scratch: Vec<f32>,
+
+    // --- Phase 4A: Tonal/Transient separation ---
+    /// Per-channel tonal/transient separator
+    tonal_transient: Vec<TonalTransientSeparator>,
+    /// Scratch for magnitudes [num_bins]
+    magnitudes_scratch: Vec<f32>,
+    /// Scratch for tonal mask [num_bins]
+    tonal_mask: Vec<f32>,
+    /// Scratch for transient mask [num_bins]
+    transient_mask: Vec<f32>,
 }
 
 impl StftState {
@@ -216,6 +228,13 @@ impl StftState {
             windowed_buf: vec![0.0f32; fft_size],
             freq_scratch: vec![Complex::new(0.0, 0.0); num_bins],
             gains_scratch: vec![0.0; num_bins],
+            // Phase 4A: Tonal/Transient
+            tonal_transient: (0..channels)
+                .map(|_| TonalTransientSeparator::new(num_bins, 7, 7))
+                .collect(),
+            magnitudes_scratch: vec![0.0; num_bins],
+            tonal_mask: vec![0.0; num_bins],
+            transient_mask: vec![0.0; num_bins],
         }
     }
 
@@ -226,6 +245,9 @@ impl StftState {
         self.input_fill = 0;
         for env in &mut self.bin_envelopes {
             env.fill(0.0);
+        }
+        for tt in &mut self.tonal_transient {
+            tt.reset();
         }
         self.output_accumulator.fill(0.0);
         self.output_accumulator_fill = 0;
@@ -257,6 +279,10 @@ pub struct SpectralCompressorPlugin {
     fft_size: usize,
     attack_coeff: f32,
     release_coeff: f32,
+
+    // Phase 4A: SOTA params
+    target_mode: usize, // 0=All, 1=Tonal, 2=Transient
+    delta_monitor: DeltaMonitor,
 
     // STFT state
     stft: StftState,
@@ -298,6 +324,9 @@ impl SpectralCompressorPlugin {
             fft_size,
             attack_coeff,
             release_coeff,
+
+            target_mode: 0, // All
+            delta_monitor: DeltaMonitor::new(),
 
             stft: StftState::new(fft_size, channels),
 
@@ -372,6 +401,7 @@ impl SpectralCompressorPlugin {
             // --- Per-bin compression ---
             for k in 0..num_bins {
                 let mag = self.stft.freq_scratch[k].norm() * mag_norm;
+                self.stft.magnitudes_scratch[k] = mag;
                 let mag_db = 20.0 * mag.max(1e-10).log10();
 
                 let target_gr = compress_gr(mag_db, threshold, ratio, knee);
@@ -384,6 +414,26 @@ impl SpectralCompressorPlugin {
                     release_coeff
                 };
                 *envelope = target_gr + coeff * (*envelope - target_gr);
+            }
+
+            // --- Phase 4A: Tonal/Transient masking ---
+            // In Tonal mode: only compress tonal bins. In Transient mode: only transient bins.
+            let target_mode = self.target_mode;
+            if target_mode > 0 {
+                self.stft.tonal_transient[ch].process(
+                    &self.stft.magnitudes_scratch[..num_bins],
+                    &mut self.stft.tonal_mask[..num_bins],
+                    &mut self.stft.transient_mask[..num_bins],
+                );
+                for k in 0..num_bins {
+                    let mask = match target_mode {
+                        1 => self.stft.tonal_mask[k],     // Tonal: compress where tonal is dominant
+                        2 => self.stft.transient_mask[k],  // Transient: compress where transient is dominant
+                        _ => 1.0,
+                    };
+                    // Scale gain reduction by mask: if mask=0, no compression on this bin
+                    self.stft.bin_envelopes[ch][k] *= mask;
+                }
             }
 
             // --- 3-bin median filter on envelope (reduce musical noise) ---
@@ -551,6 +601,13 @@ impl SpectralCompressorPlugin {
                 pk(SC, "mix").max_f64() as f32,
             )
             .with_importance(ParameterImportance::Critical),
+            // Phase 4A: SOTA
+            Parameter::new_string("target_mode", "Target", TARGET_MODES[self.target_mode.min(2)].to_string())
+                .with_group("Analysis")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("delta_listen", "Delta Listen", self.delta_monitor.enabled())
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
         ];
     }
 }
@@ -624,6 +681,20 @@ impl InPlacePlugin for SpectralCompressorPlugin {
                     .ok_or_else(|| "Mix must be a float".to_string())?;
                 self.mix_smoother.set_target(self.mix);
             }
+            "target_mode" => {
+                let idx = if let Some(s) = value.as_string() {
+                    TARGET_MODES.iter().position(|&m| m == s).unwrap_or(0)
+                } else if let Some(v) = value.as_float() {
+                    (v as usize).min(2)
+                } else {
+                    0
+                };
+                self.target_mode = idx;
+            }
+            "delta_listen" => {
+                let enabled = value.as_bool().unwrap_or(false);
+                self.delta_monitor.set_enabled(enabled);
+            }
             other => return Err(format!("Unknown parameter: {other}")),
         }
         self.rebuild_cached_parameters();
@@ -640,6 +711,8 @@ impl InPlacePlugin for SpectralCompressorPlugin {
             "knee" => Some(ParameterValue::Float(self.knee_db)),
             "spectral_smoothing" => Some(ParameterValue::Float(self.spectral_smoothing)),
             "mix" => Some(ParameterValue::Float(self.mix)),
+            "target_mode" => Some(ParameterValue::String(TARGET_MODES[self.target_mode.min(2)].to_string())),
+            "delta_listen" => Some(ParameterValue::Bool(self.delta_monitor.enabled())),
             _ => None,
         }
     }
@@ -684,6 +757,8 @@ impl InPlacePlugin for SpectralCompressorPlugin {
 
         // Ensure dry buffer large enough (no allocation after first call)
         if self.dry_buffer.len() < buffer.len() {
+            // Grow to fit — this allocates but only on the first oversized block.
+            // Subsequent calls reuse the grown buffer.
             self.dry_buffer.resize(buffer.len(), 0.0);
         }
         self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
@@ -757,12 +832,16 @@ impl InPlacePlugin for SpectralCompressorPlugin {
         }
 
         // Apply wet/dry mix
+        let total = nf * channels;
         for i in 0..nf {
             for ch in 0..channels {
                 let idx = i * channels + ch;
                 buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + buffer[idx] * g_mix;
             }
         }
+
+        // Phase 4A: Delta monitoring — replace output with wet-dry difference
+        self.delta_monitor.apply_if_enabled(&self.dry_buffer[..total], &mut buffer[..total]);
 
         flush_denormals_inplace(buffer);
         Ok(nf)

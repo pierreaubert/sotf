@@ -47,6 +47,10 @@ pub struct XtcPluginParams {
     #[serde(default = "default_head_shadow_slope")]
     pub head_shadow_slope_db_per_octave: f32,
 
+    /// Head diffraction model: 0 = Woodworth (classic), 1 = Brown-Duda (rigid sphere)
+    #[serde(default)]
+    pub head_model: usize,
+
     /// Head tracking: lateral offset in meters (default: 0.0)
     #[serde(default)]
     pub head_offset_x: f32,
@@ -229,6 +233,7 @@ impl Default for XtcPluginParams {
             max_gain_db: default_max_gain_db(),
             head_shadow_cutoff_hz: default_head_shadow_cutoff(),
             head_shadow_slope_db_per_octave: default_head_shadow_slope(),
+            head_model: 0,
             head_offset_x: 0.0,
             head_offset_z: 0.0,
             head_yaw_deg: 0.0,

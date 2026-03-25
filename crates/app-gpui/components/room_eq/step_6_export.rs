@@ -408,6 +408,7 @@ impl PlayerView {
                         channel_filters: Some(per_channel_filters.clone()),
                         per_channel_mode: true,
                         max_filters: 10, tdf2: false,
+                    topology: 0.0,
                     };
                     log::info!(
                         "Updated existing EQ plugin at index {} with per-channel room EQ",
@@ -427,6 +428,7 @@ impl PlayerView {
                         channel_filters: Some(per_channel_filters.clone()),
                         per_channel_mode: true,
                         max_filters: 10, tdf2: false,
+                    topology: 0.0,
                     };
                 }
                 log::info!(

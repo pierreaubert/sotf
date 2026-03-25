@@ -61,19 +61,29 @@ pub const PARAMS: &[ParamSpec] = &[
         .scaled(100.0)
         .output()
         .doc("Dry/wet blend"),
+    // --- Phase 3B: SOTA additions ---
+    ParamSpec::float("Link", "link_amount", 1.0, 0.0, 1.0, 0.01, "%", "Detection")
+        .scaled(100.0)
+        .doc("Channel linking: 0%=independent, 100%=linked (all channels see max peak)"),
+    ParamSpec::bool_labeled("Feed Forward", "feed_forward", false, "On", "Off", "Detection")
+        .setup()
+        .doc("Scan lookahead buffer for anticipatory gain reduction"),
 ];
 
 // ============================================================================
 // UI Layout
 // ============================================================================
 
-/// Limiter: idx 0=threshold, 1=release, 2=lookahead, 3=soft_knee, 4=true_peak, 5=isp_mode, 6=dual_release, 7=mix
+/// Limiter: idx 0=threshold, 1=release, 2=lookahead, 3=soft_knee, 4=true_peak, 5=isp_mode, 6=dual_release, 7=mix, 8=link_amount, 9=feed_forward
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::toggle(3), ControlSpec::toggle(4), ControlSpec::toggle(5), ControlSpec::toggle(6)], // soft_knee, true_peak, isp_mode, dual_release
+    config: &[ControlSpec::toggle(3), ControlSpec::toggle(4), ControlSpec::toggle(5), ControlSpec::toggle(6), ControlSpec::toggle(9)], // soft_knee, true_peak, isp_mode, dual_release, feed_forward
     main: &[
         ControlGroup {
             title: "DYNAMICS",
-            controls: &[ControlSpec::slider(0)], // threshold (ceiling)
+            controls: &[
+                ControlSpec::slider(0), // threshold (ceiling)
+                ControlSpec::slider(8), // link_amount
+            ],
         },
         ControlGroup {
             title: "TIMING",
@@ -126,8 +136,18 @@ pub struct Params {
     pub dual_release: bool,
     #[serde(default = "d_mix")]
     pub mix: f64,
+    #[serde(default = "d_link_amount")]
+    pub link_amount: f64,
+    #[serde(default = "d_feed_forward")]
+    pub feed_forward: bool,
 }
 
+fn d_link_amount() -> f64 {
+    pk(PARAMS, "link_amount").default_f64()
+}
+fn d_feed_forward() -> bool {
+    pk(PARAMS, "feed_forward").default_bool()
+}
 fn d_threshold() -> f64 {
     pk(PARAMS, "threshold").default_f64()
 }
@@ -164,6 +184,8 @@ impl Default for Params {
             isp_mode: d_isp_mode(),
             dual_release: d_dual_release(),
             mix: d_mix(),
+            link_amount: d_link_amount(),
+            feed_forward: d_feed_forward(),
         }
     }
 }
@@ -188,6 +210,8 @@ impl PluginParamDef for Params {
             5 => Some(if self.isp_mode { 1.0 } else { 0.0 }),
             6 => Some(if self.dual_release { 1.0 } else { 0.0 }),
             7 => Some(self.mix),
+            8 => Some(self.link_amount),
+            9 => Some(if self.feed_forward { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -202,6 +226,8 @@ impl PluginParamDef for Params {
             5 => self.isp_mode = value > 0.5,
             6 => self.dual_release = value > 0.5,
             7 => self.mix = value,
+            8 => self.link_amount = value,
+            9 => self.feed_forward = value > 0.5,
             _ => {}
         }
     }

@@ -347,6 +347,13 @@ pub const PARAMS: &[ParamSpec] = &[
     .structural()
     .secondary("General")
     .doc("Multi-resolution FFT analysis"),
+    // --- Phase 4B: SOTA additions ---
+    ParamSpec::bool_param("Harmonic/Percussive", "harmonic_percussive", false, "Advanced")
+        .doc("Separate tonal and transient components for differential denoising"),
+    ParamSpec::bool_param("Spatial Denoise", "spatial_denoise", false, "Advanced")
+        .doc("Use inter-channel coherence for noise detection (stereo+ only)"),
+    ParamSpec::float("Spatial Strength", "spatial_strength", 0.5, 0.0, 1.0, 0.1, "", "Advanced")
+        .doc("Weight of inter-channel coherence in noise estimation"),
 ];
 
 // ============================================================================
@@ -521,6 +528,16 @@ pub struct Params {
     pub formant_strength: f64,
     #[serde(default = "d_multi_resolution")]
     pub multi_resolution: bool,
+    #[serde(default)]
+    pub harmonic_percussive: bool,
+    #[serde(default)]
+    pub spatial_denoise: bool,
+    #[serde(default = "d_spatial_strength")]
+    pub spatial_strength: f64,
+}
+
+fn d_spatial_strength() -> f64 {
+    pk(PARAMS, "spatial_strength").default_f64()
 }
 
 fn d_reduction_db() -> f64 {
@@ -659,6 +676,9 @@ impl Default for Params {
             formant_preservation: d_formant_preservation(),
             formant_strength: d_formant_strength(),
             multi_resolution: d_multi_resolution(),
+            harmonic_percussive: false,
+            spatial_denoise: false,
+            spatial_strength: d_spatial_strength(),
         }
     }
 }
@@ -708,6 +728,9 @@ impl PluginParamDef for Params {
             30 => Some(if self.formant_preservation { 1.0 } else { 0.0 }),
             31 => Some(self.formant_strength),
             32 => Some(if self.multi_resolution { 1.0 } else { 0.0 }),
+            33 => Some(if self.harmonic_percussive { 1.0 } else { 0.0 }),
+            34 => Some(if self.spatial_denoise { 1.0 } else { 0.0 }),
+            35 => Some(self.spatial_strength),
             _ => None,
         }
     }
@@ -747,6 +770,9 @@ impl PluginParamDef for Params {
             30 => self.formant_preservation = value > 0.5,
             31 => self.formant_strength = value,
             32 => self.multi_resolution = value > 0.5,
+            33 => self.harmonic_percussive = value > 0.5,
+            34 => self.spatial_denoise = value > 0.5,
+            35 => self.spatial_strength = value,
             _ => {}
         }
     }
@@ -778,7 +804,7 @@ mod tests {
 
     #[test]
     fn param_count() {
-        assert_eq!(PARAMS.len(), 33, "Expected 33 params");
+        assert_eq!(PARAMS.len(), 36, "Expected 36 params");
     }
 
     #[test]

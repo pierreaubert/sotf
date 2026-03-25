@@ -19,6 +19,7 @@ use sotf_host::plugin_params::PluginParamDef;
 // ============================================================================
 
 pub const FFT_SIZES: &[&str] = &["1024", "2048", "4096"];
+pub const TARGET_MODES: &[&str] = &["All", "Tonal", "Transient"];
 
 // ============================================================================
 // Parameter Specifications
@@ -46,6 +47,12 @@ pub const PARAMS: &[ParamSpec] = &[
         .scaled(100.0)
         .output()
         .doc("Dry/wet blend"),
+    // --- Phase 4A: SOTA additions ---
+    ParamSpec::choice("Target", "target_mode", 0, TARGET_MODES, "Analysis")
+        .doc("Compress all bins, tonal only, or transient only"),
+    ParamSpec::bool_labeled("Delta Listen", "delta_listen", false, "On", "Off", "Output")
+        .output()
+        .doc("Solo the compression delta (hear what's being removed)"),
 ];
 
 // ============================================================================
@@ -53,11 +60,13 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 /// Spectral Compressor: idx 0=fft_size, 1=threshold, 2=ratio, 3=attack,
-/// 4=release, 5=knee, 6=spectral_smoothing, 7=mix
+/// 4=release, 5=knee, 6=spectral_smoothing, 7=mix, 8=target_mode, 9=delta_listen
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::selector(0), // fft_size
         ControlSpec::knob(6),     // spectral_smoothing
+        ControlSpec::selector(8), // target_mode
+        ControlSpec::toggle(9),   // delta_listen
     ],
     main: &[
         ControlGroup {
@@ -114,8 +123,15 @@ pub struct Params {
     pub spectral_smoothing: f64,
     #[serde(default = "d_mix")]
     pub mix: f64,
+    #[serde(default = "d_target_mode")]
+    pub target_mode: f64,
+    #[serde(default)]
+    pub delta_listen: f64,
 }
 
+fn d_target_mode() -> f64 {
+    pk(PARAMS, "target_mode").default_f64()
+}
 fn d_fft_size() -> usize {
     pk(PARAMS, "fft_size").default_f64() as usize
 }
@@ -152,6 +168,8 @@ impl Default for Params {
             knee: d_knee(),
             spectral_smoothing: d_spectral_smoothing(),
             mix: d_mix(),
+            target_mode: d_target_mode(),
+            delta_listen: 0.0,
         }
     }
 }
@@ -176,6 +194,8 @@ impl PluginParamDef for Params {
             5 => Some(self.knee),
             6 => Some(self.spectral_smoothing),
             7 => Some(self.mix),
+            8 => Some(self.target_mode),
+            9 => Some(self.delta_listen),
             _ => None,
         }
     }
@@ -190,6 +210,8 @@ impl PluginParamDef for Params {
             5 => self.knee = value,
             6 => self.spectral_smoothing = value,
             7 => self.mix = value,
+            8 => self.target_mode = value,
+            9 => self.delta_listen = value,
             _ => {}
         }
     }

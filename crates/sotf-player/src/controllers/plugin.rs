@@ -435,6 +435,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
+                topology: 0.0,
                 };
                 Ok(PluginUpdateEffect::Structural)
             } else {
@@ -503,6 +504,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
+                topology: 0.0,
                 };
 
                 Ok(PluginUpdateEffect::Structural)
@@ -550,6 +552,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
+                topology: 0.0,
                 };
 
                 Ok(PluginUpdateEffect::Structural)
@@ -597,6 +600,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
+                topology: 0.0,
                 };
 
                 Ok(PluginUpdateEffect::Structural)
@@ -644,6 +648,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
+                topology: 0.0,
                 };
 
                 Ok(PluginUpdateEffect::Structural)

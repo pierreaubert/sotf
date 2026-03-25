@@ -14,12 +14,18 @@ use sotf_host::param_specs::ParamSpec;
 // ============================================================================
 
 /// Global params before the per-filter params.
+pub const TOPOLOGIES: &[&str] = &["Biquad", "SVF"];
+
 pub const GLOBAL_PARAMS: &[ParamSpec] = &[
     ParamSpec::int("Max Filters", "max_filters", 20, 1, 20, 1, "", "Global")
         .structural()
         .doc("Maximum number of EQ bands"),
     ParamSpec::bool_param("TDF-II", "tdf2", false, "Algorithm")
         .doc("Use Transposed Direct Form II"),
+    // Phase 4C: SOTA addition
+    ParamSpec::choice("Topology", "topology", 0, TOPOLOGIES, "Algorithm")
+        .structural()
+        .doc("Filter topology: Biquad (classic) or SVF (zero-delay feedback, modulation-stable)"),
 ];
 
 // ============================================================================
@@ -30,7 +36,7 @@ pub const GLOBAL_PARAMS: &[ParamSpec] = &[
 pub const BAND_TEMPLATE: &[ParamSpec] = &[
     ParamSpec::float(
         "Frequency",
-        "frequency",
+        "freq",
         1000.0,
         20.0,
         20000.0,
@@ -41,7 +47,7 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
     .doc("Filter center/corner frequency"),
     ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.05, "", "Filter")
         .doc("Filter bandwidth (quality factor)"),
-    ParamSpec::float("Gain", "gain_db", 0.0, -24.0, 24.0, 0.5, "dB", "Filter")
+    ParamSpec::float("Gain", "gain", 0.0, -24.0, 24.0, 0.5, "dB", "Filter")
         .doc("Boost or cut amount"),
     ParamSpec::choice(
         "Type",

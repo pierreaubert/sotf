@@ -84,6 +84,8 @@ pub struct AecPlugin {
     fft_forward: Arc<dyn Fft<f32>>,
     fft_inverse: Arc<dyn Fft<f32>>,
     fft_scratch: Vec<Complex<f32>>,
+    /// Pre-allocated buffer for post-filter IFFT output
+    post_filter_time_buf: Vec<f32>,
     /// Parameter IDs
     param_echo_tail_ms: ParameterId,
     param_step_size: ParameterId,
@@ -122,6 +124,7 @@ impl AecPlugin {
             fft_forward,
             fft_inverse,
             fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
+            post_filter_time_buf: vec![0.0; block_size],
             param_echo_tail_ms: ParameterId::from("echo_tail_ms"),
             param_step_size: ParameterId::from("step_size"),
             param_post_filter: ParameterId::from("post_filter_enabled"),
@@ -281,11 +284,35 @@ impl Plugin for AecPlugin {
                 // Process one block — copy error output before push (avoids borrow conflict)
                 let error = self.aec.process(&self.mic_buffer, &self.ref_buffer);
                 let error_len = error.len();
-                // Copy to output ring (we can index output_buffer directly)
-                for &sample in &error[..error_len] {
-                    self.output_buffer[self.output_write_pos] = sample;
-                    self.output_write_pos =
-                        (self.output_write_pos + 1) % self.output_buffer.len();
+
+                // Apply residual echo suppression post-filter if enabled
+                if self.post_filter_enabled {
+                    let error_freq = self.aec.last_error_freq();
+                    let echo_est_freq = self.aec.last_echo_estimate_freq();
+                    let suppressed = self.post_filter.process(error_freq, echo_est_freq);
+                    // IFFT the suppressed spectrum to get time-domain output
+                    let mut ifft_buf = suppressed;
+                    self.fft_inverse
+                        .process_with_scratch(&mut ifft_buf, &mut self.fft_scratch);
+                    let inv_n = 1.0 / ifft_buf.len() as f32;
+                    let b = self.block_size;
+                    for i in 0..b.min(error_len) {
+                        // Take last B samples (overlap-save convention)
+                        self.post_filter_time_buf[i] = ifft_buf[b + i].re * inv_n;
+                    }
+                    // Write post-filtered output to ring
+                    for i in 0..error_len {
+                        self.output_buffer[self.output_write_pos] = self.post_filter_time_buf[i];
+                        self.output_write_pos =
+                            (self.output_write_pos + 1) % self.output_buffer.len();
+                    }
+                } else {
+                    // Write raw AEC error to ring
+                    for &sample in &error[..error_len] {
+                        self.output_buffer[self.output_write_pos] = sample;
+                        self.output_write_pos =
+                            (self.output_write_pos + 1) % self.output_buffer.len();
+                    }
                 }
                 self.input_fill = 0;
             }

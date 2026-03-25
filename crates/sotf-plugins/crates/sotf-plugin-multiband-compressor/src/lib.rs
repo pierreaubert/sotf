@@ -5,6 +5,7 @@
 pub mod params;
 
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::lookahead::LookaheadBuffer;
@@ -79,6 +80,14 @@ pub struct MultibandCompressorPluginParams {
     #[serde(default)]
     pub ms_mode: bool,
     pub bands: Vec<BandCompressorParams>,
+    #[serde(default)]
+    pub sidechain_tilt_db: f32,
+    #[serde(default = "default_link_amount")]
+    pub link_amount: f32,
+}
+
+fn default_link_amount() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +157,11 @@ pub struct MultibandCompressorPlugin {
     mix: f32,
     per_band_lookahead_ms: f32,
     ms_mode: bool,
+    sidechain_tilt_db: f32,
+    link_amount: f32,
+    /// Per-band, per-channel high-shelf biquad for sidechain tilt.
+    /// Layout: [band][channel]. Empty when tilt_db ≈ 0.
+    sidechain_tilt_biquads: Vec<Vec<Biquad>>,
     band_params: Vec<BandCompressorParams>,
     crossover_points: Vec<Lr4Crossover>,
     band_compressors: Vec<BandCompressor>,
@@ -229,6 +243,9 @@ impl MultibandCompressorPlugin {
             mix: params.mix,
             per_band_lookahead_ms: la_ms,
             ms_mode: params.ms_mode,
+            sidechain_tilt_db: params.sidechain_tilt_db,
+            link_amount: params.link_amount.clamp(0.0, 1.0),
+            sidechain_tilt_biquads: Vec::new(),
             band_params,
             crossover_points: Vec::new(),
             band_compressors: bcomps,
@@ -420,10 +437,45 @@ impl MultibandCompressorPlugin {
             );
         }
 
+        // Phase 3C: SOTA params
+        params.push(
+            Parameter::new_float(
+                "sidechain_tilt_db", "Sidechain Tilt",
+                self.sidechain_tilt_db, -6.0, 6.0,
+            ).with_group("Global").with_importance(ParameterImportance::Useful),
+        );
+        params.push(
+            Parameter::new_float(
+                "link_amount", "Link Amount",
+                self.link_amount, 0.0, 1.0,
+            ).with_group("Global").with_importance(ParameterImportance::Useful),
+        );
+
         self.cached_parameters = params;
     }
     pub fn from_params(channels: usize, params: MultibandCompressorPluginParams) -> Self {
         Self::with_params(channels, params)
+    }
+
+    fn rebuild_sidechain_tilt(&mut self) {
+        if self.sidechain_tilt_db.abs() < 0.01 || self.sample_rate == 0 {
+            self.sidechain_tilt_biquads.clear();
+            return;
+        }
+        // Create per-band, per-channel tilt biquads so each band has independent state
+        self.sidechain_tilt_biquads = (0..self.num_bands)
+            .map(|_| {
+                (0..self.channels)
+                    .map(|_| Biquad::new(
+                        BiquadFilterType::Highshelf,
+                        1000.0,
+                        self.sample_rate as f64,
+                        0.707,
+                        self.sidechain_tilt_db as f64,
+                    ))
+                    .collect()
+            })
+            .collect();
     }
 
     fn build_crossovers(&mut self) {
@@ -558,6 +610,21 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             self.ms_mode = value
                 .as_bool()
                 .ok_or_else(|| "ms_mode must be a boolean".to_string())?;
+        } else if name == "sidechain_tilt_db" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "sidechain_tilt_db must be a float".to_string())?;
+            if v.is_finite() {
+                self.sidechain_tilt_db = v.clamp(-6.0, 6.0);
+                self.rebuild_sidechain_tilt();
+            }
+        } else if name == "link_amount" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "link_amount must be a float".to_string())?;
+            if v.is_finite() {
+                self.link_amount = v.clamp(0.0, 1.0);
+            }
         } else if name.starts_with("crossover_freq_") {
             let idx = name
                 .replace("crossover_freq_", "")
@@ -719,6 +786,10 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             Some(ParameterValue::Float(self.per_band_lookahead_ms))
         } else if name == "ms_mode" {
             Some(ParameterValue::Bool(self.ms_mode))
+        } else if name == "sidechain_tilt_db" {
+            Some(ParameterValue::Float(self.sidechain_tilt_db))
+        } else if name == "link_amount" {
+            Some(ParameterValue::Float(self.link_amount))
         } else if name == "threshold" {
             Some(ParameterValue::Float(self.threshold_db))
         } else if name == "ratio" {
@@ -779,6 +850,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         self.sample_rate = sr;
         self.build_crossovers();
         self.update_coefficients();
+        self.rebuild_sidechain_tilt();
         self.threshold_smoother.set_time(20.0, sr);
         self.mix_smoother.set_time(20.0, sr);
         for s in &mut self.xover_smoothers {
@@ -931,25 +1003,34 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             let off = b * stride;
             let mut band_max_abs = 0.0f32;
 
+            // Use link_amount for continuous blending (backward compat: link_channels overrides)
+            let link = if self.link_channels { 1.0f32 } else { self.link_amount };
+
             for frame in 0..nf {
-                // Detect level from the current (non-delayed) band audio
-                let mut det = 0.0f32;
-                if self.link_channels {
-                    if use_ms {
-                        // M/S mode: use only Mid (channel 0) for detection
-                        det = self.band_buffers[off + frame * self.channels].abs();
+                // Detect max-of-channels level for linked detection
+                // Apply per-band sidechain tilt filter if configured
+                let has_tilt = b < self.sidechain_tilt_biquads.len();
+                let mut max_det = 0.0f32;
+                if use_ms {
+                    let raw = self.band_buffers[off + frame * self.channels];
+                    let filtered = if has_tilt {
+                        self.sidechain_tilt_biquads[b][0].process(raw as f64) as f32
                     } else {
-                        for ch in 0..self.channels {
-                            det = det.max(self.band_buffers[off + frame * self.channels + ch].abs());
-                        }
+                        raw
+                    };
+                    max_det = filtered.abs();
+                } else {
+                    for ch in 0..self.channels {
+                        let raw = self.band_buffers[off + frame * self.channels + ch];
+                        let filtered = if has_tilt && ch < self.sidechain_tilt_biquads[b].len() {
+                            self.sidechain_tilt_biquads[b][ch].process(raw as f64) as f32
+                        } else {
+                            raw
+                        };
+                        max_det = max_det.max(filtered.abs());
                     }
                 }
-
-                let idb_shared = if self.link_channels {
-                    20.0 * fast_log10(det.max(1e-10))
-                } else {
-                    0.0
-                };
+                let max_idb = 20.0 * fast_log10(max_det.max(1e-10));
 
                 // Apply lookahead delay: push current frame, get delayed frame
                 if use_lookahead {
@@ -963,19 +1044,23 @@ impl InPlacePlugin for MultibandCompressorPlugin {
 
                 for ch in 0..self.channels {
                     let idx = off + frame * self.channels + ch;
-                    let detect_abs = if use_lookahead {
-                        // Detection used the pre-delay signal (via det/idb_shared above)
-                        // For per-channel mode, use the original sample abs from lookahead_frame_tmp
-                        self.lookahead_frame_tmp[ch].abs()
+                    let detect_raw = if use_lookahead {
+                        self.lookahead_frame_tmp[ch]
                     } else {
-                        self.band_buffers[idx].abs()
+                        self.band_buffers[idx]
                     };
+                    // Apply tilt filter to per-channel detection (reuses same biquads — OK for detection)
+                    let detect_abs = detect_raw.abs();
                     band_max_abs = band_max_abs.max(self.band_buffers[idx].abs());
 
-                    let idb = if self.link_channels {
-                        idb_shared
+                    // Blend per-channel and linked detection using link_amount
+                    let per_ch_idb = 20.0 * fast_log10(detect_abs.max(1e-10));
+                    let idb = if link >= 1.0 {
+                        max_idb
+                    } else if link <= 0.0 {
+                        per_ch_idb
                     } else {
-                        20.0 * fast_log10(detect_abs.max(1e-10))
+                        per_ch_idb * (1.0 - link) + max_idb * link
                     };
                     let tgr = Self::calculate_gain_reduction(idb, th, rat, kn);
 

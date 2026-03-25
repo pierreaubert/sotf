@@ -2,76 +2,196 @@
 # plugins-nih: VST3/CLAP wrappers via nih-plug
 # ----------------------------------------------------------------------
 
+# All per-plugin cdylib crate names
+NIH_PLUGINS := "plugins-nih-eq plugins-nih-compressor plugins-nih-limiter plugins-nih-gate plugins-nih-gain plugins-nih-delay plugins-nih-expander plugins-nih-crossfeed plugins-nih-saturation plugins-nih-denoiser plugins-nih-downmix plugins-nih-mono-to-stereo plugins-nih-stereo-imager plugins-nih-transient-shaper plugins-nih-de-esser plugins-nih-dynamic-eq plugins-nih-multiband-compressor plugins-nih-multiband-expander plugins-nih-convolution plugins-nih-fletcher-munson plugins-nih-loudness-compensation plugins-nih-channel-mute-solo plugins-nih-upmixer plugins-nih-xtc plugins-nih-binaural plugins-nih-matrix plugins-nih-pnd plugins-nih-ab-compare plugins-nih-crossover"
+
+# Map from crate name to display name (lib_name|display_name|clap_id_suffix)
+# Used by bundle-vst3 and bundle-clap recipes
+
 [group('lint')]
 lint-nih:
 	cargo check -p plugins-nih
 	cargo clippy -p plugins-nih
 
-# Build VST3 plugin bundle
+# Lint all per-plugin crates
+[group('lint')]
+lint-nih-all:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	for pkg in {{NIH_PLUGINS}}; do
+		echo "Checking $pkg..."
+		cargo check -p "$pkg"
+		cargo clippy -p "$pkg"
+	done
+
+# Build all per-plugin cdylibs (release)
+[group('build')]
+build-nih-all:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	for pkg in {{NIH_PLUGINS}}; do
+		echo "Building $pkg..."
+		cargo build --release -p "$pkg"
+	done
+
+# Build + bundle all VST3 plugins
 [group('build')]
 prod-vst3:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	cargo build --release -p plugins-nih
-	# Extract version from sotf-plugin-eq Cargo.toml
 	VERSION=$(grep '^version' crates/sotf-plugins/crates/sotf-plugin-eq/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
-	# nih-plug outputs a .dylib; bundle it as VST3
-	BUNDLE_DIR="target/release/SOTF EQ.vst3/Contents"
-	mkdir -p "$BUNDLE_DIR/MacOS"
-	cp target/release/libplugins_nih.dylib "$BUNDLE_DIR/MacOS/SOTF EQ"
-	# Create Info.plist
-	cat > "$BUNDLE_DIR/Info.plist" <<PLIST
-	<?xml version="1.0" encoding="UTF-8"?>
-	<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-	<plist version="1.0">
-	<dict>
-		<key>CFBundleName</key>
-		<string>SOTF EQ</string>
-		<key>CFBundleIdentifier</key>
-		<string>org.spinorama.sotf.eq.vst3</string>
-		<key>CFBundleVersion</key>
-		<string>${VERSION}</string>
-		<key>CFBundlePackageType</key>
-		<string>BNDL</string>
-		<key>CFBundleExecutable</key>
-		<string>SOTF EQ</string>
-	</dict>
-	</plist>
-	PLIST
-	echo "VST3 bundle: target/release/SOTF EQ.vst3 (v${VERSION})"
 
-# Build CLAP plugin bundle
+	declare -A PLUGIN_INFO=(
+		[sotf_eq]="SOTF EQ|org.spinorama.sotf.eq.vst3"
+		[sotf_compressor]="SOTF Compressor|org.spinorama.sotf.compressor.vst3"
+		[sotf_limiter]="SOTF Limiter|org.spinorama.sotf.limiter.vst3"
+		[sotf_gate]="SOTF Gate|org.spinorama.sotf.gate.vst3"
+		[sotf_gain]="SOTF Gain|org.spinorama.sotf.gain.vst3"
+		[sotf_delay]="SOTF Delay|org.spinorama.sotf.delay.vst3"
+		[sotf_expander]="SOTF Expander|org.spinorama.sotf.expander.vst3"
+		[sotf_crossfeed]="SOTF Crossfeed|org.spinorama.sotf.crossfeed.vst3"
+		[sotf_saturation]="SOTF Saturation|org.spinorama.sotf.saturation.vst3"
+		[sotf_denoiser]="SOTF Denoiser|org.spinorama.sotf.denoiser.vst3"
+		[sotf_downmix]="SOTF Downmix|org.spinorama.sotf.downmix.vst3"
+		[sotf_mono_to_stereo]="SOTF Mono to Stereo|org.spinorama.sotf.mono-to-stereo.vst3"
+		[sotf_stereo_imager]="SOTF Stereo Imager|org.spinorama.sotf.stereo-imager.vst3"
+		[sotf_transient_shaper]="SOTF Transient Shaper|org.spinorama.sotf.transient-shaper.vst3"
+		[sotf_de_esser]="SOTF De-Esser|org.spinorama.sotf.de-esser.vst3"
+		[sotf_dynamic_eq]="SOTF Dynamic EQ|org.spinorama.sotf.dynamic-eq.vst3"
+		[sotf_multiband_compressor]="SOTF Multiband Compressor|org.spinorama.sotf.multiband-compressor.vst3"
+		[sotf_multiband_expander]="SOTF Multiband Expander|org.spinorama.sotf.multiband-expander.vst3"
+		[sotf_convolution]="SOTF Convolution|org.spinorama.sotf.convolution.vst3"
+		[sotf_fletcher_munson]="SOTF Fletcher-Munson|org.spinorama.sotf.fletcher-munson.vst3"
+		[sotf_loudness_compensation]="SOTF Loudness Compensation|org.spinorama.sotf.loudness-comp.vst3"
+		[sotf_channel_mute_solo]="SOTF Channel Mute Solo|org.spinorama.sotf.channel-mute-solo.vst3"
+		[sotf_upmixer]="SOTF Upmixer|org.spinorama.sotf.upmixer.vst3"
+		[sotf_xtc]="SOTF XTC|org.spinorama.sotf.xtc.vst3"
+		[sotf_binaural]="SOTF Binaural|org.spinorama.sotf.binaural.vst3"
+		[sotf_matrix]="SOTF Matrix|org.spinorama.sotf.matrix.vst3"
+		[sotf_pnd]="SOTF PND|org.spinorama.sotf.pnd.vst3"
+		[sotf_ab_compare]="SOTF AB Compare|org.spinorama.sotf.ab-compare.vst3"
+		[sotf_crossover]="SOTF Crossover|org.spinorama.sotf.crossover.vst3"
+	)
+
+	for pkg in {{NIH_PLUGINS}}; do
+		cargo build --release -p "$pkg"
+	done
+
+	for lib_name in "${!PLUGIN_INFO[@]}"; do
+		IFS='|' read -r display_name bundle_id <<< "${PLUGIN_INFO[$lib_name]}"
+		DYLIB="target/release/lib${lib_name}.dylib"
+		if [ ! -f "$DYLIB" ]; then
+			echo "Warning: $DYLIB not found, skipping"
+			continue
+		fi
+		BUNDLE_DIR="target/release/${display_name}.vst3/Contents"
+		mkdir -p "$BUNDLE_DIR/MacOS"
+		cp "$DYLIB" "$BUNDLE_DIR/MacOS/${display_name}"
+		cat > "$BUNDLE_DIR/Info.plist" <<-PLIST
+		<?xml version="1.0" encoding="UTF-8"?>
+		<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+		<plist version="1.0">
+		<dict>
+			<key>CFBundleName</key>
+			<string>${display_name}</string>
+			<key>CFBundleIdentifier</key>
+			<string>${bundle_id}</string>
+			<key>CFBundleVersion</key>
+			<string>${VERSION}</string>
+			<key>CFBundlePackageType</key>
+			<string>BNDL</string>
+			<key>CFBundleExecutable</key>
+			<string>${display_name}</string>
+		</dict>
+		</plist>
+		PLIST
+		echo "VST3 bundle: target/release/${display_name}.vst3 (v${VERSION})"
+	done
+
+# Build + bundle all CLAP plugins
 [group('build')]
 prod-clap:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	cargo build --release -p plugins-nih
-	BUNDLE_DIR="target/release"
-	cp "$BUNDLE_DIR/libplugins_nih.dylib" "$BUNDLE_DIR/SOTF EQ.clap"
-	echo "CLAP plugin: target/release/SOTF EQ.clap"
+
+	declare -A PLUGIN_DISPLAY=(
+		[sotf_eq]="SOTF EQ"
+		[sotf_compressor]="SOTF Compressor"
+		[sotf_limiter]="SOTF Limiter"
+		[sotf_gate]="SOTF Gate"
+		[sotf_gain]="SOTF Gain"
+		[sotf_delay]="SOTF Delay"
+		[sotf_expander]="SOTF Expander"
+		[sotf_crossfeed]="SOTF Crossfeed"
+		[sotf_saturation]="SOTF Saturation"
+		[sotf_denoiser]="SOTF Denoiser"
+		[sotf_downmix]="SOTF Downmix"
+		[sotf_mono_to_stereo]="SOTF Mono to Stereo"
+		[sotf_stereo_imager]="SOTF Stereo Imager"
+		[sotf_transient_shaper]="SOTF Transient Shaper"
+		[sotf_de_esser]="SOTF De-Esser"
+		[sotf_dynamic_eq]="SOTF Dynamic EQ"
+		[sotf_multiband_compressor]="SOTF Multiband Compressor"
+		[sotf_multiband_expander]="SOTF Multiband Expander"
+		[sotf_convolution]="SOTF Convolution"
+		[sotf_fletcher_munson]="SOTF Fletcher-Munson"
+		[sotf_loudness_compensation]="SOTF Loudness Compensation"
+		[sotf_channel_mute_solo]="SOTF Channel Mute Solo"
+		[sotf_upmixer]="SOTF Upmixer"
+		[sotf_xtc]="SOTF XTC"
+		[sotf_binaural]="SOTF Binaural"
+		[sotf_matrix]="SOTF Matrix"
+		[sotf_pnd]="SOTF PND"
+		[sotf_ab_compare]="SOTF AB Compare"
+		[sotf_crossover]="SOTF Crossover"
+	)
+
+	for pkg in {{NIH_PLUGINS}}; do
+		cargo build --release -p "$pkg"
+	done
+
+	for lib_name in "${!PLUGIN_DISPLAY[@]}"; do
+		display_name="${PLUGIN_DISPLAY[$lib_name]}"
+		DYLIB="target/release/lib${lib_name}.dylib"
+		if [ ! -f "$DYLIB" ]; then
+			echo "Warning: $DYLIB not found, skipping"
+			continue
+		fi
+		cp "$DYLIB" "target/release/${display_name}.clap"
+		echo "CLAP plugin: target/release/${display_name}.clap"
+	done
 
 # Build both VST3 and CLAP
 [group('build')]
 prod-plugins-nih: prod-vst3 prod-clap
 	@echo "VST3 and CLAP plugins built"
 
-# Install VST3 to system
+# Install all VST3 plugins to system
 [group('build')]
 install-vst3: prod-vst3
 	#!/usr/bin/env bash
 	set -euo pipefail
 	VST3_DIR="$HOME/Library/Audio/Plug-Ins/VST3"
 	mkdir -p "$VST3_DIR"
-	rm -rf "$VST3_DIR/SOTF EQ.vst3"
-	cp -r "target/release/SOTF EQ.vst3" "$VST3_DIR/"
-	echo "VST3 installed to $VST3_DIR/SOTF EQ.vst3"
+	for bundle in target/release/SOTF*.vst3; do
+		if [ -d "$bundle" ]; then
+			name=$(basename "$bundle")
+			rm -rf "$VST3_DIR/$name"
+			cp -r "$bundle" "$VST3_DIR/"
+			echo "VST3 installed: $VST3_DIR/$name"
+		fi
+	done
 
-# Install CLAP to system
+# Install all CLAP plugins to system
 [group('build')]
 install-clap: prod-clap
 	#!/usr/bin/env bash
 	set -euo pipefail
 	CLAP_DIR="$HOME/Library/Audio/Plug-Ins/CLAP"
 	mkdir -p "$CLAP_DIR"
-	cp "target/release/SOTF EQ.clap" "$CLAP_DIR/"
-	echo "CLAP installed to $CLAP_DIR/SOTF EQ.clap"
+	for clap in target/release/SOTF*.clap; do
+		if [ -f "$clap" ]; then
+			cp "$clap" "$CLAP_DIR/"
+			echo "CLAP installed: $CLAP_DIR/$(basename "$clap")"
+		fi
+	done

@@ -1026,6 +1026,7 @@ impl PluginChain {
                     per_channel_mode,
                     max_filters,
                     tdf2,
+                    topology,
                 } => {
                     if *channels != current_channels {
                         // If per-channel filters exist but don't match the new channel
@@ -1047,6 +1048,7 @@ impl PluginChain {
                             per_channel_mode: new_per_channel_mode,
                             max_filters: *max_filters,
                             tdf2: *tdf2,
+                            topology: *topology,
                         });
                     }
                 }

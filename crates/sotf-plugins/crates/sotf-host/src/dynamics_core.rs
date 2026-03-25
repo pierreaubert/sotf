@@ -307,7 +307,7 @@ impl DynamicsCore {
         if tilt_db.abs() < 0.01 {
             self.sidechain_filter_mode = SidechainFilterMode::Off;
             self.sidechain_tilt_biquads.clear();
-            self.sidechain_hpf_biquads.clear();
+            // Do NOT clear HPF state — only tilt is being disabled
             return;
         }
         self.sidechain_filter_mode = SidechainFilterMode::Tilt { tilt_db };

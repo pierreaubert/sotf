@@ -576,6 +576,7 @@ impl PluginFuzzer for LimiterFuzzer {
             isp_mode: false,
             dual_release: false,
             feed_forward: false,
+            link_amount: 1.0,
         };
         let plugin = LimiterPlugin::from_params(channels, params);
 
@@ -828,6 +829,8 @@ impl PluginFuzzer for MultibandCompressorFuzzer {
             per_band_lookahead_ms: 0.0,
             ms_mode: false,
             bands: vec![], // Use defaults for per-band params
+            sidechain_tilt_db: 0.0,
+            link_amount: 1.0,
         };
         let plugin = MultibandCompressorPlugin::from_params(channels, params);
 
@@ -1314,6 +1317,8 @@ impl PluginFuzzer for ConvolutionFuzzer {
             mix: rng.random_range(0.1..1.0),
             gain_db: rng.random_range(-12.0..0.0),
             use_nupc: true,
+            zero_latency_head: false,
+            head_taps: 128,
         };
 
         let plugin = ConvolutionPlugin::from_params(channels, self.sample_rate, params.clone())

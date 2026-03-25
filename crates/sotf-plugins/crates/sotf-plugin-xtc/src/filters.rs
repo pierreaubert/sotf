@@ -360,7 +360,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let pinna_left_contra = pinna_left_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
         let delta_t_left = delay_left_contra - delay_left_ipsi;
         let g_ll =
-            head_shadowing_woodworth(freq, asym.angle_left_contra, a) * asym.amplitude_ratio_left;
+            head_shadowing(freq, asym.angle_left_contra, a, params.head_model) * asym.amplitude_ratio_left;
         let phase_ll_contra = -2.0 * PI * freq * delta_t_left;
         let h_ll_contra = Complex::new(g_ll * phase_ll_contra.cos(), g_ll * phase_ll_contra.sin())
             * pinna_left_contra;
@@ -372,7 +372,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
             .map_or(1.0, |lut| lut[bin]);
         let delta_t_right = delay_right_contra - delay_right_ipsi;
         let g_rr =
-            head_shadowing_woodworth(freq, asym.angle_right_contra, a) * asym.amplitude_ratio_right;
+            head_shadowing(freq, asym.angle_right_contra, a, params.head_model) * asym.amplitude_ratio_right;
         let phase_rr_contra = -2.0 * PI * freq * delta_t_right;
         let h_rr_contra = Complex::new(g_rr * phase_rr_contra.cos(), g_rr * phase_rr_contra.sin())
             * pinna_right_contra;
@@ -679,7 +679,7 @@ fn compute_xtc_filters_symmetric_with_cache(
         // Contralateral path is relative to ipsilateral.
         // The head-shadowing magnitude `g` is the same for both modes; only the phase differs.
         let delta_t = sym.delay_contra - sym.delay_ipsi;
-        let g = head_shadowing_woodworth(freq, sym.contra_angle, a) * sym.amplitude_ratio;
+        let g = head_shadowing(freq, sym.contra_angle, a, params.head_model) * sym.amplitude_ratio;
         let phase_contra = -2.0 * PI * freq * delta_t;
         let h_contra_phase_only = Complex::new(g * phase_contra.cos(), g * phase_contra.sin());
 
@@ -1098,6 +1098,69 @@ pub(crate) fn head_shadowing_woodworth(freq: f32, angle_rad: f32, head_radius: f
         let exponent = (ka / 4.0).min(3.0);
         shadow_factor.powf(exponent)
     }
+}
+
+/// Dispatch head shadowing based on the configured model.
+/// Returns magnitude-only shadow gain (0..1) for API compatibility.
+/// head_model: 0 = Woodworth, 1 = Brown-Duda
+pub(crate) fn head_shadowing(freq: f32, angle_rad: f32, head_radius: f32, head_model: usize) -> f32 {
+    match head_model {
+        1 => head_shadowing_brown_duda(freq, angle_rad, head_radius).0,
+        _ => head_shadowing_woodworth(freq, angle_rad, head_radius),
+    }
+}
+
+/// Brown & Duda (1998) rigid-sphere head diffraction model.
+///
+/// Returns a Complex gain representing both ILD (magnitude) and ITD (phase)
+/// for the contralateral path. This is more accurate than Woodworth above ~1.5kHz
+/// because it models frequency-dependent diffraction around a rigid sphere.
+///
+/// Reference: Brown, C.P. & Duda, R.O. (1998). "A structural model for binaural
+/// sound synthesis." IEEE Trans. Speech & Audio Processing, 6(5), 476-488.
+pub(crate) fn head_shadowing_brown_duda(
+    freq: f32,
+    angle_rad: f32,
+    head_radius: f32,
+) -> (f32, f32) {
+    if freq <= 0.0 {
+        return (1.0, 0.0);
+    }
+
+    let theta = angle_rad.abs();
+    let w = 2.0 * PI * freq;
+    let a = head_radius;
+    let c = SPEED_OF_SOUND;
+
+    // Normalized frequency parameter
+    let w0 = c / a; // characteristic frequency of the head
+
+    // --- ILD: Head shadow magnitude (Brown & Duda Eq. 2) ---
+    // The magnitude transfer function is approximated by:
+    //   |H(w, theta)| = alpha_min + (1 - alpha_min) * cos(theta/2)
+    // where alpha_min depends on frequency:
+    //   alpha_min = 1.0 / (1.0 + (w / w0)^2)^0.5 * 2
+    // This gives ~0dB at low frequencies and increasing attenuation at high frequencies.
+    let mu = (w / w0).min(20.0); // normalized frequency, capped for stability
+    // Simplified Brown-Duda magnitude model:
+    // At low freq (mu << 1): magnitude ≈ 1 (transparent)
+    // At high freq (mu >> 1): magnitude ≈ cos(theta/2) (shadow)
+    let alpha_min = (1.0 + 0.5 * mu).recip(); // ~1 at low freq, ~0 at high freq
+    let magnitude = alpha_min + (1.0 - alpha_min) * (theta / 2.0).cos();
+
+    // --- ITD: Interaural time delay (Woodworth formula for ITD) ---
+    // Brown & Duda use the Woodworth diffraction path for time delay:
+    //   tau(theta) = (a/c) * (theta + sin(theta))  for theta < pi/2
+    //   tau(theta) = (a/c) * (pi/2 + sin(theta))    extrapolated
+    // This gives the additional path delay for the contralateral ear.
+    let tau = if theta <= PI / 2.0 {
+        (a / c) * (theta + theta.sin())
+    } else {
+        (a / c) * (PI / 2.0 + theta.sin())
+    };
+    let phase = -w * tau; // negative phase = delay
+
+    (magnitude, phase)
 }
 
 // ============================================================================

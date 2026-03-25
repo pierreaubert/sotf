@@ -346,27 +346,34 @@ impl Plugin for BeamformerPlugin {
                         }
 
                         // Beamform
-                        let output_spectrum = match self.beamformer_type {
+                        match self.beamformer_type {
                             BeamformerType::Mvdr => {
                                 self.mvdr.update_noise_covariance(&self.stft_channels);
-                                let weights =
-                                    self.mvdr.compute_weights(&self.steering_vectors);
-                                MvdrBeamformer::apply_weights(&self.stft_channels, &weights)
+                                self.mvdr.compute_weights(&self.steering_vectors);
+                                // Apply weights using internal buffers
+                                for k in 0..spectrum_size {
+                                    let mut sum = Complex::new(0.0, 0.0);
+                                    for m in 0..self.stft_channels.len() {
+                                        if k < self.stft_channels[m].len() && m < self.mvdr.weights_buf[k].len() {
+                                            sum += self.mvdr.weights_buf[k][m].conj() * self.stft_channels[m][k];
+                                        }
+                                    }
+                                    self.fft.freq_buffer[k] = sum;
+                                }
                             }
                             BeamformerType::Superdirective => {
                                 if let Some(ref sd) = self.superdirective {
-                                    sd.apply(&self.stft_channels)
+                                    let result = sd.apply(&self.stft_channels);
+                                    self.fft.freq_buffer[..spectrum_size]
+                                        .copy_from_slice(&result[..spectrum_size]);
                                 } else {
-                                    vec![Complex::new(0.0, 0.0); spectrum_size]
+                                    self.fft.freq_buffer[..spectrum_size].fill(Complex::new(0.0, 0.0));
                                 }
                             }
                             BeamformerType::Gsc => unreachable!(),
                         };
 
-                        // Synthesis
-                        self.fft.freq_buffer[..spectrum_size]
-                            .copy_from_slice(&output_spectrum);
-                        // RealFFT requires DC and Nyquist bins to have zero imaginary part
+                        // Synthesis — freq_buffer populated above; fix DC/Nyquist bins
                         self.fft.freq_buffer[0].im = 0.0;
                         self.fft.freq_buffer[spectrum_size - 1].im = 0.0;
                         self.fft.inverse();

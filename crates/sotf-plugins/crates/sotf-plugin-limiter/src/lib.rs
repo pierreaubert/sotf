@@ -37,6 +37,12 @@ pub struct LimiterPluginParams {
     pub mix: f32,
     #[serde(default)]
     pub feed_forward: bool,
+    #[serde(default = "default_link_amount")]
+    pub link_amount: f32,
+}
+
+fn default_link_amount() -> f32 {
+    pk(LM, "link_amount").default_f64() as f32
 }
 
 fn default_threshold_db() -> f32 {
@@ -97,6 +103,8 @@ pub struct LimiterPlugin {
     mix: f32,
     param_feed_forward: ParameterId,
     feed_forward: bool,
+    param_link_amount: ParameterId,
+    link_amount: f32,
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
     envelope: f32,
@@ -150,6 +158,8 @@ impl LimiterPlugin {
             mix: 1.0,
             param_feed_forward: ParameterId::from("feed_forward"),
             feed_forward: false,
+            param_link_amount: ParameterId::from("link_amount"),
+            link_amount: pk(LM, "link_amount").default_f64() as f32,
             threshold_smoother: Smoother::new(fast_pow10(threshold_db / 20.0), 5.0, sr),
             mix_smoother: Smoother::new(1.0, 5.0, sr),
             envelope: 0.0,
@@ -205,7 +215,7 @@ impl LimiterPlugin {
                 "lookahead",
                 "Lookahead",
                 self.lookahead_ms,
-                pk(LM, "lookahead").default_f64() as f32,
+                pk(LM, "lookahead").min_f64() as f32,
                 pk(LM, "lookahead").max_f64() as f32,
             )
             .with_description("Lookahead time for peak detection (ms)")
@@ -233,6 +243,16 @@ impl LimiterPlugin {
             .with_description("Dry/wet mix (0 = dry, 1 = limited)")
             .with_group("Output")
             .with_importance(ParameterImportance::Useful),
+            // Must match PARAMS order: idx 8=link_amount, idx 9=feed_forward
+            Parameter::new_float(
+                "link_amount", "Link",
+                self.link_amount,
+                pk(LM, "link_amount").min_f64() as f32,
+                pk(LM, "link_amount").max_f64() as f32,
+            )
+            .with_description("Channel linking (0=independent, 1=linked)")
+            .with_group("Detection")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("feed_forward", "Feed Forward", self.feed_forward)
                 .with_description("Scan lookahead buffer for anticipatory gain reduction")
                 .with_group("Detection")
@@ -253,6 +273,7 @@ impl LimiterPlugin {
         p.dual_release = params.dual_release;
         p.mix = params.mix.clamp(0.0, 1.0);
         p.feed_forward = params.feed_forward;
+        p.link_amount = params.link_amount.clamp(0.0, 1.0);
         p.rebuild_cached_parameters();
         p
     }
@@ -342,6 +363,11 @@ impl InPlacePlugin for LimiterPlugin {
             }
         } else if id == self.param_feed_forward {
             self.feed_forward = value.as_bool().unwrap_or(false);
+        } else if id == self.param_link_amount {
+            let val = value.as_float().unwrap_or(1.0);
+            if val.is_finite() {
+                self.link_amount = val.clamp(0.0, 1.0);
+            }
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -366,6 +392,8 @@ impl InPlacePlugin for LimiterPlugin {
             Some(ParameterValue::Float(self.mix))
         } else if id == &self.param_feed_forward {
             Some(ParameterValue::Bool(self.feed_forward))
+        } else if id == &self.param_link_amount {
+            Some(ParameterValue::Float(self.link_amount))
         } else {
             None
         }
@@ -423,24 +451,44 @@ impl InPlacePlugin for LimiterPlugin {
             self.monitoring_isp_linear.fill(0.0);
         }
 
+        let link = self.link_amount;
+
+        #[allow(clippy::needless_range_loop)]
         for frame in 0..num_frames {
-            let mut frame_peak = 0.0f32;
+            // Detect per-channel peaks
+            let mut ch_peaks = [0.0f32; 32]; // stack-allocated, max 32 channels
+            let nc = self.channels.min(32);
             if use_true_peak {
-                for ch in 0..self.channels {
+                for ch in 0..nc {
                     let idx = frame * self.channels + ch;
                     let tp = self.true_peak_detectors[ch].process_linear(buffer[idx]);
-                    frame_peak = frame_peak.max(tp);
+                    ch_peaks[ch] = tp;
                     // Track per-channel ISP
                     if tp > self.monitoring_isp_linear[ch] {
                         self.monitoring_isp_linear[ch] = tp;
                     }
                 }
             } else {
-                for ch in 0..self.channels {
+                for ch in 0..nc {
                     let idx = frame * self.channels + ch;
-                    frame_peak = frame_peak.max(buffer[idx].abs());
+                    ch_peaks[ch] = buffer[idx].abs();
                 }
             }
+
+            // Apply channel linking: blend per-channel peaks toward max
+            let max_peak_ch = ch_peaks[..nc].iter().copied().fold(0.0f32, f32::max);
+            let frame_peak = if link >= 1.0 || nc <= 1 {
+                max_peak_ch
+            } else {
+                // Blend: each channel's peak moves toward max by link amount
+                // Use the max of the linked peaks as the effective frame peak
+                let mut linked_max = 0.0f32;
+                for ch in 0..nc {
+                    let linked = ch_peaks[ch] * (1.0 - link) + max_peak_ch * link;
+                    linked_max = linked_max.max(linked);
+                }
+                linked_max
+            };
 
             max_peak = max_peak.max(frame_peak);
 
@@ -795,11 +843,13 @@ mod tests {
             dual_release: true,
             mix: 0.8,
             feed_forward: true,
+            link_amount: 0.75,
         };
         let p = LimiterPlugin::from_params(2, params);
         assert!(p.true_peak);
         assert!(p.isp_mode);
         assert!(p.dual_release);
+        assert!((p.link_amount - 0.75).abs() < 1e-6);
         assert!(p.feed_forward);
         assert_eq!(p.mix, 0.8);
 

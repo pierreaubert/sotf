@@ -7,7 +7,7 @@ pub mod params;
 #[cfg(feature = "gpui-ui")]
 pub mod ui;
 
-use math_audio_iir_fir::{Biquad, BiquadCoefficients};
+use math_audio_iir_fir::{Biquad, BiquadCoefficients, SvfFilter, SvfFilterType};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
@@ -107,6 +107,12 @@ pub struct EqPlugin {
     oversampler: Option<Oversampler>,
     /// Use Transposed Direct Form II for better numerical stability at high Q.
     use_tdf2: bool,
+    /// Filter topology: 0 = Biquad (default), 1 = SVF (zero-delay feedback).
+    /// When SVF is selected, `svf_filters` is used instead of `filters`.
+    topology: usize,
+    /// SVF filter banks: svf_filters[channel][band] — single SVF per band (no cascading).
+    /// Only populated when topology == 1.
+    svf_filters: Vec<Vec<SvfFilter>>,
 }
 
 /// Helper: create cascaded biquad stages for a given order.
@@ -169,9 +175,46 @@ impl EqPlugin {
             oversampling_factor: 1,
             use_tdf2: false,
             oversampler: None,
+            topology: 0,
+            svf_filters: Vec::new(),
         };
         p.rebuild_cached_parameters();
         p
+    }
+
+    /// Rebuild SVF filter bank from current biquad parameters.
+    /// Each biquad band maps to one SVF. Multi-stage (high-order) bands
+    /// use only the primary stage's parameters since SVF doesn't cascade the same way.
+    fn rebuild_svf_filters(&mut self) {
+        let sr = self.sample_rate as f64;
+        self.svf_filters.clear();
+        if self.filters.is_empty() {
+            return;
+        }
+        for _ch in 0..self.num_channels {
+            let mut ch_svfs = Vec::with_capacity(self.filters[0].len());
+            for stages in &self.filters[0] {
+                if let Some(primary) = stages.first() {
+                    let svf_type = match primary.filter_type {
+                        math_audio_iir_fir::BiquadFilterType::Peak
+                        | math_audio_iir_fir::BiquadFilterType::PeakMatched => SvfFilterType::Peak,
+                        math_audio_iir_fir::BiquadFilterType::Lowpass => SvfFilterType::Lowpass,
+                        math_audio_iir_fir::BiquadFilterType::Highpass => SvfFilterType::Highpass,
+                        math_audio_iir_fir::BiquadFilterType::Lowshelf
+                        | math_audio_iir_fir::BiquadFilterType::LowshelfOrf => SvfFilterType::Lowshelf,
+                        math_audio_iir_fir::BiquadFilterType::Highshelf
+                        | math_audio_iir_fir::BiquadFilterType::HighshelfOrf => SvfFilterType::Highshelf,
+                        math_audio_iir_fir::BiquadFilterType::Bandpass => SvfFilterType::Bandpass,
+                        math_audio_iir_fir::BiquadFilterType::Notch => SvfFilterType::Notch,
+                        math_audio_iir_fir::BiquadFilterType::AllPass => SvfFilterType::Allpass,
+                        // Other biquad types (HighpassVariableQ etc.) map to closest SVF type
+                        _ => SvfFilterType::Peak,
+                    };
+                    ch_svfs.push(SvfFilter::new(svf_type, primary.freq, sr, primary.q, primary.db_gain));
+                }
+            }
+            self.svf_filters.push(ch_svfs);
+        }
     }
 
     fn rebuild_cached_parameters(&mut self) {
@@ -185,6 +228,8 @@ impl EqPlugin {
                 .with_description("Oversampling factor: 1 (off), 2 (2x), 4 (4x)"),
             Parameter::new_bool("tdf2", "TDF-II", self.use_tdf2)
                 .with_description("Use Transposed Direct Form II for better numerical stability at high Q"),
+            Parameter::new_string("topology", "Topology", if self.topology == 1 { "SVF" } else { "Biquad" }.to_string())
+                .with_description("Filter topology: Biquad or SVF (zero-delay feedback)"),
         ];
 
         if !self.filters.is_empty() {
@@ -270,6 +315,8 @@ impl EqPlugin {
             oversampling_factor: 1,
             use_tdf2: false,
             oversampler: None,
+            topology: 0,
+            svf_filters: Vec::new(),
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -344,8 +391,10 @@ impl EqPlugin {
                 cached_parameters: Vec::new(),
                 transitions: (0..num_bands).map(|_| None).collect(),
                 oversampling_factor: 1,
-            use_tdf2: false,
+                use_tdf2: false,
                 oversampler: None,
+                topology: 0,
+                svf_filters: Vec::new(),
             }
         } else {
             let mut band_stages = Vec::new();
@@ -371,8 +420,10 @@ impl EqPlugin {
                 cached_parameters: Vec::new(),
                 transitions: (0..num_bands).map(|_| None).collect(),
                 oversampling_factor: 1,
-            use_tdf2: false,
+                use_tdf2: false,
                 oversampler: None,
+                topology: 0,
+                svf_filters: Vec::new(),
             }
         };
         eq.rebuild_cached_parameters();
@@ -541,6 +592,26 @@ impl InPlacePlugin for EqPlugin {
                 }
             }
             self.rebuild_cached_parameters();
+        } else if name == "topology" {
+            let new_topo = if let Some(s) = value.as_string() {
+                match s {
+                    "SVF" | "svf" => 1,
+                    _ => 0,
+                }
+            } else if let Some(v) = value.as_float() {
+                (v as usize).min(1)
+            } else {
+                0
+            };
+            if new_topo != self.topology {
+                self.topology = new_topo;
+                if new_topo == 1 {
+                    self.rebuild_svf_filters();
+                } else {
+                    self.svf_filters.clear();
+                }
+            }
+            self.rebuild_cached_parameters();
         } else if let Some(rest) = name.strip_prefix("band_") {
             // Parse "band_N_field" without heap allocation.
             // Find the next '_' to split index from field.
@@ -569,6 +640,9 @@ impl InPlacePlugin for EqPlugin {
                                 *band = create_band_stages(ft, freq, srate, q, total_gain, new_order);
                             }
                         }
+                    }
+                    if self.topology == 1 {
+                        self.rebuild_svf_filters();
                     }
                     self.rebuild_cached_parameters();
                     return Ok(());
@@ -657,6 +731,10 @@ impl InPlacePlugin for EqPlugin {
                             });
                         }
                     }
+                    // Update SVF filters if topology is active
+                    if self.topology == 1 {
+                        self.rebuild_svf_filters();
+                    }
                     self.rebuild_cached_parameters();
                 }
             }
@@ -673,6 +751,8 @@ impl InPlacePlugin for EqPlugin {
             Some(ParameterValue::Int(self.oversampling_factor as i32))
         } else if name == "tdf2" {
             Some(ParameterValue::Bool(self.use_tdf2))
+        } else if name == "topology" {
+            Some(ParameterValue::String(if self.topology == 1 { "SVF" } else { "Biquad" }.to_string()))
         } else if let Some(rest) = name.strip_prefix("band_") {
             // Parse "band_N_field" without heap allocation.
             // Find the next '_' to split index from field.
@@ -731,9 +811,20 @@ impl InPlacePlugin for EqPlugin {
             self.oversampler = None;
         }
 
+        // Rebuild SVF filters if SVF topology is active
+        if self.topology == 1 {
+            self.rebuild_svf_filters();
+        }
+
         Ok(())
     }
     fn reset(&mut self) {
+        // Reset SVF integrator state
+        for ch_svfs in &mut self.svf_filters {
+            for svf in ch_svfs {
+                svf.reset();
+            }
+        }
         for chain in &mut self.filters {
             for stages in chain {
                 for f in stages {
@@ -779,7 +870,23 @@ impl InPlacePlugin for EqPlugin {
             let _ = self.auto_gain.measure_input(buffer);
         }
 
-        if self.oversampling_factor == 1 {
+        if self.topology == 1 && !self.svf_filters.is_empty() {
+            // ----------------------------------------------------------------
+            // SVF topology: zero-delay feedback, inherently modulation-stable
+            // No coefficient interpolation needed — SVF handles parameter
+            // changes without transients.
+            // ----------------------------------------------------------------
+            for frame in 0..num_frames {
+                for ch in 0..nc {
+                    let idx = frame * nc + ch;
+                    let mut s = buffer[idx] as f64;
+                    for svf in &mut self.svf_filters[ch] {
+                        s = svf.process(s);
+                    }
+                    buffer[idx] = s as f32;
+                }
+            }
+        } else if self.oversampling_factor == 1 {
             // ----------------------------------------------------------------
             // Fast path: no oversampling — process biquads directly
             // ----------------------------------------------------------------

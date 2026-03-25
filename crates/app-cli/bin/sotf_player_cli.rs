@@ -3029,6 +3029,7 @@ fn build_rack_mode_plugins(
                         per_channel_mode: false,
                         max_filters: 20,
                         tdf2: false,
+                    topology: 0.0,
                     };
                 }
                 log::info!("Rack: Added EQ plugin with {} filters", filters.len());
@@ -3092,6 +3093,8 @@ fn build_rack_mode_plugins(
                         per_band_lookahead_ms: 0.0,
                         ms_mode: false,
                         bands: vec![],
+                    sidechain_tilt_db: 0.0,
+                    link_amount: 1.0,
                     };
                 }
                 log::info!("Rack: Added MultibandCompressor plugin");
@@ -3131,6 +3134,8 @@ fn build_rack_mode_plugins(
                         isp_mode: false,
                         dual_release: false,
                         mix: plugins.limiter.mix as f64,
+                        link_amount: 1.0,
+                        feed_forward: false,
                     };
                 }
                 log::info!("Rack: Added Limiter plugin");

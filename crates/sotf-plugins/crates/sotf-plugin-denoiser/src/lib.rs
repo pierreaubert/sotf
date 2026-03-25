@@ -300,6 +300,14 @@ pub struct DenoiserPlugin {
     /// Stored as an Option so that when disabled the extra RAM is not held.
     multi_res_state: Option<multi_resolution::MultiResState>,
 
+    // --- Phase 4B: SOTA additions ---
+    param_harmonic_percussive: ParameterId,
+    harmonic_percussive: bool,
+    param_spatial_denoise: ParameterId,
+    spatial_denoise: bool,
+    param_spatial_strength: ParameterId,
+    spatial_strength: f32,
+
     // Data exposure for UI — cached to avoid allocations in get_data()
     avg_reduction_db: f32,
     learning_active: bool,
@@ -493,6 +501,13 @@ impl DenoiserPlugin {
 
             param_multi_resolution: ParameterId::from("multi_resolution"),
             multi_resolution: pk(DN, "multi_resolution").default_bool(),
+            // Phase 4B: SOTA
+            param_harmonic_percussive: ParameterId::from("harmonic_percussive"),
+            harmonic_percussive: false,
+            param_spatial_denoise: ParameterId::from("spatial_denoise"),
+            spatial_denoise: false,
+            param_spatial_strength: ParameterId::from("spatial_strength"),
+            spatial_strength: 0.5,
             multi_res_state: None, // allocated on first enable
 
             avg_reduction_db: 0.0,
@@ -1180,6 +1195,15 @@ impl InPlacePlugin for DenoiserPlugin {
                 self.multi_res_state = None;
             }
             self.multi_resolution = enabled;
+        } else if id == self.param_harmonic_percussive {
+            self.harmonic_percussive = value.as_bool().unwrap_or(false);
+        } else if id == self.param_spatial_denoise {
+            self.spatial_denoise = value.as_bool().unwrap_or(false);
+        } else if id == self.param_spatial_strength {
+            let v = value.as_float().unwrap_or(0.5);
+            if v.is_finite() {
+                self.spatial_strength = v.clamp(0.0, 1.0);
+            }
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -1244,6 +1268,12 @@ impl InPlacePlugin for DenoiserPlugin {
             Some(ParameterValue::Float(self.formant_preserver.strength))
         } else if id == &self.param_multi_resolution {
             Some(ParameterValue::Bool(self.multi_resolution))
+        } else if id == &self.param_harmonic_percussive {
+            Some(ParameterValue::Bool(self.harmonic_percussive))
+        } else if id == &self.param_spatial_denoise {
+            Some(ParameterValue::Bool(self.spatial_denoise))
+        } else if id == &self.param_spatial_strength {
+            Some(ParameterValue::Float(self.spatial_strength))
         } else {
             None
         }

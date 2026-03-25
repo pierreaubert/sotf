@@ -155,6 +155,12 @@ pub const GLOBAL_PARAMS: &[ParamSpec] = multiband_global_params![
     ParamSpec::bool_param("M/S Mode", "ms_mode", false, "Global")
         .setup()
         .doc("Mid/Side processing mode"),
+    // --- Phase 3C: SOTA additions ---
+    ParamSpec::float("Sidechain Tilt", "sidechain_tilt_db", 0.0, -6.0, 6.0, 0.5, "dB", "Global")
+        .doc("Detection tilt: +dB = more HF sensitive, -dB = more LF sensitive"),
+    ParamSpec::float("Link Amount", "link_amount", 1.0, 0.0, 1.0, 0.01, "%", "Global")
+        .scaled(100.0)
+        .doc("Channel linking: 0%=independent, 100%=linked"),
 ];
 
 // ============================================================================
@@ -207,9 +213,10 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
 // UI Layout
 // ============================================================================
 
-/// Multiband Compressor: GLOBAL_PARAMS 0-12, BAND_TEMPLATE 0-9 per band.
+/// Multiband Compressor: GLOBAL_PARAMS 0-16, BAND_TEMPLATE 0-9 per band.
 /// Global: 0=bands, 1=preset, 2-5=crossovers, 6=threshold, 7=ratio,
-/// 8=attack, 9=release, 10=knee, 11=mix, 12=link_channels
+/// 8=attack, 9=release, 10=knee, 11=mix, 12=link_channels, 13=lookahead, 14=ms_mode,
+/// 15=sidechain_tilt_db, 16=link_amount
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::knob(0),     // num_bands
@@ -218,7 +225,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::knob(3),     // crossover_freq_2
         ControlSpec::knob(4),     // crossover_freq_3
         ControlSpec::knob(5),     // crossover_freq_4
-        ControlSpec::toggle(12),  // link_channels
+        ControlSpec::toggle(12),  // link_channels (kept for backward compat)
+        ControlSpec::slider(16),  // link_amount
+        ControlSpec::slider(15),  // sidechain_tilt_db
     ],
     main: &[
         ControlGroup {

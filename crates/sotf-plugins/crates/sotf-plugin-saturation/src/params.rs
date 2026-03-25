@@ -60,17 +60,32 @@ pub const PARAMS: &[ParamSpec] = &[
         .scaled(100.0)
         .output()
         .doc("Dry/wet blend"),
+    // --- Phase 3A: SOTA additions ---
+    ParamSpec::float("Dynamic", "dynamic_amount", 0.0, 0.0, 1.0, 0.01, "%", "Dynamic")
+        .scaled(100.0)
+        .doc("Envelope-followed drive modulation depth"),
+    ParamSpec::float("Dyn Attack", "dynamic_attack_ms", 5.0, 0.1, 100.0, 0.5, "ms", "Dynamic")
+        .doc("Dynamic saturation envelope attack time"),
+    ParamSpec::float("Dyn Release", "dynamic_release_ms", 50.0, 1.0, 500.0, 1.0, "ms", "Dynamic")
+        .doc("Dynamic saturation envelope release time"),
+    ParamSpec::bool_labeled("DC Block", "dc_blocker", true, "On", "Off", "Quality")
+        .doc("Remove DC offset from asymmetric saturation"),
+    ParamSpec::bool_labeled("ADAA", "use_adaa", true, "On", "Off", "Quality")
+        .doc("Antiderivative anti-aliasing when oversampling is off"),
 ];
 
 // ============================================================================
 // UI Layout
 // ============================================================================
 
-/// Saturation: idx 0=mode, 1=drive, 2=tone, 3=exciter_freq, 4=oversampling, 5=output_gain, 6=mix
+/// Saturation: idx 0=mode, 1=drive, 2=tone, 3=exciter_freq, 4=oversampling, 5=output_gain, 6=mix,
+///             7=dynamic_amount, 8=dynamic_attack_ms, 9=dynamic_release_ms, 10=dc_blocker, 11=use_adaa
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::selector(0), // mode
-        ControlSpec::selector(4), // oversampling
+        ControlSpec::selector(0),  // mode
+        ControlSpec::selector(4),  // oversampling
+        ControlSpec::toggle(10),   // dc_blocker
+        ControlSpec::toggle(11),   // use_adaa
     ],
     main: &[
         ControlGroup {
@@ -84,6 +99,14 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             title: "EXCITER",
             controls: &[
                 ControlSpec::slider(3), // exciter_freq
+            ],
+        },
+        ControlGroup {
+            title: "DYNAMIC",
+            controls: &[
+                ControlSpec::slider(7), // dynamic_amount
+                ControlSpec::slider(8), // dynamic_attack_ms
+                ControlSpec::slider(9), // dynamic_release_ms
             ],
         },
     ],
@@ -126,6 +149,16 @@ pub struct Params {
     pub output_gain: f64,
     #[serde(default = "d_mix")]
     pub mix: f64,
+    #[serde(default = "d_dynamic_amount")]
+    pub dynamic_amount: f64,
+    #[serde(default = "d_dynamic_attack_ms")]
+    pub dynamic_attack_ms: f64,
+    #[serde(default = "d_dynamic_release_ms")]
+    pub dynamic_release_ms: f64,
+    #[serde(default = "d_dc_blocker")]
+    pub dc_blocker: f64,
+    #[serde(default = "d_use_adaa")]
+    pub use_adaa: f64,
 }
 
 fn d_mode() -> f64 {
@@ -149,6 +182,21 @@ fn d_output_gain() -> f64 {
 fn d_mix() -> f64 {
     pk(PARAMS, "mix").default_f64()
 }
+fn d_dynamic_amount() -> f64 {
+    pk(PARAMS, "dynamic_amount").default_f64()
+}
+fn d_dynamic_attack_ms() -> f64 {
+    pk(PARAMS, "dynamic_attack_ms").default_f64()
+}
+fn d_dynamic_release_ms() -> f64 {
+    pk(PARAMS, "dynamic_release_ms").default_f64()
+}
+fn d_dc_blocker() -> f64 {
+    pk(PARAMS, "dc_blocker").default_f64()
+}
+fn d_use_adaa() -> f64 {
+    pk(PARAMS, "use_adaa").default_f64()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -160,6 +208,11 @@ impl Default for Params {
             oversampling: d_oversampling(),
             output_gain: d_output_gain(),
             mix: d_mix(),
+            dynamic_amount: d_dynamic_amount(),
+            dynamic_attack_ms: d_dynamic_attack_ms(),
+            dynamic_release_ms: d_dynamic_release_ms(),
+            dc_blocker: d_dc_blocker(),
+            use_adaa: d_use_adaa(),
         }
     }
 }
@@ -183,6 +236,11 @@ impl PluginParamDef for Params {
             4 => Some(self.oversampling),
             5 => Some(self.output_gain),
             6 => Some(self.mix),
+            7 => Some(self.dynamic_amount),
+            8 => Some(self.dynamic_attack_ms),
+            9 => Some(self.dynamic_release_ms),
+            10 => Some(self.dc_blocker),
+            11 => Some(self.use_adaa),
             _ => None,
         }
     }
@@ -196,6 +254,11 @@ impl PluginParamDef for Params {
             4 => self.oversampling = value,
             5 => self.output_gain = value,
             6 => self.mix = value,
+            7 => self.dynamic_amount = value,
+            8 => self.dynamic_attack_ms = value,
+            9 => self.dynamic_release_ms = value,
+            10 => self.dc_blocker = value,
+            11 => self.use_adaa = value,
             _ => {}
         }
     }

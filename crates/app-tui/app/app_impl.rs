@@ -507,6 +507,7 @@ impl App {
                     per_channel_mode: false,
                     max_filters: filter_count.clamp(1, 20),
                     tdf2: false,
+                topology: 0.0,
                 };
                 Ok(())
             } else {
@@ -617,6 +618,7 @@ impl App {
                 per_channel_mode: false,
                 max_filters: n.clamp(1, 20),
                 tdf2: false,
+            topology: 0.0,
             };
             plugin.enabled = true;
         }

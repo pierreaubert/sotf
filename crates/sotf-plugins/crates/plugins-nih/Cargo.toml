@@ -1,13 +1,45 @@
 [package]
 name = "plugins-nih"
 description = "VST3/CLAP plugin wrappers for SOTF audio plugins via nih-plug"
-version.workspace = true
+version = "0.5.3"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [lib]
 crate-type = ["cdylib"]
+
+[features]
+# Build one plugin per feature. The Justfile builds all 29 sequentially.
+eq = []
+compressor = []
+limiter = []
+gate = []
+gain = []
+delay = []
+expander = []
+crossfeed = []
+saturation = []
+denoiser = []
+downmix = []
+mono-to-stereo = []
+stereo-imager = []
+transient-shaper = []
+de-esser = []
+dynamic-eq = []
+multiband-compressor = []
+multiband-expander = []
+convolution = []
+fletcher-munson = []
+loudness-compensation = []
+channel-mute-solo = []
+upmixer = []
+xtc = []
+binaural = []
+matrix = []
+pnd = []
+ab-compare = []
+crossover = []
 
 [dependencies]
 plugins-bridge = { path = "../plugins-bridge" }

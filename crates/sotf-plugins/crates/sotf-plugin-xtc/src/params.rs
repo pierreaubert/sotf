@@ -279,7 +279,13 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .output()
     .doc("Auto gain transition time"),
+    // Phase 4D: SOTA addition
+    ParamSpec::choice("Head Model", "head_model", 0, HEAD_MODELS, "Geometry")
+        .setup()
+        .doc("Head diffraction model: Woodworth (classic) or Brown-Duda (rigid sphere, more accurate above 1.5kHz)"),
 ];
+
+pub const HEAD_MODELS: &[&str] = &["Woodworth", "Brown-Duda"];
 
 // ============================================================================
 // UI Layout
@@ -423,6 +429,8 @@ pub struct Params {
     pub auto_gain_max_db: f64,
     #[serde(default = "d_auto_gain_smoothing_ms")]
     pub auto_gain_smoothing_ms: f64,
+    #[serde(default)]
+    pub head_model: f64,
 }
 
 fn d_distance_m() -> f64 {
@@ -533,6 +541,7 @@ impl Default for Params {
             auto_gain_enabled: d_auto_gain_enabled(),
             auto_gain_max_db: d_auto_gain_max_db(),
             auto_gain_smoothing_ms: d_auto_gain_smoothing_ms(),
+            head_model: 0.0,
         }
     }
 }
@@ -587,6 +596,7 @@ impl PluginParamDef for Params {
             23 => Some(if self.auto_gain_enabled { 1.0 } else { 0.0 }),
             24 => Some(self.auto_gain_max_db),
             25 => Some(self.auto_gain_smoothing_ms),
+            26 => Some(self.head_model),
             _ => None,
         }
     }
@@ -619,6 +629,7 @@ impl PluginParamDef for Params {
             23 => self.auto_gain_enabled = value > 0.5,
             24 => self.auto_gain_max_db = value,
             25 => self.auto_gain_smoothing_ms = value,
+            26 => self.head_model = value,
             _ => {}
         }
     }

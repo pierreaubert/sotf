@@ -104,6 +104,16 @@ impl TwoPathAec {
         self.power_fg = self.power_bg;
     }
 
+    /// Access foreground filter's last error spectrum (for post-filter).
+    pub fn last_error_freq(&self) -> &[rustfft::num_complex::Complex<f32>] {
+        self.foreground.last_error_freq()
+    }
+
+    /// Access foreground filter's last echo estimate spectrum (for post-filter).
+    pub fn last_echo_estimate_freq(&self) -> &[rustfft::num_complex::Complex<f32>] {
+        self.foreground.last_echo_estimate_freq()
+    }
+
     /// Reset both filters.
     pub fn reset(&mut self) {
         self.foreground.reset();

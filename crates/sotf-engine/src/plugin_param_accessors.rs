@@ -408,6 +408,7 @@ impl_param_accessors! {
         fields: [
             threshold_db: f64, release_ms: f64, lookahead_ms: f64, soft: bool,
             true_peak: bool, isp_mode: bool, dual_release: bool, mix: f64,
+            link_amount: f64, feed_forward: bool,
         ]
     },
     LoudnessCompensation {
@@ -448,7 +449,7 @@ impl_param_accessors! {
     Convolution {
         params: param_specs::convolution::PARAMS,
         layout: Some(&param_specs::convolution::LAYOUT),
-        fields: [ir_file: skip, mix: f64, gain_db: f64, use_nupc: bool]
+        fields: [ir_file: skip, mix: f64, gain_db: f64, use_nupc: bool, zero_latency_head: bool, head_taps: i32]
     },
     BinauralDecoder {
         params: param_specs::binaural::PARAMS,
@@ -475,6 +476,7 @@ impl_param_accessors! {
             bypass_xtc_filters: bool, bypass_spectral_normalization: bool,
             bypass_neumann_refinement: bool,
             auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
+            head_model: f64,
         ]
     },
     Denoiser {
@@ -492,6 +494,7 @@ impl_param_accessors! {
             learn_noise: bool, use_captured_profile: bool, clear_profile: bool,
             algorithm: usize,
             formant_preservation: bool, formant_strength: f64, multi_resolution: bool,
+            harmonic_percussive: bool, spatial_denoise: bool, spatial_strength: f64,
         ]
     },
     Pnd {
@@ -585,7 +588,7 @@ impl_param_accessors! {
     EQ {
         params: param_specs::eq::GLOBAL_PARAMS,
         layout: None,
-        fields: [max_filters: usize, tdf2: bool]
+        fields: [max_filters: usize, tdf2: bool, topology: f64]
     },
     MultibandCompressor {
         params: param_specs::multiband_compressor::GLOBAL_PARAMS,
@@ -597,6 +600,7 @@ impl_param_accessors! {
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             knee_db: f64, mix: f64, link_channels: bool,
             per_band_lookahead_ms: f64, ms_mode: bool,
+            sidechain_tilt_db: f64, link_amount: f64,
         ]
     },
     MultibandExpander {
@@ -651,6 +655,8 @@ impl_param_accessors! {
             mode: f64, drive: f64, tone: f64,
             exciter_freq: f64, oversampling: f64,
             output_gain_db: f64, mix: f64,
+            dynamic_amount: f64, dynamic_attack_ms: f64, dynamic_release_ms: f64,
+            dc_blocker: bool, use_adaa: bool,
         ]
     },
     DynamicEq {
@@ -669,6 +675,7 @@ impl_param_accessors! {
             fft_size: usize, threshold: f64, ratio: f64,
             attack: f64, release: f64, knee: f64,
             spectral_smoothing: f64, mix: f64,
+            target_mode: f64, delta_listen: bool,
         ]
     },
     LinearPhaseEq {

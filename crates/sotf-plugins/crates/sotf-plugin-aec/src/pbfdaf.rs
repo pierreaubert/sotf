@@ -189,6 +189,22 @@ impl Pbfdaf {
     pub fn block_size(&self) -> usize {
         self.block_size
     }
+
+    /// Last error signal in frequency domain (available after process()).
+    /// Length = fft_size.
+    pub fn last_error_freq(&self) -> &[Complex<f32>] {
+        &self.error_freq
+    }
+
+    /// Last echo estimate in frequency domain (available after process()).
+    /// Note: this is the *pre-IFFT* echo estimate, length = fft_size.
+    pub fn last_echo_estimate_freq(&self) -> &[Complex<f32>] {
+        &self.output_buf
+    }
+
+    pub fn fft_size(&self) -> usize {
+        self.fft_size
+    }
 }
 
 impl std::fmt::Debug for Pbfdaf {

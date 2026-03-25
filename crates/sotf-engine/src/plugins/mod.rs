@@ -487,6 +487,7 @@ sotf_plugins::serde_param_default! {
     fn default_limiter_lookahead_ms() -> f64 = "lookahead";
     fn default_limiter_soft() -> bool = "soft";
     fn default_limiter_mix() -> f64 = "mix";
+    fn default_limiter_link_amount() -> f64 = "link_amount";
 }
 
 sotf_plugins::serde_param_default! {
@@ -528,6 +529,7 @@ sotf_plugins::serde_param_default! {
     fn default_mb_compressor_knee_db() -> f64 = "knee";
     fn default_mb_compressor_mix() -> f64 = "mix";
     fn default_mb_compressor_link_channels() -> bool = "link_channels";
+    fn default_mb_compressor_link_amount() -> f64 = "link_amount";
 }
 
 sotf_plugins::serde_param_default! {
@@ -606,11 +608,13 @@ sotf_plugins::serde_param_default! {
     fn default_denoiser_spectral_sub_beta() -> f64 = "spectral_sub_beta";
     fn default_denoiser_algorithm() -> usize = "algorithm";
     fn default_denoiser_formant_strength() -> f64 = "formant_strength";
+    fn default_spatial_strength() -> f64 = "spatial_strength";
 }
 
 sotf_plugins::serde_param_default! {
     convolution_specs::PARAMS;
     fn default_use_nupc() -> bool = "use_nupc";
+    fn default_head_taps() -> usize { 128 }
 }
 
 sotf_plugins::serde_param_default! {
@@ -785,6 +789,9 @@ pub enum PluginSettings {
         /// Use Transposed Direct Form II for biquad filters
         #[serde(default)]
         tdf2: bool,
+        /// Filter topology: 0 = Biquad (default), 1 = SVF (zero-delay feedback)
+        #[serde(default)]
+        topology: f64,
     },
     Gain {
         #[serde(default = "default_channels")]
@@ -926,6 +933,10 @@ pub enum PluginSettings {
         dual_release: bool,
         #[serde(default = "default_limiter_mix")]
         mix: f64,
+        #[serde(default = "default_limiter_link_amount")]
+        link_amount: f64,
+        #[serde(default)]
+        feed_forward: bool,
     },
     Gate {
         threshold_db: f64,
@@ -1020,6 +1031,10 @@ pub enum PluginSettings {
         ms_mode: bool,
         #[serde(default)]
         bands: Vec<BandCompressorParams>,
+        #[serde(default)]
+        sidechain_tilt_db: f64,
+        #[serde(default = "default_mb_compressor_link_amount")]
+        link_amount: f64,
     },
     MultibandExpander {
         #[serde(default = "default_mb_expander_num_bands")]
@@ -1172,6 +1187,10 @@ pub enum PluginSettings {
         gain_db: f64,
         #[serde(default = "default_use_nupc")]
         use_nupc: bool,
+        #[serde(default)]
+        zero_latency_head: bool,
+        #[serde(default = "default_head_taps")]
+        head_taps: usize,
     },
     LoudnessMonitor,
     SpectrumAnalyzer {
@@ -1258,6 +1277,8 @@ pub enum PluginSettings {
         auto_gain_smoothing_ms: f64,
         #[serde(default = "default_xtc_pinna_model_enabled")]
         pinna_model_enabled: bool,
+        #[serde(default)]
+        head_model: f64,
     },
     Denoiser {
         #[serde(default = "default_denoiser_reduction_db")]
@@ -1326,6 +1347,12 @@ pub enum PluginSettings {
         formant_strength: f64,
         #[serde(default)]
         multi_resolution: bool,
+        #[serde(default)]
+        harmonic_percussive: bool,
+        #[serde(default)]
+        spatial_denoise: bool,
+        #[serde(default = "default_spatial_strength")]
+        spatial_strength: f64,
     },
     Pnd {
         #[serde(default = "default_pnd_correction_strength")]
@@ -1589,6 +1616,16 @@ pub enum PluginSettings {
         output_gain_db: f64,
         #[serde(default = "default_sat_mix")]
         mix: f64,
+        #[serde(default)]
+        dynamic_amount: f64,
+        #[serde(default = "default_sat_dynamic_attack_ms")]
+        dynamic_attack_ms: f64,
+        #[serde(default = "default_sat_dynamic_release_ms")]
+        dynamic_release_ms: f64,
+        #[serde(default = "default_sat_dc_blocker")]
+        dc_blocker: bool,
+        #[serde(default = "default_sat_use_adaa")]
+        use_adaa: bool,
     },
     DynamicEq {
         #[serde(default = "default_dyneq_num_bands")]
@@ -1635,6 +1672,10 @@ pub enum PluginSettings {
         spectral_smoothing: f64,
         #[serde(default = "default_sc_mix")]
         mix: f64,
+        #[serde(default)]
+        target_mode: f64,
+        #[serde(default)]
+        delta_listen: bool,
     },
 }
 
@@ -1652,6 +1693,10 @@ sotf_plugins::serde_param_default! {
     fn default_sat_oversampling() -> f64 = "oversampling";
     fn default_sat_output_gain() -> f64 = "output_gain";
     fn default_sat_mix() -> f64 = "mix";
+    fn default_sat_dynamic_attack_ms() -> f64 = "dynamic_attack_ms";
+    fn default_sat_dynamic_release_ms() -> f64 = "dynamic_release_ms";
+    fn default_sat_dc_blocker() -> bool = "dc_blocker";
+    fn default_sat_use_adaa() -> bool = "use_adaa";
 }
 
 sotf_plugins::serde_param_default! {
@@ -1898,6 +1943,7 @@ impl PluginSettings {
                 oversampling,
                 output_gain_db,
                 mix,
+                ..
             } => {
                 let mode_str = saturation_specs::MODES
                     .get(*mode as usize)
@@ -1963,6 +2009,7 @@ impl PluginSettings {
                 knee,
                 spectral_smoothing,
                 mix,
+                ..
             } => PluginConfig::new(
                 "spectral_compressor",
                 json!({
@@ -1983,6 +2030,7 @@ impl PluginSettings {
                 per_channel_mode,
                 max_filters: _,
                 tdf2,
+                topology: _,
             } => {
                 // Helper to convert filters with mute/solo logic
                 let convert_filters = |filters: &[EQFilter]| -> Vec<serde_json::Value> {
@@ -2205,6 +2253,7 @@ impl PluginSettings {
                 isp_mode,
                 dual_release,
                 mix,
+                ..
             } => PluginConfig::new(
                 "limiter",
                 json!({
@@ -2307,6 +2356,7 @@ impl PluginSettings {
                 per_band_lookahead_ms,
                 ms_mode,
                 bands,
+                ..
             } => PluginConfig::new(
                 "multiband_compressor",
                 json!({
@@ -2825,6 +2875,7 @@ impl PluginSettings {
                 per_channel_mode: false,
                 max_filters: 5,
                 tdf2: false,
+                topology: 0.0,
             },
             PluginType::Gain => Self::Gain {
                 channels: default_channels(),
@@ -2911,6 +2962,8 @@ impl PluginSettings {
                     isp_mode: p(l, "isp_mode").default_bool(),
                     dual_release: p(l, "dual_release").default_bool(),
                     mix: p(l, "mix").default_f64(),
+                    link_amount: p(l, "link_amount").default_f64(),
+                    feed_forward: p(l, "feed_forward").default_bool(),
                 }
             }
             PluginType::Gate => {
@@ -2972,6 +3025,8 @@ impl PluginSettings {
                     per_band_lookahead_ms: p(mc, "per_band_lookahead_ms").default_f64(),
                     ms_mode: p(mc, "ms_mode").default_bool(),
                     bands: Vec::new(),
+                    sidechain_tilt_db: 0.0,
+                    link_amount: p(mc, "link_amount").default_f64(),
                 }
             }
             PluginType::MultibandExpander => {
@@ -3329,6 +3384,11 @@ impl PluginSettings {
                     oversampling: p(sat, "oversampling").default_f64(),
                     output_gain_db: p(sat, "output_gain").default_f64(),
                     mix: p(sat, "mix").default_f64(),
+                    dynamic_amount: p(sat, "dynamic_amount").default_f64(),
+                    dynamic_attack_ms: p(sat, "dynamic_attack_ms").default_f64(),
+                    dynamic_release_ms: p(sat, "dynamic_release_ms").default_f64(),
+                    dc_blocker: p(sat, "dc_blocker").default_bool(),
+                    use_adaa: p(sat, "use_adaa").default_bool(),
                 }
             }
             PluginType::DynamicEq => {
@@ -3364,6 +3424,8 @@ impl PluginSettings {
                     knee: p(sc, "knee").default_f64(),
                     spectral_smoothing: p(sc, "spectral_smoothing").default_f64(),
                     mix: p(sc, "mix").default_f64(),
+                    target_mode: p(sc, "target_mode").default_f64(),
+                    delta_listen: false,
                 }
             }
         }

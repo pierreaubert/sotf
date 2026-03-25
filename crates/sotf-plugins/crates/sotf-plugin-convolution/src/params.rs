@@ -31,6 +31,13 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::bool_param("Use NUPC", "use_nupc", true, "General")
         .structural()
         .doc("Non-uniform partitioned convolution"),
+    // Phase 4F: SOTA additions
+    ParamSpec::bool_param("Zero-Latency Head", "zero_latency_head", false, "Quality")
+        .structural()
+        .doc("Time-domain processing of first IR taps for zero additional latency"),
+    ParamSpec::int("Head Taps", "head_taps", 128, 32, 512, 32, "", "Quality")
+        .structural()
+        .doc("Number of IR taps processed in time domain (32-512)"),
 ];
 
 // ============================================================================
@@ -72,8 +79,15 @@ pub struct Params {
     pub gain_db: f64,
     #[serde(default = "d_use_nupc")]
     pub use_nupc: bool,
+    #[serde(default)]
+    pub zero_latency_head: bool,
+    #[serde(default = "d_head_taps")]
+    pub head_taps: i64,
 }
 
+fn d_head_taps() -> i64 {
+    pk(PARAMS, "head_taps").default_f64() as i64
+}
 fn d_mix() -> f64 {
     pk(PARAMS, "mix").default_f64()
 }
@@ -90,6 +104,8 @@ impl Default for Params {
             mix: d_mix(),
             gain_db: d_gain_db(),
             use_nupc: d_use_nupc(),
+            zero_latency_head: false,
+            head_taps: d_head_taps(),
         }
     }
 }
@@ -110,6 +126,8 @@ impl PluginParamDef for Params {
             1 => Some(self.mix),
             2 => Some(self.gain_db),
             3 => Some(if self.use_nupc { 1.0 } else { 0.0 }),
+            4 => Some(if self.zero_latency_head { 1.0 } else { 0.0 }),
+            5 => Some(self.head_taps as f64),
             _ => None,
         }
     }
@@ -120,6 +138,8 @@ impl PluginParamDef for Params {
             1 => self.mix = value,
             2 => self.gain_db = value,
             3 => self.use_nupc = value > 0.5,
+            4 => self.zero_latency_head = value > 0.5,
+            5 => self.head_taps = value as i64,
             _ => {}
         }
     }
