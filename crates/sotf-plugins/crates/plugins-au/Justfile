@@ -29,7 +29,7 @@ sync-au-versions:
 
 	# AU extension name → plugin crate name
 	AU_NAMES=(  EQAudioUnit         CompressorAudioUnit     LimiterAudioUnit     GateAudioUnit     GainAudioUnit     DelayAudioUnit)
-	CRATE_NAMES=(sotf-plugin-eq     sotf-plugin-compressor  sotf-plugin-limiter  sotf-plugin-gate  sotf-plugin-gain  sotf-plugin-delay)
+	CRATE_NAMES=(sotf-plugin-eq     sotf-plugin-multiband-compressor  sotf-plugin-limiter  sotf-plugin-gate  sotf-plugin-gain  sotf-plugin-delay)
 
 	for i in "${!AU_NAMES[@]}"; do
 		au="${AU_NAMES[$i]}"

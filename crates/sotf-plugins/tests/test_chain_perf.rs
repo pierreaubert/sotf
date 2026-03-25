@@ -15,7 +15,7 @@ fn test_plugin_chain_performance_with_monitor_96khz() {
         .unwrap();
 
     // Compressor
-    let comp = sotf_plugins::CompressorPlugin::new(channels, -20.0, 4.0, 10.0, 100.0, 6.0, 0.0);
+    let comp = sotf_plugins::CompressorPlugin::new(channels);
     host.add_plugin(Box::new(InPlacePluginAdapter::new(comp)))
         .unwrap();
 

@@ -1,0 +1,312 @@
+---
+source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+expression: plan
+---
+{
+  "plugin_type": "fletcher_munson",
+  "width": 1200.0,
+  "orientation": "horizontal",
+  "knob_size": "md",
+  "group_direction": "row",
+  "slider_height": 180.0,
+  "show_visualizations": true,
+  "columns_visible": [
+    "config",
+    "main",
+    "output"
+  ],
+  "columns_collapsed": [],
+  "config_controls": [
+    {
+      "param_index": 0,
+      "param_name": "Playback Volume",
+      "control_type": "label",
+      "unit": "dB",
+      "range": [
+        -80.0,
+        0.0
+      ],
+      "read_only": true
+    },
+    {
+      "param_index": 1,
+      "param_name": "Reference",
+      "control_type": "knob",
+      "unit": "dB",
+      "range": [
+        -40.0,
+        0.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 2,
+      "param_name": "Enabled",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 3,
+      "param_name": "Smoothing",
+      "control_type": "knob",
+      "unit": "ms",
+      "range": [
+        1.0,
+        200.0
+      ],
+      "read_only": false
+    }
+  ],
+  "main_groups": [
+    {
+      "title": "BAND 1 — SUB-BASS",
+      "controls": [
+        {
+          "param_index": 8,
+          "param_name": "Band 1 Freq",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            20.0,
+            20000.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 9,
+          "param_name": "Band 1 Q",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.1,
+            10.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 10,
+          "param_name": "Band 1 Max",
+          "control_type": "knob",
+          "unit": "dB",
+          "range": [
+            0.0,
+            24.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 11,
+          "param_name": "Band 1 Slope",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "title": "BAND 2 — MID-BASS",
+      "controls": [
+        {
+          "param_index": 12,
+          "param_name": "Band 2 Freq",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            20.0,
+            20000.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 13,
+          "param_name": "Band 2 Q",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.1,
+            10.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 14,
+          "param_name": "Band 2 Max",
+          "control_type": "knob",
+          "unit": "dB",
+          "range": [
+            0.0,
+            24.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 15,
+          "param_name": "Band 2 Slope",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "title": "BAND 3 — PRESENCE",
+      "controls": [
+        {
+          "param_index": 16,
+          "param_name": "Band 3 Freq",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            20.0,
+            20000.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 17,
+          "param_name": "Band 3 Q",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.1,
+            10.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 18,
+          "param_name": "Band 3 Max",
+          "control_type": "knob",
+          "unit": "dB",
+          "range": [
+            0.0,
+            24.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 19,
+          "param_name": "Band 3 Slope",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "title": "BAND 4 — AIR",
+      "controls": [
+        {
+          "param_index": 20,
+          "param_name": "Band 4 Freq",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            20.0,
+            20000.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 21,
+          "param_name": "Band 4 Q",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.1,
+            10.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 22,
+          "param_name": "Band 4 Max",
+          "control_type": "knob",
+          "unit": "dB",
+          "range": [
+            0.0,
+            24.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 23,
+          "param_name": "Band 4 Slope",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    }
+  ],
+  "output_controls": [
+    {
+      "param_index": 4,
+      "param_name": "Auto Gain",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 5,
+      "param_name": "Max Correction",
+      "control_type": "knob",
+      "unit": "dB",
+      "range": [
+        0.0,
+        24.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 6,
+      "param_name": "AG Smoothing",
+      "control_type": "knob",
+      "unit": "ms",
+      "range": [
+        10.0,
+        500.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 7,
+      "param_name": "AG Loudness Type",
+      "control_type": "selector",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    }
+  ],
+  "tabs": [],
+  "viz_slots": [],
+  "dynamic_sections": []
+}

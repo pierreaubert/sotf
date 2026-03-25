@@ -2,7 +2,6 @@
 bench-plugins:
 	cargo bench -p sotf-plugin-binaural --bench binaural-decoder-benchmark
 	cargo bench -p sotf-plugin-upmixer --bench upmixer-benchmark
-	cargo bench -p sotf-plugin-compressor --bench compressor-benchmark
 
 # ----------------------------------------------------------------------
 # QA PLUGINS
@@ -53,11 +52,9 @@ qa-plugin-fuzzer-6ch:
 [group('qa-plugins')]
 qa-plugin-diagnostics:
 	cargo run --release --package sotf-plugin-ab-compare --bin qa-ab-compare --features qa
-	cargo run --release --package sotf-plugin-compressor --bin qa-compressor --features qa
 	cargo run --release --package sotf-plugin-delay --bin qa-delay --features qa
 	cargo run --release --package sotf-plugin-downmix --bin qa-downmix --features qa
 	cargo run --release --package sotf-plugin-eq --bin qa-eq --features qa
-	cargo run --release --package sotf-plugin-expander --bin qa-expander --features qa
 	cargo run --release --package sotf-plugin-gain --bin qa-gain --features qa
 	cargo run --release --package sotf-plugin-gate --bin qa-gate --features qa
 	cargo run --release --package sotf-plugin-limiter --bin qa-limiter --features qa

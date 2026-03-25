@@ -246,6 +246,26 @@ pub enum VizSlot {
     },
 }
 
+/// Describes a repeated parameter section (one per band/filter).
+///
+/// Used by plugins with a variable number of identical parameter groups,
+/// such as multiband compressor bands or EQ filter bands.
+#[derive(Debug, Clone, Copy)]
+pub struct DynamicSection {
+    /// Instance label (e.g., "Band", "Filter").
+    pub instance_name: &'static str,
+    /// Template param indices repeated for each instance (indices into PARAMS).
+    pub template_params: &'static [usize],
+    /// Control layout for one instance of the template.
+    pub template_controls: &'static [ControlSpec],
+    /// Allowed range of instance counts (min, max).
+    pub count_range: (usize, usize),
+    /// PARAMS index that controls the instance count (None = fixed count).
+    pub count_param_index: Option<usize>,
+    /// Whether to show "Global" as instance 0 (for override-style multiband).
+    pub has_global_defaults: bool,
+}
+
 /// Complete declarative layout for a plugin UI.
 ///
 /// Each plugin defines a `static LAYOUT: PluginLayout` alongside its `PARAMS` array.
@@ -266,6 +286,8 @@ pub struct PluginLayout {
     pub visualizations: &'static [VizSlot],
     /// Column constraints for the layout solver.
     pub column_constraints: &'static [ColumnConstraint],
+    /// Dynamic (repeated) parameter sections. Empty slice = no dynamic sections.
+    pub dynamic_sections: &'static [DynamicSection],
 }
 
 impl PluginLayout {

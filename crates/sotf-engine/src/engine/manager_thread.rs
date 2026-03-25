@@ -1253,6 +1253,9 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "aec",
             "beamformer",
             "ambisonics_decoder",
+            "stereo_imager",
+            "transient_shaper",
+            "de_esser",
         ];
 
         let plugin_type_lower = config.plugin_type.to_lowercase();

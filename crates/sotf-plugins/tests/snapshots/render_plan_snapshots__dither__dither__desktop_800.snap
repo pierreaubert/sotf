@@ -1,0 +1,64 @@
+---
+source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+expression: plan
+---
+{
+  "plugin_type": "dither",
+  "width": 800.0,
+  "orientation": "horizontal",
+  "knob_size": "sm",
+  "group_direction": "row",
+  "slider_height": 180.0,
+  "show_visualizations": true,
+  "columns_visible": [
+    "config",
+    "main"
+  ],
+  "columns_collapsed": [],
+  "config_controls": [
+    {
+      "param_index": 1,
+      "param_name": "Noise Shaping",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    }
+  ],
+  "main_groups": [
+    {
+      "title": "DITHER",
+      "controls": [
+        {
+          "param_index": 0,
+          "param_name": "Bit Depth",
+          "control_type": "selector",
+          "unit": "",
+          "range": [
+            0.0,
+            2.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 2,
+          "param_name": "Dither Type",
+          "control_type": "selector",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    }
+  ],
+  "output_controls": [],
+  "tabs": [],
+  "viz_slots": [],
+  "dynamic_sections": []
+}

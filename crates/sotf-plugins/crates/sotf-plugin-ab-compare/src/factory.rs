@@ -4,7 +4,7 @@ use super::config::{GraphEdgeConfig, GraphNodeConfig, PathConfig};
 use sotf_host::InPlacePluginAdapter;
 use sotf_host::host::{DawHost, GraphEdge};
 use sotf_host::plugin::Plugin;
-use sotf_plugin_compressor::{CompressorPlugin, CompressorPluginParams};
+use sotf_plugin_multiband_compressor::{MultibandCompressorPlugin, MultibandCompressorPluginParams};
 use sotf_plugin_delay::{DelayPlugin, DelayPluginParams};
 use sotf_plugin_eq::{EqPlugin, EqPluginParams};
 use sotf_plugin_gain::{GainPlugin, GainPluginParams};
@@ -33,9 +33,9 @@ pub fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
         "compressor" => {
-            let params: CompressorPluginParams = serde_json::from_value(parameters.clone())
+            let params: MultibandCompressorPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Invalid Compressor params: {}", e))?;
-            let plugin = CompressorPlugin::from_params(num_channels, params);
+            let plugin = MultibandCompressorPlugin::from_params(num_channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
         "limiter" => {

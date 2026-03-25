@@ -18,7 +18,7 @@ required-features = ["qa"]
 
 [dependencies]
 sotf-host = { workspace = true }
-sotf-plugin-compressor = { workspace = true }
+sotf-plugin-multiband-compressor = { workspace = true }
 sotf-plugin-delay = { workspace = true }
 sotf-plugin-eq = { workspace = true }
 sotf-plugin-gain = { workspace = true }

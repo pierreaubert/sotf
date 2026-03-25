@@ -1,0 +1,76 @@
+---
+source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+expression: plan
+---
+{
+  "plugin_type": "beamformer",
+  "width": 390.0,
+  "orientation": "vertical",
+  "knob_size": "xs",
+  "group_direction": "column",
+  "slider_height": 120.0,
+  "show_visualizations": false,
+  "columns_visible": [
+    "main"
+  ],
+  "columns_collapsed": [
+    "config"
+  ],
+  "config_controls": [
+    {
+      "param_index": 0,
+      "param_name": "Microphones",
+      "control_type": "vertical_slider",
+      "unit": "",
+      "range": [
+        2.0,
+        8.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 1,
+      "param_name": "Mic Spacing",
+      "control_type": "vertical_slider",
+      "unit": "cm",
+      "range": [
+        1.0,
+        50.0
+      ],
+      "read_only": false
+    }
+  ],
+  "main_groups": [
+    {
+      "title": "",
+      "controls": [
+        {
+          "param_index": 2,
+          "param_name": "Steer Angle",
+          "control_type": "vertical_slider",
+          "unit": "°",
+          "range": [
+            -180.0,
+            180.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 3,
+          "param_name": "Algorithm",
+          "control_type": "selector",
+          "unit": "",
+          "range": [
+            0.0,
+            2.0
+          ],
+          "read_only": false
+        }
+      ]
+    }
+  ],
+  "output_controls": [],
+  "tabs": [],
+  "viz_slots": [],
+  "dynamic_sections": []
+}

@@ -42,6 +42,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     tabs: &[],
     visualizations: &[],
     column_constraints: &[ColumnConstraint::config(120.0, 0.5)],
+    dynamic_sections: &[],
 };
 
 // ============================================================================

@@ -7,12 +7,11 @@ pub mod params;
 #[cfg(feature = "gpui-ui")]
 pub mod ui;
 
-use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use math_audio_iir_fir::{Biquad, BiquadCoefficients};
-use rubato::{Fft, FixedSync, Resampler};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
+use sotf_host::oversampling::Oversampler;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -35,13 +34,6 @@ const Q_MIN: f32 = 0.1;
 const Q_MAX: f32 = 10.0;
 const GAIN_MIN: f32 = -24.0;
 const GAIN_MAX: f32 = 24.0;
-
-/// Internal chunk size used by the oversampling resamplers.
-///
-/// This is the fixed number of *input* frames consumed per resampler call.
-/// Residual buffering handles process calls that don't align to this size.
-/// Chosen as 256 to balance latency (~5ms @ 48kHz) and efficiency.
-const OS_CHUNK_SIZE: usize = 256;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BiquadFilterConfig {
@@ -93,84 +85,6 @@ struct BandTransition {
     total_samples: usize,
 }
 
-/// State for the oversampling up/down resampler pair.
-///
-/// Buffers are planar (one `Vec<f32>` per channel) to match the rubato API.
-/// All buffers are pre-allocated in `initialize()` to avoid hot-path allocations.
-struct OversamplingState {
-    /// 1x → Nx resampler (upsample)
-    resampler_up: Fft<f32>,
-    /// Nx → 1x resampler (downsample)
-    resampler_down: Fft<f32>,
-    /// Planar input buffer for up-resampler (one Vec per channel, length = OS_CHUNK_SIZE)
-    up_in: Vec<Vec<f32>>,
-    /// Planar output buffer for up-resampler (one Vec per channel, length = OS_CHUNK_SIZE * factor)
-    up_out: Vec<Vec<f32>>,
-    /// Planar input buffer for down-resampler (one Vec per channel, length = OS_CHUNK_SIZE * factor)
-    down_in: Vec<Vec<f32>>,
-    /// Planar output buffer for down-resampler (one Vec per channel, length = OS_CHUNK_SIZE)
-    down_out: Vec<Vec<f32>>,
-    /// Residual input frames (interleaved) waiting to fill a full OS_CHUNK_SIZE chunk
-    residual_in: Vec<f32>,
-    /// Number of frames currently in `residual_in`
-    residual_frames: usize,
-    /// Residual output frames (interleaved) waiting to be consumed by the caller
-    residual_out: Vec<f32>,
-    /// Number of frames currently ready in `residual_out`
-    residual_out_frames: usize,
-    /// Read cursor into `residual_out`
-    residual_out_read: usize,
-    /// Oversampling factor (2 or 4)
-    factor: u32,
-    /// Total latency in samples (at 1x rate) from the resampler pair
-    latency_samples: usize,
-}
-
-impl OversamplingState {
-    fn new(factor: u32, num_channels: usize) -> Result<Self, String> {
-        let f = factor as usize;
-        // Up-resampler: input sample_rate 1, output sample_rate factor
-        // chunk_size = OS_CHUNK_SIZE (fixed input)
-        let resampler_up = Fft::<f32>::new(1, f, OS_CHUNK_SIZE, 1, num_channels, FixedSync::Input)
-            .map_err(|e| format!("Failed to create up-resampler: {:?}", e))?;
-
-        // Down-resampler: input sample_rate factor, output sample_rate 1
-        // chunk_size = OS_CHUNK_SIZE * factor (fixed input, produces OS_CHUNK_SIZE output)
-        let resampler_down =
-            Fft::<f32>::new(f, 1, OS_CHUNK_SIZE * f, 1, num_channels, FixedSync::Input)
-                .map_err(|e| format!("Failed to create down-resampler: {:?}", e))?;
-
-        let up_out_frames = resampler_up.output_frames_max();
-        let down_out_frames = resampler_down.output_frames_max();
-
-        // Latency: up-resampler delay (in output frames at Nx rate) converted to 1x frames,
-        // plus down-resampler delay (already in 1x output frames).
-        // Both delays are reported as output frames. We add them in 1x units.
-        let up_delay_1x = resampler_up.output_delay() / f; // Nx → 1x
-        let down_delay_1x = resampler_down.output_delay();
-        // Add one chunk of input buffering latency
-        let latency_samples = up_delay_1x + down_delay_1x + OS_CHUNK_SIZE;
-
-        Ok(Self {
-            resampler_up,
-            resampler_down,
-            up_in: vec![vec![0.0f32; OS_CHUNK_SIZE]; num_channels],
-            up_out: vec![vec![0.0f32; up_out_frames]; num_channels],
-            down_in: vec![vec![0.0f32; OS_CHUNK_SIZE * f]; num_channels],
-            down_out: vec![vec![0.0f32; down_out_frames]; num_channels],
-            // Residual I/O buffers pre-allocated for max expected frame size (4096)
-            // to avoid hot-path resize. The resize guards remain as safety nets.
-            residual_in: vec![0.0f32; (4096 + OS_CHUNK_SIZE) * num_channels],
-            residual_frames: 0,
-            residual_out: vec![0.0f32; (OS_CHUNK_SIZE + latency_samples) * num_channels * 4],
-            residual_out_frames: 0,
-            residual_out_read: 0,
-            factor,
-            latency_samples,
-        })
-    }
-}
-
 pub struct EqPlugin {
     num_channels: usize,
     /// filters[channel][band][stage] — for order=2, each band has 1 stage.
@@ -190,7 +104,7 @@ pub struct EqPlugin {
     /// Oversampling factor: 1 (off), 2, or 4.
     oversampling_factor: u32,
     /// Oversampling state (None when oversampling_factor == 1).
-    os_state: Option<OversamplingState>,
+    oversampler: Option<Oversampler>,
     /// Use Transposed Direct Form II for better numerical stability at high Q.
     use_tdf2: bool,
 }
@@ -254,7 +168,7 @@ impl EqPlugin {
             transitions,
             oversampling_factor: 1,
             use_tdf2: false,
-            os_state: None,
+            oversampler: None,
         };
         p.rebuild_cached_parameters();
         p
@@ -355,7 +269,7 @@ impl EqPlugin {
             transitions,
             oversampling_factor: 1,
             use_tdf2: false,
-            os_state: None,
+            oversampler: None,
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -431,7 +345,7 @@ impl EqPlugin {
                 transitions: (0..num_bands).map(|_| None).collect(),
                 oversampling_factor: 1,
             use_tdf2: false,
-                os_state: None,
+                oversampler: None,
             }
         } else {
             let mut band_stages = Vec::new();
@@ -458,7 +372,7 @@ impl EqPlugin {
                 transitions: (0..num_bands).map(|_| None).collect(),
                 oversampling_factor: 1,
             use_tdf2: false,
-                os_state: None,
+                oversampler: None,
             }
         };
         eq.rebuild_cached_parameters();
@@ -573,128 +487,6 @@ impl EqPlugin {
         }
     }
 
-    /// Convert interleaved buffer to planar format.
-    fn interleaved_to_planar(
-        interleaved: &[f32],
-        planar: &mut [Vec<f32>],
-        num_frames: usize,
-        num_channels: usize,
-    ) {
-        for ch in 0..num_channels {
-            for frame in 0..num_frames {
-                planar[ch][frame] = interleaved[frame * num_channels + ch];
-            }
-        }
-    }
-
-    /// Convert planar format to interleaved buffer.
-    fn planar_to_interleaved(
-        planar: &[Vec<f32>],
-        interleaved: &mut [f32],
-        num_frames: usize,
-        num_channels: usize,
-    ) {
-        for frame in 0..num_frames {
-            for ch in 0..num_channels {
-                interleaved[frame * num_channels + ch] = planar[ch][frame];
-            }
-        }
-    }
-
-    /// Process one OS_CHUNK_SIZE chunk of interleaved input through oversampling + biquads.
-    ///
-    /// `input_chunk` must have exactly `OS_CHUNK_SIZE * num_channels` samples.
-    /// Appends the resulting `OS_CHUNK_SIZE` output frames (interleaved) to the
-    /// `os_state.residual_out` buffer at position `residual_out_frames`.
-    ///
-    /// Returns the number of output frames written (= OS_CHUNK_SIZE on success).
-    fn process_os_chunk(&mut self, input_chunk: &[f32]) -> Result<usize, String> {
-        let nc = self.num_channels;
-
-        // Step 1: interleaved → planar into up_in
-        Self::interleaved_to_planar(input_chunk, &mut self.os_state.as_mut().unwrap().up_in, OS_CHUNK_SIZE, nc);
-
-        // Step 2: upsample
-        let up_out_max = {
-            let os = self.os_state.as_ref().unwrap();
-            os.resampler_up.output_frames_max()
-        };
-
-        {
-            let os = self.os_state.as_mut().unwrap();
-            let in_adapter = SequentialSliceOfVecs::new(&os.up_in, nc, OS_CHUNK_SIZE)
-                .map_err(|e| format!("up in adapter: {:?}", e))?;
-            let mut out_adapter =
-                SequentialSliceOfVecs::new_mut(&mut os.up_out, nc, up_out_max)
-                    .map_err(|e| format!("up out adapter: {:?}", e))?;
-            os.resampler_up
-                .process_into_buffer(&in_adapter, &mut out_adapter, None)
-                .map_err(|e| format!("upsample: {:?}", e))?;
-        }
-
-        // The upsampled frame count is OS_CHUNK_SIZE * factor
-        let factor = self.os_state.as_ref().unwrap().factor as usize;
-        let up_frames = OS_CHUNK_SIZE * factor;
-
-        // Step 3: process biquads on upsampled data (planar in os_state.up_out)
-        // We need mutable access — borrow the up_out slice temporarily
-        {
-            // Split borrow: need &mut self.filters and &mut os.up_out simultaneously.
-            // Take the up_out buffer out, process, put back.
-            let mut up_out = std::mem::take(&mut self.os_state.as_mut().unwrap().up_out);
-            self.process_biquads_planar(&mut up_out, up_frames);
-            self.os_state.as_mut().unwrap().up_out = up_out;
-        }
-
-        // Step 4: copy upsampled data to down_in (they're different buffers)
-        {
-            let os = self.os_state.as_mut().unwrap();
-            for ch in 0..nc {
-                os.down_in[ch][..up_frames].copy_from_slice(&os.up_out[ch][..up_frames]);
-            }
-        }
-
-        // Step 5: downsample
-        let down_out_max = {
-            let os = self.os_state.as_ref().unwrap();
-            os.resampler_down.output_frames_max()
-        };
-
-        let down_frames = {
-            let os = self.os_state.as_mut().unwrap();
-            let in_adapter =
-                SequentialSliceOfVecs::new(&os.down_in, nc, OS_CHUNK_SIZE * factor)
-                    .map_err(|e| format!("down in adapter: {:?}", e))?;
-            let mut out_adapter =
-                SequentialSliceOfVecs::new_mut(&mut os.down_out, nc, down_out_max)
-                    .map_err(|e| format!("down out adapter: {:?}", e))?;
-            let (_, out_frames) = os
-                .resampler_down
-                .process_into_buffer(&in_adapter, &mut out_adapter, None)
-                .map_err(|e| format!("downsample: {:?}", e))?;
-            out_frames
-        };
-
-        // Step 6: planar → interleaved into residual_out
-        {
-            let os = self.os_state.as_mut().unwrap();
-            let write_offset = os.residual_out_frames * nc;
-            // Ensure residual_out is large enough
-            let needed = write_offset + down_frames * nc;
-            if needed > os.residual_out.len() {
-                os.residual_out.resize(needed + OS_CHUNK_SIZE * nc, 0.0);
-            }
-            Self::planar_to_interleaved(
-                &os.down_out,
-                &mut os.residual_out[write_offset..],
-                down_frames,
-                nc,
-            );
-            os.residual_out_frames += down_frames;
-        }
-
-        Ok(down_frames)
-    }
 }
 
 impl InPlacePlugin for EqPlugin {
@@ -725,14 +517,14 @@ impl InPlacePlugin for EqPlugin {
             self.oversampling_factor = new_factor as u32;
             // Re-initialize oversampling state (uses current sample_rate)
             if self.oversampling_factor > 1 {
-                self.os_state = Some(
-                    OversamplingState::new(self.oversampling_factor, self.num_channels)?,
+                self.oversampler = Some(
+                    Oversampler::new(self.oversampling_factor, self.num_channels)?,
                 );
                 // Recalculate biquad coefficients at oversampled rate
                 let os_rate = self.sample_rate as f64 * self.oversampling_factor as f64;
                 self.apply_sample_rate_to_filters(os_rate);
             } else {
-                self.os_state = None;
+                self.oversampler = None;
                 // Restore biquad coefficients at nominal rate
                 self.apply_sample_rate_to_filters(self.sample_rate as f64);
             }
@@ -932,11 +724,11 @@ impl InPlacePlugin for EqPlugin {
 
         // Rebuild oversampling state if active
         if self.oversampling_factor > 1 {
-            self.os_state = Some(
-                OversamplingState::new(self.oversampling_factor, self.num_channels)?,
+            self.oversampler = Some(
+                Oversampler::new(self.oversampling_factor, self.num_channels)?,
             );
         } else {
-            self.os_state = None;
+            self.oversampler = None;
         }
 
         Ok(())
@@ -955,30 +747,13 @@ impl InPlacePlugin for EqPlugin {
         self.auto_gain.reset();
 
         // Reset oversampling resamplers
-        if let Some(os) = &mut self.os_state {
-            os.resampler_up.reset();
-            os.resampler_down.reset();
-            os.residual_frames = 0;
-            os.residual_out_frames = 0;
-            os.residual_out_read = 0;
-            // Clear planar buffers
-            for ch_buf in &mut os.up_in {
-                ch_buf.fill(0.0);
-            }
-            for ch_buf in &mut os.up_out {
-                ch_buf.fill(0.0);
-            }
-            for ch_buf in &mut os.down_in {
-                ch_buf.fill(0.0);
-            }
-            for ch_buf in &mut os.down_out {
-                ch_buf.fill(0.0);
-            }
+        if let Some(os) = &mut self.oversampler {
+            os.reset();
         }
     }
     fn latency_samples(&self) -> usize {
-        if let Some(os) = &self.os_state {
-            os.latency_samples
+        if let Some(os) = &self.oversampler {
+            os.latency_samples()
         } else {
             0
         }
@@ -1067,85 +842,16 @@ impl InPlacePlugin for EqPlugin {
             }
         } else {
             // ----------------------------------------------------------------
-            // Oversampling path
-            //
-            // 1. Push incoming frames into the residual input buffer.
-            // 2. When residual has >= OS_CHUNK_SIZE frames, process one chunk
-            //    through: upsample → biquads → downsample → residual output.
-            // 3. Drain residual output into the caller's buffer.
-            // 4. If not enough output is ready (due to resampler latency),
-            //    fill the remainder with zeros (will be compensated by host).
+            // Oversampling path: delegate to shared Oversampler
             // ----------------------------------------------------------------
-            let total_in_samples = num_frames * nc;
-
-            // Grow residual_in if needed
-            {
-                let os = self.os_state.as_mut().unwrap();
-                let needed = (os.residual_frames + num_frames) * nc;
-                if needed > os.residual_in.len() {
-                    os.residual_in.resize(needed + OS_CHUNK_SIZE * nc, 0.0);
-                }
-                // Append incoming frames to residual_in
-                let write_start = os.residual_frames * nc;
-                os.residual_in[write_start..write_start + total_in_samples]
-                    .copy_from_slice(&buffer[..total_in_samples]);
-                os.residual_frames += num_frames;
-            }
-
-            // Process all full chunks from the residual input
-            loop {
-                let frames_available = self.os_state.as_ref().unwrap().residual_frames;
-                if frames_available < OS_CHUNK_SIZE {
-                    break;
-                }
-                // Extract one chunk into a stack buffer (no heap allocation).
-                // OS_CHUNK_SIZE=256, up to 32 channels = 32KB on stack.
-                const MAX_OS_CHANNELS: usize = 32;
-                assert!(nc <= MAX_OS_CHANNELS, "EQ oversampling supports at most {MAX_OS_CHANNELS} channels");
-                let chunk_len = OS_CHUNK_SIZE * nc;
-                let mut chunk_buf = [0.0f32; OS_CHUNK_SIZE * MAX_OS_CHANNELS];
-                {
-                    let os = self.os_state.as_mut().unwrap();
-                    chunk_buf[..chunk_len].copy_from_slice(&os.residual_in[..chunk_len]);
-                    // Shift residual_in left by OS_CHUNK_SIZE frames
-                    let remaining = (os.residual_frames - OS_CHUNK_SIZE) * nc;
-                    os.residual_in.copy_within(chunk_len..chunk_len + remaining, 0);
-                    os.residual_frames -= OS_CHUNK_SIZE;
-                }
-                // Process the chunk from stack buffer
-                self.process_os_chunk(&chunk_buf[..chunk_len])?;
-            }
-
-            // Drain residual_out into buffer
-            let mut frames_written = 0usize;
-            while frames_written < num_frames {
-                let os = self.os_state.as_mut().unwrap();
-                let frames_ready = os.residual_out_frames;
-                let frames_needed = num_frames - frames_written;
-
-                if frames_ready == 0 {
-                    // Not enough output ready (latency fill with zeros)
-                    let fill_start = frames_written * nc;
-                    buffer[fill_start..fill_start + frames_needed * nc].fill(0.0);
-                    break;
-                }
-
-                let frames_to_copy = frames_ready.min(frames_needed);
-                let src_start = os.residual_out_read * nc;
-                let dst_start = frames_written * nc;
-                buffer[dst_start..dst_start + frames_to_copy * nc]
-                    .copy_from_slice(&os.residual_out[src_start..src_start + frames_to_copy * nc]);
-
-                // Compact the residual_out buffer if it was fully consumed
-                if frames_to_copy == frames_ready {
-                    os.residual_out_read = 0;
-                    os.residual_out_frames = 0;
-                } else {
-                    os.residual_out_read += frames_to_copy;
-                    os.residual_out_frames -= frames_to_copy;
-                }
-                frames_written += frames_to_copy;
-            }
+            // Take the oversampler out to split the borrow: the callback
+            // needs &mut self.filters/transitions while oversampler needs &mut.
+            let mut os = self.oversampler.take().unwrap();
+            let result = os.process(buffer, num_frames, |planar, os_frames| {
+                self.process_biquads_planar(planar, os_frames);
+            });
+            self.oversampler = Some(os);
+            result?;
         }
 
         if do_measure {
@@ -1490,7 +1196,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.oversampling_factor, 2);
-        assert!(p.os_state.is_some());
+        assert!(p.oversampler.is_some());
         assert!(p.latency_samples() > 0);
 
         // Set to 4x
@@ -1501,7 +1207,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.oversampling_factor, 4);
-        assert!(p.os_state.is_some());
+        assert!(p.oversampler.is_some());
 
         // Set back to 1x
         InPlacePlugin::set_parameter(
@@ -1511,7 +1217,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.oversampling_factor, 1);
-        assert!(p.os_state.is_none());
+        assert!(p.oversampler.is_none());
         assert_eq!(p.latency_samples(), 0);
     }
 
@@ -1709,11 +1415,29 @@ mod tests {
         )
         .unwrap();
 
-        // Reset should clear residuals
+        // Reset should clear residuals — after reset, processing silence yields silence
         InPlacePlugin::reset(&mut p);
-        let os = p.os_state.as_ref().unwrap();
-        assert_eq!(os.residual_frames, 0);
-        assert_eq!(os.residual_out_frames, 0);
+        assert!(p.oversampler.is_some());
+        let mut silence = vec![0.0f32; num_frames * nc];
+        // Process enough blocks to flush any stale state
+        for _ in 0..10 {
+            p.process_in_place(
+                &mut silence,
+                &ProcessContext {
+                    sample_rate: 48000,
+                    num_frames,
+                },
+            )
+            .unwrap();
+        }
+        for (i, &s) in silence.iter().enumerate() {
+            assert!(
+                s.abs() < 1e-6,
+                "sample {} not silent after reset: {}",
+                i,
+                s
+            );
+        }
     }
 
     #[test]

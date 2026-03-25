@@ -1,0 +1,40 @@
+---
+source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+expression: plan
+---
+{
+  "plugin_type": "matrix",
+  "width": 390.0,
+  "orientation": "vertical",
+  "knob_size": "xs",
+  "group_direction": "column",
+  "slider_height": 120.0,
+  "show_visualizations": false,
+  "columns_visible": [
+    "main"
+  ],
+  "columns_collapsed": [],
+  "config_controls": [],
+  "main_groups": [
+    {
+      "title": "",
+      "controls": [
+        {
+          "param_index": 0,
+          "param_name": "Gain",
+          "control_type": "knob_large",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    }
+  ],
+  "output_controls": [],
+  "tabs": [],
+  "viz_slots": [],
+  "dynamic_sections": []
+}

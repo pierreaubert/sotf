@@ -13,7 +13,7 @@ fn test_dynamics_chain() {
         .unwrap();
 
     // Add compressor for dynamic range control
-    let compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 6.0); // +6dB makeup gain
+    let compressor = CompressorPlugin::new(2); // +6dB makeup gain
     host.add_plugin(Box::new(InPlacePluginAdapter::new(compressor)))
         .unwrap();
 

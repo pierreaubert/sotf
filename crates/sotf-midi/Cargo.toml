@@ -30,4 +30,4 @@ midir = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 env_logger = { workspace = true }
-sotf-plugin-compressor = { workspace = true }
+sotf-plugin-multiband-compressor = { workspace = true }

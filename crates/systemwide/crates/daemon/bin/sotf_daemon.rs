@@ -1200,6 +1200,8 @@ fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::Aec => "aec",
         PluginType::Beamformer => "beamformer",
         PluginType::AmbisonicsDecoder => "ambisonics_decoder",
+        PluginType::StereoImager => "stereo_imager",
+        PluginType::DeEsser => "de_esser",
     }
 }
 
@@ -1229,6 +1231,8 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
         PluginType::Aec => "Restoration",
         PluginType::Beamformer => "Spatial & Routing",
         PluginType::AmbisonicsDecoder => "Spatial & Routing",
+        PluginType::StereoImager => "Spatial & Routing",
+        PluginType::DeEsser => "Dynamics",
     }
 }
 

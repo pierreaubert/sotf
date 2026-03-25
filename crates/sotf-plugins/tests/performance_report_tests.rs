@@ -13,7 +13,7 @@ mod tests {
             Box::new(InPlacePluginAdapter::new(gain)),
         ));
 
-        let compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 0.0);
+        let compressor = CompressorPlugin::new(2);
         plugins.push((
             "Compressor".to_string(),
             Box::new(InPlacePluginAdapter::new(compressor)),

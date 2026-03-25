@@ -3115,6 +3115,9 @@ fn build_rack_mode_plugins(
                         mix: plugins.gate.mix as f64,
                         link_channels: !plugins.gate.unlink_channels,
                         sidechain_hpf_hz: plugins.gate.sidechain_hpf_hz as f64,
+                        sidechain_hpf_order: "2nd".to_string(),
+                        detection_mode: "Peak".to_string(),
+                        sidechain_external: false,
                         range_db: 80.0,
                         hysteresis_db: 0.0,
                         knee_db: 0.0,
@@ -3132,6 +3135,7 @@ fn build_rack_mode_plugins(
                         lookahead_ms: plugins.limiter.lookahead_ms as f64,
                         soft: plugins.limiter.soft,
                         true_peak: false,
+                        isp_mode: false,
                         dual_release: false,
                         mix: plugins.limiter.mix as f64,
                     };

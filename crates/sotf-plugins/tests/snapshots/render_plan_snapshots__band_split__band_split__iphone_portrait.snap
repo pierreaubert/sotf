@@ -1,0 +1,51 @@
+---
+source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+expression: plan
+---
+{
+  "plugin_type": "band_split",
+  "width": 390.0,
+  "orientation": "vertical",
+  "knob_size": "xs",
+  "group_direction": "column",
+  "slider_height": 120.0,
+  "show_visualizations": false,
+  "columns_visible": [
+    "main"
+  ],
+  "columns_collapsed": [],
+  "config_controls": [],
+  "main_groups": [
+    {
+      "title": "CROSSOVER",
+      "controls": [
+        {
+          "param_index": 0,
+          "param_name": "Frequency",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            20.0,
+            20000.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 1,
+          "param_name": "Type",
+          "control_type": "button_set",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    }
+  ],
+  "output_controls": [],
+  "tabs": [],
+  "viz_slots": [],
+  "dynamic_sections": []
+}

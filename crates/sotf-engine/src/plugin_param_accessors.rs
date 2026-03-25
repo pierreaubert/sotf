@@ -34,6 +34,25 @@ fn index_to_speaker_config(index: f64) -> String {
     speaker_configs().get(idx).unwrap_or(&"5.1").to_string()
 }
 
+fn de_esser_modes() -> &'static [&'static str] {
+    param_specs::find_by_key(param_specs::de_esser::PARAMS, "mode").choice_labels()
+}
+
+fn de_esser_mode_to_index(mode: &str) -> f64 {
+    de_esser_modes()
+        .iter()
+        .position(|&m| m == mode)
+        .unwrap_or(1) as f64 // default: split-band (index 1)
+}
+
+fn index_to_de_esser_mode(index: f64) -> String {
+    let idx = index as usize;
+    de_esser_modes()
+        .get(idx)
+        .unwrap_or(&"Split-Band")
+        .to_string()
+}
+
 fn crossfeed_mode_to_index(mode: &CrossfeedMode) -> f64 {
     match mode {
         CrossfeedMode::Off => 0.0,
@@ -365,6 +384,9 @@ impl_param_accessors! {
         fields: [
             threshold_db: f64, ratio: f64, attack_ms: f64, hold_ms: f64,
             release_ms: f64, mix: f64, link_channels: bool, sidechain_hpf_hz: f64,
+            sidechain_hpf_order: [str hpf_order_to_index, index_to_hpf_order],
+            detection_mode: [str detection_mode_to_index, index_to_detection_mode],
+            sidechain_external: bool,
             range_db: f64, hysteresis_db: f64, knee_db: f64, lookahead_ms: f64,
         ]
     },
@@ -385,7 +407,7 @@ impl_param_accessors! {
         layout: Some(&param_specs::limiter::LAYOUT),
         fields: [
             threshold_db: f64, release_ms: f64, lookahead_ms: f64, soft: bool,
-            true_peak: bool, dual_release: bool, mix: f64,
+            true_peak: bool, isp_mode: bool, dual_release: bool, mix: f64,
         ]
     },
     LoudnessCompensation {
@@ -605,6 +627,33 @@ impl_param_accessors! {
         params: param_specs::channel_mute_solo::PARAMS,
         layout: None,
         fields: [enabled: bool, dim_gain_db: f64, fade_ms: f64]
+    },
+    StereoImager {
+        params: param_specs::stereo_imager::PARAMS,
+        layout: Some(&param_specs::stereo_imager::LAYOUT),
+        fields: [
+            width: f64, low_mid_freq: f64, mid_high_freq: f64,
+            low_width: f64, mid_width: f64, high_width: f64,
+            mono_bass: bool, mix: f64,
+        ]
+    },
+    DeEsser {
+        params: param_specs::de_esser::PARAMS,
+        layout: Some(&param_specs::de_esser::LAYOUT),
+        fields: [
+            frequency: f64, q: f64, threshold: f64, ratio: f64,
+            attack: f64, release: f64,
+            mode: [str de_esser_mode_to_index, index_to_de_esser_mode],
+            mix: f64,
+        ]
+    },
+    TransientShaper {
+        params: param_specs::transient_shaper::PARAMS,
+        layout: Some(&param_specs::transient_shaper::LAYOUT),
+        fields: [
+            attack: f64, sustain: f64, sensitivity_db: f64,
+            output_gain_db: f64, mix: f64,
+        ]
     }
     ;
     no_params_unit: [LoudnessMonitor];

@@ -36,9 +36,7 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     plugins.push(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))));
 
     // 3. Compressor
-    plugins.push(Box::new(InPlacePluginAdapter::new(CompressorPlugin::new(
-        2, -20.0, 4.0, 10.0, 100.0, 6.0, 0.0,
-    ))));
+    plugins.push(Box::new(InPlacePluginAdapter::new(CompressorPlugin::new(2))));
 
     // 4. Limiter
     plugins.push(Box::new(InPlacePluginAdapter::new(LimiterPlugin::new(

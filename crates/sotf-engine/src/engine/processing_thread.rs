@@ -11,11 +11,11 @@ use super::{
 use sotf_plugins::{
     AecPlugin, AecPluginParams, BeamformerPlugin, BeamformerPluginParams, CompressorPluginParams, ConvolutionPlugin,
     ConvolutionPluginParams, CrossoverPlugin, CrossoverPluginParams, DelayPlugin, DelayPluginParams,
-    DenoiserPlugin, DenoiserPluginParams,
+    DeEsserPlugin, DeEsserPluginParams, DenoiserPlugin, DenoiserPluginParams,
     EqPluginParams, ExpanderPluginParams, FletcherMunsonPluginParams, GainPluginParams,
     GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams,
     LoudnessMonitorPlugin, MultibandCompressorPluginParams, MultibandExpanderPluginParams, Plugin,
-    PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPluginParams,
+    PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig, StereoImagerPluginParams, UpmixerPluginParams,
 };
 
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
@@ -928,6 +928,14 @@ fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "de_esser" => {
+            let params: DeEsserPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse de-esser plugin parameters: {}", e))?;
+
+            let plugin = DeEsserPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         "expander" => {
             let params: ExpanderPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse expander plugin parameters: {}", e))?;
@@ -1321,6 +1329,31 @@ fn create_plugin(
 
             let plugin = CrossfeedPlugin::new(params)
                 .map_err(|e| format!("Failed to create crossfeed plugin: {}", e))?;
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "stereo_imager" => {
+            let params: StereoImagerPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| {
+                    format!("Failed to parse stereo imager plugin parameters: {}", e)
+                })?;
+
+            let plugin = sotf_plugins::StereoImagerPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "transient_shaper" => {
+            use sotf_plugins::{TransientShaperPlugin, TransientShaperPluginParams};
+
+            let params: TransientShaperPluginParams =
+                serde_json::from_value(parameters.clone()).map_err(|e| {
+                    format!(
+                        "Failed to parse transient shaper plugin parameters: {}",
+                        e
+                    )
+                })?;
+
+            let plugin = TransientShaperPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 

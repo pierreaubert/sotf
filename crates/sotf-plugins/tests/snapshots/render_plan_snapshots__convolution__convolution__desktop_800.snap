@@ -1,0 +1,57 @@
+---
+source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+expression: plan
+---
+{
+  "plugin_type": "convolution",
+  "width": 800.0,
+  "orientation": "horizontal",
+  "knob_size": "sm",
+  "group_direction": "row",
+  "slider_height": 120.0,
+  "show_visualizations": false,
+  "columns_visible": [
+    "config",
+    "main",
+    "output"
+  ],
+  "columns_collapsed": [],
+  "config_controls": [
+    {
+      "param_index": 0,
+      "param_name": "IR File",
+      "control_type": "file_picker",
+      "unit": "",
+      "range": null,
+      "read_only": false
+    }
+  ],
+  "main_groups": [],
+  "output_controls": [
+    {
+      "param_index": 1,
+      "param_name": "Mix",
+      "control_type": "knob",
+      "unit": "%",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 2,
+      "param_name": "Gain",
+      "control_type": "knob",
+      "unit": "dB",
+      "range": [
+        -20.0,
+        20.0
+      ],
+      "read_only": false
+    }
+  ],
+  "tabs": [],
+  "viz_slots": [],
+  "dynamic_sections": []
+}

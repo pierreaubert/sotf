@@ -15,20 +15,20 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use sotf_plugins::{
-    ABComparePlugin, ABComparePluginParams, BandMergePlugin, BandMergePluginParams,
-    BandSplitPlugin, BandSplitPluginParams, BinauralDecoderPlugin, ChannelMuteSoloParams,
-    ChannelMuteSoloPlugin, ChannelState, CompressorPlugin, CompressorPluginParams,
+    ABComparePlugin, ABComparePluginParams, BandCompressorParams, BandExpanderParams,
+    BandMergePlugin, BandMergePluginParams, BandSplitPlugin, BandSplitPluginParams,
+    BinauralDecoderPlugin, ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState,
     ConvolutionPlugin, ConvolutionPluginParams, CrossfeedMode, CrossfeedPlugin,
     CrossfeedPluginParams, CrossoverPlugin, CrossoverPluginParams, DawHost, DelayPlugin,
     DelayPluginParams, DenoiserPlugin, DenoiserPluginParams, DownmixPlugin, DownmixPluginParams,
-    EqPlugin, EqPluginParams, ExpanderPlugin, ExpanderPluginParams, FletcherMunsonPlugin,
-    FletcherMunsonPluginParams, GainPlugin, GainPluginParams, GatePlugin, GatePluginParams,
-    InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams, LoudnessCompensationPlugin,
-    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin,
-    MonoToStereoPluginParams, MultibandCompressorPlugin, MultibandCompressorPluginParams,
-    MultibandExpanderPlugin, MultibandExpanderPluginParams, Plugin, PndPlugin, PndPluginParams,
-    RoomModel, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams,
-    XtcPlugin, XtcPluginParams,
+    EqPlugin, EqPluginParams, FletcherMunsonPlugin, FletcherMunsonPluginParams, GainPlugin,
+    GainPluginParams, GatePlugin, GatePluginParams, InPlacePluginAdapter, LimiterPlugin,
+    LimiterPluginParams, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
+    LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams,
+    MultibandCompressorPlugin, MultibandCompressorPluginParams, MultibandExpanderPlugin,
+    MultibandExpanderPluginParams, Plugin, PndPlugin, PndPluginParams, RoomModel,
+    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams, XtcPlugin,
+    XtcPluginParams,
 };
 use std::fs::File;
 use std::io::Write;
@@ -519,25 +519,24 @@ impl PluginFuzzer for CompressorFuzzer {
         let link_channels = rng.random_bool(0.5);
         let sidechain_hpf_hz = rng.random_range(0.0..200.0);
 
-        let params = CompressorPluginParams {
+        let params = MultibandCompressorPluginParams {
+            num_bands: 1,
             threshold_db,
             ratio,
             attack_ms,
             release_ms,
             knee_db,
-            makeup_gain_db,
             mix,
-            auto_makeup,
             link_channels,
-            sidechain_hpf_hz,
-            sidechain_hpf_order: "2nd".to_string(),
-            detection_mode: "peak".to_string(),
-            lookahead_ms: 0.0,
-            program_dependent_release: false,
-            measured_auto_makeup: false,
-            sidechain_external: false,
+            bands: vec![BandCompressorParams {
+                makeup_gain_db,
+                auto_makeup,
+                measured_auto_makeup: false,
+                ..Default::default()
+            }],
+            ..Default::default()
         };
-        let plugin = CompressorPlugin::from_params(channels, params);
+        let plugin = MultibandCompressorPlugin::from_params(channels, params);
 
         let desc = format!(
             "threshold={:.1}dB ratio={:.2}:1 attack={:.1}ms release={:.0}ms knee={:.1}dB makeup={:.1}dB mix={:.2} auto_makeup={} link={} sc_hpf={:.0}Hz",
@@ -574,6 +573,7 @@ impl PluginFuzzer for LimiterFuzzer {
             soft,
             mix,
             true_peak: false,
+            isp_mode: false,
             dual_release: false,
             feed_forward: false,
         };
@@ -610,6 +610,9 @@ impl PluginFuzzer for GateFuzzer {
             mix,
             link_channels,
             sidechain_hpf_hz,
+            sidechain_hpf_order: "2nd".to_string(),
+            detection_mode: "Peak".to_string(),
+            sidechain_external: false,
             range_db: 80.0,
             hysteresis_db: 0.0,
             knee_db: 0.0,
@@ -744,7 +747,8 @@ impl PluginFuzzer for ExpanderFuzzer {
         let link_channels = rng.random_bool(0.5);
         let sidechain_hpf_hz = rng.random_range(0.0..500.0);
 
-        let params = ExpanderPluginParams {
+        let params = MultibandExpanderPluginParams {
+            num_bands: 1,
             threshold_db,
             ratio,
             attack_ms,
@@ -755,13 +759,14 @@ impl PluginFuzzer for ExpanderFuzzer {
             hold_ms,
             mix,
             link_channels,
-            sidechain_hpf_hz,
-            auto_makeup: rng.random_bool(0.5),
-            lookahead_ms: 0.0,
-            detection_mode: "peak".to_string(),
-            measured_auto_makeup: false,
+            bands: vec![BandExpanderParams {
+                auto_makeup: rng.random_bool(0.5),
+                measured_auto_makeup: false,
+                ..Default::default()
+            }],
+            ..Default::default()
         };
-        let plugin = ExpanderPlugin::from_params(channels, params);
+        let plugin = MultibandExpanderPlugin::from_params(channels, params);
 
         let desc = format!(
             "threshold={:.1}dB ratio={:.2}:1 attack={:.1}ms release={:.0}ms range={:.1}dB knee={:.1}dB hyst={:.1}dB hold={:.0}ms mix={:.2} link={} sc_hpf={:.0}Hz",

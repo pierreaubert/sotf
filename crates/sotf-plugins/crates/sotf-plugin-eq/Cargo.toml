@@ -21,8 +21,6 @@ required-features = ["qa"]
 sotf-host = { workspace = true }
 math-iir-fir = { workspace = true }
 serde = { workspace = true }
-rubato = { workspace = true }
-audioadapter-buffers = { workspace = true }
 
 # GPUI UI (optional, behind gpui-ui feature)
 plugins-gpui = { workspace = true, optional = true }

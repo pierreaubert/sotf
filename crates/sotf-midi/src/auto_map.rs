@@ -181,7 +181,7 @@ pub fn auto_map(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sotf_plugin_compressor::params as compressor;
+    use sotf_plugin_multiband_compressor::params as compressor;
 
     fn make_xone_k2_like_layout() -> ControllerLayout {
         use crate::layout::MidiControlId;

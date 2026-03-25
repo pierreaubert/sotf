@@ -148,6 +148,9 @@ pub enum PluginType {
     Aec,
     Beamformer,
     AmbisonicsDecoder,
+    StereoImager,
+    DeEsser,
+    TransientShaper,
 }
 
 impl PluginType {
@@ -183,6 +186,9 @@ impl PluginType {
             Self::Aec => "AEC",
             Self::Beamformer => "Beamformer",
             Self::AmbisonicsDecoder => "Ambisonics Decoder",
+            Self::StereoImager => "Stereo Imager",
+            Self::DeEsser => "De-Esser",
+            Self::TransientShaper => "Transient Shaper",
         }
     }
 
@@ -218,6 +224,9 @@ impl PluginType {
             Self::Aec => "Acoustic Echo Cancellation (PBFDAF + Two-Path + Post-Filter)",
             Self::Beamformer => "Microphone array beamformer (MVDR / Superdirective / GSC)",
             Self::AmbisonicsDecoder => "HOA Ambisonics decoder (AllRAD) to speaker layouts",
+            Self::StereoImager => "Multi-band M/S stereo width control",
+            Self::DeEsser => "Sibilance reduction via bandpass detection and compression",
+            Self::TransientShaper => "SPL Transient Designer — attack/sustain shaping",
         }
     }
 
@@ -253,6 +262,9 @@ impl PluginType {
             Self::Aec,
             Self::Beamformer,
             Self::AmbisonicsDecoder,
+            Self::StereoImager,
+            Self::DeEsser,
+            Self::TransientShaper,
         ]
     }
 
@@ -290,7 +302,10 @@ impl PluginType {
             | Self::BandMerge
             | Self::Downmix
             | Self::LoudnessCompensation
-            | Self::MonoToStereo => ReleaseChannel::Beta,
+            | Self::MonoToStereo
+            | Self::StereoImager
+            | Self::DeEsser
+            | Self::TransientShaper => ReleaseChannel::Beta,
 
             Self::BinauralDecoder
             | Self::Convolution
@@ -315,6 +330,7 @@ use sotf_plugins::param_specs::beamformer as beamformer_specs;
 use sotf_plugins::param_specs::compressor as compressor_specs;
 use sotf_plugins::param_specs::convolution as convolution_specs;
 use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
+use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::delay as delay_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
@@ -332,6 +348,8 @@ use sotf_plugins::param_specs::multiband_expander as mb_expander_specs;
 use sotf_plugins::param_specs::pnd as pnd_specs;
 use sotf_plugins::param_specs::spectrum as spectrum_specs;
 use sotf_plugins::param_specs::upmixer as upmixer_specs;
+use sotf_plugins::param_specs::stereo_imager as stereo_imager_specs;
+use sotf_plugins::param_specs::transient_shaper as transient_shaper_specs;
 use sotf_plugins::param_specs::xtc as xtc_specs;
 
 sotf_plugins::serde_param_default! {
@@ -375,6 +393,27 @@ sotf_plugins::serde_param_default! {
     fn default_compressor_sidechain_hpf_hz() -> f64 = "sidechain_hpf_hz";
     fn default_compressor_sidechain_hpf_order() -> String = "sidechain_hpf_order";
     fn default_compressor_detection_mode() -> String = "detection_mode";
+}
+
+sotf_plugins::serde_param_default! {
+    gate_specs::PARAMS;
+    fn default_gate_sidechain_hpf_order() -> String = "sidechain_hpf_order";
+    fn default_gate_detection_mode() -> String = "detection_mode";
+}
+
+sotf_plugins::serde_param_default! {
+    de_esser_specs::PARAMS;
+    fn default_de_esser_frequency() -> f64 = "frequency";
+    fn default_de_esser_q() -> f64 = "q";
+    fn default_de_esser_threshold() -> f64 = "threshold";
+    fn default_de_esser_ratio() -> f64 = "ratio";
+    fn default_de_esser_attack() -> f64 = "attack";
+    fn default_de_esser_release() -> f64 = "release";
+    fn default_de_esser_mix() -> f64 = "mix";
+}
+
+fn default_de_esser_mode() -> String {
+    de_esser_specs::MODES[1].to_string()
 }
 
 sotf_plugins::serde_param_default! {
@@ -668,6 +707,18 @@ fn default_spectrum_tilt_reference() -> TiltReferenceFreq {
     TiltReferenceFreq::Standard
 }
 
+sotf_plugins::serde_param_default! {
+    stereo_imager_specs::PARAMS;
+    fn default_si_width() -> f64 = "width";
+    fn default_si_low_mid_freq() -> f64 = "low_mid_freq";
+    fn default_si_mid_high_freq() -> f64 = "mid_high_freq";
+    fn default_si_low_width() -> f64 = "low_width";
+    fn default_si_mid_width() -> f64 = "mid_width";
+    fn default_si_high_width() -> f64 = "high_width";
+    fn default_si_mono_bass() -> bool = "mono_bass";
+    fn default_si_mix() -> f64 = "mix";
+}
+
 fn default_channels() -> usize {
     2
 }
@@ -832,6 +883,8 @@ pub enum PluginSettings {
         #[serde(default)]
         true_peak: bool,
         #[serde(default)]
+        isp_mode: bool,
+        #[serde(default)]
         dual_release: bool,
         #[serde(default = "default_limiter_mix")]
         mix: f64,
@@ -849,6 +902,12 @@ pub enum PluginSettings {
         link_channels: bool,
         #[serde(default)] // 0.0
         sidechain_hpf_hz: f64,
+        #[serde(default = "default_gate_sidechain_hpf_order")]
+        sidechain_hpf_order: String,
+        #[serde(default = "default_gate_detection_mode")]
+        detection_mode: String,
+        #[serde(default)]
+        sidechain_external: bool,
         #[serde(default = "default_gate_range_db")]
         range_db: f64,
         #[serde(default)]
@@ -1417,7 +1476,61 @@ pub enum PluginSettings {
         #[serde(default)]
         dual_band: bool,
     },
+    StereoImager {
+        #[serde(default = "default_si_width")]
+        width: f64,
+        #[serde(default = "default_si_low_mid_freq")]
+        low_mid_freq: f64,
+        #[serde(default = "default_si_mid_high_freq")]
+        mid_high_freq: f64,
+        #[serde(default = "default_si_low_width")]
+        low_width: f64,
+        #[serde(default = "default_si_mid_width")]
+        mid_width: f64,
+        #[serde(default = "default_si_high_width")]
+        high_width: f64,
+        #[serde(default = "default_si_mono_bass")]
+        mono_bass: bool,
+        #[serde(default = "default_si_mix")]
+        mix: f64,
+    },
+    DeEsser {
+        #[serde(default = "default_de_esser_frequency")]
+        frequency: f64,
+        #[serde(default = "default_de_esser_q")]
+        q: f64,
+        #[serde(default = "default_de_esser_threshold")]
+        threshold: f64,
+        #[serde(default = "default_de_esser_ratio")]
+        ratio: f64,
+        #[serde(default = "default_de_esser_attack")]
+        attack: f64,
+        #[serde(default = "default_de_esser_release")]
+        release: f64,
+        #[serde(default = "default_de_esser_mode")]
+        mode: String,
+        #[serde(default = "default_de_esser_mix")]
+        mix: f64,
+    },
+    TransientShaper {
+        #[serde(default)]
+        attack: f64,
+        #[serde(default)]
+        sustain: f64,
+        #[serde(default)]
+        sensitivity_db: f64,
+        #[serde(default)]
+        output_gain_db: f64,
+        #[serde(default = "default_ts_mix")]
+        mix: f64,
+    },
 }
+
+sotf_plugins::serde_param_default! {
+    transient_shaper_specs::PARAMS;
+    fn default_ts_mix() -> f64 = "mix";
+}
+
 impl PluginSettings {
     pub fn plugin_type(&self) -> PluginType {
         match self {
@@ -1451,6 +1564,9 @@ impl PluginSettings {
             Self::Aec { .. } => PluginType::Aec,
             Self::Beamformer { .. } => PluginType::Beamformer,
             Self::AmbisonicsDecoder { .. } => PluginType::AmbisonicsDecoder,
+            Self::StereoImager { .. } => PluginType::StereoImager,
+            Self::DeEsser { .. } => PluginType::DeEsser,
+            Self::TransientShaper { .. } => PluginType::TransientShaper,
         }
     }
 
@@ -1458,6 +1574,7 @@ impl PluginSettings {
     pub fn required_input_channels(&self) -> Option<usize> {
         match self {
             Self::Upmixer { .. } => Some(2),
+            Self::StereoImager { .. } => Some(2),
             Self::XTC { .. } => Some(2),
             Self::Crossfeed { .. } => Some(2),
             Self::MonoToStereo { .. } => Some(1),
@@ -1565,6 +1682,66 @@ impl PluginSettings {
                     "target_layout": target_layout,
                     "max_re_weighting": max_re_weighting,
                     "dual_band": dual_band,
+                }),
+            ),
+            Self::StereoImager {
+                width,
+                low_mid_freq,
+                mid_high_freq,
+                low_width,
+                mid_width,
+                high_width,
+                mono_bass,
+                mix,
+            } => PluginConfig::new(
+                "stereo_imager",
+                json!({
+                    "width": *width as f32,
+                    "low_mid_freq": *low_mid_freq as f32,
+                    "mid_high_freq": *mid_high_freq as f32,
+                    "low_width": *low_width as f32,
+                    "mid_width": *mid_width as f32,
+                    "high_width": *high_width as f32,
+                    "mono_bass": mono_bass,
+                    "mix": *mix as f32,
+                }),
+            ),
+            Self::DeEsser {
+                frequency,
+                q,
+                threshold,
+                ratio,
+                attack,
+                release,
+                mode,
+                mix,
+            } => PluginConfig::new(
+                "de_esser",
+                json!({
+                    "frequency": *frequency as f32,
+                    "q": *q as f32,
+                    "threshold": *threshold as f32,
+                    "ratio": *ratio as f32,
+                    "attack_ms": *attack as f32,
+                    "release_ms": *release as f32,
+                    "mode": mode,
+                    "mix": *mix as f32,
+                }),
+            ),
+            Self::TransientShaper {
+                attack,
+                sustain,
+                sensitivity_db,
+                output_gain_db,
+                mix,
+            } => PluginConfig::new(
+                "transient_shaper",
+                json!({
+                    "attack": *attack as f32,
+                    "sustain": *sustain as f32,
+                    "sensitivity_db": *sensitivity_db as f32,
+                    "output_gain_db": *output_gain_db as f32,
+                    "mix": *mix as f32,
                 }),
             ),
             Self::EQ {
@@ -1793,6 +1970,7 @@ impl PluginSettings {
                 lookahead_ms,
                 soft,
                 true_peak,
+                isp_mode,
                 dual_release,
                 mix,
             } => PluginConfig::new(
@@ -1803,6 +1981,7 @@ impl PluginSettings {
                     "lookahead_ms": lookahead_ms,
                     "soft": soft,
                     "true_peak": true_peak,
+                    "isp_mode": isp_mode,
                     "dual_release": dual_release,
                     "mix": mix,
                 }),
@@ -1816,6 +1995,9 @@ impl PluginSettings {
                 mix,
                 link_channels,
                 sidechain_hpf_hz,
+                sidechain_hpf_order,
+                detection_mode,
+                sidechain_external,
                 range_db,
                 hysteresis_db,
                 knee_db,
@@ -1831,6 +2013,9 @@ impl PluginSettings {
                     "mix": mix,
                     "link_channels": link_channels,
                     "sidechain_hpf_hz": sidechain_hpf_hz,
+                    "sidechain_hpf_order": sidechain_hpf_order,
+                    "detection_mode": detection_mode,
+                    "sidechain_external": sidechain_external,
                     "range_db": range_db,
                     "hysteresis_db": hysteresis_db,
                     "knee_db": knee_db,
@@ -2525,6 +2710,7 @@ impl PluginSettings {
                     lookahead_ms: p(l, "lookahead").default_f64(),
                     soft: p(l, "soft").default_bool(),
                     true_peak: p(l, "true_peak").default_bool(),
+                    isp_mode: p(l, "isp_mode").default_bool(),
                     dual_release: p(l, "dual_release").default_bool(),
                     mix: p(l, "mix").default_f64(),
                 }
@@ -2540,6 +2726,9 @@ impl PluginSettings {
                     mix: p(g, "mix").default_f64(),
                     link_channels: p(g, "link_channels").default_bool(),
                     sidechain_hpf_hz: p(g, "sidechain_hpf_hz").default_f64(),
+                    sidechain_hpf_order: default_gate_sidechain_hpf_order(),
+                    detection_mode: default_gate_detection_mode(),
+                    sidechain_external: p(g, "sidechain_external").default_bool(),
                     range_db: p(g, "range_db").default_f64(),
                     hysteresis_db: p(g, "hysteresis_db").default_f64(),
                     knee_db: p(g, "knee_db").default_f64(),
@@ -2899,6 +3088,42 @@ impl PluginSettings {
                     target_layout: default_ambisonics_target_layout(),
                     max_re_weighting: p(a, "max_re_weighting").default_bool(),
                     dual_band: p(a, "dual_band").default_bool(),
+                }
+            }
+            PluginType::StereoImager => {
+                let si = stereo_imager_specs::PARAMS;
+                Self::StereoImager {
+                    width: p(si, "width").default_f64(),
+                    low_mid_freq: p(si, "low_mid_freq").default_f64(),
+                    mid_high_freq: p(si, "mid_high_freq").default_f64(),
+                    low_width: p(si, "low_width").default_f64(),
+                    mid_width: p(si, "mid_width").default_f64(),
+                    high_width: p(si, "high_width").default_f64(),
+                    mono_bass: p(si, "mono_bass").default_bool(),
+                    mix: p(si, "mix").default_f64(),
+                }
+            }
+            PluginType::DeEsser => {
+                let de = de_esser_specs::PARAMS;
+                Self::DeEsser {
+                    frequency: p(de, "frequency").default_f64(),
+                    q: p(de, "q").default_f64(),
+                    threshold: p(de, "threshold").default_f64(),
+                    ratio: p(de, "ratio").default_f64(),
+                    attack: p(de, "attack").default_f64(),
+                    release: p(de, "release").default_f64(),
+                    mode: default_de_esser_mode(),
+                    mix: p(de, "mix").default_f64(),
+                }
+            }
+            PluginType::TransientShaper => {
+                let ts = transient_shaper_specs::PARAMS;
+                Self::TransientShaper {
+                    attack: p(ts, "attack").default_f64(),
+                    sustain: p(ts, "sustain").default_f64(),
+                    sensitivity_db: p(ts, "sensitivity").default_f64(),
+                    output_gain_db: p(ts, "output_gain").default_f64(),
+                    mix: p(ts, "mix").default_f64(),
                 }
             }
         }

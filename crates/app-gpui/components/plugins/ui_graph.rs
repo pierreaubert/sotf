@@ -521,6 +521,9 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::Aec => theme.info,
         PluginType::Beamformer => theme.accent,
         PluginType::AmbisonicsDecoder => theme.accent,
+        PluginType::StereoImager => theme.accent,
+        PluginType::DeEsser => theme.warning,
+        PluginType::TransientShaper => theme.warning,
     }
 }
 
@@ -571,6 +574,12 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::Beamformer => (2, 1),
         // Ambisonics decoder: 4ch (FOA) in, multi-channel out
         PluginType::AmbisonicsDecoder => (4, 6),
+        // Stereo imager: stereo only
+        PluginType::StereoImager => (2, 2),
+        // De-esser: stereo in/out
+        PluginType::DeEsser => (2, 2),
+        // Transient shaper: in-place processing
+        PluginType::TransientShaper => (2, 2),
     }
 }
 
@@ -811,6 +820,7 @@ fn build_menu_items(
     items.push(MenuItem::new("plugin-compressor", "Compressor"));
     items.push(MenuItem::new("plugin-limiter", "Limiter"));
     items.push(MenuItem::new("plugin-gate", "Gate"));
+    items.push(MenuItem::new("plugin-de-esser", "De-Esser"));
     items.push(MenuItem::new("plugin-upmixer", "Upmixer"));
     items.push(MenuItem::new("plugin-downmix", "Downmix"));
     items.push(MenuItem::new("plugin-mono-to-stereo", "Mono to Stereo"));

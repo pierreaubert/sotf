@@ -34,4 +34,9 @@ rusqlite = { workspace = true }
 bincode = { workspace = true }
 sofa-reader = { workspace = true }
 rayon = { workspace = true }
+rubato = { workspace = true }
+audioadapter-buffers = { workspace = true }
 criterion = { workspace = true, optional = true }
+
+[dev-dependencies]
+insta = { workspace = true }

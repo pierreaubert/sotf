@@ -141,7 +141,7 @@ fn test_gain_zero_alloc() {
 #[serial]
 fn test_compressor_zero_alloc() {
 
-    let mut plugin = CompressorPlugin::new(2, -20.0, 4.0, 10.0, 100.0, 6.0, 0.0);
+    let mut plugin = CompressorPlugin::new(2);
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);

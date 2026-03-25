@@ -129,6 +129,9 @@ fn plugin_description(plugin_type: &PluginType) -> &'static str {
         PluginType::Aec => "Acoustic echo cancellation",
         PluginType::Beamformer => "Microphone array beamforming",
         PluginType::AmbisonicsDecoder => "Ambisonics to speaker layout decoder",
+        PluginType::StereoImager => "Multi-band M/S stereo width control",
+        PluginType::DeEsser => "Sibilance reduction (de-esser)",
+        PluginType::TransientShaper => "Attack/sustain shaping (SPL Transient Designer)",
     }
 }
 
@@ -1599,6 +1602,8 @@ impl PlayerView {
                     PluginType::Expander,
                     PluginType::MultibandCompressor,
                     PluginType::MultibandExpander,
+                    PluginType::TransientShaper,
+                    PluginType::DeEsser,
                 ],
             ),
             (

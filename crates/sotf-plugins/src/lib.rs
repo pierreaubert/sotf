@@ -64,10 +64,14 @@ pub mod param_specs {
         pub use sotf_plugin_mono_to_stereo::params::*;
     }
     pub mod compressor {
-        pub use sotf_plugin_compressor::params::*;
+        pub use sotf_plugin_multiband_compressor::params::{
+            DETECTION_MODES, GLOBAL_PARAMS, HPF_ORDERS, LAYOUT, PARAMS, SINGLE_BAND_LAYOUT,
+        };
     }
     pub mod expander {
-        pub use sotf_plugin_expander::params::*;
+        pub use sotf_plugin_multiband_expander::params::{
+            DETECTION_MODES, GLOBAL_PARAMS, HPF_ORDERS, LAYOUT, PARAMS, SINGLE_BAND_LAYOUT,
+        };
     }
     pub mod loudness_compensation {
         pub use sotf_plugin_loudness_compensation::params::*;
@@ -93,8 +97,14 @@ pub mod param_specs {
     pub mod upmixer {
         pub use sotf_plugin_upmixer::params::*;
     }
+    pub mod de_esser {
+        pub use sotf_plugin_de_esser::params::*;
+    }
     pub mod denoiser {
         pub use sotf_plugin_denoiser::params::*;
+    }
+    pub mod dither {
+        pub use sotf_plugin_dither::params::*;
     }
     pub mod eq {
         pub use sotf_plugin_eq::params::*;
@@ -107,6 +117,12 @@ pub mod param_specs {
     }
     pub mod matrix {
         pub use sotf_plugin_matrix::params::*;
+    }
+    pub mod stereo_imager {
+        pub use sotf_plugin_stereo_imager::params::*;
+    }
+    pub mod transient_shaper {
+        pub use sotf_plugin_transient_shaper::params::*;
     }
     pub mod channel_mute_solo {
         pub use sotf_plugin_channel_mute_solo::params::*;
@@ -140,15 +156,17 @@ pub use sotf_plugin_beamformer as plugin_beamformer;
 pub use sotf_plugin_band_split as plugin_band_split;
 pub use sotf_plugin_binaural as plugin_binaural;
 pub use sotf_plugin_channel_mute_solo as plugin_channel_mute_solo;
-pub use sotf_plugin_compressor as plugin_compressor;
+pub use sotf_plugin_multiband_compressor as plugin_compressor;
 pub use sotf_plugin_convolution as plugin_convolution;
 pub use sotf_plugin_crossfeed as plugin_crossfeed;
 pub use sotf_plugin_crossover as plugin_crossover;
 pub use sotf_plugin_delay as plugin_delay;
+pub use sotf_plugin_de_esser as plugin_de_esser;
 pub use sotf_plugin_denoiser as plugin_denoiser;
+pub use sotf_plugin_dither;
 pub use sotf_plugin_downmix as plugin_downmix;
 pub use sotf_plugin_eq as plugin_eq;
-pub use sotf_plugin_expander as plugin_expander;
+pub use sotf_plugin_multiband_expander as plugin_expander;
 pub use sotf_plugin_fletcher_munson as plugin_fletcher_munson;
 pub use sotf_plugin_gain as plugin_gain;
 pub use sotf_plugin_gate as plugin_gate;
@@ -160,6 +178,8 @@ pub use sotf_plugin_multiband_compressor as plugin_multiband_compressor;
 pub use sotf_plugin_multiband_expander as plugin_multiband_expander;
 pub use sotf_plugin_pnd as plugin_pnd;
 pub use sotf_plugin_resampler as plugin_resampler;
+pub use sotf_plugin_stereo_imager as plugin_stereo_imager;
+pub use sotf_plugin_transient_shaper as plugin_transient_shaper;
 pub use sotf_plugin_upmixer as plugin_upmixer;
 pub use sotf_plugin_xtc as plugin_xtc;
 
@@ -178,21 +198,22 @@ pub use plugin_binaural::{
     BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,
 };
 pub use plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
-pub use plugin_compressor::{
-    CompressorData, CompressorPlugin, CompressorPluginParams,
-    default_link_channels as compressor_default_link_channels,
-    default_sidechain_hpf_hz as compressor_default_sidechain_hpf_hz,
-};
+pub type CompressorPlugin = sotf_plugin_multiband_compressor::MultibandCompressorPlugin;
+pub type CompressorPluginParams = sotf_plugin_multiband_compressor::MultibandCompressorPluginParams;
+pub type CompressorData = sotf_plugin_multiband_compressor::MultibandCompressorData;
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_crossfeed::{
     CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, CrossfeedPreset,
 };
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
+pub use plugin_de_esser::{DeEsserData, DeEsserPlugin, DeEsserPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
+pub use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
-pub use plugin_expander::{ExpanderPlugin, ExpanderPluginParams};
+pub type ExpanderPlugin = sotf_plugin_multiband_expander::MultibandExpanderPlugin;
+pub type ExpanderPluginParams = sotf_plugin_multiband_expander::MultibandExpanderPluginParams;
 pub use plugin_fletcher_munson::{FletcherMunsonPlugin, FletcherMunsonPluginParams};
 pub use plugin_gain::{GainPlugin, GainPluginParams};
 pub use plugin_gate::{GateData, GatePlugin, GatePluginParams};
@@ -210,6 +231,10 @@ pub use plugin_multiband_expander::{
 };
 pub use plugin_pnd::{PndPlugin, PndPluginParams};
 pub use plugin_resampler::ResamplerPlugin;
+pub use plugin_stereo_imager::{StereoImagerPlugin, StereoImagerPluginParams};
+pub use plugin_transient_shaper::{
+    TransientShaperData, TransientShaperPlugin, TransientShaperPluginParams,
+};
 pub use plugin_upmixer::{
     UpmixerPlugin, UpmixerPluginParams, default_hr_sharpen as upmixer_default_hr_sharpen,
     default_safety_cap_db as upmixer_default_safety_cap_db,

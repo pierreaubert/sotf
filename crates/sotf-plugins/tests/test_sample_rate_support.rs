@@ -126,7 +126,7 @@ fn test_eq_multi_sample_rate() {
 #[test]
 fn test_compressor_multi_sample_rate() {
     for &sr in &SAMPLE_RATES {
-        let mut plugin = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 0.0);
+        let mut plugin = CompressorPlugin::new(2);
         plugin.initialize(sr).unwrap();
 
         let mut buffer = generate_sine_stereo(sr, 440.0, 0.8, NUM_FRAMES);
@@ -303,7 +303,7 @@ fn test_plugin_chain_multi_sample_rate() {
         host.add_plugin(Box::new(InPlacePluginAdapter::new(eq)))
             .unwrap();
 
-        let compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 0.0);
+        let compressor = CompressorPlugin::new(2);
         host.add_plugin(Box::new(InPlacePluginAdapter::new(compressor)))
             .unwrap();
 
@@ -343,7 +343,7 @@ fn test_dynamics_chain_multi_sample_rate() {
         host.add_plugin(Box::new(InPlacePluginAdapter::new(gate)))
             .unwrap();
 
-        let compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 0.0);
+        let compressor = CompressorPlugin::new(2);
         host.add_plugin(Box::new(InPlacePluginAdapter::new(compressor)))
             .unwrap();
 
@@ -426,7 +426,7 @@ fn test_eq_near_nyquist() {
 
 #[test]
 fn test_reinitialize_sample_rate_change() {
-    let mut plugin = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 0.0);
+    let mut plugin = CompressorPlugin::new(2);
 
     // Initialize at 44100, process some data
     plugin.initialize(44100).unwrap();

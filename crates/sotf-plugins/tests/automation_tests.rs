@@ -26,7 +26,7 @@ mod tests {
     #[test]
     fn test_compressor_threshold_automation_ramp() {
         let sample_rate = 48000.0;
-        let mut inner = CompressorPlugin::new(2, 0.0, 4.0, 5.0, 50.0, 0.0, 0.0);
+        let mut inner = CompressorPlugin::new(2);
         inner.initialize(sample_rate as u32).unwrap();
         let mut plugin = InPlacePluginAdapter::new(inner);
 

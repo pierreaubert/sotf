@@ -44,6 +44,9 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::Aec => theme.plugin_colors.eq,
         PluginType::Beamformer => theme.plugin_colors.binaural,
         PluginType::AmbisonicsDecoder => theme.plugin_colors.upmixer,
+        PluginType::StereoImager => theme.plugin_colors.upmixer,
+        PluginType::DeEsser => theme.plugin_colors.compressor,
+        PluginType::TransientShaper => theme.plugin_colors.compressor,
     }
 }
 
@@ -95,6 +98,9 @@ pub fn plugin_icon(
         PluginType::Aec => "⊘",
         PluginType::Beamformer => "⊙",
         PluginType::AmbisonicsDecoder => "🌐",
+        PluginType::StereoImager => "↔",
+        PluginType::DeEsser => "S",
+        PluginType::TransientShaper => "⚡",
     }
 }
 
@@ -150,6 +156,9 @@ pub fn plugin_short_name(
         PluginType::Aec => "AEC",
         PluginType::Beamformer => "Beamfmr",
         PluginType::AmbisonicsDecoder => "Ambi",
+        PluginType::StereoImager => "Stereo",
+        PluginType::DeEsser => "De-Ess",
+        PluginType::TransientShaper => "Transient",
     }
 }
 

@@ -441,6 +441,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ColumnConstraint::config(100.0, 0.5),
         ColumnConstraint::main(500.0),
     ],
+    dynamic_sections: &[],
 };
 
 // ============================================================================

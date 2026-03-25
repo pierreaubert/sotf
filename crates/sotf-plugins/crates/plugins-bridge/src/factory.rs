@@ -26,9 +26,13 @@ pub fn create_plugin(
         }
 
         "Compressor" | "compressor" => {
-            let params: sotf_plugin_compressor::CompressorPluginParams =
+            // Route to multiband compressor in single-band mode (num_bands=1).
+            let mut params: sotf_plugin_multiband_compressor::MultibandCompressorPluginParams =
                 parse_params(config_json)?;
-            let plugin = sotf_plugin_compressor::CompressorPlugin::from_params(channels, params);
+            params.num_bands = 1;
+            let plugin = sotf_plugin_multiband_compressor::MultibandCompressorPlugin::from_params(
+                channels, params,
+            );
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
@@ -60,8 +64,19 @@ pub fn create_plugin(
         // Wave 2: Extended effects
         // ============================================================
         "Expander" | "expander" => {
-            let params: sotf_plugin_expander::ExpanderPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_expander::ExpanderPlugin::from_params(channels, params);
+            // Route to multiband expander in single-band mode (num_bands=1).
+            let mut params: sotf_plugin_multiband_expander::MultibandExpanderPluginParams =
+                parse_params(config_json)?;
+            params.num_bands = 1;
+            let plugin = sotf_plugin_multiband_expander::MultibandExpanderPlugin::from_params(
+                channels, params,
+            );
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "DeEsser" | "de_esser" => {
+            let params: sotf_plugin_de_esser::DeEsserPluginParams = parse_params(config_json)?;
+            let plugin = sotf_plugin_de_esser::DeEsserPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
@@ -186,6 +201,21 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
+        "StereoImager" | "stereo_imager" => {
+            let params: sotf_plugin_stereo_imager::StereoImagerPluginParams =
+                parse_params(config_json)?;
+            let plugin = sotf_plugin_stereo_imager::StereoImagerPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "TransientShaper" | "transient_shaper" => {
+            let params: sotf_plugin_transient_shaper::TransientShaperPluginParams =
+                parse_params(config_json)?;
+            let plugin =
+                sotf_plugin_transient_shaper::TransientShaperPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         _ => Err(format!("Unknown plugin type: {plugin_type}")),
     }
 }
@@ -217,6 +247,8 @@ pub fn available_plugin_types() -> &'static [&'static str] {
         "Denoiser",
         "ABCompare",
         "Crossover",
+        "StereoImager",
+        "TransientShaper",
     ]
 }
 

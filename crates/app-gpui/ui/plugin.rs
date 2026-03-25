@@ -148,6 +148,7 @@ impl PlayerView {
     quick_add_plugin_handler!(quick_add_delay, QuickAddDelay, sotf_audio_player::PluginType::Delay);
     quick_add_plugin_handler!(quick_add_aec, QuickAddAec, sotf_audio_player::PluginType::Aec);
     quick_add_plugin_handler!(quick_add_beamformer, QuickAddBeamformer, sotf_audio_player::PluginType::Beamformer);
+    quick_add_plugin_handler!(quick_add_transient_shaper, QuickAddTransientShaper, sotf_audio_player::PluginType::TransientShaper);
 
     fn increment_plugin_param(&mut self, _: &IncrementPluginParam, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
