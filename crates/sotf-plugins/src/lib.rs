@@ -113,6 +113,9 @@ pub mod param_specs {
     pub mod eq {
         pub use sotf_plugin_eq::params::*;
     }
+    pub mod linear_phase_eq {
+        pub use sotf_plugin_linear_phase_eq::params::*;
+    }
     pub mod multiband_compressor {
         pub use sotf_plugin_multiband_compressor::params::*;
     }
@@ -124,6 +127,9 @@ pub mod param_specs {
     }
     pub mod saturation {
         pub use sotf_plugin_saturation::params::*;
+    }
+    pub mod spectral_compressor {
+        pub use sotf_plugin_spectral_compressor::params::*;
     }
     pub mod stereo_imager {
         pub use sotf_plugin_stereo_imager::params::*;
@@ -174,6 +180,7 @@ pub use sotf_plugin_denoiser as plugin_denoiser;
 pub use sotf_plugin_dither;
 pub use sotf_plugin_downmix as plugin_downmix;
 pub use sotf_plugin_eq as plugin_eq;
+pub use sotf_plugin_linear_phase_eq as plugin_linear_phase_eq;
 pub use sotf_plugin_multiband_expander as plugin_expander;
 /// Backward compat: Fletcher-Munson is now part of loudness_compensation.
 pub use sotf_plugin_loudness_compensation as plugin_fletcher_munson;
@@ -188,6 +195,7 @@ pub use sotf_plugin_multiband_expander as plugin_multiband_expander;
 pub use sotf_plugin_pnd as plugin_pnd;
 pub use sotf_plugin_resampler as plugin_resampler;
 pub use sotf_plugin_saturation as plugin_saturation;
+pub use sotf_plugin_spectral_compressor as plugin_spectral_compressor;
 pub use sotf_plugin_stereo_imager as plugin_stereo_imager;
 pub use sotf_plugin_transient_shaper as plugin_transient_shaper;
 pub use sotf_plugin_upmixer as plugin_upmixer;
@@ -223,6 +231,7 @@ pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
+pub use plugin_linear_phase_eq::{LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 pub type ExpanderPlugin = sotf_plugin_multiband_expander::MultibandExpanderPlugin;
 pub type ExpanderPluginParams = sotf_plugin_multiband_expander::MultibandExpanderPluginParams;
 pub use plugin_loudness_compensation::{FletcherMunsonPlugin, FletcherMunsonPluginParams};
@@ -243,6 +252,7 @@ pub use plugin_multiband_expander::{
 pub use plugin_pnd::{PndPlugin, PndPluginParams};
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_saturation::{SaturationPlugin, SaturationPluginParams};
+pub use plugin_spectral_compressor::{SpectralCompressorPlugin, SpectralCompressorPluginParams};
 pub use plugin_stereo_imager::{StereoImagerPlugin, StereoImagerPluginParams};
 pub use plugin_transient_shaper::{
     TransientShaperData, TransientShaperPlugin, TransientShaperPluginParams,

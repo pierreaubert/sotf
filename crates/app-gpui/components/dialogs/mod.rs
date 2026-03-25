@@ -29,6 +29,7 @@ impl PlayerView {
             Screen::HeadphoneEq => "Headphone EQ",
             Screen::Spinorama => "Spinorama",
             Screen::PluginGraph => "Plugin Graph",
+            Screen::Playlists => "Playlists",
         };
 
         // Get keybindings for current screen
@@ -957,6 +958,11 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("Drag port", "Create connection"),
             ("Delete", "Remove selected"),
             ("Space", "Toggle selected plugin"),
+        ],
+        Screen::Playlists => vec![
+            ("↑/↓ or K/J", "Navigate playlists"),
+            ("Enter", "Open playlist"),
+            ("D/Delete", "Remove playlist"),
         ],
     }
 }

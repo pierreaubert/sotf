@@ -10,6 +10,7 @@ mod draw_headphoneeq;
 mod draw_library_screen;
 mod draw_loading;
 mod draw_meters;
+mod draw_playlists;
 mod draw_plugins;
 mod draw_progress;
 mod draw_queue;
@@ -39,6 +40,7 @@ pub(crate) use draw_headphoneeq::*;
 pub(crate) use draw_library_screen::*;
 pub(crate) use draw_loading::*;
 pub(crate) use draw_meters::*;
+pub(crate) use draw_playlists::*;
 pub(crate) use draw_plugins::*;
 pub(crate) use draw_progress::*;
 pub(crate) use draw_queue::*;
@@ -53,7 +55,9 @@ pub(crate) use draw_transport::*;
 pub(crate) use draw_volume::*;
 
 // Common imports shared by all draw submodules via `use super::*`
-pub(crate) use crate::app::{App, InputMode, LibraryViewMode, MatrixEditMode, Screen, TreeItem};
+pub(crate) use crate::app::{
+    App, InputMode, LibraryViewMode, MatrixEditMode, PlaylistMode, Screen, TreeItem,
+};
 pub(crate) use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -146,6 +150,7 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
                 Screen::Loading => "Loading",
                 Screen::Library => "Library",
                 Screen::Queue => "Queue",
+                Screen::Playlists => "Playlists",
                 Screen::Plugins => "Plugins",
                 Screen::Devices => "Devices",
                 Screen::Configure => "Configure",
@@ -285,6 +290,7 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
                 Screen::Loading => "LOADING",
                 Screen::Library => "LIBRARY",
                 Screen::Queue => "QUEUE",
+                Screen::Playlists => "PLAYLISTS",
                 Screen::Plugins => "PLUGINS",
                 Screen::Devices => "DEVICES",
                 Screen::Configure => "CONFIGURE",
@@ -375,6 +381,19 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("a", "Load APO file (EQ plugins only)"),
             ("o", "Load SOFA file (Binaural only)"),
             ("ESC", "Exit edit mode"),
+        ],
+        Screen::Playlists => vec![
+            ("↑/↓ or k/j", "Navigate playlists/tracks"),
+            ("Enter or l", "Open playlist"),
+            ("Esc or h", "Close playlist (back to list)"),
+            ("n", "Create new playlist"),
+            ("r", "Rename selected playlist"),
+            ("d", "Delete selected playlist"),
+            ("p", "Play all tracks"),
+            ("x", "Remove track (in tracks view)"),
+            ("K/J", "Move track up/down"),
+            ("i", "Import M3U playlist"),
+            ("e", "Export playlist to M3U"),
         ],
         Screen::Devices => vec![
             ("↑/↓ or k/j", "Navigate output devices"),

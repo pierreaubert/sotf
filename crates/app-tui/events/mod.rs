@@ -9,6 +9,7 @@ pub mod file_explorer;
 pub mod level_meters;
 pub mod library;
 pub mod media_control;
+pub mod playlists;
 pub mod plugins;
 pub mod queue;
 pub mod search;
@@ -151,6 +152,11 @@ fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerComma
             app.input_mode = InputMode::Normal;
             Some(None)
         }
+        KeyCode::Char('Y') => {
+            app.current_screen = Screen::Playlists;
+            app.input_mode = InputMode::Normal;
+            Some(None)
+        }
         KeyCode::Char('N') => {
             app.current_screen = Screen::Configure;
             app.input_mode = InputMode::Configure;
@@ -194,7 +200,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.current_screen = match app.current_screen {
                 Screen::Loading => Screen::Loading,
                 Screen::Library => Screen::Queue,
-                Screen::Queue => Screen::Plugins,
+                Screen::Queue => Screen::Playlists,
+                Screen::Playlists => Screen::Plugins,
                 Screen::Plugins => Screen::Devices,
                 Screen::Devices => Screen::Configure,
                 Screen::Configure => Screen::Library,
@@ -216,6 +223,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 Screen::Loading => None,
                 Screen::Library => handle_library_keys(app, key),
                 Screen::Queue => handle_queue_keys(app, key),
+                Screen::Playlists => playlists::handle_playlists_keys(app, key),
                 Screen::Plugins => handle_plugins_keys(app, key),
                 Screen::Devices => handle_devices_keys(app, key),
                 Screen::Configure => conf::handle_tab_bar_keys(app, key),

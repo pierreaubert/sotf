@@ -691,6 +691,7 @@ mod tests {
                 enable_optimization,
                 externalization,
                 near_field_strength,
+                ..
             } => (
                 sofa_file.clone(),
                 *input_channels,
@@ -714,6 +715,7 @@ mod tests {
             enable_optimization,
             externalization,
             near_field_strength,
+            ..
         } = &plugin.settings
         {
             assert_eq!(*sofa_file, orig_sofa); // unchanged by adjust_selected_param

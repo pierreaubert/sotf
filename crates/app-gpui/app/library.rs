@@ -34,6 +34,12 @@ impl App {
         self.reset_page();
     }
 
+    /// Toggle the favorites-only filter.
+    pub fn toggle_favorites_filter(&mut self) {
+        self.library_state.toggle_favorites_filter();
+        self.reset_page();
+    }
+
     /// Get paginated albums for grid view
     pub fn get_paginated_albums(&self) -> Vec<&Album> {
         let all_albums = self.filtered_albums();

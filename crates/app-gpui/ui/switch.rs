@@ -23,6 +23,15 @@ impl PlayerView {
         self.switch_screen_with_trigger(Screen::Queue, "SwitchToQueue", cx);
     }
 
+    fn switch_to_playlists(
+        &mut self,
+        _: &SwitchToPlaylists,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.switch_screen_with_trigger(Screen::Playlists, "SwitchToPlaylists", cx);
+    }
+
     fn switch_to_plugins(&mut self, _: &SwitchToPlugins, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.set_screen(Screen::Settings, "SwitchToPlugins");

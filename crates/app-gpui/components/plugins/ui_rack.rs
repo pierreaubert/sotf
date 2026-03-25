@@ -134,6 +134,8 @@ fn plugin_description(plugin_type: &PluginType) -> &'static str {
         PluginType::TransientShaper => "Attack/sustain shaping (SPL Transient Designer)",
         PluginType::Saturation => "Harmonic saturation / exciter with multiple modes",
         PluginType::DynamicEq => "Frequency-selective dynamics (hybrid EQ + compressor)",
+        PluginType::LinearPhaseEq => "Parametric EQ with linear-phase FIR convolution",
+        PluginType::SpectralCompressor => "Per-bin FFT dynamics processor for surgical spectral compression",
     }
 }
 
@@ -1608,6 +1610,8 @@ impl PlayerView {
                     PluginType::DeEsser,
                     PluginType::Saturation,
                     PluginType::DynamicEq,
+                    PluginType::LinearPhaseEq,
+                    PluginType::SpectralCompressor,
                 ],
             ),
             (

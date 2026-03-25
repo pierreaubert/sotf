@@ -16,6 +16,7 @@ impl Screen {
             | Screen::Studio
             | Screen::RoomEq => ReleaseChannel::Prod,
             Screen::PluginGraph => ReleaseChannel::Alpha,
+            Screen::Playlists => ReleaseChannel::Alpha,
         }
     }
 }

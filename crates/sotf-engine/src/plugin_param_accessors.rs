@@ -456,6 +456,7 @@ impl_param_accessors! {
         fields: [
             sofa_file: skip, input_channels: usize,
             enable_optimization: bool, externalization: f64, near_field_strength: f64,
+            crossfade_mode: usize,
         ]
     },
     XTC {
@@ -659,6 +660,23 @@ impl_param_accessors! {
             num_bands: f64, threshold: f64, ratio: f64,
             attack: f64, release: f64, knee: f64,
             link_channels: bool, mix: f64,
+        ]
+    },
+    SpectralCompressor {
+        params: param_specs::spectral_compressor::PARAMS,
+        layout: Some(&param_specs::spectral_compressor::LAYOUT),
+        fields: [
+            fft_size: usize, threshold: f64, ratio: f64,
+            attack: f64, release: f64, knee: f64,
+            spectral_smoothing: f64, mix: f64,
+        ]
+    },
+    LinearPhaseEq {
+        params: param_specs::linear_phase_eq::PARAMS,
+        layout: Some(&param_specs::linear_phase_eq::LAYOUT),
+        fields: [
+            num_filters: f64, fir_length: f64,
+            auto_gain: bool, mix: f64,
         ]
     }
     ;

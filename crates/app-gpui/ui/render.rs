@@ -199,6 +199,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_mute))
             .on_action(cx.listener(Self::switch_to_library))
             .on_action(cx.listener(Self::switch_to_queue))
+            .on_action(cx.listener(Self::switch_to_playlists))
             .on_action(cx.listener(Self::switch_to_plugins))
             .on_action(cx.listener(Self::switch_to_studio))
             .on_action(cx.listener(Self::switch_to_plugin_graph))
@@ -228,6 +229,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::set_sort_title))
             .on_action(cx.listener(Self::set_sort_year))
             .on_action(cx.listener(Self::cycle_channel_filter))
+            .on_action(cx.listener(Self::toggle_favorites_filter))
             .on_action(cx.listener(Self::set_filter_all))
             .on_action(cx.listener(Self::set_filter_mono))
             .on_action(cx.listener(Self::set_filter_stereo))
@@ -603,6 +605,7 @@ impl PlayerView {
             Screen::HeadphoneEq => self.render_headphone_eq_screen(cx).into_any_element(),
             Screen::Spinorama => self.render_spinorama_eq_screen(cx).into_any_element(),
             Screen::PluginGraph => self.render_plugin_graph_screen(cx).into_any_element(),
+            Screen::Playlists => div().into_any_element(),
             // Library/Queue use 3-panel layout in Expanded mode, individual screens in Compact
             Screen::Library | Screen::Queue => {
                 let layout_orientation = self.state.read(cx).app.layout_orientation;

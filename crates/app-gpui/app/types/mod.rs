@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum Screen {
     Library,
     Queue,
+    Playlists,
     Spectrum,
     Settings,
     Studio,

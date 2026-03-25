@@ -56,13 +56,15 @@ public class GPUIAUView: NSView {
 
         // The implementorValueObserver is already set by GenericRustAudioUnit
         // to sync to Rust. We add a token-based observer for the UI cache.
+        // Capture the raw cache pointer directly (not self) since this closure
+        // runs on AUParameterTree.observationQueue, not the main actor.
+        let cachePtr = cache
         let allParams = tree.allParameters
         for (i, param) in allParams.enumerated() {
             let idx = i
-            param.token(byAddingParameterObserver: { [weak self] _, value in
-                guard let cache = self?.paramCache else { return }
-                // Denormalize: AU parameters store AUValue (already denormalized in our setup)
-                au_param_cache_write(cache, idx, Double(value))
+            param.token(byAddingParameterObserver: { _, value in
+                // au_param_cache_write is thread-safe (atomic)
+                au_param_cache_write(cachePtr, idx, Double(value))
             })
         }
     }

@@ -1259,6 +1259,8 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "dither",
             "dynamic_eq",
             "saturation",
+            "linear_phase_eq",
+            "spectral_compressor",
         ];
 
         let plugin_type_lower = config.plugin_type.to_lowercase();

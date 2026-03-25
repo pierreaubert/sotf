@@ -116,6 +116,9 @@ mod tests {
         assert_eq!(app.current_screen, Screen::Queue);
 
         send_keys(&mut app, &[KeyCode::Tab]);
+        assert_eq!(app.current_screen, Screen::Playlists);
+
+        send_keys(&mut app, &[KeyCode::Tab]);
         assert_eq!(app.current_screen, Screen::Plugins);
 
         send_keys(&mut app, &[KeyCode::Tab]);
@@ -770,7 +773,7 @@ mod tests {
     fn sequence_tab_through_all_screens() {
         let mut app = app_on_library();
 
-        let expected = [Screen::Queue, Screen::Plugins, Screen::Devices];
+        let expected = [Screen::Queue, Screen::Playlists, Screen::Plugins, Screen::Devices];
 
         for &expected_screen in &expected {
             send_keys(&mut app, &[KeyCode::Tab]);

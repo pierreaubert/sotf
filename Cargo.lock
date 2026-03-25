@@ -5941,7 +5941,7 @@ dependencies = [
 
 [[package]]
 name = "math-iir-fir"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -7816,6 +7816,7 @@ dependencies = [
  "sotf-plugin-gain",
  "sotf-plugin-gate",
  "sotf-plugin-limiter",
+ "sotf-plugin-linear-phase-eq",
  "sotf-plugin-loudness-compensation",
  "sotf-plugin-matrix",
  "sotf-plugin-mono-to-stereo",
@@ -7824,6 +7825,7 @@ dependencies = [
  "sotf-plugin-pnd",
  "sotf-plugin-resampler",
  "sotf-plugin-saturation",
+ "sotf-plugin-spectral-compressor",
  "sotf-plugin-stereo-imager",
  "sotf-plugin-transient-shaper",
  "sotf-plugin-upmixer",
@@ -10498,6 +10500,7 @@ dependencies = [
  "audioadapter-buffers",
  "criterion",
  "log",
+ "math-dsp",
  "realfft",
  "rubato",
  "rustfft 6.4.1",
@@ -10689,6 +10692,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-plugin-linear-phase-eq"
+version = "0.5.1"
+dependencies = [
+ "math-iir-fir",
+ "num-complex 0.4.6",
+ "realfft",
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
 name = "sotf-plugin-loudness-compensation"
 version = "0.5.1"
 dependencies = [
@@ -10771,6 +10786,18 @@ name = "sotf-plugin-saturation"
 version = "0.5.4"
 dependencies = [
  "math-dsp",
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
+name = "sotf-plugin-spectral-compressor"
+version = "0.5.20"
+dependencies = [
+ "math-dsp",
+ "realfft",
+ "rustfft 6.4.1",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10899,6 +10926,7 @@ dependencies = [
  "sotf-plugin-hal-input",
  "sotf-plugin-hal-output",
  "sotf-plugin-limiter",
+ "sotf-plugin-linear-phase-eq",
  "sotf-plugin-loudness-compensation",
  "sotf-plugin-matrix",
  "sotf-plugin-mono-to-stereo",
@@ -10907,6 +10935,7 @@ dependencies = [
  "sotf-plugin-pnd",
  "sotf-plugin-resampler",
  "sotf-plugin-saturation",
+ "sotf-plugin-spectral-compressor",
  "sotf-plugin-stereo-imager",
  "sotf-plugin-transient-shaper",
  "sotf-plugin-upmixer",

@@ -1,0 +1,20 @@
+[package]
+name = "sotf-plugin-linear-phase-eq"
+description = "SOTF Linear-Phase EQ plugin - parametric EQ with FIR convolution for zero phase distortion"
+version = "0.5.1"
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_linear_phase_eq"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+math-iir-fir = { workspace = true }
+realfft = { workspace = true }
+num-complex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

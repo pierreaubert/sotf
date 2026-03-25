@@ -648,6 +648,14 @@ impl InPlacePlugin for SaturationPlugin {
         flush_denormals_inplace(buffer);
         Ok(nf)
     }
+
+    fn preferred_oversampling(&self) -> Option<u32> {
+        match self.oversampling_index {
+            1 => Some(2),
+            2 => Some(4),
+            _ => None,
+        }
+    }
 }
 
 // ============================================================================
@@ -900,6 +908,45 @@ mod tests {
                 assert!(s.is_finite(), "sample {} not finite: {}", i, s);
             }
         }
+    }
+
+    #[test]
+    fn test_saturation_declares_oversampling() {
+        // Default oversampling index is 1 (2x), so preferred_oversampling should be Some(2)
+        let plugin = SaturationPlugin::new(2);
+        assert_eq!(plugin.preferred_oversampling(), Some(2));
+
+        // With oversampling set to Off
+        let params_off = SaturationPluginParams {
+            mode: "Soft Clip".to_string(),
+            drive: 2.0,
+            tone: 1.5,
+            exciter_freq: 3000.0,
+            oversampling: "Off".to_string(),
+            output_gain_db: 0.0,
+            mix: 0.5,
+        };
+        let plugin_off = SaturationPlugin::from_params(2, params_off);
+        assert_eq!(plugin_off.preferred_oversampling(), None);
+
+        // With oversampling set to 4x
+        let params_4x = SaturationPluginParams {
+            mode: "Soft Clip".to_string(),
+            drive: 2.0,
+            tone: 1.5,
+            exciter_freq: 3000.0,
+            oversampling: "4x".to_string(),
+            output_gain_db: 0.0,
+            mix: 0.5,
+        };
+        let plugin_4x = SaturationPlugin::from_params(2, params_4x);
+        assert_eq!(plugin_4x.preferred_oversampling(), Some(4));
+    }
+
+    #[test]
+    fn test_saturation_default_f64_is_false() {
+        let plugin = SaturationPlugin::new(2);
+        assert!(!plugin.supports_f64());
     }
 
     #[test]

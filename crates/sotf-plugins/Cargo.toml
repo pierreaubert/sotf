@@ -38,6 +38,7 @@ sotf-plugin-gain = { workspace = true }
 sotf-plugin-gate = { workspace = true }
 sotf-plugin-hal-input = { workspace = true, optional = true }
 sotf-plugin-hal-output = { workspace = true, optional = true }
+sotf-plugin-linear-phase-eq = { workspace = true }
 sotf-plugin-limiter = { workspace = true }
 sotf-plugin-loudness-compensation = { workspace = true }
 sotf-plugin-matrix = { workspace = true }
@@ -47,6 +48,7 @@ sotf-plugin-multiband-expander = { workspace = true }
 sotf-plugin-pnd = { workspace = true }
 sotf-plugin-resampler = { workspace = true }
 sotf-plugin-saturation = { workspace = true }
+sotf-plugin-spectral-compressor = { workspace = true }
 sotf-plugin-stereo-imager = { workspace = true }
 sotf-plugin-transient-shaper = { workspace = true }
 sotf-plugin-upmixer = { workspace = true, default-features = false }

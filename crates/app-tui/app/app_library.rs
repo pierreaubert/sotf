@@ -186,6 +186,7 @@ impl App {
                 &self.search_query,
                 self.library_sort_order,
                 self.channel_filter,
+                self.show_favorites_only,
             );
             self.needs_filter_update = false;
         }

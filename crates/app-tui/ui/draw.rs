@@ -111,6 +111,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             Screen::Loading => unreachable!(), // Handled by early return above
             Screen::Library => draw_library_screen(f, main_chunks[0], app),
             Screen::Queue => draw_queue_screen(f, main_chunks[0], app),
+            Screen::Playlists => draw_playlists_screen(f, main_chunks[0], app),
             Screen::Plugins => draw_plugins_screen(f, main_chunks[0], app),
             Screen::Devices => draw_devices_screen(f, main_chunks[0], app),
             Screen::Configure => draw_configure_screen(f, main_chunks[0], app),

@@ -750,6 +750,7 @@ impl MusicLibrary {
         query: &str,
         sort_order: LibrarySortOrder,
         channel_filter: ChannelFilter,
+        show_favorites_only: bool,
     ) -> Vec<Album> {
         // 1. Search
         let mut albums: Vec<&Album> = if query.is_empty() {
@@ -775,6 +776,11 @@ impl MusicLibrary {
             ChannelFilter::Mixed => matches!(album.channel_type(), Some(AlbumChannelType::Mixed)),
             ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
         });
+
+        // 2b. Favorites filter
+        if show_favorites_only {
+            albums.retain(|album| album.is_favorite);
+        }
 
         // 3. Merge (Consolidated logic as requested)
         let mut merged_albums = group_and_merge_albums(albums);

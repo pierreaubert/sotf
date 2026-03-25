@@ -63,8 +63,14 @@ pub struct App {
     pub library_view_mode: LibraryViewMode,
     pub library_sort_order: LibrarySortOrder,
     pub channel_filter: ChannelFilter,
+    pub show_favorites_only: bool,
     pub artist_tree: Vec<ArtistNode>,
     pub selected_tree_index: usize, // Index in flattened tree (artists + visible albums)
+
+    // Playlists
+    pub playlist_controller: sotf_audio_player::PlaylistController,
+    pub playlist_mode: super::types::PlaylistMode,
+    pub playlist_name_input: String,
 
     // Plugin system
     pub plugin_chain: PluginChain,
@@ -216,7 +222,7 @@ impl App {
         // Shared pause flag for all background scanners
         let scanner_pause_flag = Arc::new(AtomicBool::new(false));
 
-        Self {
+        let mut app = Self {
             library,
             queue: Vec::new(),
             current_screen: Screen::Loading,
@@ -252,8 +258,12 @@ impl App {
             library_view_mode: LibraryViewMode::Flat,
             library_sort_order: LibrarySortOrder::Artist,
             channel_filter: ChannelFilter::All,
+            show_favorites_only: false,
             artist_tree: Vec::new(),
             selected_tree_index: 0,
+            playlist_controller: sotf_audio_player::PlaylistController::new(),
+            playlist_mode: super::types::PlaylistMode::List,
+            playlist_name_input: String::new(),
             plugin_chain: PluginChain::with_default_rack(),
             needs_plugin_update: false,
             pending_param_update: None,
@@ -339,7 +349,16 @@ impl App {
             recording: super::types::RecordingTuiState::default(),
             federation_state: super::types::FederationTuiState::default(),
             server_state: super::types::ServersTuiState::default(),
+        };
+
+        // Load playlists from database
+        if let Some(db) = app.library.get_database() {
+            if let Err(e) = app.playlist_controller.load_playlists(db) {
+                log::warn!("Failed to load playlists: {}", e);
+            }
         }
+
+        app
     }
 
     /// Set the number of scanner threads for all background scanners.
@@ -748,6 +767,13 @@ impl App {
         }
     }
 
+    /// Toggle the favorites-only filter in the library view
+    pub fn toggle_favorites_filter(&mut self) {
+        self.show_favorites_only = !self.show_favorites_only;
+        self.request_filter_update();
+        self.selected_album_index = 0;
+    }
+
     // ========================================================================
     // File Explorer Methods
     // ========================================================================
@@ -807,6 +833,9 @@ impl App {
                 }
                 FilePickerOrigin::HeadphoneMeasurement
                 | FilePickerOrigin::HeadphoneCustomTarget => InputMode::ConfigureHeadphoneEq,
+                FilePickerOrigin::PlaylistImport | FilePickerOrigin::PlaylistExport => {
+                    InputMode::Normal
+                }
             };
     }
 

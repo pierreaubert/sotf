@@ -12,13 +12,26 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Static metadata for a parameter (set once, read-only after creation).
+pub struct ParamMeta {
+    pub name: String,
+    pub unit: String,
+    pub min_value: f64,
+    pub max_value: f64,
+    pub default_value: f64,
+}
+
 /// Thread-safe parameter value cache using atomics.
 ///
 /// Each parameter is stored as an `AtomicU64` holding the bit representation
 /// of an `f64` value. Reads and writes use `Relaxed` ordering since we only
 /// need eventual consistency for UI display (no ordering constraints).
+///
+/// Metadata (name, unit, min, max, default) is set once at creation and never
+/// changes — no atomics needed for those fields.
 pub struct AtomicParamCache {
     values: Box<[AtomicU64]>,
+    meta: Vec<ParamMeta>,
 }
 
 // SAFETY: AtomicU64 is Send+Sync, Box<[AtomicU64]> is Send+Sync.
@@ -32,8 +45,18 @@ impl AtomicParamCache {
         let values: Vec<AtomicU64> = (0..count)
             .map(|_| AtomicU64::new(0.0_f64.to_bits()))
             .collect();
+        let meta: Vec<ParamMeta> = (0..count)
+            .map(|_| ParamMeta {
+                name: String::new(),
+                unit: String::new(),
+                min_value: 0.0,
+                max_value: 1.0,
+                default_value: 0.0,
+            })
+            .collect();
         Self {
             values: values.into_boxed_slice(),
+            meta,
         }
     }
 
@@ -55,6 +78,30 @@ impl AtomicParamCache {
     /// Whether the cache is empty.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
+    }
+
+    /// Get metadata for a parameter by index.
+    pub fn meta(&self, index: usize) -> Option<&ParamMeta> {
+        self.meta.get(index)
+    }
+
+    /// Set metadata for a parameter by index (called once during initialization).
+    pub fn set_meta(
+        &mut self,
+        index: usize,
+        name: String,
+        unit: String,
+        min: f64,
+        max: f64,
+        default: f64,
+    ) {
+        if let Some(m) = self.meta.get_mut(index) {
+            m.name = name;
+            m.unit = unit;
+            m.min_value = min;
+            m.max_value = max;
+            m.default_value = default;
+        }
     }
 
     /// Read all values into a pre-allocated slice.
@@ -107,6 +154,43 @@ pub extern "C" fn au_param_cache_read(
     } else {
         0.0
     }
+}
+
+/// Set metadata for a parameter in the cache.
+///
+/// Called from Swift during initialization to populate parameter names,
+/// units, and ranges from the AUParameterTree.
+#[unsafe(no_mangle)]
+pub extern "C" fn au_param_cache_set_meta(
+    cache: *mut AtomicParamCache,
+    index: usize,
+    name: *const std::os::raw::c_char,
+    unit: *const std::os::raw::c_char,
+    min_value: f64,
+    max_value: f64,
+    default_value: f64,
+) {
+    if cache.is_null() {
+        return;
+    }
+    let cache = unsafe { &mut *cache };
+    let name_str = if name.is_null() {
+        String::new()
+    } else {
+        unsafe { std::ffi::CStr::from_ptr(name) }
+            .to_str()
+            .unwrap_or("")
+            .to_string()
+    };
+    let unit_str = if unit.is_null() {
+        String::new()
+    } else {
+        unsafe { std::ffi::CStr::from_ptr(unit) }
+            .to_str()
+            .unwrap_or("")
+            .to_string()
+    };
+    cache.set_meta(index, name_str, unit_str, min_value, max_value, default_value);
 }
 
 /// Destroy a parameter cache.

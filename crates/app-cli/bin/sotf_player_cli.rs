@@ -2961,6 +2961,7 @@ fn build_rack_mode_plugins(
                         enable_optimization: plugins.binaural.optimization,
                         externalization: plugins.binaural.externalization as f64,
                         near_field_strength: plugins.binaural.near_field as f64,
+                        crossfade_mode: 0,
                     };
                 }
                 log::info!("Rack: Added BinauralDecoder plugin");

@@ -27,11 +27,12 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                     let max_len = if num_channels > 4 { 75 } else { 90 };
                     let content = truncate_with_ellipsis(&cleaned, max_len);
 
-                    // Add play count to the display if > 0
+                    // Add favorite heart and play count to the display
+                    let fav_prefix = if album.is_favorite { "\u{2665} " } else { "" };
                     let display_text = if album.play_count > 0 {
-                        format!("{}  \u{1F3B5} {}", content, album.play_count)
+                        format!("{}{}  \u{1F3B5} {}", fav_prefix, content, album.play_count)
                     } else {
-                        content
+                        format!("{}{}", fav_prefix, content)
                     };
 
                     let style = if i == app.selected_album_index {
@@ -58,8 +59,9 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                         .borders(Borders::ALL)
                         .border_type(border_type)
                         .title(format!(
-                            "Albums ({}) - 'a' to add, 't' to toggle tree view",
-                            albums.len()
+                            "Albums ({}){}  'a' add, 't' tree, 'f' fav, 'F' filter",
+                            albums.len(),
+                            if app.show_favorites_only { " [\u{2665} Favorites]" } else { "" },
                         )),
                 )
                 .highlight_style(

@@ -537,6 +537,7 @@ impl ScreenGuide {
             crate::app::Screen::RoomEq => &GUIDE_ROOM_EQ,
             crate::app::Screen::HeadphoneEq => &GUIDE_HEADPHONE_EQ,
             crate::app::Screen::Spinorama => &GUIDE_SPINORAMA,
+            crate::app::Screen::Playlists => &GUIDE_LIBRARY,
         }
     }
 }

@@ -49,6 +49,8 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::TransientShaper => theme.plugin_colors.compressor,
         PluginType::Saturation => theme.plugin_colors.eq,
         PluginType::DynamicEq => theme.plugin_colors.compressor,
+        PluginType::LinearPhaseEq => theme.plugin_colors.eq,
+        PluginType::SpectralCompressor => theme.plugin_colors.compressor,
     }
 }
 
@@ -105,6 +107,8 @@ pub fn plugin_icon(
         PluginType::TransientShaper => "⚡",
         PluginType::Saturation => "♨",
         PluginType::DynamicEq => "D",
+        PluginType::LinearPhaseEq => "LP",
+        PluginType::SpectralCompressor => "SC",
     }
 }
 
@@ -165,6 +169,8 @@ pub fn plugin_short_name(
         PluginType::TransientShaper => "Transient",
         PluginType::Saturation => "Saturate",
         PluginType::DynamicEq => "DynEQ",
+        PluginType::LinearPhaseEq => "LP EQ",
+        PluginType::SpectralCompressor => "SpecComp",
     }
 }
 

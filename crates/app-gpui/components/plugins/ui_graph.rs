@@ -526,6 +526,8 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::TransientShaper => theme.warning,
         PluginType::Saturation => theme.warning,
         PluginType::DynamicEq => theme.warning,
+        PluginType::LinearPhaseEq => theme.success,
+        PluginType::SpectralCompressor => theme.warning,
     }
 }
 
@@ -586,6 +588,10 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::Saturation => (2, 2),
         // Dynamic EQ: in-place processing
         PluginType::DynamicEq => (2, 2),
+        // Linear-Phase EQ: in-place processing
+        PluginType::LinearPhaseEq => (2, 2),
+        // Spectral compressor: in-place processing
+        PluginType::SpectralCompressor => (2, 2),
     }
 }
 

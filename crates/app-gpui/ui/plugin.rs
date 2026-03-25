@@ -151,6 +151,8 @@ impl PlayerView {
     quick_add_plugin_handler!(quick_add_transient_shaper, QuickAddTransientShaper, sotf_audio_player::PluginType::TransientShaper);
     quick_add_plugin_handler!(quick_add_saturation, QuickAddSaturation, sotf_audio_player::PluginType::Saturation);
     quick_add_plugin_handler!(quick_add_dynamic_eq, QuickAddDynamicEq, sotf_audio_player::PluginType::DynamicEq);
+    quick_add_plugin_handler!(quick_add_linear_phase_eq, QuickAddLinearPhaseEq, sotf_audio_player::PluginType::LinearPhaseEq);
+    quick_add_plugin_handler!(quick_add_spectral_compressor, QuickAddSpectralCompressor, sotf_audio_player::PluginType::SpectralCompressor);
 
     fn increment_plugin_param(&mut self, _: &IncrementPluginParam, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {

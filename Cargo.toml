@@ -23,6 +23,7 @@ members = [
     "crates/sotf-plugins/crates/sotf-plugin-gate",
     "crates/sotf-plugins/crates/sotf-plugin-hal-input",
     "crates/sotf-plugins/crates/sotf-plugin-hal-output",
+    "crates/sotf-plugins/crates/sotf-plugin-linear-phase-eq",
     "crates/sotf-plugins/crates/sotf-plugin-limiter",
     "crates/sotf-plugins/crates/sotf-plugin-loudness-compensation",
     "crates/sotf-plugins/crates/sotf-plugin-matrix",
@@ -32,6 +33,7 @@ members = [
     "crates/sotf-plugins/crates/sotf-plugin-pnd",
     "crates/sotf-plugins/crates/sotf-plugin-resampler",
     "crates/sotf-plugins/crates/sotf-plugin-saturation",
+    "crates/sotf-plugins/crates/sotf-plugin-spectral-compressor",
     "crates/sotf-plugins/crates/sotf-plugin-stereo-imager",
     "crates/sotf-plugins/crates/sotf-plugin-transient-shaper",
     "crates/sotf-plugins/crates/sotf-plugin-upmixer",
@@ -211,6 +213,7 @@ sotf-plugin-gain = { path = "crates/sotf-plugins/crates/sotf-plugin-gain" }
 sotf-plugin-gate = { path = "crates/sotf-plugins/crates/sotf-plugin-gate" }
 sotf-plugin-hal-input = { path = "crates/sotf-plugins/crates/sotf-plugin-hal-input" }
 sotf-plugin-hal-output = { path = "crates/sotf-plugins/crates/sotf-plugin-hal-output" }
+sotf-plugin-linear-phase-eq = { path = "crates/sotf-plugins/crates/sotf-plugin-linear-phase-eq" }
 sotf-plugin-limiter = { path = "crates/sotf-plugins/crates/sotf-plugin-limiter" }
 sotf-plugin-loudness-compensation = { path = "crates/sotf-plugins/crates/sotf-plugin-loudness-compensation" }
 sotf-plugin-matrix = { path = "crates/sotf-plugins/crates/sotf-plugin-matrix" }
@@ -220,6 +223,7 @@ sotf-plugin-multiband-expander = { path = "crates/sotf-plugins/crates/sotf-plugi
 sotf-plugin-pnd = { path = "crates/sotf-plugins/crates/sotf-plugin-pnd" }
 sotf-plugin-resampler = { path = "crates/sotf-plugins/crates/sotf-plugin-resampler" }
 sotf-plugin-saturation = { path = "crates/sotf-plugins/crates/sotf-plugin-saturation" }
+sotf-plugin-spectral-compressor = { path = "crates/sotf-plugins/crates/sotf-plugin-spectral-compressor" }
 sotf-plugin-stereo-imager = { path = "crates/sotf-plugins/crates/sotf-plugin-stereo-imager" }
 sotf-plugin-transient-shaper = { path = "crates/sotf-plugins/crates/sotf-plugin-transient-shaper" }
 sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer", default-features = false }

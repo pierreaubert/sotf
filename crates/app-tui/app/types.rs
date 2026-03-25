@@ -16,9 +16,25 @@ pub enum Screen {
     Loading,
     Library,
     Queue,
+    Playlists,
     Plugins,
     Devices,
     Configure,
+}
+
+/// Sub-mode within the Playlists screen
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaylistMode {
+    /// Browsing the list of playlists
+    List,
+    /// Browsing tracks within the open playlist
+    Tracks,
+    /// Text input for creating a new playlist
+    Create,
+    /// Text input for renaming
+    Rename,
+    /// Confirmation prompt before deleting
+    ConfirmDelete,
 }
 
 /// Sub-screens within the Configure section
@@ -554,6 +570,8 @@ pub enum FilePickerOrigin {
     ApoFile,
     ABConfigA,
     ABConfigB,
+    PlaylistImport,
+    PlaylistExport,
 }
 
 /// Options presented in the channel conflict dialog

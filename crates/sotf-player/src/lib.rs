@@ -30,6 +30,7 @@ pub mod recording_types;
 pub mod room_eq_types;
 pub mod spinorama_eq_types;
 // plugins module is now in engine
+pub mod playlist_io;
 pub mod recommendation;
 pub mod replay_gain_scanner;
 // Backward compatibility alias
@@ -98,6 +99,7 @@ pub use sotf_plugins::param_specs;
 
 // Re-export controllers
 pub use controllers::{
-    LibraryController, PlaybackController, PluginController, PluginUpdateEffect, QueueController,
-    QueuePlaybackEffect, ScanController, get_param_count, param_index_to_engine_param,
+    LibraryController, PlaybackController, PlaylistController, PluginController,
+    PluginUpdateEffect, QueueController, QueuePlaybackEffect, ScanController, get_param_count,
+    param_index_to_engine_param,
 };

@@ -1065,6 +1065,7 @@ impl PluginChain {
                     enable_optimization,
                     externalization,
                     near_field_strength,
+                    crossfade_mode,
                 } => {
                     if *input_channels != current_channels {
                         updated_settings = Some(PluginSettings::BinauralDecoder {
@@ -1073,6 +1074,7 @@ impl PluginChain {
                             enable_optimization: *enable_optimization,
                             externalization: *externalization,
                             near_field_strength: *near_field_strength,
+                            crossfade_mode: *crossfade_mode,
                         });
                     }
                 }

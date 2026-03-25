@@ -44,6 +44,9 @@ pub struct LibraryController {
     pub selected_album_letter: Option<char>,
     pub selected_track_range: Option<(usize, usize)>,
 
+    /// Show only favorited albums
+    pub show_favorites_only: bool,
+
     /// Scan state
     pub scan_in_progress: bool,
     pub scan_progress_tracks: usize,
@@ -92,6 +95,7 @@ impl LibraryController {
             selected_composer: None,
             selected_album_letter: None,
             selected_track_range: None,
+            show_favorites_only: false,
             scan_in_progress: false,
             scan_progress_tracks: 0,
             scan_progress_albums: 0,
@@ -131,6 +135,11 @@ impl LibraryController {
 
         // Apply channel filter
         albums.retain(|album| self.matches_channel_filter(album));
+
+        // Apply favorites filter
+        if self.show_favorites_only {
+            albums.retain(|album| album.is_favorite);
+        }
 
         // Merge duplicate albums (multi-disc, different editions, etc.)
         let mut merged_albums: Vec<Album> = group_and_merge_albums(albums);
@@ -356,6 +365,13 @@ impl LibraryController {
         self.invalidate_cache();
     }
 
+    /// Toggle favorites-only filter.
+    pub fn toggle_favorites_filter(&mut self) {
+        self.show_favorites_only = !self.show_favorites_only;
+        self.selected_index = 0;
+        self.invalidate_cache();
+    }
+
     /// Set channel filter and reset selection.
     pub fn set_filter(&mut self, filter: ChannelFilter) {
         self.filter = filter;
@@ -471,6 +487,7 @@ impl LibraryController {
         self.selected_album_letter = None;
         self.selected_track_range = None;
         self.filter = ChannelFilter::All;
+        self.show_favorites_only = false;
         self.search_query.clear();
         self.selected_index = 0;
         self.invalidate_cache();
@@ -488,6 +505,7 @@ impl LibraryController {
             || self.selected_album_letter.is_some()
             || self.selected_track_range.is_some()
             || self.filter != ChannelFilter::All
+            || self.show_favorites_only
             || !self.search_query.is_empty()
     }
 

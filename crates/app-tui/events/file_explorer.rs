@@ -159,6 +159,43 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                 }
             }
         }
+        FilePickerOrigin::PlaylistImport => {
+            if let Some(db) = app.library.get_database() {
+                match app.playlist_controller.import_playlist(db, &path) {
+                    Ok(()) => {
+                        let name = path.file_stem().unwrap_or_default().to_string_lossy();
+                        app.status_message = Some(format!("Imported playlist '{}'", name));
+                        app.playlist_mode = crate::app::PlaylistMode::Tracks;
+                    }
+                    Err(e) => app.status_message = Some(format!("Import error: {}", e)),
+                }
+            }
+        }
+        FilePickerOrigin::PlaylistExport => {
+            // Build the output file path: directory + playlist_name.m3u8
+            let export_path = if path.is_dir() {
+                let playlist_name = app
+                    .playlist_controller
+                    .active_playlist()
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("playlist");
+                // Sanitize name for filename (replace non-alphanumeric with _)
+                let safe_name: String = playlist_name
+                    .chars()
+                    .map(|c| if c.is_alphanumeric() || c == '-' || c == ' ' { c } else { '_' })
+                    .collect();
+                path.join(format!("{}.m3u8", safe_name.trim()))
+            } else {
+                path.clone()
+            };
+            match app.playlist_controller.export_playlist(&app.library, &export_path) {
+                Ok(()) => {
+                    let name = export_path.file_name().unwrap_or_default().to_string_lossy();
+                    app.status_message = Some(format!("Exported to '{}'", name));
+                }
+                Err(e) => app.status_message = Some(format!("Export error: {}", e)),
+            }
+        }
     }
     app.close_file_explorer();
 }

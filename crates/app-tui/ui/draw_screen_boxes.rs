@@ -5,6 +5,7 @@ pub(crate) fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
     let screens = [
         (Screen::Library, "Library"),
         (Screen::Queue, "Queue"),
+        (Screen::Playlists, "plaYlists"),
         (Screen::Plugins, "Plugins"),
         (Screen::Devices, "Output Devices"),
         (Screen::Configure, "Configure"),

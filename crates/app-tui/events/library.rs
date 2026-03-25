@@ -142,6 +142,43 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
             app.toggle_selected_album_favorite();
             None
         }
+        KeyCode::Char('F') => {
+            // Toggle favorites-only filter
+            app.toggle_favorites_filter();
+            None
+        }
+        KeyCode::Char('A') => {
+            // Add selected album to the active playlist
+            if let Some(active_id) = app.playlist_controller.active_playlist_id() {
+                let idx = app.selected_album_index;
+                if let Some(album) = app.cached_filtered_albums.get(idx) {
+                    let album_clone = album.clone();
+                    if let Some(db) = app.library.get_database() {
+                        // Find the playlist index for the active playlist's ID
+                        let pl_idx = app
+                            .playlist_controller
+                            .playlists()
+                            .iter()
+                            .position(|p| p.id == Some(active_id));
+                        if let Some(pl_idx) = pl_idx {
+                            match app
+                                .playlist_controller
+                                .add_album_to_playlist(db, pl_idx, &album_clone)
+                            {
+                                Ok(()) => {
+                                    app.status_message =
+                                        Some(format!("Added '{}' to playlist", album_clone.title))
+                                }
+                                Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                            }
+                        }
+                    }
+                }
+            } else {
+                app.status_message = Some("Open a playlist first (Y screen)".to_string());
+            }
+            None
+        }
         KeyCode::Char('q') => {
             app.current_screen = Screen::Queue;
             None

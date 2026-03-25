@@ -111,6 +111,8 @@ actions!(
         QuickAddTransientShaper,
         QuickAddSaturation,
         QuickAddDynamicEq,
+        QuickAddLinearPhaseEq,
+        QuickAddSpectralCompressor,
         // Level meter actions
         SelectNextMeterGroup,
         SelectPrevMeterGroup,
@@ -130,5 +132,17 @@ actions!(
         IncreaseFontSize,
         DecreaseFontSize,
         ResetFontSize,
+        // Favorites
+        ToggleFavoritesFilter,
+        ToggleAlbumFavorite,
+        // Playlist actions
+        SwitchToPlaylists,
+        CreatePlaylist,
+        DeletePlaylist,
+        RenamePlaylist,
+        OpenPlaylist,
+        PlayPlaylist,
+        ImportPlaylist,
+        ExportPlaylist,
     ]
 );

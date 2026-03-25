@@ -1382,6 +1382,37 @@ fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "linear_phase_eq" => {
+            use sotf_plugins::{LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
+
+            let params: LinearPhaseEqPluginParams =
+                serde_json::from_value(parameters.clone()).map_err(|e| {
+                    format!(
+                        "Failed to parse linear-phase EQ plugin parameters: {}",
+                        e
+                    )
+                })?;
+
+            let plugin = LinearPhaseEqPlugin::from_params(channels, sample_rate, params)
+                .map_err(|e| format!("Failed to create linear-phase EQ plugin: {}", e))?;
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "spectral_compressor" => {
+            use sotf_plugins::{SpectralCompressorPlugin, SpectralCompressorPluginParams};
+
+            let params: SpectralCompressorPluginParams =
+                serde_json::from_value(parameters.clone()).map_err(|e| {
+                    format!(
+                        "Failed to parse spectral compressor plugin parameters: {}",
+                        e
+                    )
+                })?;
+
+            let plugin = SpectralCompressorPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         other => Err(format!("Unknown plugin type: {}", other)),
     }
 }

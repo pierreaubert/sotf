@@ -22,8 +22,8 @@ pub use types::{
     ConfigureSubScreen, FederationEditState, FederationMode, FederationTuiState,
     FilePickerMode, FilePickerOrigin, HEADPHONE_TARGET_PRESETS,
     HeadphoneEqStep, HeadphoneEqTuiState, InputMode, LibrarySortOrder, LibraryViewMode,
-    MatrixEditMode, PendingParameterUpdate, QueueEntry, QueueItem, RecordingTuiState,
-    ReplayGainMode, RoomEqTuiState, Screen, ServerSection, ServersTuiState,
+    MatrixEditMode, PendingParameterUpdate, PlaylistMode, QueueEntry, QueueItem,
+    RecordingTuiState, ReplayGainMode, RoomEqTuiState, Screen, ServerSection, ServersTuiState,
     SpinUpdateSubStep, SpinoramaEqTuiState, SpinoramaStep, TreeItem,
 };
 // Allow access to types submodule for full detail (SOURCE_TYPE_NAMES, etc.)

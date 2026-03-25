@@ -234,6 +234,22 @@ pub fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "LinearPhaseEQ" | "linear_phase_eq" => {
+            let params: sotf_plugin_linear_phase_eq::LinearPhaseEqPluginParams =
+                parse_params(config_json)?;
+            let plugin =
+                sotf_plugin_linear_phase_eq::LinearPhaseEqPlugin::from_params(channels, sample_rate, params)?;
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        // "SpectralCompressor" | "spectral_compressor" => {  // TODO: re-enable once it compiles
+        //     let params: sotf_plugin_spectral_compressor::SpectralCompressorPluginParams =
+        //         parse_params(config_json)?;
+        //     let plugin =
+        //         sotf_plugin_spectral_compressor::SpectralCompressorPlugin::from_params(channels, params);
+        //     Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        // }
+
         _ => Err(format!("Unknown plugin type: {plugin_type}")),
     }
 }
@@ -269,6 +285,8 @@ pub fn available_plugin_types() -> &'static [&'static str] {
         "TransientShaper",
         "DynamicEQ",
         "Saturation",
+        "LinearPhaseEQ",
+        "SpectralCompressor",
     ]
 }
 

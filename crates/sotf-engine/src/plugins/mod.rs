@@ -153,6 +153,8 @@ pub enum PluginType {
     TransientShaper,
     Saturation,
     DynamicEq,
+    LinearPhaseEq,
+    SpectralCompressor,
 }
 
 impl PluginType {
@@ -193,6 +195,8 @@ impl PluginType {
             Self::TransientShaper => "Transient Shaper",
             Self::Saturation => "Saturation",
             Self::DynamicEq => "Dynamic EQ",
+            Self::LinearPhaseEq => "Linear-Phase EQ",
+            Self::SpectralCompressor => "Spectral Compressor",
         }
     }
 
@@ -233,6 +237,8 @@ impl PluginType {
             Self::TransientShaper => "SPL Transient Designer — attack/sustain shaping",
             Self::Saturation => "Harmonic saturation / exciter with multiple modes",
             Self::DynamicEq => "Frequency-selective dynamics (hybrid EQ + compressor)",
+            Self::LinearPhaseEq => "Parametric EQ with linear-phase FIR convolution",
+            Self::SpectralCompressor => "Per-bin FFT dynamics processor for surgical spectral compression",
         }
     }
 
@@ -273,6 +279,8 @@ impl PluginType {
             Self::TransientShaper,
             Self::Saturation,
             Self::DynamicEq,
+            Self::LinearPhaseEq,
+            Self::SpectralCompressor,
         ]
     }
 
@@ -315,7 +323,8 @@ impl PluginType {
             | Self::DeEsser
             | Self::TransientShaper
             | Self::Saturation
-            | Self::DynamicEq => ReleaseChannel::Beta,
+            | Self::DynamicEq
+            | Self::LinearPhaseEq => ReleaseChannel::Beta,
 
             Self::BinauralDecoder
             | Self::Convolution
@@ -323,7 +332,8 @@ impl PluginType {
             | Self::Denoiser
             | Self::Aec
             | Self::Beamformer
-            | Self::AmbisonicsDecoder => ReleaseChannel::Alpha,
+            | Self::AmbisonicsDecoder
+            | Self::SpectralCompressor => ReleaseChannel::Alpha,
         }
     }
 }
@@ -360,8 +370,10 @@ use sotf_plugins::param_specs::pnd as pnd_specs;
 use sotf_plugins::param_specs::spectrum as spectrum_specs;
 use sotf_plugins::param_specs::upmixer as upmixer_specs;
 use sotf_plugins::param_specs::saturation as saturation_specs;
+use sotf_plugins::param_specs::spectral_compressor as spectral_compressor_specs;
 use sotf_plugins::param_specs::stereo_imager as stereo_imager_specs;
 use sotf_plugins::param_specs::transient_shaper as transient_shaper_specs;
+use sotf_plugins::param_specs::linear_phase_eq as linear_phase_eq_specs;
 use sotf_plugins::param_specs::xtc as xtc_specs;
 
 sotf_plugins::serde_param_default! {
@@ -731,6 +743,18 @@ sotf_plugins::serde_param_default! {
     fn default_si_high_width() -> f64 = "high_width";
     fn default_si_mono_bass() -> bool = "mono_bass";
     fn default_si_mix() -> f64 = "mix";
+}
+
+sotf_plugins::serde_param_default! {
+    spectral_compressor_specs::PARAMS;
+    fn default_sc_threshold() -> f64 = "threshold";
+    fn default_sc_ratio() -> f64 = "ratio";
+    fn default_sc_attack() -> f64 = "attack";
+    fn default_sc_release() -> f64 = "release";
+    fn default_sc_knee() -> f64 = "knee";
+    fn default_sc_spectral_smoothing() -> f64 = "spectral_smoothing";
+    fn default_sc_mix() -> f64 = "mix";
+    fn default_sc_fft_size() -> usize = "fft_size";
 }
 
 fn default_channels() -> usize {
@@ -1139,6 +1163,8 @@ pub enum PluginSettings {
         externalization: f64,
         #[serde(default)] // 0.0
         near_field_strength: f64,
+        #[serde(default)] // 0 = Linear
+        crossfade_mode: usize,
     },
     Convolution {
         ir_file: String,
@@ -1582,6 +1608,34 @@ pub enum PluginSettings {
         #[serde(default = "default_dyneq_mix")]
         mix: f64,
     },
+    LinearPhaseEq {
+        #[serde(default = "default_lpeq_num_filters")]
+        num_filters: f64,
+        #[serde(default = "default_lpeq_fir_length")]
+        fir_length: f64,
+        #[serde(default)]
+        auto_gain: bool,
+        #[serde(default = "default_lpeq_mix")]
+        mix: f64,
+    },
+    SpectralCompressor {
+        #[serde(default = "default_sc_fft_size")]
+        fft_size: usize,
+        #[serde(default = "default_sc_threshold")]
+        threshold: f64,
+        #[serde(default = "default_sc_ratio")]
+        ratio: f64,
+        #[serde(default = "default_sc_attack")]
+        attack: f64,
+        #[serde(default = "default_sc_release")]
+        release: f64,
+        #[serde(default = "default_sc_knee")]
+        knee: f64,
+        #[serde(default = "default_sc_spectral_smoothing")]
+        spectral_smoothing: f64,
+        #[serde(default = "default_sc_mix")]
+        mix: f64,
+    },
 }
 
 sotf_plugins::serde_param_default! {
@@ -1610,6 +1664,13 @@ sotf_plugins::serde_param_default! {
     fn default_dyneq_knee() -> f64 = "knee";
     fn default_dyneq_link_channels() -> bool = "link_channels";
     fn default_dyneq_mix() -> f64 = "mix";
+}
+
+sotf_plugins::serde_param_default! {
+    linear_phase_eq_specs::PARAMS;
+    fn default_lpeq_num_filters() -> f64 = "num_filters";
+    fn default_lpeq_fir_length() -> f64 = "fir_length";
+    fn default_lpeq_mix() -> f64 = "mix";
 }
 
 impl PluginSettings {
@@ -1650,6 +1711,8 @@ impl PluginSettings {
             Self::TransientShaper { .. } => PluginType::TransientShaper,
             Self::Saturation { .. } => PluginType::Saturation,
             Self::DynamicEq { .. } => PluginType::DynamicEq,
+            Self::LinearPhaseEq { .. } => PluginType::LinearPhaseEq,
+            Self::SpectralCompressor { .. } => PluginType::SpectralCompressor,
         }
     }
 
@@ -1874,6 +1937,42 @@ impl PluginSettings {
                     "release_ms": *release as f32,
                     "knee": *knee as f32,
                     "link_channels": link_channels,
+                    "mix": *mix as f32,
+                }),
+            ),
+            Self::LinearPhaseEq {
+                num_filters,
+                fir_length,
+                auto_gain,
+                mix,
+            } => PluginConfig::new(
+                "linear_phase_eq",
+                json!({
+                    "num_filters": *num_filters as usize,
+                    "fir_length_index": *fir_length as usize,
+                    "auto_gain": auto_gain,
+                    "mix": *mix as f32,
+                }),
+            ),
+            Self::SpectralCompressor {
+                fft_size,
+                threshold,
+                ratio,
+                attack,
+                release,
+                knee,
+                spectral_smoothing,
+                mix,
+            } => PluginConfig::new(
+                "spectral_compressor",
+                json!({
+                    "fft_size_index": *fft_size,
+                    "threshold_db": *threshold as f32,
+                    "ratio": *ratio as f32,
+                    "attack_ms": *attack as f32,
+                    "release_ms": *release as f32,
+                    "knee_db": *knee as f32,
+                    "spectral_smoothing": *spectral_smoothing as f32,
                     "mix": *mix as f32,
                 }),
             ),
@@ -2335,6 +2434,7 @@ impl PluginSettings {
                 enable_optimization,
                 externalization,
                 near_field_strength,
+                crossfade_mode,
             } => PluginConfig::new(
                 "binaural_decoder",
                 json!({
@@ -2343,6 +2443,7 @@ impl PluginSettings {
                     "enable_optimization": enable_optimization,
                     "externalization": externalization,
                     "near_field_strength": near_field_strength,
+                    "crossfade_mode": crossfade_mode,
                 }),
             ),
             Self::Convolution {
@@ -2945,6 +3046,7 @@ impl PluginSettings {
                     enable_optimization: p(b, "enable_optimization").default_bool(),
                     externalization: p(b, "externalization").default_f64(),
                     near_field_strength: p(b, "near_field_strength").default_f64(),
+                    crossfade_mode: p(b, "crossfade_mode").default_usize(),
                 }
             }
             PluginType::Convolution => {
@@ -3240,6 +3342,28 @@ impl PluginSettings {
                     knee: p(dq, "knee").default_f64(),
                     link_channels: p(dq, "link_channels").default_bool(),
                     mix: p(dq, "mix").default_f64(),
+                }
+            }
+            PluginType::LinearPhaseEq => {
+                let lp = linear_phase_eq_specs::PARAMS;
+                Self::LinearPhaseEq {
+                    num_filters: p(lp, "num_filters").default_f64(),
+                    fir_length: p(lp, "fir_length").default_f64(),
+                    auto_gain: p(lp, "auto_gain").default_bool(),
+                    mix: p(lp, "mix").default_f64(),
+                }
+            }
+            PluginType::SpectralCompressor => {
+                let sc = spectral_compressor_specs::PARAMS;
+                Self::SpectralCompressor {
+                    fft_size: p(sc, "fft_size").default_f64() as usize,
+                    threshold: p(sc, "threshold").default_f64(),
+                    ratio: p(sc, "ratio").default_f64(),
+                    attack: p(sc, "attack").default_f64(),
+                    release: p(sc, "release").default_f64(),
+                    knee: p(sc, "knee").default_f64(),
+                    spectral_smoothing: p(sc, "spectral_smoothing").default_f64(),
+                    mix: p(sc, "mix").default_f64(),
                 }
             }
         }

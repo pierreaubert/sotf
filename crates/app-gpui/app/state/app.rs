@@ -139,6 +139,9 @@ pub struct App {
     // Settings accordion expanded sections
     pub expanded_settings_sections: Vec<String>,
 
+    // Playlists
+    pub playlist_controller: sotf_audio_player::PlaylistController,
+
     // Scan managers (ReplayGain, Waveform, Bliss)
     pub scan_ctrl: sotf_audio_player::ScanController,
 
@@ -276,6 +279,7 @@ impl App {
             knob_drag_min: 0.0,
             knob_drag_max: 1.0,
             expanded_settings_sections: vec!["library".to_string()],
+            playlist_controller: sotf_audio_player::PlaylistController::new(),
             scan_ctrl: sotf_audio_player::ScanController::new(),
             upmixer_config_open: false,
             upmixer_tab: 1,
