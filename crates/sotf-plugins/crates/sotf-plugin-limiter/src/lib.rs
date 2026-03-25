@@ -162,7 +162,10 @@ impl LimiterPlugin {
             isp_correction_db: 0.0,
             dual_release_env: DualRelease::new(release_ms, release_ms * 5.0, sr),
             cached_parameters: Vec::new(),
-            cache: RealTimeCache::new(LimiterData::default()),
+            cache: RealTimeCache::new(LimiterData {
+                isp_dbtp: vec![-120.0; channels],
+                ..LimiterData::default()
+            }),
             cache_update_counter: 0,
             monitoring_peak_db: -100.0,
             monitoring_gr_db: 0.0,
@@ -519,8 +522,8 @@ impl InPlacePlugin for LimiterPlugin {
                 }
                 if frame_output_isp > thresh {
                     let overshoot = 20.0 * fast_log10(frame_output_isp / thresh);
-                    // Accumulate — take max of current correction and new overshoot
-                    self.isp_correction_db = self.isp_correction_db.max(overshoot);
+                    // Accumulate — take max of current correction and new overshoot, capped at 12dB
+                    self.isp_correction_db = self.isp_correction_db.max(overshoot).min(12.0);
                 } else {
                     // Decay correction with release coefficient
                     self.isp_correction_db *= self.release_coeff;
@@ -548,8 +551,7 @@ impl InPlacePlugin for LimiterPlugin {
                 d.gain_reduction_db = self.monitoring_gr_db;
                 d.peak_db = self.monitoring_peak_db;
                 d.is_limiting = self.monitoring_gr_db > 0.01;
-                if use_true_peak {
-                    d.isp_dbtp.resize(self.channels, -120.0);
+                if use_true_peak && d.isp_dbtp.len() == self.channels {
                     for (ch, &lin) in self.monitoring_isp_linear.iter().enumerate() {
                         d.isp_dbtp[ch] = if lin < 1e-12 {
                             -120.0
@@ -557,8 +559,6 @@ impl InPlacePlugin for LimiterPlugin {
                             20.0 * lin.log10()
                         };
                     }
-                } else {
-                    d.isp_dbtp.clear();
                 }
             });
         }
@@ -949,9 +949,9 @@ mod tests {
         );
     }
 
-    /// Verify ISP meter is empty when true_peak is disabled.
+    /// Verify ISP meter stays at floor (-120 dB) when true_peak is disabled.
     #[test]
-    fn test_isp_meter_empty_without_true_peak() {
+    fn test_isp_meter_floor_without_true_peak() {
         let mut p = LimiterPlugin::new(1, -1.0, 50.0, 5.0, false);
         p.initialize(48000).unwrap();
         assert!(!p.true_peak);
@@ -967,10 +967,13 @@ mod tests {
         }
 
         let data = p.cache.load();
-        assert!(
-            data.isp_dbtp.is_empty(),
-            "ISP should be empty when true_peak is disabled"
-        );
+        // ISP values stay at floor when true_peak is disabled (not updated)
+        for &v in &data.isp_dbtp {
+            assert!(
+                v <= -119.0,
+                "ISP should be at floor when true_peak is disabled, got {v}"
+            );
+        }
     }
 
     /// ISP mode: output inter-sample peaks must not exceed the ceiling.

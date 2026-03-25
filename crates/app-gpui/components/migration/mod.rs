@@ -196,6 +196,7 @@ pub fn write_room_config(measurements: &RoomEqMeasurementsFile, path: &Path) -> 
         target_curve: None,
         optimizer: OptimizerConfig::default(),
         recording_config,
+        cea2034_cache: None,
     };
 
     let file = std::fs::File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;

@@ -324,8 +324,10 @@ pub fn run_multi_speaker_optimization(
             mixed_phase: None,
             decomposed_correction: None,
             target_response: None,
+            cea2034_correction: None,
         },
         recording_config: None,
+        cea2034_cache: None,
     };
 
     // Wrap legacy callback
@@ -444,6 +446,7 @@ pub fn build_room_config_from_curves(
         target_curve: None,
         optimizer,
         recording_config: None,
+        cea2034_cache: None,
     }
 }
 
@@ -488,6 +491,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         multi_measurement: None,
         decomposed_correction: None,
         target_response: None,
+        cea2034_correction: None,
     }
 }
 

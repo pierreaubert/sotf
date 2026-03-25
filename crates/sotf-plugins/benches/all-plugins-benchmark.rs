@@ -11,8 +11,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
     ChannelMuteSoloPlugin, CrossoverPlugin, DelayPlugin, EqPlugin, ExpanderPlugin,
-    FletcherMunsonPlugin, FletcherMunsonPluginParams, GatePlugin, InPlacePlugin,
-    InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin,
+    GatePlugin, InPlacePlugin,
+    InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
+    LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
     MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
     SpectrumAnalyzerPlugin, SpectrumConfig,
 };
@@ -607,14 +608,17 @@ fn benchmark_analyzers(c: &mut Criterion) {
 fn benchmark_loudness(c: &mut Criterion) {
     let mut group = c.benchmark_group("Loudness");
 
-    // Fletcher-Munson (implements Plugin, not InPlacePlugin)
+    // Fletcher-Munson (now LoudnessCompensation Auto mode)
     {
-        let params = FletcherMunsonPluginParams {
+        let params = LoudnessCompensationPluginParams {
+            mode: 2, // Auto
             playback_volume_db: -30.0,
-            reference_level_db: -14.0,
+            reference_level_db: 69.0,
             ..Default::default()
         };
-        let mut plugin = FletcherMunsonPlugin::from_params(CHANNELS, params).unwrap();
+        let mut plugin = InPlacePluginAdapter::new(
+            LoudnessCompensationPlugin::from_params(CHANNELS, params).unwrap()
+        );
         Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);

@@ -233,7 +233,7 @@ pub fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::P
         "Delay" => delay::PARAMS,
         "Expander" => expander::PARAMS,
         "Crossfeed" => crossfeed::PARAMS,
-        "FletcherMunson" => fletcher_munson::PARAMS,
+        "FletcherMunson" => loudness_compensation::PARAMS,
         "LoudnessCompensation" => loudness_compensation::PARAMS,
         "MultibandCompressor" => multiband_compressor::GLOBAL_PARAMS,
         "MultibandExpander" => multiband_expander::GLOBAL_PARAMS,

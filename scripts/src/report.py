@@ -6,10 +6,11 @@ from .figures import (
     create_channel_figure,
     create_zoomed_figure,
     create_eq_figure,
+    create_multipass_eq_figure,
     create_ir_figure,
     create_combined_figure,
 )
-from .data_extract import get_channel_sort_key
+from .data_extract import extract_eq_passes, get_channel_sort_key
 
 
 def create_html_report(
@@ -276,13 +277,11 @@ def create_html_report(
         initial_curve = channel_data.get("initial_curve")
         final_curve = channel_data.get("final_curve")
 
-        # Extract EQ filters
-        plugins = channel_data.get("plugins", [])
+        # Extract EQ filters (grouped by pass for 3-pass pipeline)
+        passes = extract_eq_passes(channel_data)
         eq_filters = []
-        for plugin in plugins:
-            if plugin.get("plugin_type") == "eq":
-                filters = plugin.get("parameters", {}).get("filters", [])
-                eq_filters.extend(filters)
+        for p in passes:
+            eq_filters.extend(p["filters"])
 
         html_parts.append(
             f"""
@@ -313,8 +312,12 @@ def create_html_report(
 """
         )
 
-        # EQ response plot
-        fig_eq = create_eq_figure(channel_name, eq_filters, channel_data.get("eq_response"))
+        # EQ response plot (uses per-pass breakdown when 3-pass labels are present)
+        fig_eq = create_multipass_eq_figure(
+            channel_name, channel_data, channel_data.get("eq_response")
+        )
+        if fig_eq is None:
+            fig_eq = create_eq_figure(channel_name, eq_filters, channel_data.get("eq_response"))
         if fig_eq:
             eq_html = fig_eq.to_html(full_html=False, include_plotlyjs=False)
             html_parts.append(
@@ -341,10 +344,35 @@ def create_html_report(
 """
             )
 
-        # Filter details
-        if eq_filters:
+        # Filter details (grouped by pass when 3-pass labels are present)
+        has_labeled = any(p["label"] for p in passes)
+        if has_labeled and passes:
             html_parts.append(
-                f"""
+                """
+                <div class="filters-section">
+                    <h3>EQ Filters (3-Pass Pipeline)</h3>
+"""
+            )
+            for p in passes:
+                html_parts.append(
+                    f"""
+                    <h4 style="color: {p['color']}; margin-bottom: 5px;">{p['display_name']}</h4>
+                    <div class="filter-list" style="margin-bottom: 10px;">
+"""
+                )
+                for j, f in enumerate(p["filters"], 1):
+                    filter_type = f.get("filter_type", "peak")
+                    freq = f.get("freq", 0)
+                    q = f.get("q", 1)
+                    gain = f.get("db_gain", 0)
+                    html_parts.append(
+                        f"Filter {j}: {filter_type.upper()} @ {freq:.1f} Hz, Q={q:.2f}, Gain={gain:+.1f} dB<br>\n"
+                    )
+                html_parts.append("                    </div>\n")
+            html_parts.append("                </div>\n")
+        elif eq_filters:
+            html_parts.append(
+                """
                 <div class="filters-section">
                     <h3>EQ Filters</h3>
                     <div class="filter-list">

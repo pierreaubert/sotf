@@ -108,6 +108,9 @@ actions!(
         QuickAddDelay,
         QuickAddAec,
         QuickAddBeamformer,
+        QuickAddTransientShaper,
+        QuickAddSaturation,
+        QuickAddDynamicEq,
         // Level meter actions
         SelectNextMeterGroup,
         SelectPrevMeterGroup,

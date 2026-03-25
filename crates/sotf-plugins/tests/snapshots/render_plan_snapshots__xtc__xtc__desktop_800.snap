@@ -5,6 +5,11 @@ expression: plan
 {
   "plugin_type": "xtc",
   "width": 800.0,
+  "design_language": "neutral",
+  "corner_radius_md": 8.0,
+  "min_touch_target": 32.0,
+  "toggle_variant": "capsule",
+  "label_position": "below",
   "orientation": "horizontal",
   "knob_size": "sm",
   "group_direction": "row",

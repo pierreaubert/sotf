@@ -1723,6 +1723,7 @@ impl PlayerView {
                 target_curve: None,
                 optimizer: OptimizerConfig::default(),
                 recording_config: Some(recording_config),
+                cea2034_cache: None,
             };
 
             (room_config, recording_dir)

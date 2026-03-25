@@ -1256,6 +1256,9 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "stereo_imager",
             "transient_shaper",
             "de_esser",
+            "dither",
+            "dynamic_eq",
+            "saturation",
         ];
 
         let plugin_type_lower = config.plugin_type.to_lowercase();

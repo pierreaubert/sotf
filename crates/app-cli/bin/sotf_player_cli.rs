@@ -1890,29 +1890,13 @@ fn create_pnd_plugin_config(args: &PndArgs) -> Result<PluginConfig, String> {
 
 fn create_fletcher_munson_plugin_config(args: &FletcherMunsonArgs) -> Result<PluginConfig, String> {
     use serde_json::json;
+    // Fletcher-Munson merged into LoudnessCompensation Auto mode
     Ok(PluginConfig {
-        plugin_type: "fletcher_munson".to_string(),
+        plugin_type: "loudness_compensation".to_string(),
         parameters: json!({
+            "mode": 2,
             "playback_volume_db": 0.0,
-            "reference_level_db": args.reference_level_db,
-            "smoothing_ms": args.smoothing_ms,
-            "enabled": true,
-            "band1_freq": args.band1_freq,
-            "band1_q": args.band1_q,
-            "band1_max_gain": args.band1_max_gain,
-            "band1_slope": args.band1_slope,
-            "band2_freq": args.band2_freq,
-            "band2_q": args.band2_q,
-            "band2_max_gain": args.band2_max_gain,
-            "band2_slope": args.band2_slope,
-            "band3_freq": args.band3_freq,
-            "band3_q": args.band3_q,
-            "band3_max_gain": args.band3_max_gain,
-            "band3_slope": args.band3_slope,
-            "band4_freq": args.band4_freq,
-            "band4_q": args.band4_q,
-            "band4_max_gain": args.band4_max_gain,
-            "band4_slope": args.band4_slope,
+            "reference_level_db": 83.0 + args.reference_level_db as f64,
         }),
     })
 }
@@ -2999,6 +2983,10 @@ fn build_rack_mode_plugins(
                             auto_gain_enabled,
                             auto_gain_max_db: auto_gain_max_db as f64,
                             auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
+                            mode: 0,
+                            playback_level_db: 70.0,
+                            reference_level_db: 83.0,
+                            playback_volume_db: 0.0,
                         };
                     }
                 } else {
@@ -3016,6 +3004,10 @@ fn build_rack_mode_plugins(
                             auto_gain_enabled,
                             auto_gain_max_db: auto_gain_max_db as f64,
                             auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
+                            mode: 0,
+                            playback_level_db: 70.0,
+                            reference_level_db: 83.0,
+                            playback_volume_db: 0.0,
                         };
                     }
                 }
@@ -3286,37 +3278,28 @@ fn build_rack_mode_plugins(
                 log::info!("Rack: Added PND plugin");
             }
             "fletcher-munson" | "fm" => {
-                let idx = chain.add_plugin(&PluginType::FletcherMunson);
+                // FletcherMunson merged into LoudnessCompensation Auto mode
+                let idx = chain.add_plugin(&PluginType::LoudnessCompensation);
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
-                    plugin.settings = PluginSettings::FletcherMunson {
-                        playback_volume_db: 0.0,
-                        reference_level_db: plugins.fletcher_munson.reference_level_db as f64,
-                        enabled: true,
-                        band1_freq: plugins.fletcher_munson.band1_freq,
-                        band1_q: plugins.fletcher_munson.band1_q,
-                        band1_max_gain: plugins.fletcher_munson.band1_max_gain,
-                        band1_slope: plugins.fletcher_munson.band1_slope,
-                        band2_freq: plugins.fletcher_munson.band2_freq,
-                        band2_q: plugins.fletcher_munson.band2_q,
-                        band2_max_gain: plugins.fletcher_munson.band2_max_gain,
-                        band2_slope: plugins.fletcher_munson.band2_slope,
-                        band3_freq: plugins.fletcher_munson.band3_freq,
-                        band3_q: plugins.fletcher_munson.band3_q,
-                        band3_max_gain: plugins.fletcher_munson.band3_max_gain,
-                        band3_slope: plugins.fletcher_munson.band3_slope,
-                        band4_freq: plugins.fletcher_munson.band4_freq,
-                        band4_q: plugins.fletcher_munson.band4_q,
-                        band4_max_gain: plugins.fletcher_munson.band4_max_gain,
-                        band4_slope: plugins.fletcher_munson.band4_slope,
-                        smoothing_ms: plugins.fletcher_munson.smoothing_ms as f64,
+                    plugin.settings = PluginSettings::LoudnessCompensation {
+                        low_freq: 100.0,
+                        low_gain: 6.0,
+                        high_freq: 10000.0,
+                        high_gain: 6.0,
+                        mid_enabled: true,
+                        mid_freq: 3000.0,
+                        mid_gain: 3.0,
+                        mid_q: 0.707,
                         auto_gain_enabled: false,
                         auto_gain_max_db: 12.0,
                         auto_gain_smoothing_ms: 100.0,
-                        auto_gain_loudness_type: 0,
-                        iso_226: false,
+                        mode: 2, // Auto
+                        playback_level_db: 70.0,
+                        reference_level_db: 83.0 + plugins.fletcher_munson.reference_level_db as f64,
+                        playback_volume_db: 0.0,
                     };
                 }
-                log::info!("Rack: Added FletcherMunson plugin");
+                log::info!("Rack: Added LoudnessCompensation (Auto/FM compat) plugin");
             }
             "convolution" | "ir" => {
                 let ir_path = plugins

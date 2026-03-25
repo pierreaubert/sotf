@@ -1,0 +1,16 @@
+[package]
+name = "sotf-plugin-dynamic-eq"
+description = "SOTF Dynamic EQ plugin - frequency-selective dynamics"
+version = "0.5.4"
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_dynamic_eq"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

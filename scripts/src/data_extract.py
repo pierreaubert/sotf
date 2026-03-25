@@ -108,6 +108,60 @@ def extract_crossover_frequencies(channel_data: dict) -> list[float]:
     return sorted(crossover_freqs)
 
 
+def extract_eq_passes(channel_data: dict) -> list[dict]:
+    """
+    Extract EQ plugins from a channel, grouped by pass label.
+
+    The 3-pass pipeline labels EQ plugins as:
+    - "cea2034_speaker_correction" (Pass 1)
+    - "room_eq_correction" (Pass 2, or unlabeled)
+    - "user_preference" (Pass 3)
+
+    Unlabeled EQ plugins are assigned to "Room EQ".
+
+    Returns:
+        List of dicts with keys: label, display_name, filters, color
+    """
+    plugins = channel_data.get("plugins", [])
+
+    PASS_DISPLAY_NAMES = {
+        "cea2034_speaker_correction": "Pass 1: Speaker Correction (CEA2034)",
+        "room_eq_correction": "Pass 2: Room EQ",
+        "user_preference": "Pass 3: User Preference",
+    }
+
+    PASS_COLORS = {
+        "cea2034_speaker_correction": "rgba(255, 165, 0, 0.9)",   # orange
+        "room_eq_correction": "rgba(100, 100, 255, 0.9)",         # blue
+        "user_preference": "rgba(180, 100, 255, 0.9)",            # purple
+    }
+
+    passes: list[dict] = []
+
+    for plugin in plugins:
+        if plugin.get("plugin_type") != "eq":
+            continue
+
+        params = plugin.get("parameters", {})
+        label = params.get("label", "")
+        filters = params.get("filters", [])
+
+        if not filters:
+            continue
+
+        display_name = PASS_DISPLAY_NAMES.get(label, "Room EQ")
+        color = PASS_COLORS.get(label, "rgba(100, 100, 255, 0.9)")
+
+        passes.append({
+            "label": label,
+            "display_name": display_name,
+            "filters": filters,
+            "color": color,
+        })
+
+    return passes
+
+
 def get_all_crossover_frequencies(data: dict) -> list[float]:
     """
     Extract all unique crossover frequencies from all channels.

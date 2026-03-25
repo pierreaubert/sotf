@@ -417,20 +417,8 @@ impl_param_accessors! {
             low_freq: f64, low_gain: f64, high_freq: f64, high_gain: f64,
             mid_enabled: bool, mid_freq: f64, mid_gain: f64, mid_q: f64,
             auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
-        ]
-    },
-    FletcherMunson {
-        params: param_specs::fletcher_munson::PARAMS,
-        layout: Some(&param_specs::fletcher_munson::LAYOUT),
-        fields: [
-            playback_volume_db: f64, reference_level_db: f64, enabled: bool, smoothing_ms: f64,
-            auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
-            auto_gain_loudness_type: i32,
-            band1_freq: f64, band1_q: f64, band1_max_gain: f64, band1_slope: f64,
-            band2_freq: f64, band2_q: f64, band2_max_gain: f64, band2_slope: f64,
-            band3_freq: f64, band3_q: f64, band3_max_gain: f64, band3_slope: f64,
-            band4_freq: f64, band4_q: f64, band4_max_gain: f64, band4_slope: f64,
-            iso_226: bool,
+            mode: usize, playback_level_db: f64, reference_level_db: f64,
+            playback_volume_db: f64,
         ]
     },
     Upmixer {
@@ -654,10 +642,28 @@ impl_param_accessors! {
             attack: f64, sustain: f64, sensitivity_db: f64,
             output_gain_db: f64, mix: f64,
         ]
+    },
+    Saturation {
+        params: param_specs::saturation::PARAMS,
+        layout: Some(&param_specs::saturation::LAYOUT),
+        fields: [
+            mode: f64, drive: f64, tone: f64,
+            exciter_freq: f64, oversampling: f64,
+            output_gain_db: f64, mix: f64,
+        ]
+    },
+    DynamicEq {
+        params: param_specs::dynamic_eq::PARAMS,
+        layout: Some(&param_specs::dynamic_eq::LAYOUT),
+        fields: [
+            num_bands: f64, threshold: f64, ratio: f64,
+            attack: f64, release: f64, knee: f64,
+            link_channels: bool, mix: f64,
+        ]
     }
     ;
     no_params_unit: [LoudnessMonitor];
-    no_params_struct: [SpectrumAnalyzer, Matrix]
+    no_params_struct: [SpectrumAnalyzer, Matrix, FletcherMunson]
 }
 
 // ============================================================================

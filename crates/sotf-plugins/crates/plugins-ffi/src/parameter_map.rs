@@ -139,16 +139,24 @@ impl ParameterMap {
     /// Get denormalized parameter value by index.
     ///
     /// Returns the raw value in parameter units (Hz, dB, etc.).
+    /// Uses the `ParamBridge` for correct scaling (log for Hz, linear for others).
     pub fn get_denormalized_by_index(&self, plugin: &dyn Plugin, index: usize) -> Option<f64> {
         let info = self.cached_infos.get(index)?;
         let param_id = unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") };
         let normalized = self.get_normalized(plugin, param_id)?;
-        Some(info.min_value + normalized * (info.max_value - info.min_value))
+        // Use bridge for correct denormalization (handles log scaling for Hz params)
+        self.bridge
+            .denormalize(index, normalized)
+            .or_else(|| {
+                // Fallback: linear denormalization
+                Some(info.min_value + normalized * (info.max_value - info.min_value))
+            })
     }
 
     /// Set denormalized parameter value by index.
     ///
     /// Takes the raw value in parameter units (Hz, dB, etc.) and normalizes internally.
+    /// Uses the `ParamBridge` for correct scaling (log for Hz, linear for others).
     pub fn set_denormalized_by_index(
         &self,
         plugin: &mut dyn Plugin,
@@ -158,12 +166,16 @@ impl ParameterMap {
         let info = self.cached_infos.get(index)
             .ok_or_else(|| format!("Parameter index {index} out of range"))?;
         let param_id = unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") };
-        let range = info.max_value - info.min_value;
-        let normalized = if range.abs() < f64::EPSILON {
-            0.0
-        } else {
-            ((value - info.min_value) / range).clamp(0.0, 1.0)
-        };
+        // Use bridge for correct normalization (handles log scaling for Hz params)
+        let normalized = self.bridge.normalize(index, value).unwrap_or_else(|| {
+            // Fallback: linear normalization
+            let range = info.max_value - info.min_value;
+            if range.abs() < f64::EPSILON {
+                0.0
+            } else {
+                ((value - info.min_value) / range).clamp(0.0, 1.0)
+            }
+        });
         self.set_normalized(plugin, param_id, normalized)
     }
 
@@ -357,7 +369,7 @@ fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::Param
         "Gain" | "gain" => gain::PARAMS,
         "Expander" | "expander" => expander::PARAMS,
         "Crossfeed" | "crossfeed" => crossfeed::PARAMS,
-        "FletcherMunson" | "fletcher_munson" => fletcher_munson::PARAMS,
+        "FletcherMunson" | "fletcher_munson" => loudness_compensation::PARAMS,
         "LoudnessCompensation" | "loudness_compensation" => loudness_compensation::PARAMS,
         // Multiband plugins have GLOBAL_PARAMS + per-band params (dynamic)
         "MultibandCompressor" | "multiband_compressor" => multiband_compressor::GLOBAL_PARAMS,
@@ -372,6 +384,11 @@ fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::Param
         "PND" | "pnd" => pnd::PARAMS,
         "Denoiser" | "denoiser" => denoiser::PARAMS,
         "Downmix" | "downmix" => downmix::PARAMS,
+        // Plugins without param_specs entries fall back to Plugin::parameters() in from_plugin()
+        "Delay" | "delay"
+        | "Matrix" | "matrix"
+        | "Crossover" | "crossover"
+        | "Resampler" | "resampler" => &[],
         other => panic!("get_param_specs: unknown plugin type \"{other}\" — add it to the match arm"),
     }
 }

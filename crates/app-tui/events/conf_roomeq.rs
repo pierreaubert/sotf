@@ -938,6 +938,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
             decomposed_correction: None,
             strategy: "lshade".to_string(),
             target_response: None,
+            cea2034_correction: None,
         };
 
         let room_config = RoomConfig {
@@ -948,6 +949,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
             target_curve: None,
             optimizer,
             recording_config: None,
+            cea2034_cache: None,
         };
 
         let progress_slot2 = progress_slot.clone();

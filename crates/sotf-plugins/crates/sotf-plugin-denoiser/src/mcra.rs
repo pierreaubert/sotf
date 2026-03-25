@@ -89,6 +89,9 @@ impl DenoiserPlugin {
         let reset_window_a = frame.is_multiple_of(l);
         let reset_window_b = frame % l == half_l;
 
+        // Use previous frame's learning_active as fast-adapt trigger
+        // (avoids chicken-and-egg: we need quiet_ratio before the loop)
+        let use_fast_adapt = self.learning_active;
         // Track whether we're learning (quiet moment detected)
         let mut quiet_bins = 0;
 
@@ -130,7 +133,12 @@ impl DenoiserPlugin {
             // Step 5: Update noise estimate with adaptive smoothing
             // When p is high (speech present), alpha_d → 1 → slow/no update
             // When p is low (speech absent), alpha_d → alpha_s → normal update
-            let alpha_d = alpha_s + (1.0 - alpha_s) * p;
+            // Fast adaptation: when previous frame was mostly quiet (learning_active),
+            // use 2x faster tracking for low-speech bins to converge ~265ms vs ~530ms.
+            let mut alpha_d = alpha_s + (1.0 - alpha_s) * p;
+            if use_fast_adapt && p < 0.3 {
+                alpha_d /= 2.0; // 2x faster tracking
+            }
             let noise_est = alpha_d * self.noise_psd[channel][k] + (1.0 - alpha_d) * power;
             self.noise_psd[channel][k] = noise_est;
 

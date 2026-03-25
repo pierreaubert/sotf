@@ -6,7 +6,6 @@
 //! Run: cargo test -p sotf-plugins --test render_plan_snapshots
 //! Review: cargo insta review
 
-use sotf_host::plugin_params::PluginParamDef;
 use sotf_host::render_plan::build_render_plan;
 
 /// Device profiles covering all layout solver breakpoints.
@@ -59,7 +58,8 @@ snapshot_plugin!(denoiser, sotf_plugin_denoiser::params::Params);
 snapshot_plugin!(dither, sotf_plugin_dither::params::Params);
 snapshot_plugin!(downmix, sotf_plugin_downmix::params::Params);
 
-snapshot_plugin!(fletcher_munson, sotf_plugin_fletcher_munson::params::Params);
+// fletcher_munson merged into loudness_compensation
+snapshot_plugin!(fletcher_munson, sotf_plugin_loudness_compensation::params::Params);
 snapshot_plugin!(gain, sotf_plugin_gain::params::Params);
 snapshot_plugin!(gate, sotf_plugin_gate::params::Params);
 snapshot_plugin!(limiter, sotf_plugin_limiter::params::Params);

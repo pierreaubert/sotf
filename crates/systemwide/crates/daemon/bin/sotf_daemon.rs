@@ -1202,6 +1202,9 @@ fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::AmbisonicsDecoder => "ambisonics_decoder",
         PluginType::StereoImager => "stereo_imager",
         PluginType::DeEsser => "de_esser",
+        PluginType::TransientShaper => "transient_shaper",
+        PluginType::Saturation => "saturation",
+        PluginType::DynamicEq => "dynamic_eq",
     }
 }
 
@@ -1233,6 +1236,9 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
         PluginType::AmbisonicsDecoder => "Spatial & Routing",
         PluginType::StereoImager => "Spatial & Routing",
         PluginType::DeEsser => "Dynamics",
+        PluginType::TransientShaper => "Dynamics",
+        PluginType::Saturation => "Effects",
+        PluginType::DynamicEq => "Dynamics",
     }
 }
 

@@ -12,7 +12,8 @@ use sotf_plugins::{
     AecPlugin, AecPluginParams, BeamformerPlugin, BeamformerPluginParams, CompressorPluginParams, ConvolutionPlugin,
     ConvolutionPluginParams, CrossoverPlugin, CrossoverPluginParams, DelayPlugin, DelayPluginParams,
     DeEsserPlugin, DeEsserPluginParams, DenoiserPlugin, DenoiserPluginParams,
-    EqPluginParams, ExpanderPluginParams, FletcherMunsonPluginParams, GainPluginParams,
+    DynamicEqPlugin, DynamicEqPluginParams,
+    EqPluginParams, ExpanderPluginParams, GainPluginParams,
     GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams,
     LoudnessMonitorPlugin, MultibandCompressorPluginParams, MultibandExpanderPluginParams, Plugin,
     PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig, StereoImagerPluginParams, UpmixerPluginParams,
@@ -936,6 +937,14 @@ fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "dynamic_eq" => {
+            let params: DynamicEqPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse dynamic EQ plugin parameters: {}", e))?;
+
+            let plugin = DynamicEqPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         "expander" => {
             let params: ExpanderPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse expander plugin parameters: {}", e))?;
@@ -1024,14 +1033,15 @@ fn create_plugin(
         }
 
         "fletcher_munson" => {
-            use sotf_plugins::FletcherMunsonPlugin;
+            // Backward compat: route to LoudnessCompensation in Auto mode
+            use sotf_plugins::plugin_loudness_compensation::FletcherMunsonCompat;
 
-            let params: FletcherMunsonPluginParams = serde_json::from_value(parameters.clone())
+            let fm: FletcherMunsonCompat = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse Fletcher-Munson plugin parameters: {}", e))?;
+            let lc_params = fm.into_loudness_compensation_params();
 
-            let mut plugin = FletcherMunsonPlugin::from_params(channels, params)?;
-            plugin.initialize(sample_rate)?;
-            Ok(Box::new(plugin))
+            let plugin = LoudnessCompensationPlugin::from_params(channels, lc_params)?;
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         "matrix" => {
@@ -1354,6 +1364,21 @@ fn create_plugin(
                 })?;
 
             let plugin = TransientShaperPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "saturation" => {
+            use sotf_plugins::{SaturationPlugin, SaturationPluginParams};
+
+            let params: SaturationPluginParams =
+                serde_json::from_value(parameters.clone()).map_err(|e| {
+                    format!(
+                        "Failed to parse saturation plugin parameters: {}",
+                        e
+                    )
+                })?;
+
+            let plugin = SaturationPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 

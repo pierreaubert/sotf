@@ -14,7 +14,7 @@ use sotf_plugins::{
     ABComparePlugin, AutoGain, AutoGainParams, BandMergePlugin, BandSplitPlugin,
     BinauralDecoderPlugin, ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin,
     CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, CrossoverPlugin, DenoiserPlugin,
-    DownmixPlugin, DownmixPluginParams, EqPlugin, ExpanderPlugin, FletcherMunsonPlugin, GainPlugin,
+    DownmixPlugin, DownmixPluginParams, EqPlugin, ExpanderPlugin, GainPlugin,
     GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
     LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
     MultibandExpanderPlugin, Plugin, PndPlugin, ProcessContext, ResamplerPlugin, RoomModel,
@@ -689,8 +689,16 @@ fn test_expander_zero_alloc() {
 #[test]
 #[serial]
 fn test_fletcher_munson_zero_alloc() {
-
-    let mut plugin = FletcherMunsonPlugin::new(2);
+    // Fletcher-Munson merged into LoudnessCompensation with mode=2 (Auto)
+    let mut plugin = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
+    plugin.set_parameter(
+        sotf_plugins::ParameterId::from("mode"),
+        sotf_plugins::ParameterValue::Int(2),
+    ).unwrap();
+    plugin.set_parameter(
+        sotf_plugins::ParameterId::from("playback_volume_db"),
+        sotf_plugins::ParameterValue::Float(-20.0),
+    ).unwrap();
     InPlacePlugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
@@ -705,7 +713,7 @@ fn test_fletcher_munson_zero_alloc() {
         let _ = InPlacePlugin::get_data(&plugin);
     }
 
-    assert_no_allocs("FletcherMunsonPlugin", || {
+    assert_no_allocs("FletcherMunsonPlugin (LoudnessComp Auto)", || {
         for _ in 0..1000 {
             plugin.process_in_place(&mut buffer, &ctx).unwrap();
             let _ = InPlacePlugin::get_data(&plugin);

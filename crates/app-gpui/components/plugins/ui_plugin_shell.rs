@@ -47,6 +47,8 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::StereoImager => theme.plugin_colors.upmixer,
         PluginType::DeEsser => theme.plugin_colors.compressor,
         PluginType::TransientShaper => theme.plugin_colors.compressor,
+        PluginType::Saturation => theme.plugin_colors.eq,
+        PluginType::DynamicEq => theme.plugin_colors.compressor,
     }
 }
 
@@ -101,6 +103,8 @@ pub fn plugin_icon(
         PluginType::StereoImager => "↔",
         PluginType::DeEsser => "S",
         PluginType::TransientShaper => "⚡",
+        PluginType::Saturation => "♨",
+        PluginType::DynamicEq => "D",
     }
 }
 
@@ -159,6 +163,8 @@ pub fn plugin_short_name(
         PluginType::StereoImager => "Stereo",
         PluginType::DeEsser => "De-Ess",
         PluginType::TransientShaper => "Transient",
+        PluginType::Saturation => "Saturate",
+        PluginType::DynamicEq => "DynEQ",
     }
 }
 

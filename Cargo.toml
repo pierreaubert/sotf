@@ -9,16 +9,16 @@ members = [
     "crates/sotf-plugins/crates/sotf-plugin-band-split",
     "crates/sotf-plugins/crates/sotf-plugin-binaural",
     "crates/sotf-plugins/crates/sotf-plugin-channel-mute-solo",
-    "crates/sotf-plugins/crates/sotf-plugin-compressor",
     "crates/sotf-plugins/crates/sotf-plugin-convolution",
     "crates/sotf-plugins/crates/sotf-plugin-crossfeed",
     "crates/sotf-plugins/crates/sotf-plugin-crossover",
     "crates/sotf-plugins/crates/sotf-plugin-delay",
+    "crates/sotf-plugins/crates/sotf-plugin-de-esser",
+    "crates/sotf-plugins/crates/sotf-plugin-dynamic-eq",
     "crates/sotf-plugins/crates/sotf-plugin-denoiser",
+    "crates/sotf-plugins/crates/sotf-plugin-dither",
     "crates/sotf-plugins/crates/sotf-plugin-downmix",
     "crates/sotf-plugins/crates/sotf-plugin-eq",
-    "crates/sotf-plugins/crates/sotf-plugin-expander",
-    "crates/sotf-plugins/crates/sotf-plugin-fletcher-munson",
     "crates/sotf-plugins/crates/sotf-plugin-gain",
     "crates/sotf-plugins/crates/sotf-plugin-gate",
     "crates/sotf-plugins/crates/sotf-plugin-hal-input",
@@ -31,6 +31,9 @@ members = [
     "crates/sotf-plugins/crates/sotf-plugin-multiband-expander",
     "crates/sotf-plugins/crates/sotf-plugin-pnd",
     "crates/sotf-plugins/crates/sotf-plugin-resampler",
+    "crates/sotf-plugins/crates/sotf-plugin-saturation",
+    "crates/sotf-plugins/crates/sotf-plugin-stereo-imager",
+    "crates/sotf-plugins/crates/sotf-plugin-transient-shaper",
     "crates/sotf-plugins/crates/sotf-plugin-upmixer",
     "crates/sotf-plugins/crates/sotf-plugin-xtc",
     "crates/sotf-plugins",
@@ -139,6 +142,7 @@ strsim = "0.11"
 tempfile = "3.23"
 thiserror = "2.0.17"
 criterion = "0.8.1"
+insta = { version = "1.42", features = ["json"] }
 serial_test = "3"
 which = "8"
 walkdir = "2"
@@ -193,16 +197,16 @@ sotf-plugin-beamformer = { path = "crates/sotf-plugins/crates/sotf-plugin-beamfo
 sotf-plugin-band-split = { path = "crates/sotf-plugins/crates/sotf-plugin-band-split" }
 sotf-plugin-binaural = { path = "crates/sotf-plugins/crates/sotf-plugin-binaural" }
 sotf-plugin-channel-mute-solo = { path = "crates/sotf-plugins/crates/sotf-plugin-channel-mute-solo" }
-sotf-plugin-compressor = { path = "crates/sotf-plugins/crates/sotf-plugin-compressor" }
 sotf-plugin-convolution = { path = "crates/sotf-plugins/crates/sotf-plugin-convolution" }
 sotf-plugin-crossfeed = { path = "crates/sotf-plugins/crates/sotf-plugin-crossfeed" }
 sotf-plugin-crossover = { path = "crates/sotf-plugins/crates/sotf-plugin-crossover" }
 sotf-plugin-delay = { path = "crates/sotf-plugins/crates/sotf-plugin-delay" }
+sotf-plugin-de-esser = { path = "crates/sotf-plugins/crates/sotf-plugin-de-esser" }
+sotf-plugin-dynamic-eq = { path = "crates/sotf-plugins/crates/sotf-plugin-dynamic-eq" }
 sotf-plugin-denoiser = { path = "crates/sotf-plugins/crates/sotf-plugin-denoiser" }
+sotf-plugin-dither = { path = "crates/sotf-plugins/crates/sotf-plugin-dither" }
 sotf-plugin-downmix = { path = "crates/sotf-plugins/crates/sotf-plugin-downmix" }
 sotf-plugin-eq = { path = "crates/sotf-plugins/crates/sotf-plugin-eq" }
-sotf-plugin-expander = { path = "crates/sotf-plugins/crates/sotf-plugin-expander" }
-sotf-plugin-fletcher-munson = { path = "crates/sotf-plugins/crates/sotf-plugin-fletcher-munson" }
 sotf-plugin-gain = { path = "crates/sotf-plugins/crates/sotf-plugin-gain" }
 sotf-plugin-gate = { path = "crates/sotf-plugins/crates/sotf-plugin-gate" }
 sotf-plugin-hal-input = { path = "crates/sotf-plugins/crates/sotf-plugin-hal-input" }
@@ -215,6 +219,9 @@ sotf-plugin-multiband-compressor = { path = "crates/sotf-plugins/crates/sotf-plu
 sotf-plugin-multiband-expander = { path = "crates/sotf-plugins/crates/sotf-plugin-multiband-expander" }
 sotf-plugin-pnd = { path = "crates/sotf-plugins/crates/sotf-plugin-pnd" }
 sotf-plugin-resampler = { path = "crates/sotf-plugins/crates/sotf-plugin-resampler" }
+sotf-plugin-saturation = { path = "crates/sotf-plugins/crates/sotf-plugin-saturation" }
+sotf-plugin-stereo-imager = { path = "crates/sotf-plugins/crates/sotf-plugin-stereo-imager" }
+sotf-plugin-transient-shaper = { path = "crates/sotf-plugins/crates/sotf-plugin-transient-shaper" }
 sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer", default-features = false }
 sotf-plugin-xtc = { path = "crates/sotf-plugins/crates/sotf-plugin-xtc" }
 sotf-iamf = { path = "crates/sotf-iamf" }

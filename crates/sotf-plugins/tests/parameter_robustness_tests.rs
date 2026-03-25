@@ -12,7 +12,7 @@
 use sotf_plugins::{
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, CrossoverPlugin,
-    DelayPlugin, DenoiserPlugin, DownmixPlugin, EqPlugin, ExpanderPlugin, FletcherMunsonPlugin,
+    DelayPlugin, DenoiserPlugin, DownmixPlugin, EqPlugin, ExpanderPlugin,
     GainPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
     LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
     MultibandExpanderPlugin, ParameterValue, Plugin, PndPlugin, ProcessContext, ResamplerPlugin,
@@ -115,9 +115,9 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     // 18. Downmix
     plugins.push(Box::new(DownmixPlugin::new(6)));
 
-    // 19. FletcherMunson
+    // 19. FletcherMunson → LoudnessCompensation Auto mode
     plugins.push(Box::new(InPlacePluginAdapter::new(
-        FletcherMunsonPlugin::new(2),
+        LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0),
     )));
 
     // 20. Matrix

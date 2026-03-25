@@ -2100,6 +2100,7 @@ impl RoomEqState {
             smooth_n: self.optimizer_config.smooth_n,
             decomposed_correction: None,
             target_response: None,
+            cea2034_correction: None,
         };
 
         log::info!(
@@ -2122,6 +2123,7 @@ impl RoomEqState {
             target_curve: None,
             optimizer,
             recording_config: None,
+            cea2034_cache: None,
         }
     }
 

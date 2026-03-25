@@ -59,12 +59,17 @@ impl DenoiserPlugin {
         self.learning_frames_count = 0;
     }
 
-    /// Start the noise learning process
+    /// Start the noise learning process.
+    ///
+    /// Also resets the live MCRA state for all channels so the noise
+    /// floor re-enters the bootstrap phase and converges on the current
+    /// noise environment from scratch.
     pub(super) fn start_learning(&mut self) {
         self.is_learning = true;
         self.learning_frames_count = 0;
         for ch in 0..self.channels {
             self.learning_accumulator[ch].fill(0.0);
+            self.reset_mcra(ch);
         }
     }
 

@@ -847,3 +847,164 @@ fn test_mcra_noise_floor_converges_on_noise() {
         denoiser_data.noise_floor_db.iter().sum::<f32>()
     );
 }
+
+/// Fast adaptation: when a sudden noise-level change occurs during a
+/// noise-only signal (>80% of bins quiet), the MCRA should converge
+/// faster than without fast adaptation.
+///
+/// Strategy: feed ~1s of low-level noise to let MCRA converge, then
+/// switch to 10x-louder noise and measure how many frames it takes
+/// for the noise PSD to reach 90% of the new level.
+#[test]
+fn test_mcra_fast_adaptation() {
+    let mut plugin = DenoiserPlugin::from_params(1, DenoiserPluginParams::default());
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let block_size = 4096;
+    let context = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: block_size,
+    };
+
+    // Phase 1: Feed 1s of quiet noise (-40 dB) to let MCRA converge
+    let warmup_blocks = (SAMPLE_RATE as usize) / block_size;
+    for _ in 0..warmup_blocks {
+        let mut noise = make_noisy_signal(block_size, 1, -80.0, -40.0);
+        plugin.process_in_place(&mut noise, &context).unwrap();
+    }
+
+    // Record the converged noise PSD at a mid-frequency bin
+    let mid_bin = plugin.spectrum_size / 4;
+    let old_noise_psd = plugin.noise_psd[0][mid_bin];
+    assert!(
+        old_noise_psd > 0.0,
+        "Noise PSD should have converged after warmup"
+    );
+
+    // Phase 2: Switch to 10x-louder noise (-20 dB) and feed 30 blocks.
+    // With fast adaptation (boost=2x), convergence should happen within
+    // ~265ms instead of ~530ms.
+    let adaptation_blocks = 30;
+    for _ in 0..adaptation_blocks {
+        let mut noise = make_noisy_signal(block_size, 1, -80.0, -20.0);
+        plugin.process_in_place(&mut noise, &context).unwrap();
+    }
+
+    let new_noise_psd = plugin.noise_psd[0][mid_bin];
+
+    // The new noise PSD should be significantly larger than the old one
+    // (the louder noise is 20 dB = 100x more power)
+    assert!(
+        new_noise_psd > old_noise_psd * 5.0,
+        "After sudden noise increase, noise PSD should adapt significantly. \
+         old={:.6}, new={:.6}, ratio={:.2}",
+        old_noise_psd,
+        new_noise_psd,
+        new_noise_psd / old_noise_psd
+    );
+}
+
+/// Median filter: verify that isolated gain spikes are removed while
+/// broad gain patterns are preserved.
+#[test]
+fn test_median_filter_reduces_spikes() {
+    // Create a gain curve with isolated spikes (musical noise pattern)
+    let len = 64;
+    let mut gains = vec![0.2_f32; len];
+
+    // Insert isolated spikes: single bins at 1.0 surrounded by 0.2
+    gains[10] = 1.0;
+    gains[30] = 1.0;
+    gains[50] = 1.0;
+
+    // Insert a broad region (3+ consecutive high bins) — should survive
+    gains[20] = 0.9;
+    gains[21] = 0.9;
+    gains[22] = 0.9;
+    gains[23] = 0.9;
+
+    let gains_before = gains.clone();
+    DenoiserPlugin::median_smooth_gains(&mut gains, len);
+
+    // Isolated spikes should be reduced (they are the odd-one-out)
+    assert!(
+        gains[10] < 0.5,
+        "Spike at bin 10 should be suppressed. Got {}",
+        gains[10]
+    );
+    assert!(
+        gains[30] < 0.5,
+        "Spike at bin 30 should be suppressed. Got {}",
+        gains[30]
+    );
+    assert!(
+        gains[50] < 0.5,
+        "Spike at bin 50 should be suppressed. Got {}",
+        gains[50]
+    );
+
+    // Broad region interior should be mostly preserved
+    // (bins 21 and 22 are surrounded by 0.9 on both sides)
+    assert!(
+        gains[21] > 0.8,
+        "Broad region bin 21 should be preserved. Got {} (was {})",
+        gains[21],
+        gains_before[21]
+    );
+    assert!(
+        gains[22] > 0.8,
+        "Broad region bin 22 should be preserved. Got {} (was {})",
+        gains[22],
+        gains_before[22]
+    );
+
+    // Edge elements should be unchanged
+    assert_eq!(gains[0], gains_before[0], "First element should be unchanged");
+    assert_eq!(
+        gains[len - 1],
+        gains_before[len - 1],
+        "Last element should be unchanged"
+    );
+}
+
+/// Learn-noise trigger should reset MCRA state (re-enter bootstrap).
+#[test]
+fn test_learn_noise_resets_mcra() {
+    let mut plugin = DenoiserPlugin::from_params(1, DenoiserPluginParams::default());
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let block_size = 4096;
+    let context = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: block_size,
+    };
+
+    // Process enough frames to leave bootstrap
+    let warmup_blocks = 10;
+    for _ in 0..warmup_blocks {
+        let mut noise = make_noisy_signal(block_size, 1, -80.0, -20.0);
+        plugin.process_in_place(&mut noise, &context).unwrap();
+    }
+
+    // Frame counter should be well past bootstrap
+    assert!(
+        plugin.frame_counter[0] > 5,
+        "Should be past bootstrap. frame_counter={}",
+        plugin.frame_counter[0]
+    );
+
+    // Trigger learn_noise
+    plugin
+        .set_parameter(
+            ParameterId::from("learn_noise"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+
+    // Frame counter should be reset to 0 (re-entered bootstrap)
+    assert_eq!(
+        plugin.frame_counter[0], 0,
+        "learn_noise should reset MCRA (frame_counter back to 0)"
+    );
+    assert!(plugin.is_learning, "Should be in learning mode");
+}

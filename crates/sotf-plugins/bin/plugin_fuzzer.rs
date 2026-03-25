@@ -21,7 +21,7 @@ use sotf_plugins::{
     ConvolutionPlugin, ConvolutionPluginParams, CrossfeedMode, CrossfeedPlugin,
     CrossfeedPluginParams, CrossoverPlugin, CrossoverPluginParams, DawHost, DelayPlugin,
     DelayPluginParams, DenoiserPlugin, DenoiserPluginParams, DownmixPlugin, DownmixPluginParams,
-    EqPlugin, EqPluginParams, FletcherMunsonPlugin, FletcherMunsonPluginParams, GainPlugin,
+    EqPlugin, EqPluginParams, GainPlugin,
     GainPluginParams, GatePlugin, GatePluginParams, InPlacePluginAdapter, LimiterPlugin,
     LimiterPluginParams, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
     LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams,
@@ -690,6 +690,10 @@ impl PluginFuzzer for LoudnessCompensationFuzzer {
             auto_gain_max_db: 12.0,
             auto_gain_smoothing_ms: 100.0,
             auto_gain_position: "post".to_string(),
+            mode: 0,
+            playback_level_db: 70.0,
+            reference_level_db: 83.0,
+            playback_volume_db: 0.0,
         };
         let plugin = LoudnessCompensationPlugin::from_params(channels, params)
             .expect("Failed to create LoudnessCompensationPlugin");
@@ -1154,22 +1158,23 @@ struct FletcherMunsonFuzzer;
 impl PluginFuzzer for FletcherMunsonFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let playback_volume_db = rng.random_range(-60.0..0.0);
-        let reference_level_db = rng.random_range(-30.0..0.0);
+        let reference_level_db = rng.random_range(60.0..100.0);
 
-        let params = FletcherMunsonPluginParams {
+        let params = LoudnessCompensationPluginParams {
+            mode: 2, // Auto
             playback_volume_db,
             reference_level_db,
             ..Default::default()
         };
-        let plugin = FletcherMunsonPlugin::from_params(channels, params)
-            .expect("Failed to create FletcherMunsonPlugin");
+        let plugin = LoudnessCompensationPlugin::from_params(channels, params)
+            .expect("Failed to create FletcherMunsonPlugin (LoudnessCompensation Auto)");
 
         let desc = format!(
             "playback_vol={:.1}dB ref_level={:.1}dB",
             playback_volume_db, reference_level_db
         );
 
-        (Box::new(plugin), desc)
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
     }
 }
 

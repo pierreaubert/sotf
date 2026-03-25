@@ -819,7 +819,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.16"
+version = "0.4.17"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -1815,6 +1815,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973"
 dependencies = [
  "crossbeam-utils",
+]
+
+[[package]]
+name = "console"
+version = "0.15.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "054ccb5b10f9f2cbf51eb355ca1d05c2d279ce1804688d0db74b4733a5aeafd8"
+dependencies = [
+ "encode_unicode",
+ "libc",
+ "once_cell",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2954,6 +2966,12 @@ dependencies = [
  "vswhom",
  "winreg 0.55.0",
 ]
+
+[[package]]
+name = "encode_unicode"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "encoding_rs"
@@ -5055,6 +5073,19 @@ checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
 dependencies = [
  "block-padding",
  "generic-array",
+]
+
+[[package]]
+name = "insta"
+version = "1.46.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e82db8c87c7f1ccecb34ce0c24399b8a73081427f3c7c50a5d597925356115e4"
+dependencies = [
+ "console",
+ "once_cell",
+ "serde",
+ "similar",
+ "tempfile",
 ]
 
 [[package]]
@@ -7773,16 +7804,15 @@ dependencies = [
  "sotf-plugin-beamformer",
  "sotf-plugin-binaural",
  "sotf-plugin-channel-mute-solo",
- "sotf-plugin-compressor",
  "sotf-plugin-convolution",
  "sotf-plugin-crossfeed",
  "sotf-plugin-crossover",
+ "sotf-plugin-de-esser",
  "sotf-plugin-delay",
  "sotf-plugin-denoiser",
  "sotf-plugin-downmix",
+ "sotf-plugin-dynamic-eq",
  "sotf-plugin-eq",
- "sotf-plugin-expander",
- "sotf-plugin-fletcher-munson",
  "sotf-plugin-gain",
  "sotf-plugin-gate",
  "sotf-plugin-limiter",
@@ -7793,6 +7823,9 @@ dependencies = [
  "sotf-plugin-multiband-expander",
  "sotf-plugin-pnd",
  "sotf-plugin-resampler",
+ "sotf-plugin-saturation",
+ "sotf-plugin-stereo-imager",
+ "sotf-plugin-transient-shaper",
  "sotf-plugin-upmixer",
  "sotf-plugin-xtc",
 ]
@@ -9950,6 +9983,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "similar"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
+
+[[package]]
 name = "simplecss"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10252,10 +10291,12 @@ name = "sotf-host"
 version = "0.5.88"
 dependencies = [
  "arc-swap",
+ "audioadapter-buffers",
  "bincode",
  "chrono",
  "clap",
  "criterion",
+ "insta",
  "log",
  "math-dsp",
  "math-iir-fir",
@@ -10263,6 +10304,7 @@ dependencies = [
  "rayon",
  "realfft",
  "rtrb",
+ "rubato",
  "rusqlite",
  "rustfft 6.4.1",
  "serde",
@@ -10314,7 +10356,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sotf-host",
- "sotf-plugin-compressor",
+ "sotf-plugin-multiband-compressor",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -10386,12 +10428,12 @@ dependencies = [
  "serde",
  "serde_json",
  "sotf-host",
- "sotf-plugin-compressor",
  "sotf-plugin-delay",
  "sotf-plugin-eq",
  "sotf-plugin-gain",
  "sotf-plugin-gate",
  "sotf-plugin-limiter",
+ "sotf-plugin-multiband-compressor",
 ]
 
 [[package]]
@@ -10475,18 +10517,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sotf-plugin-compressor"
-version = "0.5.7"
-dependencies = [
- "criterion",
- "math-dsp",
- "math-iir-fir",
- "serde",
- "serde_json",
- "sotf-host",
-]
-
-[[package]]
 name = "sotf-plugin-convolution"
 version = "0.5.6"
 dependencies = [
@@ -10526,6 +10556,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-plugin-de-esser"
+version = "0.5.4"
+dependencies = [
+ "math-dsp",
+ "math-iir-fir",
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
 name = "sotf-plugin-delay"
 version = "0.5.4"
 dependencies = [
@@ -10549,6 +10590,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-plugin-dither"
+version = "0.5.8"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
 name = "sotf-plugin-downmix"
 version = "0.5.22"
 dependencies = [
@@ -10562,40 +10612,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-plugin-dynamic-eq"
+version = "0.5.4"
+dependencies = [
+ "math-dsp",
+ "math-iir-fir",
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
 name = "sotf-plugin-eq"
 version = "0.5.65"
 dependencies = [
- "audioadapter-buffers",
  "gpui",
  "gpui-px",
  "gpui-ui-kit",
  "math-iir-fir",
  "plugins-gpui",
- "rubato",
  "serde",
  "sotf-host",
  "sotf-midi",
-]
-
-[[package]]
-name = "sotf-plugin-expander"
-version = "0.5.17"
-dependencies = [
- "math-dsp",
- "serde",
- "serde_json",
- "sotf-host",
-]
-
-[[package]]
-name = "sotf-plugin-fletcher-munson"
-version = "0.5.2"
-dependencies = [
- "math-dsp",
- "math-iir-fir",
- "serde",
- "serde_json",
- "sotf-host",
 ]
 
 [[package]]
@@ -10612,6 +10650,7 @@ name = "sotf-plugin-gate"
 version = "0.5.4"
 dependencies = [
  "math-dsp",
+ "math-iir-fir",
  "serde",
  "serde_json",
  "sotf-host",
@@ -10728,6 +10767,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-plugin-saturation"
+version = "0.5.4"
+dependencies = [
+ "math-dsp",
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
+name = "sotf-plugin-stereo-imager"
+version = "0.5.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
+name = "sotf-plugin-transient-shaper"
+version = "0.5.4"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
 name = "sotf-plugin-upmixer"
 version = "0.5.114"
 dependencies = [
@@ -10785,6 +10852,7 @@ dependencies = [
  "env_logger",
  "hound",
  "id3",
+ "insta",
  "libc",
  "log",
  "math-dsp",
@@ -10816,16 +10884,16 @@ dependencies = [
  "sotf-plugin-beamformer",
  "sotf-plugin-binaural",
  "sotf-plugin-channel-mute-solo",
- "sotf-plugin-compressor",
  "sotf-plugin-convolution",
  "sotf-plugin-crossfeed",
  "sotf-plugin-crossover",
+ "sotf-plugin-de-esser",
  "sotf-plugin-delay",
  "sotf-plugin-denoiser",
+ "sotf-plugin-dither",
  "sotf-plugin-downmix",
+ "sotf-plugin-dynamic-eq",
  "sotf-plugin-eq",
- "sotf-plugin-expander",
- "sotf-plugin-fletcher-munson",
  "sotf-plugin-gain",
  "sotf-plugin-gate",
  "sotf-plugin-hal-input",
@@ -10838,6 +10906,9 @@ dependencies = [
  "sotf-plugin-multiband-expander",
  "sotf-plugin-pnd",
  "sotf-plugin-resampler",
+ "sotf-plugin-saturation",
+ "sotf-plugin-stereo-imager",
+ "sotf-plugin-transient-shaper",
  "sotf-plugin-upmixer",
  "sotf-plugin-xtc",
  "symphonia",

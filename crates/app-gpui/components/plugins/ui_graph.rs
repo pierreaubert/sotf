@@ -524,6 +524,8 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::StereoImager => theme.accent,
         PluginType::DeEsser => theme.warning,
         PluginType::TransientShaper => theme.warning,
+        PluginType::Saturation => theme.warning,
+        PluginType::DynamicEq => theme.warning,
     }
 }
 
@@ -580,6 +582,10 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::DeEsser => (2, 2),
         // Transient shaper: in-place processing
         PluginType::TransientShaper => (2, 2),
+        // Saturation: in-place processing
+        PluginType::Saturation => (2, 2),
+        // Dynamic EQ: in-place processing
+        PluginType::DynamicEq => (2, 2),
     }
 }
 

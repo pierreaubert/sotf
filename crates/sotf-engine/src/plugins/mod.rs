@@ -151,6 +151,8 @@ pub enum PluginType {
     StereoImager,
     DeEsser,
     TransientShaper,
+    Saturation,
+    DynamicEq,
 }
 
 impl PluginType {
@@ -189,6 +191,8 @@ impl PluginType {
             Self::StereoImager => "Stereo Imager",
             Self::DeEsser => "De-Esser",
             Self::TransientShaper => "Transient Shaper",
+            Self::Saturation => "Saturation",
+            Self::DynamicEq => "Dynamic EQ",
         }
     }
 
@@ -227,6 +231,8 @@ impl PluginType {
             Self::StereoImager => "Multi-band M/S stereo width control",
             Self::DeEsser => "Sibilance reduction via bandpass detection and compression",
             Self::TransientShaper => "SPL Transient Designer — attack/sustain shaping",
+            Self::Saturation => "Harmonic saturation / exciter with multiple modes",
+            Self::DynamicEq => "Frequency-selective dynamics (hybrid EQ + compressor)",
         }
     }
 
@@ -265,6 +271,8 @@ impl PluginType {
             Self::StereoImager,
             Self::DeEsser,
             Self::TransientShaper,
+            Self::Saturation,
+            Self::DynamicEq,
         ]
     }
 
@@ -305,7 +313,9 @@ impl PluginType {
             | Self::MonoToStereo
             | Self::StereoImager
             | Self::DeEsser
-            | Self::TransientShaper => ReleaseChannel::Beta,
+            | Self::TransientShaper
+            | Self::Saturation
+            | Self::DynamicEq => ReleaseChannel::Beta,
 
             Self::BinauralDecoder
             | Self::Convolution
@@ -332,11 +342,12 @@ use sotf_plugins::param_specs::convolution as convolution_specs;
 use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
 use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::delay as delay_specs;
+use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
 use sotf_plugins::param_specs::find_by_key as pk;
-use sotf_plugins::param_specs::fletcher_munson as fm_specs;
+// fletcher_munson specs removed — merged into loudness_compensation
 use sotf_plugins::param_specs::gain as gain_specs;
 use sotf_plugins::param_specs::gate as gate_specs;
 use sotf_plugins::param_specs::limiter as limiter_specs;
@@ -348,6 +359,7 @@ use sotf_plugins::param_specs::multiband_expander as mb_expander_specs;
 use sotf_plugins::param_specs::pnd as pnd_specs;
 use sotf_plugins::param_specs::spectrum as spectrum_specs;
 use sotf_plugins::param_specs::upmixer as upmixer_specs;
+use sotf_plugins::param_specs::saturation as saturation_specs;
 use sotf_plugins::param_specs::stereo_imager as stereo_imager_specs;
 use sotf_plugins::param_specs::transient_shaper as transient_shaper_specs;
 use sotf_plugins::param_specs::xtc as xtc_specs;
@@ -429,32 +441,34 @@ sotf_plugins::serde_param_default! {
     fn default_lc_mid_freq() -> f64 = "mid_freq";
     fn default_lc_mid_gain() -> f64 = "mid_gain";
     fn default_lc_mid_q() -> f64 = "mid_q";
+    fn default_lc_mode() -> usize = "mode";
+    fn default_lc_playback_level_db() -> f64 = "playback_level_db";
+    fn default_lc_reference_level_db() -> f64 = "reference_level_db";
 }
 
-sotf_plugins::serde_param_default! {
-    fm_specs::PARAMS;
-    fn default_fm_reference_level_db() -> f64 = "reference_level_db";
-    fn default_fm_enabled() -> bool = "enabled";
-    fn default_fm_smoothing_ms() -> f64 = "smoothing_ms";
-    fn default_fm_auto_gain_max_db() -> f64 = "auto_gain_max_db";
-    fn default_fm_auto_gain_smoothing_ms() -> f64 = "auto_gain_smoothing_ms";
-    fn default_fm_band1_freq() -> f64 = "band1_freq";
-    fn default_fm_band1_q() -> f64 = "band1_q";
-    fn default_fm_band1_max_gain() -> f64 = "band1_max_gain";
-    fn default_fm_band1_slope() -> f64 = "band1_slope";
-    fn default_fm_band2_freq() -> f64 = "band2_freq";
-    fn default_fm_band2_q() -> f64 = "band2_q";
-    fn default_fm_band2_max_gain() -> f64 = "band2_max_gain";
-    fn default_fm_band2_slope() -> f64 = "band2_slope";
-    fn default_fm_band3_freq() -> f64 = "band3_freq";
-    fn default_fm_band3_q() -> f64 = "band3_q";
-    fn default_fm_band3_max_gain() -> f64 = "band3_max_gain";
-    fn default_fm_band3_slope() -> f64 = "band3_slope";
-    fn default_fm_band4_freq() -> f64 = "band4_freq";
-    fn default_fm_band4_q() -> f64 = "band4_q";
-    fn default_fm_band4_max_gain() -> f64 = "band4_max_gain";
-    fn default_fm_band4_slope() -> f64 = "band4_slope";
-}
+// Hardcoded defaults for backward-compat FletcherMunson deserialization.
+// These match the old sotf-plugin-fletcher-munson defaults.
+fn default_fm_reference_level_db() -> f64 { -14.0 }
+fn default_fm_enabled() -> bool { true }
+fn default_fm_smoothing_ms() -> f64 { 30.0 }
+fn default_fm_auto_gain_max_db() -> f64 { 12.0 }
+fn default_fm_auto_gain_smoothing_ms() -> f64 { 100.0 }
+fn default_fm_band1_freq() -> f64 { 60.0 }
+fn default_fm_band1_q() -> f64 { 0.5 }
+fn default_fm_band1_max_gain() -> f64 { 15.0 }
+fn default_fm_band1_slope() -> f64 { 0.6 }
+fn default_fm_band2_freq() -> f64 { 250.0 }
+fn default_fm_band2_q() -> f64 { 0.707 }
+fn default_fm_band2_max_gain() -> f64 { 8.0 }
+fn default_fm_band2_slope() -> f64 { 0.4 }
+fn default_fm_band3_freq() -> f64 { 3500.0 }
+fn default_fm_band3_q() -> f64 { 1.0 }
+fn default_fm_band3_max_gain() -> f64 { 4.0 }
+fn default_fm_band3_slope() -> f64 { 0.2 }
+fn default_fm_band4_freq() -> f64 { 12000.0 }
+fn default_fm_band4_q() -> f64 { 0.707 }
+fn default_fm_band4_max_gain() -> f64 { 6.0 }
+fn default_fm_band4_slope() -> f64 { 0.3 }
 
 sotf_plugins::serde_param_default! {
     limiter_specs::PARAMS;
@@ -1040,6 +1054,16 @@ pub enum PluginSettings {
         auto_gain_max_db: f64,
         #[serde(default = "default_auto_gain_smoothing_ms")]
         auto_gain_smoothing_ms: f64,
+        /// 0 = Manual, 1 = ISO 226, 2 = Auto
+        #[serde(default = "default_lc_mode")]
+        mode: usize,
+        #[serde(default = "default_lc_playback_level_db")]
+        playback_level_db: f64,
+        #[serde(default = "default_lc_reference_level_db")]
+        reference_level_db: f64,
+        /// Engine playback volume in dB (used in Auto mode)
+        #[serde(default)]
+        playback_volume_db: f64,
     },
     FletcherMunson {
         /// Current playback volume (set by engine/UI)
@@ -1524,11 +1548,68 @@ pub enum PluginSettings {
         #[serde(default = "default_ts_mix")]
         mix: f64,
     },
+    Saturation {
+        #[serde(default = "default_sat_mode")]
+        mode: f64,
+        #[serde(default = "default_sat_drive")]
+        drive: f64,
+        #[serde(default = "default_sat_tone")]
+        tone: f64,
+        #[serde(default = "default_sat_exciter_freq")]
+        exciter_freq: f64,
+        #[serde(default = "default_sat_oversampling")]
+        oversampling: f64,
+        #[serde(default = "default_sat_output_gain")]
+        output_gain_db: f64,
+        #[serde(default = "default_sat_mix")]
+        mix: f64,
+    },
+    DynamicEq {
+        #[serde(default = "default_dyneq_num_bands")]
+        num_bands: f64,
+        #[serde(default = "default_dyneq_threshold")]
+        threshold: f64,
+        #[serde(default = "default_dyneq_ratio")]
+        ratio: f64,
+        #[serde(default = "default_dyneq_attack")]
+        attack: f64,
+        #[serde(default = "default_dyneq_release")]
+        release: f64,
+        #[serde(default = "default_dyneq_knee")]
+        knee: f64,
+        #[serde(default = "default_dyneq_link_channels")]
+        link_channels: bool,
+        #[serde(default = "default_dyneq_mix")]
+        mix: f64,
+    },
 }
 
 sotf_plugins::serde_param_default! {
     transient_shaper_specs::PARAMS;
     fn default_ts_mix() -> f64 = "mix";
+}
+
+sotf_plugins::serde_param_default! {
+    saturation_specs::PARAMS;
+    fn default_sat_mode() -> f64 = "mode";
+    fn default_sat_drive() -> f64 = "drive";
+    fn default_sat_tone() -> f64 = "tone";
+    fn default_sat_exciter_freq() -> f64 = "exciter_freq";
+    fn default_sat_oversampling() -> f64 = "oversampling";
+    fn default_sat_output_gain() -> f64 = "output_gain";
+    fn default_sat_mix() -> f64 = "mix";
+}
+
+sotf_plugins::serde_param_default! {
+    dynamic_eq_specs::PARAMS;
+    fn default_dyneq_num_bands() -> f64 = "num_bands";
+    fn default_dyneq_threshold() -> f64 = "threshold";
+    fn default_dyneq_ratio() -> f64 = "ratio";
+    fn default_dyneq_attack() -> f64 = "attack";
+    fn default_dyneq_release() -> f64 = "release";
+    fn default_dyneq_knee() -> f64 = "knee";
+    fn default_dyneq_link_channels() -> bool = "link_channels";
+    fn default_dyneq_mix() -> f64 = "mix";
 }
 
 impl PluginSettings {
@@ -1567,6 +1648,8 @@ impl PluginSettings {
             Self::StereoImager { .. } => PluginType::StereoImager,
             Self::DeEsser { .. } => PluginType::DeEsser,
             Self::TransientShaper { .. } => PluginType::TransientShaper,
+            Self::Saturation { .. } => PluginType::Saturation,
+            Self::DynamicEq { .. } => PluginType::DynamicEq,
         }
     }
 
@@ -1741,6 +1824,56 @@ impl PluginSettings {
                     "sustain": *sustain as f32,
                     "sensitivity_db": *sensitivity_db as f32,
                     "output_gain_db": *output_gain_db as f32,
+                    "mix": *mix as f32,
+                }),
+            ),
+            Self::Saturation {
+                mode,
+                drive,
+                tone,
+                exciter_freq,
+                oversampling,
+                output_gain_db,
+                mix,
+            } => {
+                let mode_str = saturation_specs::MODES
+                    .get(*mode as usize)
+                    .unwrap_or(&"Soft Clip");
+                let os_str = saturation_specs::OVERSAMPLING_OPTIONS
+                    .get(*oversampling as usize)
+                    .unwrap_or(&"Off");
+                PluginConfig::new(
+                    "saturation",
+                    json!({
+                        "mode": mode_str,
+                        "drive": *drive as f32,
+                        "tone": *tone as f32,
+                        "exciter_freq": *exciter_freq as f32,
+                        "oversampling": os_str,
+                        "output_gain_db": *output_gain_db as f32,
+                        "mix": *mix as f32,
+                    }),
+                )
+            }
+            Self::DynamicEq {
+                num_bands,
+                threshold,
+                ratio,
+                attack,
+                release,
+                knee,
+                link_channels,
+                mix,
+            } => PluginConfig::new(
+                "dynamic_eq",
+                json!({
+                    "num_bands": *num_bands as usize,
+                    "threshold": *threshold as f32,
+                    "ratio": *ratio as f32,
+                    "attack_ms": *attack as f32,
+                    "release_ms": *release as f32,
+                    "knee": *knee as f32,
+                    "link_channels": link_channels,
                     "mix": *mix as f32,
                 }),
             ),
@@ -2152,6 +2285,10 @@ impl PluginSettings {
                 auto_gain_enabled,
                 auto_gain_max_db,
                 auto_gain_smoothing_ms,
+                mode,
+                playback_level_db,
+                reference_level_db,
+                playback_volume_db,
             } => PluginConfig::new(
                 "loudness_compensation",
                 json!({
@@ -2166,72 +2303,32 @@ impl PluginSettings {
                     "auto_gain_enabled": auto_gain_enabled,
                     "auto_gain_max_db": auto_gain_max_db,
                     "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
+                    "mode": mode,
+                    "playback_level_db": playback_level_db,
+                    "reference_level_db": reference_level_db,
+                    "playback_volume_db": playback_volume_db,
                 }),
             ),
             Self::FletcherMunson {
                 playback_volume_db,
                 reference_level_db,
-                enabled,
-                band1_freq,
-                band1_q,
-                band1_max_gain,
-                band1_slope,
-                band2_freq,
-                band2_q,
-                band2_max_gain,
-                band2_slope,
-                band3_freq,
-                band3_q,
-                band3_max_gain,
-                band3_slope,
-                band4_freq,
-                band4_q,
-                band4_max_gain,
-                band4_slope,
-                smoothing_ms,
-                auto_gain_enabled,
-                auto_gain_max_db,
-                auto_gain_smoothing_ms,
-                auto_gain_loudness_type,
-                iso_226,
-            } => PluginConfig::new(
-                "fletcher_munson",
-                json!({
-                    "playback_volume_db": playback_volume_db,
-                    "reference_level_db": reference_level_db,
-                    "band1": {
-                        "frequency": band1_freq,
-                        "q": band1_q,
-                        "max_gain_db": band1_max_gain,
-                        "slope": band1_slope,
-                    },
-                    "band2": {
-                        "frequency": band2_freq,
-                        "q": band2_q,
-                        "max_gain_db": band2_max_gain,
-                        "slope": band2_slope,
-                    },
-                    "band3": {
-                        "frequency": band3_freq,
-                        "q": band3_q,
-                        "max_gain_db": band3_max_gain,
-                        "slope": band3_slope,
-                    },
-                    "band4": {
-                        "frequency": band4_freq,
-                        "q": band4_q,
-                        "max_gain_db": band4_max_gain,
-                        "slope": band4_slope,
-                    },
-                    "smoothing_ms": smoothing_ms,
-                    "enabled": enabled,
-                    "auto_gain_enabled": auto_gain_enabled,
-                    "auto_gain_max_db": auto_gain_max_db,
-                    "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
-                    "auto_gain_loudness_type": auto_gain_loudness_type,
-                    "iso_226": iso_226,
-                }),
-            ),
+                ..
+            } => {
+                // Backward compat: emit as loudness_compensation with mode=2 (Auto)
+                PluginConfig::new(
+                    "loudness_compensation",
+                    json!({
+                        "low_freq": pk(lc_specs::PARAMS, "low_freq").default_f64(),
+                        "low_gain": pk(lc_specs::PARAMS, "low_gain").default_f64(),
+                        "high_freq": pk(lc_specs::PARAMS, "high_freq").default_f64(),
+                        "high_gain": pk(lc_specs::PARAMS, "high_gain").default_f64(),
+                        "mode": 2,
+                        "playback_volume_db": playback_volume_db,
+                        "reference_level_db": 83.0 + reference_level_db,
+                        "playback_level_db": pk(lc_specs::PARAMS, "playback_level_db").default_f64(),
+                    }),
+                )
+            }
             Self::BinauralDecoder {
                 sofa_file,
                 input_channels,
@@ -2813,37 +2910,31 @@ impl PluginSettings {
                     auto_gain_enabled: p(lc, "auto_gain_enabled").default_bool(),
                     auto_gain_max_db: p(lc, "auto_gain_max_db").default_f64(),
                     auto_gain_smoothing_ms: p(lc, "auto_gain_smoothing_ms").default_f64(),
+                    mode: p(lc, "mode").default_usize(),
+                    playback_level_db: p(lc, "playback_level_db").default_f64(),
+                    reference_level_db: p(lc, "reference_level_db").default_f64(),
+                    playback_volume_db: 0.0,
                 }
             }
             PluginType::FletcherMunson => {
-                let fm = fm_specs::PARAMS;
-                Self::FletcherMunson {
+                // Fletcher-Munson merged into LoudnessCompensation with mode=2 (Auto)
+                let lc = lc_specs::PARAMS;
+                Self::LoudnessCompensation {
+                    low_freq: p(lc, "low_freq").default_f64(),
+                    low_gain: p(lc, "low_gain").default_f64(),
+                    high_freq: p(lc, "high_freq").default_f64(),
+                    high_gain: p(lc, "high_gain").default_f64(),
+                    mid_enabled: p(lc, "mid_enabled").default_bool(),
+                    mid_freq: p(lc, "mid_freq").default_f64(),
+                    mid_gain: p(lc, "mid_gain").default_f64(),
+                    mid_q: p(lc, "mid_q").default_f64(),
+                    auto_gain_enabled: p(lc, "auto_gain_enabled").default_bool(),
+                    auto_gain_max_db: p(lc, "auto_gain_max_db").default_f64(),
+                    auto_gain_smoothing_ms: p(lc, "auto_gain_smoothing_ms").default_f64(),
+                    mode: 2, // Auto mode
+                    playback_level_db: p(lc, "playback_level_db").default_f64(),
+                    reference_level_db: p(lc, "reference_level_db").default_f64(),
                     playback_volume_db: 0.0,
-                    reference_level_db: p(fm, "reference_level_db").default_f64(),
-                    enabled: p(fm, "enabled").default_bool(),
-                    band1_freq: p(fm, "band1_freq").default_f64(),
-                    band1_q: p(fm, "band1_q").default_f64(),
-                    band1_max_gain: p(fm, "band1_max_gain").default_f64(),
-                    band1_slope: p(fm, "band1_slope").default_f64(),
-                    band2_freq: p(fm, "band2_freq").default_f64(),
-                    band2_q: p(fm, "band2_q").default_f64(),
-                    band2_max_gain: p(fm, "band2_max_gain").default_f64(),
-                    band2_slope: p(fm, "band2_slope").default_f64(),
-                    band3_freq: p(fm, "band3_freq").default_f64(),
-                    band3_q: p(fm, "band3_q").default_f64(),
-                    band3_max_gain: p(fm, "band3_max_gain").default_f64(),
-                    band3_slope: p(fm, "band3_slope").default_f64(),
-                    band4_freq: p(fm, "band4_freq").default_f64(),
-                    band4_q: p(fm, "band4_q").default_f64(),
-                    band4_max_gain: p(fm, "band4_max_gain").default_f64(),
-                    band4_slope: p(fm, "band4_slope").default_f64(),
-                    smoothing_ms: p(fm, "smoothing_ms").default_f64(),
-                    auto_gain_enabled: p(fm, "auto_gain_enabled").default_bool(),
-                    auto_gain_max_db: p(fm, "auto_gain_max_db").default_f64(),
-                    auto_gain_smoothing_ms: p(fm, "auto_gain_smoothing_ms").default_f64(),
-                    auto_gain_loudness_type: pk(fm_specs::PARAMS, "auto_gain_loudness_type")
-                        .default_f64() as i32,
-                    iso_226: p(fm, "iso_226").default_bool(),
                 }
             }
             PluginType::BinauralDecoder => {
@@ -3124,6 +3215,31 @@ impl PluginSettings {
                     sensitivity_db: p(ts, "sensitivity").default_f64(),
                     output_gain_db: p(ts, "output_gain").default_f64(),
                     mix: p(ts, "mix").default_f64(),
+                }
+            }
+            PluginType::Saturation => {
+                let sat = saturation_specs::PARAMS;
+                Self::Saturation {
+                    mode: p(sat, "mode").default_f64(),
+                    drive: p(sat, "drive").default_f64(),
+                    tone: p(sat, "tone").default_f64(),
+                    exciter_freq: p(sat, "exciter_freq").default_f64(),
+                    oversampling: p(sat, "oversampling").default_f64(),
+                    output_gain_db: p(sat, "output_gain").default_f64(),
+                    mix: p(sat, "mix").default_f64(),
+                }
+            }
+            PluginType::DynamicEq => {
+                let dq = dynamic_eq_specs::PARAMS;
+                Self::DynamicEq {
+                    num_bands: p(dq, "num_bands").default_f64(),
+                    threshold: p(dq, "threshold").default_f64(),
+                    ratio: p(dq, "ratio").default_f64(),
+                    attack: p(dq, "attack").default_f64(),
+                    release: p(dq, "release").default_f64(),
+                    knee: p(dq, "knee").default_f64(),
+                    link_channels: p(dq, "link_channels").default_bool(),
+                    mix: p(dq, "mix").default_f64(),
                 }
             }
         }

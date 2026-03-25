@@ -5,6 +5,11 @@ expression: plan
 {
   "plugin_type": "loudness_compensation",
   "width": 1400.0,
+  "design_language": "neutral",
+  "corner_radius_md": 8.0,
+  "min_touch_target": 32.0,
+  "toggle_variant": "capsule",
+  "label_position": "below",
   "orientation": "horizontal",
   "knob_size": "md",
   "group_direction": "row",
@@ -15,8 +20,47 @@ expression: plan
     "output"
   ],
   "columns_collapsed": [],
-  "config_controls": [],
+  "config_controls": [
+    {
+      "param_index": 11,
+      "param_name": "Mode",
+      "control_type": "selector",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    }
+  ],
   "main_groups": [
+    {
+      "title": "ISO 226",
+      "controls": [
+        {
+          "param_index": 12,
+          "param_name": "Playback Level",
+          "control_type": "knob",
+          "unit": "dB SPL",
+          "range": [
+            40.0,
+            90.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 13,
+          "param_name": "Reference Level",
+          "control_type": "knob",
+          "unit": "dB SPL",
+          "range": [
+            60.0,
+            100.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
     {
       "title": "LOW",
       "controls": [

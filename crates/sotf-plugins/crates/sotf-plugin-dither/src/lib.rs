@@ -8,6 +8,7 @@ use crate::params::PARAMS as DT;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 
 use serde::{Deserialize, Serialize};
 
@@ -279,6 +280,7 @@ impl InPlacePlugin for DitherPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
+        enable_ftz_daz();
         let nf = context.num_frames;
         let ch = self.channels;
         let scale = self.scale;
@@ -322,6 +324,7 @@ impl InPlacePlugin for DitherPlugin {
             }
         }
 
+        flush_denormals_inplace(buffer);
         Ok(nf)
     }
 }

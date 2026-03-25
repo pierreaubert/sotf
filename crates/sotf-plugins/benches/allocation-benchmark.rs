@@ -23,8 +23,8 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
     ABComparePlugin, AecPlugin, AecPluginParams, AutoGain, AutoGainParams, BandMergePlugin,
     BandSplitPlugin, BeamformerPlugin, ChannelMuteSoloPlugin, CompressorPlugin, CrossoverPlugin,
-    DelayPlugin, DenoiserPlugin, EqPlugin, ExpanderPlugin, FletcherMunsonPlugin,
-    FletcherMunsonPluginParams, GainPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter,
+    DelayPlugin, DenoiserPlugin, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter,
+    LoudnessCompensationPluginParams,
     LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin,
     MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
     SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams, XtcPlugin,
@@ -295,12 +295,15 @@ fn test_loudness_compensation_zero_alloc() {
 }
 
 fn test_fletcher_munson_zero_alloc() {
-    let params = FletcherMunsonPluginParams {
+    let params = LoudnessCompensationPluginParams {
+        mode: 2, // Auto
         playback_volume_db: -30.0,
-        reference_level_db: -14.0,
+        reference_level_db: 69.0, // 83 + (-14)
         ..Default::default()
     };
-    let mut plugin = FletcherMunsonPlugin::from_params(2, params).unwrap();
+    let mut plugin = InPlacePluginAdapter::new(
+        LoudnessCompensationPlugin::from_params(2, params).unwrap()
+    );
     Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
@@ -312,7 +315,7 @@ fn test_fletcher_munson_zero_alloc() {
 
     plugin.process(&input, &mut output, &ctx).unwrap();
 
-    assert_no_allocs("FletcherMunsonPlugin", || {
+    assert_no_allocs("FletcherMunsonPlugin (LoudnessComp Auto)", || {
         plugin.process(&input, &mut output, &ctx).unwrap();
     });
 }

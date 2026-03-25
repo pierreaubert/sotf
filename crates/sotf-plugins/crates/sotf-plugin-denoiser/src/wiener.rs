@@ -107,6 +107,11 @@ impl DenoiserPlugin {
                 self.apply_formant_preservation(ch);
             }
 
+            // Pass 1e: 3-bin median filter to suppress isolated musical noise
+            // spikes. Applied before spectral/temporal smoothing so that the
+            // smoother operates on clean gain curves.
+            Self::median_smooth_gains(&mut self.gain[ch], self.spectrum_size);
+
             // Pass 2: Smooth gains across frequency bins
             if self.spectral_smoothing_enabled {
                 self.smooth_gains_across_frequency(ch);
@@ -156,6 +161,43 @@ impl DenoiserPlugin {
                 60.0 // Max reduction
             };
         }
+    }
+
+    /// In-place 3-bin median smoothing of gain values.
+    ///
+    /// Musical noise artifacts appear as isolated loud bins surrounded by
+    /// quiet bins. A 3-bin median filter removes these narrow spikes without
+    /// affecting broadband content. First and last elements are unchanged.
+    ///
+    /// Uses a sliding window that reads ahead by one bin, so no temporary
+    /// buffer is needed — only a single `prev_in` variable tracks the
+    /// pre-overwrite value of the previous bin.
+    #[inline]
+    pub(super) fn median_smooth_gains(gains: &mut [f32], len: usize) {
+        if len < 3 {
+            return;
+        }
+
+        let mut prev_in = gains[0];
+
+        for i in 1..len - 1 {
+            let a = prev_in;
+            let b = gains[i];
+            let c = gains[i + 1];
+            prev_in = b; // save before overwrite
+
+            // Median of three
+            let median = if (a <= b && b <= c) || (c <= b && b <= a) {
+                b
+            } else if (b <= a && a <= c) || (c <= a && a <= b) {
+                a
+            } else {
+                c
+            };
+
+            gains[i] = median;
+        }
+        // Last element stays unchanged
     }
 
     /// Compute the 5-tap Gaussian kernel weights for a given smoothing value.

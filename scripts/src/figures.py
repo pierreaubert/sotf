@@ -14,6 +14,7 @@ from .dsp import (
 from .data_extract import (
     compute_y_range,
     compute_average_spl_in_range,
+    extract_eq_passes,
     get_all_crossover_frequencies,
     get_channel_sort_key,
 )
@@ -419,6 +420,119 @@ def create_eq_figure(
             tickfont=dict(size=10),
             gridcolor="rgba(128, 128, 128, 0.2)",
             range=y_range,
+            dtick=5,
+        ),
+        legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(l=60, r=40, t=60, b=60),
+        height=400,
+    )
+
+    return fig
+
+
+def create_multipass_eq_figure(
+    channel_name: str,
+    channel_data: dict,
+    eq_response_data: dict | None = None,
+) -> go.Figure | None:
+    """Create a Plotly figure showing per-pass EQ responses for the 3-pass pipeline.
+
+    When labeled passes exist (cea2034_speaker_correction, user_preference),
+    shows each pass as a distinct colored curve plus the combined response.
+    Falls back to the standard create_eq_figure for single-pass configs.
+
+    Args:
+        channel_name: Name of the channel.
+        channel_data: Full channel data dict from roomeq output.
+        eq_response_data: Optional pre-computed combined EQ response.
+    """
+    passes = extract_eq_passes(channel_data)
+
+    if not passes:
+        return None
+
+    # If only one unlabeled pass, fall back to standard EQ figure
+    has_labeled = any(p["label"] for p in passes)
+    if not has_labeled:
+        all_filters = []
+        for p in passes:
+            all_filters.extend(p["filters"])
+        return create_eq_figure(channel_name, all_filters, eq_response_data)
+
+    freq_points = generate_freq_points(20.0, 20000.0, 500)
+    fig = go.Figure()
+
+    # Collect all filters for the combined response
+    all_filters = []
+    for p in passes:
+        all_filters.extend(p["filters"])
+
+    # Combined EQ response (from pre-computed data or calculated)
+    if eq_response_data and "freq" in eq_response_data and "spl" in eq_response_data:
+        combined_freq = eq_response_data["freq"]
+        combined_response = eq_response_data["spl"]
+    else:
+        combined_freq = freq_points
+        combined_response = compute_eq_response(all_filters, freq_points)
+
+    if combined_response:
+        fig.add_trace(
+            go.Scatter(
+                x=combined_freq,
+                y=combined_response,
+                mode="lines",
+                name="Combined (all passes)",
+                line=dict(color="rgba(50, 50, 50, 0.9)", width=2.5),
+            )
+        )
+
+    # Per-pass responses
+    for p in passes:
+        pass_response = compute_eq_response(p["filters"], freq_points)
+        if pass_response:
+            fig.add_trace(
+                go.Scatter(
+                    x=freq_points,
+                    y=pass_response,
+                    mode="lines",
+                    name=p["display_name"],
+                    line=dict(color=p["color"], width=2),
+                )
+            )
+
+    # 0 dB reference
+    fig.add_trace(
+        go.Scatter(
+            x=[freq_points[0], freq_points[-1]],
+            y=[0, 0],
+            mode="lines",
+            name="0 dB",
+            line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
+        )
+    )
+
+    # Y-range
+    y_min, y_max = -15, 15
+    if combined_response:
+        eq_max = max(combined_response)
+        eq_min = min(combined_response)
+        y_max = math.ceil(eq_max / 5) * 5
+        y_min = math.floor(eq_min / 5) * 5
+        y_min = max(y_min, y_max - 50)
+
+    freq_axis = get_freq_axis_config()
+    freq_axis["range"] = [1.3, 4.3]
+
+    fig.update_layout(
+        title=dict(text=f"EQ Response (3-Pass): {channel_name}", font=dict(size=14)),
+        xaxis=freq_axis,
+        yaxis=dict(
+            title=dict(text="Gain (dB)", font=dict(size=11)),
+            tickfont=dict(size=10),
+            gridcolor="rgba(128, 128, 128, 0.2)",
+            range=[y_min, y_max],
             dtick=5,
         ),
         legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
