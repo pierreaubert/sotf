@@ -2,22 +2,25 @@
 // Loudness Compensation Plugin
 // ============================================================================
 //
-// Filter frequencies are derived from ISO 226:2003 equal-loudness contour data.
-// At the reference listening level (83 dB SPL), the equal-loudness contour shows:
-//   - Bass rise: perceived loudness drops below ~100 Hz, requiring a low shelf
-//     boost centered at ~100 Hz to compensate at lower playback levels.
-//   - Ear canal resonance dip: the ear is most sensitive around 3-4 kHz due to
-//     ear canal resonance, so a midrange peak at ~3.5 kHz compensates for
-//     reduced sensitivity at other frequencies relative to this reference point.
-//   - High-frequency roll-off: sensitivity drops above ~8 kHz, requiring a high
-//     shelf boost centered at ~8 kHz.
+// Two modes of operation:
 //
-// These ISO 226-derived reference points (100 Hz, 3.5 kHz, 8 kHz) replace the
-// previous arbitrary defaults and provide perceptually-motivated compensation.
+// **Manual mode** (default, backward compatible):
+//   Uses 3 bands (5 biquads): lowshelf at 100Hz, peak at 3.5kHz, highshelf at
+//   8kHz. Filter frequencies are derived from ISO 226:2003 equal-loudness
+//   contour inflection points. Gains are user-controlled.
+//
+// **ISO 226 mode**:
+//   Full ISO 226:2003 equal-loudness contour lookup table. Computes a
+//   compensation curve from the delta between the reference level (default 83
+//   dB SPL) and the playback level, then fits 7 parametric EQ bands to match
+//   the delta curve. All filter computation happens at parameter-change time;
+//   the hot path only applies pre-computed biquads.
 // ============================================================================
 
+pub mod iso226;
 pub mod params;
 
+use iso226::{compute_iso226_delta, interpolate_delta, ISO226_NUM_FREQS};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 use sotf_host::param_specs::find_by_key as pk;
@@ -193,15 +196,42 @@ pub struct LoudnessCompensationPluginParams {
     /// Auto-gain position: "pre", "post" (default), or "disabled"
     #[serde(default = "default_auto_gain_position")]
     pub auto_gain_position: String,
+    /// 0 = Manual (default), 1 = ISO 226
+    #[serde(default)]
+    pub mode: usize,
+    #[serde(default = "default_playback_level_db")]
+    pub playback_level_db: f32,
+    #[serde(default = "default_reference_level_db")]
+    pub reference_level_db: f32,
 }
 
 fn default_auto_gain_position() -> String {
     "post".to_string()
 }
+fn default_playback_level_db() -> f32 {
+    pk(LC, "playback_level_db").default_f32()
+}
+fn default_reference_level_db() -> f32 {
+    pk(LC, "reference_level_db").default_f32()
+}
+
+// ============================================================================
+// ISO 226 Filter Bank
+// ============================================================================
+
+/// Number of ISO 226 compensation filters per channel.
+const ISO_FILTER_COUNT: usize = 7;
+
+/// Center frequencies for the 7 ISO 226 compensation bands.
+const ISO_BAND_FREQS: [f64; ISO_FILTER_COUNT] = [50.0, 150.0, 500.0, 1500.0, 3500.0, 7000.0, 10000.0];
+
+/// Q factors for the 7 ISO 226 compensation bands.
+const ISO_BAND_QS: [f64; ISO_FILTER_COUNT] = [0.7, 0.8, 1.0, 1.2, 1.5, 1.2, 0.8];
 
 pub struct LoudnessCompensationPlugin {
     num_channels: usize,
     sample_rate: u32,
+    // -- Manual mode fields --
     low_freq: f32,
     low_gain: f32,
     high_freq: f32,
@@ -210,7 +240,19 @@ pub struct LoudnessCompensationPlugin {
     mid_freq: f32,
     mid_gain: f32,
     mid_q: f32,
+    /// Manual mode filters: [channel][filter_index], 5 biquads per channel.
     filters: Vec<Vec<Biquad>>,
+    // -- ISO 226 mode fields --
+    /// 0 = Manual, 1 = ISO 226
+    mode_index: usize,
+    playback_level_db: f32,
+    reference_level_db: f32,
+    /// ISO 226 mode filters: [channel][band_index], 7 biquads per channel.
+    /// Pre-allocated in `new()`, coefficients updated in `rebuild_iso_filters()`.
+    iso_filters: Vec<Vec<Biquad>>,
+    /// Cached ISO 226 delta curve for the current playback/reference levels.
+    iso_deltas: [(f64, f64); ISO226_NUM_FREQS],
+    // -- Common fields --
     auto_gain: Option<AutoGain>,
     auto_gain_enabled: bool,
     auto_gain_max_db: f32,
@@ -231,6 +273,8 @@ impl LoudnessCompensationPlugin {
         high_gain: f32,
     ) -> Self {
         let sr = 48000;
+        let playback_db = default_playback_level_db();
+        let reference_db = default_reference_level_db();
         let mut p = Self {
             num_channels,
             sample_rate: sr,
@@ -243,6 +287,11 @@ impl LoudnessCompensationPlugin {
             mid_gain: default_mid_gain(),
             mid_q: default_mid_q(),
             filters: vec![Vec::new(); num_channels],
+            mode_index: 0, // Manual by default
+            playback_level_db: playback_db,
+            reference_level_db: reference_db,
+            iso_filters: vec![Vec::new(); num_channels],
+            iso_deltas: compute_iso226_delta(playback_db as f64, reference_db as f64),
             auto_gain: None,
             auto_gain_enabled: false,
             auto_gain_max_db: pk(LC, "auto_gain_max_db").default_f32(),
@@ -256,6 +305,7 @@ impl LoudnessCompensationPlugin {
             cached_parameters: Vec::new(),
         };
         p.rebuild_filters();
+        p.rebuild_iso_filters();
         p.rebuild_cached_parameters();
         p
     }
@@ -357,12 +407,40 @@ impl LoudnessCompensationPlugin {
             )
             .with_description("Auto-gain position: pre, post, or disabled")
             .with_group("Auto Gain"),
+            Parameter::new_int(
+                "mode",
+                "Mode",
+                self.mode_index as i32,
+                0,
+                1,
+            )
+            .with_description("0 = Manual, 1 = ISO 226")
+            .with_group("Compensation"),
+            Parameter::new_float(
+                "playback_level_db",
+                "Playback Level",
+                self.playback_level_db,
+                pk(LC, "playback_level_db").min_f64() as f32,
+                pk(LC, "playback_level_db").max_f64() as f32,
+            )
+            .with_description("Current playback level (dB SPL)")
+            .with_group("Compensation"),
+            Parameter::new_float(
+                "reference_level_db",
+                "Reference Level",
+                self.reference_level_db,
+                pk(LC, "reference_level_db").min_f64() as f32,
+                pk(LC, "reference_level_db").max_f64() as f32,
+            )
+            .with_description("Reference listening level (dB SPL)")
+            .with_group("Compensation"),
         ];
     }
 
-    /// Expected filter count per channel: 2x lowshelf + 1x mid peak + 2x highshelf = 5
+    /// Expected filter count per channel for manual mode: 2x lowshelf + 1x mid peak + 2x highshelf = 5
     const FILTER_COUNT: usize = 5;
 
+    /// Rebuild the manual-mode 3-band filters (5 biquads per channel).
     fn rebuild_filters(&mut self) {
         let q = 0.707;
         let sr = self.sample_rate as f64;
@@ -453,11 +531,75 @@ impl LoudnessCompensationPlugin {
                     ),
                 ];
             }
-            // Compensation gain accounts for all active bands
-            let max_gain = if self.mid_enabled {
-                self.low_gain.max(self.high_gain).max(self.mid_gain)
+        }
+        self.update_comp_gain_smoother();
+    }
+
+    /// Rebuild ISO 226 filters based on current playback/reference levels.
+    ///
+    /// Fits 7 parametric EQ bands to the ISO 226 delta contour.
+    /// Called at parameter-change time only, never in the hot path.
+    fn rebuild_iso_filters(&mut self) {
+        let sr = self.sample_rate as f64;
+        self.iso_deltas =
+            compute_iso226_delta(self.playback_level_db as f64, self.reference_level_db as f64);
+
+        for ch in 0..self.num_channels {
+            if self.iso_filters[ch].len() == ISO_FILTER_COUNT {
+                // Update in place — preserves filter delay state for click-free transitions
+                for (band_idx, &freq) in ISO_BAND_FREQS.iter().enumerate() {
+                    let gain = interpolate_delta(&self.iso_deltas, freq);
+                    let q = ISO_BAND_QS[band_idx];
+                    let filter_type = if band_idx == 0 {
+                        BiquadFilterType::Lowshelf
+                    } else if band_idx == ISO_FILTER_COUNT - 1 {
+                        BiquadFilterType::Highshelf
+                    } else {
+                        BiquadFilterType::Peak
+                    };
+                    self.iso_filters[ch][band_idx].update_params(filter_type, freq, sr, q, gain);
+                }
             } else {
-                self.low_gain.max(self.high_gain)
+                // First initialization — create from scratch
+                self.iso_filters[ch] = Vec::with_capacity(ISO_FILTER_COUNT);
+                for (band_idx, &freq) in ISO_BAND_FREQS.iter().enumerate() {
+                    let gain = interpolate_delta(&self.iso_deltas, freq);
+                    let q = ISO_BAND_QS[band_idx];
+                    let filter_type = if band_idx == 0 {
+                        BiquadFilterType::Lowshelf
+                    } else if band_idx == ISO_FILTER_COUNT - 1 {
+                        BiquadFilterType::Highshelf
+                    } else {
+                        BiquadFilterType::Peak
+                    };
+                    self.iso_filters[ch].push(Biquad::new(filter_type, freq, sr, q, gain));
+                }
+            }
+        }
+        self.update_comp_gain_smoother();
+    }
+
+    /// Update the compensation gain smoother targets based on the active mode.
+    fn update_comp_gain_smoother(&mut self) {
+        for ch in 0..self.num_channels {
+            let max_gain = if self.mode_index == 1 {
+                // ISO 226 mode: find max absolute gain across all bands
+                let mut mg = 0.0_f32;
+                for (band_idx, &freq) in ISO_BAND_FREQS.iter().enumerate() {
+                    let _ = band_idx;
+                    let g = interpolate_delta(&self.iso_deltas, freq).abs() as f32;
+                    if g > mg {
+                        mg = g;
+                    }
+                }
+                mg
+            } else {
+                // Manual mode
+                if self.mid_enabled {
+                    self.low_gain.max(self.high_gain).max(self.mid_gain)
+                } else {
+                    self.low_gain.max(self.high_gain)
+                }
             };
             let target = 10.0_f32.powf(-max_gain / 20.0);
             self.comp_gain_smoother[ch].set_target(target);
@@ -479,6 +621,9 @@ impl LoudnessCompensationPlugin {
         p.mid_freq = params.mid_freq;
         p.mid_gain = params.mid_gain;
         p.mid_q = params.mid_q;
+        p.mode_index = params.mode;
+        p.playback_level_db = params.playback_level_db;
+        p.reference_level_db = params.reference_level_db;
         p.auto_gain_position = AutoGainPosition::from_str_lossy(&params.auto_gain_position);
         // auto_gain_enabled overrides position: if explicitly disabled, position becomes Disabled
         if !params.auto_gain_enabled {
@@ -500,14 +645,34 @@ impl LoudnessCompensationPlugin {
             )?);
         }
         p.rebuild_filters();
+        p.rebuild_iso_filters();
         p.rebuild_cached_parameters();
         Ok(p)
+    }
+
+    /// Process a single frame through the active filter bank.
+    /// Returns the processed sample value.
+    #[inline(always)]
+    fn process_sample(&mut self, ch: usize, sample: f32) -> f32 {
+        let mut s = sample as f64;
+        if self.mode_index == 1 {
+            // ISO 226 mode
+            for f in &mut self.iso_filters[ch] {
+                s = f.process(s);
+            }
+        } else {
+            // Manual mode
+            for f in &mut self.filters[ch] {
+                s = f.process(s);
+            }
+        }
+        (s as f32) * self.comp_gain_smoother[ch].advance()
     }
 }
 
 impl InPlacePlugin for LoudnessCompensationPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Loudness Compensation", "2.0.0", "Sotf")
+        PluginInfo::new("Loudness Compensation", "3.0.0", "Sotf")
     }
     fn channels(&self) -> usize {
         self.num_channels
@@ -631,6 +796,33 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 self.auto_gain = None;
             }
             self.auto_gain_enabled = want_enabled;
+        } else if id.0 == "mode" {
+            // Accept both int and float representations
+            let v = match &value {
+                ParameterValue::Int(i) => *i as usize,
+                ParameterValue::Float(f) => *f as usize,
+                _ => return Err(format!("mode must be numeric, got {:?}", value)),
+            };
+            if v <= 1 {
+                self.mode_index = v;
+                self.update_comp_gain_smoother();
+            }
+        } else if id.0 == "playback_level_db" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "playback_level_db must be a float".to_string())?;
+            if v.is_finite() {
+                self.playback_level_db = v;
+                self.rebuild_iso_filters();
+            }
+        } else if id.0 == "reference_level_db" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "reference_level_db must be a float".to_string())?;
+            if v.is_finite() {
+                self.reference_level_db = v;
+                self.rebuild_iso_filters();
+            }
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -662,6 +854,12 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             Some(ParameterValue::Float(self.auto_gain_smoothing_ms))
         } else if id.0 == "auto_gain_position" {
             Some(ParameterValue::String(self.auto_gain_position.to_string()))
+        } else if id.0 == "mode" {
+            Some(ParameterValue::Int(self.mode_index as i32))
+        } else if id.0 == "playback_level_db" {
+            Some(ParameterValue::Float(self.playback_level_db))
+        } else if id.0 == "reference_level_db" {
+            Some(ParameterValue::Float(self.reference_level_db))
         } else {
             None
         }
@@ -672,6 +870,7 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             s.set_time(20.0, sr);
         }
         self.rebuild_filters();
+        self.rebuild_iso_filters();
         Ok(())
     }
     fn reset(&mut self) {
@@ -687,12 +886,28 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             0.0
         };
         for ch in 0..self.num_channels {
+            // Reset manual filters
             self.filters[ch].clear();
             self.filters[ch].push(Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64));
             self.filters[ch].push(Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64));
             self.filters[ch].push(Biquad::new(BiquadFilterType::Peak, self.mid_freq as f64, sr, self.mid_q as f64, mg as f64));
             self.filters[ch].push(Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64));
             self.filters[ch].push(Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64));
+
+            // Reset ISO 226 filters
+            self.iso_filters[ch].clear();
+            for (band_idx, &freq) in ISO_BAND_FREQS.iter().enumerate() {
+                let gain = interpolate_delta(&self.iso_deltas, freq);
+                let bq = ISO_BAND_QS[band_idx];
+                let filter_type = if band_idx == 0 {
+                    BiquadFilterType::Lowshelf
+                } else if band_idx == ISO_FILTER_COUNT - 1 {
+                    BiquadFilterType::Highshelf
+                } else {
+                    BiquadFilterType::Peak
+                };
+                self.iso_filters[ch].push(Biquad::new(filter_type, freq, sr, bq, gain));
+            }
         }
     }
 
@@ -734,11 +949,7 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 for frame in 0..nf {
                     for ch in 0..self.num_channels {
                         let idx = frame * self.num_channels + ch;
-                        let mut s = buffer[idx] as f64;
-                        for f in &mut self.filters[ch] {
-                            s = f.process(s);
-                        }
-                        buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].advance();
+                        buffer[idx] = self.process_sample(ch, buffer[idx]);
                     }
                 }
             }
@@ -753,11 +964,7 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 for frame in 0..nf {
                     for ch in 0..self.num_channels {
                         let idx = frame * self.num_channels + ch;
-                        let mut s = buffer[idx] as f64;
-                        for f in &mut self.filters[ch] {
-                            s = f.process(s);
-                        }
-                        buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].advance();
+                        buffer[idx] = self.process_sample(ch, buffer[idx]);
                     }
                 }
 
@@ -777,11 +984,7 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 for frame in 0..nf {
                     for ch in 0..self.num_channels {
                         let idx = frame * self.num_channels + ch;
-                        let mut s = buffer[idx] as f64;
-                        for f in &mut self.filters[ch] {
-                            s = f.process(s);
-                        }
-                        buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].advance();
+                        buffer[idx] = self.process_sample(ch, buffer[idx]);
                     }
                 }
             }
@@ -975,6 +1178,126 @@ mod tests {
             low_rms > mid_rms * 1.3,
             "Loudness compensation should boost 50 Hz relative to 1 kHz, \
              but low RMS {low_rms:.4} is not significantly greater than mid RMS {mid_rms:.4}"
+        );
+    }
+
+    // ==========================================================================
+    // ISO 226 mode tests
+    // ==========================================================================
+
+    #[test]
+    fn test_default_mode_is_manual() {
+        let p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        assert_eq!(p.mode_index, 0, "Default mode should be Manual (0)");
+    }
+
+    #[test]
+    fn test_iso226_mode_has_seven_filters_per_channel() {
+        let p = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
+        for ch in 0..2 {
+            assert_eq!(
+                p.iso_filters[ch].len(),
+                ISO_FILTER_COUNT,
+                "Channel {ch} should have {ISO_FILTER_COUNT} ISO filters"
+            );
+        }
+    }
+
+    #[test]
+    fn test_iso226_mode_equal_levels_passthrough() {
+        // When playback_level == reference_level, ISO 226 mode should be near-passthrough
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1)).unwrap();
+        p.set_parameter(ParameterId::from("playback_level_db"), ParameterValue::Float(83.0)).unwrap();
+        p.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
+
+        let nf = 4800;
+        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        let signal: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0).sin())
+            .collect();
+
+        let mut buf = signal.clone();
+        p.process_in_place(&mut buf, &ctx).unwrap();
+
+        // Measure RMS in the settled half
+        let input_rms: f32 = (signal[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let output_rms: f32 = (buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let diff_db = 20.0 * (output_rms / input_rms).log10();
+        assert!(
+            diff_db.abs() < 1.0,
+            "Equal playback and reference levels should be near-passthrough, got {diff_db:.2} dB difference"
+        );
+    }
+
+    #[test]
+    fn test_iso226_mode_low_volume_boosts_bass() {
+        // At lower playback level, bass should be boosted relative to mid
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1)).unwrap();
+        p.set_parameter(ParameterId::from("playback_level_db"), ParameterValue::Float(60.0)).unwrap();
+        p.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
+
+        let nf = 9600;
+        let sr = 48000.0f32;
+        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+
+        // Process a 50 Hz signal
+        let mut low_buf: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr).sin())
+            .collect();
+        p.process_in_place(&mut low_buf, &ctx).unwrap();
+
+        // Process a 1 kHz signal with a fresh plugin at same settings
+        let mut p2 = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
+        InPlacePlugin::initialize(&mut p2, 48000).unwrap();
+        p2.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1)).unwrap();
+        p2.set_parameter(ParameterId::from("playback_level_db"), ParameterValue::Float(60.0)).unwrap();
+        p2.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
+
+        let mut mid_buf: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin())
+            .collect();
+        p2.process_in_place(&mut mid_buf, &ctx).unwrap();
+
+        let low_rms: f32 = (low_buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let mid_rms: f32 = (mid_buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+
+        assert!(
+            low_rms > mid_rms * 1.2,
+            "ISO 226 at low volume should boost bass: low RMS={low_rms:.4} should be > mid RMS={mid_rms:.4} * 1.2"
+        );
+    }
+
+    #[test]
+    fn test_mode_switch_via_set_parameter() {
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        assert_eq!(p.mode_index, 0);
+
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1)).unwrap();
+        assert_eq!(p.mode_index, 1);
+
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(0)).unwrap();
+        assert_eq!(p.mode_index, 0);
+    }
+
+    #[test]
+    fn test_get_parameter_new_fields() {
+        let p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("mode")),
+            Some(ParameterValue::Int(0))
+        );
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("playback_level_db")),
+            Some(ParameterValue::Float(70.0))
+        );
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("reference_level_db")),
+            Some(ParameterValue::Float(83.0))
         );
     }
 }

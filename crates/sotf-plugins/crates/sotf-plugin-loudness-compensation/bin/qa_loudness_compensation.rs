@@ -25,6 +25,9 @@ fn main() {
         auto_gain_max_db: 12.0,
         auto_gain_smoothing_ms: 100.0,
         auto_gain_position: "post".to_string(),
+        mode: 0,
+        playback_level_db: 70.0,
+        reference_level_db: 83.0,
     };
 
     let mut inner = LoudnessCompensationPlugin::from_params(channels, params).unwrap();

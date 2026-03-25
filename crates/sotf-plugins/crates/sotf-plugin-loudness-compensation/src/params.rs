@@ -18,7 +18,11 @@ use sotf_host::plugin_params::PluginParamDef;
 // Parameter Specifications
 // ============================================================================
 
+/// Mode labels: index 0 = "Manual" (backward compat default), index 1 = "ISO 226".
+pub const MODE_LABELS: &[&str] = &["Manual", "ISO 226"];
+
 pub const PARAMS: &[ParamSpec] = &[
+    // -- indices 0..10: existing parameters (order preserved for backward compat) --
     ParamSpec::float("Low Freq", "low_freq", 100.0, 20.0, 500.0, 5.0, "Hz", "Low")
         .doc("Low shelf center frequency"),
     ParamSpec::float("Low Gain", "low_gain", 6.0, -20.0, 20.0, 0.5, "dB", "Low")
@@ -95,6 +99,33 @@ pub const PARAMS: &[ParamSpec] = &[
     .structural()
     .output()
     .doc("Auto gain transition time"),
+    // -- indices 11..13: new ISO 226 parameters --
+    // Default mode_index = 0 = "Manual" for backward compatibility.
+    ParamSpec::choice("Mode", "mode", 0, MODE_LABELS, "Compensation")
+        .structural()
+        .doc("Manual 3-band or ISO 226 automatic contour"),
+    ParamSpec::float(
+        "Playback Level",
+        "playback_level_db",
+        70.0,
+        40.0,
+        90.0,
+        1.0,
+        "dB SPL",
+        "Compensation",
+    )
+    .doc("Current playback level — compensation adjusts for this level vs reference"),
+    ParamSpec::float(
+        "Reference Level",
+        "reference_level_db",
+        83.0,
+        60.0,
+        100.0,
+        1.0,
+        "dB SPL",
+        "Compensation",
+    )
+    .doc("Reference listening level (no compensation applied at this level)"),
 ];
 
 // ============================================================================
@@ -102,8 +133,17 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[],
+    config: &[
+        ControlSpec::choice(11), // mode
+    ],
     main: &[
+        ControlGroup {
+            title: "ISO 226",
+            controls: &[
+                ControlSpec::knob(12), // playback_level_db
+                ControlSpec::knob(13), // reference_level_db
+            ],
+        },
         ControlGroup {
             title: "LOW",
             controls: &[
@@ -175,6 +215,13 @@ pub struct Params {
     pub auto_gain_max_db: f64,
     #[serde(default = "d_auto_gain_smoothing_ms")]
     pub auto_gain_smoothing_ms: f64,
+    /// 0 = Manual, 1 = ISO 226
+    #[serde(default = "d_mode")]
+    pub mode: usize,
+    #[serde(default = "d_playback_level_db")]
+    pub playback_level_db: f64,
+    #[serde(default = "d_reference_level_db")]
+    pub reference_level_db: f64,
 }
 
 fn d_low_freq() -> f64 {
@@ -210,6 +257,15 @@ fn d_auto_gain_max_db() -> f64 {
 fn d_auto_gain_smoothing_ms() -> f64 {
     pk(PARAMS, "auto_gain_smoothing_ms").default_f64()
 }
+fn d_mode() -> usize {
+    pk(PARAMS, "mode").default_usize()
+}
+fn d_playback_level_db() -> f64 {
+    pk(PARAMS, "playback_level_db").default_f64()
+}
+fn d_reference_level_db() -> f64 {
+    pk(PARAMS, "reference_level_db").default_f64()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -225,6 +281,9 @@ impl Default for Params {
             auto_gain_enabled: d_auto_gain_enabled(),
             auto_gain_max_db: d_auto_gain_max_db(),
             auto_gain_smoothing_ms: d_auto_gain_smoothing_ms(),
+            mode: d_mode(),
+            playback_level_db: d_playback_level_db(),
+            reference_level_db: d_reference_level_db(),
         }
     }
 }
@@ -236,7 +295,7 @@ impl Default for Params {
 impl PluginParamDef for Params {
     const PARAMS: &'static [ParamSpec] = PARAMS;
     const LAYOUT: Option<&'static PluginLayout> = Some(&LAYOUT);
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
     const PLUGIN_TYPE_KEY: &'static str = "loudness_compensation";
 
     fn param_value(&self, index: usize) -> Option<f64> {
@@ -252,6 +311,9 @@ impl PluginParamDef for Params {
             8 => Some(if self.auto_gain_enabled { 1.0 } else { 0.0 }),
             9 => Some(self.auto_gain_max_db),
             10 => Some(self.auto_gain_smoothing_ms),
+            11 => Some(self.mode as f64),
+            12 => Some(self.playback_level_db),
+            13 => Some(self.reference_level_db),
             _ => None,
         }
     }
@@ -269,6 +331,9 @@ impl PluginParamDef for Params {
             8 => self.auto_gain_enabled = value > 0.5,
             9 => self.auto_gain_max_db = value,
             10 => self.auto_gain_smoothing_ms = value,
+            11 => self.mode = value as usize,
+            12 => self.playback_level_db = value,
+            13 => self.reference_level_db = value,
             _ => {}
         }
     }
@@ -317,6 +382,9 @@ mod tests {
             original.auto_gain_smoothing_ms,
             restored.auto_gain_smoothing_ms
         );
+        assert_eq!(original.mode, restored.mode);
+        assert_eq!(original.playback_level_db, restored.playback_level_db);
+        assert_eq!(original.reference_level_db, restored.reference_level_db);
     }
 
     #[test]
@@ -342,5 +410,20 @@ mod tests {
             p.auto_gain_smoothing_ms,
             pk(PARAMS, "auto_gain_smoothing_ms").default_f64()
         );
+        assert_eq!(p.mode, pk(PARAMS, "mode").default_usize());
+        assert_eq!(
+            p.playback_level_db,
+            pk(PARAMS, "playback_level_db").default_f64()
+        );
+        assert_eq!(
+            p.reference_level_db,
+            pk(PARAMS, "reference_level_db").default_f64()
+        );
+    }
+
+    #[test]
+    fn default_mode_is_manual() {
+        let p = Params::default();
+        assert_eq!(p.mode, 0, "Default mode should be Manual (0)");
     }
 }
