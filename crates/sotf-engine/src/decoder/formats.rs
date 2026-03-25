@@ -474,6 +474,9 @@ impl AudioDecoder for SymphoniaDecoder {
     }
 
     fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize> {
+        /// Max consecutive decode errors before we give up (file is too corrupted).
+        const MAX_CONSECUTIVE_ERRORS: u32 = 50;
+
         if self.eof {
             return Ok(0);
         }
@@ -482,6 +485,8 @@ impl AudioDecoder for SymphoniaDecoder {
         dest.samples.clear();
         dest.frame_position = self.position;
         dest.spec = self.spec.clone(); // Ensure spec matches
+
+        let mut consecutive_errors: u32 = 0;
 
         loop {
             // Read the next packet
@@ -492,6 +497,28 @@ impl AudioDecoder for SymphoniaDecoder {
                 {
                     self.eof = true;
                     return Ok(0);
+                }
+                Err(SymphoniaError::DecodeError(msg)) => {
+                    // Corrupted frame header — the format reader failed to parse
+                    // the next frame. It will automatically resync on the next call.
+                    consecutive_errors += 1;
+                    log::warn!(
+                        "[SymphoniaDecoder] Corrupted frame in {} at position {}: {} ({}/{})",
+                        self.format.as_str(),
+                        self.position,
+                        msg,
+                        consecutive_errors,
+                        MAX_CONSECUTIVE_ERRORS,
+                    );
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                        self.eof = true;
+                        return Err(AudioDecoderError::DecodingFailed(format!(
+                            "Too many consecutive decode errors ({}) in {} — file too corrupted",
+                            MAX_CONSECUTIVE_ERRORS,
+                            self.format.as_str(),
+                        )));
+                    }
+                    continue;
                 }
                 Err(err) => {
                     self.eof = true;
@@ -504,14 +531,39 @@ impl AudioDecoder for SymphoniaDecoder {
                 continue;
             }
 
-            // Decode the packet
-            let decoded_audio_buf = self.decoder.decode(&packet).map_err(|e| {
-                AudioDecoderError::DecodingFailed(format!(
-                    "Failed to decode {} packet: {:?}",
-                    self.format.as_str(),
-                    e
-                ))
-            })?;
+            // Decode the packet — if a single frame is corrupted, skip it and
+            // try the next one. Symphonia's format reader resyncs automatically
+            // on the next `next_packet()` call (FLAC sync codes, MP3 sync words, etc.).
+            let decoded_audio_buf = match self.decoder.decode(&packet) {
+                Ok(buf) => buf,
+                Err(SymphoniaError::DecodeError(msg)) => {
+                    consecutive_errors += 1;
+                    log::warn!(
+                        "[SymphoniaDecoder] Skipping corrupted {} packet at position {}: {} ({}/{})",
+                        self.format.as_str(),
+                        self.position,
+                        msg,
+                        consecutive_errors,
+                        MAX_CONSECUTIVE_ERRORS,
+                    );
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                        self.eof = true;
+                        return Err(AudioDecoderError::DecodingFailed(format!(
+                            "Too many consecutive decode errors ({}) in {} — file too corrupted",
+                            MAX_CONSECUTIVE_ERRORS,
+                            self.format.as_str(),
+                        )));
+                    }
+                    continue;
+                }
+                Err(e) => {
+                    return Err(AudioDecoderError::DecodingFailed(format!(
+                        "Failed to decode {} packet: {:?}",
+                        self.format.as_str(),
+                        e
+                    )));
+                }
+            };
 
             let frame_count = decoded_audio_buf.frames() as u64;
 
