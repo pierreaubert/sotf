@@ -870,7 +870,7 @@ pub async fn load_spinorama_with_spin(
 }
 
 /// Build Cea2034Data from curves HashMap
-fn build_cea2034_data(curves: HashMap<String, Curve>) -> Result<Cea2034Data, Box<dyn Error>> {
+pub fn build_cea2034_data(curves: HashMap<String, Curve>) -> Result<Cea2034Data, Box<dyn Error>> {
     let get_curve = |name: &str| -> Result<Curve, Box<dyn Error>> {
         curves
             .get(name)

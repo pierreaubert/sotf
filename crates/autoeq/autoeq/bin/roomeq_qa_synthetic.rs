@@ -353,6 +353,7 @@ fn build_config(
         target_curve: None,
         optimizer: Default::default(),
         recording_config: None,
+        cea2034_cache: None,
     };
 
     config.optimizer.algorithm = "autoeq:de".to_string();
@@ -556,6 +557,7 @@ fn build_multisub_config(
         target_curve: None,
         optimizer: Default::default(),
         recording_config: None,
+        cea2034_cache: None,
     };
 
     config.optimizer.algorithm = "autoeq:de".to_string();
@@ -841,6 +843,7 @@ fn build_multichannel_config(
         target_curve: None,
         optimizer: Default::default(),
         recording_config: None,
+        cea2034_cache: None,
     };
 
     config.optimizer.algorithm = "autoeq:de".to_string();

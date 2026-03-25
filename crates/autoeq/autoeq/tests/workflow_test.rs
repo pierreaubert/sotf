@@ -56,6 +56,7 @@ mod tests {
                 ..OptimizerConfig::default()
             },
             recording_config: None,
+            cea2034_cache: None,
         };
 
         let result = autoeq::roomeq::optimize_room(&config, 48000.0, None, None)
@@ -150,6 +151,7 @@ mod tests {
                 ..OptimizerConfig::default()
             },
             recording_config: None,
+            cea2034_cache: None,
         };
 
         let result = autoeq::roomeq::optimize_room(&config, 48000.0, None, None)

@@ -53,6 +53,7 @@ mod tests {
             target_curve: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
+            cea2034_cache: None,
         };
 
         let result = optimize_room(&config, 48000.0, None, None).expect("Optimization failed");
@@ -115,6 +116,7 @@ mod tests {
             target_curve: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
+            cea2034_cache: None,
         };
 
         let result = optimize_room(&config, 48000.0, None, None).expect("Optimization failed");

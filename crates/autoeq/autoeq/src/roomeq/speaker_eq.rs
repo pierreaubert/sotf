@@ -180,25 +180,45 @@ pub(super) fn process_single_speaker(
     // Build the unified target curve from target_response (or migrated legacy fields).
     // This curve is the single source of truth for both broadband pre-correction
     // and EQ optimization, eliminating double-tilt bugs.
+    //
+    // When 3-pass CEA2034 correction is active, user preferences (bass/treble shelves)
+    // are emitted as Pass 3 filters rather than being baked into the target curve.
+    let cea2034_active = room_config
+        .optimizer
+        .cea2034_correction
+        .as_ref()
+        .is_some_and(|c| c.enabled);
+
     let target_tilt_curve = if let Some(ref target_resp) = room_config.optimizer.target_response {
-        if target_resp.shape != TargetShape::Flat
-            || target_resp.preference.bass_shelf_db.abs() > 1e-6
-            || target_resp.preference.treble_shelf_db.abs() > 1e-6
+        // When 3-pass is active, strip preferences from the target
+        // (they become Pass 3 output filters instead)
+        let effective_target = if cea2034_active {
+            let mut stripped = target_resp.clone();
+            stripped.preference = super::types::UserPreference::default();
+            stripped
+        } else {
+            target_resp.clone()
+        };
+
+        if effective_target.shape != TargetShape::Flat
+            || effective_target.preference.bass_shelf_db.abs() > 1e-6
+            || effective_target.preference.treble_shelf_db.abs() > 1e-6
         {
             info!(
-                "  Building target curve: shape={:?}, slope={:.2} dB/oct, bass={:+.1}dB, treble={:+.1}dB",
-                target_resp.shape,
-                match target_resp.shape {
+                "  Building target curve: shape={:?}, slope={:.2} dB/oct, bass={:+.1}dB, treble={:+.1}dB{}",
+                effective_target.shape,
+                match effective_target.shape {
                     TargetShape::Harman => -0.8,
-                    TargetShape::Custom => target_resp.slope_db_per_octave,
+                    TargetShape::Custom => effective_target.slope_db_per_octave,
                     _ => 0.0,
                 },
-                target_resp.preference.bass_shelf_db,
-                target_resp.preference.treble_shelf_db,
+                effective_target.preference.bass_shelf_db,
+                effective_target.preference.treble_shelf_db,
+                if cea2034_active { " (preferences extracted to Pass 3)" } else { "" },
             );
             Some(target_tilt::build_complete_target_curve(
                 &curve.freq,
-                target_resp,
+                &effective_target,
             ))
         } else {
             None
@@ -281,6 +301,84 @@ pub(super) fn process_single_speaker(
     } else {
         curve
     };
+
+    // ========================================================================
+    // Pass 1: CEA2034 Speaker Correction (above Schroeder frequency)
+    // ========================================================================
+    let (curve, cea2034_filters, cea2034_plugins) =
+        if let Some(cea_config) = &room_config.optimizer.cea2034_correction {
+            if cea_config.enabled {
+                // Resolve speaker name: config override > MeasurementSource
+                let speaker_name = cea_config
+                    .speaker_name
+                    .as_deref()
+                    .or_else(|| source.speaker_name());
+
+                if let Some(name) = speaker_name {
+                    // Look up pre-fetched CEA2034 data
+                    let cea_data = room_config
+                        .cea2034_cache
+                        .as_ref()
+                        .and_then(|cache| cache.get(name));
+
+                    if let Some(data) = cea_data {
+                        // Determine Schroeder frequency
+                        let schroeder_freq = cea_config.min_freq.unwrap_or_else(|| {
+                            room_config
+                                .optimizer
+                                .schroeder_split
+                                .as_ref()
+                                .filter(|s| s.enabled)
+                                .map(|s| s.schroeder_freq)
+                                .unwrap_or(300.0)
+                        });
+
+                        match super::cea2034_correction::compute_speaker_correction(
+                            data,
+                            cea_config,
+                            &curve,
+                            schroeder_freq,
+                            arrival_time_ms,
+                            sample_rate,
+                        ) {
+                            Ok((filters, corrected_curve)) => {
+                                info!(
+                                    "  Pass 1 CEA2034 correction: {} filters above {:.0} Hz for '{}'",
+                                    filters.len(),
+                                    schroeder_freq,
+                                    name
+                                );
+                                let plugin = output::create_labeled_eq_plugin(
+                                    &filters,
+                                    "cea2034_speaker_correction",
+                                );
+                                (corrected_curve, filters, vec![plugin])
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "  CEA2034 correction failed for '{}': {}. Skipping Pass 1.",
+                                    name, e
+                                );
+                                (curve, vec![], vec![])
+                            }
+                        }
+                    } else {
+                        warn!(
+                            "  No CEA2034 data in cache for speaker '{}'. Skipping Pass 1.",
+                            name
+                        );
+                        (curve, vec![], vec![])
+                    }
+                } else {
+                    debug!("  No speaker_name configured. Skipping CEA2034 correction.");
+                    (curve, vec![], vec![])
+                }
+            } else {
+                (curve, vec![], vec![])
+            }
+        } else {
+            (curve, vec![], vec![])
+        };
 
     // Compute pre-score (within EQ range)
     let mut min_freq = room_config.optimizer.min_freq;
@@ -1116,19 +1214,58 @@ pub(super) fn process_single_speaker(
 
             info!("  Optimized {} EQ filters", eq_filters.len());
 
-            // Combine excursion protection + broadband + EQ filters
+            // Pass 3: User Preference Filters (bass/treble shelves as separate pass)
+            // When 3-pass mode is active, extract preference as separate output filters
+            // instead of baking them into the target curve.
+            // (reuses cea2034_active computed at the start of process_single_speaker)
+            let preference_filters = if cea2034_active {
+                if let Some(ref target_resp) = room_config.optimizer.target_response {
+                    super::cea2034_correction::generate_preference_filters(
+                        &target_resp.preference,
+                        sample_rate,
+                    )
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            };
+
+            // all_filters includes every biquad for response simulation only.
+            // The DSP chain uses separate labeled plugins to avoid double-application.
             let mut all_filters = excursion_filters.clone();
+            all_filters.extend(cea2034_filters.iter().cloned());
             all_filters.extend(broadband_biquads.iter().cloned());
             all_filters.extend(eq_filters.clone());
+            all_filters.extend(preference_filters.iter().cloned());
+
+            // Filters for the main EQ plugin in the chain (only excursion + room EQ).
+            // CEA2034, broadband, and preference are added as separate labeled plugins.
+            let mut main_eq_filters = excursion_filters.clone();
+            main_eq_filters.extend(eq_filters.clone());
+
+            // Build plugin chain: CEA2034 + broadband as separate plugins,
+            // then main EQ, then preference — each applied exactly once.
+            let mut pre_plugins = Vec::new();
+            pre_plugins.extend(cea2034_plugins.iter().cloned());
+            pre_plugins.extend(broadband_plugins.iter().cloned());
 
             let mut chain = output::build_channel_dsp_chain_with_curves(
                 channel_name,
                 None,
-                broadband_plugins,
-                &all_filters,
+                pre_plugins,
+                &main_eq_filters,
                 None,
                 None,
             );
+
+            // Add Pass 3 preference EQ plugin if non-empty
+            if !preference_filters.is_empty() {
+                chain.plugins.push(output::create_labeled_eq_plugin(
+                    &preference_filters,
+                    "user_preference",
+                ));
+            }
 
             // Compute final response including all corrections (HPF + broadband + EQ).
             // Apply to curve_raw (original measurement) since all_filters includes

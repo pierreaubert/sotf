@@ -155,6 +155,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
             target_curve: None,
             optimizer,
             recording_config: None,
+            cea2034_cache: None,
         };
         return Ok(config);
     }
@@ -263,6 +264,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         target_curve: None,
         optimizer,
         recording_config: None,
+        cea2034_cache: None,
     };
 
     Ok(config)

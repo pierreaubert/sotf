@@ -291,6 +291,12 @@ pub struct RoomConfig {
     /// Recording configuration (device settings, signal parameters used during capture)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_config: Option<RecordingConfiguration>,
+
+    /// Pre-fetched CEA2034 data (runtime only, not serialized).
+    /// Keyed by speaker name. Populated by `optimize_room()` when `cea2034_correction` is enabled.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub cea2034_cache: Option<HashMap<String, crate::read::Cea2034Data>>,
 }
 
 impl RoomConfig {
@@ -1318,6 +1324,16 @@ pub struct OptimizerConfig {
     /// gets gentle correction, early reflections get reduced correction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decomposed_correction: Option<DecomposedCorrectionSerdeConfig>,
+
+    /// CEA2034 speaker pre-correction configuration.
+    /// When enabled, fetches anechoic speaker data from spinorama.org and generates
+    /// correction filters for frequencies above the Schroeder frequency.
+    /// This is Pass 1 of the 3-pass optimization pipeline:
+    ///   Pass 1: Speaker correction (above Schroeder)
+    ///   Pass 2: Room EQ correction (standard room correction on residual)
+    ///   Pass 3: User preference (bass/treble shelves)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cea2034_correction: Option<Cea2034CorrectionConfig>,
 }
 
 // ============================================================================
@@ -1473,6 +1489,129 @@ fn default_decomposed_steady_weight() -> f64 {
     0.5
 }
 
+// ============================================================================
+// CEA2034 Speaker Pre-Correction Configuration
+// ============================================================================
+
+/// Correction mode for CEA2034 speaker pre-correction.
+///
+/// The optimal strategy depends on listening distance:
+/// - Nearfield (<2m): direct sound dominates → correct Listening Window toward flat
+/// - Farfield (>=2m): room interaction matters → optimize full Harman preference score
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Cea2034CorrectionMode {
+    /// Correct Listening Window toward flat (best for nearfield <2m)
+    Flat,
+    /// Optimize full Harman speaker preference score using all CEA2034 curves
+    Score,
+    /// Auto-select based on estimated listening distance from impulse response
+    #[default]
+    Auto,
+}
+
+/// CEA2034 speaker pre-correction configuration.
+///
+/// When enabled, fetches anechoic measurement data from spinorama.org for the
+/// configured speaker and generates correction filters for frequencies above the
+/// Schroeder frequency. Below Schroeder, the room dominates and speaker correction
+/// is not applied.
+///
+/// This is Pass 1 of the 3-pass optimization pipeline.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Cea2034CorrectionConfig {
+    /// Enable CEA2034 speaker pre-correction
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Speaker name on spinorama.org (overrides speaker_name from MeasurementSource)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_name: Option<String>,
+
+    /// Measurement version on spinorama.org (default: "asr")
+    #[serde(default = "default_cea2034_version")]
+    pub version: String,
+
+    /// Correction mode: flat (nearfield), score (farfield), auto (distance-based)
+    #[serde(default)]
+    pub correction_mode: Cea2034CorrectionMode,
+
+    /// Manual listening distance override in meters.
+    /// When None and mode=Auto, computed from arrival_time - system_latency.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listening_distance_m: Option<f64>,
+
+    /// System round-trip latency in ms (for distance computation from impulse response).
+    /// Subtract this from arrival_time_ms to get acoustic propagation time only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_latency_ms: Option<f64>,
+
+    /// Distance threshold in meters for auto mode switch (default: 2.0m).
+    /// Below this: flat LW correction. At or above: speaker-score optimization.
+    #[serde(default = "default_nearfield_threshold")]
+    pub nearfield_threshold_m: f64,
+
+    /// Override minimum correction frequency in Hz (Schroeder frequency).
+    /// Below this frequency, speaker correction is skipped (room dominates).
+    /// If None, uses the Schroeder frequency from schroeder_split config, or 300 Hz.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_freq: Option<f64>,
+
+    /// Number of PEQ filters for speaker correction (default: 5)
+    #[serde(default = "default_cea2034_num_filters")]
+    pub num_filters: usize,
+
+    /// Maximum Q factor (default: 3.0)
+    #[serde(default = "default_cea2034_max_q")]
+    pub max_q: f64,
+
+    /// Maximum boost in dB (default: 3.0, allows limited boosts)
+    #[serde(default = "default_cea2034_max_db")]
+    pub max_db: f64,
+
+    /// Minimum gain in dB (default: -12.0)
+    #[serde(default = "default_cea2034_min_db")]
+    pub min_db: f64,
+}
+
+fn default_cea2034_version() -> String {
+    "asr".to_string()
+}
+fn default_nearfield_threshold() -> f64 {
+    2.0
+}
+fn default_cea2034_num_filters() -> usize {
+    5
+}
+fn default_cea2034_max_q() -> f64 {
+    3.0
+}
+fn default_cea2034_max_db() -> f64 {
+    3.0
+}
+fn default_cea2034_min_db() -> f64 {
+    -12.0
+}
+
+impl Default for Cea2034CorrectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            speaker_name: None,
+            version: default_cea2034_version(),
+            correction_mode: Cea2034CorrectionMode::default(),
+            listening_distance_m: None,
+            system_latency_ms: None,
+            nearfield_threshold_m: default_nearfield_threshold(),
+            min_freq: None,
+            num_filters: default_cea2034_num_filters(),
+            max_q: default_cea2034_max_q(),
+            max_db: default_cea2034_max_db(),
+            min_db: default_cea2034_min_db(),
+        }
+    }
+}
+
 // Default values for OptimizerConfig
 fn default_loss_type() -> String {
     "flat".to_string()
@@ -1591,6 +1730,7 @@ impl Default for OptimizerConfig {
             broadband_target_matching: None,
             multi_measurement: None,
             decomposed_correction: None,
+            cea2034_correction: None,
         }
     }
 }
@@ -1833,6 +1973,7 @@ mod tests {
             target_curve: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
+            cea2034_cache: None,
         };
 
         // Should serialize and deserialize

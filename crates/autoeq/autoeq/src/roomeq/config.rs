@@ -175,6 +175,42 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         ));
     }
 
+    // Validate CEA2034 correction config
+    if let Some(ref cea) = opt.cea2034_correction
+        && cea.enabled
+    {
+        if cea.num_filters == 0 || cea.num_filters > 20 {
+            result.add_error(format!(
+                "cea2034_correction.num_filters ({}) must be in range [1..20]",
+                cea.num_filters
+            ));
+        }
+        if cea.max_q <= 0.0 {
+            result.add_error(format!(
+                "cea2034_correction.max_q ({}) must be positive",
+                cea.max_q
+            ));
+        }
+        if cea.min_db >= 0.0 {
+            result.add_warning(format!(
+                "cea2034_correction.min_db ({}) is non-negative; speaker correction typically needs cuts",
+                cea.min_db
+            ));
+        }
+        if cea.max_db < cea.min_db {
+            result.add_error(format!(
+                "cea2034_correction.max_db ({}) must be >= min_db ({})",
+                cea.max_db, cea.min_db
+            ));
+        }
+        if cea.nearfield_threshold_m <= 0.0 {
+            result.add_error(format!(
+                "cea2034_correction.nearfield_threshold_m ({}) must be positive",
+                cea.nearfield_threshold_m
+            ));
+        }
+    }
+
     // Validate mode
     let valid_modes = ["iir", "fir", "mixed", "mixed_phase"];
     if !valid_modes.contains(&opt.mode.as_str()) {
@@ -499,6 +535,7 @@ mod tests {
             target_curve: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
+            cea2034_cache: None,
         };
 
         let result = validate_room_config(&config);
@@ -529,6 +566,7 @@ mod tests {
             target_curve: None,
             optimizer,
             recording_config: None,
+            cea2034_cache: None,
         };
 
         let result = validate_room_config(&config);
@@ -566,6 +604,7 @@ mod tests {
             target_curve: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
+            cea2034_cache: None,
         };
 
         let result = validate_room_config(&config);
@@ -597,6 +636,7 @@ mod tests {
             target_curve: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
+            cea2034_cache: None,
         };
 
         let result = validate_room_config(&config);
@@ -633,6 +673,7 @@ mod tests {
             target_curve: None,
             optimizer,
             recording_config: None,
+            cea2034_cache: None,
         }
     }
 

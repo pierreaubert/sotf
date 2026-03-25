@@ -77,7 +77,8 @@ pub use output::{
     build_multidriver_dsp_chain_with_curves, build_multisub_dsp_chain,
     build_multisub_dsp_chain_with_curves, build_multisub_dsp_chain_with_allpass,
     create_convolution_plugin, create_crossover_plugin,
-    create_delay_plugin, create_dsp_chain_output, create_eq_plugin, create_gain_plugin,
+    create_delay_plugin, create_dsp_chain_output, create_eq_plugin, create_labeled_eq_plugin,
+    create_gain_plugin,
     create_gain_plugin_with_invert, save_dsp_chain,
 };
 
@@ -109,6 +110,9 @@ pub mod impulse_analysis;
 pub use impulse_analysis::{
     DecomposedCorrectionConfig, DecomposedCorrectionResult, analyze_decomposed_correction,
 };
+
+// CEA2034 speaker pre-correction (3-pass pipeline)
+pub mod cea2034_correction;
 
 // Utility modules
 mod ir_waveform;

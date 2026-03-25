@@ -353,6 +353,24 @@ pub fn optimize_room(
     // (tests, GPUI) may not have called it.
     let mut config = config.clone();
     config.optimizer.migrate_target_config();
+
+    // Pre-fetch CEA2034 data for all speakers when speaker pre-correction is enabled
+    if config
+        .optimizer
+        .cea2034_correction
+        .as_ref()
+        .is_some_and(|c| c.enabled)
+    {
+        let cache = super::cea2034_correction::pre_fetch_all_cea2034(&config);
+        if !cache.is_empty() {
+            info!(
+                "  CEA2034 cache: loaded data for {} speaker(s)",
+                cache.len()
+            );
+            config.cea2034_cache = Some(cache);
+        }
+    }
+
     let config = &config;
 
     // Validate configuration
@@ -1324,6 +1342,7 @@ pub fn optimize_speaker(
         target_curve: target_curve.cloned(),
         optimizer: optimizer_config.clone(),
         recording_config: None,
+        cea2034_cache: None,
     };
 
     let (

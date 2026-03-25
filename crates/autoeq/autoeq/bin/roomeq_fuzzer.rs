@@ -618,6 +618,7 @@ fn generate_random_config(
             ..OptimizerConfig::default()
         },
         recording_config: None,
+        cea2034_cache: None,
     };
 
     Ok((room_config, measurement_files, multi_driver_groups))

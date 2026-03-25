@@ -123,6 +123,23 @@ pub fn create_eq_plugin(filters: &[Biquad]) -> PluginConfigWrapper {
     }
 }
 
+/// Create a labeled EQ plugin configuration from Biquad filters.
+///
+/// Adds a `label` field to the parameters JSON to identify which pass
+/// of the 3-pass pipeline this EQ belongs to. The audio engine ignores
+/// unknown keys, so this is backward-compatible.
+pub fn create_labeled_eq_plugin(filters: &[Biquad], label: &str) -> PluginConfigWrapper {
+    let filter_configs: Vec<serde_json::Value> = filters.iter().map(biquad_to_json).collect();
+
+    PluginConfigWrapper {
+        plugin_type: "eq".to_string(),
+        parameters: json!({
+            "label": label,
+            "filters": filter_configs
+        }),
+    }
+}
+
 /// Create a crossover plugin configuration
 pub fn create_crossover_plugin(
     crossover_type: &str,
