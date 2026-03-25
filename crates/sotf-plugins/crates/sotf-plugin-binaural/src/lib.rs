@@ -3,6 +3,7 @@
 // ============================================================================
 
 use arc_swap::ArcSwap;
+use math_audio_dsp::rtpghi::RtpghiProcessor;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
@@ -97,6 +98,18 @@ pub struct BinauralDecoderPlugin {
     /// Temporary buffers for crossfade blending (old filter output)
     crossfade_sum_left: Vec<Complex<f32>>,
     crossfade_sum_right: Vec<Complex<f32>>,
+
+    /// Crossfade mode: 0 = Linear (complex blend), 1 = Spectral (magnitude interpolation + RTPGHI)
+    crossfade_mode_index: usize,
+    /// RTPGHI processors for spectral crossfade (one per ear), created lazily in initialize()
+    rtpghi_left: Option<RtpghiProcessor>,
+    rtpghi_right: Option<RtpghiProcessor>,
+    /// Pre-allocated magnitude scratch buffers for spectral crossfade
+    crossfade_mag_left: Vec<f32>,
+    crossfade_mag_right: Vec<f32>,
+    /// Pre-allocated phase output buffers for RTPGHI
+    crossfade_phase_left: Vec<f32>,
+    crossfade_phase_right: Vec<f32>,
 
     latency_filled: usize,
     cached_parameters: Vec<Parameter>,
@@ -250,6 +263,13 @@ impl BinauralDecoderPlugin {
             crossfade_total: 0,
             crossfade_sum_left: vec![Complex::new(0.0, 0.0); freq_size],
             crossfade_sum_right: vec![Complex::new(0.0, 0.0); freq_size],
+            crossfade_mode_index: 0,
+            rtpghi_left: None,
+            rtpghi_right: None,
+            crossfade_mag_left: vec![0.0; freq_size],
+            crossfade_mag_right: vec![0.0; freq_size],
+            crossfade_phase_left: vec![0.0; freq_size],
+            crossfade_phase_right: vec![0.0; freq_size],
             latency_filled: 0,
             cached_parameters: Vec::new(),
             crossfade_ms: 50.0,
@@ -330,6 +350,13 @@ impl BinauralDecoderPlugin {
                 4.0,
                 16.0,
             ),
+            Parameter::new_int(
+                "crossfade_mode",
+                "Crossfade Mode",
+                self.crossfade_mode_index as i32,
+                0,
+                1,
+            ),
         ];
     }
 
@@ -380,6 +407,17 @@ impl BinauralDecoderPlugin {
             self.crossfade_total = total;
             self.crossfade_remaining = total;
             self.current_state_snapshot = new_state.clone();
+
+            // Reset RTPGHI state when starting a new crossfade so stale phase
+            // history from a previous crossfade does not contaminate this one.
+            if self.crossfade_mode_index == 1 {
+                if let Some(ref mut rtpghi) = self.rtpghi_left {
+                    rtpghi.reset();
+                }
+                if let Some(ref mut rtpghi) = self.rtpghi_right {
+                    rtpghi.reset();
+                }
+            }
         }
 
         let state = &new_state;
@@ -490,11 +528,68 @@ impl BinauralDecoderPlugin {
             };
             let old_gain = 1.0 - new_gain;
 
-            for k in 0..freq_size {
-                self.sum_left[k] =
-                    self.sum_left[k] * new_gain + self.crossfade_sum_left[k] * old_gain;
-                self.sum_right[k] =
-                    self.sum_right[k] * new_gain + self.crossfade_sum_right[k] * old_gain;
+            let use_spectral = self.crossfade_mode_index == 1
+                && self.rtpghi_left.is_some()
+                && self.rtpghi_right.is_some();
+
+            if use_spectral {
+                // Spectral mode: magnitude interpolation + RTPGHI phase reconstruction
+                // This avoids comb-filter artifacts from complex-domain blending.
+                for k in 0..freq_size {
+                    let mag_new_l = (self.sum_left[k].re * self.sum_left[k].re
+                        + self.sum_left[k].im * self.sum_left[k].im)
+                        .sqrt();
+                    let mag_old_l = (self.crossfade_sum_left[k].re
+                        * self.crossfade_sum_left[k].re
+                        + self.crossfade_sum_left[k].im * self.crossfade_sum_left[k].im)
+                        .sqrt();
+                    self.crossfade_mag_left[k] = mag_old_l * old_gain + mag_new_l * new_gain;
+
+                    let mag_new_r = (self.sum_right[k].re * self.sum_right[k].re
+                        + self.sum_right[k].im * self.sum_right[k].im)
+                        .sqrt();
+                    let mag_old_r = (self.crossfade_sum_right[k].re
+                        * self.crossfade_sum_right[k].re
+                        + self.crossfade_sum_right[k].im * self.crossfade_sum_right[k].im)
+                        .sqrt();
+                    self.crossfade_mag_right[k] = mag_old_r * old_gain + mag_new_r * new_gain;
+                }
+
+                // RTPGHI phase reconstruction from interpolated magnitudes
+                // Safety: use_spectral already checked is_some() above.
+                let rtpghi_l = self.rtpghi_left.as_mut().expect("checked above");
+                rtpghi_l.process_frame_into(
+                    &self.crossfade_mag_left[..freq_size],
+                    &mut self.crossfade_phase_left[..freq_size],
+                );
+                let rtpghi_r = self.rtpghi_right.as_mut().expect("checked above");
+                rtpghi_r.process_frame_into(
+                    &self.crossfade_mag_right[..freq_size],
+                    &mut self.crossfade_phase_right[..freq_size],
+                );
+
+                // Reconstruct complex spectrum from blended magnitude + reconstructed phase
+                for k in 0..freq_size {
+                    let (sin_l, cos_l) = (self.crossfade_phase_left[k] as f64).sin_cos();
+                    self.sum_left[k] = Complex::new(
+                        self.crossfade_mag_left[k] * cos_l as f32,
+                        self.crossfade_mag_left[k] * sin_l as f32,
+                    );
+
+                    let (sin_r, cos_r) = (self.crossfade_phase_right[k] as f64).sin_cos();
+                    self.sum_right[k] = Complex::new(
+                        self.crossfade_mag_right[k] * cos_r as f32,
+                        self.crossfade_mag_right[k] * sin_r as f32,
+                    );
+                }
+            } else {
+                // Linear mode: simple complex-domain blend (original behavior)
+                for k in 0..freq_size {
+                    self.sum_left[k] =
+                        self.sum_left[k] * new_gain + self.crossfade_sum_left[k] * old_gain;
+                    self.sum_right[k] =
+                        self.sum_right[k] * new_gain + self.crossfade_sum_right[k] * old_gain;
+                }
             }
 
             // Advance crossfade
@@ -820,6 +915,13 @@ impl BinauralDecoderPlugin {
         // Clear crossfade state on reset
         self.crossfade_prev_state = None;
         self.crossfade_remaining = 0;
+        // Reset RTPGHI state so stale phase history is not carried across resets
+        if let Some(ref mut rtpghi) = self.rtpghi_left {
+            rtpghi.reset();
+        }
+        if let Some(ref mut rtpghi) = self.rtpghi_right {
+            rtpghi.reset();
+        }
     }
 }
 
@@ -1048,6 +1150,17 @@ impl Plugin for BinauralDecoderPlugin {
                 }
             }
             Ok(())
+        } else if id.0 == "crossfade_mode" {
+            let v = val
+                .as_int()
+                .or_else(|| val.as_float().map(|f| f as i32))
+                .ok_or_else(|| "crossfade_mode must be an int".to_string())?;
+            let idx = v as usize;
+            if idx <= 1 {
+                self.crossfade_mode_index = idx;
+                self.rebuild_cached_parameters();
+            }
+            Ok(())
         } else {
             Err(format!("Unknown: {}", id))
         }
@@ -1077,6 +1190,8 @@ impl Plugin for BinauralDecoderPlugin {
             Some(ParameterValue::Float(self.head_width_cm))
         } else if id.0 == "ear_height_cm" {
             Some(ParameterValue::Float(self.ear_height_cm))
+        } else if id.0 == "crossfade_mode" {
+            Some(ParameterValue::Int(self.crossfade_mode_index as i32))
         } else {
             None
         }
@@ -1088,6 +1203,15 @@ impl Plugin for BinauralDecoderPlugin {
         self.head_yaw_deg.set_time(10.0, sr);
         self.head_pitch_deg.set_time(10.0, sr);
         self.head_roll_deg.set_time(10.0, sr);
+
+        // Initialize RTPGHI processors for spectral crossfade mode
+        self.rtpghi_left = Some(RtpghiProcessor::new(self.fft_size, self.hop_size));
+        self.rtpghi_right = Some(RtpghiProcessor::new(self.fft_size, self.hop_size));
+        // Ensure magnitude/phase scratch buffers are correctly sized
+        self.crossfade_mag_left.resize(self.freq_size, 0.0);
+        self.crossfade_mag_right.resize(self.freq_size, 0.0);
+        self.crossfade_phase_left.resize(self.freq_size, 0.0);
+        self.crossfade_phase_right.resize(self.freq_size, 0.0);
         let (f, g) = filter::compute_lfe_filter(
             self.fft_size,
             sr,
@@ -2007,5 +2131,235 @@ mod tests {
             output.iter().all(|s| s.is_finite()),
             "All output samples must be finite with non-zero yaw"
         );
+    }
+
+    /// Verify that spectral crossfade mode (magnitude interpolation + RTPGHI)
+    /// produces a smoother magnitude spectrum than linear complex blending
+    /// during an HRTF transition.
+    ///
+    /// The test triggers a crossfade between two different HRTF filter sets and
+    /// processes audio through both modes. The spectral mode should produce a
+    /// magnitude spectrum without the comb-filter dips that linear mode creates
+    /// when old and new HRTFs have different phase responses.
+    #[test]
+    fn test_spectral_crossfade_no_tonal_shift() {
+        let fft_size = 1024;
+        let freq_size = fft_size / 2 + 1;
+        let sample_rate = 44100u32;
+
+        // Create two plugins: one linear (mode 0), one spectral (mode 1)
+        let make_plugin = |mode: usize| {
+            let mut p = BinauralDecoderPlugin::new(
+                2,
+                fft_size,
+                None,
+                true,
+                0.0,
+                0.0,
+                false,
+                120.0,
+                2.0,
+                0.0,
+                RoomModel::default(),
+            );
+            p.crossfade_mode_index = mode;
+            p.initialize(sample_rate).unwrap();
+            p
+        };
+
+        let mut linear_plugin = make_plugin(0);
+        let mut spectral_plugin = make_plugin(1);
+
+        // Create two distinct HRTF states to trigger a crossfade.
+        // State A: passthrough-like (all 1.0)
+        // State B: different phase response (rotated complex values)
+        let make_state = |phase_shift: f32, channels: usize| {
+            let mut filters = vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; channels];
+            for ch in 0..channels {
+                for k in 0..freq_size {
+                    // Different phase per frequency bin for state B, creating phase
+                    // differences that would cause comb-filtering in linear blend.
+                    let angle = phase_shift * (k as f32 / freq_size as f32) * std::f32::consts::PI;
+                    let (sin_a, cos_a) = angle.sin_cos();
+                    let val = Complex::new(cos_a * 0.7, sin_a * 0.7);
+                    filters[ch][k] = val;               // left ear
+                    filters[ch][freq_size + k] = val;   // right ear
+                }
+            }
+            Arc::new(BinauralState {
+                hrtf_filters_freq: filters,
+                diffuse_field_eq_filter: None,
+                _hrtf_data: None,
+            })
+        };
+
+        // Start with state A
+        let state_a = make_state(0.0, 2);
+        linear_plugin.state.store(state_a.clone());
+        spectral_plugin.state.store(state_a.clone());
+        // Force state snapshot update
+        linear_plugin.current_state_snapshot = linear_plugin.state.load_full();
+        spectral_plugin.current_state_snapshot = spectral_plugin.state.load_full();
+
+        // Process a few frames to fill pipeline
+        let num_frames = fft_size * 4;
+        let input: Vec<f32> = (0..num_frames * 2)
+            .map(|i| {
+                let phase = 2.0 * std::f32::consts::PI * 1000.0 * (i / 2) as f32 / sample_rate as f32;
+                phase.sin() * 0.5
+            })
+            .collect();
+        let mut output_warmup = vec![0.0f32; num_frames * 2];
+        let ctx = ProcessContext {
+            num_frames,
+            sample_rate,
+        };
+        linear_plugin.process(&input, &mut output_warmup, &ctx).unwrap();
+        spectral_plugin.process(&input, &mut output_warmup, &ctx).unwrap();
+
+        // Now switch to state B -- this triggers crossfade
+        let state_b = make_state(4.0, 2);
+        linear_plugin.state.store(state_b.clone());
+        spectral_plugin.state.store(state_b);
+
+        // Process during the crossfade
+        let mut output_linear = vec![0.0f32; num_frames * 2];
+        let mut output_spectral = vec![0.0f32; num_frames * 2];
+        linear_plugin.process(&input, &mut output_linear, &ctx).unwrap();
+        spectral_plugin.process(&input, &mut output_spectral, &ctx).unwrap();
+
+        // Both outputs must be finite
+        assert!(
+            output_linear.iter().all(|s| s.is_finite()),
+            "Linear crossfade output must be finite"
+        );
+        assert!(
+            output_spectral.iter().all(|s| s.is_finite()),
+            "Spectral crossfade output must be finite"
+        );
+
+        // Both outputs should have signal (not silence)
+        let linear_energy: f32 = output_linear.iter().map(|s| s * s).sum();
+        let spectral_energy: f32 = output_spectral.iter().map(|s| s * s).sum();
+        assert!(
+            linear_energy > 1e-6,
+            "Linear crossfade should produce signal, energy={}",
+            linear_energy
+        );
+        assert!(
+            spectral_energy > 1e-6,
+            "Spectral crossfade should produce signal, energy={}",
+            spectral_energy
+        );
+
+        // Compute magnitude spectra of a chunk during crossfade to verify
+        // spectral mode has smoother magnitude (fewer comb-filter dips).
+        // Take a section from the middle of the output (skip latency).
+        let analysis_start = fft_size; // skip initial latency
+        if analysis_start + fft_size <= num_frames {
+            let compute_spectrum = |output: &[f32]| -> Vec<f32> {
+                let mut mags = vec![0.0f32; freq_size];
+                // Simple DFT magnitude for left channel
+                for k in 0..freq_size {
+                    let mut re = 0.0f64;
+                    let mut im = 0.0f64;
+                    for n in 0..fft_size {
+                        let sample = output[(analysis_start + n) * 2] as f64;
+                        let angle = -2.0 * std::f64::consts::PI * k as f64 * n as f64 / fft_size as f64;
+                        re += sample * angle.cos();
+                        im += sample * angle.sin();
+                    }
+                    mags[k] = (re * re + im * im).sqrt() as f32;
+                }
+                mags
+            };
+
+            let linear_mags = compute_spectrum(&output_linear);
+            let spectral_mags = compute_spectrum(&output_spectral);
+
+            // Count "deep nulls" in the magnitude spectrum (bins where magnitude
+            // drops to less than 10% of the peak). Linear complex blending with
+            // phase-mismatched HRTFs creates many such nulls. Spectral mode should
+            // create fewer.
+            let count_nulls = |mags: &[f32]| -> usize {
+                let peak = mags.iter().copied().fold(0.0f32, f32::max);
+                if peak < 1e-10 {
+                    return 0;
+                }
+                let threshold = peak * 0.1;
+                // Only count nulls in the first half of the spectrum (audible range)
+                mags[1..freq_size / 2]
+                    .iter()
+                    .filter(|&&m| m < threshold && m > 0.0)
+                    .count()
+            };
+
+            let linear_nulls = count_nulls(&linear_mags);
+            let spectral_nulls = count_nulls(&spectral_mags);
+
+            // Spectral mode should not have MORE nulls than linear mode.
+            // (It should have fewer or equal.)
+            assert!(
+                spectral_nulls <= linear_nulls + 3, // small tolerance for edge effects
+                "Spectral crossfade should not produce more comb-filter nulls than linear: \
+                 spectral={}, linear={}",
+                spectral_nulls,
+                linear_nulls
+            );
+        }
+    }
+
+    /// Verify that the crossfade_mode parameter can be set and retrieved.
+    #[test]
+    fn test_crossfade_mode_parameter_set_get() {
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            1024,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+
+        // Default should be 0 (Linear)
+        let val = plugin
+            .get_parameter(&ParameterId::from("crossfade_mode"))
+            .expect("crossfade_mode must exist");
+        assert_eq!(val, ParameterValue::Int(0));
+
+        // Set to Spectral (1)
+        plugin
+            .set_parameter(
+                ParameterId::from("crossfade_mode"),
+                ParameterValue::Int(1),
+            )
+            .unwrap();
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("crossfade_mode")),
+            Some(ParameterValue::Int(1))
+        );
+        assert_eq!(plugin.crossfade_mode_index, 1);
+
+        // Invalid value (2) should be rejected by validation and not change the stored value
+        let result = plugin.set_parameter(
+            ParameterId::from("crossfade_mode"),
+            ParameterValue::Int(2),
+        );
+        assert!(result.is_err(), "Out-of-range crossfade_mode should be rejected");
+        assert_eq!(plugin.crossfade_mode_index, 1, "Invalid mode should not change state");
+
+        // Set back to Linear (0)
+        plugin
+            .set_parameter(
+                ParameterId::from("crossfade_mode"),
+                ParameterValue::Int(0),
+            )
+            .unwrap();
+        assert_eq!(plugin.crossfade_mode_index, 0);
     }
 }

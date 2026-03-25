@@ -10,6 +10,7 @@ path = "src/lib.rs"
 
 [dependencies]
 sotf-host = { workspace = true }
+math-dsp = { workspace = true }
 arc-swap = { workspace = true }
 audioadapter-buffers = { workspace = true }
 log = { workspace = true }

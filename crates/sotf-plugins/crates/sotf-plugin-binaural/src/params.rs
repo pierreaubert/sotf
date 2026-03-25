@@ -62,6 +62,14 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .structural()
     .doc("Near-field compensation amount"),
+    ParamSpec::choice(
+        "Crossfade Mode",
+        "crossfade_mode",
+        0,
+        &["Linear", "Spectral"],
+        "Quality",
+    )
+    .doc("Linear: simple blend (may cause tonal shift). Spectral: magnitude interpolation + phase reconstruction (smoother)"),
 ];
 
 // ============================================================================
@@ -77,8 +85,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     main: &[ControlGroup {
         title: "CONTROLS",
         controls: &[
-            ControlSpec::knob(3), // externalization
-            ControlSpec::knob(4), // near_field_strength
+            ControlSpec::knob(3),   // externalization
+            ControlSpec::knob(4),   // near_field_strength
+            ControlSpec::selector(5), // crossfade_mode
         ],
     }],
     output: &[],
@@ -111,6 +120,8 @@ pub struct Params {
     pub externalization: f64,
     #[serde(default = "d_near_field_strength")]
     pub near_field_strength: f64,
+    #[serde(default = "d_crossfade_mode")]
+    pub crossfade_mode: usize,
 }
 
 fn d_input_channels() -> usize {
@@ -125,6 +136,9 @@ fn d_externalization() -> f64 {
 fn d_near_field_strength() -> f64 {
     pk(PARAMS, "near_field_strength").default_f64()
 }
+fn d_crossfade_mode() -> usize {
+    pk(PARAMS, "crossfade_mode").default_usize()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -133,6 +147,7 @@ impl Default for Params {
             enable_optimization: d_enable_optimization(),
             externalization: d_externalization(),
             near_field_strength: d_near_field_strength(),
+            crossfade_mode: d_crossfade_mode(),
         }
     }
 }
@@ -154,6 +169,7 @@ impl PluginParamDef for Params {
             2 => Some(if self.enable_optimization { 1.0 } else { 0.0 }),
             3 => Some(self.externalization),
             4 => Some(self.near_field_strength),
+            5 => Some(self.crossfade_mode as f64),
             _ => None,
         }
     }
@@ -165,6 +181,7 @@ impl PluginParamDef for Params {
             2 => self.enable_optimization = value > 0.5,
             3 => self.externalization = value,
             4 => self.near_field_strength = value,
+            5 => self.crossfade_mode = value as usize,
             _ => {}
         }
     }
@@ -208,6 +225,7 @@ mod tests {
         );
         assert_eq!(original.externalization, restored.externalization);
         assert_eq!(original.near_field_strength, restored.near_field_strength);
+        assert_eq!(original.crossfade_mode, restored.crossfade_mode);
     }
 
     #[test]
@@ -228,6 +246,10 @@ mod tests {
         assert_eq!(
             p.near_field_strength,
             pk(PARAMS, "near_field_strength").default_f64()
+        );
+        assert_eq!(
+            p.crossfade_mode,
+            pk(PARAMS, "crossfade_mode").default_usize()
         );
     }
 }
