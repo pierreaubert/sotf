@@ -33,6 +33,8 @@ mod fir;
 mod fir_design;
 mod iir;
 mod phase_smooth;
+/// Zero-Delay Feedback State Variable Filter (Zavalishin TPT topology).
+pub mod svf;
 
 // Re-export error types
 pub use error::{IirError, Result};
@@ -63,6 +65,9 @@ pub use fir_design::{
 
 // Re-export phase smoothing functions
 pub use phase_smooth::{interpolate_phase_complex, smooth_phase_via_group_delay, unwrap_phase};
+
+// Re-export SVF filter types
+pub use svf::{SvfFilter, SvfFilterType};
 
 // ============================================================================
 // Common Helper Functions and Constants
