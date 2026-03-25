@@ -1,0 +1,13 @@
+[package]
+name = "sotf-docs-gen"
+description = "Generate documentation markdown from plugin PARAMS, keybindings, and screen guides"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "sotf-docs-gen"
+path = "src/main.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+sotf-plugins = { workspace = true, default-features = false }
