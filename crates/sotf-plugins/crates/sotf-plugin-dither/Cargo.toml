@@ -1,0 +1,17 @@
+[package]
+name = "sotf-plugin-dither"
+description = "SOTF Dither plugin - TPDF dither with F-weighted noise shaping for bit-depth reduction"
+version = "0.5.8"
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_dither"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
