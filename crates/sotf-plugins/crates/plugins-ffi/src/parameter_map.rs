@@ -194,14 +194,19 @@ impl ParameterMap {
         }
 
         // Fallback: direct set using raw parameter system
-        // Denormalize using cached info
+        // Denormalize using cached info (log scaling for Hz params, linear for others)
         if let Some(pos) = self.cached_infos.iter().position(|info| {
             let id = unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") };
             id == param_id
         }) {
             let info = &self.cached_infos[pos];
-            let raw = info.min_value
-                + (normalized_value * (info.max_value - info.min_value));
+            let raw = if info.logarithmic && info.min_value > 0.0 {
+                let log_min = info.min_value.ln();
+                let log_max = info.max_value.ln();
+                (log_min + normalized_value * (log_max - log_min)).exp()
+            } else {
+                info.min_value + (normalized_value * (info.max_value - info.min_value))
+            };
             let id = sotf_host::parameters::ParameterId(param_id.to_string());
             let value = sotf_host::parameters::ParameterValue::Float(raw as f32);
             plugin.set_parameter(id, value)
@@ -232,11 +237,18 @@ impl ParameterMap {
             sotf_host::parameters::ParameterValue::Bool(b) => if b { 1.0 } else { 0.0 },
             _ => return None,
         };
-        let range = info.max_value - info.min_value;
-        if range.abs() < f64::EPSILON {
-            return Some(0.0);
+        if info.logarithmic && info.min_value > 0.0 {
+            let log_min = info.min_value.ln();
+            let log_max = info.max_value.ln();
+            let log_val = raw.clamp(info.min_value, info.max_value).ln();
+            Some(((log_val - log_min) / (log_max - log_min)).clamp(0.0, 1.0))
+        } else {
+            let range = info.max_value - info.min_value;
+            if range.abs() < f64::EPSILON {
+                return Some(0.0);
+            }
+            Some(((raw - info.min_value) / range).clamp(0.0, 1.0))
         }
-        Some(((raw - info.min_value) / range).clamp(0.0, 1.0))
     }
 }
 
@@ -274,6 +286,8 @@ fn get_band_template(
         "MultibandExpander" | "multiband_expander" => {
             Some((multiband_expander::BAND_TEMPLATE, 5))
         }
+        "DynamicEQ" | "dynamic_eq" => Some((dynamic_eq::BAND_PARAMS, 8)),
+        "LinearPhaseEQ" | "linear_phase_eq" => Some((linear_phase_eq::BAND_TEMPLATE, 20)),
         _ => None,
     }
 }
@@ -307,7 +321,9 @@ fn expand_band_params(
                     } else {
                         0
                     };
-                    (min, max, default, steps, false)
+                    // Hz params with positive min use logarithmic scaling
+                    let is_log = spec.unit == "Hz" && min > 0.0;
+                    (min, max, default, steps, is_log)
                 }
                 ParamType::Int {
                     default,
@@ -384,6 +400,13 @@ fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::Param
         "PND" | "pnd" => pnd::PARAMS,
         "Denoiser" | "denoiser" => denoiser::PARAMS,
         "Downmix" | "downmix" => downmix::PARAMS,
+        "Saturation" | "saturation" => saturation::PARAMS,
+        "StereoImager" | "stereo_imager" => stereo_imager::PARAMS,
+        "TransientShaper" | "transient_shaper" => transient_shaper::PARAMS,
+        "DeEsser" | "de_esser" => de_esser::PARAMS,
+        "DynamicEQ" | "dynamic_eq" => dynamic_eq::PARAMS,
+        "LinearPhaseEQ" | "linear_phase_eq" => linear_phase_eq::PARAMS,
+        "Dither" | "dither" => dither::PARAMS,
         // Plugins without param_specs entries fall back to Plugin::parameters() in from_plugin()
         "Delay" | "delay"
         | "Matrix" | "matrix"
@@ -391,6 +414,18 @@ fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::Param
         | "Resampler" | "resampler" => &[],
         other => panic!("get_param_specs: unknown plugin type \"{other}\" — add it to the match arm"),
     }
+}
+
+/// Get the global (non-band) ParamSpec array for a plugin type.
+/// Used by `AuHostState` to determine the global param offset for band-based plugins.
+pub fn global_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::ParamSpec] {
+    get_param_specs(plugin_type)
+}
+
+/// Get band template info for a plugin type: `(params_per_band, max_bands)`.
+/// Returns `None` for plugins without dynamic bands.
+pub fn band_template_info(plugin_type: &str) -> Option<(usize, usize)> {
+    get_band_template(plugin_type).map(|(template, max_bands)| (template.len(), max_bands))
 }
 
 #[cfg(test)]

@@ -517,6 +517,7 @@ pub fn render_vertical_slider_sized<H: PluginViewHost>(
         .label(label.to_string())
         .selected(is_selected)
         .theme(theme_to_vertical_slider_theme(theme))
+        .design_tokens(theme.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
@@ -588,6 +589,7 @@ pub fn render_vertical_slider_with_ticks<H: PluginViewHost>(
         .with_ticks()
         .selected(is_selected)
         .theme(theme_to_vertical_slider_theme(theme))
+        .design_tokens(theme.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
@@ -1386,6 +1388,7 @@ pub fn render_knob_sized<H: PluginViewHost>(
         .scale(scale)
         .selected(is_selected)
         .theme(theme.to_potentiometer_theme())
+        .design_tokens(theme.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {

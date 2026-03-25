@@ -35,6 +35,9 @@ typedef enum PluginError {
  * Each parameter is stored as an `AtomicU64` holding the bit representation
  * of an `f64` value. Reads and writes use `Relaxed` ordering since we only
  * need eventual consistency for UI display (no ordering constraints).
+ *
+ * Metadata (name, unit, min, max, default) is set once at creation and never
+ * changes — no atomics needed for those fields.
  */
 typedef struct AtomicParamCache AtomicParamCache;
 
@@ -86,19 +89,11 @@ typedef struct ParameterInfo {
 
 /**
  * C function pointer type for parameter writes.
- *
- * Called when the GPUI UI changes a parameter. The Swift side implements this
- * by setting the value on the `AUParameterTree`, which triggers the standard
- * AU parameter observation flow → `plugin_set_parameter()`.
- *
- * Arguments: `(userdata, param_index, denormalized_value)`
  */
 typedef void (*SetParamCallback)(void*, uintptr_t, double);
 
 /**
  * C function pointer type for parameter reset (to default).
- *
- * Arguments: `(userdata, param_index)`
  */
 typedef void (*ResetParamCallback)(void*, uintptr_t);
 
@@ -308,6 +303,20 @@ void au_param_cache_write(struct AtomicParamCache *cache, uintptr_t index, doubl
  * Read a denormalized parameter value from the cache.
  */
 double au_param_cache_read(const struct AtomicParamCache *cache, uintptr_t index);
+
+/**
+ * Set metadata for a parameter in the cache.
+ *
+ * Called from Swift during initialization to populate parameter names,
+ * units, and ranges from the AUParameterTree.
+ */
+void au_param_cache_set_meta(struct AtomicParamCache *cache,
+                             uintptr_t index,
+                             const char *name,
+                             const char *unit,
+                             double min_value,
+                             double max_value,
+                             double default_value);
 
 /**
  * Destroy a parameter cache.

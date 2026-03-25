@@ -685,7 +685,7 @@ fn render_eq_visualization<H: PluginViewHost>(
                             host.set_plugin_param(
                                 plugin_idx,
                                 band_idx * 4,
-                                pk(EQ, "frequency").default_f64(),
+                                pk(EQ, "freq").default_f64(),
                             );
                             // Reset Q to 1.0
                             host.set_plugin_param(
@@ -697,7 +697,7 @@ fn render_eq_visualization<H: PluginViewHost>(
                             host.set_plugin_param(
                                 plugin_idx,
                                 band_idx * 4 + 2,
-                                pk(EQ, "gain_db").default_f64(),
+                                pk(EQ, "gain").default_f64(),
                             );
                             cx.notify();
                         });
@@ -957,7 +957,7 @@ pub fn render_eq_plugin<H: PluginViewHost>(
                                     let entity = entity_clone.clone();
                                     move |_event, _window, cx| {
                                         entity.update(cx, |host, cx| {
-                                            host.set_eq_per_channel_mode(plugin_idx, false);
+                                            host.set_per_channel_mode(plugin_idx, false);
                                             cx.notify();
                                         });
                                     }
@@ -988,7 +988,7 @@ pub fn render_eq_plugin<H: PluginViewHost>(
                                     let entity = entity_clone2.clone();
                                     move |_event, _window, cx| {
                                         entity.update(cx, |host, cx| {
-                                            host.set_eq_per_channel_mode(plugin_idx, true);
+                                            host.set_per_channel_mode(plugin_idx, true);
                                             cx.notify();
                                         });
                                     }
@@ -1030,7 +1030,7 @@ pub fn render_eq_plugin<H: PluginViewHost>(
                                     })
                                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                                         entity.update(cx, |host, _| {
-                                            host.set_selected_eq_channel(plugin_idx, ch);
+                                            host.set_selected_channel(plugin_idx, ch);
                                         });
                                     })
                                     .child(ch_name)
@@ -1130,7 +1130,7 @@ pub fn render_eq_plugin<H: PluginViewHost>(
                                             cx.stop_propagation();
                                             entity_clone2.update(cx, |host, cx| {
                                                 host.set_editing_plugin(plugin_idx);
-                                                host.toggle_eq_band_mute(plugin_idx, band_idx);
+                                                host.toggle_band_mute(plugin_idx, band_idx);
                                                 cx.notify();
                                             });
                                         }
@@ -1163,7 +1163,7 @@ pub fn render_eq_plugin<H: PluginViewHost>(
                                             cx.stop_propagation();
                                             entity_clone3.update(cx, |host, cx| {
                                                 host.set_editing_plugin(plugin_idx);
-                                                host.toggle_eq_band_solo(plugin_idx, band_idx);
+                                                host.toggle_band_solo(plugin_idx, band_idx);
                                                 cx.notify();
                                             });
                                         }
@@ -1195,7 +1195,7 @@ pub fn render_eq_plugin<H: PluginViewHost>(
                         .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                             entity_clone.update(cx, |host, cx| {
                                 host.set_editing_plugin(plugin_idx);
-                                host.add_eq_band(plugin_idx);
+                                host.add_band(plugin_idx);
                                 cx.notify();
                             });
                         })
@@ -1270,8 +1270,8 @@ pub fn render_eq_plugin<H: PluginViewHost>(
                                 plugin_idx,
                                 "Freq",
                                 filter.frequency,
-                                pk(EQ, "frequency").min_f64(),
-                                pk(EQ, "frequency").max_f64(),
+                                pk(EQ, "freq").min_f64(),
+                                pk(EQ, "freq").max_f64(),
                                 "Hz",
                                 base_param_idx,
                                 state.selected_param,
@@ -1298,8 +1298,8 @@ pub fn render_eq_plugin<H: PluginViewHost>(
                                 plugin_idx,
                                 "Gain",
                                 filter.gain_db,
-                                pk(EQ, "gain_db").min_f64(),
-                                pk(EQ, "gain_db").max_f64(),
+                                pk(EQ, "gain").min_f64(),
+                                pk(EQ, "gain").max_f64(),
                                 "dB",
                                 base_param_idx + 2,
                                 state.selected_param,

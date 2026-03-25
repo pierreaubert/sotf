@@ -5,6 +5,7 @@
 //! `PluginViewTheme::from(&theme)`. In AU, use `PluginViewTheme::default_dark()`.
 
 use gpui::Rgba;
+use gpui_ui_kit::audio_design_tokens::AudioDesignTokens;
 
 /// Colors for the EQ frequency response chart.
 #[derive(Debug, Clone)]
@@ -97,6 +98,11 @@ pub struct PluginViewTheme {
 
     /// Peak indicator color.
     pub peak_indicator: Rgba,
+
+    // ── Design system tokens ────────────────────────────────────────────
+    /// Platform design tokens for component geometry/spacing.
+    /// Default: neutral preset (matches current hardcoded values).
+    pub design_tokens: AudioDesignTokens,
 }
 
 impl PluginViewTheme {
@@ -230,6 +236,7 @@ impl PluginViewTheme {
             ],
             knob_color: gpui::rgb(0x3b82f6),
             peak_indicator: gpui::rgb(0xef4444),
+            design_tokens: AudioDesignTokens::default(),
         }
     }
 }

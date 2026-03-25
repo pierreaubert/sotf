@@ -16,11 +16,13 @@
 //! `gpui-ui` feature flag.
 
 pub mod common;
+pub mod design_tokens;
 mod host;
 pub mod meter_theme;
 mod theme;
 pub mod ticks;
 
+pub use design_tokens::audio_tokens_from_ds;
 pub use host::PluginViewHost;
 pub use meter_theme::{LufsConfig, MeterTheme, TruePeakConfig};
 pub use theme::*;

@@ -6,21 +6,22 @@
 //!
 //! `AuHostState` does NOT hold a `PluginHandle` pointer. Instead it uses:
 //! - **Reads**: An `AtomicParamCache` populated by Swift's `AUParameterTree` observer
-//!   on the main thread. The GPUI render reads atomically — no locks, no races.
-//! - **Writes**: A C function pointer callback that routes through Swift's
-//!   `AUParameterTree`, which handles thread-safe parameter dispatch to the
-//!   audio plugin via the AU framework's built-in synchronization.
+//! - **Writes**: C callback function pointers routed through Swift's `AUParameterTree`
 //!
-//! # Parameter index mapping (EQ)
+//! # Parameter index mapping
 //!
-//! The EQ UI uses band-relative indices: `band_idx * 4 + field` (0=freq, 1=q, 2=gain, 3=type).
-//! The AU parameter cache has absolute indices: 2 globals + 20*4 band params.
-//! `set_plugin_param` adds the global offset (`GLOBAL_PARAM_COUNT`) when forwarding to AU.
+//! Band-based plugins (EQ, MultibandCompressor, etc.) have global params followed by
+//! per-band params. Custom UIs use band-relative indices (`band_idx * params_per_band + field`).
+//! `set_plugin_param` adds `global_param_count` to map from UI indices to AU cache indices.
+//! Non-band plugins have `global_param_count = 0`, so the mapping is identity.
 
 use crate::param_cache::AtomicParamCache;
+use crate::parameter_map;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::PotentiometerSize;
 use math_audio_iir_fir::BiquadFilterType;
+use plugins_gpui::common::render_knob_sized;
 use plugins_gpui::{PluginViewHost, PluginViewTheme};
 use std::sync::Arc;
 
@@ -30,38 +31,32 @@ pub type SetParamCallback = extern "C" fn(*mut std::ffi::c_void, usize, f64);
 /// C function pointer type for parameter reset (to default).
 pub type ResetParamCallback = extern "C" fn(*mut std::ffi::c_void, usize);
 
-/// Number of global EQ params before band params.
-const EQ_GLOBAL_PARAM_COUNT: usize = 2; // max_filters, tdf2
-/// Number of params per EQ band.
-const EQ_PARAMS_PER_BAND: usize = 4; // frequency, q, gain_db, filter_type
+/// Band layout info for band-based plugins.
+struct BandLayout {
+    /// Number of global params before band params.
+    global_param_count: usize,
+    /// Number of params per band.
+    params_per_band: usize,
+    /// Maximum number of bands.
+    max_bands: usize,
+}
 
 /// Root GPUI entity for AU plugin views.
 pub struct AuHostState {
-    /// Atomic parameter cache, shared with Swift's AU parameter observer.
     cache: Arc<AtomicParamCache>,
-    /// Callback to set a parameter (routes through AUParameterTree).
     set_param_cb: SetParamCallback,
-    /// Callback to reset a parameter to default.
     reset_param_cb: ResetParamCallback,
-    /// Opaque userdata pointer passed to callbacks.
     cb_userdata: *mut std::ffi::c_void,
-    /// Plugin type string.
     plugin_type: String,
-    /// Local copy of param values for rendering (refreshed from cache each frame).
     param_snapshot: Vec<f64>,
-    /// Currently selected parameter index.
+    /// Band layout for band-based plugins (EQ, multiband, etc.), None for simple plugins.
+    band_layout: Option<BandLayout>,
     selected_param: usize,
-    /// Currently selected EQ band.
     selected_band: usize,
-    /// Selected EQ channel (for per-channel mode).
-    selected_eq_channel: usize,
-    /// Whether a plugin is being edited.
+    selected_channel: usize,
     editing: bool,
-    /// Theme for rendering.
     theme: PluginViewTheme,
-    /// Self-entity handle.
     self_entity: Option<Entity<Self>>,
-    // Knob drag state
     is_dragging: bool,
     drag_plugin_idx: usize,
     drag_start_y: f32,
@@ -82,6 +77,16 @@ impl AuHostState {
         let mut param_snapshot = vec![0.0; param_count];
         cache.read_all(&mut param_snapshot);
 
+        // Determine band layout from ParamSpec metadata
+        let global_specs = parameter_map::global_param_specs(&plugin_type);
+        let band_layout = parameter_map::band_template_info(&plugin_type).map(
+            |(params_per_band, max_bands)| BandLayout {
+                global_param_count: global_specs.len(),
+                params_per_band,
+                max_bands,
+            },
+        );
+
         Self {
             cache,
             set_param_cb,
@@ -89,9 +94,10 @@ impl AuHostState {
             cb_userdata,
             plugin_type,
             param_snapshot,
+            band_layout,
             selected_param: 0,
             selected_band: 0,
-            selected_eq_channel: 0,
+            selected_channel: 0,
             editing: false,
             theme: PluginViewTheme::default_dark(),
             self_entity: None,
@@ -112,27 +118,27 @@ impl AuHostState {
         self.cache.read_all(&mut self.param_snapshot);
     }
 
-    /// Check if this is an EQ-type plugin.
-    fn is_eq(&self) -> bool {
-        matches!(self.plugin_type.as_str(), "EQ" | "eq")
-    }
-
     /// Convert a UI band-relative param index to an absolute AU param index.
-    /// EQ UI uses `band_idx * 4 + field`, AU cache has `2 + band_idx * 4 + field`.
+    /// For band-based plugins, adds the global param offset.
+    /// For non-band plugins, returns the index unchanged.
     fn ui_to_au_param_index(&self, ui_idx: usize) -> usize {
-        if self.is_eq() {
-            EQ_GLOBAL_PARAM_COUNT + ui_idx
-        } else {
-            ui_idx
+        match &self.band_layout {
+            Some(layout) => layout.global_param_count + ui_idx,
+            None => ui_idx,
         }
     }
 
-    /// Get current max_filters value from the param snapshot.
-    fn eq_max_filters(&self) -> usize {
-        if !self.param_snapshot.is_empty() {
-            self.param_snapshot[0] as usize
-        } else {
-            0
+    /// Get current band count from the first global param (which is typically `max_filters`/`num_bands`).
+    fn band_count(&self) -> usize {
+        match &self.band_layout {
+            Some(layout) => {
+                if !self.param_snapshot.is_empty() {
+                    (self.param_snapshot[0] as usize).min(layout.max_bands)
+                } else {
+                    0
+                }
+            }
+            None => 0,
         }
     }
 
@@ -145,12 +151,16 @@ impl AuHostState {
     }
 
     fn build_eq_bands(&self) -> Vec<sotf_plugin_eq::ui::EqBandView> {
+        let layout = match &self.band_layout {
+            Some(l) => l,
+            None => return Vec::new(),
+        };
         let mut bands = Vec::new();
-        let max_filters = self.eq_max_filters();
+        let count = self.band_count();
 
-        for band in 0..max_filters.min(20) {
-            let base = EQ_GLOBAL_PARAM_COUNT + band * EQ_PARAMS_PER_BAND;
-            if base + 3 >= self.param_snapshot.len() {
+        for band in 0..count {
+            let base = layout.global_param_count + band * layout.params_per_band;
+            if base + layout.params_per_band > self.param_snapshot.len() {
                 break;
             }
 
@@ -181,6 +191,90 @@ impl AuHostState {
         }
 
         bands
+    }
+
+    /// Render a generic UI with a grid of knobs.
+    fn render_generic_knob_grid(&self, entity: Entity<Self>) -> AnyElement {
+        let theme = &self.theme;
+        let knobs_per_row = 4;
+
+        let header = div()
+            .w_full()
+            .flex()
+            .justify_center()
+            .py(px(8.0))
+            .child(
+                div()
+                    .text_color(rgb(0xffffff))
+                    .text_xl()
+                    .child(format!("SOTF: {}", self.plugin_type)),
+            );
+
+        let mut rows = div().w_full().flex().flex_col().gap(px(8.0)).px(px(12.0));
+        let mut row = div()
+            .w_full()
+            .flex()
+            .flex_row()
+            .gap(px(8.0))
+            .justify_center();
+        let mut col_in_row = 0;
+
+        for i in 0..self.param_snapshot.len() {
+            let meta = self.cache.meta(i);
+            let name = meta.map(|m| m.name.as_str()).unwrap_or("");
+            if name.is_empty() {
+                continue;
+            }
+            let unit = meta.map(|m| m.unit.as_str()).unwrap_or("");
+            let min = meta.map(|m| m.min_value).unwrap_or(0.0);
+            let max = meta.map(|m| m.max_value).unwrap_or(1.0);
+            let value = self.param_snapshot.get(i).copied().unwrap_or(0.0);
+
+            let knob = render_knob_sized::<AuHostState>(
+                entity.clone(),
+                0,
+                name,
+                value,
+                min,
+                max,
+                unit,
+                i, // AU cache index (non-band: identity, band: passed through directly)
+                self.selected_param,
+                self.editing,
+                None,
+                PotentiometerSize::Md,
+                theme,
+            );
+
+            row = row.child(knob);
+            col_in_row += 1;
+
+            if col_in_row >= knobs_per_row {
+                rows = rows.child(row);
+                row = div()
+                    .w_full()
+                    .flex()
+                    .flex_row()
+                    .gap(px(8.0))
+                    .justify_center();
+                col_in_row = 0;
+            }
+        }
+
+        if col_in_row > 0 {
+            rows = rows.child(row);
+        }
+
+        div()
+            .size_full()
+            .bg(rgb(0x1a1a2e))
+            .flex()
+            .flex_col()
+            .items_center()
+            .overflow_hidden()
+            .child(header)
+            .child(rows)
+            .into_any_element()
     }
 }
 
@@ -239,56 +333,70 @@ impl PluginViewHost for AuHostState {
         self.selected_band = band;
     }
 
-    fn set_selected_eq_channel(&mut self, _plugin_idx: usize, channel: usize) {
-        self.selected_eq_channel = channel;
+    fn set_selected_channel(&mut self, _plugin_idx: usize, channel: usize) {
+        self.selected_channel = channel;
     }
 
-    fn add_eq_band(&mut self, _plugin_idx: usize) {
-        let current = self.eq_max_filters();
-        if current >= 20 {
+    fn add_band(&mut self, _plugin_idx: usize) {
+        let (global_count, ppb, max_bands) = match &self.band_layout {
+            Some(l) => (l.global_param_count, l.params_per_band, l.max_bands),
+            None => return,
+        };
+        let current = self.band_count();
+        if current >= max_bands {
             return;
         }
-        let new_count = current + 1;
-        // Set max_filters (AU param index 0)
-        self.set_au_param(0, new_count as f64);
-        // Initialize the new band with defaults
-        let base = EQ_GLOBAL_PARAM_COUNT + current * EQ_PARAMS_PER_BAND;
-        self.set_au_param(base, 1000.0);     // frequency = 1000 Hz
-        self.set_au_param(base + 1, 1.0);    // q = 1.0
-        self.set_au_param(base + 2, 0.0);    // gain_db = 0.0
-        self.set_au_param(base + 3, 0.0);    // filter_type = Peak (0)
-        // Select the new band
+        // Collect defaults before mutating
+        let base = global_count + current * ppb;
+        let defaults: Vec<(usize, f64)> = (0..ppb)
+            .map(|f| {
+                let au_idx = base + f;
+                let default = self.cache.meta(au_idx).map(|m| m.default_value).unwrap_or(0.0);
+                (au_idx, default)
+            })
+            .collect();
+        // Set band count
+        self.set_au_param(0, (current + 1) as f64);
+        // Initialize the new band
+        for (idx, val) in defaults {
+            self.set_au_param(idx, val);
+        }
         self.selected_band = current;
     }
 
-    fn remove_eq_band(&mut self, _plugin_idx: usize, band_idx: usize) {
-        let current = self.eq_max_filters();
+    fn remove_band(&mut self, _plugin_idx: usize, band_idx: usize) {
+        let (global_count, ppb) = match &self.band_layout {
+            Some(l) => (l.global_param_count, l.params_per_band),
+            None => return,
+        };
+        let current = self.band_count();
         if current == 0 || band_idx >= current {
             return;
         }
-        // Shift bands down: copy band[i+1] → band[i] for i >= band_idx
+        // Collect shifted values first to avoid borrow conflict
+        let mut updates: Vec<(usize, f64)> = Vec::new();
         for i in band_idx..current.saturating_sub(1) {
-            let src_base = EQ_GLOBAL_PARAM_COUNT + (i + 1) * EQ_PARAMS_PER_BAND;
-            let dst_base = EQ_GLOBAL_PARAM_COUNT + i * EQ_PARAMS_PER_BAND;
-            for f in 0..EQ_PARAMS_PER_BAND {
+            let src_base = global_count + (i + 1) * ppb;
+            let dst_base = global_count + i * ppb;
+            for f in 0..ppb {
                 let val = self.param_snapshot.get(src_base + f).copied().unwrap_or(0.0);
-                self.set_au_param(dst_base + f, val);
+                updates.push((dst_base + f, val));
             }
         }
-        // Decrease max_filters
+        for (idx, val) in updates {
+            self.set_au_param(idx, val);
+        }
         self.set_au_param(0, (current - 1) as f64);
-        // Adjust selected band
         if self.selected_band >= current - 1 {
             self.selected_band = (current - 1).saturating_sub(1);
         }
     }
 
-    fn toggle_eq_band_mute(&mut self, _plugin_idx: usize, _band_idx: usize) {
+    fn toggle_band_mute(&mut self, _plugin_idx: usize, _band_idx: usize) {
         // Mute/solo are not exposed as AU parameters — no-op in AU context.
-        // These are UI-only states in the app-gpui player.
     }
 
-    fn toggle_eq_band_solo(&mut self, _plugin_idx: usize, _band_idx: usize) {
+    fn toggle_band_solo(&mut self, _plugin_idx: usize, _band_idx: usize) {
         // Solo is not exposed as an AU parameter — no-op in AU context.
     }
 }
@@ -328,37 +436,14 @@ impl Render for AuHostState {
                         is_editing: self.editing,
                         selected_param: self.selected_param,
                         selected_band_idx: selected_band,
-                        selected_eq_channel: self.selected_eq_channel,
+                        selected_eq_channel: self.selected_channel,
                         midi_overlay: None,
                     },
                     &self.theme,
                 )
                 .into_any_element()
             }
-            _ => {
-                let param_count = self.param_snapshot.len();
-                div()
-                    .size_full()
-                    .bg(rgb(0x1a1a2e))
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        div()
-                            .text_color(rgb(0xffffff))
-                            .text_xl()
-                            .child(format!("SOTF: {}", self.plugin_type)),
-                    )
-                    .child(
-                        div()
-                            .text_color(rgb(0x808090))
-                            .text_sm()
-                            .mt(px(8.0))
-                            .child(format!("{param_count} parameters")),
-                    )
-                    .into_any_element()
-            }
+            _ => self.render_generic_knob_grid(entity),
         }
     }
 }

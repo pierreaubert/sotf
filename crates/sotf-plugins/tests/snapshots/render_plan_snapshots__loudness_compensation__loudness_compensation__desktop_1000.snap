@@ -28,7 +28,7 @@ expression: plan
       "unit": "",
       "range": [
         0.0,
-        1.0
+        2.0
       ],
       "read_only": false
     }
@@ -47,6 +47,33 @@ expression: plan
             90.0
           ],
           "read_only": false
+        },
+        {
+          "param_index": 13,
+          "param_name": "Reference Level",
+          "control_type": "knob",
+          "unit": "dB SPL",
+          "range": [
+            60.0,
+            100.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "title": "AUTO",
+      "controls": [
+        {
+          "param_index": 14,
+          "param_name": "Playback Volume",
+          "control_type": "label",
+          "unit": "dB",
+          "range": [
+            -80.0,
+            0.0
+          ],
+          "read_only": true
         },
         {
           "param_index": 13,

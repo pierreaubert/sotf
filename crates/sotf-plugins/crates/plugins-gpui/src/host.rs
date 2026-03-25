@@ -31,9 +31,6 @@ pub trait PluginViewHost: 'static {
     fn set_selected_param(&mut self, plugin_idx: usize, param_idx: usize);
 
     /// Track knob drag state for smooth mouse interaction.
-    ///
-    /// Called when the user starts dragging a potentiometer knob.
-    /// The host stores this state to enable drag-to-adjust behavior.
     fn on_knob_drag_start(
         &mut self,
         plugin_idx: usize,
@@ -50,30 +47,30 @@ pub trait PluginViewHost: 'static {
     /// Query current knob drag state for interactive controls (e.g., transfer curve).
     ///
     /// Returns `(is_dragging, plugin_idx, start_y, start_value, drag_min, drag_max)`.
-    /// `drag_min`/`drag_max` are scratch storage — for transfer curves they hold
-    /// `start_x` and `start_ratio` respectively.
     fn knob_drag_state(&self) -> (bool, usize, f32, f64, f64, f64);
 
-    // ── EQ / multiband-specific (default no-ops) ──────────────────────────
+    // ── Band-based plugin operations (EQ, multiband comp/exp, dynamic EQ) ──
 
-    /// Set the selected EQ band index for highlighting and editing.
+    /// Set the selected band index for highlighting and editing.
     fn set_selected_band(&mut self, _plugin_idx: usize, _band: usize) {}
 
-    /// Add a new EQ filter band.
-    fn add_eq_band(&mut self, _plugin_idx: usize) {}
+    /// Add a new band (EQ filter, multiband crossover, etc.).
+    fn add_band(&mut self, _plugin_idx: usize) {}
 
-    /// Remove an EQ filter band by index.
-    fn remove_eq_band(&mut self, _plugin_idx: usize, _band_idx: usize) {}
+    /// Remove a band by index.
+    fn remove_band(&mut self, _plugin_idx: usize, _band_idx: usize) {}
 
-    /// Toggle mute state on an EQ band.
-    fn toggle_eq_band_mute(&mut self, _plugin_idx: usize, _band_idx: usize) {}
+    /// Toggle mute state on a band.
+    fn toggle_band_mute(&mut self, _plugin_idx: usize, _band_idx: usize) {}
 
-    /// Toggle solo state on an EQ band.
-    fn toggle_eq_band_solo(&mut self, _plugin_idx: usize, _band_idx: usize) {}
+    /// Toggle solo state on a band.
+    fn toggle_band_solo(&mut self, _plugin_idx: usize, _band_idx: usize) {}
 
-    /// Set the selected EQ channel (for per-channel EQ mode).
-    fn set_selected_eq_channel(&mut self, _plugin_idx: usize, _channel: usize) {}
+    // ── Channel-specific operations ─────────────────────────────────────
 
-    /// Toggle per-channel EQ mode on/off.
-    fn set_eq_per_channel_mode(&mut self, _plugin_idx: usize, _per_channel: bool) {}
+    /// Set the selected channel (for per-channel processing mode).
+    fn set_selected_channel(&mut self, _plugin_idx: usize, _channel: usize) {}
+
+    /// Toggle per-channel mode on/off.
+    fn set_per_channel_mode(&mut self, _plugin_idx: usize, _per_channel: bool) {}
 }
