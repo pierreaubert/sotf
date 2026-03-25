@@ -823,7 +823,6 @@ version = "0.4.17"
 dependencies = [
  "anyhow",
  "assert_fs",
- "autoeq-cea2034",
  "autoeq-env",
  "build_html",
  "chrono",
@@ -858,59 +857,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "autoeq-cea2034"
-version = "0.4.1"
-dependencies = [
- "ndarray",
- "serde",
- "tokio",
-]
-
-[[package]]
-name = "autoeq-datagen"
-version = "0.4.1"
-dependencies = [
- "anyhow",
- "autoeq",
- "clap",
- "env_logger",
- "log",
- "math-bem",
- "math-fem",
- "math-xem-common",
- "ndarray",
- "num-complex 0.4.6",
- "rand 0.9.2",
- "rayon",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "autoeq-env"
 version = "0.4.0"
 dependencies = [
  "chrono",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "autoeq-roomsim"
-version = "0.4.1"
-dependencies = [
- "console_error_panic_hook",
- "csv",
- "math-bem",
- "ndarray",
- "num-complex 0.4.6",
- "rayon",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-rayon",
- "web-sys",
 ]
 
 [[package]]
@@ -1827,16 +1778,6 @@ dependencies = [
  "libc",
  "once_cell",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "console_error_panic_hook"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
-dependencies = [
- "cfg-if 1.0.4",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -3955,12 +3896,12 @@ dependencies = [
 
 [[package]]
 name = "gpui-au"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "block",
  "core-foundation 0.10.0",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys 0.7.0",
  "core-graphics 0.24.0",
  "core-text",
  "env_logger",
@@ -3993,7 +3934,6 @@ version = "0.6.5"
 dependencies = [
  "approx",
  "autoeq",
- "autoeq-cea2034",
  "bytemuck",
  "delaunator",
  "fontdue",
@@ -4041,7 +3981,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-px"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "autoeq",
  "gpui",
@@ -4055,7 +3995,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.13"
+version = "0.6.14"
 dependencies = [
  "block",
  "gpui",
@@ -5869,31 +5809,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "math-bem"
-version = "0.4.2"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "directories",
- "env_logger",
- "log",
- "math-solvers",
- "math-wave",
- "math-xem-common",
- "ndarray",
- "num-complex 0.4.6",
- "oxiblas-ndarray",
- "rayon",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "toml 0.8.23",
- "wasm-bindgen",
- "wasm-bindgen-rayon",
-]
-
-[[package]]
 name = "math-delaunay"
 version = "0.4.1"
 dependencies = [
@@ -5902,7 +5817,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "approx",
  "clap",
@@ -5919,29 +5834,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "math-fem"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "clap",
- "criterion",
- "env_logger",
- "log",
- "math-solvers",
- "math-wave",
- "math-xem-common",
- "ndarray",
- "num-complex 0.4.6",
- "rayon",
- "serde",
- "serde_json",
- "spec_math",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "math-iir-fir"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -5970,24 +5864,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "math-solvers"
-version = "0.4.2"
-dependencies = [
- "approx",
- "bytemuck",
- "log",
- "ndarray",
- "num-complex 0.4.6",
- "num-traits",
- "oxiblas-core",
- "oxiblas-ndarray",
- "rayon",
- "thiserror 2.0.18",
- "wasm-bindgen",
- "wasm-bindgen-rayon",
-]
-
-[[package]]
 name = "math-test-functions"
 version = "0.4.0"
 dependencies = [
@@ -5996,29 +5872,6 @@ dependencies = [
  "ndarray",
  "plotly",
  "plotly_static",
-]
-
-[[package]]
-name = "math-wave"
-version = "0.4.0"
-dependencies = [
- "approx",
- "num-complex 0.4.6",
- "serde",
- "serde_json",
- "spec_math",
-]
-
-[[package]]
-name = "math-xem-common"
-version = "0.4.0"
-dependencies = [
- "approx",
- "chrono",
- "ndarray",
- "num-complex 0.4.6",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -6689,9 +6542,7 @@ version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
- "bytemuck",
  "num-traits",
- "serde",
 ]
 
 [[package]]
@@ -7259,72 +7110,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
-name = "oxiblas-blas"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b20733edf8bd497233628af75afdb7c5f29157d8dc82e9fdc6c0e862e6e6957"
-dependencies = [
- "bytemuck",
- "num-complex 0.4.6",
- "num-traits",
- "oxiblas-core",
- "oxiblas-matrix",
-]
-
-[[package]]
-name = "oxiblas-core"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2d36abb8c720acdb430c810434582b558f0dfdfcc34b73b64e7cd4f641b1ea1"
-dependencies = [
- "bytemuck",
- "libc",
- "num-complex 0.4.6",
- "num-traits",
-]
-
-[[package]]
-name = "oxiblas-lapack"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d69ba187daaf0d0e38d331c6fba35f5584296160e78d832b8e39c8e6c93b46f"
-dependencies = [
- "bytemuck",
- "num-complex 0.4.6",
- "num-traits",
- "oxiblas-blas",
- "oxiblas-core",
- "oxiblas-matrix",
-]
-
-[[package]]
-name = "oxiblas-matrix"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75bf5ed8ca26065e07b83f98009447302cd01926c88e829d7b5bc50e97d0ff19"
-dependencies = [
- "bytemuck",
- "num-complex 0.4.6",
- "num-traits",
- "oxiblas-core",
-]
-
-[[package]]
-name = "oxiblas-ndarray"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee20cc93be5eefffa6ee2ba283047cf0558ee1fdf5c73507859a9a6dc36df70f"
-dependencies = [
- "bytemuck",
- "ndarray",
- "num-complex 0.4.6",
- "oxiblas-blas",
- "oxiblas-core",
- "oxiblas-lapack",
- "oxiblas-matrix",
-]
-
-[[package]]
 name = "page_size"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7790,7 +7575,7 @@ dependencies = [
 
 [[package]]
 name = "plugins-bridge"
-version = "0.5.14"
+version = "0.5.3"
 dependencies = [
  "log",
  "serde",
@@ -7834,11 +7619,12 @@ dependencies = [
 
 [[package]]
 name = "plugins-ffi"
-version = "0.5.14"
+version = "0.5.3"
 dependencies = [
  "cbindgen 0.29.2",
  "gpui",
  "gpui-au",
+ "gpui-ui-kit",
  "log",
  "math-iir-fir",
  "plugins-bridge",
@@ -7852,7 +7638,7 @@ dependencies = [
 
 [[package]]
 name = "plugins-gpui"
-version = "0.5.14"
+version = "0.5.3"
 dependencies = [
  "gpui",
  "gpui-px",
@@ -7864,7 +7650,7 @@ dependencies = [
 
 [[package]]
 name = "plugins-nih"
-version = "0.5.14"
+version = "0.5.3"
 dependencies = [
  "log",
  "nih_plug",
@@ -8661,7 +8447,6 @@ checksum = "368f01d005bf8fd9b1206fb6fa653e6c4a81ceb1466406b81792d87c5677a58f"
 dependencies = [
  "either",
  "rayon-core",
- "wasm_sync",
 ]
 
 [[package]]
@@ -8672,7 +8457,6 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
- "wasm_sync",
 ]
 
 [[package]]
@@ -10150,6 +9934,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-docs-gen"
+version = "0.5.14"
+dependencies = [
+ "sotf-host",
+ "sotf-plugins",
+]
+
+[[package]]
 name = "sotf-engine"
 version = "1.0.16"
 dependencies = [
@@ -10382,7 +10174,6 @@ dependencies = [
  "anyhow",
  "audioadapter-buffers",
  "autoeq",
- "autoeq-cea2034",
  "autoeq-env",
  "chrono",
  "clap",
@@ -11134,12 +10925,6 @@ dependencies = [
  "thiserror 1.0.69",
  "windows 0.44.0",
 ]
-
-[[package]]
-name = "spec_math"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02ef091d4e8b981dbaa4cc17789d00b53d5d2c001ae689f14e6093f30c529036"
 
 [[package]]
 name = "spin"
@@ -13037,18 +12822,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasm-bindgen-rayon"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a16c60a56c81e4dc3b9c43d76ba5633e1c0278211d59a9cb07d61b6cd1c6583"
-dependencies = [
- "crossbeam-channel",
- "js-sys",
- "rayon",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "wasm-bindgen-shared"
 version = "0.2.114"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13077,17 +12850,6 @@ dependencies = [
  "indexmap 2.13.0",
  "wasm-encoder",
  "wasmparser",
-]
-
-[[package]]
-name = "wasm_sync"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cff360cade7fec41ff0e9d2cda57fe58258c5f16def0e21302394659e6bbb0ea"
-dependencies = [
- "js-sys",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]

@@ -9,6 +9,7 @@
 
 pub mod actions;
 pub mod common;
+pub mod custom_view_registry;
 pub mod editing;
 pub mod level_meters;
 pub mod theme;
@@ -67,14 +68,14 @@ pub use ui_upmixer::render_upmixer_plugin;
 use crate::app::AppState;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
+use custom_view_registry::{CustomViewRenderContext, GpuiViewRegistry};
 use gpui::*;
 use sotf_audio_player::{PluginChain, PluginSettings};
 
 /// Render plugin-specific content based on plugin type.
 ///
-/// Uses the declarative `PluginLayout` renderer for most plugins, with
-/// custom renderers only for EQ, SpectrumAnalyzer, Matrix, ChannelMuteSolo,
-/// MultibandCompressor, MultibandExpander, and LoudnessMonitor.
+/// Uses the `GpuiViewRegistry` for plugins with custom UIs (EQ, Spectrum, etc.)
+/// and falls back to the declarative `PluginLayout` renderer for everything else.
 pub fn render_plugin_content(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -101,8 +102,6 @@ pub fn render_plugin_content(
         .unwrap_or(0);
 
     // Compute available width for the plugin content area.
-    // In Studio screen: plugin UI is full-width (not inside rack panel).
-    // In Library/Queue: plugin UI is inside the rack panel at rack_h_ratio fraction.
     let available_width = {
         let window_width = state.app.ui_state.window_width;
         let is_standalone = state.app.ui_state.current_screen == crate::app::Screen::Studio;
@@ -122,292 +121,42 @@ pub fn render_plugin_content(
         } else {
             state.app.output_meter_width
         };
-        // Subtract output meter, dividers (~12px), and padding (~32px)
         (content_width - output_meter_width - 44.0).max(300.0)
     };
 
-    match settings {
-        // ====================================================================
-        // Custom renderers — plugins with unique UI requirements
-        // ====================================================================
-        PluginSettings::EQ {
-            channels,
-            filters,
-            channel_filters,
-            per_channel_mode,
-            ..
-        } => {
-            let selected_band_idx = selected_band_idx.min(filters.len().saturating_sub(1));
-            render_eq_plugin(
-                entity.clone(),
-                plugin_idx,
-                ui_eq::EqRenderState {
-                    channels: *channels,
-                    filters,
-                    channel_filters,
-                    per_channel_mode: *per_channel_mode,
-                    is_editing,
-                    selected_param,
-                    selected_band_idx,
-                    midi_overlay,
-                },
-                theme,
-                cx,
-            )
-            .into_any_element()
-        }
+    // Check if this plugin has a registered custom view
+    let registry = GpuiViewRegistry::new();
+    let type_key = custom_view_registry::plugin_type_key(settings);
 
-        PluginSettings::SpectrumAnalyzer {
-            num_bins,
-            min_freq,
-            max_freq,
-            smoothing,
-            tilt_correction,
-            tilt_reference,
-        } => render_spectrum_analyzer_plugin(
-            entity.clone(),
-            plugin_idx,
-            ui_spectrum::SpectrumRenderState {
-                num_bins: *num_bins,
-                min_freq: *min_freq,
-                max_freq: *max_freq,
-                smoothing: *smoothing,
-                tilt_correction: *tilt_correction,
-                tilt_reference: *tilt_reference,
-                tilt_select_open: spectrum_tilt_select_open,
-                reference_select_open: spectrum_reference_select_open,
-                is_editing,
-                selected_param,
-                data: plugin_data.as_ref().and_then(|d| d.downcast_ref()),
-            },
-            theme,
-        )
-        .into_any_element(),
-
-        PluginSettings::ChannelMuteSolo {
-            enabled,
-            channel_states,
-            ..
-        } => render_mute_solo_plugin(
-            entity.clone(),
-            plugin_idx,
-            ui_mute_solo::ChannelMuteSoloRenderState {
-                enabled: *enabled,
-                channel_states,
-                is_editing,
-                selected_param,
-            },
-            theme,
-        )
-        .into_any_element(),
-
-        PluginSettings::Matrix {
-            input_channels,
-            output_channels,
-            matrix,
-            channel_states,
-        } => {
-            let speaker_config = plugin_chain.speaker_config_at_index(plugin_idx);
-            render_matrix_plugin(
-                entity.clone(),
-                plugin_idx,
-                ui_matrix::MatrixRenderState {
-                    input_channels: *input_channels,
-                    output_channels: *output_channels,
-                    matrix,
-                    channel_states,
-                    speaker_config,
-                    is_editing,
-                    selected_param,
-                    selected_cell: None,
-                },
-                theme,
-            )
-            .into_any_element()
-        }
-
-        PluginSettings::LoudnessMonitor => {
-            render_loudness_monitor_plugin(loudness, plugin_idx, is_editing, theme)
-                .into_any_element()
-        }
-
-        // MultibandCompressor/Expander: band selection UI requires custom rendering
-        PluginSettings::MultibandCompressor {
-            num_bands,
-            crossover_preset,
-            crossover_freq_1,
-            crossover_freq_2,
-            crossover_freq_3,
-            crossover_freq_4,
-            threshold_db,
-            ratio,
-            attack_ms,
-            release_ms,
-            knee_db,
-            mix,
-            link_channels,
-            bands,
-            ..
-        } => {
-            let selected_band_idx = selected_band_idx.min(bands.len());
-            let (dt, dr, da, drl, dk, dm, dam, dact, ds, db) = if selected_band_idx > 0 {
-                let b = &bands[selected_band_idx - 1];
-                (
-                    b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
-                    b.ratio.map(|v| v as f64).unwrap_or(*ratio),
-                    b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
-                    b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
-                    b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
-                    b.makeup_gain_db as f64,
-                    b.auto_makeup,
-                    b.active,
-                    b.solo,
-                    b.bypass,
-                )
-            } else {
-                (
-                    *threshold_db,
-                    *ratio,
-                    *attack_ms,
-                    *release_ms,
-                    *knee_db,
-                    0.0,
-                    false,
-                    true,
-                    false,
-                    false,
-                )
-            };
-            render_mb_compressor_plugin(
-                entity.clone(),
-                plugin_idx,
-                ui_mb_compressor::MbCompressorRenderState {
-                    num_bands: *num_bands,
-                    crossover_preset: *crossover_preset,
-                    crossover_freq_1: *crossover_freq_1,
-                    crossover_freq_2: *crossover_freq_2,
-                    crossover_freq_3: *crossover_freq_3,
-                    crossover_freq_4: *crossover_freq_4,
-                    threshold_db: dt,
-                    ratio: dr,
-                    attack_ms: da,
-                    release_ms: drl,
-                    knee_db: dk,
-                    makeup_gain_db: dm,
-                    auto_makeup: dam,
-                    active: dact,
-                    solo: ds,
-                    bypass: db,
-                    mix: *mix,
-                    link_channels: *link_channels,
-                    is_editing,
-                    selected_param,
-                    selected_band_idx,
-                },
-                theme,
-            )
-            .into_any_element()
-        }
-        PluginSettings::MultibandExpander {
-            num_bands,
-            crossover_preset,
-            crossover_freq_1,
-            crossover_freq_2,
-            crossover_freq_3,
-            crossover_freq_4,
-            threshold_db,
-            ratio,
-            attack_ms,
-            release_ms,
-            range_db,
-            knee_db,
-            hysteresis_db,
-            hold_ms,
-            mix,
-            link_channels,
-            bands,
-            ..
-        } => {
-            let selected_band_idx = selected_band_idx.min(bands.len());
-            let (dt, dr, da, drl, drng, dk, dh, dhold, dam, dact, ds, db) = if selected_band_idx > 0
-            {
-                let b = &bands[selected_band_idx - 1];
-                (
-                    b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
-                    b.ratio.map(|v| v as f64).unwrap_or(*ratio),
-                    b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
-                    b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
-                    b.range_db.map(|v| v as f64).unwrap_or(*range_db),
-                    b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
-                    b.hysteresis_db.map(|v| v as f64).unwrap_or(*hysteresis_db),
-                    b.hold_ms.map(|v| v as f64).unwrap_or(*hold_ms),
-                    b.auto_makeup,
-                    b.active,
-                    b.solo,
-                    b.bypass,
-                )
-            } else {
-                (
-                    *threshold_db,
-                    *ratio,
-                    *attack_ms,
-                    *release_ms,
-                    *range_db,
-                    *knee_db,
-                    *hysteresis_db,
-                    *hold_ms,
-                    false,
-                    true,
-                    false,
-                    false,
-                )
-            };
-            render_mb_expander_plugin(
-                entity.clone(),
-                plugin_idx,
-                ui_mb_expander::MbExpanderRenderState {
-                    num_bands: *num_bands,
-                    crossover_preset: *crossover_preset,
-                    crossover_freq_1: *crossover_freq_1,
-                    crossover_freq_2: *crossover_freq_2,
-                    crossover_freq_3: *crossover_freq_3,
-                    crossover_freq_4: *crossover_freq_4,
-                    threshold_db: dt,
-                    ratio: dr,
-                    attack_ms: da,
-                    release_ms: drl,
-                    range_db: drng,
-                    knee_db: dk,
-                    hysteresis_db: dh,
-                    hold_ms: dhold,
-                    auto_makeup: dam,
-                    active: dact,
-                    solo: ds,
-                    bypass: db,
-                    mix: *mix,
-                    link_channels: *link_channels,
-                    is_editing,
-                    selected_param,
-                    selected_band_idx,
-                },
-                theme,
-            )
-            .into_any_element()
-        }
-
-        // ====================================================================
-        // Generic layout renderer — all plugins with PluginLayout definitions
-        // ====================================================================
-        _ => ui_layout_renderer::render_from_layout(
-            entity.clone(),
+    if let Some(render_fn) = registry.get(type_key) {
+        let ctx = CustomViewRenderContext {
+            entity: entity.clone(),
             plugin_idx,
             settings,
             is_editing,
             selected_param,
-            auto_tab,
-            plugin_data.as_ref(),
-            available_width,
+            selected_band_idx,
             theme,
-        ),
+            loudness,
+            plugin_data,
+            spectrum_tilt_select_open,
+            spectrum_reference_select_open,
+            plugin_chain,
+            midi_overlay,
+        };
+        return render_fn(&ctx, cx);
     }
+
+    // Fallback: generic layout renderer for plugins with PluginLayout definitions
+    ui_layout_renderer::render_from_layout(
+        entity.clone(),
+        plugin_idx,
+        settings,
+        is_editing,
+        selected_param,
+        auto_tab,
+        plugin_data.as_ref(),
+        available_width,
+        theme,
+    )
 }

@@ -99,11 +99,11 @@ pub enum VerticalSliderSize {
 }
 
 impl VerticalSliderSize {
-    fn track_width(&self) -> f32 {
+    fn track_width(&self, tokens: &crate::audio_design_tokens::AudioDesignTokens) -> f32 {
         match self {
-            Self::Sm => 14.0,
-            Self::Md => 18.0,
-            Self::Lg => 24.0,
+            Self::Sm => tokens.slider_track_widths[0],
+            Self::Md => tokens.slider_track_widths[1],
+            Self::Lg => tokens.slider_track_widths[2],
         }
     }
 
@@ -426,6 +426,8 @@ pub struct VerticalSlider {
     /// Optional peak marker value (for audio peak indicators)
     peak: Option<f64>,
     theme: Option<VerticalSliderTheme>,
+    /// Platform design tokens for track sizing.
+    design_tokens: crate::audio_design_tokens::AudioDesignTokens,
     on_change: Option<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>,
     on_drag_start: Option<Box<dyn Fn(f32, f64, &mut Window, &mut App) + 'static>>,
     on_select: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
@@ -452,6 +454,7 @@ impl VerticalSlider {
             disabled: false,
             peak: None,
             theme: None,
+            design_tokens: Default::default(),
             on_change: None,
             on_drag_start: None,
             on_select: None,
@@ -560,6 +563,12 @@ impl VerticalSlider {
         self
     }
 
+    /// Set platform design tokens for track sizing.
+    pub fn design_tokens(mut self, tokens: crate::audio_design_tokens::AudioDesignTokens) -> Self {
+        self.design_tokens = tokens;
+        self
+    }
+
     /// Set value change handler (called on scroll wheel)
     pub fn on_change(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
@@ -659,7 +668,7 @@ impl RenderOnce for VerticalSlider {
         let formatted_label = self.format_label();
         let value_str = self.format_value();
 
-        let track_width = self.size.track_width();
+        let track_width = self.size.track_width(&self.design_tokens);
         let track_height = self
             .custom_height
             .unwrap_or_else(|| self.size.track_height());

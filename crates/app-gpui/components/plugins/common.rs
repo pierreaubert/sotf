@@ -523,6 +523,7 @@ pub fn render_vertical_slider_sized(
         .label(label.to_string())
         .selected(is_selected)
         .theme(theme_to_vertical_slider_theme(theme))
+        .design_tokens(theme.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
@@ -600,6 +601,7 @@ pub fn render_vertical_slider_with_ticks(
         .with_ticks()
         .selected(is_selected)
         .theme(theme_to_vertical_slider_theme(theme))
+        .design_tokens(theme.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
@@ -1405,6 +1407,7 @@ pub fn render_knob_sized(
         .scale(scale)
         .selected(is_selected)
         .theme(theme.to_potentiometer_theme())
+        .design_tokens(theme.design_tokens.clone())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {

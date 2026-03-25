@@ -40,7 +40,7 @@ impl SpinoramaApp {
     /// Get SPL at a given angle from directivity curves at a specific frequency.
     /// Interpolates between measured angles.
     fn get_spl_at_angle(
-        curves: &[autoeq_cea2034::DirectivityCurve],
+        curves: &[autoeq::cea2034::DirectivityCurve],
         angle: f64,
         target_freq: f64,
     ) -> f64 {

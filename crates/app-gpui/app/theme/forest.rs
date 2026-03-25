@@ -201,6 +201,7 @@ impl Theme {
 
             // Font family
             font_family: "B612".into(),
+            design_tokens: Default::default(),
         }
     }
 }

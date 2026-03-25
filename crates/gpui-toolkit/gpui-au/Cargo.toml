@@ -1,6 +1,6 @@
 [package]
 name = "gpui-au"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 description = "macOS Audio Unit platform backend for GPUI — embeds GPUI rendering inside AUv3 ViewControllers"
 license = "ISC"

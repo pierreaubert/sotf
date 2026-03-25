@@ -680,7 +680,7 @@ fn render_eq_visualization(
                             state.app.set_plugin_param(
                                 plugin_idx,
                                 band_idx * 4,
-                                pk(EQ, "frequency").default_f64(),
+                                pk(EQ, "freq").default_f64(),
                             );
                             // Reset Q to 1.0
                             state.app.set_plugin_param(
@@ -692,7 +692,7 @@ fn render_eq_visualization(
                             state.app.set_plugin_param(
                                 plugin_idx,
                                 band_idx * 4 + 2,
-                                pk(EQ, "gain_db").default_f64(),
+                                pk(EQ, "gain").default_f64(),
                             );
                             cx.notify();
                         });
@@ -1296,8 +1296,8 @@ pub fn render_eq_plugin(
                                 plugin_idx,
                                 "Freq",
                                 filter.frequency,
-                                pk(EQ, "frequency").min_f64(),
-                                pk(EQ, "frequency").max_f64(),
+                                pk(EQ, "freq").min_f64(),
+                                pk(EQ, "freq").max_f64(),
                                 "Hz",
                                 base_param_idx,
                                 state.selected_param,
@@ -1324,8 +1324,8 @@ pub fn render_eq_plugin(
                                 plugin_idx,
                                 "Gain",
                                 filter.gain_db,
-                                pk(EQ, "gain_db").min_f64(),
-                                pk(EQ, "gain_db").max_f64(),
+                                pk(EQ, "gain").min_f64(),
+                                pk(EQ, "gain").max_f64(),
                                 "dB",
                                 base_param_idx + 2,
                                 state.selected_param,

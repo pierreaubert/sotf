@@ -48,6 +48,7 @@ pub mod toggle;
 
 // audio
 pub mod audio;
+pub mod audio_design_tokens;
 
 // Data display
 pub mod avatar;

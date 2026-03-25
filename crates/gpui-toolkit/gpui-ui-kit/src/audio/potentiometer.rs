@@ -22,7 +22,6 @@ use crate::scale::Scale;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
-use std::f32::consts::PI;
 
 // ============================================================================
 // KnobArcElement — custom-painted value arc around the potentiometer
@@ -46,6 +45,12 @@ struct KnobArcElement {
     arc_color: Rgba,
     /// Arc thickness in pixels
     arc_width: f32,
+    /// Arc start angle in radians (from design tokens)
+    arc_start_rad: f32,
+    /// Arc end angle in radians (from design tokens)
+    arc_end_rad: f32,
+    /// Number of segments for arc smoothness (from design tokens)
+    arc_segments: u32,
 }
 
 impl IntoElement for KnobArcElement {
@@ -119,18 +124,17 @@ impl Element for KnobArcElement {
         let center_x = self.knob_offset + self.knob_size / 2.0;
         let center_y = self.knob_offset + self.knob_size / 2.0;
 
-        // Arc sits just outside the knob border (2px border + 1px gap)
+        // Arc sits just outside the knob border
         let outer_radius = self.knob_size / 2.0 + 1.0;
         let inner_radius = outer_radius - self.arc_width;
 
-        // Angle range: 135° (7:30) to 405° (4:30) — 270° sweep with dead zone at bottom
-        let start_rad: f32 = PI * 0.75;
-        let end_rad: f32 = PI * 2.25;
+        let start_rad = self.arc_start_rad;
+        let end_rad = self.arc_end_rad;
         let value_rad = start_rad + (end_rad - start_rad) * self.normalized;
 
         // Build the annular sector as a filled path:
         // outer arc from start_rad to value_rad, then inner arc back
-        let segments = 48; // Enough segments for smooth curve
+        let segments = self.arc_segments;
         let angle_span = value_rad - start_rad;
         let actual_segments = ((segments as f32 * (angle_span / (end_rad - start_rad)))
             .ceil()
@@ -328,6 +332,8 @@ pub struct Potentiometer {
     theme: Option<PotentiometerTheme>,
     /// Override accent color for the value arc (e.g., plugin-specific color)
     accent_color: Option<Rgba>,
+    /// Platform design tokens for arc geometry and sizing.
+    design_tokens: crate::audio_design_tokens::AudioDesignTokens,
     on_change: Option<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>,
     on_drag_start: Option<Box<dyn Fn(f32, f64, &mut Window, &mut App) + 'static>>,
     on_select: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
@@ -352,6 +358,7 @@ impl Potentiometer {
             disabled: false,
             theme: None,
             accent_color: None,
+            design_tokens: Default::default(),
             on_change: None,
             on_drag_start: None,
             on_select: None,
@@ -441,6 +448,12 @@ impl Potentiometer {
     /// Use this to match the plugin's type color (e.g., blue for EQ, red for compressor).
     pub fn accent_color(mut self, color: Rgba) -> Self {
         self.accent_color = Some(color);
+        self
+    }
+
+    /// Set platform design tokens for arc geometry and sizing.
+    pub fn design_tokens(mut self, tokens: crate::audio_design_tokens::AudioDesignTokens) -> Self {
+        self.design_tokens = tokens;
         self
     }
 
@@ -566,11 +579,11 @@ impl RenderOnce for Potentiometer {
         // Use scale-aware normalization for indicator position
         let normalized = self.value_to_normalized(self.value) as f32;
 
-        // Calculate angle for indicator with dead zone at 6 o'clock (bottom)
-        // In screen coordinates (y-down): 0° = 3 o'clock, 90° = 6 o'clock, 180° = 9 o'clock, 270° = 12 o'clock
-        // Start at 135° (7:30 position) and sweep clockwise 270° to 45° (4:30 position)
-        let start_rad: f32 = std::f32::consts::PI * 0.75; // 135° = 3π/4 (7:30)
-        let end_rad: f32 = std::f32::consts::PI * 2.25; // 405° = 45° + 360° (4:30, going through top)
+        // Calculate angle for indicator with dead zone at bottom
+        let start_rad: f32 = self.design_tokens.knob_arc_start_deg.to_radians();
+        let end_rad: f32 =
+            (self.design_tokens.knob_arc_start_deg + self.design_tokens.knob_arc_sweep_deg)
+                .to_radians();
         let angle_rad = start_rad + (end_rad - start_rad) * normalized;
 
         let knob_size = self.size.knob_size();
@@ -971,10 +984,10 @@ impl RenderOnce for Potentiometer {
         // Value arc — painted behind tick marks, around the knob
         let arc_color = self.accent_color.unwrap_or(theme.accent);
         let arc_width = match self.size {
-            PotentiometerSize::Xs => 2.5,
-            PotentiometerSize::Sm => 3.0,
-            PotentiometerSize::Md => 3.5,
-            PotentiometerSize::Lg => 4.0,
+            PotentiometerSize::Xs => self.design_tokens.knob_arc_widths[0],
+            PotentiometerSize::Sm => self.design_tokens.knob_arc_widths[1],
+            PotentiometerSize::Md => self.design_tokens.knob_arc_widths[2],
+            PotentiometerSize::Lg => self.design_tokens.knob_arc_widths[3],
         };
         knob_container = knob_container.child(
             div().absolute().inset_0().child(KnobArcElement {
@@ -984,11 +997,17 @@ impl RenderOnce for Potentiometer {
                 normalized,
                 arc_color,
                 arc_width,
+                arc_start_rad: self.design_tokens.knob_arc_start_deg.to_radians(),
+                arc_end_rad: (self.design_tokens.knob_arc_start_deg
+                    + self.design_tokens.knob_arc_sweep_deg)
+                    .to_radians(),
+                arc_segments: self.design_tokens.knob_arc_segments,
             }),
         );
 
         // Knob circle (offset to center in larger container)
         // Use major_tick_color for border to match ticks and labels
+        let knob_border = self.design_tokens.knob_border_width;
         let mut knob = div()
             .absolute()
             .left(px(knob_offset))
@@ -997,7 +1016,7 @@ impl RenderOnce for Potentiometer {
             .h(px(knob_size))
             .rounded_full()
             .bg(knob_bg)
-            .border_2()
+            .border(px(knob_border))
             .border_color(major_tick_color);
 
         if selected {

@@ -153,6 +153,15 @@ pub struct EditorTheme {
 
     // Font family
     pub font_family: String,
+
+    /// Platform design language identifier (e.g., "neutral", "apple_hig", "material3", "fluent").
+    /// Informational — the actual design system parameters live in sotf-host::DesignSystem.
+    #[serde(default = "default_design_language")]
+    pub design_language: String,
+}
+
+fn default_design_language() -> String {
+    "neutral".to_string()
 }
 
 impl Default for EditorTheme {
@@ -299,6 +308,7 @@ impl EditorTheme {
 
             // Font family
             font_family: ".SystemUI".to_string(),
+            design_language: "neutral".to_string(),
         }
     }
 
@@ -424,6 +434,7 @@ impl EditorTheme {
 
             separator_size: 20.0,
             font_family: ".SystemUI".to_string(),
+            design_language: "neutral".to_string(),
         }
     }
 
@@ -549,6 +560,7 @@ impl EditorTheme {
 
             separator_size: 20.0,
             font_family: ".SystemUI".to_string(),
+            design_language: "neutral".to_string(),
         }
     }
 
@@ -674,6 +686,7 @@ impl EditorTheme {
 
             separator_size: 20.0,
             font_family: ".SystemUI".to_string(),
+            design_language: "neutral".to_string(),
         }
     }
 
@@ -799,6 +812,7 @@ impl EditorTheme {
 
             separator_size: 20.0,
             font_family: ".SystemUI".to_string(),
+            design_language: "neutral".to_string(),
         }
     }
 
@@ -893,6 +907,7 @@ pub fn {}() -> EditorTheme {{
 
         separator_size: {:.1},
         font_family: "{}".to_string(),
+        design_language: "{}".to_string(),
 "#,
             self.name,
             self.name.to_lowercase().replace(' ', "_"),
@@ -940,6 +955,7 @@ pub fn {}() -> EditorTheme {{
             color_to_rust(&self.grid_color),
             self.separator_size,
             self.font_family,
+            self.design_language,
         );
 
         // Add plugin_colors, graph_colors, etc. (abbreviated for length)

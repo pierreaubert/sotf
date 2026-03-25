@@ -26,7 +26,6 @@ path = "src/bin/bliss_scan.rs"
 math-iir-fir = { workspace = true }
 math-optimisation = { workspace = true }
 autoeq-env = { workspace = true }
-autoeq-cea2034 = { workspace = true }
 autoeq = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }

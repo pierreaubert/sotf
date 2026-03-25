@@ -221,6 +221,9 @@ pub struct Theme {
 
     // Font family
     pub font_family: SharedString,
+
+    // Design system tokens for platform-adaptive component geometry
+    pub design_tokens: gpui_ui_kit::audio_design_tokens::AudioDesignTokens,
 }
 
 impl Theme {

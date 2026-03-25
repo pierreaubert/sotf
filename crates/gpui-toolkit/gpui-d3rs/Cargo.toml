@@ -15,7 +15,7 @@ name = "d3rs"
 [features]
 default = ["gpui", "gpu-2d", "gpu-3d"]
 gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:smol", "dep:gpui_macos"]
-spinorama = ["dep:autoeq", "dep:autoeq-cea2034", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
+spinorama = ["dep:autoeq", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
 gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "gpui"]
 gpu-2d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "dep:fontdue", "gpui"]
 
@@ -29,7 +29,6 @@ math-delaunay = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 autoeq = { workspace = true, optional = true }
-autoeq-cea2034 = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }

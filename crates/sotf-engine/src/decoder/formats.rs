@@ -462,6 +462,37 @@ impl SymphoniaDecoder {
 
         Ok(())
     }
+
+    /// Log a recoverable decode error and check whether we've hit the limit.
+    /// Returns `Ok(true)` to continue the loop, or `Err` if too many errors.
+    fn check_error_limit(
+        &mut self,
+        consecutive_errors: &mut u32,
+        msg: &str,
+        context: &str,
+    ) -> AudioDecoderResult<bool> {
+        const MAX_CONSECUTIVE_ERRORS: u32 = 50;
+
+        *consecutive_errors += 1;
+        log::warn!(
+            "[SymphoniaDecoder] {} in {} at position {}: {} ({}/{})",
+            context,
+            self.format.as_str(),
+            self.position,
+            msg,
+            consecutive_errors,
+            MAX_CONSECUTIVE_ERRORS,
+        );
+        if *consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+            self.eof = true;
+            return Err(AudioDecoderError::DecodingFailed(format!(
+                "Too many consecutive decode errors ({}) in {} — file too corrupted",
+                MAX_CONSECUTIVE_ERRORS,
+                self.format.as_str(),
+            )));
+        }
+        Ok(true)
+    }
 }
 
 impl AudioDecoder for SymphoniaDecoder {
@@ -474,9 +505,6 @@ impl AudioDecoder for SymphoniaDecoder {
     }
 
     fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize> {
-        /// Max consecutive decode errors before we give up (file is too corrupted).
-        const MAX_CONSECUTIVE_ERRORS: u32 = 50;
-
         if self.eof {
             return Ok(0);
         }
@@ -499,25 +527,18 @@ impl AudioDecoder for SymphoniaDecoder {
                     return Ok(0);
                 }
                 Err(SymphoniaError::DecodeError(msg)) => {
-                    // Corrupted frame header — the format reader failed to parse
-                    // the next frame. It will automatically resync on the next call.
-                    consecutive_errors += 1;
-                    log::warn!(
-                        "[SymphoniaDecoder] Corrupted frame in {} at position {}: {} ({}/{})",
-                        self.format.as_str(),
-                        self.position,
-                        msg,
-                        consecutive_errors,
-                        MAX_CONSECUTIVE_ERRORS,
-                    );
-                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                        self.eof = true;
-                        return Err(AudioDecoderError::DecodingFailed(format!(
-                            "Too many consecutive decode errors ({}) in {} — file too corrupted",
-                            MAX_CONSECUTIVE_ERRORS,
-                            self.format.as_str(),
-                        )));
-                    }
+                    // Corrupted frame header — the format reader will resync
+                    // on the next call (FLAC sync codes, MP3 sync words, etc.).
+                    self.check_error_limit(&mut consecutive_errors, msg, "corrupted frame")?;
+                    continue;
+                }
+                Err(SymphoniaError::ResetRequired) => {
+                    self.decoder.reset();
+                    self.check_error_limit(
+                        &mut consecutive_errors,
+                        "reset required",
+                        "decoder reset",
+                    )?;
                     continue;
                 }
                 Err(err) => {
@@ -533,27 +554,28 @@ impl AudioDecoder for SymphoniaDecoder {
 
             // Decode the packet — if a single frame is corrupted, skip it and
             // try the next one. Symphonia's format reader resyncs automatically
-            // on the next `next_packet()` call (FLAC sync codes, MP3 sync words, etc.).
+            // on the next `next_packet()` call.
             let decoded_audio_buf = match self.decoder.decode(&packet) {
                 Ok(buf) => buf,
                 Err(SymphoniaError::DecodeError(msg)) => {
-                    consecutive_errors += 1;
-                    log::warn!(
-                        "[SymphoniaDecoder] Skipping corrupted {} packet at position {}: {} ({}/{})",
-                        self.format.as_str(),
-                        self.position,
+                    // Advance position by the packet's declared duration so
+                    // timestamps stay roughly in sync after skipping.
+                    self.position += packet.dur();
+                    self.check_error_limit(
+                        &mut consecutive_errors,
                         msg,
-                        consecutive_errors,
-                        MAX_CONSECUTIVE_ERRORS,
-                    );
-                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                        self.eof = true;
-                        return Err(AudioDecoderError::DecodingFailed(format!(
-                            "Too many consecutive decode errors ({}) in {} — file too corrupted",
-                            MAX_CONSECUTIVE_ERRORS,
-                            self.format.as_str(),
-                        )));
-                    }
+                        "corrupted packet",
+                    )?;
+                    continue;
+                }
+                Err(SymphoniaError::ResetRequired) => {
+                    self.decoder.reset();
+                    self.position += packet.dur();
+                    self.check_error_limit(
+                        &mut consecutive_errors,
+                        "reset required",
+                        "decoder reset after packet",
+                    )?;
                     continue;
                 }
                 Err(e) => {

@@ -183,6 +183,20 @@ impl Toggle {
         self
     }
 
+    /// Set toggle style from platform design tokens.
+    /// Maps token toggle_variant to the closest supported ToggleStyle.
+    pub fn design_tokens(mut self, tokens: &crate::audio_design_tokens::AudioDesignTokens) -> Self {
+        self.style = match tokens.toggle_variant {
+            crate::audio_design_tokens::AudioDesignTokens::TOGGLE_SEGMENTED => {
+                ToggleStyle::Segmented
+            }
+            // Sliding, ThumbOnTrack, Pill all map to Sliding for now.
+            // ThumbOnTrack and Pill will get dedicated renderers when needed.
+            _ => ToggleStyle::Sliding,
+        };
+        self
+    }
+
     /// Set disabled state
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
