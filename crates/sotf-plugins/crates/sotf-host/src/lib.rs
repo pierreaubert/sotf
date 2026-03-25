@@ -2,22 +2,29 @@
 //! SOTF Host - Core traits, host, and shared utilities for audio plugins
 //! ============================================================================
 
+pub mod adaa;
 pub mod analyzer;
 pub mod analyzer_loudness_monitor;
 pub mod analyzer_spectrum;
 pub mod auto_gain;
 pub mod auto_makeup;
 pub mod automation;
+pub mod channel_linking;
 pub mod custom_views;
+pub mod dc_blocker;
+pub mod delta_monitor;
 pub mod design_system;
 pub mod detector;
 pub mod dynamics_core;
+pub mod envelope_follower;
+pub mod fir_crossover;
 pub mod envelope;
 pub mod error;
 pub mod host;
 pub mod layout_solver;
 pub mod lookahead;
 pub mod lr4_crossover;
+pub mod lufs_target;
 pub mod oversampling;
 pub mod param_registry;
 pub mod param_specs;
@@ -37,12 +44,20 @@ pub mod vbap;
 #[cfg(any(feature = "qa", test, debug_assertions))]
 pub mod test_utils;
 
+pub use adaa::{Adaa1, Adaa2, adaa1_hardclip, adaa1_softclip, adaa1_tanh, adaa2_hardclip, adaa2_softclip, adaa2_tanh};
 pub use analyzer::{AnalyzerData, LoudnessData, SpectrumData};
 pub use auto_makeup::MeasuredMakeup;
+pub use channel_linking::{compute_linked_levels, link_stereo};
+pub use dc_blocker::DcBlocker;
+pub use delta_monitor::DeltaMonitor;
 pub use detector::{DetectionMode, LevelDetector};
+pub use fir_crossover::{FirCrossover, MultibandFirCrossover};
+pub use dynamics_core::SidechainFilterMode;
 pub use envelope::DualRelease;
+pub use envelope_follower::EnvelopeFollower;
 pub use lookahead::LookaheadBuffer;
 pub use lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
+pub use lufs_target::LufsTarget;
 pub use oversampling::{Oversampler, interleaved_to_planar, planar_to_interleaved};
 pub use true_peak::TruePeakDetector;
 pub use analyzer_loudness_monitor::{LoudnessMonitor, LoudnessMonitorPlugin};

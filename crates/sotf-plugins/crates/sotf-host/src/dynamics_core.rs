@@ -13,7 +13,7 @@
 // - No unsafe code
 
 use crate::{DetectionMode, DualRelease, LevelDetector, LookaheadBuffer, MeasuredMakeup};
-use math_audio_iir_fir::{peq_butterworth_highpass, Biquad};
+use math_audio_iir_fir::{peq_butterworth_highpass, Biquad, BiquadFilterType};
 
 // ============================================================================
 // Constants
@@ -43,6 +43,24 @@ pub enum GateState {
     Closing,
 }
 
+/// Sidechain filter mode for the detection path.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SidechainFilterMode {
+    /// No sidechain filtering.
+    Off,
+    /// High-pass filter at the given frequency.
+    /// `order_index`: 0 = 2nd order, 1 = 4th order.
+    Hpf {
+        freq_hz: f32,
+        order_index: usize,
+    },
+    /// Spectral tilt filter: positive = emphasize HF in detection, negative = emphasize LF.
+    /// Implemented as a 1st-order high-shelf at 1 kHz with the given gain.
+    Tilt {
+        tilt_db: f32,
+    },
+}
+
 // ============================================================================
 // DynamicsCore
 // ============================================================================
@@ -66,10 +84,13 @@ pub struct DynamicsCore {
     level_detectors: Vec<LevelDetector>,
     detection_mode_index: usize, // 0=peak, 1=RMS
 
-    // === Sidechain HPF ===
+    // === Sidechain filter (HPF or Tilt) ===
     sidechain_hpf_biquads: Vec<Vec<Biquad>>,
     sidechain_hpf_hz: f32,
     sidechain_hpf_order_index: usize, // 0=2nd, 1=4th
+    sidechain_tilt_biquads: Vec<Biquad>,
+    sidechain_tilt_db: f32,
+    sidechain_filter_mode: SidechainFilterMode,
 
     // === Program-dependent release (compress mode only) ===
     dual_release: Vec<DualRelease>,
@@ -122,6 +143,9 @@ impl DynamicsCore {
             sidechain_hpf_biquads: Vec::new(),
             sidechain_hpf_hz: 0.0,
             sidechain_hpf_order_index: 0,
+            sidechain_tilt_biquads: Vec::new(),
+            sidechain_tilt_db: 0.0,
+            sidechain_filter_mode: SidechainFilterMode::Off,
 
             dual_release: (0..channels)
                 .map(|_| {
@@ -165,8 +189,9 @@ impl DynamicsCore {
         self.attack_coeff = time_to_coeff(self.attack_ms, sample_rate);
         self.release_coeff = time_to_coeff(self.release_ms, sample_rate);
 
-        // Rebuild HPF biquads
+        // Rebuild sidechain filters
         self.rebuild_sidechain_hpf_internal();
+        self.rebuild_sidechain_tilt_internal();
 
         // Reinitialize level detectors
         let mode = self.detection_mode();
@@ -213,8 +238,9 @@ impl DynamicsCore {
         self.gate_state.fill(GateState::Open);
         self.hold_counter.fill(0);
 
-        // Reset HPF biquad states by rebuilding
+        // Reset sidechain filter states by rebuilding
         self.rebuild_sidechain_hpf_internal();
+        self.rebuild_sidechain_tilt_internal();
 
         // Reset level detectors
         for det in &mut self.level_detectors {
@@ -258,7 +284,59 @@ impl DynamicsCore {
     pub fn set_sidechain_hpf(&mut self, freq_hz: f32, order_index: usize) {
         self.sidechain_hpf_hz = freq_hz;
         self.sidechain_hpf_order_index = order_index;
+        self.sidechain_filter_mode = if freq_hz > 0.0 {
+            SidechainFilterMode::Hpf {
+                freq_hz,
+                order_index,
+            }
+        } else {
+            SidechainFilterMode::Off
+        };
         self.rebuild_sidechain_hpf_internal();
+        self.sidechain_tilt_biquads.clear();
+        self.sidechain_tilt_db = 0.0;
+    }
+
+    /// Set a spectral tilt filter on the sidechain detection path.
+    ///
+    /// `tilt_db`: positive values weight HF more heavily (e.g., +3 dB makes the
+    /// compressor more sensitive to high frequencies). Negative values weight LF.
+    /// Implemented as a 1st-order high-shelf at 1 kHz.
+    pub fn set_sidechain_tilt(&mut self, tilt_db: f32) {
+        self.sidechain_tilt_db = tilt_db;
+        if tilt_db.abs() < 0.01 {
+            self.sidechain_filter_mode = SidechainFilterMode::Off;
+            self.sidechain_tilt_biquads.clear();
+            self.sidechain_hpf_biquads.clear();
+            return;
+        }
+        self.sidechain_filter_mode = SidechainFilterMode::Tilt { tilt_db };
+        // Clear HPF — tilt and HPF are mutually exclusive
+        self.sidechain_hpf_biquads.clear();
+        self.sidechain_hpf_hz = 0.0;
+        self.rebuild_sidechain_tilt_internal();
+    }
+
+    /// Set sidechain filter using the unified enum.
+    pub fn set_sidechain_filter(&mut self, mode: SidechainFilterMode) {
+        match mode {
+            SidechainFilterMode::Off => {
+                self.sidechain_hpf_biquads.clear();
+                self.sidechain_hpf_hz = 0.0;
+                self.sidechain_tilt_biquads.clear();
+                self.sidechain_tilt_db = 0.0;
+                self.sidechain_filter_mode = SidechainFilterMode::Off;
+            }
+            SidechainFilterMode::Hpf {
+                freq_hz,
+                order_index,
+            } => {
+                self.set_sidechain_hpf(freq_hz, order_index);
+            }
+            SidechainFilterMode::Tilt { tilt_db } => {
+                self.set_sidechain_tilt(tilt_db);
+            }
+        }
     }
 
     /// Set detection mode: 0=peak, 1=RMS. Reinitializes level detectors.
@@ -307,21 +385,32 @@ impl DynamicsCore {
     // Hot-path methods — called per-sample, zero allocations
     // ========================================================================
 
-    /// Run the sidechain HPF biquad cascade for this channel.
+    /// Run the sidechain filter (HPF or Tilt) for this channel.
     ///
-    /// Returns the filtered sample. If HPF is disabled (no biquads), returns
+    /// Returns the filtered sample. If no sidechain filter is active, returns
     /// the input sample unchanged.
     #[inline]
     pub fn apply_sidechain_filter(&mut self, ch: usize, sample: f32) -> f32 {
-        if ch >= self.sidechain_hpf_biquads.len() {
-            return sample;
+        match self.sidechain_filter_mode {
+            SidechainFilterMode::Off => sample,
+            SidechainFilterMode::Hpf { .. } => {
+                if ch >= self.sidechain_hpf_biquads.len() {
+                    return sample;
+                }
+                let biquads: &mut [Biquad] = &mut self.sidechain_hpf_biquads[ch];
+                let mut x = sample as f64;
+                for bq in biquads.iter_mut() {
+                    x = bq.process(x);
+                }
+                x as f32
+            }
+            SidechainFilterMode::Tilt { .. } => {
+                if ch >= self.sidechain_tilt_biquads.len() {
+                    return sample;
+                }
+                self.sidechain_tilt_biquads[ch].process(sample as f64) as f32
+            }
         }
-        let biquads: &mut [Biquad] = &mut self.sidechain_hpf_biquads[ch];
-        let mut x = sample as f64;
-        for bq in biquads.iter_mut() {
-            x = bq.process(x);
-        }
-        x as f32
     }
 
     /// Detect level for one sample on a channel.
@@ -530,6 +619,28 @@ impl DynamicsCore {
         } else {
             self.sidechain_hpf_biquads.clear();
         }
+    }
+
+    fn rebuild_sidechain_tilt_internal(&mut self) {
+        let tilt = self.sidechain_tilt_db;
+        if tilt.abs() < 0.01 || self.sample_rate == 0 {
+            self.sidechain_tilt_biquads.clear();
+            return;
+        }
+        // 1st-order high-shelf at 1 kHz: positive tilt = more HF sensitivity
+        let shelf_freq = 1000.0;
+        let q = 0.707; // Butterworth Q for 1st-order approximation
+        self.sidechain_tilt_biquads = (0..self.channels)
+            .map(|_| {
+                Biquad::new(
+                    BiquadFilterType::Highshelf,
+                    shelf_freq,
+                    self.sample_rate as f64,
+                    q,
+                    tilt as f64,
+                )
+            })
+            .collect();
     }
 }
 

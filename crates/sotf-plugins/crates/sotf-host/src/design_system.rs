@@ -308,7 +308,7 @@ impl DesignSystem {
             audio_controls: AudioControlRules {
                 knob_arc_start_deg: 135.0,
                 knob_arc_sweep_deg: 270.0,
-                knob_arc_width: 2.0,
+                knob_arc_width: 2.5,
                 knob_arc_segments: 48,
                 knob_border_width: 2.0,
                 slider_track_widths: [14.0, 18.0, 24.0],
