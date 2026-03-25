@@ -1,0 +1,20 @@
+[package]
+name = "sotf-plugin-spectral-compressor"
+description = "SOTF Spectral Compressor plugin - per-bin frequency domain dynamics"
+version = "0.5.20"
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_spectral_compressor"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+realfft = { workspace = true }
+rustfft = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
