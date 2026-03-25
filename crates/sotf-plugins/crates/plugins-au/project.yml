@@ -79,6 +79,52 @@ targets:
         embed: true
       - target: DelayAudioUnit
         embed: true
+      - target: ExpanderAudioUnit
+        embed: true
+      - target: CrossfeedAudioUnit
+        embed: true
+      - target: SaturationAudioUnit
+        embed: true
+      - target: DenoiserAudioUnit
+        embed: true
+      - target: DownmixAudioUnit
+        embed: true
+      - target: MonoToStereoAudioUnit
+        embed: true
+      - target: StereoImagerAudioUnit
+        embed: true
+      - target: TransientShaperAudioUnit
+        embed: true
+      - target: DeEsserAudioUnit
+        embed: true
+      - target: DynamicEQAudioUnit
+        embed: true
+      - target: MultibandCompressorAudioUnit
+        embed: true
+      - target: MultibandExpanderAudioUnit
+        embed: true
+      - target: ConvolutionAudioUnit
+        embed: true
+      - target: FletcherMunsonAudioUnit
+        embed: true
+      - target: LoudnessCompensationAudioUnit
+        embed: true
+      - target: ChannelMuteSoloAudioUnit
+        embed: true
+      - target: UpmixerAudioUnit
+        embed: true
+      - target: XTCAudioUnit
+        embed: true
+      - target: BinauralAudioUnit
+        embed: true
+      - target: MatrixAudioUnit
+        embed: true
+      - target: PNDAudioUnit
+        embed: true
+      - target: ABCompareAudioUnit
+        embed: true
+      - target: CrossoverAudioUnit
+        embed: true
 
   # EQ Audio Unit
   EQAudioUnit:
@@ -157,3 +203,302 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.DelayAudioUnit
       INFOPLIST_FILE: DelayAudioUnit/Info.plist
       CODE_SIGN_ENTITLEMENTS: DelayAudioUnit/DelayAudioUnit.entitlements
+
+  # Expander Audio Unit
+  ExpanderAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: ExpanderAudioUnit
+        name: ExpanderAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.ExpanderAudioUnit
+      INFOPLIST_FILE: ExpanderAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: ExpanderAudioUnit/ExpanderAudioUnit.entitlements
+
+  # Crossfeed Audio Unit
+  CrossfeedAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: CrossfeedAudioUnit
+        name: CrossfeedAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.CrossfeedAudioUnit
+      INFOPLIST_FILE: CrossfeedAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: CrossfeedAudioUnit/CrossfeedAudioUnit.entitlements
+
+  # Saturation Audio Unit
+  SaturationAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: SaturationAudioUnit
+        name: SaturationAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.SaturationAudioUnit
+      INFOPLIST_FILE: SaturationAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: SaturationAudioUnit/SaturationAudioUnit.entitlements
+
+  # Denoiser Audio Unit
+  DenoiserAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: DenoiserAudioUnit
+        name: DenoiserAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.DenoiserAudioUnit
+      INFOPLIST_FILE: DenoiserAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: DenoiserAudioUnit/DenoiserAudioUnit.entitlements
+
+  # Downmix Audio Unit
+  DownmixAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: DownmixAudioUnit
+        name: DownmixAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.DownmixAudioUnit
+      INFOPLIST_FILE: DownmixAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: DownmixAudioUnit/DownmixAudioUnit.entitlements
+
+  # MonoToStereo Audio Unit
+  MonoToStereoAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: MonoToStereoAudioUnit
+        name: MonoToStereoAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.MonoToStereoAudioUnit
+      INFOPLIST_FILE: MonoToStereoAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: MonoToStereoAudioUnit/MonoToStereoAudioUnit.entitlements
+
+  # StereoImager Audio Unit
+  StereoImagerAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: StereoImagerAudioUnit
+        name: StereoImagerAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.StereoImagerAudioUnit
+      INFOPLIST_FILE: StereoImagerAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: StereoImagerAudioUnit/StereoImagerAudioUnit.entitlements
+
+  # TransientShaper Audio Unit
+  TransientShaperAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: TransientShaperAudioUnit
+        name: TransientShaperAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.TransientShaperAudioUnit
+      INFOPLIST_FILE: TransientShaperAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: TransientShaperAudioUnit/TransientShaperAudioUnit.entitlements
+
+  # DeEsser Audio Unit
+  DeEsserAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: DeEsserAudioUnit
+        name: DeEsserAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.DeEsserAudioUnit
+      INFOPLIST_FILE: DeEsserAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: DeEsserAudioUnit/DeEsserAudioUnit.entitlements
+
+  # DynamicEQ Audio Unit
+  DynamicEQAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: DynamicEQAudioUnit
+        name: DynamicEQAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.DynamicEQAudioUnit
+      INFOPLIST_FILE: DynamicEQAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: DynamicEQAudioUnit/DynamicEQAudioUnit.entitlements
+
+  # MultibandCompressor Audio Unit
+  MultibandCompressorAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: MultibandCompressorAudioUnit
+        name: MultibandCompressorAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.MultibandCompressorAudioUnit
+      INFOPLIST_FILE: MultibandCompressorAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: MultibandCompressorAudioUnit/MultibandCompressorAudioUnit.entitlements
+
+  # MultibandExpander Audio Unit
+  MultibandExpanderAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: MultibandExpanderAudioUnit
+        name: MultibandExpanderAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.MultibandExpanderAudioUnit
+      INFOPLIST_FILE: MultibandExpanderAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: MultibandExpanderAudioUnit/MultibandExpanderAudioUnit.entitlements
+
+  # Convolution Audio Unit
+  ConvolutionAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: ConvolutionAudioUnit
+        name: ConvolutionAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.ConvolutionAudioUnit
+      INFOPLIST_FILE: ConvolutionAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: ConvolutionAudioUnit/ConvolutionAudioUnit.entitlements
+
+  # FletcherMunson Audio Unit
+  FletcherMunsonAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: FletcherMunsonAudioUnit
+        name: FletcherMunsonAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.FletcherMunsonAudioUnit
+      INFOPLIST_FILE: FletcherMunsonAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: FletcherMunsonAudioUnit/FletcherMunsonAudioUnit.entitlements
+
+  # LoudnessCompensation Audio Unit
+  LoudnessCompensationAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: LoudnessCompensationAudioUnit
+        name: LoudnessCompensationAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.LoudnessCompensationAudioUnit
+      INFOPLIST_FILE: LoudnessCompensationAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: LoudnessCompensationAudioUnit/LoudnessCompensationAudioUnit.entitlements
+
+  # ChannelMuteSolo Audio Unit
+  ChannelMuteSoloAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: ChannelMuteSoloAudioUnit
+        name: ChannelMuteSoloAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.ChannelMuteSoloAudioUnit
+      INFOPLIST_FILE: ChannelMuteSoloAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: ChannelMuteSoloAudioUnit/ChannelMuteSoloAudioUnit.entitlements
+
+  # Upmixer Audio Unit
+  UpmixerAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: UpmixerAudioUnit
+        name: UpmixerAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.UpmixerAudioUnit
+      INFOPLIST_FILE: UpmixerAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: UpmixerAudioUnit/UpmixerAudioUnit.entitlements
+
+  # XTC Audio Unit
+  XTCAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: XTCAudioUnit
+        name: XTCAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.XTCAudioUnit
+      INFOPLIST_FILE: XTCAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: XTCAudioUnit/XTCAudioUnit.entitlements
+
+  # Binaural Audio Unit
+  BinauralAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: BinauralAudioUnit
+        name: BinauralAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.BinauralAudioUnit
+      INFOPLIST_FILE: BinauralAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: BinauralAudioUnit/BinauralAudioUnit.entitlements
+
+  # Matrix Audio Unit
+  MatrixAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: MatrixAudioUnit
+        name: MatrixAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.MatrixAudioUnit
+      INFOPLIST_FILE: MatrixAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: MatrixAudioUnit/MatrixAudioUnit.entitlements
+
+  # PND Audio Unit
+  PNDAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: PNDAudioUnit
+        name: PNDAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.PNDAudioUnit
+      INFOPLIST_FILE: PNDAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: PNDAudioUnit/PNDAudioUnit.entitlements
+
+  # ABCompare Audio Unit
+  ABCompareAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: ABCompareAudioUnit
+        name: ABCompareAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.ABCompareAudioUnit
+      INFOPLIST_FILE: ABCompareAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: ABCompareAudioUnit/ABCompareAudioUnit.entitlements
+
+  # Crossover Audio Unit
+  CrossoverAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: CrossoverAudioUnit
+        name: CrossoverAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.CrossoverAudioUnit
+      INFOPLIST_FILE: CrossoverAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: CrossoverAudioUnit/CrossoverAudioUnit.entitlements

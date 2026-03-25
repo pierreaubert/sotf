@@ -23,10 +23,11 @@ public class GPUIAUView: NSView {
         if let au = audioUnit, let tree = au.parameterTree {
             let count = tree.allParameters.count
             self.paramCache = au_param_cache_create(count)
-            // Initialize cache with current parameter values
+            // Initialize cache with current parameter values and metadata
             for (i, param) in tree.allParameters.enumerated() {
                 let denormalized = GPUIAUView.denormalizeParam(param)
                 au_param_cache_write(self.paramCache, i, denormalized)
+                GPUIAUView.setParamMeta(cache: self.paramCache, index: i, param: param)
             }
         } else {
             self.paramCache = nil
@@ -54,24 +55,44 @@ public class GPUIAUView: NSView {
     private func setupParameterObservation(_ au: GenericRustAudioUnit) {
         guard let cache = paramCache, let tree = au.parameterTree else { return }
 
-        // The implementorValueObserver is already set by GenericRustAudioUnit
-        // to sync to Rust. We add a token-based observer for the UI cache.
-        // Capture the raw cache pointer directly (not self) since this closure
-        // runs on AUParameterTree.observationQueue, not the main actor.
+        // AU parameter observers fire on AUParameterTree.observationQueue (not main actor).
+        // au_param_cache_write is thread-safe (atomic), so we pass a nonisolated callback.
         let cachePtr = cache
         let allParams = tree.allParameters
         for (i, param) in allParams.enumerated() {
             let idx = i
-            param.token(byAddingParameterObserver: { _, value in
-                // au_param_cache_write is thread-safe (atomic)
-                au_param_cache_write(cachePtr, idx, Double(value))
-            })
+            param.token(byAddingParameterObserver: Self.makeParamObserver(cachePtr: cachePtr, index: idx))
+        }
+    }
+
+    /// Create a nonisolated parameter observer closure.
+    /// Must be a static/nonisolated method so the returned closure doesn't inherit @MainActor.
+    nonisolated private static func makeParamObserver(
+        cachePtr: UnsafeMutableRawPointer,
+        index: Int
+    ) -> AUParameterObserver {
+        return { _, value in
+            au_param_cache_write(cachePtr, index, Double(value))
         }
     }
 
     /// Denormalize an AU parameter value to its real-world value.
     private static func denormalizeParam(_ param: AUParameter) -> Double {
         return Double(param.value)
+    }
+
+    /// Push parameter metadata (name, unit, range) into the Rust cache.
+    private static func setParamMeta(cache: UnsafeMutableRawPointer?, index: Int, param: AUParameter) {
+        guard let cache = cache else { return }
+        let name = param.displayName
+        let unitStr = param.unitName ?? ""
+        name.withCString { namePtr in
+            unitStr.withCString { unitPtr in
+                au_param_cache_set_meta(cache, index, namePtr, unitPtr,
+                                        Double(param.minValue), Double(param.maxValue),
+                                        Double(param.value))
+            }
+        }
     }
 
     /// Connect an AU after the view was already created (handles the case where
@@ -87,6 +108,7 @@ public class GPUIAUView: NSView {
             let cache = au_param_cache_create(count)
             for (i, param) in tree.allParameters.enumerated() {
                 au_param_cache_write(cache, i, GPUIAUView.denormalizeParam(param))
+                GPUIAUView.setParamMeta(cache: cache, index: i, param: param)
             }
             self.paramCache = cache
             setupParameterObservation(au)
