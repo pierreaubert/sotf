@@ -18,8 +18,8 @@ use sotf_host::plugin_params::PluginParamDef;
 // Parameter Specifications
 // ============================================================================
 
-/// Mode labels: index 0 = "Manual" (backward compat default), index 1 = "ISO 226".
-pub const MODE_LABELS: &[&str] = &["Manual", "ISO 226"];
+/// Mode labels: index 0 = "Manual" (backward compat default), index 1 = "ISO 226", index 2 = "Auto".
+pub const MODE_LABELS: &[&str] = &["Manual", "ISO 226", "Auto"];
 
 pub const PARAMS: &[ParamSpec] = &[
     // -- indices 0..10: existing parameters (order preserved for backward compat) --
@@ -126,6 +126,19 @@ pub const PARAMS: &[ParamSpec] = &[
         "Compensation",
     )
     .doc("Reference listening level (no compensation applied at this level)"),
+    // -- index 14: Auto mode parameter --
+    ParamSpec::float(
+        "Playback Volume",
+        "playback_volume_db",
+        0.0,
+        -80.0,
+        0.0,
+        0.5,
+        "dB",
+        "Auto",
+    )
+    .setup()
+    .doc("Engine playback volume (set automatically by the engine)"),
 ];
 
 // ============================================================================
@@ -142,6 +155,13 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             controls: &[
                 ControlSpec::knob(12), // playback_level_db
                 ControlSpec::knob(13), // reference_level_db
+            ],
+        },
+        ControlGroup {
+            title: "AUTO",
+            controls: &[
+                ControlSpec::label(14), // playback_volume_db (engine-set, read-only)
+                ControlSpec::knob(13),  // reference_level_db (shared with ISO 226)
             ],
         },
         ControlGroup {
@@ -215,13 +235,16 @@ pub struct Params {
     pub auto_gain_max_db: f64,
     #[serde(default = "d_auto_gain_smoothing_ms")]
     pub auto_gain_smoothing_ms: f64,
-    /// 0 = Manual, 1 = ISO 226
+    /// 0 = Manual, 1 = ISO 226, 2 = Auto
     #[serde(default = "d_mode")]
     pub mode: usize,
     #[serde(default = "d_playback_level_db")]
     pub playback_level_db: f64,
     #[serde(default = "d_reference_level_db")]
     pub reference_level_db: f64,
+    /// Engine playback volume in dB (set externally, used in Auto mode)
+    #[serde(default = "d_playback_volume_db")]
+    pub playback_volume_db: f64,
 }
 
 fn d_low_freq() -> f64 {
@@ -266,6 +289,9 @@ fn d_playback_level_db() -> f64 {
 fn d_reference_level_db() -> f64 {
     pk(PARAMS, "reference_level_db").default_f64()
 }
+fn d_playback_volume_db() -> f64 {
+    pk(PARAMS, "playback_volume_db").default_f64()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -284,6 +310,7 @@ impl Default for Params {
             mode: d_mode(),
             playback_level_db: d_playback_level_db(),
             reference_level_db: d_reference_level_db(),
+            playback_volume_db: d_playback_volume_db(),
         }
     }
 }
@@ -314,6 +341,7 @@ impl PluginParamDef for Params {
             11 => Some(self.mode as f64),
             12 => Some(self.playback_level_db),
             13 => Some(self.reference_level_db),
+            14 => Some(self.playback_volume_db),
             _ => None,
         }
     }
@@ -334,6 +362,7 @@ impl PluginParamDef for Params {
             11 => self.mode = value as usize,
             12 => self.playback_level_db = value,
             13 => self.reference_level_db = value,
+            14 => self.playback_volume_db = value,
             _ => {}
         }
     }
@@ -385,6 +414,7 @@ mod tests {
         assert_eq!(original.mode, restored.mode);
         assert_eq!(original.playback_level_db, restored.playback_level_db);
         assert_eq!(original.reference_level_db, restored.reference_level_db);
+        assert_eq!(original.playback_volume_db, restored.playback_volume_db);
     }
 
     #[test]
@@ -418,6 +448,10 @@ mod tests {
         assert_eq!(
             p.reference_level_db,
             pk(PARAMS, "reference_level_db").default_f64()
+        );
+        assert_eq!(
+            p.playback_volume_db,
+            pk(PARAMS, "playback_volume_db").default_f64()
         );
     }
 

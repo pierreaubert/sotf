@@ -167,7 +167,7 @@ impl Default for ChannelLoudnessParams {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LoudnessCompensationPluginParams {
     #[serde(default = "default_low_freq")]
     pub low_freq: f32,
@@ -196,13 +196,16 @@ pub struct LoudnessCompensationPluginParams {
     /// Auto-gain position: "pre", "post" (default), or "disabled"
     #[serde(default = "default_auto_gain_position")]
     pub auto_gain_position: String,
-    /// 0 = Manual (default), 1 = ISO 226
+    /// 0 = Manual (default), 1 = ISO 226, 2 = Auto
     #[serde(default)]
     pub mode: usize,
     #[serde(default = "default_playback_level_db")]
     pub playback_level_db: f32,
     #[serde(default = "default_reference_level_db")]
     pub reference_level_db: f32,
+    /// Engine playback volume in dB (used in Auto mode)
+    #[serde(default)]
+    pub playback_volume_db: f32,
 }
 
 fn default_auto_gain_position() -> String {
@@ -214,6 +217,52 @@ fn default_playback_level_db() -> f32 {
 fn default_reference_level_db() -> f32 {
     pk(LC, "reference_level_db").default_f32()
 }
+
+// ============================================================================
+// Fletcher-Munson backward compatibility
+// ============================================================================
+
+/// Backward-compatible deserialization of old FletcherMunson configs.
+/// When the factory receives a `FletcherMunson` plugin type, it deserializes
+/// into this struct and then converts to `LoudnessCompensationPluginParams`
+/// with `mode = 2` (Auto).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FletcherMunsonCompat {
+    #[serde(default)]
+    pub playback_volume_db: f32,
+    #[serde(default = "default_fm_compat_reference")]
+    pub reference_level_db: f32,
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub auto_gain_enabled: bool,
+    #[serde(default)]
+    pub smoothing_ms: f32,
+}
+
+fn default_fm_compat_reference() -> f32 {
+    -14.0
+}
+
+impl FletcherMunsonCompat {
+    /// Convert this backward-compat struct to a LoudnessCompensation params in Auto mode.
+    pub fn into_loudness_compensation_params(self) -> LoudnessCompensationPluginParams {
+        LoudnessCompensationPluginParams {
+            mode: 2, // Auto
+            playback_volume_db: self.playback_volume_db,
+            // Convert relative reference_level_db to absolute SPL estimate for ISO 226.
+            // Old FM used relative dB (e.g. -14). Map to SPL: 83 + reference_level_db.
+            reference_level_db: 83.0 + self.reference_level_db,
+            auto_gain_enabled: self.auto_gain_enabled,
+            ..Default::default()
+        }
+    }
+}
+
+/// Type alias for backward compatibility.
+pub type FletcherMunsonPlugin = LoudnessCompensationPlugin;
+/// Type alias for backward compatibility.
+pub type FletcherMunsonPluginParams = LoudnessCompensationPluginParams;
 
 // ============================================================================
 // ISO 226 Filter Bank
@@ -242,11 +291,16 @@ pub struct LoudnessCompensationPlugin {
     mid_q: f32,
     /// Manual mode filters: [channel][filter_index], 5 biquads per channel.
     filters: Vec<Vec<Biquad>>,
-    // -- ISO 226 mode fields --
-    /// 0 = Manual, 1 = ISO 226
+    // -- ISO 226 / Auto mode fields --
+    /// 0 = Manual, 1 = ISO 226, 2 = Auto
     mode_index: usize,
     playback_level_db: f32,
     reference_level_db: f32,
+    /// Engine playback volume in dB (relative, set externally). Used in Auto mode.
+    playback_volume_db: f32,
+    /// Last volume at which ISO filters were rebuilt (Auto mode). Prevents
+    /// per-frame rebuilds; filters are only rebuilt when volume changes by >0.5 dB.
+    last_auto_volume_db: f32,
     /// ISO 226 mode filters: [channel][band_index], 7 biquads per channel.
     /// Pre-allocated in `new()`, coefficients updated in `rebuild_iso_filters()`.
     iso_filters: Vec<Vec<Biquad>>,
@@ -290,6 +344,8 @@ impl LoudnessCompensationPlugin {
             mode_index: 0, // Manual by default
             playback_level_db: playback_db,
             reference_level_db: reference_db,
+            playback_volume_db: 0.0,
+            last_auto_volume_db: 0.0,
             iso_filters: vec![Vec::new(); num_channels],
             iso_deltas: compute_iso226_delta(playback_db as f64, reference_db as f64),
             auto_gain: None,
@@ -412,9 +468,9 @@ impl LoudnessCompensationPlugin {
                 "Mode",
                 self.mode_index as i32,
                 0,
-                1,
+                2,
             )
-            .with_description("0 = Manual, 1 = ISO 226")
+            .with_description("0 = Manual, 1 = ISO 226, 2 = Auto")
             .with_group("Compensation"),
             Parameter::new_float(
                 "playback_level_db",
@@ -434,6 +490,15 @@ impl LoudnessCompensationPlugin {
             )
             .with_description("Reference listening level (dB SPL)")
             .with_group("Compensation"),
+            Parameter::new_float(
+                "playback_volume_db",
+                "Playback Volume",
+                self.playback_volume_db,
+                pk(LC, "playback_volume_db").min_f64() as f32,
+                pk(LC, "playback_volume_db").max_f64() as f32,
+            )
+            .with_description("Engine playback volume (dB, set automatically)")
+            .with_group("Auto"),
         ];
     }
 
@@ -582,8 +647,8 @@ impl LoudnessCompensationPlugin {
     /// Update the compensation gain smoother targets based on the active mode.
     fn update_comp_gain_smoother(&mut self) {
         for ch in 0..self.num_channels {
-            let max_gain = if self.mode_index == 1 {
-                // ISO 226 mode: find max absolute gain across all bands
+            let max_gain = if self.mode_index == 1 || self.mode_index == 2 {
+                // ISO 226 / Auto mode: find max absolute gain across all bands
                 let mut mg = 0.0_f32;
                 for (band_idx, &freq) in ISO_BAND_FREQS.iter().enumerate() {
                     let _ = band_idx;
@@ -624,6 +689,8 @@ impl LoudnessCompensationPlugin {
         p.mode_index = params.mode;
         p.playback_level_db = params.playback_level_db;
         p.reference_level_db = params.reference_level_db;
+        p.playback_volume_db = params.playback_volume_db;
+        p.last_auto_volume_db = params.playback_volume_db;
         p.auto_gain_position = AutoGainPosition::from_str_lossy(&params.auto_gain_position);
         // auto_gain_enabled overrides position: if explicitly disabled, position becomes Disabled
         if !params.auto_gain_enabled {
@@ -655,8 +722,8 @@ impl LoudnessCompensationPlugin {
     #[inline(always)]
     fn process_sample(&mut self, ch: usize, sample: f32) -> f32 {
         let mut s = sample as f64;
-        if self.mode_index == 1 {
-            // ISO 226 mode
+        if self.mode_index == 1 || self.mode_index == 2 {
+            // ISO 226 / Auto mode — both use the iso_filters bank
             for f in &mut self.iso_filters[ch] {
                 s = f.process(s);
             }
@@ -667,6 +734,34 @@ impl LoudnessCompensationPlugin {
             }
         }
         (s as f32) * self.comp_gain_smoother[ch].advance()
+    }
+
+    /// In Auto mode, rebuild ISO 226 filters based on engine volume.
+    /// Converts relative `playback_volume_db` to absolute SPL estimate:
+    ///   estimated_spl = reference_level_db + playback_volume_db
+    /// Only rebuilds if volume changed by >0.5 dB since last rebuild.
+    fn maybe_rebuild_auto_filters(&mut self) {
+        if self.mode_index != 2 {
+            return;
+        }
+        let delta = (self.playback_volume_db - self.last_auto_volume_db).abs();
+        if delta < 0.5 {
+            return;
+        }
+        self.last_auto_volume_db = self.playback_volume_db;
+        // Compute effective SPL: 0 dB volume = reference_level_db SPL
+        let estimated_spl = self.reference_level_db + self.playback_volume_db;
+        // Clamp to valid ISO 226 range (20-90 phon)
+        let estimated_phon = (estimated_spl as f64).clamp(20.0, 90.0);
+        let reference_phon = (self.reference_level_db as f64).clamp(20.0, 90.0);
+        // Temporarily set playback_level_db for rebuild_iso_filters
+        let saved_playback = self.playback_level_db;
+        self.playback_level_db = estimated_phon as f32;
+        let saved_reference = self.reference_level_db;
+        self.reference_level_db = reference_phon as f32;
+        self.rebuild_iso_filters();
+        self.playback_level_db = saved_playback;
+        self.reference_level_db = saved_reference;
     }
 }
 
@@ -803,9 +898,22 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 ParameterValue::Float(f) => *f as usize,
                 _ => return Err(format!("mode must be numeric, got {:?}", value)),
             };
-            if v <= 1 {
+            if v <= 2 {
                 self.mode_index = v;
+                if v == 2 {
+                    // Auto mode: force an initial rebuild
+                    self.last_auto_volume_db = f32::MIN;
+                    self.maybe_rebuild_auto_filters();
+                }
                 self.update_comp_gain_smoother();
+            }
+        } else if id.0 == "playback_volume_db" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "playback_volume_db must be a float".to_string())?;
+            if v.is_finite() {
+                self.playback_volume_db = v;
+                self.maybe_rebuild_auto_filters();
             }
         } else if id.0 == "playback_level_db" {
             let v = value
@@ -813,7 +921,13 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 .ok_or_else(|| "playback_level_db must be a float".to_string())?;
             if v.is_finite() {
                 self.playback_level_db = v;
-                self.rebuild_iso_filters();
+                if self.mode_index == 2 {
+                    // Auto mode: force rebuild with updated reference
+                    self.last_auto_volume_db = f32::MIN;
+                    self.maybe_rebuild_auto_filters();
+                } else {
+                    self.rebuild_iso_filters();
+                }
             }
         } else if id.0 == "reference_level_db" {
             let v = value
@@ -821,7 +935,13 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 .ok_or_else(|| "reference_level_db must be a float".to_string())?;
             if v.is_finite() {
                 self.reference_level_db = v;
-                self.rebuild_iso_filters();
+                if self.mode_index == 2 {
+                    // Auto mode: force rebuild with updated reference
+                    self.last_auto_volume_db = f32::MIN;
+                    self.maybe_rebuild_auto_filters();
+                } else {
+                    self.rebuild_iso_filters();
+                }
             }
         } else {
             return Err(format!("Unknown parameter: {}", id));
@@ -860,6 +980,8 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             Some(ParameterValue::Float(self.playback_level_db))
         } else if id.0 == "reference_level_db" {
             Some(ParameterValue::Float(self.reference_level_db))
+        } else if id.0 == "playback_volume_db" {
+            Some(ParameterValue::Float(self.playback_volume_db))
         } else {
             None
         }
@@ -918,6 +1040,9 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let nf = context.num_frames;
+
+        // Auto mode: rebuild filters if volume changed significantly (>0.5 dB)
+        self.maybe_rebuild_auto_filters();
 
         // Throttled measurement
         self.cache_update_counter += 1;
@@ -1299,5 +1424,94 @@ mod tests {
             p.get_parameter(&ParameterId::from("reference_level_db")),
             Some(ParameterValue::Float(83.0))
         );
+        assert_eq!(
+            p.get_parameter(&ParameterId::from("playback_volume_db")),
+            Some(ParameterValue::Float(0.0))
+        );
+    }
+
+    // ==========================================================================
+    // Auto mode tests
+    // ==========================================================================
+
+    #[test]
+    fn test_auto_mode_applies_compensation() {
+        // Auto mode with volume=-20 should produce bass boost
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2)).unwrap();
+        p.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
+        p.set_parameter(ParameterId::from("playback_volume_db"), ParameterValue::Float(-20.0)).unwrap();
+
+        let nf = 9600;
+        let sr = 48000.0f32;
+        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+
+        // Process a 50 Hz signal
+        let mut low_buf: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr).sin())
+            .collect();
+        p.process_in_place(&mut low_buf, &ctx).unwrap();
+
+        // Process a 1 kHz signal with a fresh plugin at same settings
+        let mut p2 = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
+        InPlacePlugin::initialize(&mut p2, 48000).unwrap();
+        p2.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2)).unwrap();
+        p2.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
+        p2.set_parameter(ParameterId::from("playback_volume_db"), ParameterValue::Float(-20.0)).unwrap();
+
+        let mut mid_buf: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin())
+            .collect();
+        p2.process_in_place(&mut mid_buf, &ctx).unwrap();
+
+        let low_rms: f32 = (low_buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let mid_rms: f32 = (mid_buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+
+        assert!(
+            low_rms > mid_rms * 1.2,
+            "Auto mode at -20dB volume should boost bass: low RMS={low_rms:.4} should be > mid RMS={mid_rms:.4} * 1.2"
+        );
+    }
+
+    #[test]
+    fn test_auto_mode_zero_volume_flat_response() {
+        // Auto mode with volume=0 and reference=83 means estimated_spl = 83 = reference
+        // => no compensation (flat response)
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2)).unwrap();
+        p.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
+        p.set_parameter(ParameterId::from("playback_volume_db"), ParameterValue::Float(0.0)).unwrap();
+
+        let nf = 4800;
+        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        let signal: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0).sin())
+            .collect();
+
+        let mut buf = signal.clone();
+        p.process_in_place(&mut buf, &ctx).unwrap();
+
+        let input_rms: f32 = (signal[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let output_rms: f32 = (buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let diff_db = 20.0 * (output_rms / input_rms).log10();
+        assert!(
+            diff_db.abs() < 1.0,
+            "Auto mode at 0dB volume should be near-passthrough, got {diff_db:.2} dB difference"
+        );
+    }
+
+    #[test]
+    fn test_auto_mode_switch_via_set_parameter() {
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        assert_eq!(p.mode_index, 0);
+
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2)).unwrap();
+        assert_eq!(p.mode_index, 2);
+
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(0)).unwrap();
+        assert_eq!(p.mode_index, 0);
     }
 }
