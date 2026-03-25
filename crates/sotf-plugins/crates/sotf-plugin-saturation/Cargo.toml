@@ -1,0 +1,15 @@
+[package]
+name = "sotf-plugin-saturation"
+description = "SOTF Saturation / Harmonic Exciter plugin"
+version = "0.5.4"
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_saturation"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
