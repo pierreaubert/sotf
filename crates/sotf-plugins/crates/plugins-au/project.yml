@@ -43,6 +43,13 @@ targetTemplates:
       - sdk: CoreAudioKit.framework
       - sdk: Metal.framework
       - sdk: QuartzCore.framework
+      - sdk: AppKit.framework
+      - sdk: Carbon.framework
+      - sdk: CoreGraphics.framework
+      - sdk: CoreText.framework
+      - sdk: Foundation.framework
+      - sdk: IOKit.framework
+      - sdk: IOSurface.framework
 
 targets:
   # Main app container (required for App Extension)

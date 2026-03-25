@@ -4,7 +4,7 @@ import AudioToolbox
 
 public class EQViewController: AUViewController, AUAudioUnitFactory {
     nonisolated(unsafe) private var audioUnit: EQAudioUnit?
-    private var gpuiView: GPUIAUView?
+    nonisolated(unsafe) private var gpuiView: GPUIAUView?
 
     public nonisolated func createAudioUnit(with componentDescription: AudioComponentDescription) throws -> AUAudioUnit {
         NSLog("SOTF EQViewController: createAudioUnit called")
@@ -17,7 +17,6 @@ public class EQViewController: AUViewController, AUAudioUnitFactory {
         super.viewDidLoad()
         NSLog("SOTF EQViewController: viewDidLoad, view.bounds = \(view.bounds)")
 
-        // Blue background to distinguish VC's view from GPUIAUView's red
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.blue.cgColor
 
@@ -35,6 +34,9 @@ public class EQViewController: AUViewController, AUAudioUnitFactory {
 
     public override func viewDidLayout() {
         super.viewDidLayout()
-        NSLog("SOTF EQViewController: viewDidLayout, view.bounds = \(view.bounds), gpuiView.bounds = \(gpuiView?.bounds ?? .zero)")
+        // Late-bind AU if createAudioUnit was called after viewDidLoad
+        if let au = audioUnit, let gpui = gpuiView {
+            gpui.connectAudioUnit(au)
+        }
     }
 }

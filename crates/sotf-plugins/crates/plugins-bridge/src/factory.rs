@@ -80,6 +80,12 @@ pub fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "DynamicEQ" | "dynamic_eq" => {
+            let params: sotf_plugin_dynamic_eq::DynamicEqPluginParams = parse_params(config_json)?;
+            let plugin = sotf_plugin_dynamic_eq::DynamicEqPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         "Crossfeed" | "crossfeed" => {
             let params: sotf_plugin_crossfeed::CrossfeedPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_crossfeed::CrossfeedPlugin::new(params)?;
@@ -113,10 +119,14 @@ pub fn create_plugin(
         }
 
         "FletcherMunson" | "fletcher_munson" => {
-            let params: sotf_plugin_fletcher_munson::FletcherMunsonPluginParams =
+            // Backward compat: route to LoudnessCompensation in Auto mode (mode=2)
+            let fm_params: sotf_plugin_loudness_compensation::FletcherMunsonCompat =
                 parse_params(config_json)?;
+            let lc_params = fm_params.into_loudness_compensation_params();
             let plugin =
-                sotf_plugin_fletcher_munson::FletcherMunsonPlugin::from_params(channels, params)?;
+                sotf_plugin_loudness_compensation::LoudnessCompensationPlugin::from_params(
+                    channels, lc_params,
+                )?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
@@ -216,6 +226,14 @@ pub fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "Saturation" | "saturation" => {
+            let params: sotf_plugin_saturation::SaturationPluginParams =
+                parse_params(config_json)?;
+            let plugin =
+                sotf_plugin_saturation::SaturationPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         _ => Err(format!("Unknown plugin type: {plugin_type}")),
     }
 }
@@ -249,6 +267,8 @@ pub fn available_plugin_types() -> &'static [&'static str] {
         "Crossover",
         "StereoImager",
         "TransientShaper",
+        "DynamicEQ",
+        "Saturation",
     ]
 }
 

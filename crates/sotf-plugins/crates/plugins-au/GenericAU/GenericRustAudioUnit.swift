@@ -238,10 +238,23 @@ open class GenericRustAudioUnit: AUAudioUnit {
     private func normalize(value: AUValue, param: AUParameter) -> Float {
         let range = param.maxValue - param.minValue
         guard range > 0 else { return 0 }
+        // Logarithmic scaling for frequency parameters (must match Rust ParamBridge)
+        if param.unit == .hertz && param.minValue > 0 {
+            let logMin = log(param.minValue)
+            let logMax = log(param.maxValue)
+            let logVal = log(max(value, param.minValue))
+            return (logVal - logMin) / (logMax - logMin)
+        }
         return (value - param.minValue) / range
     }
 
     private func denormalize(normalized: Float, param: AUParameter) -> AUValue {
+        // Logarithmic scaling for frequency parameters (must match Rust ParamBridge)
+        if param.unit == .hertz && param.minValue > 0 {
+            let logMin = log(param.minValue)
+            let logMax = log(param.maxValue)
+            return exp(logMin + normalized * (logMax - logMin))
+        }
         return param.minValue + normalized * (param.maxValue - param.minValue)
     }
 

@@ -2,6 +2,7 @@
 // NSView subclass that hosts GPUI rendering via Metal for Audio Unit plugin UIs.
 
 import AppKit
+import AudioToolbox
 
 public class GPUIAUView: NSView {
 
@@ -9,9 +10,10 @@ public class GPUIAUView: NSView {
     private var renderTimer: Timer?
     private let pluginType: String
     /// Atomic parameter cache for thread-safe UI rendering.
-    private let paramCache: UnsafeMutableRawPointer?
+    nonisolated(unsafe) private var paramCache: UnsafeMutableRawPointer?
     /// Reference to the AU for parameter writes through AUParameterTree.
-    private weak var audioUnit: GenericRustAudioUnit?
+    /// Strong ref: AU must outlive the GPUI view (callback userdata points to it).
+    private var audioUnit: GenericRustAudioUnit?
 
     public init(pluginType: String, audioUnit: GenericRustAudioUnit? = nil) {
         self.pluginType = pluginType
@@ -68,6 +70,32 @@ public class GPUIAUView: NSView {
     /// Denormalize an AU parameter value to its real-world value.
     private static func denormalizeParam(_ param: AUParameter) -> Double {
         return Double(param.value)
+    }
+
+    /// Connect an AU after the view was already created (handles the case where
+    /// `createAudioUnit` is called after `viewDidLoad`).
+    public func connectAudioUnit(_ au: GenericRustAudioUnit) {
+        guard self.audioUnit == nil else { return } // already connected
+        NSLog("SOTF GPUIAUView: connectAudioUnit (late binding)")
+        self.audioUnit = au
+
+        // Create param cache
+        if let tree = au.parameterTree {
+            let count = tree.allParameters.count
+            let cache = au_param_cache_create(count)
+            for (i, param) in tree.allParameters.enumerated() {
+                au_param_cache_write(cache, i, GPUIAUView.denormalizeParam(param))
+            }
+            self.paramCache = cache
+            setupParameterObservation(au)
+        }
+
+        // If GPUI was already initialized with the placeholder, tear it down
+        // so it re-initializes with the real plugin UI
+        if gpuiContext != nil {
+            teardownGPUI()
+            tryInitializeGPUI()
+        }
     }
 
     // MARK: - GPUI Lifecycle
@@ -156,7 +184,9 @@ public class GPUIAUView: NSView {
 
     deinit {
         teardownGPUI()
-        if let cache = paramCache {
+        // Cache is a raw pointer to Rust-allocated memory — safe to destroy from any thread
+        let cache = paramCache
+        if let cache = cache {
             au_param_cache_destroy(cache)
         }
     }
@@ -253,19 +283,21 @@ public class GPUIAUView: NSView {
 
 /// Called by GPUI when the user changes a parameter via the UI.
 /// Routes through AUParameterTree for thread-safe dispatch to the audio plugin.
-private func gpuiSetParamCallback(userdata: UnsafeMutableRawPointer?, paramIndex: Int, value: Double) {
+/// Must match Rust's `SetParamCallback = extern "C" fn(*mut c_void, usize, f64)`.
+private let gpuiSetParamCallback: SetParamCallback = { userdata, paramIndex, value in
     guard let ud = userdata else { return }
     let au = Unmanaged<GenericRustAudioUnit>.fromOpaque(ud).takeUnretainedValue()
     guard let tree = au.parameterTree else { return }
     let allParams = tree.allParameters
     guard paramIndex < allParams.count else { return }
     let param = allParams[paramIndex]
-    // Set via AUParameterTree — this triggers implementorValueObserver → plugin_set_parameter
+    // Set via AUParameterTree — triggers implementorValueObserver → plugin_set_parameter
     param.value = AUValue(value)
 }
 
 /// Called by GPUI when the user resets a parameter to its default.
-private func gpuiResetParamCallback(userdata: UnsafeMutableRawPointer?, paramIndex: Int) {
+/// Must match Rust's `ResetParamCallback = extern "C" fn(*mut c_void, usize)`.
+private let gpuiResetParamCallback: ResetParamCallback = { userdata, paramIndex in
     guard let ud = userdata else { return }
     let au = Unmanaged<GenericRustAudioUnit>.fromOpaque(ud).takeUnretainedValue()
     guard let tree = au.parameterTree else { return }
@@ -273,8 +305,10 @@ private func gpuiResetParamCallback(userdata: UnsafeMutableRawPointer?, paramInd
     guard paramIndex < allParams.count else { return }
     let param = allParams[paramIndex]
     // Reset to AU default value
-    let info = plugin_get_parameter_info(au.pluginHandle, paramIndex)
-    if let info = info {
-        param.value = AUValue(info.pointee.default_value)
+    if let handle = au.pluginHandle {
+        let info = plugin_get_parameter_info(OpaquePointer(handle), paramIndex)
+        if let info = info {
+            param.value = AUValue(info.pointee.default_value)
+        }
     }
 }

@@ -4,7 +4,7 @@ import AudioToolbox
 
 public class GateViewController: AUViewController, AUAudioUnitFactory {
     nonisolated(unsafe) private var audioUnit: GateAudioUnit?
-    private var gpuiView: GPUIAUView?
+    nonisolated(unsafe) private var gpuiView: GPUIAUView?
 
     public nonisolated func createAudioUnit(with componentDescription: AudioComponentDescription) throws -> AUAudioUnit {
         let unit = try GateAudioUnit(componentDescription: componentDescription, options: [])
@@ -14,8 +14,7 @@ public class GateViewController: AUViewController, AUAudioUnitFactory {
 
     public override func viewDidLoad() {
         super.viewDidLoad()
-
-        let gpui = GPUIAUView(pluginType: "Gate")
+        let gpui = GPUIAUView(pluginType: "Gate", audioUnit: audioUnit)
         gpui.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(gpui)
         NSLayoutConstraint.activate([
@@ -25,5 +24,10 @@ public class GateViewController: AUViewController, AUAudioUnitFactory {
             gpui.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         gpuiView = gpui
+    }
+
+    public override func viewDidLayout() {
+        super.viewDidLayout()
+        if let au = audioUnit, let gpui = gpuiView { gpui.connectAudioUnit(au) }
     }
 }
