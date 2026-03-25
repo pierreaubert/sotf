@@ -27,6 +27,14 @@ pub struct RtpghiProcessor {
     has_prev: bool,
     /// Tolerance for log-magnitude (bins below this are set to random phase)
     log_mag_tol: f64,
+
+    // Pre-allocated scratch buffers for process_frame_into (zero-alloc hot path)
+    scratch_log_mag: Vec<f64>,
+    scratch_phases: Vec<f64>,
+    scratch_integrated: Vec<bool>,
+    scratch_d_phase_time: Vec<f64>,
+    scratch_d_phase_freq: Vec<f64>,
+    scratch_heap: Vec<HeapEntry>,
 }
 
 /// A bin entry for the priority queue (max-heap by magnitude).
@@ -73,6 +81,12 @@ impl RtpghiProcessor {
             prev_phase: vec![0.0; spectrum_size],
             has_prev: false,
             log_mag_tol: -60.0, // -60 dB threshold
+            scratch_log_mag: vec![0.0; spectrum_size],
+            scratch_phases: vec![0.0; spectrum_size],
+            scratch_integrated: vec![false; spectrum_size],
+            scratch_d_phase_time: vec![0.0; spectrum_size],
+            scratch_d_phase_freq: vec![0.0; spectrum_size],
+            scratch_heap: Vec::with_capacity(spectrum_size),
         }
     }
 
@@ -244,11 +258,175 @@ impl RtpghiProcessor {
         phases.iter().map(|&p| p as f32).collect()
     }
 
+    /// Process one STFT frame without allocations: given magnitudes, write
+    /// reconstructed phases into the provided output slice.
+    ///
+    /// # Arguments
+    /// * `magnitudes` - Magnitude spectrum (spectrum_size = fft_size/2 + 1)
+    /// * `phases_out` - Output slice for reconstructed phases (same length)
+    ///
+    /// # Panics
+    /// If `magnitudes` or `phases_out` length does not equal `fft_size/2 + 1`.
+    pub fn process_frame_into(&mut self, magnitudes: &[f32], phases_out: &mut [f32]) {
+        let spectrum_size = self.fft_size / 2 + 1;
+        assert_eq!(magnitudes.len(), spectrum_size);
+        assert_eq!(phases_out.len(), spectrum_size);
+
+        let log_mag = &mut self.scratch_log_mag;
+        let phases = &mut self.scratch_phases;
+        let integrated = &mut self.scratch_integrated;
+        let d_phase_time = &mut self.scratch_d_phase_time;
+        let d_phase_freq = &mut self.scratch_d_phase_freq;
+
+        // Compute log-magnitudes
+        for (i, &m) in magnitudes.iter().enumerate() {
+            log_mag[i] = if m > 0.0 {
+                (m as f64).ln()
+            } else {
+                f64::NEG_INFINITY
+            };
+        }
+
+        // Zero scratch
+        for v in phases.iter_mut() {
+            *v = 0.0;
+        }
+        for v in integrated.iter_mut() {
+            *v = false;
+        }
+
+        if !self.has_prev {
+            // First frame: use zero phase
+            self.prev_log_mag.copy_from_slice(log_mag);
+            self.prev_phase.copy_from_slice(phases);
+            self.has_prev = true;
+            for (out, &p) in phases_out.iter_mut().zip(phases.iter()) {
+                *out = p as f32;
+            }
+            return;
+        }
+
+        // Phase gradient estimation
+        let hop = self.hop_size as f64;
+        let two_pi = 2.0 * std::f64::consts::PI;
+        let gamma = self.gamma;
+        let log_mag_tol = self.log_mag_tol;
+        let fft_size = self.fft_size;
+
+        // Time-direction phase gradient
+        for k in 0..spectrum_size {
+            let omega_k = two_pi * k as f64 / fft_size as f64;
+            let expected_advance = omega_k * hop;
+            let time_grad = if log_mag[k] > log_mag_tol && self.prev_log_mag[k] > log_mag_tol {
+                gamma * (log_mag[k] - self.prev_log_mag[k])
+            } else {
+                0.0
+            };
+            d_phase_time[k] = expected_advance + time_grad;
+        }
+
+        // Frequency-direction phase gradient
+        let inv_gamma = if gamma.abs() > 1e-30 { 1.0 / gamma } else { 0.0 };
+        d_phase_freq[0] = 0.0;
+        if spectrum_size > 1 {
+            d_phase_freq[spectrum_size - 1] = 0.0;
+        }
+        for k in 1..spectrum_size.saturating_sub(1) {
+            d_phase_freq[k] = if log_mag[k] > log_mag_tol
+                && log_mag[k - 1] > log_mag_tol
+                && log_mag[k + 1] > log_mag_tol
+            {
+                inv_gamma * (log_mag[k + 1] - log_mag[k - 1]) / 2.0
+            } else {
+                0.0
+            };
+        }
+
+        // Build sorted list by magnitude descending (reuse pre-allocated vec)
+        self.scratch_heap.clear();
+        for (k, &mag) in log_mag.iter().enumerate() {
+            if mag > log_mag_tol {
+                self.scratch_heap.push(HeapEntry {
+                    magnitude: mag,
+                    bin: k,
+                });
+            }
+        }
+        // Sort descending by magnitude (highest first) -- no heap allocation needed
+        self.scratch_heap.sort_unstable_by(|a, b| b.cmp(a));
+
+        // Integrate phases starting from loudest bins
+        for idx in 0..self.scratch_heap.len() {
+            let k = self.scratch_heap[idx].bin;
+            if integrated[k] {
+                continue;
+            }
+
+            let phase_from_time = self.prev_phase[k] + d_phase_time[k];
+
+            let phase_from_freq_below = if k > 0 && integrated[k - 1] {
+                Some(phases[k - 1] + d_phase_freq[k - 1])
+            } else {
+                None
+            };
+
+            let phase_from_freq_above = if k + 1 < spectrum_size && integrated[k + 1] {
+                Some(phases[k + 1] - d_phase_freq[k + 1])
+            } else {
+                None
+            };
+
+            let phase = match (phase_from_freq_below, phase_from_freq_above) {
+                (Some(below), Some(above)) => {
+                    let avg = (below + above) / 2.0;
+                    if self.prev_log_mag[k] > log_mag_tol {
+                        (avg + phase_from_time) / 2.0
+                    } else {
+                        avg
+                    }
+                }
+                (Some(below), None) => {
+                    if self.prev_log_mag[k] > log_mag_tol {
+                        (below + phase_from_time) / 2.0
+                    } else {
+                        below
+                    }
+                }
+                (None, Some(above)) => {
+                    if self.prev_log_mag[k] > log_mag_tol {
+                        (above + phase_from_time) / 2.0
+                    } else {
+                        above
+                    }
+                }
+                (None, None) => phase_from_time,
+            };
+
+            phases[k] = phase;
+            integrated[k] = true;
+        }
+
+        // Bins below threshold get zero phase
+        for k in 0..spectrum_size {
+            if !integrated[k] {
+                phases[k] = 0.0;
+            }
+        }
+
+        // Store for next frame
+        self.prev_log_mag.copy_from_slice(log_mag);
+        self.prev_phase.copy_from_slice(phases);
+
+        // Write output
+        for (out, &p) in phases_out.iter_mut().zip(phases.iter()) {
+            *out = p as f32;
+        }
+    }
+
     /// Reset the processor state.
     pub fn reset(&mut self) {
-        let spectrum_size = self.fft_size / 2 + 1;
-        self.prev_log_mag = vec![f64::NEG_INFINITY; spectrum_size];
-        self.prev_phase = vec![0.0; spectrum_size];
+        self.prev_log_mag.fill(f64::NEG_INFINITY);
+        self.prev_phase.fill(0.0);
         self.has_prev = false;
     }
 
@@ -463,6 +641,66 @@ mod tests {
 
         for &p in &phases {
             assert!(p.is_finite());
+        }
+    }
+
+    /// Verify that `process_frame_into` produces the same results as `process_frame`.
+    #[test]
+    fn test_process_frame_into_matches_process_frame() {
+        let fft_size = 512;
+        let hop_size = 128;
+        let spectrum_size = fft_size / 2 + 1;
+
+        let mut proc_alloc = RtpghiProcessor::new(fft_size, hop_size);
+        let mut proc_noalloc = RtpghiProcessor::new(fft_size, hop_size);
+
+        for frame_idx in 0..15 {
+            let mags: Vec<f32> = (0..spectrum_size)
+                .map(|k| {
+                    let freq_factor = 1.0 - k as f32 / spectrum_size as f32;
+                    let time_factor = 1.0 + 0.5 * (frame_idx as f32 * 0.3).sin();
+                    freq_factor * time_factor
+                })
+                .collect();
+
+            let phases_alloc = proc_alloc.process_frame(&mags);
+            let mut phases_noalloc = vec![0.0f32; spectrum_size];
+            proc_noalloc.process_frame_into(&mags, &mut phases_noalloc);
+
+            for (k, (&a, &b)) in phases_alloc.iter().zip(phases_noalloc.iter()).enumerate() {
+                assert!(
+                    (a - b).abs() < 1e-5,
+                    "Mismatch at bin {k}, frame {frame_idx}: alloc={a}, noalloc={b}"
+                );
+            }
+        }
+    }
+
+    /// Verify that `process_frame_into` produces finite phases and does not panic.
+    #[test]
+    fn test_process_frame_into_no_nan() {
+        let fft_size = 256;
+        let hop_size = 64;
+        let spectrum_size = fft_size / 2 + 1;
+
+        let mut processor = RtpghiProcessor::new(fft_size, hop_size);
+        let mut phases = vec![0.0f32; spectrum_size];
+
+        for frame_idx in 0..10 {
+            let mags: Vec<f32> = (0..spectrum_size)
+                .map(|k| {
+                    let v = 0.5 + 0.5 * ((frame_idx * k) as f32 * 0.1).sin();
+                    v.max(0.0)
+                })
+                .collect();
+
+            processor.process_frame_into(&mags, &mut phases);
+            for (k, &p) in phases.iter().enumerate() {
+                assert!(
+                    p.is_finite(),
+                    "Phase at bin {k}, frame {frame_idx} is not finite: {p}"
+                );
+            }
         }
     }
 }

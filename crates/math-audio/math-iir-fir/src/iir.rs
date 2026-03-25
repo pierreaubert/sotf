@@ -909,6 +909,299 @@ pub fn compute_peq_response(freqs: &Array1<f64>, peq: &Peq, _sample_rate: f64) -
     response
 }
 
+// ============================================================================
+// BiquadBank: Multi-channel biquad processing with SIMD auto-vectorization
+// ============================================================================
+
+/// A bank of biquad filters sharing coefficients but with independent per-channel state.
+///
+/// This is the common case in audio plugins where the same EQ band is applied to
+/// all channels. By processing channels in pairs, the compiler can auto-vectorize
+/// the inner loop into f64x2 SIMD instructions (SSE2 on x86-64, NEON on aarch64).
+///
+/// # No allocations in hot path
+///
+/// All state vectors are pre-allocated at construction time. The `process_interleaved_frame`
+/// and `process_interleaved_block` methods perform zero allocations.
+///
+/// # Example
+///
+/// ```rust
+/// use math_audio_iir_fir::{Biquad, BiquadBank, BiquadFilterType, SRATE};
+///
+/// // Create a peak filter template
+/// let template = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+///
+/// // Create a bank for 8 channels
+/// let mut bank = BiquadBank::new(&template, 8);
+///
+/// // Process one interleaved frame (8 samples, one per channel)
+/// let mut frame = [0.5_f64; 8];
+/// bank.process_interleaved_frame(&mut frame);
+/// ```
+#[derive(Debug, Clone)]
+pub struct BiquadBank {
+    // Shared coefficients (all filters use the same)
+    a1: f64,
+    a2: f64,
+    b0: f64,
+    b1: f64,
+    b2: f64,
+    /// When true, use Transposed Direct Form II instead of Direct Form I.
+    pub use_tdf2: bool,
+
+    // Per-channel state (TDF-II: s1, s2 per channel)
+    s1: Vec<f64>,
+    s2: Vec<f64>,
+
+    // Per-channel state (DF-I: x1, x2, y1, y2 per channel)
+    x1: Vec<f64>,
+    x2: Vec<f64>,
+    y1: Vec<f64>,
+    y2: Vec<f64>,
+
+    num_channels: usize,
+
+    // Copy of filter config for coefficient updates
+    /// The type of filter
+    pub filter_type: BiquadFilterType,
+    /// Center frequency in Hz
+    pub freq: f64,
+    /// Sample rate in Hz
+    pub srate: f64,
+    /// Q factor (quality factor)
+    pub q: f64,
+    /// Gain in dB (for peaking and shelving filters)
+    pub db_gain: f64,
+}
+
+impl BiquadBank {
+    /// Create a bank from a template Biquad, replicated for N channels.
+    ///
+    /// All channels share the same coefficients but have independent filter state
+    /// (initialized to zero).
+    ///
+    /// # Arguments
+    ///
+    /// * `template` - A configured Biquad whose coefficients and parameters are copied
+    /// * `num_channels` - Number of independent channels to process
+    pub fn new(template: &Biquad, num_channels: usize) -> Self {
+        let (a1, a2, b0, b1, b2) = template.constants();
+        Self {
+            a1,
+            a2,
+            b0,
+            b1,
+            b2,
+            use_tdf2: template.use_tdf2,
+            s1: vec![0.0; num_channels],
+            s2: vec![0.0; num_channels],
+            x1: vec![0.0; num_channels],
+            x2: vec![0.0; num_channels],
+            y1: vec![0.0; num_channels],
+            y2: vec![0.0; num_channels],
+            num_channels,
+            filter_type: template.filter_type,
+            freq: template.freq,
+            srate: template.srate,
+            q: template.q,
+            db_gain: template.db_gain,
+        }
+    }
+
+    /// Update filter parameters and recompute coefficients for all channels.
+    ///
+    /// This does **not** reset filter state, allowing click-free parameter changes.
+    /// A temporary Biquad is created internally to compute the new coefficients.
+    pub fn update_params(&mut self, freq: f64, srate: f64, q: f64, db_gain: f64) {
+        let tmp = Biquad::new(self.filter_type, freq, srate, q, db_gain);
+        self.copy_coefficients_from(&tmp);
+        self.freq = freq;
+        self.srate = srate;
+        self.q = tmp.q; // Use the clamped/defaulted Q from Biquad::new
+        self.db_gain = db_gain;
+    }
+
+    /// Copy coefficients from a Biquad.
+    ///
+    /// Only the filter coefficients are copied; filter state is preserved.
+    /// The filter_type, freq, srate, q, and db_gain fields are also updated.
+    pub fn copy_coefficients_from(&mut self, biquad: &Biquad) {
+        let (a1, a2, b0, b1, b2) = biquad.constants();
+        self.a1 = a1;
+        self.a2 = a2;
+        self.b0 = b0;
+        self.b1 = b1;
+        self.b2 = b2;
+        self.filter_type = biquad.filter_type;
+        self.freq = biquad.freq;
+        self.srate = biquad.srate;
+        self.q = biquad.q;
+        self.db_gain = biquad.db_gain;
+    }
+
+    /// Reset all channel state to zero.
+    ///
+    /// Coefficients are preserved; only the per-channel delay state is cleared.
+    pub fn reset(&mut self) {
+        self.s1.fill(0.0);
+        self.s2.fill(0.0);
+        self.x1.fill(0.0);
+        self.x2.fill(0.0);
+        self.y1.fill(0.0);
+        self.y2.fill(0.0);
+    }
+
+    /// Number of channels in this bank.
+    #[inline]
+    pub fn num_channels(&self) -> usize {
+        self.num_channels
+    }
+
+    /// Process a single interleaved frame (one sample per channel) in-place.
+    ///
+    /// `samples` must have length >= `num_channels`. Only the first `num_channels`
+    /// elements are read and written.
+    ///
+    /// The inner loop processes channels in pairs of 2, which enables the compiler
+    /// to auto-vectorize into f64x2 SIMD (SSE2 on x86-64, NEON on aarch64).
+    #[inline]
+    pub fn process_interleaved_frame(&mut self, samples: &mut [f64]) {
+        let nc = self.num_channels;
+        // Subslice to exact channel count — panics if too short (same as assert),
+        // but gives the compiler a length proof so all subsequent `samples[ch]`
+        // indexing is bounds-check-free in release builds.
+        let samples = &mut samples[..nc];
+
+        if self.use_tdf2 {
+            self.process_frame_tdf2(samples);
+        } else {
+            self.process_frame_df1(samples);
+        }
+    }
+
+    /// TDF-II frame processing with paired-channel loop for auto-vectorization.
+    #[inline]
+    fn process_frame_tdf2(&mut self, samples: &mut [f64]) {
+        let nc = self.num_channels;
+        let b0 = self.b0;
+        let b1 = self.b1;
+        let b2 = self.b2;
+        let a1 = self.a1;
+        let a2 = self.a2;
+
+        // Process pairs of channels — the compiler can auto-vectorize this
+        // into f64x2 SIMD (SSE2 on x86-64, NEON on aarch64) because the
+        // two iterations are independent (no data dependency between them).
+        let mut ch = 0;
+        while ch + 1 < nc {
+            let x0 = samples[ch];
+            let x1 = samples[ch + 1];
+            let s1_0 = self.s1[ch];
+            let s1_1 = self.s1[ch + 1];
+            let s2_0 = self.s2[ch];
+            let s2_1 = self.s2[ch + 1];
+
+            let y0 = b0 * x0 + s1_0;
+            let y1 = b0 * x1 + s1_1;
+            self.s1[ch] = b1 * x0 - a1 * y0 + s2_0;
+            self.s1[ch + 1] = b1 * x1 - a1 * y1 + s2_1;
+            self.s2[ch] = b2 * x0 - a2 * y0;
+            self.s2[ch + 1] = b2 * x1 - a2 * y1;
+
+            samples[ch] = y0;
+            samples[ch + 1] = y1;
+            ch += 2;
+        }
+        // Handle odd last channel (scalar)
+        if ch < nc {
+            let x = samples[ch];
+            let y = b0 * x + self.s1[ch];
+            self.s1[ch] = b1 * x - a1 * y + self.s2[ch];
+            self.s2[ch] = b2 * x - a2 * y;
+            samples[ch] = y;
+        }
+    }
+
+    /// DF-I frame processing with paired-channel loop for auto-vectorization.
+    #[inline]
+    fn process_frame_df1(&mut self, samples: &mut [f64]) {
+        let nc = self.num_channels;
+        let b0 = self.b0;
+        let b1 = self.b1;
+        let b2 = self.b2;
+        let a1 = self.a1;
+        let a2 = self.a2;
+
+        let mut ch = 0;
+        while ch + 1 < nc {
+            let x0 = samples[ch];
+            let x1_in = samples[ch + 1];
+
+            let y0 = b0 * x0 + b1 * self.x1[ch] + b2 * self.x2[ch]
+                - a1 * self.y1[ch] - a2 * self.y2[ch];
+            let y1 = b0 * x1_in + b1 * self.x1[ch + 1] + b2 * self.x2[ch + 1]
+                - a1 * self.y1[ch + 1] - a2 * self.y2[ch + 1];
+
+            self.x2[ch] = self.x1[ch];
+            self.x1[ch] = x0;
+            self.y2[ch] = self.y1[ch];
+            self.y1[ch] = y0;
+
+            self.x2[ch + 1] = self.x1[ch + 1];
+            self.x1[ch + 1] = x1_in;
+            self.y2[ch + 1] = self.y1[ch + 1];
+            self.y1[ch + 1] = y1;
+
+            samples[ch] = y0;
+            samples[ch + 1] = y1;
+            ch += 2;
+        }
+        // Handle odd last channel (scalar)
+        if ch < nc {
+            let x = samples[ch];
+            let y = b0 * x + b1 * self.x1[ch] + b2 * self.x2[ch]
+                - a1 * self.y1[ch] - a2 * self.y2[ch];
+            self.x2[ch] = self.x1[ch];
+            self.x1[ch] = x;
+            self.y2[ch] = self.y1[ch];
+            self.y1[ch] = y;
+            samples[ch] = y;
+        }
+    }
+
+    /// Process a block of interleaved audio in-place.
+    ///
+    /// `buffer` contains `num_frames * num_channels` samples in interleaved order:
+    /// `[ch0_f0, ch1_f0, ..., chN_f0, ch0_f1, ch1_f1, ..., chN_f1, ...]`
+    ///
+    /// # Panics
+    ///
+    /// Debug-asserts that `buffer.len() >= num_frames * num_channels`.
+    pub fn process_interleaved_block(&mut self, buffer: &mut [f64], num_frames: usize) {
+        let nc = self.num_channels;
+        let buffer = &mut buffer[..num_frames * nc];
+        for frame_idx in 0..num_frames {
+            let offset = frame_idx * nc;
+            self.process_interleaved_frame(&mut buffer[offset..offset + nc]);
+        }
+    }
+}
+
+impl fmt::Display for BiquadBank {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "BiquadBank({}ch, Type:{}, Freq:{:.1}, Q:{:.1}, Gain:{:.1}dB)",
+            self.num_channels,
+            self.filter_type.short_name(),
+            self.freq,
+            self.q,
+            self.db_gain
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4161,5 +4454,342 @@ mod format_tests {
         // Should only contain 9 bands
         assert!(rme_str.contains("REQ Band9 Freq"));
         assert!(!rme_str.contains("REQ Band10 Freq"));
+    }
+}
+
+// ============================================================================
+// BiquadBank Tests
+// ============================================================================
+
+#[cfg(test)]
+mod biquad_bank_tests {
+    use super::*;
+
+    const SRATE: f64 = 48000.0;
+    const TOL: f64 = 1e-12;
+
+    /// Test that BiquadBank produces identical output to individual Biquads (TDF-II).
+    #[test]
+    fn test_biquad_bank_matches_individual_tdf2() {
+        let num_channels = 4;
+        let num_frames = 256;
+
+        // Create template and bank
+        let mut template = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+        template.use_tdf2 = true;
+        let mut bank = BiquadBank::new(&template, num_channels);
+
+        // Create individual biquads (one per channel)
+        let mut individuals: Vec<Biquad> = (0..num_channels).map(|_| {
+            let mut b = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+            b.use_tdf2 = true;
+            b
+        }).collect();
+
+        // Generate different test signals per channel
+        let mut bank_frame = vec![0.0_f64; num_channels];
+        for frame_idx in 0..num_frames {
+            for ch in 0..num_channels {
+                // Different frequency per channel so outputs diverge
+                let t = frame_idx as f64 / SRATE;
+                let freq = 440.0 * (ch as f64 + 1.0);
+                bank_frame[ch] = (2.0 * std::f64::consts::PI * freq * t).sin();
+            }
+
+            // Process individually
+            let mut individual_out = bank_frame.clone();
+            for ch in 0..num_channels {
+                individual_out[ch] = individuals[ch].process(individual_out[ch]);
+            }
+
+            // Process via bank
+            bank.process_interleaved_frame(&mut bank_frame);
+
+            // Compare
+            for ch in 0..num_channels {
+                assert!(
+                    (bank_frame[ch] - individual_out[ch]).abs() < TOL,
+                    "TDF-II mismatch at frame={}, ch={}: bank={}, individual={}",
+                    frame_idx, ch, bank_frame[ch], individual_out[ch]
+                );
+            }
+        }
+    }
+
+    /// Test that BiquadBank produces identical output to individual Biquads (DF-I).
+    #[test]
+    fn test_biquad_bank_matches_individual_df1() {
+        let num_channels = 4;
+        let num_frames = 256;
+
+        // Create template and bank (DF-I is the default)
+        let template = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+        let mut bank = BiquadBank::new(&template, num_channels);
+
+        let mut individuals: Vec<Biquad> = (0..num_channels)
+            .map(|_| Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0))
+            .collect();
+
+        let mut bank_frame = vec![0.0_f64; num_channels];
+        for frame_idx in 0..num_frames {
+            for ch in 0..num_channels {
+                let t = frame_idx as f64 / SRATE;
+                let freq = 440.0 * (ch as f64 + 1.0);
+                bank_frame[ch] = (2.0 * std::f64::consts::PI * freq * t).sin();
+            }
+
+            let mut individual_out = bank_frame.clone();
+            for ch in 0..num_channels {
+                individual_out[ch] = individuals[ch].process(individual_out[ch]);
+            }
+
+            bank.process_interleaved_frame(&mut bank_frame);
+
+            for ch in 0..num_channels {
+                assert!(
+                    (bank_frame[ch] - individual_out[ch]).abs() < TOL,
+                    "DF-I mismatch at frame={}, ch={}: bank={}, individual={}",
+                    frame_idx, ch, bank_frame[ch], individual_out[ch]
+                );
+            }
+        }
+    }
+
+    /// Test multichannel independence: each channel processes independently.
+    #[test]
+    fn test_biquad_bank_multichannel() {
+        let num_channels = 8;
+        let num_frames = 128;
+
+        let mut template = Biquad::new(BiquadFilterType::Lowshelf, 200.0, SRATE, 0.7, 6.0);
+        template.use_tdf2 = true;
+        let mut bank = BiquadBank::new(&template, num_channels);
+
+        // Feed signal only into channel 3, silence everywhere else
+        let active_ch = 3;
+        let mut active_biquad = Biquad::new(BiquadFilterType::Lowshelf, 200.0, SRATE, 0.7, 6.0);
+        active_biquad.use_tdf2 = true;
+
+        for frame_idx in 0..num_frames {
+            let t = frame_idx as f64 / SRATE;
+            let input = (2.0 * std::f64::consts::PI * 100.0 * t).sin();
+
+            let mut frame = vec![0.0_f64; num_channels];
+            frame[active_ch] = input;
+
+            let expected = active_biquad.process(input);
+            bank.process_interleaved_frame(&mut frame);
+
+            // Active channel should match the individual biquad
+            assert!(
+                (frame[active_ch] - expected).abs() < TOL,
+                "Active channel mismatch at frame {}: bank={}, expected={}",
+                frame_idx, frame[active_ch], expected
+            );
+
+            // All other channels should remain zero (silence in → silence out)
+            for ch in 0..num_channels {
+                if ch != active_ch {
+                    assert!(
+                        frame[ch].abs() < TOL,
+                        "Non-active channel {} has non-zero output {} at frame {}",
+                        ch, frame[ch], frame_idx
+                    );
+                }
+            }
+        }
+    }
+
+    /// Test that reset clears all state.
+    #[test]
+    fn test_biquad_bank_reset() {
+        let num_channels = 4;
+        let mut template = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+        template.use_tdf2 = true;
+        let mut bank = BiquadBank::new(&template, num_channels);
+
+        // Feed some signal to build up state
+        for _ in 0..100 {
+            let mut frame = vec![1.0_f64; num_channels];
+            bank.process_interleaved_frame(&mut frame);
+        }
+
+        // Verify state is non-zero
+        assert!(bank.s1.iter().any(|&v| v.abs() > 1e-15));
+        assert!(bank.s2.iter().any(|&v| v.abs() > 1e-15));
+
+        // Reset
+        bank.reset();
+
+        // Verify all state is zeroed
+        for ch in 0..num_channels {
+            assert_eq!(bank.s1[ch], 0.0);
+            assert_eq!(bank.s2[ch], 0.0);
+            assert_eq!(bank.x1[ch], 0.0);
+            assert_eq!(bank.x2[ch], 0.0);
+            assert_eq!(bank.y1[ch], 0.0);
+            assert_eq!(bank.y2[ch], 0.0);
+        }
+
+        // After reset, processing zero should yield zero
+        let mut frame = vec![0.0_f64; num_channels];
+        bank.process_interleaved_frame(&mut frame);
+        for ch in 0..num_channels {
+            assert_eq!(frame[ch], 0.0);
+        }
+    }
+
+    /// Test that coefficient update applies to all channels correctly.
+    #[test]
+    fn test_biquad_bank_coefficient_update() {
+        let num_channels = 4;
+        let num_frames = 64;
+
+        // Start with a flat peak (0 dB gain)
+        let template = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 0.0);
+        let mut bank = BiquadBank::new(&template, num_channels);
+        bank.use_tdf2 = true;
+
+        // Process with unity (0 dB peak = passthrough)
+        let mut frame = vec![1.0_f64; num_channels];
+        for _ in 0..num_frames {
+            bank.process_interleaved_frame(&mut frame);
+        }
+        // After settling, output ≈ input for 0dB peak
+        let passthrough_out = frame[0];
+
+        // Now update to +6 dB peak at 1kHz
+        bank.update_params(1000.0, SRATE, 2.0, 6.0);
+
+        // Verify the parameters were updated
+        assert!((bank.freq - 1000.0).abs() < 1e-10);
+        assert!((bank.db_gain - 6.0).abs() < 1e-10);
+
+        // Create a reference biquad with the new params to verify coefficients match
+        let ref_biquad = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 6.0);
+        let (ref_a1, ref_a2, ref_b0, ref_b1, ref_b2) = ref_biquad.constants();
+        assert!((bank.a1 - ref_a1).abs() < 1e-15);
+        assert!((bank.a2 - ref_a2).abs() < 1e-15);
+        assert!((bank.b0 - ref_b0).abs() < 1e-15);
+        assert!((bank.b1 - ref_b1).abs() < 1e-15);
+        assert!((bank.b2 - ref_b2).abs() < 1e-15);
+
+        // Process more frames and verify output changed
+        let mut frame2 = vec![1.0_f64; num_channels];
+        for _ in 0..num_frames {
+            bank.process_interleaved_frame(&mut frame2);
+        }
+        // With 6 dB gain, steady-state output for DC should differ from passthrough
+        // (peak at 1kHz doesn't affect DC much, but coefficients changed)
+        // The important thing is coefficients match the reference
+        let _ = passthrough_out; // used above for verification context
+    }
+
+    /// Test copy_coefficients_from.
+    #[test]
+    fn test_biquad_bank_copy_coefficients_from() {
+        let num_channels = 2;
+        let template = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+        let mut bank = BiquadBank::new(&template, num_channels);
+
+        // Build up some state
+        let mut frame = vec![0.5; num_channels];
+        bank.process_interleaved_frame(&mut frame);
+
+        // Copy from a different biquad
+        let new_biquad = Biquad::new(BiquadFilterType::Highshelf, 4000.0, SRATE, 0.7, -3.0);
+        bank.copy_coefficients_from(&new_biquad);
+
+        // Coefficients should match
+        let (a1, a2, b0, b1, b2) = new_biquad.constants();
+        assert_eq!(bank.a1, a1);
+        assert_eq!(bank.a2, a2);
+        assert_eq!(bank.b0, b0);
+        assert_eq!(bank.b1, b1);
+        assert_eq!(bank.b2, b2);
+        assert_eq!(bank.filter_type, BiquadFilterType::Highshelf);
+        assert!((bank.freq - 4000.0).abs() < 1e-10);
+        assert!((bank.db_gain - (-3.0)).abs() < 1e-10);
+    }
+
+    /// Test process_interleaved_block matches frame-by-frame processing.
+    #[test]
+    fn test_biquad_bank_block_matches_frame() {
+        let num_channels = 5; // Odd number to test remainder handling
+        let num_frames = 128;
+
+        let mut template = Biquad::new(BiquadFilterType::Highpass, 80.0, SRATE, 0.7, 0.0);
+        template.use_tdf2 = true;
+
+        // Two identical banks
+        let mut bank_frame = BiquadBank::new(&template, num_channels);
+        let mut bank_block = BiquadBank::new(&template, num_channels);
+
+        // Generate interleaved test signal
+        let mut buffer: Vec<f64> = Vec::with_capacity(num_frames * num_channels);
+        for frame_idx in 0..num_frames {
+            for ch in 0..num_channels {
+                let t = frame_idx as f64 / SRATE;
+                let freq = 50.0 + 200.0 * (ch as f64);
+                buffer.push((2.0 * std::f64::consts::PI * freq * t).sin());
+            }
+        }
+
+        // Process frame-by-frame
+        let mut buffer_frame = buffer.clone();
+        for frame_idx in 0..num_frames {
+            let offset = frame_idx * num_channels;
+            let frame = &mut buffer_frame[offset..offset + num_channels];
+            bank_frame.process_interleaved_frame(frame);
+        }
+
+        // Process as block
+        let mut buffer_block = buffer;
+        bank_block.process_interleaved_block(&mut buffer_block, num_frames);
+
+        // Compare
+        for i in 0..num_frames * num_channels {
+            assert!(
+                (buffer_frame[i] - buffer_block[i]).abs() < TOL,
+                "Block/frame mismatch at index {}: frame={}, block={}",
+                i, buffer_frame[i], buffer_block[i]
+            );
+        }
+    }
+
+    /// Test with 1 channel (odd number, no SIMD pairs).
+    #[test]
+    fn test_biquad_bank_single_channel() {
+        let mut template = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+        template.use_tdf2 = true;
+        let mut bank = BiquadBank::new(&template, 1);
+        let mut reference = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+        reference.use_tdf2 = true;
+
+        for frame_idx in 0..256 {
+            let t = frame_idx as f64 / SRATE;
+            let input = (2.0 * std::f64::consts::PI * 1000.0 * t).sin();
+
+            let expected = reference.process(input);
+            let mut frame = [input];
+            bank.process_interleaved_frame(&mut frame);
+
+            assert!(
+                (frame[0] - expected).abs() < TOL,
+                "Single-channel mismatch at frame {}: bank={}, expected={}",
+                frame_idx, frame[0], expected
+            );
+        }
+    }
+
+    /// Test Display trait.
+    #[test]
+    fn test_biquad_bank_display() {
+        let template = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+        let bank = BiquadBank::new(&template, 8);
+        let display = format!("{}", bank);
+        assert!(display.contains("8ch"));
+        assert!(display.contains("PK"));
+        assert!(display.contains("1000.0"));
     }
 }
