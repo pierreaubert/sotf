@@ -77,6 +77,7 @@ fn default_detection_mode() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct MultibandExpanderPluginParams {
     pub num_bands: usize,
     pub crossover_preset: i32,

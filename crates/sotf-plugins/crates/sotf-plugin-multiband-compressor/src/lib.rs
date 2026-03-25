@@ -62,6 +62,7 @@ impl Default for BandCompressorParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct MultibandCompressorPluginParams {
     pub num_bands: usize,
     pub crossover_preset: i32,
