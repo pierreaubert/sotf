@@ -1,0 +1,14 @@
+[package]
+name = "sotf-plugin-transient-shaper"
+description = "SOTF Transient Shaper plugin - SPL Transient Designer approach"
+version = "0.5.4"
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_transient_shaper"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
