@@ -12,10 +12,6 @@ path = "src/lib.rs"
 default = []
 qa = ["dep:criterion"]
 
-[[bin]]
-name = "simd-fuzzer"
-path = "bin/simd_fuzzer.rs"
-
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

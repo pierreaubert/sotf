@@ -15,7 +15,7 @@ use clap::Parser;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rustfft::num_complex::Complex;
-use sotf_host::simd;
+use math_audio_dsp::simd;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ============================================================================

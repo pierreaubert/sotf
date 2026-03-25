@@ -17,6 +17,10 @@ path = "src/lib.rs"
 name = "wav2csv"
 path = "bin/wav2csv.rs"
 
+[[bin]]
+name = "simd-fuzzer"
+path = "bin/simd_fuzzer.rs"
+
 [dependencies]
 # FFT and math
 rustfft = { workspace = true }
@@ -37,6 +41,7 @@ serde = { workspace = true }
 # Utilities
 log = { workspace = true }
 clap = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 approx = "0.5"
