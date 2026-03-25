@@ -134,27 +134,6 @@ impl DenoiserPlugin {
                 }
             }
 
-            // Pass 1g: Spatial denoising (stereo+ only)
-            // Low inter-channel coherence = more likely noise
-            if self.spatial_denoise && self.channels >= 2 && ch == 0 {
-                // Compare ch0 and ch1 magnitudes for coherence estimate
-                let strength = self.spatial_strength;
-                for k in 0..self.spectrum_size {
-                    let p0 = self.get_power_at_bin(0, k);
-                    let p1 = self.get_power_at_bin(1, k);
-                    let coherence = if p0 + p1 > EPSILON {
-                        2.0 * (p0 * p1).sqrt() / (p0 + p1) // normalized coherence [0..1]
-                    } else {
-                        0.0
-                    };
-                    // Low coherence → more noise → reduce gain further
-                    let incoherence = 1.0 - coherence;
-                    let extra_reduction = incoherence * strength * 0.3;
-                    self.gain[0][k] = (self.gain[0][k] - extra_reduction).max(floor_linear);
-                    self.gain[1][k] = (self.gain[1][k] - extra_reduction).max(floor_linear);
-                }
-            }
-
             // Pass 2: Smooth gains across frequency bins
             if self.spectral_smoothing_enabled {
                 self.smooth_gains_across_frequency(ch);
@@ -192,6 +171,25 @@ impl DenoiserPlugin {
                     total_reduction += (1.0 - self.gain[ch][k]).max(0.0);
                     bin_count += 1;
                 }
+            }
+        }
+
+        // Spatial denoising (after all per-channel passes complete)
+        // Applied to both channels simultaneously using inter-channel coherence
+        if self.spatial_denoise && self.channels >= 2 {
+            let strength = self.spatial_strength;
+            for k in 0..self.spectrum_size {
+                let p0 = self.get_power_at_bin(0, k);
+                let p1 = self.get_power_at_bin(1, k);
+                let coherence = if p0 + p1 > EPSILON {
+                    2.0 * (p0 * p1).sqrt() / (p0 + p1)
+                } else {
+                    0.0
+                };
+                let incoherence = 1.0 - coherence;
+                let extra_reduction = incoherence * strength * 0.3;
+                self.smoothed_gain[0][k] = (self.smoothed_gain[0][k] - extra_reduction).max(floor_linear);
+                self.smoothed_gain[1][k] = (self.smoothed_gain[1][k] - extra_reduction).max(floor_linear);
             }
         }
 

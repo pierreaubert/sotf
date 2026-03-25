@@ -92,6 +92,8 @@ pub struct BinauralDecoderPlugin {
     fdn: math_audio_dsp::fdn::Fdn,
     late_reverb_enabled: bool,
     late_reverb_mix: f32,
+    late_reverb_rt60: f32,
+    late_reverb_damping: f32,
     headphone_eq_enabled: bool,
 
     /// Crossfade state for smooth HRTF transitions.
@@ -267,6 +269,8 @@ impl BinauralDecoderPlugin {
             fdn: math_audio_dsp::fdn::Fdn::new(8, sr),
             late_reverb_enabled: false,
             late_reverb_mix: 0.3,
+            late_reverb_rt60: 1.0,
+            late_reverb_damping: 0.3,
             headphone_eq_enabled: false,
             current_state_snapshot: initial_state,
             crossfade_prev_state: None,
@@ -368,6 +372,17 @@ impl BinauralDecoderPlugin {
                 0,
                 1,
             ),
+            // Phase 4E: Late reverb + headphone EQ
+            Parameter::new_bool("late_reverb_enabled", "Late Reverb", self.late_reverb_enabled)
+                .with_group("Room"),
+            Parameter::new_float("late_reverb_mix", "Reverb Mix", self.late_reverb_mix, 0.0, 1.0)
+                .with_group("Room"),
+            Parameter::new_float("late_reverb_rt60", "Reverb Time", self.late_reverb_rt60, 0.1, 5.0)
+                .with_group("Room"),
+            Parameter::new_float("late_reverb_damping", "Reverb Damping", self.late_reverb_damping, 0.0, 1.0)
+                .with_group("Room"),
+            Parameter::new_bool("headphone_eq_enabled", "Headphone EQ", self.headphone_eq_enabled)
+                .with_group("Headphone"),
         ];
     }
 
@@ -1182,14 +1197,15 @@ impl Plugin for BinauralDecoderPlugin {
             self.rebuild_cached_parameters();
             Ok(())
         } else if id.0 == "late_reverb_rt60" {
-            let v = val.as_float().unwrap_or(1.0);
-            self.fdn.set_room_params(v, self.late_reverb_mix, 1.0, self.sample_rate);
+            let v = val.as_float().unwrap_or(1.0).clamp(0.1, 5.0);
+            self.late_reverb_rt60 = v;
+            self.fdn.set_room_params(self.late_reverb_rt60, self.late_reverb_damping, 1.0, self.sample_rate);
             self.rebuild_cached_parameters();
             Ok(())
         } else if id.0 == "late_reverb_damping" {
-            let v = val.as_float().unwrap_or(0.3);
-            // Re-apply room params with new damping
-            self.fdn.set_room_params(1.0, v, 1.0, self.sample_rate);
+            let v = val.as_float().unwrap_or(0.3).clamp(0.0, 1.0);
+            self.late_reverb_damping = v;
+            self.fdn.set_room_params(self.late_reverb_rt60, self.late_reverb_damping, 1.0, self.sample_rate);
             self.rebuild_cached_parameters();
             Ok(())
         } else if id.0 == "headphone_eq_enabled" {
@@ -1232,9 +1248,9 @@ impl Plugin for BinauralDecoderPlugin {
         } else if id.0 == "late_reverb_mix" {
             Some(ParameterValue::Float(self.late_reverb_mix))
         } else if id.0 == "late_reverb_rt60" {
-            Some(ParameterValue::Float(1.0)) // TODO: store separately
+            Some(ParameterValue::Float(self.late_reverb_rt60))
         } else if id.0 == "late_reverb_damping" {
-            Some(ParameterValue::Float(0.3)) // TODO: store separately
+            Some(ParameterValue::Float(self.late_reverb_damping))
         } else if id.0 == "headphone_eq_enabled" {
             Some(ParameterValue::Bool(self.headphone_eq_enabled))
         } else {

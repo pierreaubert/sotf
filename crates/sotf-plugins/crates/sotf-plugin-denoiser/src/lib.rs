@@ -737,6 +737,16 @@ impl DenoiserPlugin {
             )
             .with_group("General")
             .with_importance(ParameterImportance::Useful),
+            // Phase 4B
+            Parameter::new_bool("harmonic_percussive", "Harmonic/Percussive", self.harmonic_percussive)
+                .with_group("Advanced")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("spatial_denoise", "Spatial Denoise", self.spatial_denoise)
+                .with_group("Advanced")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("spatial_strength", "Spatial Strength", self.spatial_strength, 0.0, 1.0)
+                .with_group("Advanced")
+                .with_importance(ParameterImportance::Useful),
         ];
     }
 

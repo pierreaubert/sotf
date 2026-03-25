@@ -1536,6 +1536,10 @@ ensuring the 2nd eigenvector captures a real source and not noise.",
             )
             .with_group("Enhancement")
             .with_importance(ParameterImportance::FineTuning),
+            // Phase 4G
+            Parameter::new_bool("binaural_preview", "Binaural Preview", self.binaural_preview)
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
         ];
     }
 
@@ -1819,7 +1823,9 @@ impl Plugin for UpmixerPlugin {
     }
 
     fn output_channels(&self) -> usize {
-        if self.binaural_preview { 2 } else { self.num_output_channels }
+        // binaural_preview is a host hint — the upmixer always outputs surround channels.
+        // The host should chain a BinauralDecoderPlugin downstream when this flag is set.
+        self.num_output_channels
     }
 
     fn parameters(&self) -> Vec<Parameter> {

@@ -237,7 +237,7 @@ impl StftState {
             magnitudes_scratch: vec![0.0; num_bins],
             tonal_mask: vec![0.0; num_bins],
             transient_mask: vec![0.0; num_bins],
-            adaptive_avg: vec![vec![-40.0; num_bins]; channels],
+            adaptive_avg: vec![vec![-20.0; num_bins]; channels], // init near typical threshold to avoid startup transient
         }
     }
 
@@ -251,6 +251,9 @@ impl StftState {
         }
         for tt in &mut self.tonal_transient {
             tt.reset();
+        }
+        for avg in &mut self.adaptive_avg {
+            avg.fill(-20.0);
         }
         self.output_accumulator.fill(0.0);
         self.output_accumulator_fill = 0;
