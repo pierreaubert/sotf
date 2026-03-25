@@ -523,6 +523,10 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .secondary("Analysis")
     .doc("Source separation sensitivity"),
+    // Phase 4G: SOTA addition
+    ParamSpec::bool_param("Binaural Preview", "binaural_preview", false, "Output")
+        .structural()
+        .doc("Preview surround output binaurally (headphone monitoring, changes output to 2ch)"),
 ];
 
 // ============================================================================
@@ -727,6 +731,8 @@ pub struct Params {
     pub multi_source_extraction: bool,
     #[serde(default = "d_multi_source_threshold")]
     pub multi_source_threshold: f64,
+    #[serde(default)]
+    pub binaural_preview: bool,
 }
 
 fn d_speaker_config() -> usize {
@@ -905,6 +911,7 @@ impl Default for Params {
             enable_ml_detection: d_enable_ml_detection(),
             multi_source_extraction: d_multi_source_extraction(),
             multi_source_threshold: d_multi_source_threshold(),
+            binaural_preview: false,
         }
     }
 }
@@ -964,6 +971,7 @@ impl PluginParamDef for Params {
             40 => Some(if self.enable_ml_detection { 1.0 } else { 0.0 }),
             41 => Some(if self.multi_source_extraction { 1.0 } else { 0.0 }),
             42 => Some(self.multi_source_threshold),
+            43 => Some(if self.binaural_preview { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -1013,6 +1021,7 @@ impl PluginParamDef for Params {
             40 => self.enable_ml_detection = value > 0.5,
             41 => self.multi_source_extraction = value > 0.5,
             42 => self.multi_source_threshold = value,
+            43 => self.binaural_preview = value > 0.5,
             _ => {}
         }
     }
@@ -1044,7 +1053,7 @@ mod tests {
 
     #[test]
     fn param_count() {
-        assert_eq!(PARAMS.len(), 43, "Expected 43 params");
+        assert_eq!(PARAMS.len(), 44, "Expected 44 params");
     }
 
     #[test]

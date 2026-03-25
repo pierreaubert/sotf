@@ -307,6 +307,12 @@ pub struct DenoiserPlugin {
     spatial_denoise: bool,
     param_spatial_strength: ParameterId,
     spatial_strength: f32,
+    /// Per-channel tonal/transient separator for harmonic/percussive mode
+    tonal_transient_seps: Vec<math_audio_dsp::tonal_transient::TonalTransientSeparator>,
+    /// Scratch buffers for tonal/transient masks [spectrum_size]
+    tt_magnitudes: Vec<f32>,
+    tt_tonal_mask: Vec<f32>,
+    tt_transient_mask: Vec<f32>,
 
     // Data exposure for UI — cached to avoid allocations in get_data()
     avg_reduction_db: f32,
@@ -508,6 +514,12 @@ impl DenoiserPlugin {
             spatial_denoise: false,
             param_spatial_strength: ParameterId::from("spatial_strength"),
             spatial_strength: 0.5,
+            tonal_transient_seps: (0..channels)
+                .map(|_| math_audio_dsp::tonal_transient::TonalTransientSeparator::new(spectrum_size, 7, 7))
+                .collect(),
+            tt_magnitudes: vec![0.0; spectrum_size],
+            tt_tonal_mask: vec![0.0; spectrum_size],
+            tt_transient_mask: vec![0.0; spectrum_size],
             multi_res_state: None, // allocated on first enable
 
             avg_reduction_db: 0.0,

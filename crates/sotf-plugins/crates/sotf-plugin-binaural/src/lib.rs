@@ -88,6 +88,12 @@ pub struct BinauralDecoderPlugin {
     reflection_delay_pos: usize,
     reflection_delay_mask: usize,
 
+    // --- Phase 4E: Late reverb FDN ---
+    fdn: math_audio_dsp::fdn::Fdn,
+    late_reverb_enabled: bool,
+    late_reverb_mix: f32,
+    headphone_eq_enabled: bool,
+
     /// Crossfade state for smooth HRTF transitions.
     /// When HRTF filters change, we blend from old to new over ~50ms.
     /// `current_state_snapshot` tracks the last-seen Arc so we can detect changes.
@@ -257,6 +263,11 @@ impl BinauralDecoderPlugin {
             reflection_delay_line: vec![0.0; delay_size * 2],
             reflection_delay_pos: 0,
             reflection_delay_mask: delay_size - 1,
+            // Phase 4E: Late reverb FDN
+            fdn: math_audio_dsp::fdn::Fdn::new(8, sr),
+            late_reverb_enabled: false,
+            late_reverb_mix: 0.3,
+            headphone_eq_enabled: false,
             current_state_snapshot: initial_state,
             crossfade_prev_state: None,
             crossfade_remaining: 0,
@@ -1161,6 +1172,30 @@ impl Plugin for BinauralDecoderPlugin {
                 self.rebuild_cached_parameters();
             }
             Ok(())
+        } else if id.0 == "late_reverb_enabled" {
+            self.late_reverb_enabled = val.as_bool().unwrap_or(false);
+            self.rebuild_cached_parameters();
+            Ok(())
+        } else if id.0 == "late_reverb_mix" {
+            let v = val.as_float().unwrap_or(0.3);
+            self.late_reverb_mix = v.clamp(0.0, 1.0);
+            self.rebuild_cached_parameters();
+            Ok(())
+        } else if id.0 == "late_reverb_rt60" {
+            let v = val.as_float().unwrap_or(1.0);
+            self.fdn.set_room_params(v, self.late_reverb_mix, 1.0, self.sample_rate);
+            self.rebuild_cached_parameters();
+            Ok(())
+        } else if id.0 == "late_reverb_damping" {
+            let v = val.as_float().unwrap_or(0.3);
+            // Re-apply room params with new damping
+            self.fdn.set_room_params(1.0, v, 1.0, self.sample_rate);
+            self.rebuild_cached_parameters();
+            Ok(())
+        } else if id.0 == "headphone_eq_enabled" {
+            self.headphone_eq_enabled = val.as_bool().unwrap_or(false);
+            self.rebuild_cached_parameters();
+            Ok(())
         } else {
             Err(format!("Unknown: {}", id))
         }
@@ -1192,6 +1227,16 @@ impl Plugin for BinauralDecoderPlugin {
             Some(ParameterValue::Float(self.ear_height_cm))
         } else if id.0 == "crossfade_mode" {
             Some(ParameterValue::Int(self.crossfade_mode_index as i32))
+        } else if id.0 == "late_reverb_enabled" {
+            Some(ParameterValue::Bool(self.late_reverb_enabled))
+        } else if id.0 == "late_reverb_mix" {
+            Some(ParameterValue::Float(self.late_reverb_mix))
+        } else if id.0 == "late_reverb_rt60" {
+            Some(ParameterValue::Float(1.0)) // TODO: store separately
+        } else if id.0 == "late_reverb_damping" {
+            Some(ParameterValue::Float(0.3)) // TODO: store separately
+        } else if id.0 == "headphone_eq_enabled" {
+            Some(ParameterValue::Bool(self.headphone_eq_enabled))
         } else {
             None
         }
@@ -1382,6 +1427,17 @@ impl Plugin for BinauralDecoderPlugin {
                     self.output_accumulator[ri * 2 + 1] = 0.0;
                 }
                 self.apply_reflections(drain_slice, to_drain);
+                // Phase 4E: Apply late reverb FDN to output
+                if self.late_reverb_enabled {
+                    let mix = self.late_reverb_mix;
+                    for i in 0..to_drain {
+                        let l = drain_slice[i * 2];
+                        let r = drain_slice[i * 2 + 1];
+                        let (rl, rr) = self.fdn.process_stereo(l, r);
+                        drain_slice[i * 2] = l * (1.0 - mix) + rl * mix;
+                        drain_slice[i * 2 + 1] = r * (1.0 - mix) + rr * mix;
+                    }
+                }
                 self.output_read_position = (self.output_read_position + to_drain) & mask;
                 self.output_accumulator_fill -= to_drain;
                 op += to_drain;

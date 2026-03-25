@@ -112,6 +112,49 @@ impl DenoiserPlugin {
             // smoother operates on clean gain curves.
             Self::median_smooth_gains(&mut self.gain[ch], self.spectrum_size);
 
+            // Pass 1f: Harmonic/percussive differential denoising
+            // Tonal bins get stronger denoising (noise is diffuse), transient bins get gentler
+            if self.harmonic_percussive {
+                // Compute magnitudes for separator
+                for k in 0..self.spectrum_size {
+                    self.tt_magnitudes[k] = self.get_power_at_bin(ch, k).sqrt();
+                }
+                self.tonal_transient_seps[ch].process(
+                    &self.tt_magnitudes[..self.spectrum_size],
+                    &mut self.tt_tonal_mask[..self.spectrum_size],
+                    &mut self.tt_transient_mask[..self.spectrum_size],
+                );
+                for k in 0..self.spectrum_size {
+                    // Transient-dominant bins: reduce denoising strength (preserve attacks)
+                    // tonal_mask = how tonal this bin is (0..1)
+                    // Blend: tonal bins keep current gain, transient bins push gain toward 1.0
+                    let transient_weight = self.tt_transient_mask[k];
+                    self.gain[ch][k] = self.gain[ch][k] * (1.0 - 0.5 * transient_weight)
+                        + transient_weight * 0.5; // 50% less denoising on transients
+                }
+            }
+
+            // Pass 1g: Spatial denoising (stereo+ only)
+            // Low inter-channel coherence = more likely noise
+            if self.spatial_denoise && self.channels >= 2 && ch == 0 {
+                // Compare ch0 and ch1 magnitudes for coherence estimate
+                let strength = self.spatial_strength;
+                for k in 0..self.spectrum_size {
+                    let p0 = self.get_power_at_bin(0, k);
+                    let p1 = self.get_power_at_bin(1, k);
+                    let coherence = if p0 + p1 > EPSILON {
+                        2.0 * (p0 * p1).sqrt() / (p0 + p1) // normalized coherence [0..1]
+                    } else {
+                        0.0
+                    };
+                    // Low coherence → more noise → reduce gain further
+                    let incoherence = 1.0 - coherence;
+                    let extra_reduction = incoherence * strength * 0.3;
+                    self.gain[0][k] = (self.gain[0][k] - extra_reduction).max(floor_linear);
+                    self.gain[1][k] = (self.gain[1][k] - extra_reduction).max(floor_linear);
+                }
+            }
+
             // Pass 2: Smooth gains across frequency bins
             if self.spectral_smoothing_enabled {
                 self.smooth_gains_across_frequency(ch);

@@ -53,6 +53,10 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::bool_labeled("Delta Listen", "delta_listen", false, "On", "Off", "Output")
         .output()
         .doc("Solo the compression delta (hear what's being removed)"),
+    ParamSpec::bool_param("Adaptive Threshold", "adaptive_threshold", false, "Analysis")
+        .doc("Auto-set threshold relative to long-term spectral average per bin"),
+    ParamSpec::float("Adaptive Offset", "adaptive_offset_db", 0.0, -20.0, 20.0, 0.5, "dB", "Analysis")
+        .doc("Offset from adaptive threshold (positive = less compression)"),
 ];
 
 // ============================================================================
@@ -127,6 +131,10 @@ pub struct Params {
     pub target_mode: f64,
     #[serde(default)]
     pub delta_listen: f64,
+    #[serde(default)]
+    pub adaptive_threshold: f64,
+    #[serde(default)]
+    pub adaptive_offset_db: f64,
 }
 
 fn d_target_mode() -> f64 {
@@ -170,6 +178,8 @@ impl Default for Params {
             mix: d_mix(),
             target_mode: d_target_mode(),
             delta_listen: 0.0,
+            adaptive_threshold: 0.0,
+            adaptive_offset_db: 0.0,
         }
     }
 }
@@ -196,6 +206,8 @@ impl PluginParamDef for Params {
             7 => Some(self.mix),
             8 => Some(self.target_mode),
             9 => Some(self.delta_listen),
+            10 => Some(self.adaptive_threshold),
+            11 => Some(self.adaptive_offset_db),
             _ => None,
         }
     }
@@ -212,6 +224,8 @@ impl PluginParamDef for Params {
             7 => self.mix = value,
             8 => self.target_mode = value,
             9 => self.delta_listen = value,
+            10 => self.adaptive_threshold = value,
+            11 => self.adaptive_offset_db = value,
             _ => {}
         }
     }

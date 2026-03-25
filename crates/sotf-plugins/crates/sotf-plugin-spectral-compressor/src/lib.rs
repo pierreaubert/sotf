@@ -186,6 +186,8 @@ struct StftState {
     tonal_mask: Vec<f32>,
     /// Scratch for transient mask [num_bins]
     transient_mask: Vec<f32>,
+    /// Per-channel long-term spectral average for adaptive threshold [channels][num_bins]
+    adaptive_avg: Vec<Vec<f32>>,
 }
 
 impl StftState {
@@ -235,6 +237,7 @@ impl StftState {
             magnitudes_scratch: vec![0.0; num_bins],
             tonal_mask: vec![0.0; num_bins],
             transient_mask: vec![0.0; num_bins],
+            adaptive_avg: vec![vec![-40.0; num_bins]; channels],
         }
     }
 
@@ -283,6 +286,8 @@ pub struct SpectralCompressorPlugin {
     // Phase 4A: SOTA params
     target_mode: usize, // 0=All, 1=Tonal, 2=Transient
     delta_monitor: DeltaMonitor,
+    adaptive_threshold: bool,
+    adaptive_offset_db: f32,
 
     // STFT state
     stft: StftState,
@@ -327,6 +332,8 @@ impl SpectralCompressorPlugin {
 
             target_mode: 0, // All
             delta_monitor: DeltaMonitor::new(),
+            adaptive_threshold: false,
+            adaptive_offset_db: 0.0,
 
             stft: StftState::new(fft_size, channels),
 
@@ -383,6 +390,10 @@ impl SpectralCompressorPlugin {
         let spectral_smoothing = self.spectral_smoothing;
 
         let mag_norm = 2.0 / fft_size as f32;
+        let use_adaptive = self.adaptive_threshold;
+        let adaptive_offset = self.adaptive_offset_db;
+        // EMA coefficient for long-term average: ~500ms at hop rate
+        let adaptive_alpha = 0.98_f32;
 
         for ch in 0..channels {
             // --- Forward FFT ---
@@ -404,7 +415,16 @@ impl SpectralCompressorPlugin {
                 self.stft.magnitudes_scratch[k] = mag;
                 let mag_db = 20.0 * mag.max(1e-10).log10();
 
-                let target_gr = compress_gr(mag_db, threshold, ratio, knee);
+                // Adaptive threshold: use long-term per-bin average + offset
+                let effective_threshold = if use_adaptive {
+                    let avg = &mut self.stft.adaptive_avg[ch][k];
+                    *avg = adaptive_alpha * *avg + (1.0 - adaptive_alpha) * mag_db;
+                    *avg + adaptive_offset
+                } else {
+                    threshold
+                };
+
+                let target_gr = compress_gr(mag_db, effective_threshold, ratio, knee);
 
                 // One-pole envelope smoothing at hop rate
                 let envelope = &mut self.stft.bin_envelopes[ch][k];
@@ -608,6 +628,12 @@ impl SpectralCompressorPlugin {
             Parameter::new_bool("delta_listen", "Delta Listen", self.delta_monitor.enabled())
                 .with_group("Output")
                 .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("adaptive_threshold", "Adaptive", self.adaptive_threshold)
+                .with_group("Analysis")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("adaptive_offset_db", "Adapt Offset", self.adaptive_offset_db, -20.0, 20.0)
+                .with_group("Analysis")
+                .with_importance(ParameterImportance::Useful),
         ];
     }
 }
@@ -695,6 +721,15 @@ impl InPlacePlugin for SpectralCompressorPlugin {
                 let enabled = value.as_bool().unwrap_or(false);
                 self.delta_monitor.set_enabled(enabled);
             }
+            "adaptive_threshold" => {
+                self.adaptive_threshold = value.as_bool().unwrap_or(false);
+            }
+            "adaptive_offset_db" => {
+                let v = value.as_float().unwrap_or(0.0);
+                if v.is_finite() {
+                    self.adaptive_offset_db = v.clamp(-20.0, 20.0);
+                }
+            }
             other => return Err(format!("Unknown parameter: {other}")),
         }
         self.rebuild_cached_parameters();
@@ -713,6 +748,8 @@ impl InPlacePlugin for SpectralCompressorPlugin {
             "mix" => Some(ParameterValue::Float(self.mix)),
             "target_mode" => Some(ParameterValue::String(TARGET_MODES[self.target_mode.min(2)].to_string())),
             "delta_listen" => Some(ParameterValue::Bool(self.delta_monitor.enabled())),
+            "adaptive_threshold" => Some(ParameterValue::Bool(self.adaptive_threshold)),
+            "adaptive_offset_db" => Some(ParameterValue::Float(self.adaptive_offset_db)),
             _ => None,
         }
     }

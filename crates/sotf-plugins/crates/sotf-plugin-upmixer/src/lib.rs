@@ -74,6 +74,8 @@ pub struct UpmixerPlugin {
     speaker_config: &'static SpeakerConfig,
     /// Number of output channels (dynamic based on config)
     num_output_channels: usize,
+    /// When true, output is binaural (2ch) instead of surround
+    binaural_preview: bool,
 
     /// Forward FFT planner (low-resolution path)
     fft_forward: Arc<dyn RealToComplex<f32>>,
@@ -616,6 +618,7 @@ impl UpmixerPlugin {
             sample_rate,
             speaker_config,
             num_output_channels,
+            binaural_preview: false,
 
             fft_forward,
             fft_inverse,
@@ -1816,7 +1819,7 @@ impl Plugin for UpmixerPlugin {
     }
 
     fn output_channels(&self) -> usize {
-        self.num_output_channels // Variable based on configuration
+        if self.binaural_preview { 2 } else { self.num_output_channels }
     }
 
     fn parameters(&self) -> Vec<Parameter> {
@@ -2196,6 +2199,8 @@ impl Plugin for UpmixerPlugin {
             if val.is_finite() {
                 self.multi_source_threshold = val.clamp(0.05, 0.5);
             }
+        } else if id.0 == "binaural_preview" {
+            self.binaural_preview = value.as_bool().unwrap_or(false);
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -2322,6 +2327,8 @@ impl Plugin for UpmixerPlugin {
             Some(ParameterValue::Bool(self.multi_source_extraction))
         } else if id == &self.param_multi_source_threshold {
             Some(ParameterValue::Float(self.multi_source_threshold))
+        } else if id.0 == "binaural_preview" {
+            Some(ParameterValue::Bool(self.binaural_preview))
         } else {
             None
         }

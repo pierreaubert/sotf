@@ -70,6 +70,18 @@ pub const PARAMS: &[ParamSpec] = &[
         "Quality",
     )
     .doc("Linear: simple blend (may cause tonal shift). Spectral: magnitude interpolation + phase reconstruction (smoother)"),
+    // --- Phase 4E: SOTA additions ---
+    ParamSpec::bool_param("Late Reverb", "late_reverb_enabled", false, "Room")
+        .doc("Add FDN-based late reverb tail after early reflections"),
+    ParamSpec::float("Reverb Mix", "late_reverb_mix", 0.3, 0.0, 1.0, 0.05, "", "Room")
+        .scaled(100.0)
+        .doc("Late reverb wet/dry mix"),
+    ParamSpec::float("Reverb Time", "late_reverb_rt60", 1.0, 0.1, 5.0, 0.1, "s", "Room")
+        .doc("RT60 decay time for late reverb"),
+    ParamSpec::float("Reverb Damping", "late_reverb_damping", 0.3, 0.0, 1.0, 0.05, "", "Room")
+        .doc("High-frequency damping (0=bright, 1=dark)"),
+    ParamSpec::bool_param("Headphone EQ", "headphone_eq_enabled", false, "Headphone")
+        .doc("Apply headphone compensation EQ"),
 ];
 
 // ============================================================================
@@ -122,7 +134,21 @@ pub struct Params {
     pub near_field_strength: f64,
     #[serde(default = "d_crossfade_mode")]
     pub crossfade_mode: usize,
+    #[serde(default)]
+    pub late_reverb_enabled: bool,
+    #[serde(default = "d_late_reverb_mix")]
+    pub late_reverb_mix: f64,
+    #[serde(default = "d_late_reverb_rt60")]
+    pub late_reverb_rt60: f64,
+    #[serde(default = "d_late_reverb_damping")]
+    pub late_reverb_damping: f64,
+    #[serde(default)]
+    pub headphone_eq_enabled: bool,
 }
+
+fn d_late_reverb_mix() -> f64 { pk(PARAMS, "late_reverb_mix").default_f64() }
+fn d_late_reverb_rt60() -> f64 { pk(PARAMS, "late_reverb_rt60").default_f64() }
+fn d_late_reverb_damping() -> f64 { pk(PARAMS, "late_reverb_damping").default_f64() }
 
 fn d_input_channels() -> usize {
     pk(PARAMS, "input_channels").default_usize()
@@ -148,6 +174,11 @@ impl Default for Params {
             externalization: d_externalization(),
             near_field_strength: d_near_field_strength(),
             crossfade_mode: d_crossfade_mode(),
+            late_reverb_enabled: false,
+            late_reverb_mix: d_late_reverb_mix(),
+            late_reverb_rt60: d_late_reverb_rt60(),
+            late_reverb_damping: d_late_reverb_damping(),
+            headphone_eq_enabled: false,
         }
     }
 }
@@ -170,6 +201,11 @@ impl PluginParamDef for Params {
             3 => Some(self.externalization),
             4 => Some(self.near_field_strength),
             5 => Some(self.crossfade_mode as f64),
+            6 => Some(if self.late_reverb_enabled { 1.0 } else { 0.0 }),
+            7 => Some(self.late_reverb_mix),
+            8 => Some(self.late_reverb_rt60),
+            9 => Some(self.late_reverb_damping),
+            10 => Some(if self.headphone_eq_enabled { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -182,6 +218,11 @@ impl PluginParamDef for Params {
             3 => self.externalization = value,
             4 => self.near_field_strength = value,
             5 => self.crossfade_mode = value as usize,
+            6 => self.late_reverb_enabled = value > 0.5,
+            7 => self.late_reverb_mix = value,
+            8 => self.late_reverb_rt60 = value,
+            9 => self.late_reverb_damping = value,
+            10 => self.headphone_eq_enabled = value > 0.5,
             _ => {}
         }
     }
