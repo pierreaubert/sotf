@@ -160,6 +160,19 @@ pub trait Plugin: Send {
     fn last_output_frames(&self) -> Option<usize> {
         None
     }
+
+    /// Returns the plugin's preferred oversampling factor, if any.
+    /// When `Some(n)`, the host may insert oversampling before/after this plugin.
+    /// `n` must be 2 or 4.
+    fn preferred_oversampling(&self) -> Option<u32> {
+        None
+    }
+
+    /// Whether this plugin can process in f64 precision.
+    /// When true, the host may provide f64 buffers via a future `process_f64()` method.
+    fn supports_f64(&self) -> bool {
+        false
+    }
 }
 
 /// Helper trait for plugins that process audio in-place (input channels == output channels)
@@ -232,6 +245,19 @@ pub trait InPlacePlugin: Send {
     /// Returns `None` by default for plugins that don't expose data.
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         None
+    }
+
+    /// Returns the plugin's preferred oversampling factor, if any.
+    /// When `Some(n)`, the host may insert oversampling before/after this plugin.
+    /// `n` must be 2 or 4.
+    fn preferred_oversampling(&self) -> Option<u32> {
+        None
+    }
+
+    /// Whether this plugin can process in f64 precision.
+    /// When true, the host may provide f64 buffers via a future `process_f64()` method.
+    fn supports_f64(&self) -> bool {
+        false
     }
 }
 
@@ -307,5 +333,114 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         self.plugin.get_data()
+    }
+
+    fn preferred_oversampling(&self) -> Option<u32> {
+        self.plugin.preferred_oversampling()
+    }
+
+    fn supports_f64(&self) -> bool {
+        self.plugin.supports_f64()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Minimal in-place plugin that uses all defaults.
+    struct DummyInPlacePlugin;
+
+    impl InPlacePlugin for DummyInPlacePlugin {
+        fn info(&self) -> PluginInfo {
+            PluginInfo::new("Dummy", "0.0.1", "Test")
+        }
+        fn channels(&self) -> usize {
+            2
+        }
+        fn parameters(&self) -> Vec<Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _id: ParameterId,
+            _value: ParameterValue,
+        ) -> PluginResult<()> {
+            Ok(())
+        }
+        fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
+            None
+        }
+        fn process_in_place(
+            &mut self,
+            _buffer: &mut [f32],
+            context: &ProcessContext,
+        ) -> PluginResult<usize> {
+            Ok(context.num_frames)
+        }
+    }
+
+    /// In-place plugin that declares oversampling and f64 support.
+    struct OversampledPlugin;
+
+    impl InPlacePlugin for OversampledPlugin {
+        fn info(&self) -> PluginInfo {
+            PluginInfo::new("Oversampled", "0.0.1", "Test")
+        }
+        fn channels(&self) -> usize {
+            2
+        }
+        fn parameters(&self) -> Vec<Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _id: ParameterId,
+            _value: ParameterValue,
+        ) -> PluginResult<()> {
+            Ok(())
+        }
+        fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
+            None
+        }
+        fn process_in_place(
+            &mut self,
+            _buffer: &mut [f32],
+            context: &ProcessContext,
+        ) -> PluginResult<usize> {
+            Ok(context.num_frames)
+        }
+        fn preferred_oversampling(&self) -> Option<u32> {
+            Some(4)
+        }
+        fn supports_f64(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn test_default_oversampling_is_none() {
+        let plugin = DummyInPlacePlugin;
+        assert_eq!(plugin.preferred_oversampling(), None);
+    }
+
+    #[test]
+    fn test_default_f64_is_false() {
+        let plugin = DummyInPlacePlugin;
+        assert!(!plugin.supports_f64());
+    }
+
+    #[test]
+    fn test_adapter_forwards_oversampling() {
+        let adapted = InPlacePluginAdapter::new(OversampledPlugin);
+        assert_eq!(adapted.preferred_oversampling(), Some(4));
+        assert!(adapted.supports_f64());
+    }
+
+    #[test]
+    fn test_adapter_forwards_defaults() {
+        let adapted = InPlacePluginAdapter::new(DummyInPlacePlugin);
+        assert_eq!(adapted.preferred_oversampling(), None);
+        assert!(!adapted.supports_f64());
     }
 }
