@@ -1,0 +1,128 @@
+---
+title: Optimize Headphone EQ
+description: Match your headphones to the Harman target curve using scientifically-derived EQ filters.
+---
+
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Most headphones have frequency response deviations that color the sound. SotF can automatically calculate parametric EQ filters that correct these deviations, targeting the **Harman curve** — a scientifically-derived preference target backed by decades of listening research.
+
+## What you need
+
+- SotF (TUI or Desktop)
+- Your headphone model name (or a custom measurement CSV)
+
+## Walkthrough
+
+<Tabs>
+<TabItem label="Desktop (GPUI)">
+
+<Steps>
+
+1. **Open the Headphone EQ screen**
+
+   Click the **Headphone EQ** tab in the sidebar, or press the corresponding shortcut key.
+
+2. **Search for your headphone model**
+
+   Type your headphone name in the search field (e.g., "Beyerdynamic DT1990"). The database covers hundreds of popular models with real measurements.
+
+3. **Configure optimization parameters** (optional)
+
+   The defaults work well for most headphones, but you can tune:
+
+   | Parameter | Default | Description |
+   |-----------|---------|-------------|
+   | Number of filters | 7 | More filters = closer match, but diminishing returns above 10 |
+   | Min/Max Q | 0.5 / 10.0 | Narrower Q range prevents ringing |
+   | Min/Max dB | -12 / 12 | Limit maximum boost/cut |
+   | Min frequency | 20 Hz | Lower bound for filter placement |
+   | Max frequency | 20000 Hz | Upper bound for filter placement |
+
+4. **Run the optimization**
+
+   Click **Optimize**. The algorithm (typically COBYLA or Differential Evolution) finds the best filter combination. Watch the loss value converge — lower is better.
+
+5. **Review results**
+
+   The results screen shows:
+   - **Before/after frequency response curves** overlaid on the target
+   - **Filter list** with frequency, Q, and gain for each band
+   - **Improvement score** (how much closer to target)
+
+6. **Apply to your plugin chain**
+
+   Click **Apply**. The EQ filters are loaded into a Parametric EQ plugin in your chain. The correction is applied in real-time.
+
+</Steps>
+
+</TabItem>
+<TabItem label="TUI">
+
+<Steps>
+
+1. **Navigate to Configure > Headphone EQ**
+
+   Use arrow keys to reach the Configure screen, then select Headphone EQ.
+
+2. **Search and select your headphone**
+
+   Type to search, use arrow keys to select from the list.
+
+3. **Configure parameters and optimize**
+
+   Adjust filter count and bounds if desired, then press Enter to start optimization.
+
+4. **Apply results**
+
+   Review the filter list and press Enter/Apply to load the EQ into your plugin chain.
+
+</Steps>
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+# Optimize for Beyerdynamic DT1990 Pro
+cargo run --bin autoeq --release -- \
+  --curve ./path/to/dt1990_measurement.csv \
+  --target ./data_tests/targets/harman-over-ear-2018.csv \
+  --loss headphone-score \
+  -n 7 \
+  --algo nlopt:cobyla
+```
+
+The CLI outputs the filter list to stdout. You can pipe it into a plugin chain config.
+
+</TabItem>
+</Tabs>
+
+## Custom measurements
+
+If your headphone isn't in the database, you can use your own measurement:
+
+1. Measure your headphone's frequency response using a measurement rig (e.g., miniDSP EARS, Bruel & Kjaer)
+2. Export as CSV with columns: `frequency_hz, magnitude_db`
+3. In the Headphone EQ screen, click **Load Custom** and select your CSV
+4. Choose a target curve (Harman Over-Ear 2018, Harman In-Ear 2019, Diffuse Field, or custom)
+5. Run the optimization as normal
+
+## Tips
+
+<Aside type="tip">
+**Start with fewer filters.** 5-7 filters usually capture 90% of the correction. Adding more can cause ringing or audible pre-ringing with minimum-phase EQ.
+</Aside>
+
+<Aside type="tip">
+**Trust your ears after applying.** The Harman target is a population average — you may prefer slightly more bass or treble. Adjust individual filters by editing the EQ plugin after applying.
+</Aside>
+
+<Aside type="caution">
+**Beware of excessive boost.** Large boosts (> 6 dB) amplify noise and reduce headroom. If the optimizer produces large boosts, consider adding a [Limiter](/reference/plugins/limiter/) after the EQ to prevent clipping.
+</Aside>
+
+## Related
+
+- [Plugin Reference: Parametric EQ](/reference/plugins/eq/)
+- [Plugin Reference: Loudness Compensation](/reference/plugins/loudness-compensation/)
+- [Concept: Why EQ Matters](/concepts/psychoacoustics/)

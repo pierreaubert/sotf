@@ -1,0 +1,37 @@
+---
+title: "Add Your First Plugin"
+description: Add an EQ plugin to your audio chain and start tweaking.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. **Open the plugin rack**
+
+   - **TUI**: Navigate to the Plugins screen.
+   - **Desktop**: Click the **Studio** tab to see the plugin rack.
+
+2. **Add a plugin**
+
+   Press **+** (or click the add button) and select **EQ** from the plugin list.
+
+3. **Adjust a parameter**
+
+   Select the EQ plugin and add a filter. Set the frequency, Q factor, and gain to taste.
+
+   | Parameter | What it does |
+   |-----------|-------------|
+   | Frequency | Center frequency of the filter (Hz) |
+   | Q | Width — higher Q = narrower band |
+   | Gain (dB) | Boost or cut at that frequency |
+
+4. **Hear the difference**
+
+   Changes apply in real-time with zero dropout. Toggle the plugin on/off to A/B compare.
+
+</Steps>
+
+<Aside type="tip">
+SotF has 30+ plugins beyond EQ — compressor, limiter, crossfeed, surround upmixer, and more. Browse the full list in the [Plugin Reference](/reference/plugins/eq/).
+</Aside>

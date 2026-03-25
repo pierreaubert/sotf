@@ -1,0 +1,117 @@
+---
+title: Room Correction
+description: Measure your room acoustics and apply automatic EQ correction.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+Room acoustics are typically the biggest source of sound coloration — bigger than speaker quality differences. Standing waves, reflections, and absorption patterns create peaks and dips in the frequency response that vary by listening position. SotF can measure these problems and calculate correction filters.
+
+## What you need
+
+- SotF (TUI or Desktop)
+- A measurement microphone (e.g., miniDSP UMIK-1, Dayton Audio UMM-6)
+- A microphone calibration file (usually provided with the mic)
+- Your speakers connected and positioned at the listening position
+
+## Overview
+
+The room correction workflow has 5 stages:
+
+1. **Device setup** — Select output speaker and input microphone
+2. **Signal configuration** — Configure the measurement sweep
+3. **Measurement** — Play a sweep signal and record the room response
+4. **Analysis** — SotF analyzes the recording and calculates corrections
+5. **Apply** — Load the correction EQ into your plugin chain
+
+## Walkthrough
+
+<Steps>
+
+1. **Open the Room EQ screen**
+
+   - Desktop: Click the **Room EQ** tab
+   - TUI: Navigate to Configure > Room EQ
+
+2. **Select devices**
+
+   - **Output device**: Your speaker/DAC (the device playing the sweep)
+   - **Output channel**: Which speaker to measure (start with the left speaker)
+   - **Input device**: Your measurement microphone
+   - **Input channel**: The mic input channel (usually 0)
+
+3. **Configure the measurement**
+
+   | Parameter | Recommended | Description |
+   |-----------|-------------|-------------|
+   | Signal type | Sweep | Logarithmic frequency sweep (best SNR) |
+   | Duration | 5 seconds | Longer = better SNR in low frequencies |
+   | Start frequency | 20 Hz | Lower bound of sweep |
+   | End frequency | 20000 Hz | Upper bound of sweep |
+   | Amplitude | -12 dBFS | Safe level — adjust if room is noisy |
+   | Sample rate | 48000 Hz | Match your audio interface |
+   | Mic calibration | (load file) | Your UMIK-1 or equivalent calibration .txt |
+
+   <Aside type="caution">
+   **Set the amplitude conservatively.** Start at -18 dBFS and increase if the signal-to-noise ratio is poor. Too loud can damage speakers or clip the microphone.
+   </Aside>
+
+4. **Run the measurement**
+
+   Click **Record** / press Enter. SotF will:
+   - Play the sweep through the selected output channel
+   - Simultaneously record through the microphone
+   - Display progress in real-time
+
+   **During the measurement:**
+   - Stay still and quiet
+   - Keep the room as quiet as possible
+   - Don't touch the microphone
+
+5. **Review the analysis**
+
+   After recording, SotF analyzes the captured signal and shows:
+   - **Frequency response** of the room + speaker
+   - **Phase response**
+   - **Impulse response**
+   - **Identified room modes** (resonant frequencies)
+
+6. **Optimize and apply**
+
+   SotF calculates parametric EQ filters to correct the measured response:
+   - Cuts at room mode frequencies (peaks)
+   - Gentle boosts at absorption dips (limited to avoid amplifying noise)
+   - The optimizer respects the passband of the measurement data
+
+   Click **Apply** to load the correction into your plugin chain.
+
+</Steps>
+
+## Multi-point measurement
+
+For better correction across a wider listening area:
+
+1. Measure at your primary listening position (center of the sweet spot)
+2. Measure at 2-4 positions around it (30-50 cm offset in each direction)
+3. SotF averages the measurements to find corrections that work across the area
+
+<Aside type="tip">
+**Focus on low frequencies.** Room correction is most effective below 300-500 Hz where room modes dominate. Above that, the direct sound from the speaker matters more. Avoid aggressive correction above 1 kHz.
+</Aside>
+
+## Tips
+
+<Aside type="tip">
+**Combine with speaker EQ.** Use [Spinorama EQ](/guides/speaker-eq/) to correct the speaker's inherent response, then room EQ to correct the room interaction. Apply speaker EQ first in the chain.
+</Aside>
+
+<Aside type="caution">
+**EQ can't fix everything.** Deep nulls (> 20 dB dips) are caused by destructive interference and can't be fixed with EQ — boosting will just waste amplifier power. Consider speaker/listener repositioning instead.
+</Aside>
+
+## Related
+
+- [Recording Measurements Guide](/guides/recording/)
+- [Speaker EQ Guide](/guides/speaker-eq/)
+- [Plugin Reference: Convolution](/reference/plugins/convolution/)
+- [Plugin Reference: Parametric EQ](/reference/plugins/eq/)

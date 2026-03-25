@@ -1,0 +1,83 @@
+---
+title: Surround Upmixing
+description: Convert stereo music to 5.0, 5.1, or 7.1 surround using FFT-based spatial decomposition.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+SotF's upmixer converts stereo audio into surround sound by decomposing the stereo signal into **direct** (phantom center) and **ambient** (diffuse) components using FFT analysis, then distributing them across surround channels using VBAP (Vector Base Amplitude Panning).
+
+## What you need
+
+- SotF (TUI or Desktop)
+- A surround speaker setup (5.0, 5.1, or 7.1)
+- Your audio device configured for the correct number of output channels
+
+## Walkthrough
+
+<Steps>
+
+1. **Set your output to surround**
+
+   In the Devices screen (or Settings), select your surround audio device. Verify it's configured for 5.0, 5.1, or 7.1 channels in your OS audio settings.
+
+2. **Add the Upmixer plugin**
+
+   Go to the plugin rack and add an **Upmixer** plugin.
+
+3. **Configure output layout**
+
+   Set the target channel count to match your speaker layout:
+   - **5 channels** (5.0): L, R, C, LS, RS
+   - **6 channels** (5.1): L, R, C, LFE, LS, RS
+   - **8 channels** (7.1): L, R, C, LFE, LS, RS, LB, RB
+
+4. **Adjust the spatial parameters**
+
+   | Parameter | What it does | Suggested range |
+   |-----------|-------------|-----------------|
+   | Center gain | Level of the extracted center channel | -3 to 0 dB |
+   | Surround gain | Level of the ambient/surround channels | -6 to -3 dB |
+   | LFE gain | Low frequency effects channel level | -10 to -6 dB |
+   | FFT size | Analysis resolution (larger = better separation, more latency) | 4096 or 8192 |
+   | Ambient threshold | Sensitivity of direct/ambient separation | 0.3 to 0.7 |
+
+5. **Play stereo music**
+
+   The upmixer processes in real-time. Center vocals appear in the center channel, ambient/reverb content fills the surrounds.
+
+</Steps>
+
+## How it works
+
+The upmixer uses a three-stage process:
+
+1. **FFT Analysis**: The stereo signal is transformed to the frequency domain
+2. **Direct/Ambient Decomposition**: Each frequency bin is classified as "direct" (correlated between L and R, typically center-panned content) or "ambient" (decorrelated, typically reverb and spatial content)
+3. **VBAP Rendering**: Direct content is panned to the center speaker, ambient content is distributed to surround speakers, and the original L/R content is preserved in the front channels
+
+<Aside type="tip">
+**Start with the defaults.** The default parameters are tuned for a natural surround presentation. Only adjust if something sounds off — over-separation of center content can make vocals sound thin.
+</Aside>
+
+## Channel conflict handling
+
+The upmixer changes the channel count from 2 to 5+ channels. Any plugins **after** the upmixer must handle the new channel count. If a downstream plugin only supports stereo, SotF will warn you about the channel conflict.
+
+**Best practice:** Place the upmixer as one of the last plugins in the chain. Apply EQ and dynamics processing on the stereo signal first, then upmix.
+
+## Tips
+
+<Aside type="caution">
+**Already multichannel sources** (5.1 FLAC, DTS) will bypass the upmixer automatically since they don't need upmixing. The upmixer only activates on stereo (2-channel) input.
+</Aside>
+
+<Aside type="tip">
+**For headphone surround**, combine the upmixer with the [Binaural Renderer](/reference/plugins/binaural/) instead of physical speakers. The chain becomes: Upmixer (2ch → 5.0) → Binaural (5.0 → 2ch binaural).
+</Aside>
+
+## Related
+
+- [Plugin Reference: Upmixer](/reference/plugins/upmixer/)
+- [Plugin Reference: Binaural Renderer](/reference/plugins/binaural/)
+- [Plugin Reference: Downmix](/reference/plugins/downmix/)

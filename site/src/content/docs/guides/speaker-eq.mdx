@@ -1,0 +1,117 @@
+---
+title: Optimize Speaker EQ (Spinorama)
+description: Flatten your speaker's frequency response using real measurement data from spinorama.org.
+---
+
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Every speaker has frequency response imperfections. SotF can automatically correct these using real measurement data from [spinorama.org](https://spinorama.org), a database of 800+ speakers measured under controlled conditions (CEA-2034 / Spinorama standard).
+
+## What you need
+
+- SotF (TUI or Desktop)
+- Your speaker model name (must be in the spinorama.org database)
+- Internet connection (for fetching measurement data)
+
+## Walkthrough
+
+<Tabs>
+<TabItem label="Desktop (GPUI)">
+
+<Steps>
+
+1. **Open the Spinorama EQ screen**
+
+   Click the **Spinorama** tab in the sidebar.
+
+2. **Search for your speaker**
+
+   Type your speaker model (e.g., "KEF R3", "JBL 305P", "Genelec 8030"). Select from the search results. SotF fetches the measurement data from spinorama.org.
+
+3. **Select measurement version**
+
+   Some speakers have multiple measurements (e.g., from different reviewers like ASR, EAC, Princeton). Choose the one that matches your speaker revision.
+
+4. **Configure optimization** (optional)
+
+   | Parameter | Default | Description |
+   |-----------|---------|-------------|
+   | Number of filters | 7 | PEQ filter count |
+   | Loss function | speaker-score | Optimizes Harman preference score |
+   | Algorithm | cobyla | Local optimizer (fast). Use `autoeq:de` for global search |
+   | Min/Max Q | 0.5 / 10.0 | Filter sharpness bounds |
+   | Min spacing (oct) | 0.3 | Minimum distance between filters |
+
+5. **Run optimization**
+
+   Click **Optimize**. Watch the loss curve converge. This typically takes 5-30 seconds depending on algorithm choice.
+
+6. **Review and apply**
+
+   Inspect the before/after frequency response overlay. Click **Apply** to load the correction EQ into your plugin chain.
+
+</Steps>
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+# Optimize for KEF R3 using COBYLA
+cargo run --bin autoeq --release -- \
+  --speaker "KEF R3" \
+  --version asr \
+  --measurement CEA2034 \
+  --loss speaker-score \
+  --algo nlopt:cobyla \
+  -n 7
+
+# Global search with Differential Evolution (slower, better for complex responses)
+cargo run --bin autoeq --release -- \
+  --speaker "KEF R3" \
+  --version asr \
+  --measurement CEA2034 \
+  --loss speaker-score \
+  --algo autoeq:de \
+  --population 50 \
+  --iterations 5000 \
+  -n 10
+```
+
+</TabItem>
+</Tabs>
+
+## Loss functions explained
+
+| Loss | Best for | What it optimizes |
+|------|----------|-------------------|
+| `speaker-flat` | Studio monitors | Minimizes deviation from perfectly flat response |
+| `speaker-score` | Listening preference | Optimizes the Harman/Olive preference score (slight bass boost + PIR flatness) |
+
+<Aside type="tip">
+**`speaker-score` is usually the better choice** for home listening. It targets the response that the majority of listeners prefer, which includes a gentle bass shelf boost rather than ruler-flat response.
+</Aside>
+
+## Algorithm choice
+
+| Algorithm | Speed | Quality | Best for |
+|-----------|-------|---------|----------|
+| `nlopt:cobyla` | Fast (seconds) | Good | Quick optimization, simple responses |
+| `autoeq:de` | Slow (minutes) | Excellent | Complex responses, many filters |
+| `ga` | Medium | Good | Alternative global search |
+| `pso` | Medium | Good | Particle swarm, good for exploration |
+
+## Tips
+
+<Aside type="tip">
+**Combine with room correction.** Speaker EQ corrects manufacturing variations, but your room adds its own coloration. Use the [Room Correction guide](/guides/room-correction/) for the full picture.
+</Aside>
+
+<Aside type="caution">
+**EQ can't fix directivity problems.** If a speaker has poor off-axis response, EQ on the on-axis measurement won't help with room interactions. Check the spinorama.org plots for directivity index before optimizing.
+</Aside>
+
+## Related
+
+- [Plugin Reference: Parametric EQ](/reference/plugins/eq/)
+- [Room Correction Guide](/guides/room-correction/)
+- [AutoEQ CLI Reference](/reference/cli/autoeq/)

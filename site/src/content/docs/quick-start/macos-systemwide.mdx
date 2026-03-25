@@ -1,0 +1,38 @@
+---
+title: "macOS System-Wide Audio"
+description: Process all system audio through SotF's plugin chain on macOS.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. **Install the HAL driver**
+
+   Build and install the CoreAudio driver:
+   ```bash
+   just prod-hal
+   just install-hal
+   ```
+
+2. **Start the daemon**
+
+   ```bash
+   sotf_daemon
+   ```
+
+   The daemon listens on a Unix socket and runs the audio engine.
+
+3. **Set macOS audio output**
+
+   Open **System Settings > Sound** and select **SotF** as your output device. All system audio now routes through SotF.
+
+4. **Configure plugins**
+
+   Use the configbar menu icon or send JSON commands to the daemon socket to add EQ, compression, or any other plugin to the system audio chain.
+
+</Steps>
+
+<Aside type="caution">
+The HAL driver requires macOS 15.0+. Audio processing adds minimal latency but runs in real-time — avoid CPU-heavy plugin chains on older hardware.
+</Aside>

@@ -1,0 +1,107 @@
+---
+title: Build a Headphone Listening Chain
+description: Create a complete headphone processing chain with crossfeed, EQ, loudness compensation, and limiting.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+A well-configured plugin chain transforms headphone listening. This guide walks you through building a chain that addresses the three main headphone problems: unnatural stereo imaging, frequency response deviations, and volume-dependent tonal shifts.
+
+## The recommended chain
+
+```
+Audio Source
+  → Crossfeed (natural stereo image)
+  → Parametric EQ (frequency correction)
+  → Loudness Compensation (volume-aware tonal balance)
+  → Limiter (prevent clipping)
+  → Output
+```
+
+Each plugin addresses a specific issue:
+
+| Plugin | Problem it solves |
+|--------|-------------------|
+| [Crossfeed](/reference/plugins/crossfeed/) | Headphones present hard left/right separation — unnatural compared to speakers |
+| [Parametric EQ](/reference/plugins/eq/) | Your headphone's frequency response deviates from the target curve |
+| [Loudness Compensation](/reference/plugins/loudness-compensation/) | Human hearing is less sensitive to bass and treble at lower volumes |
+| [Limiter](/reference/plugins/limiter/) | EQ boosts can push peaks above 0 dBFS, causing clipping |
+
+## Step by step
+
+<Steps>
+
+1. **Add Crossfeed first**
+
+   Go to the plugin rack (Studio tab / Plugins screen) and add a **Crossfeed** plugin.
+
+   **Recommended starting settings:**
+   - Mode: **Bauer** (simplest, most natural)
+   - Bauer Cutoff: **700 Hz** (default)
+   - Bauer Feed: **4.5 dB** (default)
+
+   This blends a small amount of the left channel into the right and vice versa, simulating how speakers interact with both ears.
+
+   <Aside type="tip">
+   If Bauer sounds too subtle, try **Meier** mode at 30-50% for a stronger effect. **Multiband** mode gives the most control — reduce high-frequency feed for a more natural result.
+   </Aside>
+
+2. **Add Parametric EQ**
+
+   Add an **EQ** plugin after the crossfeed. Either:
+   - Use the [Headphone EQ wizard](/guides/headphone-eq/) to auto-generate filters for your model
+   - Manually add filters to taste
+
+   The EQ corrects your headphone's frequency response to match the Harman target curve.
+
+3. **Add Loudness Compensation**
+
+   Add a **Loudness Compensation** (Fletcher-Munson) plugin. Set your typical listening volume:
+
+   | Listening level | Playback volume setting |
+   |-----------------|-------------------------|
+   | Quiet (late night) | -40 to -30 dB |
+   | Normal | -25 to -15 dB |
+   | Loud | -10 to 0 dB |
+
+   The plugin automatically boosts bass and treble at lower volumes to compensate for the ear's reduced sensitivity (equal-loudness contours).
+
+4. **Add a Limiter at the end**
+
+   Add a **Limiter** plugin as the last in the chain.
+
+   - Ceiling: **-0.5 dBFS** (leaves headroom for DAC intersample peaks)
+   - Release: **50 ms** (default)
+
+   This prevents any clipping from EQ boosts or loudness compensation.
+
+5. **Save as a preset**
+
+   Save this chain as a preset (e.g., "Headphone Daily") so you can quickly load it later.
+
+</Steps>
+
+## Optional additions
+
+| Plugin | When to add | Position in chain |
+|--------|-------------|-------------------|
+| [Stereo Imager](/reference/plugins/stereo-imager/) | If you want wider/narrower soundstage | Before crossfeed |
+| [Dynamic EQ](/reference/plugins/dynamic-eq/) | For music with harsh sibilance | After main EQ |
+| [A/B Compare](/reference/plugins/ab-compare/) | To verify your chain improves the sound | Anywhere |
+| [Gain](/reference/plugins/gain/) | Fine-tune overall level | Before limiter |
+
+## Tips
+
+<Aside type="tip">
+**A/B test everything.** Add an A/B Compare plugin to instantly toggle the entire chain on/off. If the processed version doesn't sound clearly better, simplify your chain.
+</Aside>
+
+<Aside type="caution">
+**Order matters.** Crossfeed should come before EQ because crossfeed changes the frequency balance. EQ after crossfeed corrects the combined response.
+</Aside>
+
+## Related
+
+- [Headphone EQ Guide](/guides/headphone-eq/)
+- [Plugin Reference: Crossfeed](/reference/plugins/crossfeed/)
+- [Plugin Reference: Loudness Compensation](/reference/plugins/loudness-compensation/)

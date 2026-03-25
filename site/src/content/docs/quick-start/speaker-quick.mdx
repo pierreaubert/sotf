@@ -1,0 +1,31 @@
+---
+title: "Better Speakers in 3 Minutes"
+description: Optimize your speaker's frequency response using measurements from spinorama.org.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. **Open the Spinorama EQ screen**
+
+   - **TUI**: Navigate to Configure > Spinorama EQ.
+   - **Desktop**: Click the Spinorama tab.
+
+2. **Search for your speaker**
+
+   Type your speaker model (e.g., "KEF R3") and select it. SotF fetches real measurement data from spinorama.org.
+
+3. **Click Optimize**
+
+   The optimizer finds the best parametric EQ filters to flatten your speaker's response. Watch the loss curve converge.
+
+4. **Apply the filters**
+
+   Click **Apply** to load the correction EQ into your plugin chain.
+
+</Steps>
+
+<Aside type="tip">
+Over 800 speakers are available in the spinorama.org database. If yours isn't listed, you can use the Room EQ workflow with your own measurements instead. See the [Speaker EQ guide](/guides/speaker-eq/) for details.
+</Aside>

@@ -1,0 +1,16 @@
+/* SotF docs theme — dark mode matching the marketing site */
+:root {
+  --sl-color-accent-low: #083344;
+  --sl-color-accent: #22d3ee;
+  --sl-color-accent-high: #a5f3fc;
+  --sl-color-white: #f8fafc;
+  --sl-color-gray-1: #e2e8f0;
+  --sl-color-gray-2: #94a3b8;
+  --sl-color-gray-3: #64748b;
+  --sl-color-gray-4: #334155;
+  --sl-color-gray-5: #1e293b;
+  --sl-color-gray-6: #111827;
+  --sl-color-black: #030712;
+  --sl-font-system: 'Inter', system-ui, sans-serif;
+  --sl-font-system-mono: 'JetBrains Mono', monospace;
+}

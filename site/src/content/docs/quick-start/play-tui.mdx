@@ -1,0 +1,42 @@
+---
+title: "Play Music (TUI)"
+description: Go from zero to music in 2 minutes with the terminal player.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. **Download SotF**
+
+   Grab the latest binary for your platform from [GitHub Releases](https://github.com/pierreaubert/sotf/releases).
+
+2. **Launch with your music folder**
+
+   ```bash
+   sotf_player_tui --directories ~/Music --scan
+   ```
+
+   SotF scans your library in the background. Albums appear as they're indexed.
+
+3. **Browse and play**
+
+   | Key | Action |
+   |-----|--------|
+   | `j` / `k` | Move down / up |
+   | `Enter` | Play album or track |
+   | `Space` | Pause / resume |
+   | `+` / `-` | Volume up / down |
+   | `?` | Show all keybindings |
+
+4. **Done!**
+
+   You're listening. Next steps:
+   - [Optimize for your headphones](/quick-start/headphone-quick/)
+   - [Add your first plugin](/quick-start/first-plugin/)
+
+</Steps>
+
+<Aside type="tip">
+On subsequent launches, just run `sotf_player_tui` — your library and settings are saved automatically.
+</Aside>

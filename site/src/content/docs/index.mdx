@@ -1,0 +1,34 @@
+---
+title: SotF Documentation
+description: Your room, your headphones, your sound — scientifically optimized.
+template: splash
+hero:
+  tagline: Free, open-source audio optimization for audiophiles and home theater enthusiasts.
+  actions:
+    - text: Quick Start
+      link: /quick-start/play-tui/
+      icon: right-arrow
+      variant: primary
+    - text: Plugin Reference
+      link: /reference/plugins/eq/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Choose your path
+
+<CardGrid>
+  <Card title="Quick Start" icon="rocket">
+    Get playing in 2 minutes. Visual, step-by-step cards — no walls of text.
+  </Card>
+  <Card title="How-To Guides" icon="open-book">
+    Task-oriented walkthroughs: headphone EQ, room correction, surround upmixing, and more.
+  </Card>
+  <Card title="Reference" icon="setting">
+    Every plugin, parameter, keybinding, and CLI flag documented.
+  </Card>
+  <Card title="Concepts" icon="information">
+    Deep dives into psychoacoustics, optimization algorithms, room acoustics, and engine architecture.
+  </Card>
+</CardGrid>
