@@ -218,13 +218,15 @@ impl Oversampler {
             buffer[dst_start..dst_start + frames_to_copy * nc]
                 .copy_from_slice(&self.residual_out[src_start..src_start + frames_to_copy * nc]);
 
-            // Compact the residual_out buffer if it was fully consumed
-            if frames_to_copy == frames_ready {
+            self.residual_out_frames -= frames_to_copy;
+            if self.residual_out_frames == 0 {
                 self.residual_out_read = 0;
-                self.residual_out_frames = 0;
             } else {
-                self.residual_out_read += frames_to_copy;
-                self.residual_out_frames -= frames_to_copy;
+                // Compact: move remaining data to front so write_offset stays consistent
+                let remaining = self.residual_out_frames * nc;
+                let src_start = (self.residual_out_read + frames_to_copy) * nc;
+                self.residual_out.copy_within(src_start..src_start + remaining, 0);
+                self.residual_out_read = 0;
             }
             frames_written += frames_to_copy;
         }

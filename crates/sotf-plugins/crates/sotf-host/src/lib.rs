@@ -9,6 +9,7 @@ pub mod auto_gain;
 pub mod auto_makeup;
 pub mod automation;
 pub mod custom_views;
+pub mod design_system;
 pub mod detector;
 pub mod dynamics_core;
 pub mod envelope;

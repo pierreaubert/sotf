@@ -167,6 +167,14 @@ impl ControlSpec {
         }
     }
 
+    pub const fn choice(param_index: usize) -> Self {
+        Self {
+            param_index,
+            control_type: ControlType::Selector,
+            read_only: false,
+        }
+    }
+
     pub const fn meter(min_db: f64, max_db: f64) -> Self {
         Self {
             // param_index is unused for meters — they read from viz_data

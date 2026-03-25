@@ -12,34 +12,21 @@
 //! 5. Distribute leftover space to Main (flex)
 //! 6. Determine internal adaptations (slider height, group direction, viz visibility)
 
+use crate::design_system::DesignSystem;
 use crate::plugin_layout::{ColumnConstraint, ColumnRole};
 
 // ============================================================================
-// Thresholds
+// Legacy constants — kept for backward compatibility. New code should use
+// DesignSystem::neutral().layout.* instead.
 // ============================================================================
 
-/// Below this width, switch to vertical orientation (mobile).
 pub const VERTICAL_THRESHOLD: f32 = 400.0;
-
-/// Below this width, stack control groups vertically instead of side-by-side.
 pub const GROUP_STACK_THRESHOLD: f32 = 500.0;
-
-/// Below this width, use compact slider height (120px instead of 180px).
 pub const COMPACT_SLIDER_THRESHOLD: f32 = 700.0;
-
-/// Below this width, hide visualizations.
 pub const HIDE_VIZ_THRESHOLD: f32 = 600.0;
-
-/// Below this main-column width, use compact (Xs) knobs instead of Sm.
 pub const COMPACT_KNOB_THRESHOLD: f32 = 400.0;
-
-/// Above this main-column width, use medium (Md) knobs instead of Sm.
 pub const LARGE_KNOB_THRESHOLD: f32 = 800.0;
-
-/// Standard slider height in pixels.
 pub const SLIDER_HEIGHT_NORMAL: f32 = 180.0;
-
-/// Compact slider height in pixels.
 pub const SLIDER_HEIGHT_COMPACT: f32 = 120.0;
 
 // ============================================================================
@@ -143,14 +130,25 @@ fn tab_name_for_role(role: ColumnRole) -> &'static str {
     }
 }
 
-/// Solve the layout for the given constraints and available space.
+/// Solve the layout using the neutral design system (backward-compat wrapper).
+pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> SolvedLayout {
+    solve_layout_with_ds(constraints, available_width, &DesignSystem::neutral())
+}
+
+/// Solve the layout for the given constraints, available space, and design system.
 ///
 /// Returns a `SolvedLayout` describing which columns are visible, which
 /// became tabs, and what internal adaptations to apply.
-pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> SolvedLayout {
+pub fn solve_layout_with_ds(
+    constraints: &[ColumnConstraint],
+    available_width: f32,
+    ds: &DesignSystem,
+) -> SolvedLayout {
+    let lt = &ds.layout;
+
     // 1. Vertical mode: all collapsible columns become tabs
-    if available_width < VERTICAL_THRESHOLD {
-        return solve_vertical(constraints, available_width);
+    if available_width < lt.vertical_threshold {
+        return solve_vertical(constraints, available_width, ds);
     }
 
     // 2. Find the Main column (never collapses)
@@ -197,46 +195,42 @@ pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> S
 
     // 6. Build final column order: Config (left) → Main (center) → Diagnostic → Output (right)
     let mut columns = Vec::with_capacity(visible.len() + 1);
-    // Config goes first (left)
     if let Some(pos) = visible.iter().position(|c| c.role == ColumnRole::Config) {
         columns.push(visible[pos]);
     }
-    // Main always present
     columns.push(SolvedColumn {
         role: ColumnRole::Main,
         width: main_width,
     });
-    // Diagnostic (if visible) between main and output
     if let Some(pos) = visible
         .iter()
         .position(|c| c.role == ColumnRole::Diagnostic)
     {
         columns.push(visible[pos]);
     }
-    // Output goes last (right)
     if let Some(pos) = visible.iter().position(|c| c.role == ColumnRole::Output) {
         columns.push(visible[pos]);
     }
 
     // 7. Internal adaptations — use main_width (not available_width) for decisions
     //    about main-column content, since sidebars consume part of available_width.
-    let group_direction = if main_width < GROUP_STACK_THRESHOLD {
+    let group_direction = if main_width < lt.group_stack_threshold {
         Direction::Column
     } else {
         Direction::Row
     };
 
-    let slider_height = if main_width < COMPACT_SLIDER_THRESHOLD {
-        SLIDER_HEIGHT_COMPACT
+    let slider_height = if main_width < lt.compact_slider_threshold {
+        lt.slider_height_compact
     } else {
-        SLIDER_HEIGHT_NORMAL
+        lt.slider_height_normal
     };
 
-    let show_visualizations = main_width >= HIDE_VIZ_THRESHOLD;
+    let show_visualizations = main_width >= lt.hide_viz_threshold;
 
-    let knob_size = if main_width < COMPACT_KNOB_THRESHOLD {
+    let knob_size = if main_width < lt.compact_knob_threshold {
         KnobSize::Xs
-    } else if main_width >= LARGE_KNOB_THRESHOLD {
+    } else if main_width >= lt.large_knob_threshold {
         KnobSize::Md
     } else {
         KnobSize::Sm
@@ -254,7 +248,11 @@ pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> S
 }
 
 /// Vertical mode (mobile): only Main visible, everything else becomes tabs.
-fn solve_vertical(constraints: &[ColumnConstraint], available_width: f32) -> SolvedLayout {
+fn solve_vertical(
+    constraints: &[ColumnConstraint],
+    available_width: f32,
+    ds: &DesignSystem,
+) -> SolvedLayout {
     let main_min = constraints
         .iter()
         .find(|c| c.role == ColumnRole::Main)
@@ -277,7 +275,7 @@ fn solve_vertical(constraints: &[ColumnConstraint], available_width: f32) -> Sol
         collapsed_tabs: collapsed,
         orientation: Orientation::Vertical,
         group_direction: Direction::Column,
-        slider_height: SLIDER_HEIGHT_COMPACT,
+        slider_height: ds.layout.slider_height_compact,
         show_visualizations: false,
         knob_size: KnobSize::Xs,
     }

@@ -7,6 +7,7 @@
 //! Used for snapshot testing: 33 plugins × 10 device profiles = ~330 JSON snapshots.
 //! Any layout regression at any screen size produces a diff.
 
+use crate::design_system::DesignSystem;
 use crate::layout_solver::{self, Direction, KnobSize, Orientation};
 use crate::param_specs::ParamSpec;
 use crate::plugin_layout::{
@@ -25,6 +26,13 @@ use serde::Serialize;
 pub struct PluginRenderPlan {
     pub plugin_type: String,
     pub width: f32,
+
+    // Design system identity
+    pub design_language: String,
+    pub corner_radius_md: f32,
+    pub min_touch_target: f32,
+    pub toggle_variant: String,
+    pub label_position: String,
 
     // Solved layout decisions
     pub orientation: String,
@@ -89,10 +97,16 @@ pub struct DynamicSectionPlan {
 // Builder
 // ============================================================================
 
-/// Build a render plan for a plugin at a given available width.
-///
-/// Pure function — no framework dependencies, fully deterministic.
+/// Build a render plan for a plugin at a given width, using the neutral design system.
 pub fn build_render_plan<P: PluginParamDef>(available_width: f32) -> PluginRenderPlan {
+    build_render_plan_with_ds::<P>(available_width, &DesignSystem::neutral())
+}
+
+/// Build a render plan for a plugin at a given width and design system.
+pub fn build_render_plan_with_ds<P: PluginParamDef>(
+    available_width: f32,
+    ds: &DesignSystem,
+) -> PluginRenderPlan {
     let layout = P::LAYOUT.unwrap_or_else(|| {
         panic!(
             "plugin '{}' must have a LAYOUT to build a render plan",
@@ -100,7 +114,7 @@ pub fn build_render_plan<P: PluginParamDef>(available_width: f32) -> PluginRende
         )
     });
     let params = P::PARAMS;
-    build_render_plan_from_layout(P::PLUGIN_TYPE_KEY, params, layout, available_width)
+    build_render_plan_from_layout(P::PLUGIN_TYPE_KEY, params, layout, available_width, ds)
 }
 
 /// Build a render plan from raw layout + params (for plugins not using PluginParamDef).
@@ -109,12 +123,19 @@ pub fn build_render_plan_from_layout(
     params: &[ParamSpec],
     layout: &PluginLayout,
     available_width: f32,
+    ds: &DesignSystem,
 ) -> PluginRenderPlan {
-    let solved = layout_solver::solve_layout(layout.column_constraints, available_width);
+    let solved =
+        layout_solver::solve_layout_with_ds(layout.column_constraints, available_width, ds);
 
     PluginRenderPlan {
         plugin_type: plugin_type.to_string(),
         width: available_width,
+        design_language: ds.language.as_str().to_string(),
+        corner_radius_md: ds.corners.md,
+        min_touch_target: ds.interaction.min_touch_target,
+        toggle_variant: format_toggle_variant(&ds.toggle_variant),
+        label_position: format_label_position(&ds.label_position),
         orientation: format_orientation(solved.orientation),
         knob_size: format_knob_size(solved.knob_size),
         group_direction: format_direction(solved.group_direction),
@@ -267,6 +288,24 @@ fn format_control_type(ct: &ControlType) -> String {
     }
 }
 
+fn format_toggle_variant(tv: &crate::design_system::ToggleVariant) -> String {
+    use crate::design_system::ToggleVariant;
+    match tv {
+        ToggleVariant::Capsule => "capsule".to_string(),
+        ToggleVariant::ThumbOnTrack => "thumb_on_track".to_string(),
+        ToggleVariant::Segmented => "segmented".to_string(),
+        ToggleVariant::Pill => "pill".to_string(),
+    }
+}
+
+fn format_label_position(lp: &crate::design_system::LabelPosition) -> String {
+    use crate::design_system::LabelPosition;
+    match lp {
+        LabelPosition::Below => "below".to_string(),
+        LabelPosition::Right => "right".to_string(),
+    }
+}
+
 fn format_viz_position(pos: &VizPosition) -> String {
     match pos {
         VizPosition::BelowGroup(title) => format!("below:{title}"),
@@ -346,7 +385,7 @@ mod tests {
     #[test]
     fn test_build_plan_wide() {
         let plan =
-            build_render_plan_from_layout("test_plugin", &TEST_PARAMS, &TEST_LAYOUT, 1200.0);
+            build_render_plan_from_layout("test_plugin", &TEST_PARAMS, &TEST_LAYOUT, 1200.0, &DesignSystem::neutral());
 
         assert_eq!(plan.plugin_type, "test_plugin");
         assert_eq!(plan.width, 1200.0);
@@ -365,7 +404,7 @@ mod tests {
     #[test]
     fn test_build_plan_vertical_mode() {
         let plan =
-            build_render_plan_from_layout("test_plugin", &TEST_PARAMS, &TEST_LAYOUT, 350.0);
+            build_render_plan_from_layout("test_plugin", &TEST_PARAMS, &TEST_LAYOUT, 350.0, &DesignSystem::neutral());
 
         assert_eq!(plan.orientation, "vertical");
         assert_eq!(plan.knob_size, "xs");
@@ -390,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_build_plan_with_viz() {
-        let plan = build_render_plan_from_layout("comp", &TEST_PARAMS, &VIZ_LAYOUT, 1000.0);
+        let plan = build_render_plan_from_layout("comp", &TEST_PARAMS, &VIZ_LAYOUT, 1000.0, &DesignSystem::neutral());
 
         assert_eq!(plan.viz_slots.len(), 1);
         assert_eq!(plan.viz_slots[0].viz_type, "transfer_curve");
@@ -418,7 +457,7 @@ mod tests {
 
     #[test]
     fn test_build_plan_with_dynamic_section() {
-        let plan = build_render_plan_from_layout("mb_comp", &TEST_PARAMS, &DS_LAYOUT, 1000.0);
+        let plan = build_render_plan_from_layout("mb_comp", &TEST_PARAMS, &DS_LAYOUT, 1000.0, &DesignSystem::neutral());
 
         assert_eq!(plan.dynamic_sections.len(), 1);
         assert_eq!(plan.dynamic_sections[0].instance_name, "Band");
@@ -444,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_meter_control_plan() {
-        let plan = build_render_plan_from_layout("test", &TEST_PARAMS, &METER_LAYOUT, 1000.0);
+        let plan = build_render_plan_from_layout("test", &TEST_PARAMS, &METER_LAYOUT, 1000.0, &DesignSystem::neutral());
 
         let meter = &plan.main_groups[0].controls[0];
         assert_eq!(meter.param_name, "(meter)");
