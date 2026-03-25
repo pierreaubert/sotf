@@ -59,21 +59,38 @@ impl ServerCertVerifier for TofuVerifier {
 
     fn verify_tls12_signature(
         &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, Error> {
-        // Accept all signatures — we trust based on fingerprint, not CA chain
-        Ok(HandshakeSignatureValid::assertion())
+        // TOFU replaces CA-chain validation, NOT signature verification.
+        // We must still verify that the server possesses the private key
+        // matching the certificate — otherwise an attacker who captured the
+        // certificate (sent in the clear during handshake) could MITM.
+        let provider = rustls::crypto::CryptoProvider::get_default()
+            .ok_or_else(|| Error::General("no crypto provider installed".into()))?;
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &provider.signature_verification_algorithms,
+        )
     }
 
     fn verify_tls13_signature(
         &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, Error> {
-        Ok(HandshakeSignatureValid::assertion())
+        let provider = rustls::crypto::CryptoProvider::get_default()
+            .ok_or_else(|| Error::General("no crypto provider installed".into()))?;
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &provider.signature_verification_algorithms,
+        )
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
