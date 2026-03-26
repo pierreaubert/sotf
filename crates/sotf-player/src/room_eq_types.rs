@@ -204,102 +204,143 @@ impl RoomEqMeasurementsFile {
         room_config: autoeq::RoomConfig,
         base_dir: Option<&std::path::Path>,
     ) -> Vec<ChannelMeasurement> {
+        let resolve_path = |rel: &str| -> String {
+            match base_dir {
+                Some(dir) => {
+                    let abs = dir.join(rel);
+                    if abs.exists() {
+                        abs.to_string_lossy().to_string()
+                    } else {
+                        rel.to_string()
+                    }
+                }
+                None => rel.to_string(),
+            }
+        };
+
         room_config
             .speakers
             .into_iter()
             .enumerate()
             .filter_map(|(idx, (channel_name, speaker_config))| {
-                let inline = match speaker_config {
+                // Extract the primary MeasurementRef from the speaker config
+                let measurement_ref = match speaker_config {
                     autoeq::SpeakerConfig::Single(source) => match source {
-                        autoeq::MeasurementSource::Single(s) => {
-                            s.measurement.inline_data().cloned()
+                        autoeq::MeasurementSource::Single(s) => Some(s.measurement),
+                        autoeq::MeasurementSource::Multiple(m) => {
+                            m.measurements.into_iter().next()
                         }
-                        autoeq::MeasurementSource::Multiple(m) => m
-                            .measurements
-                            .first()
-                            .and_then(|r| r.inline_data())
-                            .cloned(),
                         autoeq::MeasurementSource::InMemory(_)
                         | autoeq::MeasurementSource::InMemoryMultiple(_) => None,
                     },
-                    _ => None,
+                    _ => None, // Groups not yet supported
                 };
 
-                inline.map(|data| {
-                    let resolve = |rel: &str| -> String {
-                        match base_dir {
-                            Some(dir) => {
-                                let abs = dir.join(rel);
-                                if abs.exists() {
-                                    abs.to_string_lossy().to_string()
-                                } else {
-                                    rel.to_string()
-                                }
-                            }
-                            None => rel.to_string(),
-                        }
-                    };
+                let measurement_ref = measurement_ref?;
 
-                    let wav_path = data.wav_path.as_deref().map(&resolve);
-                    let csv_path = data.csv_path.as_deref().map(&resolve);
+                // Build ChannelMeasurement from any MeasurementRef variant
+                let (frequencies, magnitude_db, phase_deg, wav_path, csv_path) =
+                    Self::load_measurement_ref(&measurement_ref, &resolve_path);
 
-                    let (frequencies, magnitude_db, phase_deg) = if data.frequencies.is_empty() {
-                        // Try loading from CSV
-                        if let Some(ref csv) = csv_path {
-                            let csv_full = std::path::PathBuf::from(csv);
-                            if let Ok(curve) = autoeq::read::read_curve_from_csv(&csv_full) {
-                                (
-                                    curve.freq.iter().map(|&f| f as f32).collect(),
-                                    curve.spl.iter().map(|&s| s as f32).collect(),
-                                    curve
-                                        .phase
-                                        .map(|p| p.iter().map(|&v| v as f32).collect())
-                                        .unwrap_or_default(),
-                                )
-                            } else {
-                                (Vec::new(), Vec::new(), Vec::new())
-                            }
-                        } else {
-                            (Vec::new(), Vec::new(), Vec::new())
-                        }
-                    } else {
-                        (
-                            data.frequencies.iter().map(|&f| f as f32).collect(),
-                            data.magnitude_db.iter().map(|&m| m as f32).collect(),
-                            data.phase_deg
-                                .unwrap_or_default()
-                                .iter()
-                                .map(|&p| p as f32)
-                                .collect(),
-                        )
-                    };
-
-                    ChannelMeasurement {
-                        channel_name,
-                        measurement: RecordingResult {
-                            channel: idx,
-                            wav_path,
-                            csv_path,
-                            frequencies,
-                            magnitude_db,
-                            phase_deg,
-                            impulse_response: None,
-                            impulse_time_ms: None,
-                            excess_group_delay_ms: None,
-                            thd_percent: None,
-                            harmonic_distortion_db: None,
-                            rt60_ms: None,
-                            clarity_c50_db: None,
-                            clarity_c80_db: None,
-                            spectrogram_db: None,
-                        },
-                        is_group: false,
-                        group_drivers: Vec::new(),
-                    }
+                Some(ChannelMeasurement {
+                    channel_name,
+                    measurement: RecordingResult {
+                        channel: idx,
+                        wav_path,
+                        csv_path,
+                        frequencies,
+                        magnitude_db,
+                        phase_deg,
+                        impulse_response: None,
+                        impulse_time_ms: None,
+                        excess_group_delay_ms: None,
+                        thd_percent: None,
+                        harmonic_distortion_db: None,
+                        rt60_ms: None,
+                        clarity_c50_db: None,
+                        clarity_c80_db: None,
+                        spectrogram_db: None,
+                    },
+                    is_group: false,
+                    group_drivers: Vec::new(),
+                    multi_mic_measurements: Vec::new(),
                 })
             })
             .filter(|ch| !ch.measurement.frequencies.is_empty())
             .collect()
+    }
+
+    /// Load measurement data from any MeasurementRef variant (inline, named path, or bare path).
+    /// Returns (frequencies, magnitude_db, phase_deg, wav_path, csv_path).
+    fn load_measurement_ref(
+        measurement_ref: &autoeq::read::MeasurementRef,
+        resolve_path: &dyn Fn(&str) -> String,
+    ) -> (Vec<f32>, Vec<f32>, Vec<f32>, Option<String>, Option<String>) {
+        match measurement_ref {
+            autoeq::read::MeasurementRef::Inline(data) => {
+                let wav_path = data.wav_path.as_deref().map(resolve_path);
+                let csv_path = data.csv_path.as_deref().map(resolve_path);
+
+                if data.frequencies.is_empty() {
+                    // Inline has no data — try loading from referenced CSV
+                    if let Some(ref csv) = csv_path {
+                        if let Some(loaded) = Self::load_curve_from_csv(csv) {
+                            return (loaded.0, loaded.1, loaded.2, wav_path, csv_path);
+                        }
+                    }
+                    (Vec::new(), Vec::new(), Vec::new(), wav_path, csv_path)
+                } else {
+                    (
+                        data.frequencies.iter().map(|&f| f as f32).collect(),
+                        data.magnitude_db.iter().map(|&m| m as f32).collect(),
+                        data.phase_deg
+                            .as_ref()
+                            .map(|p| p.iter().map(|&v| v as f32).collect())
+                            .unwrap_or_default(),
+                        wav_path,
+                        csv_path,
+                    )
+                }
+            }
+            autoeq::read::MeasurementRef::Named { path, .. } => {
+                let csv_str = resolve_path(&path.to_string_lossy());
+                let loaded = Self::load_curve_from_csv(&csv_str);
+                let (freq, mag, phase) = loaded.unwrap_or_default();
+                (freq, mag, phase, None, Some(csv_str))
+            }
+            autoeq::read::MeasurementRef::Path(path) => {
+                let csv_str = resolve_path(&path.to_string_lossy());
+                let loaded = Self::load_curve_from_csv(&csv_str);
+                let (freq, mag, phase) = loaded.unwrap_or_default();
+                (freq, mag, phase, None, Some(csv_str))
+            }
+        }
+    }
+
+    /// Load a curve from a CSV file, returning (frequencies, magnitude_db, phase_deg).
+    fn load_curve_from_csv(csv_path: &str) -> Option<(Vec<f32>, Vec<f32>, Vec<f32>)> {
+        let path = std::path::PathBuf::from(csv_path);
+        match autoeq::read::read_curve_from_csv(&path) {
+            Ok(curve) => {
+                log::info!(
+                    "Loaded {} frequency points from CSV: {}",
+                    curve.freq.len(),
+                    csv_path
+                );
+                Some((
+                    curve.freq.iter().map(|&f| f as f32).collect(),
+                    curve.spl.iter().map(|&s| s as f32).collect(),
+                    curve
+                        .phase
+                        .map(|p| p.iter().map(|&v| v as f32).collect())
+                        .unwrap_or_default(),
+                ))
+            }
+            Err(e) => {
+                log::warn!("Failed to load CSV '{}': {}", csv_path, e);
+                None
+            }
+        }
     }
 }
 
@@ -314,6 +355,9 @@ pub struct ChannelMeasurement {
     pub is_group: bool,
     /// Individual driver measurements (for multi-driver)
     pub group_drivers: Vec<RecordingResult>,
+    /// Additional mic measurements for multi-position optimization
+    #[serde(default)]
+    pub multi_mic_measurements: Vec<RecordingResult>,
 }
 
 /// Speaker configuration type (duplicated from autoeq::types for UI use)

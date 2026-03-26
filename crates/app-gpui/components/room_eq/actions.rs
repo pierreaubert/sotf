@@ -224,112 +224,35 @@ impl PlayerView {
                             }
                             let has_multi_position_data = !multi_position_counts.is_empty();
 
-                            // Convert RoomConfig speakers to ChannelMeasurement
-                            let mut channel_measurements: Vec<ChannelMeasurement> = room_config
-                                .speakers
-                                .into_iter()
-                                .enumerate()
-                                .filter_map(|(idx, (channel_name, speaker_config))| {
-                                    // Extract inline measurement from speaker config
-                                    let inline = match speaker_config {
-                                        autoeq::SpeakerConfig::Single(source) => match source {
-                                            autoeq::MeasurementSource::Single(s) => {
-                                                s.measurement.inline_data().cloned()
-                                            }
-                                            autoeq::MeasurementSource::Multiple(m) => {
-                                                m.measurements.first().and_then(|r| r.inline_data()).cloned()
-                                            }
-                                            autoeq::MeasurementSource::InMemory(_)
-                                            | autoeq::MeasurementSource::InMemoryMultiple(_) => {
-                                                None
-                                            }
-                                        },
-                                        _ => None, // Groups not yet supported
-                                    };
+                            // Use shared sotf-player parsing to convert RoomConfig → ChannelMeasurement.
+                            // Use shared sotf-player parsing — handles all MeasurementRef
+                            // variants (Inline, Named, Path) and both RoomConfig / legacy formats.
+                            let mut channel_measurements: Vec<ChannelMeasurement> =
+                                match RoomEqMeasurementsFile::load_from_json(&json, file_dir.as_deref()) {
+                                    Ok(channels) => channels,
+                                    Err(e) => {
+                                        log::error!("Failed to parse measurements: {}", e);
+                                        state_entity.update(cx, |state, _| {
+                                            state.app.measurement_state.room_eq_state.error_message =
+                                                Some(format!("Failed to parse measurements: {}", e));
+                                        });
+                                        return;
+                                    }
+                                };
 
-                                    inline.map(|inline_data| {
-                                        // Check if inline data is empty - if so, load from CSV
-                                        let (frequencies, magnitude_db, phase_deg) = if inline_data.frequencies.is_empty() {
-                                            // Try to load from CSV file using autoeq's reader
-                                            if let Some(csv_path) = &inline_data.csv_path {
-                                                let csv_full_path = file_dir
-                                                    .as_ref()
-                                                    .map(|d| d.join(csv_path))
-                                                    .unwrap_or_else(|| std::path::PathBuf::from(csv_path));
-
-                                                if let Ok(curve) = autoeq::read::read_curve_from_csv(&csv_full_path) {
-                                                    log::info!(
-                                                        "Loaded {} frequency points from CSV for channel '{}'",
-                                                        curve.freq.len(),
-                                                        channel_name
-                                                    );
-                                                    (
-                                                        curve.freq.iter().map(|&f| f as f32).collect(),
-                                                        curve.spl.iter().map(|&s| s as f32).collect(),
-                                                        curve.phase.map(|p| p.iter().map(|&v| v as f32).collect()).unwrap_or_default(),
-                                                    )
-                                                } else {
-                                                    log::warn!("Failed to load CSV for channel '{}': {:?}", channel_name, csv_full_path);
-                                                    (Vec::new(), Vec::new(), Vec::new())
-                                                }
-                                            } else {
-                                                log::warn!("No CSV path and empty inline data for channel '{}'", channel_name);
-                                                (Vec::new(), Vec::new(), Vec::new())
-                                            }
-                                        } else {
-                                            // Use inline data
-                                            (
-                                                inline_data.frequencies.iter().map(|&f| f as f32).collect(),
-                                                inline_data.magnitude_db.iter().map(|&m| m as f32).collect(),
-                                                inline_data.phase_deg.unwrap_or_default().iter().map(|&p| p as f32).collect(),
-                                            )
-                                        };
-
-                                        // Try to load extended metrics from CSV file
-                                        let extended_metrics = crate::components::migration::load_extended_metrics(
-                                            inline_data.csv_path.as_deref(),
-                                            file_dir.as_deref(),
-                                        );
-
-                                        let (thd_percent, rt60_ms, clarity_c50_db, clarity_c80_db, excess_group_delay_ms) =
-                                            if let Some(metrics) = extended_metrics {
-                                                (
-                                                    metrics.thd_percent,
-                                                    metrics.rt60_ms,
-                                                    metrics.clarity_c50_db,
-                                                    metrics.clarity_c80_db,
-                                                    metrics.excess_group_delay_ms,
-                                                )
-                                            } else {
-                                                (None, None, None, None, None)
-                                            };
-
-                                        ChannelMeasurement {
-                                            channel_name: channel_name.clone(),
-                                            measurement: RecordingResult {
-                                                channel: idx,
-                                                wav_path: inline_data.wav_path,
-                                                csv_path: inline_data.csv_path,
-                                                frequencies,
-                                                magnitude_db,
-                                                phase_deg,
-                                                impulse_response: None,
-                                                impulse_time_ms: None,
-                                                excess_group_delay_ms,
-                                                thd_percent,
-                                                harmonic_distortion_db: None,
-                                                rt60_ms,
-                                                clarity_c50_db,
-                                                clarity_c80_db,
-                                                spectrogram_db: None,
-                                            },
-                                            is_group: false,
-                                            group_drivers: Vec::new(),
-                                            multi_mic_measurements: Vec::new(),
-                                        }
-                                    })
-                                })
-                                .collect();
+                            // Enrich with extended metrics (THD, RT60, C50, C80) from CSV
+                            for ch in &mut channel_measurements {
+                                if let Some(metrics) = crate::components::migration::load_extended_metrics(
+                                    ch.measurement.csv_path.as_deref(),
+                                    file_dir.as_deref(),
+                                ) {
+                                    ch.measurement.thd_percent = metrics.thd_percent;
+                                    ch.measurement.rt60_ms = metrics.rt60_ms;
+                                    ch.measurement.clarity_c50_db = metrics.clarity_c50_db;
+                                    ch.measurement.clarity_c80_db = metrics.clarity_c80_db;
+                                    ch.measurement.excess_group_delay_ms = metrics.excess_group_delay_ms;
+                                }
+                            }
 
                             // Filter out channels with empty frequency data (can happen with
                             // older RoomConfig versions where CSV paths are unresolvable)

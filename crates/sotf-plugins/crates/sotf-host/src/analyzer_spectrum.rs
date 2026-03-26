@@ -259,8 +259,14 @@ impl Plugin for SpectrumAnalyzerPlugin {
         self.rebuild_cached_parameters();
         Ok(())
     }
-    fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
-        None
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        match id.as_str() {
+            "smoothing" => Some(ParameterValue::Float(self.config.smoothing)),
+            "num_bins" => Some(ParameterValue::Int(self.config.num_bins as i32)),
+            "min_freq" => Some(ParameterValue::Float(self.config.min_freq)),
+            "max_freq" => Some(ParameterValue::Float(self.config.max_freq)),
+            _ => None,
+        }
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;

@@ -839,6 +839,9 @@ impl Plugin for PndPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let num_frames = context.num_frames;
+        if num_frames == 0 {
+            return Ok(0);
+        }
         let total_input_samples = num_frames * self.channels;
 
         if self.phase_vocoder {

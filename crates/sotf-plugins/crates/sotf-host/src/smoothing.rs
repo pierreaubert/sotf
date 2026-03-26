@@ -24,7 +24,7 @@ impl Smoother {
     }
 
     fn calculate_coeff(time_ms: f32, sample_rate: u32) -> f32 {
-        if time_ms <= 0.0 {
+        if time_ms <= 0.0 || sample_rate == 0 {
             0.0
         } else {
             // Standard one-pole coeff: e^(-1 / (tau * fs))
@@ -290,5 +290,29 @@ mod tests {
         }
         assert!((s.advance() - 1000.0).abs() < 1e-4);
         assert!((s.advance() - 1000.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_smoother_sample_rate_zero_no_panic() {
+        // sample_rate=0 should produce coeff=0 (instant jump, no smoothing)
+        let mut s = Smoother::new(1.0, 50.0, 0);
+        assert_eq!(s.current(), 1.0);
+        s.set_target(2.0);
+        // With coeff=0, set_target jumps immediately
+        assert_eq!(s.current(), 2.0);
+        // advance should also be stable
+        let val = s.advance();
+        assert_eq!(val, 2.0);
+        assert!(!val.is_nan());
+        assert!(!val.is_infinite());
+    }
+
+    #[test]
+    fn test_smoother_set_time_sample_rate_zero() {
+        let mut s = Smoother::new(1.0, 10.0, 48000);
+        s.set_time(10.0, 0);
+        s.set_target(5.0);
+        // coeff=0 → instant jump
+        assert_eq!(s.current(), 5.0);
     }
 }

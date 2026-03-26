@@ -236,8 +236,10 @@ pub enum ThreadEvent {
     PlaybackDrained,
     /// Playback buffer underrun count update
     PlaybackUnderrun(u64),
-    /// Processing error
+    /// Processing error (fatal — sets PlaybackState::Stopped)
     ProcessingError(String),
+    /// Non-fatal processing warning (sets last_error but does NOT change playback state)
+    ProcessingWarning(String),
     /// Thread panicked
     ThreadPanic(String),
     /// Position update

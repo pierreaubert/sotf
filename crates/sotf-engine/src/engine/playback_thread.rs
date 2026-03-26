@@ -700,16 +700,36 @@ fn run_playback_thread(
                                         new_channels,
                                         e
                                     );
-                                    if let Err(resume_err) = stream.play() {
+                                    // Attempt to resume old stream
+                                    let resume_result = stream.play();
+                                    if let Err(resume_err) = resume_result {
                                         log::error!(
-                                            "[Playback Thread] Failed to resume old stream: {}",
+                                            "[Playback Thread] Failed to resume old stream after rebuild failure: {}. \
+                                             Playback is dead, exiting playback loop.",
                                             resume_err
                                         );
+                                        event_tx
+                                            .send(ThreadEvent::ProcessingError(format!(
+                                                "Playback stream unrecoverable: rebuild failed ({}) \
+                                                 and old stream failed to resume ({})",
+                                                e, resume_err
+                                            )))
+                                            .ok();
+                                        break;
                                     }
+                                    // Resume succeeded — the callback stall detector will
+                                    // catch the stream if it stops producing audio.
+                                    // Use ProcessingWarning (not ProcessingError) so the
+                                    // manager records the issue without setting Stopped —
+                                    // the old stream is still playing.
+                                    log::warn!(
+                                        "[Playback Thread] Falling back to old stream ({} channels) after rebuild failure",
+                                        channels
+                                    );
                                     event_tx
-                                        .send(ThreadEvent::ProcessingError(format!(
-                                            "Playback stream rebuild failed for {} channels: {}",
-                                            new_channels, e
+                                        .send(ThreadEvent::ProcessingWarning(format!(
+                                            "Playback stream rebuild failed for {} channels, falling back to previous configuration",
+                                            new_channels
                                         )))
                                         .ok();
                                 }

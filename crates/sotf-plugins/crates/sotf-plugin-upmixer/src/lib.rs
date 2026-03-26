@@ -2269,7 +2269,9 @@ impl Plugin for UpmixerPlugin {
             Some(ParameterValue::Float(self.subharmonic_release_ms))
         }
         // Decorrelation parameters
-        else if id == &self.param_decorrelation_lfo_rate_hz {
+        else if id == &self.param_decorrelation_mode {
+            Some(ParameterValue::Int(self.decorrelation_mode as i32))
+        } else if id == &self.param_decorrelation_lfo_rate_hz {
             Some(ParameterValue::Float(self.decorrelation_lfo_rate_hz))
         } else if id == &self.param_velvet_noise_duration_ms {
             Some(ParameterValue::Float(self.velvet_noise_duration_ms))

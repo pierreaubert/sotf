@@ -318,7 +318,8 @@ impl InPlacePlugin for DelayPlugin {
         let fb = self.feedback_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
 
-        let lfo_active = self.lfo_rate_hz > 0.0 && self.lfo_depth_ms > 0.0;
+        let lfo_active =
+            self.lfo_rate_hz > 0.0 && self.lfo_depth_ms > 0.0 && self.sample_rate > 0;
         let lfo_phase_inc = if lfo_active {
             self.lfo_rate_hz / self.sample_rate as f32
         } else {

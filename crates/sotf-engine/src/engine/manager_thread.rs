@@ -757,6 +757,12 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             new_state.last_error = Some(err);
             state.store(Arc::new(new_state));
         }
+        ThreadEvent::ProcessingWarning(warning) => {
+            log::warn!("[Manager Thread] Processing warning: {}", warning);
+            let mut new_state = (**state.load()).clone();
+            new_state.last_error = Some(warning);
+            state.store(Arc::new(new_state));
+        }
         ThreadEvent::ThreadPanic(thread_name) => {
             log::debug!("[Manager Thread] Thread panicked: {}", thread_name);
             let mut new_state = (**state.load()).clone();
@@ -770,18 +776,29 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
                 let mut new_state = (**current).clone();
                 // Compensate for plugin chain latency: the decoder position
                 // is ahead of actual playback by the total pipeline latency.
-                let latency_sec = if new_state.sample_rate > 0 {
-                    new_state.plugin_latency_samples as f64 / new_state.sample_rate as f64
-                } else {
-                    0.0
-                };
+                // When processing is bypassed, audio passes through without
+                // plugin processing, so effective latency is 0.
+                let latency_sec =
+                    if new_state.sample_rate > 0 && !new_state.processing_bypassed {
+                        new_state.plugin_latency_samples as f64 / new_state.sample_rate as f64
+                    } else {
+                        0.0
+                    };
                 new_state.position = (position - latency_sec).max(0.0);
                 state.store(Arc::new(new_state));
             }
         }
         ThreadEvent::PluginLatencyUpdate(latency_samples) => {
             let mut new_state = (**state.load()).clone();
+            let old_latency = new_state.plugin_latency_samples;
             new_state.plugin_latency_samples = latency_samples;
+            // Adjust displayed position to compensate for the latency delta,
+            // preventing a visible position jump when plugins change mid-stream.
+            if new_state.sample_rate > 0 && old_latency != latency_samples {
+                let delta_sec = (latency_samples as f64 - old_latency as f64)
+                    / new_state.sample_rate as f64;
+                new_state.position = (new_state.position - delta_sec).max(0.0);
+            }
             state.store(Arc::new(new_state));
         }
         ThreadEvent::SeekComplete => {
@@ -1986,5 +2003,182 @@ mod tests {
 
         handle_thread_event(ThreadEvent::PlaybackChannelsChanged(2), &state);
         assert_eq!(state.load().num_channels, 2);
+    }
+
+    #[test]
+    fn test_latency_update_adjusts_position_to_prevent_jump() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            position: 10.0,
+            sample_rate: 48000,
+            plugin_latency_samples: 4800, // 100ms
+            ..AudioEngineState::default()
+        }));
+
+        // Latency increases from 4800 to 9600 samples (100ms → 200ms).
+        // Position should shift back by 100ms (the delta) so the displayed
+        // position doesn't jump when the next PositionUpdate arrives.
+        handle_thread_event(ThreadEvent::PluginLatencyUpdate(9600), &state);
+
+        let s = state.load();
+        assert_eq!(s.plugin_latency_samples, 9600);
+        assert!((s.position - 9.9).abs() < 1e-9, "position={}", s.position);
+    }
+
+    #[test]
+    fn test_latency_update_clamps_position_to_zero() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            position: 0.05,
+            sample_rate: 48000,
+            plugin_latency_samples: 0,
+            ..AudioEngineState::default()
+        }));
+
+        // Latency increase of 4800 samples (100ms) on a position of 50ms
+        // should clamp to 0.0, not go negative.
+        handle_thread_event(ThreadEvent::PluginLatencyUpdate(4800), &state);
+
+        assert_eq!(state.load().position, 0.0);
+    }
+
+    #[test]
+    fn test_latency_decrease_shifts_position_forward() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            position: 5.0,
+            sample_rate: 48000,
+            plugin_latency_samples: 9600, // 200ms
+            ..AudioEngineState::default()
+        }));
+
+        // Latency decreases from 9600 to 4800 (200ms → 100ms).
+        // Position should shift forward by 100ms.
+        handle_thread_event(ThreadEvent::PluginLatencyUpdate(4800), &state);
+
+        let s = state.load();
+        assert!((s.position - 5.1).abs() < 1e-9, "position={}", s.position);
+    }
+
+    #[test]
+    fn test_latency_update_noop_when_unchanged() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            position: 10.0,
+            sample_rate: 48000,
+            plugin_latency_samples: 4800,
+            ..AudioEngineState::default()
+        }));
+
+        handle_thread_event(ThreadEvent::PluginLatencyUpdate(4800), &state);
+
+        assert!((state.load().position - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_position_update_compensates_latency() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            playback_state: PlaybackState::Playing,
+            sample_rate: 48000,
+            plugin_latency_samples: 4800, // 100ms
+            ..AudioEngineState::default()
+        }));
+
+        // Decoder reports position 5.0s, but pipeline latency is 100ms,
+        // so displayed position should be 4.9s.
+        handle_thread_event(ThreadEvent::PositionUpdate(5.0), &state);
+
+        let s = state.load();
+        assert!((s.position - 4.9).abs() < 1e-9, "position={}", s.position);
+    }
+
+    #[test]
+    fn test_position_update_ignored_when_stopped() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            playback_state: PlaybackState::Stopped,
+            position: 0.0,
+            ..AudioEngineState::default()
+        }));
+
+        handle_thread_event(ThreadEvent::PositionUpdate(5.0), &state);
+
+        assert!((state.load().position - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_processing_warning_sets_error_without_stopping() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            playback_state: PlaybackState::Playing,
+            ..AudioEngineState::default()
+        }));
+
+        handle_thread_event(
+            ThreadEvent::ProcessingWarning("channel rebuild fallback".to_string()),
+            &state,
+        );
+
+        let s = state.load();
+        // Warning should record the error message...
+        assert_eq!(
+            s.last_error.as_deref(),
+            Some("channel rebuild fallback")
+        );
+        // ...but NOT change playback state to Stopped
+        assert_eq!(s.playback_state, PlaybackState::Playing);
+    }
+
+    #[test]
+    fn test_processing_error_stops_playback() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            playback_state: PlaybackState::Playing,
+            ..AudioEngineState::default()
+        }));
+
+        handle_thread_event(
+            ThreadEvent::ProcessingError("fatal error".to_string()),
+            &state,
+        );
+
+        let s = state.load();
+        assert_eq!(s.playback_state, PlaybackState::Stopped);
+        assert_eq!(s.last_error.as_deref(), Some("fatal error"));
+    }
+
+    #[test]
+    fn test_position_update_skips_latency_when_bypassed() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            playback_state: PlaybackState::Playing,
+            sample_rate: 48000,
+            plugin_latency_samples: 4800, // 100ms
+            processing_bypassed: true,
+            ..AudioEngineState::default()
+        }));
+
+        // With bypass=true, latency compensation should be skipped.
+        // Decoder reports 5.0s → displayed position should be 5.0s (not 4.9s).
+        handle_thread_event(ThreadEvent::PositionUpdate(5.0), &state);
+
+        let s = state.load();
+        assert!(
+            (s.position - 5.0).abs() < 1e-9,
+            "Bypass should skip latency compensation, got position={}",
+            s.position
+        );
+    }
+
+    #[test]
+    fn test_position_update_applies_latency_when_not_bypassed() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            playback_state: PlaybackState::Playing,
+            sample_rate: 48000,
+            plugin_latency_samples: 4800, // 100ms
+            processing_bypassed: false,
+            ..AudioEngineState::default()
+        }));
+
+        handle_thread_event(ThreadEvent::PositionUpdate(5.0), &state);
+
+        let s = state.load();
+        assert!(
+            (s.position - 4.9).abs() < 1e-9,
+            "Should apply latency compensation, got position={}",
+            s.position
+        );
     }
 }

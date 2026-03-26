@@ -43,6 +43,9 @@ impl DcBlocker {
     }
 
     fn calculate_coeff(cutoff_hz: f32, sample_rate: u32) -> f32 {
+        if sample_rate == 0 {
+            return 0.99999; // Maximum R = lowest cutoff, safe default
+        }
         // R = 1 - 2*pi*fc/fs
         // Higher R = lower cutoff = less bass attenuation
         let r = 1.0 - (2.0 * std::f32::consts::PI * cutoff_hz / sample_rate as f32);
@@ -166,5 +169,14 @@ mod tests {
         // After reset, state should be clean
         let out = blocker.process_sample(0.0, 0);
         assert!(out.abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_sample_rate_zero_no_panic() {
+        // sample_rate=0 should not panic or produce NaN
+        let mut blocker = DcBlocker::new(1, 0, 5.0);
+        let out = blocker.process_sample(1.0, 0);
+        assert!(!out.is_nan(), "NaN from sample_rate=0");
+        assert!(!out.is_infinite(), "inf from sample_rate=0");
     }
 }

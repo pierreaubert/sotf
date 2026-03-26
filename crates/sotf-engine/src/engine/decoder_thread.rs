@@ -14,6 +14,10 @@ use std::time::{Duration, Instant};
 use driver_hal::HalInputReader;
 
 const SPIN_MS_SLEEP_DECODER: u64 = 1;
+/// Maximum size of resample staging buffer to prevent unbounded growth.
+/// This limits memory usage while ensuring we can handle typical resampling
+/// ratios (e.g., 48kHz→44.1kHz produces ~940-frame blocks, so we allow ~4x that).
+const MAX_RESAMPLE_STAGING_SAMPLES: usize = 1024 * 8 * 4; // 1024 frames * 8 channels * 4x margin
 
 /// Action returned by decode loop
 enum DecoderLoopAction {
@@ -334,6 +338,29 @@ impl DecoderState {
                         // fire an FFT block and would produce silence. Staging here
                         // ensures we always forward exactly `frame_size` frames.
                         let frame_len = actual_output_frames * channels;
+                        let new_staging_len = self.resample_staging.len() + frame_len;
+                        if new_staging_len > MAX_RESAMPLE_STAGING_SAMPLES {
+                            // Staging buffer growing too large — drain the oldest
+                            // complete-frame-sized blocks to stay under the cap
+                            // while preserving any partial frame at the tail.
+                            let send_chunk_len_here = frame_size * channels;
+                            let excess = new_staging_len - MAX_RESAMPLE_STAGING_SAMPLES;
+                            // Round up to whole frame chunks to keep alignment
+                            let drain_amount = if send_chunk_len_here > 0 {
+                                ((excess + send_chunk_len_here - 1) / send_chunk_len_here)
+                                    * send_chunk_len_here
+                            } else {
+                                excess
+                            };
+                            let drain_amount = drain_amount.min(self.resample_staging.len());
+                            log::warn!(
+                                "[Decoder Thread] Resample staging buffer would exceed {} samples (current: {}), draining {} oldest samples",
+                                MAX_RESAMPLE_STAGING_SAMPLES,
+                                self.resample_staging.len(),
+                                drain_amount,
+                            );
+                            self.resample_staging.drain(..drain_amount);
+                        }
                         self.resample_staging
                             .extend_from_slice(&self.resample_output_buffer[..frame_len]);
 

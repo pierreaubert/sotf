@@ -844,6 +844,7 @@ pub(crate) fn save_recordings(app: &mut App) {
             measurement: ch.result.clone().unwrap(),
             is_group: false,
             group_drivers: Vec::new(),
+            multi_mic_measurements: Vec::new(),
         })
         .collect();
 

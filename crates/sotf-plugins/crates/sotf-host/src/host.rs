@@ -2005,4 +2005,103 @@ mod tests {
             "Output samples should be input * 0.75"
         );
     }
+
+    // ── DAG topology tests ──
+
+    #[test]
+    fn test_cycle_detection_self_loop() {
+        let mut g = DawHost::new(2, 48000);
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        // Self-loops are rejected at add_edge level
+        assert!(g.add_edge(GraphEdge::new(a, a)).is_err());
+    }
+
+    #[test]
+    fn test_cycle_detection_two_node_cycle() {
+        let mut g = DawHost::new(2, 48000);
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        g.add_edge(GraphEdge::new(a, b)).unwrap();
+        g.add_edge(GraphEdge::new(b, a)).unwrap();
+        assert!(g.build().is_err());
+    }
+
+    #[test]
+    fn test_cycle_detection_three_node_cycle() {
+        let mut g = DawHost::new(2, 48000);
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        let c = g.add_node("C".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        g.add_edge(GraphEdge::new(a, b)).unwrap();
+        g.add_edge(GraphEdge::new(b, c)).unwrap();
+        g.add_edge(GraphEdge::new(c, a)).unwrap();
+        assert!(g.build().is_err());
+    }
+
+    #[test]
+    fn test_diamond_topology_processes_correctly() {
+        // Diamond: A -> B, A -> C, B -> D, C -> D
+        // A scales by 2, B scales by 3, C scales by 5, D scales by 1
+        // D merges (sums) B and C outputs: input * 2 * 3 + input * 2 * 5 = input * 16
+        let mut g = DawHost::new(2, 48000);
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(2, 2.0))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::new(2, 3.0))).unwrap();
+        let c = g.add_node("C".into(), Box::new(ScalerPlugin::new(2, 5.0))).unwrap();
+        let d = g.add_node("D".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        g.add_edge(GraphEdge::new(a, b)).unwrap();
+        g.add_edge(GraphEdge::new(a, c)).unwrap();
+        g.add_edge(GraphEdge::new(b, d)).unwrap();
+        g.add_edge(GraphEdge::new(c, d)).unwrap();
+        g.build().unwrap();
+
+        let nf = 4;
+        let input = vec![1.0_f32; nf * 2];
+        let mut output = vec![0.0_f32; nf * 2];
+        g.process(&input, &mut output).unwrap();
+
+        // D receives sum of B and C: (1*2*3) + (1*2*5) = 16
+        for &s in &output {
+            assert!(
+                (s - 16.0).abs() < 1e-4,
+                "Diamond should produce 16.0, got {}",
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn test_diamond_latency_compensation() {
+        // Diamond with asymmetric latency:
+        // A -> B (latency 10), A -> C (latency 30), B -> D, C -> D
+        // B path total: 10, C path total: 30
+        // B should be delayed by 20 samples to align with C
+        let mut g = DawHost::new(2, 48000);
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 0))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
+        let c = g.add_node("C".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 30))).unwrap();
+        let d = g.add_node("D".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 0))).unwrap();
+        g.add_edge(GraphEdge::new(a, b)).unwrap();
+        g.add_edge(GraphEdge::new(a, c)).unwrap();
+        g.add_edge(GraphEdge::new(b, d)).unwrap();
+        g.add_edge(GraphEdge::new(c, d)).unwrap();
+        g.build().unwrap();
+
+        // Total latency should be max path: 30
+        assert_eq!(g.total_latency_samples(), 30);
+    }
+
+    #[test]
+    fn test_diamond_with_valid_dag_builds_ok() {
+        // Ensure diamond topology (not a cycle) is accepted
+        let mut g = DawHost::new(1, 44100);
+        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let b = g.add_node("B".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let c = g.add_node("C".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let d = g.add_node("D".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        g.add_edge(GraphEdge::new(a, b)).unwrap();
+        g.add_edge(GraphEdge::new(a, c)).unwrap();
+        g.add_edge(GraphEdge::new(b, d)).unwrap();
+        g.add_edge(GraphEdge::new(c, d)).unwrap();
+        assert!(g.build().is_ok(), "Diamond DAG should not be rejected as cycle");
+    }
 }
