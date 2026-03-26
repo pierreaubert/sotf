@@ -2941,6 +2941,7 @@ fn build_rack_mode_plugins(
                         frequency_resolution: 0,
                         multi_source_extraction: false,
                         multi_source_threshold: 0.3,
+                        binaural_preview: false,
                     };
                 }
                 log::info!("Rack: Added Upmixer plugin ({})", plugins.upmixer.config);
@@ -2962,6 +2963,11 @@ fn build_rack_mode_plugins(
                         externalization: plugins.binaural.externalization as f64,
                         near_field_strength: plugins.binaural.near_field as f64,
                         crossfade_mode: 0,
+                        late_reverb_enabled: false,
+                        late_reverb_mix: 0.3,
+                        late_reverb_rt60: 1.0,
+                        late_reverb_damping: 0.3,
+                        headphone_eq_enabled: false,
                     };
                 }
                 log::info!("Rack: Added BinauralDecoder plugin");
@@ -3224,6 +3230,7 @@ fn build_rack_mode_plugins(
                         auto_gain_max_db: plugins.xtc.auto_gain_max_db as f64,
                         auto_gain_smoothing_ms: plugins.xtc.auto_gain_smoothing_ms as f64,
                         pinna_model_enabled: plugins.xtc.pinna_model,
+                        head_model: 0.0,
                     };
                 }
                 log::info!("Rack: Added XTC plugin");
@@ -3265,6 +3272,9 @@ fn build_rack_mode_plugins(
                         formant_preservation: false,
                         formant_strength: 0.5,
                         multi_resolution: false,
+                        harmonic_percussive: false,
+                        spatial_denoise: false,
+                        spatial_strength: 0.5,
                     };
                 }
                 log::info!("Rack: Added Denoiser plugin");
@@ -3320,6 +3330,8 @@ fn build_rack_mode_plugins(
                         mix: plugins.convolution.mix as f64,
                         gain_db: plugins.convolution.gain_db as f64,
                         use_nupc: true,
+                        zero_latency_head: false,
+                        head_taps: 128,
                     };
                 }
                 log::info!("Rack: Added Convolution plugin");

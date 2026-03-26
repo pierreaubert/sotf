@@ -1068,6 +1068,11 @@ impl PluginChain {
                     externalization,
                     near_field_strength,
                     crossfade_mode,
+                    late_reverb_enabled,
+                    late_reverb_mix,
+                    late_reverb_rt60,
+                    late_reverb_damping,
+                    headphone_eq_enabled,
                 } => {
                     if *input_channels != current_channels {
                         updated_settings = Some(PluginSettings::BinauralDecoder {
@@ -1077,6 +1082,11 @@ impl PluginChain {
                             externalization: *externalization,
                             near_field_strength: *near_field_strength,
                             crossfade_mode: *crossfade_mode,
+                            late_reverb_enabled: *late_reverb_enabled,
+                            late_reverb_mix: *late_reverb_mix,
+                            late_reverb_rt60: *late_reverb_rt60,
+                            late_reverb_damping: *late_reverb_damping,
+                            headphone_eq_enabled: *headphone_eq_enabled,
                         });
                     }
                 }
@@ -1271,6 +1281,7 @@ mod tests {
                 multi_source_threshold: 0.5,
                 low_latency: false,
                 frequency_resolution: 0,
+                binaural_preview: false,
             };
         }
         assert_eq!(chain.output_channels(), 8);
@@ -1347,6 +1358,7 @@ mod tests {
                 multi_source_threshold: 0.5,
                 low_latency: false,
                 frequency_resolution: 0,
+                binaural_preview: false,
             };
         }
 

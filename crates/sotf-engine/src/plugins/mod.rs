@@ -443,6 +443,9 @@ fn default_de_esser_mode() -> String {
 sotf_plugins::serde_param_default! {
     binaural_specs::PARAMS;
     fn default_binaural_enable_optimization() -> bool = "enable_optimization";
+    fn default_binaural_late_reverb_mix() -> f64 = "late_reverb_mix";
+    fn default_binaural_late_reverb_rt60() -> f64 = "late_reverb_rt60";
+    fn default_binaural_late_reverb_damping() -> f64 = "late_reverb_damping";
 }
 
 sotf_plugins::serde_param_default! {
@@ -614,7 +617,7 @@ sotf_plugins::serde_param_default! {
 sotf_plugins::serde_param_default! {
     convolution_specs::PARAMS;
     fn default_use_nupc() -> bool = "use_nupc";
-    fn default_head_taps() -> usize { 128 }
+    fn default_head_taps() -> usize = "head_taps";
 }
 
 sotf_plugins::serde_param_default! {
@@ -890,6 +893,9 @@ pub enum PluginSettings {
         multi_source_extraction: bool,
         #[serde(default = "default_upmixer_multi_source_threshold")]
         multi_source_threshold: f64,
+        // Binaural preview (Phase 4G)
+        #[serde(default)]
+        binaural_preview: bool,
     },
     Compressor {
         threshold_db: f64,
@@ -1180,6 +1186,17 @@ pub enum PluginSettings {
         near_field_strength: f64,
         #[serde(default)] // 0 = Linear
         crossfade_mode: usize,
+        // Phase 4E: Late reverb
+        #[serde(default)]
+        late_reverb_enabled: bool,
+        #[serde(default = "default_binaural_late_reverb_mix")]
+        late_reverb_mix: f64,
+        #[serde(default = "default_binaural_late_reverb_rt60")]
+        late_reverb_rt60: f64,
+        #[serde(default = "default_binaural_late_reverb_damping")]
+        late_reverb_damping: f64,
+        #[serde(default)]
+        headphone_eq_enabled: bool,
     },
     Convolution {
         ir_file: String,
@@ -1676,6 +1693,11 @@ pub enum PluginSettings {
         target_mode: f64,
         #[serde(default)]
         delta_listen: bool,
+        // Phase 4A: Adaptive threshold
+        #[serde(default)]
+        adaptive_threshold: bool,
+        #[serde(default)]
+        adaptive_offset_db: f64,
     },
 }
 
@@ -2009,7 +2031,10 @@ impl PluginSettings {
                 knee,
                 spectral_smoothing,
                 mix,
-                ..
+                target_mode,
+                delta_listen,
+                adaptive_threshold,
+                adaptive_offset_db,
             } => PluginConfig::new(
                 "spectral_compressor",
                 json!({
@@ -2021,6 +2046,10 @@ impl PluginSettings {
                     "knee_db": *knee as f32,
                     "spectral_smoothing": *spectral_smoothing as f32,
                     "mix": *mix as f32,
+                    "target_mode": *target_mode as usize,
+                    "delta_listen": delta_listen,
+                    "adaptive_threshold": adaptive_threshold,
+                    "adaptive_offset_db": adaptive_offset_db,
                 }),
             ),
             Self::EQ {
@@ -2153,6 +2182,7 @@ impl PluginSettings {
                 enable_ml_detection,
                 multi_source_extraction,
                 multi_source_threshold,
+                binaural_preview,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
@@ -2204,6 +2234,7 @@ impl PluginSettings {
                     "enable_ml_detection": enable_ml_detection,
                     "multi_source_extraction": multi_source_extraction,
                     "multi_source_threshold": multi_source_threshold,
+                    "binaural_preview": binaural_preview,
                 }),
             ),
             Self::Compressor {
@@ -2485,6 +2516,11 @@ impl PluginSettings {
                 externalization,
                 near_field_strength,
                 crossfade_mode,
+                late_reverb_enabled,
+                late_reverb_mix,
+                late_reverb_rt60,
+                late_reverb_damping,
+                headphone_eq_enabled,
             } => PluginConfig::new(
                 "binaural_decoder",
                 json!({
@@ -2494,6 +2530,11 @@ impl PluginSettings {
                     "externalization": externalization,
                     "near_field_strength": near_field_strength,
                     "crossfade_mode": crossfade_mode,
+                    "late_reverb_enabled": late_reverb_enabled,
+                    "late_reverb_mix": late_reverb_mix,
+                    "late_reverb_rt60": late_reverb_rt60,
+                    "late_reverb_damping": late_reverb_damping,
+                    "headphone_eq_enabled": headphone_eq_enabled,
                 }),
             ),
             Self::Convolution {
@@ -2501,6 +2542,8 @@ impl PluginSettings {
                 mix,
                 gain_db,
                 use_nupc,
+                zero_latency_head,
+                head_taps,
             } => PluginConfig::new(
                 "convolution",
                 json!({
@@ -2508,6 +2551,8 @@ impl PluginSettings {
                     "mix": mix,
                     "gain_db": gain_db,
                     "use_nupc": use_nupc,
+                    "zero_latency_head": zero_latency_head,
+                    "head_taps": head_taps,
                 }),
             ),
             Self::LoudnessMonitor => PluginConfig::new("loudness_monitor", json!({})),
@@ -2619,6 +2664,7 @@ impl PluginSettings {
                 auto_gain_max_db,
                 auto_gain_smoothing_ms,
                 pinna_model_enabled,
+                head_model,
             } => PluginConfig::new(
                 "xtc",
                 json!({
@@ -2649,6 +2695,7 @@ impl PluginSettings {
                     "auto_gain_max_db": auto_gain_max_db,
                     "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
                     "pinna_model_enabled": pinna_model_enabled,
+                    "head_model": *head_model as usize,
                 }),
             ),
             Self::Denoiser {
@@ -2685,6 +2732,9 @@ impl PluginSettings {
                 formant_preservation,
                 formant_strength,
                 multi_resolution,
+                harmonic_percussive,
+                spatial_denoise,
+                spatial_strength,
             } => PluginConfig::new(
                 "denoiser",
                 json!({
@@ -2721,6 +2771,9 @@ impl PluginSettings {
                     "formant_preservation": formant_preservation,
                     "formant_strength": formant_strength,
                     "multi_resolution": multi_resolution,
+                    "harmonic_percussive": harmonic_percussive,
+                    "spatial_denoise": spatial_denoise,
+                    "spatial_strength": spatial_strength,
                 }),
             ),
             Self::Pnd {
@@ -2928,6 +2981,7 @@ impl PluginSettings {
                     enable_ml_detection: p(u, "enable_ml_detection").default_bool(),
                     multi_source_extraction: p(u, "multi_source_extraction").default_bool(),
                     multi_source_threshold: p(u, "multi_source_threshold").default_f64(),
+                    binaural_preview: p(u, "binaural_preview").default_bool(),
                 }
             }
             PluginType::Compressor => {
@@ -3102,6 +3156,11 @@ impl PluginSettings {
                     externalization: p(b, "externalization").default_f64(),
                     near_field_strength: p(b, "near_field_strength").default_f64(),
                     crossfade_mode: p(b, "crossfade_mode").default_usize(),
+                    late_reverb_enabled: false,
+                    late_reverb_mix: p(b, "late_reverb_mix").default_f64(),
+                    late_reverb_rt60: p(b, "late_reverb_rt60").default_f64(),
+                    late_reverb_damping: p(b, "late_reverb_damping").default_f64(),
+                    headphone_eq_enabled: false,
                 }
             }
             PluginType::Convolution => {
@@ -3111,6 +3170,8 @@ impl PluginSettings {
                     mix: p(cv, "mix").default_f64(),
                     gain_db: p(cv, "gain_db").default_f64(),
                     use_nupc: p(cv, "use_nupc").default_bool(),
+                    zero_latency_head: false,
+                    head_taps: p(cv, "head_taps").default_usize(),
                 }
             }
             PluginType::LoudnessMonitor => Self::LoudnessMonitor,
@@ -3172,6 +3233,7 @@ impl PluginSettings {
                     auto_gain_max_db: p(x, "auto_gain_max_db").default_f64(),
                     auto_gain_smoothing_ms: p(x, "auto_gain_smoothing_ms").default_f64(),
                     pinna_model_enabled: p(x, "pinna_model_enabled").default_bool(),
+                    head_model: p(x, "head_model").default_f64(),
                 }
             }
             PluginType::Denoiser => {
@@ -3210,6 +3272,9 @@ impl PluginSettings {
                     formant_preservation: p(d, "formant_preservation").default_bool(),
                     formant_strength: p(d, "formant_strength").default_f64(),
                     multi_resolution: p(d, "multi_resolution").default_bool(),
+                    harmonic_percussive: false,
+                    spatial_denoise: false,
+                    spatial_strength: p(d, "spatial_strength").default_f64(),
                 }
             }
             PluginType::Pnd => {
@@ -3426,6 +3491,8 @@ impl PluginSettings {
                     mix: p(sc, "mix").default_f64(),
                     target_mode: p(sc, "target_mode").default_f64(),
                     delta_listen: false,
+                    adaptive_threshold: false,
+                    adaptive_offset_db: 0.0,
                 }
             }
         }

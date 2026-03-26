@@ -444,12 +444,13 @@ impl_param_accessors! {
             bypass_decorrelation: bool, bypass_transient_detection: bool,
             bypass_all_processing: bool, enable_ml_detection: bool,
             multi_source_extraction: bool, multi_source_threshold: f64,
+            binaural_preview: bool,
         ]
     },
     Convolution {
         params: param_specs::convolution::PARAMS,
         layout: Some(&param_specs::convolution::LAYOUT),
-        fields: [ir_file: skip, mix: f64, gain_db: f64, use_nupc: bool, zero_latency_head: bool, head_taps: i32]
+        fields: [ir_file: skip, mix: f64, gain_db: f64, use_nupc: bool, zero_latency_head: bool, head_taps: usize]
     },
     BinauralDecoder {
         params: param_specs::binaural::PARAMS,
@@ -458,6 +459,8 @@ impl_param_accessors! {
             sofa_file: skip, input_channels: usize,
             enable_optimization: bool, externalization: f64, near_field_strength: f64,
             crossfade_mode: usize,
+            late_reverb_enabled: bool, late_reverb_mix: f64, late_reverb_rt60: f64,
+            late_reverb_damping: f64, headphone_eq_enabled: bool,
         ]
     },
     XTC {
@@ -676,6 +679,7 @@ impl_param_accessors! {
             attack: f64, release: f64, knee: f64,
             spectral_smoothing: f64, mix: f64,
             target_mode: f64, delta_listen: bool,
+            adaptive_threshold: bool, adaptive_offset_db: f64,
         ]
     },
     LinearPhaseEq {
