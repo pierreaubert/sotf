@@ -86,6 +86,9 @@ pub struct ConvolutionPlugin {
     use_nupc: bool,
     zero_latency_head: bool,
     head_taps: usize,
+    /// Pre-allocated accumulator buffers for rayon fold/reduce (one per rayon thread).
+    /// Avoids heap allocation in the audio processing hot path.
+    rayon_accum_pool: Vec<Vec<Complex<f32>>>,
 }
 
 impl ConvolutionPlugin {
@@ -114,6 +117,7 @@ impl ConvolutionPlugin {
             use_nupc: false,
             zero_latency_head: false,
             head_taps: 128,
+            rayon_accum_pool: Vec::new(),
         };
         p.rebuild_cached_parameters();
         p
@@ -219,6 +223,12 @@ impl ConvolutionPlugin {
         self.fdl_head = 0;
         self.fft_scratch = vec![Complex::new(0.0, 0.0); fft_scratch_len];
         self.ir_file = path.to_string();
+
+        // Pre-allocate rayon accumulator pool (one buffer per available thread)
+        let n_threads = rayon::current_num_threads().max(1);
+        self.rayon_accum_pool = (0..n_threads)
+            .map(|_| vec![Complex::new(0.0, 0.0); FFT_SIZE])
+            .collect();
 
         // Build NUPC engines if use_nupc is enabled.
         // One NupcEngine per channel, each configured with the channel's IR.
@@ -577,33 +587,45 @@ impl InPlacePlugin for ConvolutionPlugin {
                         let channels = self.channels;
                         let ir_partitions = &state.partitions[ir_ch];
 
-                        // Use fold+reduce: each rayon thread gets ONE accumulator
-                        // that is reused across all its partitions (not one per partition).
-                        // This reduces allocations from ~N to ~num_threads per call.
-                        let partial = (0..num_partitions)
-                            .into_par_iter()
-                            .fold(
-                                || vec![Complex::new(0.0, 0.0); FFT_SIZE],
-                                |mut acc, p| {
+                        // Lazy-init pool if not yet allocated (e.g. IR loaded via test helper)
+                        if self.rayon_accum_pool.is_empty() {
+                            let n_threads = rayon::current_num_threads().max(1);
+                            self.rayon_accum_pool = (0..n_threads)
+                                .map(|_| vec![Complex::new(0.0, 0.0); FFT_SIZE])
+                                .collect();
+                        }
+                        // Zero the pre-allocated accumulators
+                        let pool = &mut self.rayon_accum_pool;
+                        for acc in pool.iter_mut() {
+                            acc.fill(Complex::new(0.0, 0.0));
+                        }
+
+                        // Split partitions across pre-allocated accumulators.
+                        // Each chunk of partitions accumulates into one pool buffer.
+                        let n_accum = pool.len().max(1);
+                        let chunk_size = num_partitions.div_ceil(n_accum);
+
+                        pool.par_iter_mut()
+                            .enumerate()
+                            .for_each(|(idx, acc)| {
+                                let start = idx * chunk_size;
+                                let end = (start + chunk_size).min(num_partitions);
+                                for p in start..end {
                                     let fdl_p = (fdl_head + p) % num_partitions;
                                     let fdl_off = (fdl_p * channels + ch) * FFT_SIZE;
                                     let fdl_slice = &fdl_flat[fdl_off..fdl_off + FFT_SIZE];
                                     let ir_slice = &ir_partitions[p];
-                                    complex_mul_add_simd(&mut acc, fdl_slice, ir_slice);
-                                    acc
-                                },
-                            )
-                            .reduce(
-                                || vec![Complex::new(0.0, 0.0); FFT_SIZE],
-                                |mut a, b| {
-                                    for (x, y) in a.iter_mut().zip(b.iter()) {
-                                        *x += y;
-                                    }
-                                    a
-                                },
-                            );
+                                    complex_mul_add_simd(acc, fdl_slice, ir_slice);
+                                }
+                            });
 
-                        self.fft_sum.copy_from_slice(&partial);
+                        // Merge all accumulators into fft_sum
+                        self.fft_sum.fill(Complex::new(0.0, 0.0));
+                        for acc in self.rayon_accum_pool.iter() {
+                            for (dst, src) in self.fft_sum.iter_mut().zip(acc.iter()) {
+                                *dst += src;
+                            }
+                        }
                     } else {
                         for p in 0..num_partitions {
                             let fdl_p = (self.fdl_head + p) % num_partitions;
@@ -642,8 +664,9 @@ impl InPlacePlugin for ConvolutionPlugin {
                 }
                 self.input_fill = 0;
 
-                self.mix.next_n(PARTITION_SIZE);
-                self.gain_linear.next_n(PARTITION_SIZE);
+                // Smoother already advanced by advance() above — do not double-advance
+                self.mix.next_n(PARTITION_SIZE - 1);
+                self.gain_linear.next_n(PARTITION_SIZE - 1);
             }
             in_pos += to_copy;
         }

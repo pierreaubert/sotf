@@ -488,7 +488,7 @@ impl BinauralDecoderPlugin {
                         &mut self.temp_freq_buffer,
                         &mut self.temp_fft_scratch,
                     )
-                    .unwrap();
+                    .ok(); // Defensive: silence on FFT error instead of panic
 
                 // New filters
                 let hrtf_new = &filters[ch];
@@ -644,7 +644,7 @@ impl BinauralDecoderPlugin {
                         &mut self.temp_freq_buffer,
                         &mut self.temp_fft_scratch,
                     )
-                    .unwrap();
+                    .ok(); // Defensive: silence on FFT error instead of panic
                 let hrtf = &filters[ch];
                 complex_mul_add_simd(
                     &mut self.sum_left,
@@ -692,7 +692,7 @@ impl BinauralDecoderPlugin {
                     &mut self.temp_freq_buffer,
                     &mut self.temp_fft_scratch,
                 )
-                .unwrap();
+                .ok(); // Defensive: silence on FFT error instead of panic
             complex_mul_add_simd(
                 &mut self.lfe_freq,
                 &self.temp_freq_buffer,
@@ -709,7 +709,7 @@ impl BinauralDecoderPlugin {
                 &mut self.ifft_output_buf,
                 &mut self.temp_fft_scratch,
             )
-            .unwrap();
+            .ok(); // Defensive: silence on FFT error instead of panic
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             self.output_accumulator[idx * 2] += self.ifft_output_buf[i] * scale;
@@ -724,7 +724,7 @@ impl BinauralDecoderPlugin {
                 &mut self.ifft_output_buf,
                 &mut self.temp_fft_scratch,
             )
-            .unwrap();
+            .ok(); // Defensive: silence on FFT error instead of panic
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             self.output_accumulator[idx * 2 + 1] += self.ifft_output_buf[i] * scale;
@@ -740,7 +740,7 @@ impl BinauralDecoderPlugin {
                     &mut self.ifft_output_buf,
                     &mut self.temp_fft_scratch,
                 )
-                .unwrap();
+                .ok(); // Defensive: silence on FFT error instead of panic
             let lfe_g = scale * self.lfe_gain;
             for i in 0..n {
                 let idx = (self.next_add_position + i) & mask;

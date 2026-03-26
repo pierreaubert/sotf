@@ -674,7 +674,16 @@ pub extern "C" fn gpui_au_create_with_plugin(
     let platform = Rc::new(gpui_au::AuPlatform::new());
     let app = gpui::Application::with_platform(platform);
 
-    // Clone Rc<AppCell> to keep GPUI alive after run() returns
+    // Clone Rc<AppCell> to keep GPUI alive after run() returns.
+    // SAFETY: Application is `pub struct Application(Rc<AppCell>)` — a single-field newtype.
+    // AppCell is pub (doc(hidden)). We clone the Rc to keep AppCell alive after run() consumes
+    // Application. Without this, AppCell is deallocated when run() returns because AuPlatform::run()
+    // calls the callback immediately (unlike macOS which blocks on [NSApp run]).
+    debug_assert_eq!(
+        std::mem::size_of::<gpui::Application>(),
+        std::mem::size_of::<Rc<gpui::AppCell>>(),
+        "Application layout changed — transmute assumption broken"
+    );
     let app_cell: Rc<gpui::AppCell> = unsafe {
         let rc: &Rc<gpui::AppCell> = std::mem::transmute(&app);
         rc.clone()

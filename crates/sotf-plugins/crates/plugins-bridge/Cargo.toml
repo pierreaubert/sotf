@@ -26,6 +26,7 @@ sotf-plugin-delay = { workspace = true }
 sotf-plugin-de-esser = { workspace = true }
 sotf-plugin-dynamic-eq = { workspace = true }
 sotf-plugin-denoiser = { workspace = true }
+sotf-plugin-dither = { workspace = true }
 sotf-plugin-downmix = { workspace = true }
 sotf-plugin-eq = { workspace = true }
 sotf-plugin-linear-phase-eq = { workspace = true }

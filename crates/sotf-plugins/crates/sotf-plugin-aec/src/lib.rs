@@ -84,8 +84,10 @@ pub struct AecPlugin {
     fft_forward: Arc<dyn Fft<f32>>,
     fft_inverse: Arc<dyn Fft<f32>>,
     fft_scratch: Vec<Complex<f32>>,
-    /// Pre-allocated buffer for post-filter IFFT output
+    /// Pre-allocated buffer for post-filter IFFT output (time domain)
     post_filter_time_buf: Vec<f32>,
+    /// Pre-allocated buffer for post-filter IFFT input (frequency domain)
+    post_filter_ifft_buf: Vec<Complex<f32>>,
     /// Parameter IDs
     param_echo_tail_ms: ParameterId,
     param_step_size: ParameterId,
@@ -125,6 +127,7 @@ impl AecPlugin {
             fft_inverse,
             fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
             post_filter_time_buf: vec![0.0; block_size],
+            post_filter_ifft_buf: vec![Complex::new(0.0, 0.0); block_size * 2],
             param_echo_tail_ms: ParameterId::from("echo_tail_ms"),
             param_step_size: ParameterId::from("step_size"),
             param_post_filter: ParameterId::from("post_filter_enabled"),
@@ -291,14 +294,19 @@ impl Plugin for AecPlugin {
                     let echo_est_freq = self.aec.last_echo_estimate_freq();
                     let suppressed = self.post_filter.process(error_freq, echo_est_freq);
                     // IFFT the suppressed spectrum to get time-domain output
-                    let mut ifft_buf = suppressed;
+                    // Copy into pre-allocated buffer since IFFT needs mutable access
+                    let n_sup = suppressed.len();
+                    if self.post_filter_ifft_buf.len() < n_sup {
+                        self.post_filter_ifft_buf.resize(n_sup, Complex::new(0.0, 0.0));
+                    }
+                    self.post_filter_ifft_buf[..n_sup].copy_from_slice(suppressed);
                     self.fft_inverse
-                        .process_with_scratch(&mut ifft_buf, &mut self.fft_scratch);
-                    let inv_n = 1.0 / ifft_buf.len() as f32;
+                        .process_with_scratch(&mut self.post_filter_ifft_buf[..n_sup], &mut self.fft_scratch);
+                    let inv_n = 1.0 / n_sup as f32;
                     let b = self.block_size;
                     for i in 0..b.min(error_len) {
                         // Take last B samples (overlap-save convention)
-                        self.post_filter_time_buf[i] = ifft_buf[b + i].re * inv_n;
+                        self.post_filter_time_buf[i] = self.post_filter_ifft_buf[b + i].re * inv_n;
                     }
                     // Write post-filtered output to ring
                     for i in 0..error_len {

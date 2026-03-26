@@ -177,7 +177,10 @@ impl AuHostState {
                 4 => BiquadFilterType::Highpass,
                 5 => BiquadFilterType::Bandpass,
                 6 => BiquadFilterType::Notch,
-                other => panic!("Unknown EQ filter type index: {other}"),
+                other => {
+                    eprintln!("Unknown EQ filter type index: {other}, defaulting to Peak");
+                    BiquadFilterType::Peak
+                }
             };
 
             bands.push(sotf_plugin_eq::ui::EqBandView {

@@ -17,3 +17,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sotf-plugin-pnd = { workspace = true }
 nnnoiseless = { workspace = true }
+
+[dev-dependencies]
+hound = { workspace = true }

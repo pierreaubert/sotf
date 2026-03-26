@@ -746,9 +746,9 @@ impl InPlacePlugin for SaturationPlugin {
         let nc = self.channels;
         let total = nf * nc;
 
-        // Buffers pre-allocated in initialize(); skip if larger frame than expected
+        // Grow buffer if host sends a larger-than-expected block (rare, only first time)
         if self.dry_buf.len() < total {
-            return Ok(0);
+            self.dry_buf.resize(total, 0.0);
         }
 
         // Save dry signal for mix

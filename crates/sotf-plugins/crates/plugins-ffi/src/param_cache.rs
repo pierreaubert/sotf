@@ -34,10 +34,12 @@ pub struct AtomicParamCache {
     meta: Vec<ParamMeta>,
 }
 
-// SAFETY: AtomicU64 is Send+Sync, Box<[AtomicU64]> is Send+Sync.
-// The cache is shared between the AU main thread (writes) and GPUI render (reads).
-unsafe impl Send for AtomicParamCache {}
-unsafe impl Sync for AtomicParamCache {}
+// AtomicU64 and Vec<ParamMeta> (containing String) are both Send+Sync,
+// so AtomicParamCache auto-derives Send+Sync. Compile-time assertion:
+const _: () = {
+    fn assert_send_sync<T: Send + Sync>() {}
+    fn _check() { assert_send_sync::<AtomicParamCache>(); }
+};
 
 impl AtomicParamCache {
     /// Create a new cache with `count` parameters, all initialized to 0.0.
@@ -115,9 +117,15 @@ impl AtomicParamCache {
 // ── FFI ──────────────────────────────────────────────────────────────────────
 
 /// Create a new atomic parameter cache.
+///
+/// The returned pointer is `Arc`-allocated. Consumers that reconstruct an `Arc`
+/// (e.g. `gpui_au_create_with_plugin`) MUST use `Arc::from_raw`.
+/// FFI read/write/destroy functions work with raw pointer dereference and are
+/// compatible with both `Box` and `Arc` layout since they never free the header.
 #[unsafe(no_mangle)]
 pub extern "C" fn au_param_cache_create(count: usize) -> *mut AtomicParamCache {
-    Box::into_raw(Box::new(AtomicParamCache::new(count)))
+    let arc = std::sync::Arc::new(AtomicParamCache::new(count));
+    std::sync::Arc::into_raw(arc) as *mut AtomicParamCache
 }
 
 /// Write a denormalized parameter value into the cache.

@@ -175,9 +175,13 @@ impl MvdrBeamformer {
 
     /// Reset noise covariance to identity.
     pub fn reset(&mut self) {
-        let identity = DMatrix::identity(self.num_mics, self.num_mics)
-            .map(|x: f64| Complex::new(x as f32, 0.0));
-        self.noise_cov = vec![identity; self.spectrum_size];
+        // Reset noise covariance matrices in-place (avoids heap allocation)
+        for mat in &mut self.noise_cov {
+            mat.fill(Complex::new(0.0, 0.0));
+            for i in 0..self.num_mics.min(mat.nrows()) {
+                mat[(i, i)] = Complex::new(1.0, 0.0);
+            }
+        }
         self.frame_count = 0;
         for w in &mut self.weights_buf {
             w.fill(Complex::new(0.0, 0.0));

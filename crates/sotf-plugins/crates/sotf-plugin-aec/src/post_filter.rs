@@ -20,6 +20,8 @@ pub struct ResidualEchoSuppressor {
     /// Gain smoothing factor
     gain_alpha: f32,
     spectrum_size: usize,
+    /// Pre-allocated output buffer (avoids hot-path allocation)
+    output_buf: Vec<Complex<f32>>,
 }
 
 impl ResidualEchoSuppressor {
@@ -36,6 +38,7 @@ impl ResidualEchoSuppressor {
             smoothed_gains: vec![1.0; spectrum_size],
             gain_alpha: 0.8,
             spectrum_size,
+            output_buf: vec![Complex::new(0.0, 0.0); spectrum_size * 2],
         }
     }
 
@@ -51,13 +54,16 @@ impl ResidualEchoSuppressor {
         &mut self,
         error_spectrum: &[Complex<f32>],
         echo_estimate_spectrum: &[Complex<f32>],
-    ) -> Vec<Complex<f32>> {
+    ) -> &[Complex<f32>] {
         debug_assert!(error_spectrum.len() >= self.spectrum_size);
         debug_assert!(echo_estimate_spectrum.len() >= self.spectrum_size);
 
-        let mut output = Vec::with_capacity(error_spectrum.len());
+        let n = error_spectrum.len();
+        if self.output_buf.len() < n {
+            self.output_buf.resize(n, Complex::new(0.0, 0.0));
+        }
 
-        for k in 0..error_spectrum.len() {
+        for k in 0..n {
             if k < self.spectrum_size {
                 let s_error = error_spectrum[k].norm_sqr();
                 let s_echo = echo_estimate_spectrum[k].norm_sqr();
@@ -74,13 +80,13 @@ impl ResidualEchoSuppressor {
                 self.smoothed_gains[k] =
                     self.gain_alpha * self.smoothed_gains[k] + (1.0 - self.gain_alpha) * gain;
 
-                output.push(error_spectrum[k] * self.smoothed_gains[k]);
+                self.output_buf[k] = error_spectrum[k] * self.smoothed_gains[k];
             } else {
-                output.push(error_spectrum[k]);
+                self.output_buf[k] = error_spectrum[k];
             }
         }
 
-        output
+        &self.output_buf[..n]
     }
 
     /// Reset suppressor state.

@@ -842,6 +842,7 @@ impl DenoiserPlugin {
             ));
         }
 
+        plugin.rebuild_cached_parameters();
         plugin
     }
 

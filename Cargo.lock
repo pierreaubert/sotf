@@ -7596,6 +7596,7 @@ dependencies = [
  "sotf-plugin-de-esser",
  "sotf-plugin-delay",
  "sotf-plugin-denoiser",
+ "sotf-plugin-dither",
  "sotf-plugin-downmix",
  "sotf-plugin-dynamic-eq",
  "sotf-plugin-eq",
@@ -10374,6 +10375,7 @@ dependencies = [
 name = "sotf-plugin-denoiser"
 version = "0.5.4"
 dependencies = [
+ "hound",
  "math-dsp",
  "nnnoiseless",
  "realfft",
@@ -10556,6 +10558,7 @@ name = "sotf-plugin-pnd"
 version = "0.5.1"
 dependencies = [
  "audioadapter-buffers",
+ "hound",
  "rubato",
  "rustfft 6.4.1",
  "serde",

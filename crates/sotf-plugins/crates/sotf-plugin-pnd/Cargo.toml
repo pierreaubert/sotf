@@ -23,3 +23,6 @@ audioadapter-buffers = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rustfft = { workspace = true }
+
+[dev-dependencies]
+hound = { workspace = true }

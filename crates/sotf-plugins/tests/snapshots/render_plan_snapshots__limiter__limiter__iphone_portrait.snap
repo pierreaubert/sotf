@@ -66,6 +66,17 @@ expression: plan
         1.0
       ],
       "read_only": false
+    },
+    {
+      "param_index": 9,
+      "param_name": "Feed Forward",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
     }
   ],
   "main_groups": [
@@ -80,6 +91,17 @@ expression: plan
           "range": [
             -20.0,
             0.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 8,
+          "param_name": "Link",
+          "control_type": "vertical_slider",
+          "unit": "%",
+          "range": [
+            0.0,
+            1.0
           ],
           "read_only": false
         }

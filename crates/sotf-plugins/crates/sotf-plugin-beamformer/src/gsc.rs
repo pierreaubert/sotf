@@ -27,6 +27,8 @@ pub struct GscBeamformer {
     mu: f32,
     /// Regularization
     delta: f32,
+    /// Pre-allocated scratch for reference signals (avoids per-sample allocation)
+    reference_scratch: Vec<f32>,
 }
 
 impl GscBeamformer {
@@ -75,6 +77,7 @@ impl GscBeamformer {
             filter_length,
             mu,
             delta: 1e-6,
+            reference_scratch: vec![0.0; num_refs],
         }
     }
 
@@ -98,15 +101,16 @@ impl GscBeamformer {
 
         // 2. Blocking matrix: compute reference signals
         // u = B * x (num_refs reference signals)
-        let mut references = vec![0.0f32; num_refs];
+        self.reference_scratch[..num_refs].fill(0.0);
         for (r, row) in self.blocking_matrix.iter().enumerate() {
             for i in 0..m {
-                references[r] += row[i] * mic_samples[i];
+                self.reference_scratch[r] += row[i] * mic_samples[i];
             }
         }
+        let references = &self.reference_scratch[..num_refs];
 
         // Store references in delay lines
-        for (buf, &ref_val) in self.reference_buffers[..num_refs].iter_mut().zip(&references) {
+        for (buf, &ref_val) in self.reference_buffers[..num_refs].iter_mut().zip(references) {
             buf[self.ref_write_pos] = ref_val;
         }
 

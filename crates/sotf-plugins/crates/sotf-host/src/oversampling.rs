@@ -445,7 +445,6 @@ impl<P: InPlacePlugin> InPlacePlugin for OversampledPlugin<P> {
     ) -> PluginResult<usize> {
         let nf = context.num_frames;
         let nc = self.channels;
-        let factor = self.factor as usize;
 
         // The oversampler's callback receives planar buffers at the OS rate.
         // We need to convert to interleaved, call inner.process_in_place, then

@@ -362,7 +362,7 @@ impl Plugin for BeamformerPlugin {
                                 }
                             }
                             BeamformerType::Superdirective => {
-                                if let Some(ref sd) = self.superdirective {
+                                if let Some(ref mut sd) = self.superdirective {
                                     let result = sd.apply(&self.stft_channels);
                                     self.fft.freq_buffer[..spectrum_size]
                                         .copy_from_slice(&result[..spectrum_size]);

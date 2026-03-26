@@ -49,6 +49,132 @@ qa-plugin-fuzzer-6ch:
 		done; \
 	done
 
+# ----------------------------------------------------------------------
+# QA FORMAT VALIDATION (AU, VST3, CLAP)
+# ----------------------------------------------------------------------
+
+# Run all format-level QA (AU + VST3 + CLAP + cross-format comparison)
+[group('qa-formats')]
+qa-formats: qa-au-validate qa-vst3-validate qa-clap-validate qa-cross-format
+
+# Validate all installed Audio Units via auval
+[group('qa-formats')]
+qa-au-validate:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	# AU subtypes extracted from Info.plist files
+	SUBTYPES=( SOAb SOBn SOCs SOCP SOCv SOCf SOCx SODs SODY SODn SODm SODq SOEQ SOEx SOFm SOGN SOGT SOLM SOLc SOMx SOM2 SOMc SOMe SOPn SOSt SOSi SOTs SOUp SOXt )
+	NAMES=(    ABCompare Binaural ChannelMuteSolo Compressor Convolution Crossfeed Crossover DeEsser Delay Denoiser Downmix DynamicEQ EQ Expander FletcherMunson Gain Gate Limiter LoudnessComp Matrix MonoToStereo MultibandComp MultibandExp PND Saturation StereoImager TransientShaper Upmixer XTC )
+	FAILED=0
+	PASSED=0
+	for i in "${!SUBTYPES[@]}"; do
+		printf "  %-20s (${SUBTYPES[$i]}) ... " "${NAMES[$i]}"
+		if auval -v aufx "${SUBTYPES[$i]}" SOTF > /dev/null 2>&1; then
+			echo "PASS"
+			PASSED=$((PASSED + 1))
+		else
+			echo "FAIL"
+			FAILED=$((FAILED + 1))
+		fi
+	done
+	echo ""
+	echo "AU validation: $PASSED passed, $FAILED failed (${#SUBTYPES[@]} total)"
+	[ "$FAILED" -eq 0 ]
+
+# Validate all VST3 plugins via pluginval
+[group('qa-formats')]
+qa-vst3-validate:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v pluginval &>/dev/null; then
+		echo "pluginval not found. Install with: brew install pluginval"
+		exit 1
+	fi
+	VST3_DIR="dist/vst3"
+	if [ ! -d "$VST3_DIR" ] || [ -z "$(ls "$VST3_DIR"/*.vst3 2>/dev/null)" ]; then
+		echo "No VST3 bundles in $VST3_DIR. Run 'just prod-vst3' first."
+		exit 1
+	fi
+	FAILED=0
+	PASSED=0
+	for bundle in "$VST3_DIR"/*.vst3; do
+		name=$(basename "$bundle" .vst3)
+		printf "  %-30s ... " "$name"
+		if pluginval --validate "$bundle" --strictness-level 5 --timeout-ms 30000 > /dev/null 2>&1; then
+			echo "PASS"
+			PASSED=$((PASSED + 1))
+		else
+			echo "FAIL"
+			FAILED=$((FAILED + 1))
+		fi
+	done
+	echo ""
+	echo "VST3 validation: $PASSED passed, $FAILED failed"
+	[ "$FAILED" -eq 0 ]
+
+# Validate all CLAP plugins via clap-validator
+[group('qa-formats')]
+qa-clap-validate:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v clap-validator &>/dev/null; then
+		echo "clap-validator not found. Install from:"
+		echo "  https://github.com/free-audio/clap-validator/releases"
+		echo "  cd /tmp && curl -sL https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-macos-universal.tar.gz | tar xz && cp binaries/clap-validator ~/.local/bin/"
+		exit 1
+	fi
+	CLAP_DIR="dist/clap"
+	if [ ! -d "$CLAP_DIR" ] || [ -z "$(ls "$CLAP_DIR"/*.clap 2>/dev/null)" ]; then
+		echo "No CLAP plugins in $CLAP_DIR. Run 'just prod-clap' first."
+		exit 1
+	fi
+	FAILED=0
+	PASSED=0
+	for plugin in "$CLAP_DIR"/*.clap; do
+		name=$(basename "$plugin" .clap)
+		printf "  %-30s ... " "$name"
+		if clap-validator validate "$plugin" > /dev/null 2>&1; then
+			echo "PASS"
+			PASSED=$((PASSED + 1))
+		else
+			echo "FAIL"
+			FAILED=$((FAILED + 1))
+		fi
+	done
+	echo ""
+	echo "CLAP validation: $PASSED passed, $FAILED failed"
+	[ "$FAILED" -eq 0 ]
+
+# Cross-format audio comparison: core vs bridge parameter round-trip
+[group('qa-formats')]
+qa-cross-format:
+	cargo test -p plugins-bridge --test cross_format_comparison --release
+
+# VST3 stress test (pluginval at maximum strictness)
+[group('qa-formats')]
+qa-vst3-stress:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if ! command -v pluginval &>/dev/null; then
+		echo "pluginval not found. Install with: brew install pluginval"
+		exit 1
+	fi
+	VST3_DIR="dist/vst3"
+	FAILED=0
+	for bundle in "$VST3_DIR"/*.vst3; do
+		name=$(basename "$bundle" .vst3)
+		printf "  %-30s ... " "$name"
+		if pluginval --validate "$bundle" --strictness-level 10 --timeout-ms 60000 > /dev/null 2>&1; then
+			echo "PASS"
+		else
+			echo "FAIL"
+			FAILED=$((FAILED + 1))
+		fi
+	done
+	[ "$FAILED" -eq 0 ]
+
+# ----------------------------------------------------------------------
+
 [group('qa-plugins')]
 qa-plugin-diagnostics:
 	cargo run --release --package sotf-plugin-ab-compare --bin qa-ab-compare --features qa

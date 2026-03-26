@@ -288,6 +288,11 @@ AuContext *gpui_au_create_with_plugin(void *ns_view,
 
 /**
  * Create a new atomic parameter cache.
+ *
+ * The returned pointer is `Arc`-allocated. Consumers that reconstruct an `Arc`
+ * (e.g. `gpui_au_create_with_plugin`) MUST use `Arc::from_raw`.
+ * FFI read/write/destroy functions work with raw pointer dereference and are
+ * compatible with both `Box` and `Arc` layout since they never free the header.
  */
 struct AtomicParamCache *au_param_cache_create(uintptr_t count);
 

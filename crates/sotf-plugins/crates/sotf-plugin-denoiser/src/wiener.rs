@@ -508,6 +508,8 @@ pub(super) struct FormantPreserver {
     pub log_mag_scratch: Vec<f32>,
     /// Smoothed spectral envelope in log-magnitude domain
     pub envelope: Vec<f32>,
+    /// Scratch copy of envelope for backward pass (avoids reading stale data)
+    envelope_scratch: Vec<f32>,
     /// Smoothing window half-width in bins (= lifter_len)
     lifter_len: usize,
     /// Whether formant preservation is active
@@ -522,6 +524,7 @@ impl FormantPreserver {
         Self {
             log_mag_scratch: vec![0.0_f32; spectrum_size],
             envelope: vec![0.0_f32; spectrum_size],
+            envelope_scratch: vec![0.0_f32; spectrum_size],
             lifter_len: LIFTER_LEN,
             enabled: false,
             strength: 0.5,
@@ -557,17 +560,19 @@ impl FormantPreserver {
 
         // Backward pass: average the forward-smoothed result with a mirrored pass
         // to cancel the lag introduced by the causal forward accumulator.
+        // Copy forward-pass result to scratch to avoid reading stale overwritten data.
+        self.envelope_scratch[..n].copy_from_slice(&self.envelope[..n]);
         running_sum = 0.0;
         count = 0;
         for k in (0..n).rev() {
-            running_sum += self.envelope[k];
+            running_sum += self.envelope_scratch[k];
             count += 1;
             if n - 1 - k >= win {
-                running_sum -= self.envelope[k + win];
+                running_sum -= self.envelope_scratch[k + win];
                 count -= 1;
             }
             // Average forward and backward estimates
-            self.envelope[k] = (self.envelope[k] + running_sum / count as f32) * 0.5;
+            self.envelope[k] = (self.envelope_scratch[k] + running_sum / count as f32) * 0.5;
         }
     }
 }

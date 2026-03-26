@@ -19,6 +19,8 @@ pub struct SuperdirectiveBeamformer {
     /// Precomputed weights: [bin][mic]
     weights: Vec<Vec<Complex<f32>>>,
     spectrum_size: usize,
+    /// Pre-allocated output buffer (avoids per-hop allocation)
+    output_buf: Vec<Complex<f32>>,
 }
 
 impl SuperdirectiveBeamformer {
@@ -98,6 +100,7 @@ impl SuperdirectiveBeamformer {
 
         Self {
             weights,
+            output_buf: vec![Complex::new(0.0, 0.0); spectrum_size],
             spectrum_size,
         }
     }
@@ -109,20 +112,19 @@ impl SuperdirectiveBeamformer {
     ///
     /// # Returns
     /// Single-channel STFT output
-    pub fn apply(&self, stft_channels: &[Vec<Complex<f32>>]) -> Vec<Complex<f32>> {
+    pub fn apply(&mut self, stft_channels: &[Vec<Complex<f32>>]) -> &[Complex<f32>] {
         let num_mics = stft_channels.len();
 
-        (0..self.spectrum_size)
-            .map(|k| {
-                let mut sum = Complex::new(0.0, 0.0);
-                for (m, ch) in stft_channels.iter().enumerate().take(num_mics) {
-                    if k < ch.len() && m < self.weights[k].len() {
-                        sum += self.weights[k][m].conj() * ch[k];
-                    }
+        for k in 0..self.spectrum_size {
+            let mut sum = Complex::new(0.0, 0.0);
+            for (m, ch) in stft_channels.iter().enumerate().take(num_mics) {
+                if k < ch.len() && m < self.weights[k].len() {
+                    sum += self.weights[k][m].conj() * ch[k];
                 }
-                sum
-            })
-            .collect()
+            }
+            self.output_buf[k] = sum;
+        }
+        &self.output_buf[..self.spectrum_size]
     }
 
     /// Get spectrum size.
@@ -181,7 +183,7 @@ mod tests {
             spacing_m: 0.05,
         };
 
-        let bf = SuperdirectiveBeamformer::new(&geom, 0.0, 256, 48000.0, 0.01);
+        let mut bf = SuperdirectiveBeamformer::new(&geom, 0.0, 256, 48000.0, 0.01);
 
         let stft_channels = vec![
             vec![Complex::new(1.0, 0.0); 129],
@@ -190,7 +192,7 @@ mod tests {
 
         let output = bf.apply(&stft_channels);
         assert_eq!(output.len(), 129);
-        for c in &output {
+        for c in output {
             assert!(c.re.is_finite() && c.im.is_finite());
         }
     }
