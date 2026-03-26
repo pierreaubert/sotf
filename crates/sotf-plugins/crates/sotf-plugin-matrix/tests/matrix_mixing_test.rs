@@ -25,10 +25,7 @@ fn test_mono_summing_loudness_correlated() {
     let mut plugin =
         MatrixPlugin::with_matrix(input_channels, output_channels, matrix_data).unwrap();
 
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames: 64,
-    };
+    let context = ProcessContext::new(44100, 64,);
 
     // Create INTERLEAVED input buffer for 64 frames
     // [L, R, L, R, ...]
@@ -62,10 +59,7 @@ fn test_mono_summing_loudness_correlated() {
     let settle_frames = 4096;
     let settle_input = vec![1.0_f32; settle_frames * input_channels];
     let mut settle_output = vec![0.0_f32; settle_frames * output_channels];
-    let settle_context = ProcessContext {
-        sample_rate: 44100,
-        num_frames: settle_frames,
-    };
+    let settle_context = ProcessContext::new(44100, settle_frames,);
     plugin
         .process(&settle_input, &mut settle_output, &settle_context)
         .unwrap();
@@ -97,10 +91,7 @@ fn test_mid_side_encoding_decoding() {
     ];
 
     let mut plugin = MatrixPlugin::with_matrix(input_channels, output_channels, ms_matrix).unwrap();
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames: 64,
-    };
+    let context = ProcessContext::new(44100, 64,);
 
     let num_frames = 64;
     let mut output = vec![0.0; num_frames * output_channels];
@@ -173,10 +164,7 @@ fn test_mid_side_roundtrip() {
 
     let mut decoder = MatrixPlugin::with_matrix(2, 2, vec![0.5, 0.5, 0.5, -0.5]).unwrap();
 
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames: 64,
-    };
+    let context = ProcessContext::new(44100, 64,);
     let num_frames = 64;
 
     // Input: L=0.8, R=0.2
@@ -203,10 +191,7 @@ fn test_mid_side_roundtrip() {
 #[test]
 fn test_mono_mix_down_laws() {
     // Validate different pan laws
-    let context = ProcessContext {
-        sample_rate: 44100,
-        num_frames: 64,
-    };
+    let context = ProcessContext::new(44100, 64,);
     let num_frames = 64;
 
     // -3dB Law Matrix: [0.707, 0.707]

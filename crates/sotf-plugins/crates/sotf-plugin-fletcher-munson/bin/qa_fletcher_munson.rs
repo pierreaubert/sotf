@@ -36,10 +36,7 @@ fn main() {
     inner.initialize(sample_rate).unwrap();
 
     let mut buffer = generate_sine(sample_rate, 1000.0, -10.0, num_frames);
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer[num_frames - 1000..]);
     println!("  Expected: ~-10.00 dB  Measured: {:.2} dB", peak);
@@ -85,10 +82,7 @@ fn main() {
 
     // Measure 50 Hz (sub-bass)
     let mut buf_50 = generate_sine(sample_rate, 50.0, -10.0, settle_frames);
-    let ctx_settle = ProcessContext {
-        sample_rate,
-        num_frames: settle_frames,
-    };
+    let ctx_settle = ProcessContext::new(sample_rate, settle_frames);
     plugin_below.process_in_place(&mut buf_50, &ctx_settle).unwrap();
     let peak_50 = measure_peak_db(&buf_50[settle_frames - 2000..]);
 

@@ -195,10 +195,7 @@ pub fn test_varied_buffer_sizes<P: Plugin>(
 
         while frames_processed < total_frames {
             let num_frames = (block_size).min(total_frames - frames_processed);
-            let ctx = ProcessContext {
-                sample_rate: sample_rate as u32,
-                num_frames,
-            };
+            let ctx = ProcessContext::new(sample_rate as u32, num_frames);
 
             let in_slice = &input[frames_processed * num_channels_in
                 ..(frames_processed + num_frames) * num_channels_in];
@@ -304,10 +301,7 @@ pub fn run_standard_tests(plugin: &mut dyn Plugin, label: &str) {
     let rt_block_size = 512;
     let rt_input = vec![0.0_f32; rt_block_size * plugin.input_channels()];
     let mut rt_output = vec![0.0_f32; rt_block_size * plugin.output_channels()];
-    let rt_ctx = ProcessContext {
-        sample_rate,
-        num_frames: rt_block_size,
-    };
+    let rt_ctx = ProcessContext::new(sample_rate, rt_block_size);
 
     // Warm up
     for _ in 0..10 {
@@ -330,10 +324,7 @@ pub fn run_standard_tests(plugin: &mut dyn Plugin, label: &str) {
     let mut pos = 0;
     while pos < bench_frames {
         let end = (pos + rt_block_size).min(bench_frames);
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sample_rate, end - pos);
         plugin
             .process(
                 &bench_input[pos * plugin.input_channels()..end * plugin.input_channels()],
@@ -384,10 +375,7 @@ pub fn detect_latency(plugin: &mut dyn Plugin, sample_rate: f64) -> usize {
     let mut frames_processed = 0;
     while frames_processed < total_frames {
         let num_frames = (block_size).min(total_frames - frames_processed);
-        let ctx = ProcessContext {
-            sample_rate: sample_rate as u32,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sample_rate as u32, num_frames);
 
         let in_slice =
             &input[frames_processed * channels..(frames_processed + num_frames) * channels];
@@ -437,10 +425,7 @@ impl PerformanceProfiler {
         let mut frames_processed = 0;
         while frames_processed < total_frames {
             let num_frames = (self.block_size).min(total_frames - frames_processed);
-            let ctx = ProcessContext {
-                sample_rate: self.sample_rate as u32,
-                num_frames,
-            };
+            let ctx = ProcessContext::new(self.sample_rate as u32, num_frames);
 
             let in_slice = &input
                 [frames_processed * self.channels..(frames_processed + num_frames) * self.channels];
@@ -479,10 +464,7 @@ pub fn benchmark_plugin_full(
     let buffer_size = 512;
     let input = vec![0.1; buffer_size * plugin.input_channels()];
     let mut output = vec![0.0; buffer_size * plugin.output_channels()];
-    let ctx = ProcessContext {
-        sample_rate: sample_rate as u32,
-        num_frames: buffer_size,
-    };
+    let ctx = ProcessContext::new(sample_rate as u32, buffer_size,);
 
     group.bench_function("process_512", |b: &mut criterion::Bencher| {
         b.iter(|| {
@@ -527,10 +509,7 @@ pub fn test_parameter_ramp(
             .set_parameter(param_id.clone(), ParameterValue::Float(val))
             .unwrap();
 
-        let ctx = ProcessContext {
-            sample_rate: sample_rate as u32,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sample_rate as u32, num_frames);
 
         let in_slice =
             &input[frames_processed * channels..(frames_processed + num_frames) * channels];

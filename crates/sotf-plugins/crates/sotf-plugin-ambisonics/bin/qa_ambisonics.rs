@@ -30,10 +30,7 @@ fn main() {
         input[f * 4] = 1.0; // W channel only
     }
     let mut output = vec![0.0_f32; num_frames * 6];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     plugin.process(&input, &mut output, &ctx).unwrap();
 
     // Non-LFE channels should all be non-zero for omni signal
@@ -83,10 +80,7 @@ fn main() {
         input_soa[f * 9] = 1.0; // W channel
     }
     let mut output_soa = vec![0.0_f32; num_frames * 12];
-    let ctx_soa = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx_soa = ProcessContext::new(sample_rate, num_frames);
     plugin_soa
         .process(&input_soa, &mut output_soa, &ctx_soa)
         .unwrap();

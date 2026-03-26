@@ -18,10 +18,7 @@ proptest! {
         let mut gain = GainPlugin::new(2, 0.0);
         gain.initialize(48000).unwrap();
 
-        let context = sotf_plugins::ProcessContext {
-            sample_rate: 48000,
-            num_frames: 512,
-        };
+        let context = sotf_plugins::ProcessContext::new(48000, 512,);
 
         let mut buffer = input.clone();
         gain.process_in_place(&mut buffer, &context).unwrap();
@@ -41,10 +38,7 @@ proptest! {
         let mut gain = GainPlugin::new(2, 6.0);
         gain.initialize(48000).unwrap();
 
-        let context = sotf_plugins::ProcessContext {
-            sample_rate: 48000,
-            num_frames: 256,
-        };
+        let context = sotf_plugins::ProcessContext::new(48000, 256,);
 
         let mut buffer = input.clone();
         gain.process_in_place(&mut buffer, &context).unwrap();
@@ -66,10 +60,7 @@ proptest! {
         let mut gain = GainPlugin::new(2, -60.0);
         gain.initialize(48000).unwrap();
 
-        let context = sotf_plugins::ProcessContext {
-            sample_rate: 48000,
-            num_frames: 128,
-        };
+        let context = sotf_plugins::ProcessContext::new(48000, 128,);
 
         let mut buffer = input.clone();
         gain.process_in_place(&mut buffer, &context).unwrap();
@@ -84,10 +75,7 @@ proptest! {
         let mut gain = GainPlugin::new(2, gain_db);
         gain.initialize(48000).unwrap();
 
-        let context = sotf_plugins::ProcessContext {
-            sample_rate: 48000,
-            num_frames: 64,
-        };
+        let context = sotf_plugins::ProcessContext::new(48000, 64,);
 
         let mut buffer = input.clone();
         let result = gain.process_in_place(&mut buffer, &context);
@@ -151,10 +139,7 @@ proptest! {
         let mut gain = GainPlugin::new(2, 0.0);
         gain.initialize(48000).unwrap();
 
-        let context = sotf_plugins::ProcessContext {
-            sample_rate: 48000,
-            num_frames: 128,
-        };
+        let context = sotf_plugins::ProcessContext::new(48000, 128,);
 
         let mut buffer = input.clone();
         gain.process_in_place(&mut buffer, &context).unwrap();
@@ -171,10 +156,7 @@ proptest! {
         let mut gain = GainPlugin::new(2, gain_db);
         gain.initialize(48000).unwrap();
 
-        let context = sotf_plugins::ProcessContext {
-            sample_rate: 48000,
-            num_frames: 64,
-        };
+        let context = sotf_plugins::ProcessContext::new(48000, 64,);
 
         let mut buffer = input.clone();
         gain.process_in_place(&mut buffer, &context).unwrap();
@@ -224,10 +206,7 @@ fn test_gain_at_boundary_values() {
             gain_db
         );
 
-        let context = sotf_plugins::ProcessContext {
-            sample_rate: 48000,
-            num_frames: 64,
-        };
+        let context = sotf_plugins::ProcessContext::new(48000, 64,);
 
         let input = [0.5f32; 128];
         let mut buffer = input.to_vec();
@@ -259,10 +238,7 @@ fn test_processing_at_different_sample_rates() {
             sample_rate
         );
 
-        let context = sotf_plugins::ProcessContext {
-            sample_rate,
-            num_frames: 64,
-        };
+        let context = sotf_plugins::ProcessContext::new(sample_rate, 64);
 
         let input = [0.5f32; 128];
         let mut buffer = input.to_vec();
@@ -284,10 +260,7 @@ fn test_processing_at_different_buffer_sizes() {
         let mut gain = GainPlugin::new(2, 0.0);
         gain.initialize(48000).unwrap();
 
-        let context = sotf_plugins::ProcessContext {
-            sample_rate: 48000,
-            num_frames: buffer_size,
-        };
+        let context = sotf_plugins::ProcessContext::new(48000, buffer_size,);
 
         let input = vec![0.5f32; buffer_size * 2];
         let mut buffer = input.to_vec();

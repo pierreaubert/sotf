@@ -1551,10 +1551,7 @@ mod tests {
         let num_frames = 4096;
         let input = vec![0.1f32; num_frames * 2]; // stereo
         let mut output = vec![0.0f32; num_frames * 2];
-        let context = ProcessContext {
-            num_frames,
-            sample_rate: 48000,
-        };
+        let context = ProcessContext::new(48000, num_frames);
 
         let processed = plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(processed, num_frames);
@@ -1592,10 +1589,7 @@ mod tests {
             })
             .collect();
         let mut output = vec![0.0f32; num_frames * 2];
-        let context = ProcessContext {
-            num_frames,
-            sample_rate: 48000,
-        };
+        let context = ProcessContext::new(48000, num_frames);
 
         let processed = plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(processed, num_frames);
@@ -1996,10 +1990,7 @@ mod tests {
             .map(|i| (i as f32 * 0.01).sin() * 0.5)
             .collect();
         let mut output = vec![0.0f32; num_frames * 2];
-        let context = ProcessContext {
-            num_frames,
-            sample_rate: 44100,
-        };
+        let context = ProcessContext::new(44100, num_frames);
 
         let processed = plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(processed, num_frames);

@@ -23,10 +23,7 @@ fn main() {
     let num_frames = 512;
     let input = vec![0.1f32; num_frames * 2]; // 2-channel interleaved
     let mut output = vec![0.0f32; num_frames]; // 1-channel output
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     plugin.process(&input, &mut output, &ctx).unwrap();
     println!("  Process completed: PASS");
 

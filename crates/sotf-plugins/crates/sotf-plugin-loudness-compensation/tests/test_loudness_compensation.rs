@@ -37,10 +37,7 @@ fn test_loudness_comp_typical_usage() {
 
     let mut output = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -71,10 +68,7 @@ fn test_loudness_comp_dynamic_adjustment() {
     let input = vec![0.1_f32; num_frames * 2];
     let mut output1 = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process with no boost
     plugin.process(&input, &mut output1, &context).unwrap();
@@ -137,10 +131,7 @@ fn test_loudness_comp_with_music() {
     let mut output_high = vec![0.0_f32; num_frames * 2];
     let mut output_low = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin_high_vol
         .process(&input, &mut output_high, &context)
@@ -172,10 +163,7 @@ fn test_loudness_comp_12db_per_octave() {
     plugin.initialize(48000).unwrap();
 
     let num_frames = 4096;
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Test at different frequencies to verify slope
     let test_frequencies = vec![
@@ -229,10 +217,7 @@ fn test_loudness_comp_stereo_to_5ch() {
 
     let mut output = vec![0.0_f32; num_frames * 5];
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 

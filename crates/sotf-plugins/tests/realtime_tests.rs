@@ -30,10 +30,7 @@ fn test_gain_plugin_timing() {
     gain.initialize(TEST_SAMPLE_RATE).unwrap();
 
     let input = vec![0.5f32; TEST_BUFFER_SIZE * 2];
-    let context = ProcessContext {
-        sample_rate: TEST_SAMPLE_RATE,
-        num_frames: TEST_BUFFER_SIZE,
-    };
+    let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE,);
 
     let mut times = Vec::with_capacity(ITERATIONS);
 
@@ -80,10 +77,7 @@ fn test_gain_plugin_timing() {
 #[test]
 fn test_gain_plugin_chain_timing() {
     let input = vec![0.5f32; TEST_BUFFER_SIZE * 2];
-    let context = ProcessContext {
-        sample_rate: TEST_SAMPLE_RATE,
-        num_frames: TEST_BUFFER_SIZE,
-    };
+    let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE,);
 
     let mut gain = GainPlugin::new(2, 1.0);
     gain.initialize(TEST_SAMPLE_RATE).unwrap();
@@ -121,10 +115,7 @@ fn test_limiter_plugin_timing() {
     plugin.initialize(TEST_SAMPLE_RATE).unwrap();
 
     let input = vec![0.8f32; TEST_BUFFER_SIZE * 2];
-    let context = ProcessContext {
-        sample_rate: TEST_SAMPLE_RATE,
-        num_frames: TEST_BUFFER_SIZE,
-    };
+    let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE,);
 
     let mut times = Vec::with_capacity(ITERATIONS);
 
@@ -160,10 +151,7 @@ fn test_upmixer_plugin_timing() {
     );
 
     let input = vec![0.5f32; TEST_BUFFER_SIZE * 2];
-    let context = ProcessContext {
-        sample_rate: TEST_SAMPLE_RATE,
-        num_frames: TEST_BUFFER_SIZE,
-    };
+    let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE,);
 
     let output_channels = 10; // 5.1.4 has 10 channels
     let mut times = Vec::with_capacity(ITERATIONS);
@@ -198,10 +186,7 @@ fn test_no_allocations_in_processing_loop() {
     let mut gain = GainPlugin::new(2, 0.0);
     gain.initialize(TEST_SAMPLE_RATE).unwrap();
 
-    let context = ProcessContext {
-        sample_rate: TEST_SAMPLE_RATE,
-        num_frames: TEST_BUFFER_SIZE,
-    };
+    let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE,);
 
     let input = vec![0.5f32; TEST_BUFFER_SIZE * 2];
 
@@ -216,10 +201,7 @@ fn test_memory_usage_stability() {
     let mut gain = GainPlugin::new(2, 0.0);
     gain.initialize(TEST_SAMPLE_RATE).unwrap();
 
-    let context = ProcessContext {
-        sample_rate: TEST_SAMPLE_RATE,
-        num_frames: TEST_BUFFER_SIZE,
-    };
+    let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE,);
 
     let input = vec![0.5f32; TEST_BUFFER_SIZE * 2];
 
@@ -236,10 +218,7 @@ fn test_processing_under_load() {
     let mut gain = GainPlugin::new(2, 0.0);
     gain.initialize(TEST_SAMPLE_RATE).unwrap();
 
-    let context = ProcessContext {
-        sample_rate: TEST_SAMPLE_RATE,
-        num_frames: TEST_BUFFER_SIZE,
-    };
+    let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE,);
 
     let input = vec![0.5f32; TEST_BUFFER_SIZE * 2];
 

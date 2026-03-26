@@ -417,10 +417,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(output[999].is_finite());
@@ -435,10 +432,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(output[999].is_finite());
@@ -453,10 +447,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 100,
-            },
+            &ProcessContext::new(48000, 100,),
         )
         .unwrap();
         assert!(output[0].is_finite());
@@ -472,10 +463,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 10000,
-            },
+            &ProcessContext::new(48000, 10000,),
         )
         .unwrap();
         assert!(
@@ -494,10 +482,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 10000,
-            },
+            &ProcessContext::new(48000, 10000,),
         )
         .unwrap();
         assert!(
@@ -527,10 +512,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 
@@ -565,10 +547,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 
@@ -611,10 +590,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
         // All outputs should be finite
@@ -635,10 +611,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 
@@ -677,10 +650,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 
@@ -702,10 +672,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 
@@ -728,10 +695,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
         assert!(
@@ -752,10 +716,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
         assert!(
@@ -792,10 +753,7 @@ mod tests {
         assert_eq!(p.output_channels(), 3); // 3 bands
 
         let num_frames = 2000;
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
 
         // Process a block before parameter change
         let input: Vec<f32> = (0..num_frames)

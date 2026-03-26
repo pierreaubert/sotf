@@ -428,10 +428,7 @@ mod tests {
 
     /// Helper: process enough frames for smoothers to converge, then check final frame
     fn process_converged(plugin: &mut ChannelMuteSoloPlugin, channels: usize) -> Vec<f32> {
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: CONVERGE_FRAMES,
-        };
+        let context = ProcessContext::new(48000, CONVERGE_FRAMES,);
         // Fill with 1.0 so gain is the output value
         let mut buffer = vec![1.0; CONVERGE_FRAMES * channels];
         plugin.process_in_place(&mut buffer, &context).unwrap();
@@ -443,10 +440,7 @@ mod tests {
     fn test_bypass() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, false); // disabled
         let mut buffer = vec![1.0, 2.0, 3.0, 4.0]; // 2 frames, 2 channels
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2,
-        };
+        let context = ProcessContext::new(44100, 2,);
 
         plugin.process_in_place(&mut buffer, &context).unwrap();
 
@@ -610,10 +604,7 @@ mod tests {
         let mut plugin = ChannelMuteSoloPlugin::from_params(2, params);
         // Even with just 1 frame, should be at target (smoothers were reset)
         let mut buffer = vec![1.0, 1.0];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1,
-        };
+        let context = ProcessContext::new(48000, 1,);
         plugin.process_in_place(&mut buffer, &context).unwrap();
 
         assert!(
@@ -634,10 +625,7 @@ mod tests {
 
         // First frame should be at gain 1.0 (all channels unmuted)
         let mut buffer = vec![1.0, 1.0];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1,
-        };
+        let context = ProcessContext::new(48000, 1,);
         plugin.process_in_place(&mut buffer, &context).unwrap();
         assert!((buffer[0] - 1.0).abs() < TOLERANCE);
 
@@ -747,10 +735,7 @@ mod tests {
 
         // Verify the dim gain is applied correctly (from_params resets smoothers)
         let mut buffer = vec![1.0, 1.0];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1,
-        };
+        let context = ProcessContext::new(48000, 1,);
         plugin.process_in_place(&mut buffer, &context).unwrap();
 
         let expected_linear = 10.0_f32.powf(-6.0 / 20.0);

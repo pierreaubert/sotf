@@ -34,10 +34,7 @@ fn main() {
     // Test 1: Open Gate (Input above threshold)
     println!("\n[Test 1] Open State (Input -10dB, Thresh -20dB)");
     let mut buffer = generate_dc(-10.0, 4800);
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames: 4800,
-    };
+    let ctx = ProcessContext::new(sample_rate, 4800);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer);
     println!("  Target: -10.00dB, Measured: {:.2}dB", peak);
@@ -54,10 +51,7 @@ fn main() {
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx_block = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx_block = ProcessContext::new(sample_rate, end - pos);
         inner
             .process_in_place(&mut buffer[pos..end], &ctx_block)
             .unwrap();
@@ -79,10 +73,7 @@ fn main() {
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx_block = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx_block = ProcessContext::new(sample_rate, end - pos);
         inner
             .process_in_place(&mut buffer[pos..end], &ctx_block)
             .unwrap();

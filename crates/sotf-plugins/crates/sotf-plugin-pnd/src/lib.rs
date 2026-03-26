@@ -968,10 +968,7 @@ mod tests {
         p.initialize(48000).unwrap();
 
         let nf = RESAMPLER_CHUNK_SIZE;
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(48000, nf,);
 
         // Process several blocks and track how current_ratio evolves
         let mut ratios = Vec::new();
@@ -1011,10 +1008,7 @@ mod tests {
             p.initialize(48000).unwrap();
 
             let nf = RESAMPLER_CHUNK_SIZE;
-            let ctx = ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(48000, nf,);
 
             let input: Vec<f32> = (0..nf * 2)
                 .map(|i| 0.3 * (i as f32 * 0.01).sin())

@@ -284,6 +284,12 @@ pub struct DawHost {
     /// Per-node cumulative latency from graph inputs, computed during build().
     /// Used to calculate compensation delays at merge points.
     node_latency_from_input: Vec<usize>,
+    /// Per-node reported latency cached during build(), indexed by NodeId.
+    /// Used to detect runtime latency changes in set_plugin_parameter().
+    node_latency_cache: Vec<usize>,
+    /// True when a plugin's latency_samples() has changed since last build/rebuild.
+    /// Triggers compensation delay recomputation at the start of next process().
+    latency_dirty: bool,
     /// Parameter automation state. Key = (NodeId, ParameterId).
     /// Evaluated before each processing stage.
     automation: HashMap<(NodeId, ParameterId), ParameterAutomation>,
@@ -291,6 +297,16 @@ pub struct DawHost {
     playback_position: usize,
     /// Pre-allocated scratch buffer for automation updates (avoids per-process() heap allocation).
     automation_scratch: Vec<(NodeId, ParameterId, f32)>,
+    /// Per-node parameter ramps for the current block, indexed by NodeId.
+    /// Pre-allocated during build(), cleared (not deallocated) each process() call.
+    node_ramps: Vec<Vec<crate::plugin::ParameterRamp>>,
+    /// Maps (NodeId, ParameterId) -> param_index (position in plugin's parameters() vec).
+    /// Built during build() for O(1) lookup when creating ParameterRamp structs.
+    param_index_cache: HashMap<(NodeId, ParameterId), u16>,
+    /// Per-node count of primary (non-sidechain) input channels, indexed by NodeId.
+    /// primary_input_channels[nid] = input_channels - sidechain_channels.
+    /// Computed during build() from sidechain edge predecessors.
+    primary_input_channels: Vec<usize>,
 }
 
 impl DawHost {
@@ -320,9 +336,14 @@ impl DawHost {
             cached_latency: None,
             bypassed: Vec::new(),
             node_latency_from_input: Vec::new(),
+            node_latency_cache: Vec::new(),
+            latency_dirty: false,
             automation: HashMap::new(),
             playback_position: 0,
             automation_scratch: Vec::new(),
+            node_ramps: Vec::new(),
+            param_index_cache: HashMap::new(),
+            primary_input_channels: Vec::new(),
         }
     }
     pub fn new_default(sr: u32) -> Self {
@@ -459,6 +480,40 @@ impl DawHost {
         }
         // Compute per-node cumulative latency from inputs and compensation delays
         let compensation_delays = self.compute_compensation_delays(num_slots);
+
+        // Cache per-node reported latency for runtime change detection
+        self.node_latency_cache = vec![0; num_slots];
+        for &nid in self.nodes.keys() {
+            if let Some(p) = self.plugins.get(nid).and_then(|p| p.as_ref()) {
+                self.node_latency_cache[nid] = p.latency_samples();
+            }
+        }
+        self.latency_dirty = false;
+
+        // Build param_index_cache and pre-allocate node_ramps for automation
+        self.param_index_cache.clear();
+        self.node_ramps = vec![Vec::new(); num_slots];
+        for &nid in self.nodes.keys() {
+            if let Some(p) = self.plugins.get(nid).and_then(|p| p.as_ref()) {
+                for (idx, param) in p.parameters().iter().enumerate() {
+                    self.param_index_cache
+                        .insert((nid, param.id.clone()), idx as u16);
+                }
+            }
+        }
+
+        // Compute primary (non-sidechain) input channels per node.
+        // For nodes with sidechain edges, subtract sidechain source channels.
+        self.primary_input_channels = vec![0; num_slots];
+        for (&id, node) in &self.nodes {
+            let sc_ch: usize = self.predecessors[id]
+                .iter()
+                .filter(|e| e.edge_type == EdgeType::Sidechain)
+                .filter_map(|e| self.nodes.get(&e.from_node))
+                .map(|n| n.output_channels())
+                .sum();
+            self.primary_input_channels[id] = node.input_channels().saturating_sub(sc_ch);
+        }
 
         self.process_buffers = Some(ProcessBuffers {
             node_buffers,
@@ -598,10 +653,18 @@ impl DawHost {
         val: super::parameters::ParameterValue,
     ) -> Result<(), String> {
         let &nid = self.chain_nodes.get(index).ok_or("oob")?;
-        self.plugins[nid]
-            .as_mut()
-            .unwrap()
-            .set_parameter(super::parameters::ParameterId(id.to_string()), val)
+        let plugin = self.plugins[nid].as_mut().unwrap();
+        plugin.set_parameter(super::parameters::ParameterId(id.to_string()), val)?;
+        // Detect runtime latency changes: if the plugin's reported latency differs
+        // from the cached value, mark for compensation rebuild at next process().
+        let new_latency = plugin.latency_samples();
+        if nid < self.node_latency_cache.len()
+            && self.node_latency_cache[nid] != new_latency
+        {
+            self.node_latency_cache[nid] = new_latency;
+            self.latency_dirty = true;
+        }
+        Ok(())
     }
 
     /// Bypass a node so its plugin is skipped during processing.
@@ -670,6 +733,10 @@ impl DawHost {
         if !self.built {
             self.build()?;
         }
+        // Rebuild compensation delays if a plugin's latency changed at runtime
+        if self.latency_dirty {
+            self.rebuild_compensation();
+        }
         if self.nodes.is_empty() {
             output.copy_from_slice(input);
             return Ok(input.len() / self.input_channels());
@@ -686,11 +753,14 @@ impl DawHost {
         }
         let mut cf = nf;
 
-        // Apply automation: evaluate curves at current position and set parameters.
-        // `eval_curve` interprets (sample, num_frames) as a position within a window,
-        // so we use each automation's relative position and advance it by nf each call.
+        // Apply automation: evaluate curves at block start AND end for sample-accurate ramps.
+        // start_value = curve at current position, end_value = curve at position + nf.
+        // Plugins receive both via ProcessContext.ramps for per-sample interpolation.
+        // set_parameter(end_value) is called for backward compatibility.
+        for ramps in self.node_ramps.iter_mut() {
+            ramps.clear();
+        }
         if !self.automation.is_empty() {
-            // Re-use pre-allocated scratch buffer (clear does not deallocate).
             self.automation_scratch.clear();
             for ((nid, _pid), auto) in &self.automation {
                 if let Some(curve) = auto.curve.as_ref() {
@@ -715,10 +785,31 @@ impl DawHost {
                             values.len().max(1) * nf
                         }
                     };
-                    let pos = auto.position.min(total_frames.saturating_sub(1));
-                    let val = automation_utils::eval_curve(curve, pos, total_frames);
+                    let pos_start = auto.position.min(total_frames.saturating_sub(1));
+                    let pos_end = (auto.position + nf).min(total_frames.saturating_sub(1));
+                    let start_val =
+                        automation_utils::eval_curve(curve, pos_start, total_frames);
+                    let end_val = automation_utils::eval_curve(curve, pos_end, total_frames);
+                    // set_parameter uses start_val for backward compat: plugins
+                    // that don't read ramps will process the block at the start value.
+                    // Ramp-aware plugins interpolate from start_val to end_val.
                     self.automation_scratch
-                        .push((*nid, auto.param_id.clone(), val));
+                        .push((*nid, auto.param_id.clone(), start_val));
+
+                    // Build ParameterRamp if the value changes across the block
+                    if (start_val - end_val).abs() > 1e-9 {
+                        if let Some(&param_idx) =
+                            self.param_index_cache.get(&(*nid, auto.param_id.clone()))
+                        {
+                            if *nid < self.node_ramps.len() {
+                                self.node_ramps[*nid].push(crate::plugin::ParameterRamp {
+                                    param_index: param_idx,
+                                    start_value: start_val,
+                                    end_value: end_val,
+                                });
+                            }
+                        }
+                    }
                 }
             }
             for i in 0..self.automation_scratch.len() {
@@ -741,6 +832,11 @@ impl DawHost {
                     bufs.scratch_input[..input.len()].copy_from_slice(input);
                     input.len()
                 } else {
+                    let primary_ch = if nid < self.primary_input_channels.len() {
+                        self.primary_input_channels[nid]
+                    } else {
+                        node.input_channels()
+                    };
                     let il = Self::merge_inputs_into(
                         node,
                         &self.predecessors,
@@ -750,6 +846,7 @@ impl DawHost {
                         &mut bufs.channel_map_buffer,
                         &mut bufs.delay_scratch,
                         &mut bufs.compensation_delays,
+                        primary_ch,
                     )?;
                     bufs.scratch_input[..il].copy_from_slice(&bufs.merge_buffer[..il]);
                     il
@@ -763,9 +860,15 @@ impl DawHost {
                     cf
                 } else {
                     let p = self.plugins[nid].as_mut().unwrap();
+                    let ramps = if nid < self.node_ramps.len() {
+                        std::mem::take(&mut self.node_ramps[nid])
+                    } else {
+                        Vec::new()
+                    };
                     let context = ProcessContext {
                         sample_rate: self.sample_rate,
                         num_frames: cf,
+                        ramps,
                     };
                     let mof = p.output_frames_for_input(cf);
                     let ol = mof * node.output_channels();
@@ -777,6 +880,12 @@ impl DawHost {
                         &mut bufs.scratch_output[..ol],
                         &context,
                     )?;
+                    // Return ramps Vec to avoid re-allocation on next process()
+                    if nid < self.node_ramps.len() {
+                        let mut ramps = context.ramps;
+                        ramps.clear();
+                        self.node_ramps[nid] = ramps;
+                    }
                     bufs.node_buffers[nid]
                         .as_mut()
                         .unwrap()
@@ -814,16 +923,17 @@ impl DawHost {
         cmb: &mut [f32],
         delay_scratch: &mut Vec<f32>,
         compensation_delays: &mut HashMap<(NodeId, NodeId), LookaheadBuffer>,
+        primary_ch: usize,
     ) -> Result<usize, String> {
-        let is = nf * n.input_channels();
+        let node_in_ch = n.input_channels();
+        let is = nf * node_in_ch;
         if mb.len() < is {
             return Err(format!("Merge buffer too small: {} < {}", mb.len(), is));
         }
         mb[..is].fill(0.0);
+
+        // Phase 1: Sum Audio edges into primary channels (0..primary_ch)
         for e in &preds[n.id] {
-            // Skip sidechain edges — they should not be summed into the primary
-            // audio input. Sidechain data is routed separately when plugins
-            // declare extended input channels via input_channels() > channels().
             if e.edge_type == EdgeType::Sidechain {
                 continue;
             }
@@ -843,18 +953,53 @@ impl DawHost {
                         cmb[f * cm.len() + di] = sd[f * sb.num_channels + si];
                     }
                 }
-                // Apply compensation delay if needed, then sum into merge buffer
                 Self::apply_compensation_and_sum(
                     e, cm.len(), nf, &cmb[..ms], mb, delay_scratch, compensation_delays,
                 );
-            } else {
+            } else if sb.num_channels == node_in_ch {
+                // Source channels match node input channels: bulk sum (common case)
                 let len = is.min(sd.len());
-                // Apply compensation delay if needed, then sum into merge buffer
                 Self::apply_compensation_and_sum(
-                    e, n.input_channels(), nf, &sd[..len], mb, delay_scratch, compensation_delays,
+                    e, node_in_ch, nf, &sd[..len], mb, delay_scratch, compensation_delays,
                 );
+            } else {
+                // Source has fewer channels than node (sidechain extends input).
+                // Copy per-frame, placing source data into channels 0..src_ch
+                // with stride = node_in_ch in the merge buffer.
+                let src_ch = sb.num_channels;
+                for f in 0..nf {
+                    for ch in 0..src_ch.min(primary_ch) {
+                        let src_idx = f * src_ch + ch;
+                        let dst_idx = f * node_in_ch + ch;
+                        if src_idx < sd.len() {
+                            mb[dst_idx] += sd[src_idx];
+                        }
+                    }
+                }
             }
         }
+
+        // Phase 2: Route Sidechain edges into extended channels (primary_ch..node_in_ch)
+        let mut sc_ch_offset = primary_ch;
+        for e in &preds[n.id] {
+            if e.edge_type != EdgeType::Sidechain {
+                continue;
+            }
+            let sb = nbs[e.from_node].as_ref().unwrap();
+            let sd = sb.read();
+            let sc_ch = sb.num_channels;
+            for f in 0..nf {
+                for ch in 0..sc_ch {
+                    let src_idx = f * sc_ch + ch;
+                    let dst_idx = f * node_in_ch + sc_ch_offset + ch;
+                    if src_idx < sd.len() && dst_idx < is {
+                        mb[dst_idx] = sd[src_idx];
+                    }
+                }
+            }
+            sc_ch_offset += sc_ch;
+        }
+
         Ok(is)
     }
 
@@ -1048,6 +1193,18 @@ impl DawHost {
         }
 
         delays
+    }
+
+    /// Recompute compensation delays after a plugin's latency changed at runtime.
+    /// Only recalculates latency and delay buffers — does not do a full build().
+    fn rebuild_compensation(&mut self) {
+        let num_slots = self.plugins.len();
+        let new_delays = self.compute_compensation_delays(num_slots);
+        if let Some(bufs) = self.process_buffers.as_mut() {
+            bufs.compensation_delays = new_delays;
+        }
+        self.cached_latency = Some(self.compute_latency());
+        self.latency_dirty = false;
     }
 
     fn has_cycle(&self) -> bool {
@@ -2005,6 +2162,706 @@ mod tests {
         assert!(
             output.iter().all(|&s| (s - 0.75).abs() < 1e-6),
             "Output samples should be input * 0.75"
+        );
+    }
+
+    // ---- PDC (Plugin Delay Compensation) tests ----
+
+    /// A plugin that actually delays audio by `delay` samples using a LookaheadBuffer,
+    /// and correctly reports latency_samples(). Used to test PDC end-to-end.
+    struct TrueDelayPlugin {
+        channels: usize,
+        delay: usize,
+        buf: crate::lookahead::LookaheadBuffer,
+    }
+    impl TrueDelayPlugin {
+        fn new(channels: usize, delay_samples: usize) -> Self {
+            Self {
+                channels,
+                delay: delay_samples,
+                buf: crate::lookahead::LookaheadBuffer::new(delay_samples, channels),
+            }
+        }
+    }
+    impl Plugin for TrueDelayPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("TrueDelay", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            Err("none".into())
+        }
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            let ch = self.channels;
+            for f in 0..ctx.num_frames {
+                let start = f * ch;
+                let end = start + ch;
+                self.buf
+                    .process_frame(&input[start..end], &mut output[start..end]);
+            }
+            Ok(ctx.num_frames)
+        }
+        fn latency_samples(&self) -> usize {
+            self.delay
+        }
+    }
+
+    #[test]
+    fn test_pdc_diamond_time_alignment() {
+        // Diamond graph:
+        //   inp -> [passthrough (lat=0), delay (lat=16)] -> out
+        //
+        // Without PDC, the passthrough path would arrive 16 samples early.
+        // With PDC, both paths should be time-aligned at the merge (out) node:
+        // the passthrough path gets a compensation delay of 16 samples.
+        let delay_samples = 16;
+        let num_frames = 64;
+
+        let mut g = DawHost::new(1, 48000);
+
+        let inp = g.add_node("inp".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let pass = g.add_node("pass".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let delay = g.add_node("delay".into(), Box::new(TrueDelayPlugin::new(1, delay_samples))).unwrap();
+        let out = g.add_node("out".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+
+        g.add_edge(GraphEdge::new(inp, pass)).unwrap();
+        g.add_edge(GraphEdge::new(inp, delay)).unwrap();
+        g.add_edge(GraphEdge::new(pass, out)).unwrap();
+        g.add_edge(GraphEdge::new(delay, out)).unwrap();
+        g.build().unwrap();
+
+        assert_eq!(g.total_latency_samples(), delay_samples);
+
+        // Create an impulse at frame 0
+        let mut input = vec![0.0f32; num_frames];
+        input[0] = 1.0;
+        let mut output = vec![0.0f32; num_frames];
+
+        g.process(&input, &mut output).unwrap();
+
+        // Both paths should arrive at the same time (frame = delay_samples).
+        // passthrough path: delayed by PDC compensation (16 samples)
+        // delay path: delayed by TrueDelayPlugin (16 samples)
+        // At the merge, they sum: output[delay_samples] should be 2.0 (1.0 + 1.0)
+        assert!(
+            (output[delay_samples] - 2.0).abs() < 1e-6,
+            "Impulse should be doubled at frame {} due to PDC alignment, got {}",
+            delay_samples,
+            output[delay_samples]
+        );
+
+        // No energy before the aligned position
+        for i in 0..delay_samples {
+            assert!(
+                output[i].abs() < 1e-6,
+                "Frame {} should be silent before aligned impulse, got {}",
+                i,
+                output[i]
+            );
+        }
+
+        // No energy after the aligned impulse
+        for i in (delay_samples + 1)..num_frames {
+            assert!(
+                output[i].abs() < 1e-6,
+                "Frame {} should be silent after aligned impulse, got {}",
+                i,
+                output[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_pdc_diamond_multi_block() {
+        // Same diamond as above, but process the impulse across multiple blocks.
+        // The impulse is in the first block; alignment should still work.
+        let delay_samples = 8;
+        let block_size = 4; // Smaller than delay
+        let total_frames = 32;
+
+        let mut g = DawHost::new(1, 48000);
+
+        let inp = g.add_node("inp".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let pass = g.add_node("pass".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let delay = g.add_node("delay".into(), Box::new(TrueDelayPlugin::new(1, delay_samples))).unwrap();
+        let out = g.add_node("out".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+
+        g.add_edge(GraphEdge::new(inp, pass)).unwrap();
+        g.add_edge(GraphEdge::new(inp, delay)).unwrap();
+        g.add_edge(GraphEdge::new(pass, out)).unwrap();
+        g.add_edge(GraphEdge::new(delay, out)).unwrap();
+        g.build().unwrap();
+
+        // Collect output across multiple blocks
+        let mut all_output = Vec::new();
+        for block_idx in 0..(total_frames / block_size) {
+            let mut input = vec![0.0f32; block_size];
+            if block_idx == 0 {
+                input[0] = 1.0; // Impulse in first frame of first block
+            }
+            let mut output = vec![0.0f32; block_size];
+            g.process(&input, &mut output).unwrap();
+            all_output.extend_from_slice(&output);
+        }
+
+        // Impulse should appear at sample = delay_samples, doubled
+        assert!(
+            (all_output[delay_samples] - 2.0).abs() < 1e-6,
+            "Multi-block: impulse should be doubled at frame {}, got {}",
+            delay_samples,
+            all_output[delay_samples]
+        );
+
+        // Verify silence elsewhere
+        for (i, &s) in all_output.iter().enumerate() {
+            if i != delay_samples {
+                assert!(
+                    s.abs() < 1e-6,
+                    "Multi-block: frame {} should be silent, got {}",
+                    i,
+                    s
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_pdc_reported_vs_actual() {
+        // Verify that total_latency_samples() matches the actual measured delay.
+        // Linear chain: input -> delay(32) -> output
+        let delay_samples = 32;
+        let channels = 1;
+        let num_frames = 128;
+
+        let mut g = DawHost::new(channels, 48000);
+        g.add_plugin(Box::new(TrueDelayPlugin::new(channels, delay_samples)))
+            .unwrap();
+        g.build().unwrap();
+
+        let reported = g.total_latency_samples();
+        assert_eq!(reported, delay_samples);
+
+        // Measure actual delay via impulse
+        let mut input = vec![0.0f32; num_frames * channels];
+        input[0] = 1.0;
+        let mut output = vec![0.0f32; num_frames * channels];
+        g.process(&input, &mut output).unwrap();
+
+        // Find the first non-zero sample in output
+        let actual = output
+            .iter()
+            .position(|&s| s.abs() > 0.5)
+            .expect("impulse should appear in output");
+
+        assert_eq!(
+            reported, actual,
+            "Reported latency ({}) should match actual measured delay ({})",
+            reported, actual
+        );
+    }
+
+    /// A plugin whose latency changes when the "latency" parameter is set.
+    /// Used to test runtime latency rebuild.
+    struct VariableLatencyPlugin {
+        channels: usize,
+        latency: usize,
+    }
+    impl VariableLatencyPlugin {
+        fn new(channels: usize, initial_latency: usize) -> Self {
+            Self {
+                channels,
+                latency: initial_latency,
+            }
+        }
+    }
+    impl Plugin for VariableLatencyPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("VarLatency", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![crate::parameters::Parameter::new_float(
+                "latency", "Latency", 0.0, 0.0, 1000.0,
+            )]
+        }
+        fn set_parameter(
+            &mut self,
+            id: crate::parameters::ParameterId,
+            val: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            if id.0 == "latency" {
+                if let crate::parameters::ParameterValue::Float(v) = val {
+                    self.latency = v as usize;
+                    return Ok(());
+                }
+            }
+            Err(format!("unknown parameter: {}", id.0))
+        }
+        fn get_parameter(
+            &self,
+            id: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            if id.0 == "latency" {
+                Some(crate::parameters::ParameterValue::Float(
+                    self.latency as f32,
+                ))
+            } else {
+                None
+            }
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            output[..input.len()].copy_from_slice(input);
+            Ok(ctx.num_frames)
+        }
+        fn latency_samples(&self) -> usize {
+            self.latency
+        }
+    }
+
+    #[test]
+    fn test_runtime_latency_change_triggers_rebuild() {
+        let mut g = DawHost::new(1, 48000);
+        g.add_plugin(Box::new(VariableLatencyPlugin::new(1, 10)))
+            .unwrap();
+        g.build().unwrap();
+
+        assert_eq!(g.total_latency_samples(), 10);
+        assert!(!g.latency_dirty);
+
+        // Change latency via parameter
+        g.set_plugin_parameter(
+            0,
+            "latency",
+            crate::parameters::ParameterValue::Float(20.0),
+        )
+        .unwrap();
+
+        assert!(g.latency_dirty, "latency_dirty should be set after latency change");
+
+        // Process to trigger rebuild
+        let input = vec![0.0f32; 64];
+        let mut output = vec![0.0f32; 64];
+        g.process(&input, &mut output).unwrap();
+
+        assert_eq!(
+            g.total_latency_samples(),
+            20,
+            "Total latency should update after process() triggers rebuild"
+        );
+        assert!(!g.latency_dirty, "latency_dirty should be cleared after rebuild");
+    }
+
+    // ---- Sample-accurate automation ramp tests ----
+
+    /// A plugin that captures the ramps received in ProcessContext.
+    /// Used to verify that DawHost delivers correct ramp data.
+    struct RampCapturingPlugin {
+        channels: usize,
+        gain: f32,
+        captured_ramps: Vec<Vec<crate::plugin::ParameterRamp>>,
+    }
+    impl RampCapturingPlugin {
+        fn new(channels: usize) -> Self {
+            Self {
+                channels,
+                gain: 1.0,
+                captured_ramps: Vec::new(),
+            }
+        }
+    }
+    impl Plugin for RampCapturingPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("RampCapture", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![crate::parameters::Parameter::new_float(
+                "gain", "Gain", 1.0, 0.0, 4.0,
+            )]
+        }
+        fn set_parameter(
+            &mut self,
+            id: crate::parameters::ParameterId,
+            val: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            if id.0 == "gain" {
+                if let crate::parameters::ParameterValue::Float(v) = val {
+                    self.gain = v;
+                    return Ok(());
+                }
+            }
+            Err(format!("unknown parameter: {}", id.0))
+        }
+        fn get_parameter(
+            &self,
+            id: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            if id.0 == "gain" {
+                Some(crate::parameters::ParameterValue::Float(self.gain))
+            } else {
+                None
+            }
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            // Capture ramps for test inspection
+            self.captured_ramps.push(ctx.ramps.clone());
+            // Apply gain to pass audio through
+            for (o, &i) in output.iter_mut().zip(input.iter()) {
+                *o = i * self.gain;
+            }
+            Ok(ctx.num_frames)
+        }
+    }
+
+    #[test]
+    fn test_automation_linear_ramp_values() {
+        // Linear automation ramp from 0.0 to 1.0 over 4 blocks.
+        // Each block should receive a ramp with interpolated start/end values.
+        let mut g = DawHost::new(1, 48000);
+        g.add_plugin(Box::new(RampCapturingPlugin::new(1))).unwrap();
+        g.build().unwrap();
+
+        let node_id = g.chain_nodes[0];
+        let param_id = crate::parameters::ParameterId::from("gain");
+        let num_frames = 48;
+
+        // Linear curve: 4 values [0.0, 0.333, 0.667, 1.0]
+        // With 4 values and total_frames = 4 * nf, each value corresponds to one block.
+        g.set_automation(
+            node_id,
+            param_id,
+            crate::automation::AutomationCurve::Linear {
+                values: vec![0.0, 0.333, 0.667, 1.0],
+            },
+        );
+
+        let input = vec![1.0f32; num_frames];
+        let mut output = vec![0.0f32; num_frames];
+
+        // Process 4 blocks
+        for _ in 0..4 {
+            g.process(&input, &mut output).unwrap();
+        }
+
+        // Get captured ramps from the plugin
+        let plugin = g.get_plugin(0).unwrap();
+        let plugin: &RampCapturingPlugin =
+            unsafe { &*(plugin as *const dyn Plugin as *const RampCapturingPlugin) };
+
+        // Every block should have received ramps (values change each block)
+        let non_empty_ramps: Vec<_> = plugin
+            .captured_ramps
+            .iter()
+            .filter(|r| !r.is_empty())
+            .collect();
+        assert!(
+            !non_empty_ramps.is_empty(),
+            "Linear automation should produce ramps"
+        );
+
+        // Each ramp should have param_index=0 (gain is the first parameter)
+        for ramps in &non_empty_ramps {
+            assert_eq!(ramps[0].param_index, 0);
+            // start and end should differ (linear interpolation changes across block)
+            assert!(
+                (ramps[0].start_value - ramps[0].end_value).abs() > 1e-6,
+                "Ramp should have different start ({}) and end ({}) values",
+                ramps[0].start_value,
+                ramps[0].end_value
+            );
+        }
+    }
+
+    #[test]
+    fn test_automation_step_no_ramp() {
+        // Step automation: value is constant within each step.
+        // No ramp should be generated within a step.
+        let mut g = DawHost::new(1, 48000);
+        g.add_plugin(Box::new(RampCapturingPlugin::new(1))).unwrap();
+        g.build().unwrap();
+
+        let node_id = g.chain_nodes[0];
+        let param_id = crate::parameters::ParameterId::from("gain");
+        let num_frames = 48;
+
+        // Step: hold 0.5 for 2 blocks, then 0.8 for 2 blocks
+        g.set_automation(
+            node_id,
+            param_id,
+            crate::automation::AutomationCurve::Step {
+                values: vec![0.5, 0.8],
+                samples_per_step: num_frames * 2, // Each step lasts 2 blocks
+            },
+        );
+
+        let input = vec![1.0f32; num_frames];
+        let mut output = vec![0.0f32; num_frames];
+
+        // First block: within step 0 (0.5) — no ramp expected
+        g.process(&input, &mut output).unwrap();
+
+        let plugin = g.get_plugin(0).unwrap();
+        let plugin: &RampCapturingPlugin =
+            unsafe { &*(plugin as *const dyn Plugin as *const RampCapturingPlugin) };
+
+        assert!(
+            plugin.captured_ramps[0].is_empty(),
+            "Step automation within a step should not produce ramps, got {:?}",
+            plugin.captured_ramps[0]
+        );
+    }
+
+    #[test]
+    fn test_automation_ramp_empty_when_idle() {
+        // No automation set — ramps should be empty.
+        let mut g = DawHost::new(1, 48000);
+        g.add_plugin(Box::new(RampCapturingPlugin::new(1))).unwrap();
+        g.build().unwrap();
+
+        let input = vec![1.0f32; 48];
+        let mut output = vec![0.0f32; 48];
+
+        g.process(&input, &mut output).unwrap();
+
+        let plugin = g.get_plugin(0).unwrap();
+        let plugin: &RampCapturingPlugin =
+            unsafe { &*(plugin as *const dyn Plugin as *const RampCapturingPlugin) };
+
+        assert!(
+            plugin.captured_ramps[0].is_empty(),
+            "No automation should produce empty ramps"
+        );
+    }
+
+    // ---- Sidechain routing tests ----
+
+    /// A plugin that receives N primary channels + N sidechain channels.
+    /// Copies sidechain data to output for verification.
+    struct SidechainReceiver {
+        primary_ch: usize,
+        /// Captured sidechain samples from the last process() call
+        last_sidechain: Vec<f32>,
+    }
+    impl SidechainReceiver {
+        fn new(primary_ch: usize) -> Self {
+            Self {
+                primary_ch,
+                last_sidechain: Vec::new(),
+            }
+        }
+    }
+    impl Plugin for SidechainReceiver {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("SidechainReceiver", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize {
+            self.primary_ch * 2 // primary + sidechain
+        }
+        fn output_channels(&self) -> usize {
+            self.primary_ch
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
+            Err("none".into())
+        }
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
+            let in_ch = self.primary_ch * 2;
+            let out_ch = self.primary_ch;
+            self.last_sidechain.clear();
+            for f in 0..ctx.num_frames {
+                // Copy primary audio to output
+                for ch in 0..out_ch {
+                    output[f * out_ch + ch] = input[f * in_ch + ch];
+                }
+                // Capture sidechain channels
+                for ch in 0..self.primary_ch {
+                    self.last_sidechain
+                        .push(input[f * in_ch + self.primary_ch + ch]);
+                }
+            }
+            Ok(ctx.num_frames)
+        }
+    }
+
+    #[test]
+    fn test_sidechain_routing_basic() {
+        // Graph: inp -> receiver (Audio), kick -> receiver (Sidechain)
+        // inp sends primary audio (1.0), kick sends sidechain signal (0.5)
+        // Receiver should see both in its extended input channels.
+        let mut g = DawHost::new(1, 48000);
+
+        let inp = g
+            .add_node("inp".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let kick = g
+            .add_node("kick".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let recv = g
+            .add_node("recv".into(), Box::new(SidechainReceiver::new(1)))
+            .unwrap();
+        let out = g
+            .add_node("out".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+
+        // Audio: inp -> recv, Sidechain: kick -> recv, recv -> out
+        g.add_edge(GraphEdge::new(inp, recv)).unwrap();
+        g.add_edge(GraphEdge::sidechain(kick, recv)).unwrap();
+        g.add_edge(GraphEdge::new(recv, out)).unwrap();
+        g.build().unwrap();
+
+        // Verify primary_input_channels
+        assert_eq!(
+            g.primary_input_channels[recv], 1,
+            "Receiver should have 1 primary channel"
+        );
+
+        let nf = 16;
+        // inp gets 1.0, kick gets 0.5
+        let mut input = vec![1.0f32; nf];
+        let mut output = vec![0.0f32; nf];
+
+        // We need to feed different signals to inp and kick.
+        // Since inp is an input node and kick is also an input node (no predecessors),
+        // both receive the same input buffer from process().
+        // For this test, use a workaround: set kick's gain to 0.5 so it scales the input.
+        // Actually, both inp and kick are input nodes — they both receive the same
+        // `input` slice in process(). Let's use ScalerPlugin with factor=0.5 for kick.
+        drop(g);
+
+        let mut g = DawHost::new(1, 48000);
+        let inp = g
+            .add_node("inp".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let kick = g
+            .add_node("kick".into(), Box::new(ScalerPlugin::new(1, 0.5)))
+            .unwrap();
+        let recv = g
+            .add_node("recv".into(), Box::new(SidechainReceiver::new(1)))
+            .unwrap();
+        let out = g
+            .add_node("out".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+
+        g.add_edge(GraphEdge::new(inp, recv)).unwrap();
+        g.add_edge(GraphEdge::sidechain(kick, recv)).unwrap();
+        g.add_edge(GraphEdge::new(recv, out)).unwrap();
+        g.build().unwrap();
+
+        input.fill(1.0);
+        g.process(&input, &mut output).unwrap();
+
+        // Get the SidechainReceiver's captured sidechain data
+        let plugin: &SidechainReceiver = unsafe {
+            &*(g.plugins[recv].as_ref().unwrap().as_ref() as *const dyn Plugin
+                as *const SidechainReceiver)
+        };
+
+        // Primary audio should be 1.0 (from inp with factor 1.0)
+        // Output should be the primary audio passed through
+        for &s in &output {
+            assert!(
+                (s - 1.0).abs() < 1e-6,
+                "Primary audio should be 1.0 in output, got {}",
+                s
+            );
+        }
+
+        // Sidechain should be 0.5 (from kick with factor 0.5)
+        assert_eq!(plugin.last_sidechain.len(), nf);
+        for &s in &plugin.last_sidechain {
+            assert!(
+                (s - 0.5).abs() < 1e-6,
+                "Sidechain should be 0.5, got {}",
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn test_sidechain_primary_channels_computation() {
+        let mut g = DawHost::new(2, 48000);
+
+        // Node with no sidechain: primary_ch == input_ch
+        let a = g
+            .add_node("a".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
+        // Node with sidechain: SidechainReceiver has input_ch=4, output_ch=2
+        let b = g
+            .add_node("b".into(), Box::new(SidechainReceiver::new(2)))
+            .unwrap();
+
+        g.add_edge(GraphEdge::new(a, b)).unwrap();
+        // Add a sidechain source (another 2ch node)
+        let sc = g
+            .add_node("sc".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
+        g.add_edge(GraphEdge::sidechain(sc, b)).unwrap();
+        g.build().unwrap();
+
+        assert_eq!(g.primary_input_channels[a], 2, "Node a: no sidechain");
+        assert_eq!(
+            g.primary_input_channels[b], 2,
+            "Node b: 4 input - 2 sidechain = 2 primary"
         );
     }
 }

@@ -39,10 +39,7 @@ fn main() {
     let block_size = 1024;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sample_rate, end - pos);
         plugin
             .process(
                 &input[pos * 6..end * 6],

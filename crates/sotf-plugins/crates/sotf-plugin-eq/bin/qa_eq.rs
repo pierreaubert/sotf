@@ -30,10 +30,7 @@ fn main() {
     println!("\n[Test 1] Peak Boost (+6dB at 1kHz)");
     let num_frames = 4800;
     let mut buffer = generate_sine(sample_rate, 1000.0, -10.0, num_frames);
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer[num_frames - 1000..]); // Measure settled
     println!("  Expected: -4.00dB, Measured: {:.2}dB", peak);

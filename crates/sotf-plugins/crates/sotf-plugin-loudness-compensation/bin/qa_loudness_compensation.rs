@@ -36,10 +36,7 @@ fn main() {
     println!("\n[Test 1] Low Boost (+6dB at 50Hz)");
     let num_frames = 4800;
     let mut buffer = generate_sine(sample_rate, 50.0, -10.0, num_frames);
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer[num_frames - 1000..]);
 

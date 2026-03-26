@@ -11,6 +11,7 @@ pub mod automation;
 pub mod detector;
 pub mod envelope;
 pub mod error;
+pub mod external_plugin;
 pub mod host;
 pub mod layout_solver;
 pub mod lookahead;
@@ -45,10 +46,12 @@ pub use analyzer_spectrum::{
     TiltReferenceFreq,
 };
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+pub use automation::AutomationCurve;
 pub use host::{DawHost, GraphEdge, Host};
 pub use parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 pub use plugin::{
-    InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
+    InPlacePlugin, InPlacePluginAdapter, InstrumentPlugin, NoteEvent, NoteEventKind,
+    ParameterRamp, Plugin, PluginInfo, PluginResult, ProcessContext,
 };
 
 #[cfg(feature = "qa")]

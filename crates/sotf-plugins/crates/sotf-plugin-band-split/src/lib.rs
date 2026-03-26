@@ -332,10 +332,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(o[0].is_finite());
@@ -352,10 +349,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(o[0].is_finite());
@@ -373,10 +367,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 500,
-            },
+            &ProcessContext::new(48000, 500,),
         )
         .unwrap();
         assert!(o[0].is_finite());
@@ -395,10 +386,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 100,
-            },
+            &ProcessContext::new(48000, 100,),
         )
         .unwrap();
         assert!(o[0].is_finite());
@@ -440,10 +428,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
+            &ProcessContext::new(48000, n,),
         )
         .unwrap();
         // Last frame: low (idx n*2 - 2) + high (idx n*2 - 1) should sum near 1.0
@@ -476,10 +461,7 @@ mod tests {
 
         let n = 10000;
         let input = vec![1.0f32; n];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: n,
-        };
+        let ctx = ProcessContext::new(48000, n,);
 
         // Reference: 0dB gain (unity)
         let mut p_ref = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();

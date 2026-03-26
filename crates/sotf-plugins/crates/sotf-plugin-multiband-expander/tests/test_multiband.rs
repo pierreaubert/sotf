@@ -46,10 +46,7 @@ fn test_multiband_expander_processes_audio() {
     let block_size = 1024;
     for pos in (0..num_frames).step_by(block_size) {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sr, end - pos,);
         plugin.process_in_place(&mut buffer[pos..end], &ctx).unwrap();
     }
 

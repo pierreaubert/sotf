@@ -286,10 +286,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
+            &ProcessContext::new(48000, 1,),
         )
         .unwrap();
         assert_eq!(o, vec![4.0, 6.0]);
@@ -311,10 +308,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
+            &ProcessContext::new(48000, 1,),
         )
         .unwrap();
         // Band 0 * 2.0 + Band 1 * 1.0 = 3.0
@@ -336,10 +330,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
+            &ProcessContext::new(48000, 1,),
         )
         .unwrap();
         // Only band 0 contributes: [1.0, 2.0]
@@ -368,10 +359,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
+            &ProcessContext::new(48000, 1,),
         )
         .unwrap();
         // band0 muted, band1 * 1.0 + band2 * 2.0 = 3.0
@@ -430,10 +418,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1,
-            },
+            &ProcessContext::new(48000, 1,),
         )
         .unwrap();
         // ~2.0 + 0 + ~0.001 ≈ 2.001
@@ -463,10 +448,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
+            &ProcessContext::new(48000, nf,),
         )
         .unwrap();
 

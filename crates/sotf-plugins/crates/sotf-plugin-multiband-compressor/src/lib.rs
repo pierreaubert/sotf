@@ -1139,10 +1139,7 @@ mod tests {
         let mut b = vec![0.5; 1000];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(b[999].is_finite());
@@ -1171,10 +1168,7 @@ mod tests {
         let mut output = input.clone();
         p.process_in_place(
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
+            &ProcessContext::new(48000, nf,),
         )
         .unwrap();
 
@@ -1200,10 +1194,7 @@ mod tests {
         p.initialize(48000).unwrap();
 
         let nf = 2400;
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(48000, nf,);
 
         // Process a block with default crossover
         let mut b1: Vec<f32> = (0..nf)
@@ -1263,10 +1254,7 @@ mod tests {
         let mut b = vec![input_val; nf];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
+            &ProcessContext::new(48000, nf,),
         )
         .unwrap();
 

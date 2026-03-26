@@ -37,10 +37,7 @@ fn main() {
     let block_size = 1024;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sample_rate, end - pos);
         plugin_mono
             .process(&input[pos..end], &mut output[pos * 2..end * 2], &ctx)
             .unwrap();
@@ -72,10 +69,7 @@ fn main() {
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: end - pos,
-        };
+        let ctx = ProcessContext::new(sample_rate, end - pos);
         plugin
             .process(&input[pos..end], &mut output_stereo[pos * 2..end * 2], &ctx)
             .unwrap();

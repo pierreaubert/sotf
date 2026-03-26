@@ -708,10 +708,7 @@ mod tests {
         let mut b = vec![0.05; 1000];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(b[999] < 0.05);
@@ -754,10 +751,7 @@ mod tests {
                 amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr as f32).sin();
         }
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         p_low.process_in_place(&mut buf_low, &ctx).unwrap();
 
         // The 50 Hz signal should be significantly attenuated because the HPF
@@ -860,10 +854,7 @@ mod tests {
             })
             .collect();
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         p.process_in_place(&mut buffer, &ctx).unwrap();
 
         // Count how many times the output crosses a "gate closed" boundary.

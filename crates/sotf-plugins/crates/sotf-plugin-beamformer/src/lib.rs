@@ -452,10 +452,7 @@ mod tests {
         let mut plugin = BeamformerPlugin::new(2, 48000);
         plugin.beamformer_type = BeamformerType::Gsc;
 
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 256,
-        };
+        let context = ProcessContext::new(48000, 256,);
         let input = vec![0.1f32; 256 * 2];
         let mut output = vec![0.0f32; 256];
 
@@ -468,10 +465,7 @@ mod tests {
         let mut plugin = BeamformerPlugin::new(2, 48000);
         plugin.beamformer_type = BeamformerType::Mvdr;
 
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 512,
-        };
+        let context = ProcessContext::new(48000, 512,);
         let input = vec![0.1f32; 512 * 2];
         let mut output = vec![0.0f32; 512];
 
@@ -484,10 +478,7 @@ mod tests {
         let mut plugin = BeamformerPlugin::new(2, 48000);
         plugin.beamformer_type = BeamformerType::Superdirective;
 
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 512,
-        };
+        let context = ProcessContext::new(48000, 512,);
         let input = vec![0.1f32; 512 * 2];
         let mut output = vec![0.0f32; 512];
 

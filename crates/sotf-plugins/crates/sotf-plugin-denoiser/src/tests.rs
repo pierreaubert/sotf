@@ -113,10 +113,7 @@ fn test_bypass_mode() {
     let input = make_test_signal(num_frames, 2, 1000.0);
     let mut output = input.clone();
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut output, &context).unwrap();
 
@@ -141,10 +138,7 @@ fn test_output_nonzero() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 2, 1000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -173,10 +167,7 @@ fn test_continuous_processing() {
     for block in 0..num_blocks {
         let mut input = make_test_signal(block_size, 2, 1000.0);
 
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: block_size,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, block_size,);
 
         plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -200,10 +191,7 @@ fn test_mcra_noise_estimation() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 2, 1000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -223,10 +211,7 @@ fn test_noise_reduction_reduces_energy() {
     let input = make_noisy_signal(num_frames, 2, -10.0, -30.0);
     let mut output = input.clone();
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut output, &context).unwrap();
 
@@ -254,10 +239,7 @@ fn test_energy_preservation_with_low_reduction() {
     let input = make_test_signal(num_frames, 2, 1000.0);
     let mut output = input.clone();
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut output, &context).unwrap();
 
@@ -284,10 +266,7 @@ fn test_polyphonic_detection_mode() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 2, 1000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -306,10 +285,7 @@ fn test_psychoacoustic_masking() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 2, 1000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -328,10 +304,7 @@ fn test_dd_enabled_mode() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 2, 1000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -347,10 +320,7 @@ fn test_reset_clears_state() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 2, 1000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
     plugin.reset();
@@ -371,10 +341,7 @@ fn test_mono_channel() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 1, 1000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -391,10 +358,7 @@ fn test_multi_channel() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 6, 1000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -430,10 +394,7 @@ fn test_denoiser_data_exposure() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 2, 1000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -456,10 +417,7 @@ fn test_different_sample_rates() {
         let freq = 1000.0_f32.min(sr as f32 * 0.4);
         let mut input = make_test_signal(num_frames, 2, freq);
 
-        let context = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let context = ProcessContext::new(sr, num_frames);
 
         plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -480,10 +438,7 @@ fn test_floor_prevents_complete_attenuation() {
     let input = make_noisy_signal(num_frames, 2, 0.0, -40.0);
     let mut output = input.clone();
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut output, &context).unwrap();
 
@@ -547,10 +502,7 @@ fn test_silence_input() {
     let num_frames = 4096;
     let mut input = vec![0.0_f32; num_frames * 2];
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -571,10 +523,7 @@ fn test_high_frequency_content() {
     let num_frames = 4096;
     let mut input = make_test_signal(num_frames, 2, 15000.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -591,10 +540,7 @@ fn test_low_frequency_content() {
     let num_frames = 8192;
     let mut input = make_test_signal(num_frames, 2, 50.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -654,10 +600,7 @@ fn test_formant_preservation_floors_gains_at_peaks() {
     plugin_on.initialize(SAMPLE_RATE).unwrap();
 
     let mut buf_on = buffer_with_preservation.clone();
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, num_frames);
     plugin_on.process_in_place(&mut buf_on, &ctx).unwrap();
 
     // Verify parameter round-trip
@@ -726,10 +669,7 @@ fn test_multi_resolution_mode() {
     let num_frames = 8192;
     let mut input = make_noisy_signal(num_frames, 2, -10.0, -30.0);
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -781,10 +721,7 @@ fn test_bootstrap_noise_floor_seeding() {
     // Phase 1: Feed 5 blocks of noise to seed the noise floor
     for _ in 0..5 {
         let mut noise = make_noisy_signal(block_size, 1, -60.0, -20.0);
-        let ctx = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: block_size,
-        };
+        let ctx = ProcessContext::new(SAMPLE_RATE, block_size,);
         plugin.process_in_place(&mut noise, &ctx).unwrap();
     }
 
@@ -792,10 +729,7 @@ fn test_bootstrap_noise_floor_seeding() {
     let mut total_energy = 0.0f32;
     for _ in 0..5 {
         let mut signal = make_test_signal(block_size, 1, 1000.0);
-        let ctx = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: block_size,
-        };
+        let ctx = ProcessContext::new(SAMPLE_RATE, block_size,);
         plugin.process_in_place(&mut signal, &ctx).unwrap();
         total_energy += signal.iter().map(|x| x * x).sum::<f32>();
     }
@@ -817,10 +751,7 @@ fn test_mcra_noise_floor_converges_on_noise() {
     // Feed ~2 seconds of moderate-level noise to let MCRA converge
     let block_size = 4096;
     let num_blocks = (SAMPLE_RATE as usize * 2) / block_size;
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: block_size,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, block_size,);
 
     for _ in 0..num_blocks {
         let mut noise = make_noisy_signal(block_size, 2, -60.0, -10.0);

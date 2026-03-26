@@ -107,10 +107,7 @@ fn test_eq_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     // Warm-up
     plugin.process(&input, &mut output, &ctx).unwrap();
@@ -125,10 +122,7 @@ fn test_gain_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -142,10 +136,7 @@ fn test_compressor_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -159,10 +150,7 @@ fn test_expander_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -176,10 +164,7 @@ fn test_gate_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -193,10 +178,7 @@ fn test_limiter_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -210,10 +192,7 @@ fn test_delay_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -227,10 +206,7 @@ fn test_crossover_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -245,10 +221,7 @@ fn test_matrix_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process(&input, &mut output, &ctx).unwrap();
 
@@ -262,10 +235,7 @@ fn test_channel_mute_solo_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -281,10 +251,7 @@ fn test_loudness_compensation_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process(&input, &mut output, &ctx).unwrap();
 
@@ -304,10 +271,7 @@ fn test_fletcher_munson_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process(&input, &mut output, &ctx).unwrap();
 
@@ -321,10 +285,7 @@ fn test_multiband_compressor_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -338,10 +299,7 @@ fn test_multiband_expander_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
 
@@ -356,10 +314,7 @@ fn test_ab_compare_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process(&input, &mut output, &ctx).unwrap();
 
@@ -374,10 +329,7 @@ fn test_band_split_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 4]; // 2 bands * 2 channels
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process(&input, &mut output, &ctx).unwrap();
 
@@ -392,10 +344,7 @@ fn test_band_merge_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 4); // 2 bands * 2 channels
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process(&input, &mut output, &ctx).unwrap();
 
@@ -412,10 +361,7 @@ fn test_upmixer_zero_alloc() {
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let out_ch = plugin.output_channels();
     let mut output = vec![0.0f32; BUFFER_SIZE * out_ch];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     plugin.process(&input, &mut output, &ctx).unwrap();
 
@@ -431,10 +377,7 @@ fn test_xtc_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     // Warm-up: XTC needs several blocks to fill its STFT buffers
     for _ in 0..5 {
@@ -451,10 +394,7 @@ fn test_denoiser_zero_alloc() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     // Warm-up
     for _ in 0..3 {
@@ -478,10 +418,7 @@ fn test_spectrum_analyzer_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     // Warm-up (fill FFT buffer)
     for _ in 0..10 {
@@ -499,10 +436,7 @@ fn test_loudness_monitor_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     // Warm-up
     plugin.process(&input, &mut output, &ctx).unwrap();
@@ -540,10 +474,7 @@ fn test_aec_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2); // 2-channel: mic + ref
     let mut output = vec![0.0f32; BUFFER_SIZE]; // 1-channel output
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     // Warm up
     plugin.process(&input, &mut output, &ctx).unwrap();
@@ -566,10 +497,7 @@ fn test_beamformer_zero_alloc() {
 
     let input = generate_test_buffer(BUFFER_SIZE, 2); // 2-mic input
     let mut output = vec![0.0f32; BUFFER_SIZE]; // 1-channel output
-    let ctx = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     // Warm up
     plugin.process(&input, &mut output, &ctx).unwrap();

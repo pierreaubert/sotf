@@ -40,6 +40,7 @@ autoeq-env = { workspace = true }
 math-iir-fir = { workspace = true }
 math-dsp = { workspace = true }
 sotf-plugins = { workspace = true }
+sotf-midi = { workspace = true }
 sotf-iamf = { workspace = true, optional = true }
 sotf-plugin-ambisonics = { workspace = true, optional = true }
 sotf-streaming = { workspace = true, optional = true }

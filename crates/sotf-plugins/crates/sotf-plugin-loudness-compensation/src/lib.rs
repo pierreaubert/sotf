@@ -810,10 +810,7 @@ mod tests {
         let mut b = vec![0.5; 1000];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(b[999] > 0.0);
@@ -829,10 +826,7 @@ mod tests {
 
         // Process a block to establish filter state
         let mut b = vec![0.3f32; 4800];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 4800,
-        };
+        let ctx = ProcessContext::new(48000, 4800,);
         p.process_in_place(&mut b, &ctx).unwrap();
         let last_before = b[4799];
 
@@ -844,10 +838,7 @@ mod tests {
         let mut b2 = vec![0.3f32; 480];
         p.process_in_place(
             &mut b2,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 480,
-            },
+            &ProcessContext::new(48000, 480,),
         )
         .unwrap();
 
@@ -901,10 +892,7 @@ mod tests {
         // should see the same behavior as if the peak band didn't exist.
         // Process two paths: one with mid_enabled=false, one with mid_gain=0.
         let nf = 4800;
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(48000, nf,);
 
         let signal: Vec<f32> = (0..nf)
             .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 3500.0 * i as f32 / 48000.0).sin())
@@ -957,10 +945,7 @@ mod tests {
             .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin())
             .collect();
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(48000, nf,);
         p_low.process_in_place(&mut low_buf, &ctx).unwrap();
         p_mid.process_in_place(&mut mid_buf, &ctx).unwrap();
 

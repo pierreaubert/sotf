@@ -76,6 +76,8 @@ pub mod mapping;
 pub mod mapping_engine;
 pub mod message;
 pub mod profiles;
+pub mod sequencer;
+pub mod smf;
 pub mod templates;
 
 pub use config::{DeviceConfig, DeviceProfile, MidiConfig};

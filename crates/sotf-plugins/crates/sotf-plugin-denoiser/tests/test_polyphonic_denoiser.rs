@@ -20,10 +20,7 @@ mod tests {
 
         // Process a silence buffer (should not crash)
         let mut buffer = vec![0.0; 2048 * 2]; // 2048 frames * 2 channels
-        let context = ProcessContext {
-            sample_rate: 44100,
-            num_frames: 2048,
-        };
+        let context = ProcessContext::new(44100, 2048,);
 
         // First run (latency fill)
         denoiser.process_in_place(&mut buffer, &context).unwrap();

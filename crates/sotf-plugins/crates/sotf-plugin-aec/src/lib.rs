@@ -355,10 +355,7 @@ mod tests {
     #[test]
     fn test_aec_plugin_process() {
         let mut plugin = AecPlugin::new(48000);
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 512,
-        };
+        let context = ProcessContext::new(48000, 512,);
 
         // 2-channel interleaved input
         let input = vec![0.1f32; 512 * 2];
@@ -417,10 +414,7 @@ mod tests {
                 input[i * 2 + 1] = reference[i];
             }
 
-            let context = ProcessContext {
-                sample_rate,
-                num_frames: block_size,
-            };
+            let context = ProcessContext::new(sample_rate, block_size);
             let mut output = vec![0.0f32; block_size];
             plugin.process(&input, &mut output, &context).unwrap();
 

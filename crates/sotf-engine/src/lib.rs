@@ -30,7 +30,10 @@ pub use manager::{
 pub mod preflight;
 pub use preflight::{PreflightError, run_preflight_checks};
 
+pub mod offline_renderer;
+pub mod project;
 pub mod replaygain;
+pub mod timeline;
 pub mod signal_recorder;
 pub use signal_recorder::{
     ChannelRecordingInfo, DeviceInfo, LegacyChannelRecording, LegacyRecordingResult,

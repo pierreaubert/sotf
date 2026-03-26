@@ -31,10 +31,7 @@ fn test_multiband_compressor_processing() {
         input[i * 2 + 1] = (low + high) * 0.5;
     }
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 
@@ -70,10 +67,7 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
     }
     let original = input.clone();
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     plugin.process_in_place(&mut input, &context).unwrap();
 

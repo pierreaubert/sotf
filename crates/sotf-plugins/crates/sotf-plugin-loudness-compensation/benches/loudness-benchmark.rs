@@ -27,10 +27,7 @@ fn benchmark_loudness_plugin(c: &mut Criterion) {
                 plugin.initialize(sample_rate).unwrap();
 
                 let mut buffer = vec![0.5f32; block_size * channels];
-                let context = ProcessContext {
-                    sample_rate,
-                    num_frames: block_size,
-                };
+                let context = ProcessContext::new(sample_rate, block_size);
 
                 b.iter(|| {
                     let _ = plugin.process_in_place(black_box(&mut buffer), black_box(&context));

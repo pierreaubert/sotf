@@ -1215,10 +1215,7 @@ mod tests {
 
         // Generate reference output with standard block size
         let mut expected_output = vec![0.0; input.len()];
-        let ctx = ProcessContext {
-            sample_rate: sample_rate as u32,
-            num_frames: 4800,
-        };
+        let ctx = ProcessContext::new(sample_rate as u32, 4800,);
         plugin.process(&input, &mut expected_output, &ctx).unwrap();
 
         // Reset and test varied buffer sizes
@@ -1237,10 +1234,7 @@ mod tests {
 
         let input = vec![0.1; 512 * channels];
         let mut output = vec![0.0; 512 * channels];
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: 512,
-        };
+        let ctx = ProcessContext::new(sample_rate, 512);
 
         // Warm up
         for _ in 0..10 {
@@ -1312,10 +1306,7 @@ mod tests {
         let mut buffer: Vec<f32> = (0..num_frames).map(|i| {
             0.5 * (2.0 * PI * 1000.0 * i as f32 / 48000.0).sin()
         }).collect();
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         compressor.process_in_place(&mut buffer, &ctx).unwrap();
 
         // Check the peak of the last 1000 frames (RMS window is definitely filled)
@@ -1374,10 +1365,7 @@ mod tests {
         // Put an impulse at frame 0
         buffer[0] = 1.0;
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         compressor.process_in_place(&mut buffer, &ctx).unwrap();
 
         // The impulse should appear at frame `delay_samples`
@@ -1436,10 +1424,7 @@ mod tests {
             }
         }).collect();
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         compressor.process_in_place(&mut buffer, &ctx).unwrap();
         // Just verify it runs without panicking
     }
@@ -1480,10 +1465,7 @@ mod tests {
             0.3 * (2.0 * PI * 1000.0 * i as f32 / 48000.0).sin()
         }).collect();
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         compressor.process_in_place(&mut buffer, &ctx).unwrap();
 
         // The measured makeup should have tracked the average gain reduction
@@ -1555,10 +1537,7 @@ mod tests {
         // Put impulse at frame 0, channel 0
         buffer[0] = 1.0;
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         compressor.process_in_place(&mut buffer, &ctx).unwrap();
 
         // Check channel 0: impulse should be at frame delay_samples
@@ -1599,10 +1578,7 @@ mod tests {
                 .collect()
         };
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: total,
-        };
+        let ctx = ProcessContext::new(sr, total,);
 
         // Fixed release
         let mut comp_fixed =
@@ -1682,10 +1658,7 @@ mod tests {
             })
             .collect();
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
 
         let mut peak_comp = make_comp("peak");
         let mut peak_buf = signal.clone();
@@ -1755,10 +1728,7 @@ mod tests {
 
         let input = vec![0.1; 512 * channels];
         let mut output = vec![0.0; 512 * channels];
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: 512,
-        };
+        let ctx = ProcessContext::new(sample_rate, 512);
 
         // Warm up
         for _ in 0..10 {

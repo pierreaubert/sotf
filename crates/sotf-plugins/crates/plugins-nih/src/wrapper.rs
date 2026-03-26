@@ -169,10 +169,7 @@ macro_rules! sotf_nih_plugin {
                 }
 
                 // Process
-                let ctx = sotf_host::plugin::ProcessContext {
-                    sample_rate: self.sample_rate,
-                    num_frames,
-                };
+                let ctx = sotf_host::plugin::ProcessContext::new(self.sample_rate, num_frames);
                 if plugin
                     .process(
                         &self.interleaved_in[..num_frames * num_channels],

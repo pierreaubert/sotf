@@ -36,10 +36,7 @@ fn test_xtc_bypass_fidelity() {
     }
 
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -101,10 +98,7 @@ fn test_upmixer_bypass_fidelity() {
 
     let out_ch = plugin.output_channels();
     let mut output = vec![0.0; num_frames * out_ch];
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Skip latency + warm-up
@@ -171,10 +165,7 @@ fn test_xtc_limiter_reactivity() {
     }
 
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -240,10 +231,7 @@ fn test_downmix_bypass_fidelity() {
     }
 
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -285,10 +273,7 @@ fn test_xtc_envelope_stability() {
     }
 
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -354,10 +339,7 @@ fn test_upmixer_envelope_stability() {
 
     let out_ch = plugin.output_channels();
     let mut output = vec![0.0; num_frames * out_ch];
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
     plugin.process(&input, &mut output, &context).unwrap();
 
     let latency = plugin.latency_samples();
@@ -440,10 +422,7 @@ fn test_downmix_phase_coherence_stability() {
     }
 
     let mut output = vec![0.0; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -513,10 +492,7 @@ fn test_upmixer_prime_block_size_fidelity() {
     let mut frames_processed = 0;
     while frames_processed < total_frames {
         let nf = prime_block.min(total_frames - frames_processed);
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(sample_rate, nf);
 
         let start_in = frames_processed * 2;
         let end_in = start_in + nf * 2;

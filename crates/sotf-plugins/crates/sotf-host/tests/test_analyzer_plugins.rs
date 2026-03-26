@@ -26,10 +26,7 @@ fn test_loudness_monitor_stereo() {
         input[i * 2 + 1] = sample;
     }
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process audio
     let mut output = vec![0.0; input.len()];
@@ -76,10 +73,7 @@ fn test_spectrum_analyzer_stereo() {
         input[i * 2 + 1] = sample;
     }
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process audio
     let mut output = vec![0.0; input.len()];
@@ -141,10 +135,7 @@ fn test_both_analyzers_together() {
         input[i * 2 + 1] = sample;
     }
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process with both analyzers
     let mut output = vec![0.0; input.len()];
@@ -199,10 +190,7 @@ fn test_analyzer_with_5ch_audio() {
         input[i * 5 + 4] = (2.0 * std::f32::consts::PI * 138.0 * t).sin() * 0.1; // RR
     }
 
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     // Process
     let mut output = vec![0.0; input.len()];
@@ -239,10 +227,7 @@ fn test_analyzer_reset() {
     // Process some audio
     let num_frames = 1024;
     let input = vec![0.5_f32; num_frames * 2];
-    let context = ProcessContext {
-        sample_rate: 48000,
-        num_frames,
-    };
+    let context = ProcessContext::new(48000, num_frames);
 
     let mut output = vec![0.0; input.len()];
     monitor.process(&input, &mut output, &context).unwrap();

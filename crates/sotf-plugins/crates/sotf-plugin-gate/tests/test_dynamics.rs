@@ -107,17 +107,11 @@ fn test_gate_hysteresis_prevents_chatter() {
 
     // Process in blocks
     let block_size = 1024;
-    let _ctx = ProcessContext {
-        sample_rate: sr,
-        num_frames: block_size,
-    };
+    let _ctx = ProcessContext::new(sr, block_size,);
     for pos in (0..num_frames).step_by(block_size) {
         let end = (pos + block_size).min(num_frames);
         let nf = end - pos;
-        let c = ProcessContext {
-            sample_rate: sr,
-            num_frames: nf,
-        };
+        let c = ProcessContext::new(sr, nf,);
         gate.process_in_place(&mut buffer[pos..end], &c).unwrap();
     }
 

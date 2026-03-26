@@ -10049,6 +10049,7 @@ dependencies = [
  "signal-hook 0.4.3",
  "sofa-reader",
  "sotf-iamf",
+ "sotf-midi",
  "sotf-plugin-ambisonics",
  "sotf-plugins",
  "sotf-streaming",

@@ -865,10 +865,7 @@ mod tests {
         let mut b = vec![0.1; 1000];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(b[999] < 0.1);
@@ -891,10 +888,7 @@ mod tests {
         let mut b = vec![input_val; 480];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 480,
-            },
+            &ProcessContext::new(48000, 480,),
         )
         .unwrap();
         // With mix=0, output should equal input regardless of auto_makeup
@@ -931,10 +925,7 @@ mod tests {
         let input_val = 0.01f32; // quiet signal, below threshold
         let mut b_no = vec![input_val; 4800];
         let mut b_am = vec![input_val; 4800];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 4800,
-        };
+        let ctx = ProcessContext::new(48000, 4800,);
         p_no_am.process_in_place(&mut b_no, &ctx).unwrap();
         p_am.process_in_place(&mut b_am, &ctx).unwrap();
 
@@ -972,10 +963,7 @@ mod tests {
             buf[i] = amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin();
         }
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         p.process_in_place(&mut buf, &ctx).unwrap();
 
         // With HPF=0 (disabled), the 50 Hz signal should be detected and the
@@ -1014,10 +1002,7 @@ mod tests {
         let mut loud = vec![0.5f32; 4800]; // -6 dBFS, well above -20 threshold
         p.process_in_place(
             &mut loud,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 4800,
-            },
+            &ProcessContext::new(48000, 4800,),
         )
         .unwrap();
 
@@ -1026,10 +1011,7 @@ mod tests {
         let mut quiet = vec![quiet_val; 480]; // 10ms of quiet
         p.process_in_place(
             &mut quiet,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 480,
-            },
+            &ProcessContext::new(48000, 480,),
         )
         .unwrap();
 

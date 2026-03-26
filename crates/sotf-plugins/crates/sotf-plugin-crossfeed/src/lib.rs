@@ -984,10 +984,7 @@ mod tests {
         let mut b = vec![1.0, 0.0, 1.0, 0.0];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2,
-            },
+            &ProcessContext::new(48000, 2,),
         )
         .unwrap();
         assert!(b[1].abs() > 0.0);
@@ -1003,10 +1000,7 @@ mod tests {
         let mut buffer = vec![1.0, 0.0, 0.0, 1.0];
         p.process_in_place(
             &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2,
-            },
+            &ProcessContext::new(48000, 2,),
         )
         .unwrap();
 
@@ -1029,10 +1023,7 @@ mod tests {
         let mut dc_buf: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0]).collect();
         p.process_in_place(
             &mut dc_buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
+            &ProcessContext::new(48000, n,),
         )
         .unwrap();
 
@@ -1055,10 +1046,7 @@ mod tests {
         let mut buffer = vec![1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
         p.process_in_place(
             &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 4,
-            },
+            &ProcessContext::new(48000, 4,),
         )
         .unwrap();
         assert!(buffer[1].abs() > 0.0);
@@ -1075,10 +1063,7 @@ mod tests {
         let mut buffer: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0]).collect();
         p.process_in_place(
             &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
+            &ProcessContext::new(48000, n,),
         )
         .unwrap();
         // Right channel should get some crossfeed
@@ -1101,10 +1086,7 @@ mod tests {
 
         p.process_in_place(
             &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
+            &ProcessContext::new(48000, n,),
         )
         .unwrap();
 
@@ -1134,10 +1116,7 @@ mod tests {
         let mut buffer: Vec<f32> = (0..n).flat_map(|_| [1.0f32, 0.0]).collect();
         p.process_in_place(
             &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: n,
-            },
+            &ProcessContext::new(48000, n,),
         )
         .unwrap();
         // Should still work and produce crossfeed
@@ -1183,10 +1162,7 @@ mod tests {
 
             p.process_in_place(
                 &mut buffer,
-                &ProcessContext {
-                    sample_rate: sr,
-                    num_frames: n,
-                },
+                &ProcessContext::new(sr, n,),
             )
             .unwrap();
 
@@ -1233,10 +1209,7 @@ mod tests {
         let original = buffer.clone();
         p.process_in_place(
             &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2,
-            },
+            &ProcessContext::new(48000, 2,),
         )
         .unwrap();
         assert_eq!(buffer, original, "Disabled crossfeed should pass through unchanged");
@@ -1249,10 +1222,7 @@ mod tests {
         // crossfeed leaks into the right channel at each frequency.
         let sr = 48000u32;
         let n = 10000; // frames
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: n,
-        };
+        let ctx = ProcessContext::new(sr, n,);
 
         let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
         params.mode = CrossfeedMode::Bauer;

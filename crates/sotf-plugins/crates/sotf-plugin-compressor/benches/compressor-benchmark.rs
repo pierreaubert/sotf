@@ -11,10 +11,7 @@ fn benchmark_plugin_full(
     let frame_size = 512;
     let input = vec![0.5f32; frame_size * channels];
     let mut output = vec![0.0f32; frame_size * channels];
-    let context = sotf_host::ProcessContext {
-        num_frames: frame_size,
-        sample_rate: sample_rate as u32,
-    };
+    let context = sotf_host::ProcessContext::new(sample_rate as u32,, frame_size);
     c.bench_function(name, |b| {
         b.iter(|| {
             plugin

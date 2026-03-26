@@ -36,6 +36,7 @@ pub use decoder_thread::DecoderThread;
 
 mod processing_thread;
 pub use processing_thread::ProcessingThread;
+pub use processing_thread::build_plugin_host;
 
 mod manager_thread;
 pub use manager_thread::ManagerThread;

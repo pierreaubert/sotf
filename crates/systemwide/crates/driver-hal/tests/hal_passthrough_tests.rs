@@ -234,10 +234,7 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
     let input_audio = generate_test_audio(num_frames, num_channels, sample_rate);
     let mut output_audio = vec![0.0f32; input_audio.len()];
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     // Process through EQ
     plugin
@@ -307,10 +304,7 @@ fn test_eq_empty_filters_passthrough_bit_exact() {
     let input_audio = generate_test_audio(num_frames, num_channels, sample_rate);
     let mut output_audio = vec![0.0f32; input_audio.len()];
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin
         .process(&input_audio, &mut output_audio, &context)
@@ -411,10 +405,7 @@ fn test_hal_with_eq_zero_gain_passthrough() {
 
     // Step 3: Process through EQ
     let mut processed_audio = vec![0.0f32; read_audio.len()];
-    let context = ProcessContext {
-        sample_rate,
-        num_frames: buffer_frames as usize,
-    };
+    let context = ProcessContext::new(sample_rate, buffer_frames as usize);
     plugin
         .process(&read_audio, &mut processed_audio, &context)
         .expect("Failed to process");
@@ -490,10 +481,7 @@ fn test_eq_zero_gain_with_silence() {
     let input_audio = vec![0.0f32; num_frames * num_channels];
     let mut output_audio = vec![0.0f32; input_audio.len()];
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin
         .process(&input_audio, &mut output_audio, &context)
@@ -687,10 +675,7 @@ fn test_volume_control_global_gain() {
 
     let original_buffer = buffer.clone();
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin
         .process_in_place(&mut buffer, &context)
@@ -738,10 +723,7 @@ fn test_volume_control_per_channel() {
         })
         .collect();
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin
         .process_in_place(&mut buffer, &context)
@@ -797,10 +779,7 @@ fn test_volume_control_multichannel() {
         })
         .collect();
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin
         .process_in_place(&mut buffer, &context)
@@ -864,10 +843,7 @@ fn test_volume_with_hal_pipeline() {
         .initialize(sample_rate)
         .expect("Failed to initialize");
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames: buffer_frames as usize,
-    };
+    let context = ProcessContext::new(sample_rate, buffer_frames as usize);
 
     gain_plugin
         .process_in_place(&mut read_buffer, &context)
@@ -929,10 +905,7 @@ fn test_eq_zero_gain_preserves_full_scale() {
         .collect();
     let mut output_audio = vec![0.0f32; input_audio.len()];
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     plugin
         .process(&input_audio, &mut output_audio, &context)

@@ -41,6 +41,24 @@ impl PluginInfo {
     }
 }
 
+/// A parameter ramp for sample-accurate automation within a processing block.
+///
+/// When automation is active, the host evaluates the automation curve at the
+/// start and end of each block and passes the ramp to the plugin via
+/// [`ProcessContext::ramps`]. Plugins that support sample-accurate automation
+/// can interpolate per-sample using [`ProcessContext::ramp_value_at`].
+/// Plugins that don't read ramps are unaffected — the host also calls
+/// `set_parameter(end_value)` for backward compatibility.
+#[derive(Debug, Clone, Copy)]
+pub struct ParameterRamp {
+    /// Parameter index (position in the plugin's `parameters()` vec)
+    pub param_index: u16,
+    /// Value at the start of this processing block
+    pub start_value: f32,
+    /// Value at the end of this processing block
+    pub end_value: f32,
+}
+
 /// Processing context passed to plugins
 #[derive(Clone)]
 pub struct ProcessContext {
@@ -48,6 +66,36 @@ pub struct ProcessContext {
     pub sample_rate: u32,
     /// Number of frames in this processing block
     pub num_frames: usize,
+    /// Parameter ramps active for this block (empty if no automation).
+    /// Plugins that support sample-accurate automation should interpolate
+    /// between start_value and end_value across num_frames samples.
+    pub ramps: Vec<ParameterRamp>,
+}
+
+impl ProcessContext {
+    /// Create a new ProcessContext with no active parameter ramps.
+    pub fn new(sample_rate: u32, num_frames: usize) -> Self {
+        Self {
+            sample_rate,
+            num_frames,
+            ramps: Vec::new(),
+        }
+    }
+
+    /// Get the linearly interpolated value of a ramped parameter at a given
+    /// sample offset within the current block.
+    ///
+    /// Returns `None` if no ramp exists for the given `param_index`.
+    #[inline]
+    pub fn ramp_value_at(&self, param_index: u16, sample_offset: usize) -> Option<f32> {
+        self.ramps
+            .iter()
+            .find(|r| r.param_index == param_index)
+            .map(|r| {
+                let t = sample_offset as f32 / self.num_frames.max(1) as f32;
+                r.start_value + (r.end_value - r.start_value) * t
+            })
+    }
 }
 
 /// Result type for plugin operations
@@ -232,6 +280,68 @@ pub trait InPlacePlugin: Send {
     /// Returns `None` by default for plugins that don't expose data.
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         None
+    }
+}
+
+/// A MIDI message for instrument plugins.
+/// Kept simple to avoid depending on the full sotf-midi crate.
+#[derive(Debug, Clone)]
+pub struct NoteEvent {
+    /// Sample offset within the current processing block
+    pub sample_offset: u32,
+    /// MIDI channel (0-15)
+    pub channel: u8,
+    /// Event type
+    pub kind: NoteEventKind,
+}
+
+/// The kind of note event.
+#[derive(Debug, Clone)]
+pub enum NoteEventKind {
+    NoteOn { note: u8, velocity: u8 },
+    NoteOff { note: u8 },
+    ControlChange { controller: u8, value: u8 },
+    PitchBend { value: i16 },
+}
+
+/// Trait for instrument plugins that generate audio from MIDI/note events.
+///
+/// Instrument plugins are the first node in a MIDI track's processing chain.
+/// They receive note events and produce audio output (no audio input).
+pub trait InstrumentPlugin: Send {
+    /// Plugin info
+    fn info(&self) -> PluginInfo;
+
+    /// Number of output channels (e.g., 2 for stereo synth)
+    fn output_channels(&self) -> usize;
+
+    /// Get the list of parameters
+    fn parameters(&self) -> Vec<Parameter>;
+
+    /// Set a parameter value
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()>;
+
+    /// Get a parameter value
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue>;
+
+    /// Process note events and generate audio output.
+    ///
+    /// `events` are sorted by sample_offset within the block.
+    /// `output` is interleaved: [ch0_f0, ch1_f0, ch0_f1, ch1_f1, ...]
+    /// Returns the number of frames written.
+    fn process_events(
+        &mut self,
+        events: &[NoteEvent],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize>;
+
+    /// Reset internal state (e.g., release all notes)
+    fn reset(&mut self) {}
+
+    /// Get the processing latency in samples
+    fn latency_samples(&self) -> usize {
+        0
     }
 }
 

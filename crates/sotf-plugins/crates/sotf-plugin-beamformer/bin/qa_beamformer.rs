@@ -19,10 +19,7 @@ fn main() {
     let num_frames = 512;
     let input = vec![0.1f32; num_frames * num_mics];
     let mut output = vec![0.0f32; num_frames];
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
 
     use sotf_host::parameters::{ParameterId, ParameterValue};
     plugin

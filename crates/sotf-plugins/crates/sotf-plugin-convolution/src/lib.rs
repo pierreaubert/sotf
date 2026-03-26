@@ -467,6 +467,16 @@ impl InPlacePlugin for ConvolutionPlugin {
         self.fdl_head = 0;
     }
 
+    fn latency_samples(&self) -> usize {
+        if let Some(engine) = self.nupc_engines.first() {
+            engine.latency_samples()
+        } else if self.state.load().is_some() {
+            PARTITION_SIZE
+        } else {
+            0
+        }
+    }
+
     fn process_in_place(
         &mut self,
         buffer: &mut [f32],
@@ -711,10 +721,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf,);
             plugin
                 .process_in_place(&mut buffer[block_start..block_end], &ctx)
                 .unwrap();
@@ -760,10 +767,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf,);
             let buf_start = block_start * channels;
             let buf_end = block_end * channels;
             plugin
@@ -804,10 +808,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf,);
             plugin
                 .process_in_place(&mut buffer[block_start..block_end], &ctx)
                 .unwrap();
@@ -849,10 +850,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf,);
             plugin_0db
                 .process_in_place(&mut buffer_0db[block_start..block_end], &ctx)
                 .unwrap();
@@ -872,10 +870,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf,);
             plugin_6db
                 .process_in_place(&mut buffer_6db[block_start..block_end], &ctx)
                 .unwrap();
@@ -939,7 +934,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
+            let ctx = ProcessContext::new(sr, nf);
             plugin_par.process_in_place(&mut buf_par[block_start..block_end], &ctx).unwrap();
         }
 
@@ -955,7 +950,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
+            let ctx = ProcessContext::new(sr, nf);
             plugin_seq.process_in_place(&mut buf_seq[block_start..block_end], &ctx).unwrap();
         }
 
@@ -1007,10 +1002,7 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext {
-                sample_rate: sr,
-                num_frames: nf,
-            };
+            let ctx = ProcessContext::new(sr, nf,);
             plugin
                 .process_in_place(&mut buffer[block_start..block_end], &ctx)
                 .unwrap();

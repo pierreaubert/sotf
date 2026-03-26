@@ -225,10 +225,12 @@ pub use sotf_host::analyzer_spectrum::{
     TiltReferenceFreq,
 };
 pub use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+pub use sotf_host::automation::AutomationCurve;
 pub use sotf_host::host::{DawHost, GraphEdge, Host};
 pub use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 pub use sotf_host::plugin::{
-    InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
+    InPlacePlugin, InPlacePluginAdapter, InstrumentPlugin, NoteEvent, NoteEventKind,
+    ParameterRamp, Plugin, PluginInfo, PluginResult, ProcessContext,
 };
 
 #[cfg(feature = "qa")]

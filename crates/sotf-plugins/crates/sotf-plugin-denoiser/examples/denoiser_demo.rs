@@ -91,10 +91,7 @@ fn main() {
     // Compute input energy
     let input_energy: f32 = buffer.iter().map(|x: &f32| x.powi(2)).sum();
 
-    let context = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(sample_rate, num_frames);
 
     // Create output buffer (in-place processing)
     let mut output = buffer.clone();

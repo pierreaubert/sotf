@@ -536,10 +536,7 @@ mod tests {
         let mut b = vec![2.0; 1000];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         let thresh_lin = fast_pow10(-1.0 / 20.0);
@@ -558,10 +555,7 @@ mod tests {
 
         // Feed loud signal to establish steady-state
         let mut b = vec![1.0f32; 4800];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 4800,
-        };
+        let ctx = ProcessContext::new(48000, 4800,);
         p.process_in_place(&mut b, &ctx).unwrap();
         let _output_before = b[4799];
 
@@ -575,10 +569,7 @@ mod tests {
         let mut b2 = vec![1.0f32; 48];
         p.process_in_place(
             &mut b2,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 48,
-            },
+            &ProcessContext::new(48000, 48,),
         )
         .unwrap();
         let output_after_1ms = b2[47];
@@ -611,10 +602,7 @@ mod tests {
             b[frame * 2] = val;
             b[frame * 2 + 1] = val;
         }
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 2048,
-        };
+        let ctx = ProcessContext::new(48000, 2048,);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         // After lookahead fills (=5ms = 240 samples), all output should be
@@ -646,10 +634,7 @@ mod tests {
         for i in 0..frames {
             b[i] = if i % 2 == 0 { 0.8 } else { -0.8 };
         }
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames,);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         // With true peak, the limiter should detect the inter-sample overshoot
@@ -713,10 +698,7 @@ mod tests {
         for i in 0..frames {
             b[i] = 0.9 * (i as f32 * 0.1).sin();
         }
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames,);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         let thresh_lin = fast_pow10(-6.0 / 20.0);
@@ -773,10 +755,7 @@ mod tests {
         let warmup = 4800; // 100ms
         let mut warmup_buf_dry = vec![0.0f32; warmup];
         let mut warmup_buf_wet = vec![0.0f32; warmup];
-        let warmup_ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: warmup,
-        };
+        let warmup_ctx = ProcessContext::new(sr, warmup,);
         p_dry
             .process_in_place(&mut warmup_buf_dry, &warmup_ctx)
             .unwrap();
@@ -794,10 +773,7 @@ mod tests {
         };
         let mut buf_dry = make_signal();
         let mut buf_wet = make_signal();
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(sr, num_frames);
         p_dry.process_in_place(&mut buf_dry, &ctx).unwrap();
         p_wet.process_in_place(&mut buf_wet, &ctx).unwrap();
 
@@ -827,10 +803,7 @@ mod tests {
 
         let num_frames = 4096;
         let mut buf = vec![1.0f32; num_frames]; // 0 dBFS
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         p.process_in_place(&mut buf, &ctx).unwrap();
 
         let thresh_lin = fast_pow10(-6.0 / 20.0);
@@ -862,10 +835,7 @@ mod tests {
         }
 
         // Process enough blocks to trigger cache update (>= CACHE_UPDATE_THROTTLE)
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames,);
         for _ in 0..CACHE_UPDATE_THROTTLE + 1 {
             p.process_in_place(&mut b, &ctx).unwrap();
         }
@@ -902,10 +872,7 @@ mod tests {
 
         let frames = 512;
         let mut b = vec![0.5f32; frames];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames,);
         for _ in 0..CACHE_UPDATE_THROTTLE + 1 {
             p.process_in_place(&mut b, &ctx).unwrap();
         }
@@ -927,10 +894,7 @@ mod tests {
 
         // Process some audio to build up state
         let mut b = vec![0.9f32; 2 * 1024];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1024,
-        };
+        let ctx = ProcessContext::new(48000, 1024,);
         p.process_in_place(&mut b, &ctx).unwrap();
 
         p.reset();

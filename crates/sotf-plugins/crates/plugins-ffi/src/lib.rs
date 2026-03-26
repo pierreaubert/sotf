@@ -298,10 +298,7 @@ unsafe fn process_impl(
     let input_slice = unsafe { slice::from_raw_parts(input, input_samples) };
     let output_slice = unsafe { slice::from_raw_parts_mut(output, output_samples) };
 
-    let context = ProcessContext {
-        sample_rate: handle_ref.sample_rate,
-        num_frames,
-    };
+    let context = ProcessContext::new(handle_ref.sample_rate, num_frames);
 
     match handle_ref
         .plugin

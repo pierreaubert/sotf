@@ -293,6 +293,19 @@ impl InPlacePlugin for GainPlugin {
                     &self.cached_gains,
                 );
             }
+        } else if let Some(ramp) = context.ramps.iter().find(|r| r.param_index == 0) {
+            // Sample-accurate automation: interpolate gain_db from ramp,
+            // convert to linear per sample. Overrides the smoother.
+            for frame in 0..nf {
+                let t = frame as f32 / nf.max(1) as f32;
+                let gain_db = ramp.start_value + (ramp.end_value - ramp.start_value) * t;
+                let g = Self::db_to_linear(gain_db);
+                let off = frame * self.channels;
+                apply_gain_simd(&mut buffer[off..off + self.channels], g);
+            }
+            // Sync smoother to end value so it's correct if ramp stops
+            let end_linear = Self::db_to_linear(ramp.end_value);
+            self.global_gain_smoother.reset(end_linear);
         } else {
             for frame in 0..nf {
                 let g = self.global_gain_smoother.advance();
@@ -313,10 +326,7 @@ mod tests {
         let mut b = vec![1.0, 2.0, 3.0, 4.0];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 44100,
-                num_frames: 2,
-            },
+            &ProcessContext::new(44100, 2,),
         )
         .unwrap();
         assert!((b[0] - 1.0).abs() < 1e-5);
@@ -341,10 +351,7 @@ mod tests {
         let mut buf = vec![1.0f32; num_frames];
         p.process_in_place(
             &mut buf,
-            &ProcessContext {
-                sample_rate: 96000,
-                num_frames,
-            },
+            &ProcessContext::new(96000, num_frames),
         )
         .unwrap();
 

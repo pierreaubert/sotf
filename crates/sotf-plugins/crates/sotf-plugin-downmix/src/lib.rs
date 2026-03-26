@@ -1099,10 +1099,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 44100,
-                num_frames: 1024,
-            },
+            &ProcessContext::new(44100, 1024,),
         )
         .unwrap();
         assert!(o.iter().any(|&s| s.abs() > 1e-5));
@@ -1120,10 +1117,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 44100,
-                num_frames: 100,
-            },
+            &ProcessContext::new(44100, 100,),
         )
         .unwrap();
         assert!(o[0].abs() > 0.01);
@@ -1156,10 +1150,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 
@@ -1284,10 +1275,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 

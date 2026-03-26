@@ -1955,10 +1955,7 @@ mod tests {
         let mut b = vec![0.1; 1000];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(b[999].is_finite());
@@ -1998,10 +1995,7 @@ mod tests {
         let mut loud: Vec<f32> = (0..nf)
             .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0).sin())
             .collect();
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(48000, nf,);
         p.process_in_place(&mut loud, &ctx).unwrap();
 
         // Verify the loud signal passed through with reasonable level
@@ -2076,10 +2070,7 @@ mod tests {
         }
         p.process_in_place(
             &mut loud,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 9600,
-            },
+            &ProcessContext::new(48000, 9600,),
         )
         .unwrap();
 
@@ -2093,10 +2084,7 @@ mod tests {
             (quiet.iter().map(|s| s * s).sum::<f32>() / quiet.len() as f32).sqrt();
         p.process_in_place(
             &mut quiet,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2400,
-            },
+            &ProcessContext::new(48000, 2400,),
         )
         .unwrap();
 
@@ -2135,10 +2123,7 @@ mod tests {
         let mut output = input.clone();
         p.process_in_place(
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 4800,
-            },
+            &ProcessContext::new(48000, 4800,),
         )
         .unwrap();
 
@@ -2192,10 +2177,7 @@ mod tests {
         let mut buf = signal.clone();
         p.process_in_place(
             &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: nf,
-            },
+            &ProcessContext::new(48000, nf,),
         )
         .unwrap();
 
@@ -2247,10 +2229,7 @@ mod tests {
 
         let input_rms = amp; // DC: RMS == amplitude
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
+        let ctx = ProcessContext::new(48000, num_frames);
         p.process_in_place(&mut buffer, &ctx).unwrap();
 
         // Measure RMS of the second half to let the expander settle
@@ -2312,10 +2291,7 @@ mod tests {
         let mut sp_plugin = MultibandExpanderPlugin::with_params(1, make_params("spectral"));
         sp_plugin.initialize(sr).unwrap();
 
-        let ctx = ProcessContext {
-            sample_rate: sr,
-            num_frames: nf,
-        };
+        let ctx = ProcessContext::new(sr, nf,);
 
         let mut td_buf = signal.clone();
         td_plugin.process_in_place(&mut td_buf, &ctx).unwrap();

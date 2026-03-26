@@ -13,10 +13,7 @@ mod tests {
         // 2. Process audio WITHOUT mute (Baseline)
         let input = vec![1.0, 1.0]; // 1 frame, both channels 1.0
         let mut output = vec![0.0; 2];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1,
-        };
+        let context = ProcessContext::new(48000, 1,);
 
         plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(output[0], 1.0, "Baseline Ch0 should be 1.0");
@@ -52,10 +49,7 @@ mod tests {
         let mut plugin = MatrixPlugin::with_matrix(2, 2, matrix).unwrap();
 
         let input = vec![1.0, 1.0];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1,
-        };
+        let context = ProcessContext::new(48000, 1,);
 
         // 2. Apply Dim to Channel 0
         let states = vec![
@@ -111,10 +105,7 @@ mod tests {
         let settle_frames = 4096;
         let settle_input = vec![1.0_f32; settle_frames * 2];
         let mut settle_output = vec![0.0_f32; settle_frames * 2];
-        let settle_context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: settle_frames,
-        };
+        let settle_context = ProcessContext::new(48000, settle_frames,);
         plugin
             .process(&settle_input, &mut settle_output, &settle_context)
             .unwrap();
@@ -122,10 +113,7 @@ mod tests {
         // After settling, process one more frame to verify
         let input = vec![1.0, 1.0];
         let mut output = vec![0.0; 2];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 1,
-        };
+        let context = ProcessContext::new(48000, 1,);
         plugin.process(&input, &mut output, &context).unwrap();
         assert!(
             output[0].abs() < 1e-5,

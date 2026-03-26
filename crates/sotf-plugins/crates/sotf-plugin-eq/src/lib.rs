@@ -1177,10 +1177,7 @@ mod tests {
         let mut b = vec![0.5; 2048];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1024,
-            },
+            &ProcessContext::new(48000, 1024,),
         )
         .unwrap();
         assert_eq!(b, vec![0.5; 2048]);
@@ -1207,10 +1204,7 @@ mod tests {
         let i = b.clone();
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1024,
-            },
+            &ProcessContext::new(48000, 1024,),
         )
         .unwrap();
         // Check a sample after some settling
@@ -1237,10 +1231,7 @@ mod tests {
         let input = signal_gen.generate(4800 * channels);
 
         let mut expected_output = vec![0.0; input.len()];
-        let ctx = ProcessContext {
-            sample_rate: sample_rate as u32,
-            num_frames: 4800,
-        };
+        let ctx = ProcessContext::new(sample_rate as u32, 4800,);
         plugin.process(&input, &mut expected_output, &ctx).unwrap();
 
         plugin.reset();
@@ -1277,10 +1268,7 @@ mod tests {
 
         let input = vec![0.1; 512 * channels];
         let mut output = vec![0.0; 512 * channels];
-        let ctx = ProcessContext {
-            sample_rate,
-            num_frames: 512,
-        };
+        let ctx = ProcessContext::new(sample_rate, 512);
 
         // Warm up
         for _ in 0..10 {
@@ -1356,10 +1344,7 @@ mod tests {
         }
         p.process_in_place(
             &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 
@@ -1389,10 +1374,7 @@ mod tests {
         let mut buf: Vec<f32> = (0..256).map(|k| (k as f32 * 0.1).sin()).collect();
         p.process_in_place(
             &mut buf,
-            &ProcessContext {
-                sample_rate: 44100,
-                num_frames: 256,
-            },
+            &ProcessContext::new(44100, 256,),
         )
         .unwrap();
 
@@ -1431,10 +1413,7 @@ mod tests {
         let mut warmup = vec![0.5f32; 1024];
         p.process_in_place(
             &mut warmup,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1024,
-            },
+            &ProcessContext::new(48000, 1024,),
         )
         .unwrap();
 
@@ -1450,10 +1429,7 @@ mod tests {
         let mut buf = vec![0.5f32; 512];
         p.process_in_place(
             &mut buf,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 512,
-            },
+            &ProcessContext::new(48000, 512,),
         )
         .unwrap();
 
@@ -1569,10 +1545,7 @@ mod tests {
         for _ in 0..10 {
             p.process_in_place(
                 &mut signal,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames,
-                },
+                &ProcessContext::new(48000, num_frames),
             )
             .unwrap();
         }
@@ -1617,10 +1590,7 @@ mod tests {
         for _ in 0..10 {
             p.process_in_place(
                 &mut signal,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames,
-                },
+                &ProcessContext::new(48000, num_frames),
             )
             .unwrap();
         }
@@ -1699,10 +1669,7 @@ mod tests {
         let mut signal = vec![0.5f32; num_frames * nc];
         p.process_in_place(
             &mut signal,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 
@@ -1743,10 +1710,7 @@ mod tests {
         // Process enough frames to trigger the oversampling chunk path (>= OS_CHUNK_SIZE)
         let frames = 512;
         let mut buffer = vec![0.5f32; frames * nc];
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            num_frames: frames,
-        };
+        let ctx = ProcessContext::new(48000, frames,);
         // Should not panic with 12 channels
         p.process_in_place(&mut buffer, &ctx).unwrap();
         assert!(buffer.iter().all(|s| s.is_finite()));

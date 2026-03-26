@@ -67,10 +67,7 @@ fn test_binaural_with_minimal_sofa() {
         input[i * 5] = (2.0 * PI * 440.0 * t).sin() * 0.3;
     }
 
-    let context = ProcessContext {
-        num_frames: block_size,
-        sample_rate: 44100,
-    };
+    let context = ProcessContext::new(44100,, block_size);
 
     // Process multiple blocks to overcome latency and let smoothers settle
     for _ in 0..10 {
@@ -123,10 +120,7 @@ fn test_binaural_sample_rate_resampling() {
     let input = vec![0.1f32; block_size * 5];
     let mut output = vec![0.0f32; block_size * 2];
 
-    let context = ProcessContext {
-        num_frames: block_size,
-        sample_rate: 44100,
-    };
+    let context = ProcessContext::new(44100,, block_size);
 
     // Process multiple blocks to overcome latency
     for _ in 0..10 {
@@ -171,10 +165,7 @@ fn test_binaural_lfe_handling() {
         input[i * 6 + 3] = 0.5;
     }
 
-    let context = ProcessContext {
-        num_frames: block_size,
-        sample_rate: 48000,
-    };
+    let context = ProcessContext::new(48000,, block_size);
 
     // Process multiple blocks to overcome latency
     for _ in 0..10 {
@@ -246,10 +237,7 @@ fn test_binaural_externalization() {
     let mut output_no_ext = vec![0.0f32; block_size * 2];
     let mut output_with_ext = vec![0.0f32; block_size * 2];
 
-    let context = ProcessContext {
-        num_frames: block_size,
-        sample_rate: 48000,
-    };
+    let context = ProcessContext::new(48000,, block_size);
 
     // Process multiple blocks to overcome latency
     for _ in 0..10 {
@@ -315,10 +303,7 @@ fn test_binaural_optimization_equivalence() {
     let mut output_standard = vec![0.0f32; block_size * 2];
     let mut output_optimized = vec![0.0f32; block_size * 2];
 
-    let context = ProcessContext {
-        num_frames: block_size,
-        sample_rate: 48000,
-    };
+    let context = ProcessContext::new(48000,, block_size);
 
     decoder_standard
         .process(&input, &mut output_standard, &context)
@@ -382,10 +367,7 @@ fn test_binaural_atmos_7_1_4() {
 
     let mut output = vec![0.0f32; block_size * 2];
 
-    let context = ProcessContext {
-        num_frames: block_size,
-        sample_rate: 48000,
-    };
+    let context = ProcessContext::new(48000,, block_size);
 
     // Process multiple blocks to overcome latency
     for _ in 0..10 {
@@ -426,10 +408,7 @@ fn test_binaural_continuous_processing() {
         let input = vec![0.1f32; block_size * 5];
         let mut output = vec![0.0f32; block_size * 2];
 
-        let context = ProcessContext {
-            num_frames: block_size,
-            sample_rate: 48000,
-        };
+        let context = ProcessContext::new(48000,, block_size);
 
         decoder.process(&input, &mut output, &context).unwrap();
 

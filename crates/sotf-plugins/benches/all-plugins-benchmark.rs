@@ -53,10 +53,7 @@ fn benchmark_eq(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
         let mut output = vec![0.0f32; BUFFER_SIZE * CHANNELS];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("1band_stereo", |b| {
             b.iter(|| {
@@ -110,10 +107,7 @@ fn benchmark_eq(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
         let mut output = vec![0.0f32; BUFFER_SIZE * CHANNELS];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("6band_stereo", |b| {
             b.iter(|| {
@@ -146,10 +140,7 @@ fn benchmark_eq(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, channels);
         let mut output = vec![0.0f32; BUFFER_SIZE * channels];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("2band_5.1", |b| {
             b.iter(|| {
@@ -178,10 +169,7 @@ fn benchmark_eq(c: &mut Criterion) {
 
         let input = generate_test_buffer(buf_size, CHANNELS);
         let mut output = vec![0.0f32; buf_size * CHANNELS];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: buf_size,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, buf_size,);
 
         group.bench_function(format!("1band_{}frames", buf_size), |b| {
             b.iter(|| {
@@ -211,10 +199,7 @@ fn benchmark_delay(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(buf_size, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: buf_size,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, buf_size,);
 
         group.bench_function(format!("stereo_{}frames", buf_size), |b| {
             b.iter(|| {
@@ -231,10 +216,7 @@ fn benchmark_delay(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function(format!("feedback_{:.0}pct", feedback * 100.0), |b| {
             b.iter(|| {
@@ -260,10 +242,7 @@ fn benchmark_gate(c: &mut Criterion) {
 
     for &buf_size in &[256, 512, 1024] {
         let mut buffer = generate_test_buffer(buf_size, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: buf_size,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, buf_size,);
 
         group.bench_function(format!("stereo_{}frames", buf_size), |b| {
             b.iter(|| {
@@ -290,10 +269,7 @@ fn benchmark_limiter(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("hard_stereo_512", |b| {
             b.iter(|| {
@@ -310,10 +286,7 @@ fn benchmark_limiter(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("soft_stereo_512", |b| {
             b.iter(|| {
@@ -330,10 +303,7 @@ fn benchmark_limiter(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function(format!("lookahead_{}ms", lookahead), |b| {
             b.iter(|| {
@@ -359,10 +329,7 @@ fn benchmark_expander(c: &mut Criterion) {
 
     for &buf_size in &[256, 512, 1024] {
         let mut buffer = generate_test_buffer(buf_size, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: buf_size,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, buf_size,);
 
         group.bench_function(format!("stereo_{}frames", buf_size), |b| {
             b.iter(|| {
@@ -389,10 +356,7 @@ fn benchmark_crossover(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("lr24_lowpass", |b| {
             b.iter(|| {
@@ -409,10 +373,7 @@ fn benchmark_crossover(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("lr48_lowpass", |b| {
             b.iter(|| {
@@ -429,10 +390,7 @@ fn benchmark_crossover(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, channels);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function(format!("lr24_{}ch", channels), |b| {
             b.iter(|| {
@@ -460,10 +418,7 @@ fn benchmark_matrix(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, 2);
         let mut output = vec![0.0f32; BUFFER_SIZE * 2];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("identity_2x2", |b| {
             b.iter(|| {
@@ -485,10 +440,7 @@ fn benchmark_matrix(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, 2);
         let mut output = vec![0.0f32; BUFFER_SIZE * 6];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("upmix_2to6", |b| {
             b.iter(|| {
@@ -510,10 +462,7 @@ fn benchmark_matrix(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, 8);
         let mut output = vec![0.0f32; BUFFER_SIZE * 8];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("routing_8x8", |b| {
             b.iter(|| {
@@ -551,10 +500,7 @@ fn benchmark_analyzers(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
         let mut output = vec![0.0f32; BUFFER_SIZE * CHANNELS];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("spectrum_30bins", |b| {
             b.iter(|| {
@@ -576,10 +522,7 @@ fn benchmark_analyzers(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
         let mut output = vec![0.0f32; BUFFER_SIZE * CHANNELS];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("loudness_monitor", |b| {
             b.iter(|| {
@@ -616,10 +559,7 @@ fn benchmark_loudness(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
         let mut output = vec![0.0f32; BUFFER_SIZE * CHANNELS];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("fletcher_munson", |b| {
             b.iter(|| {
@@ -643,10 +583,7 @@ fn benchmark_loudness(c: &mut Criterion) {
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
         let mut output = vec![0.0f32; BUFFER_SIZE * CHANNELS];
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("loudness_compensation", |b| {
             b.iter(|| {
@@ -675,10 +612,7 @@ fn benchmark_channel_mute_solo(c: &mut Criterion) {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: BUFFER_SIZE,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
     group.bench_function("stereo_512", |b| {
         b.iter(|| {
@@ -695,10 +629,7 @@ fn benchmark_channel_mute_solo(c: &mut Criterion) {
         plugin8.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer8 = generate_test_buffer(BUFFER_SIZE, channels);
-        let context8 = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context8 = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("8ch_512", |b| {
             b.iter(|| {
@@ -725,10 +656,7 @@ fn benchmark_multiband_compressor(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("3band_stereo_512", |b| {
             b.iter(|| {
@@ -750,10 +678,7 @@ fn benchmark_multiband_compressor(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("5band_stereo_512", |b| {
             b.iter(|| {
@@ -780,10 +705,7 @@ fn benchmark_multiband_expander(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("3band_stereo_512", |b| {
             b.iter(|| {
@@ -805,10 +727,7 @@ fn benchmark_multiband_expander(c: &mut Criterion) {
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: BUFFER_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE,);
 
         group.bench_function("5band_stereo_512", |b| {
             b.iter(|| {

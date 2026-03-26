@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::parameters::ParameterId;
+use serde::{Deserialize, Serialize};
 
 /// Automation mode for a parameter
 ///
@@ -10,7 +11,7 @@ use crate::parameters::ParameterId;
 /// - **Host**: DAW automation writes parameter changes
 /// - **Plugin**: Plugin generates its own parameter changes (LFOs, envelopes)
 /// - **Mixed**: Both host and plugin can modify the parameter
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AutomationMode {
     /// Parameter is controlled by the host (DAW automation)
     #[default]
@@ -26,7 +27,7 @@ pub enum AutomationMode {
 /// Curve type for parameter automation
 ///
 /// Defines how parameter values interpolate between control points.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AutomationCurve {
     /// Hold each value for a specified number of samples
     Step {
@@ -60,7 +61,7 @@ pub enum AutomationCurve {
 /// A point in a Bezier automation curve
 ///
 /// Contains a value and handles for curve shaping.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BezierPoint {
     /// Position in samples (0 = current position)
     pub position: usize,

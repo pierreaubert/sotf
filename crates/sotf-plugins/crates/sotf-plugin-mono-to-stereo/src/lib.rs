@@ -500,10 +500,7 @@ mod tests {
         p.process(
             &i,
             &mut o,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1024,
-            },
+            &ProcessContext::new(48000, 1024,),
         )
         .unwrap();
         assert!(o[2047].is_finite());
@@ -521,10 +518,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: total_frames,
-            },
+            &ProcessContext::new(48000, total_frames,),
         )
         .unwrap();
         for frame in (FFT_SIZE * 5)..(FFT_SIZE * 6) {
@@ -548,10 +542,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: total_frames,
-            },
+            &ProcessContext::new(48000, total_frames,),
         )
         .unwrap();
         let mut any_differ = false;
@@ -594,10 +585,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: total_frames,
-            },
+            &ProcessContext::new(48000, total_frames,),
         )
         .unwrap();
 
@@ -649,10 +637,7 @@ mod tests {
             p.process(
                 &input,
                 &mut output,
-                &ProcessContext {
-                    sample_rate: 48000,
-                    num_frames: total_frames,
-                },
+                &ProcessContext::new(48000, total_frames,),
             )
             .unwrap();
 
@@ -717,10 +702,7 @@ mod tests {
         p.process(
             &input,
             &mut output,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: total_frames,
-            },
+            &ProcessContext::new(48000, total_frames,),
         )
         .unwrap();
 

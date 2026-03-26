@@ -129,10 +129,7 @@ fn process_upmixer_signal(plugin: &mut UpmixerPlugin, signal_name: &str) -> Vec<
         let input_block = &input[input_offset..input_offset + FFT_SIZE * 2];
         let mut output_block = vec![0.0_f32; FFT_SIZE * num_output_channels];
 
-        let context = ProcessContext {
-            sample_rate: SAMPLE_RATE,
-            num_frames: FFT_SIZE,
-        };
+        let context = ProcessContext::new(SAMPLE_RATE, FFT_SIZE,);
 
         plugin
             .process(input_block, &mut output_block, &context)
@@ -378,10 +375,7 @@ fn test_upmixer_no_clipping() {
     let loud_input = vec![0.9_f32; FFT_SIZE * 2];
     let mut output = vec![0.0_f32; FFT_SIZE * plugin.output_channels()];
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: FFT_SIZE,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, FFT_SIZE,);
 
     plugin.process(&loud_input, &mut output, &context).unwrap();
 
@@ -401,10 +395,7 @@ fn test_upmixer_silence_input() {
     let input = vec![0.0_f32; FFT_SIZE * 2];
     let mut output = vec![0.0_f32; FFT_SIZE * plugin.output_channels()];
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: FFT_SIZE,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, FFT_SIZE,);
 
     plugin.process(&input, &mut output, &context).unwrap();
 
@@ -434,10 +425,7 @@ fn test_upmixer_stereo_imaging_preserved() {
 
     let mut output = vec![0.0_f32; FFT_SIZE * plugin.output_channels()];
 
-    let context = ProcessContext {
-        sample_rate: SAMPLE_RATE,
-        num_frames: FFT_SIZE,
-    };
+    let context = ProcessContext::new(SAMPLE_RATE, FFT_SIZE,);
 
     plugin.process(&mono_input, &mut output, &context).unwrap();
 

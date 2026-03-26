@@ -391,10 +391,7 @@ mod tests {
         let mut b = vec![1.0; 1000];
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 1000,
-            },
+            &ProcessContext::new(48000, 1000,),
         )
         .unwrap();
         assert!(b[999] != 1.0);
@@ -457,10 +454,7 @@ mod tests {
         b[0] = 1.0;
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 48000,
-            },
+            &ProcessContext::new(48000, 48000,),
         )
         .unwrap();
 
@@ -493,10 +487,7 @@ mod tests {
         b[0] = 1.0;
         p.process_in_place(
             &mut b,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames: 2000,
-            },
+            &ProcessContext::new(48000, 2000,),
         )
         .unwrap();
 
@@ -595,10 +586,7 @@ mod tests {
         let mut buffer = original.clone();
         p.process_in_place(
             &mut buffer,
-            &ProcessContext {
-                sample_rate: 48000,
-                num_frames,
-            },
+            &ProcessContext::new(48000, num_frames),
         )
         .unwrap();
 
@@ -630,10 +618,7 @@ mod tests {
 
         p.process_in_place(
             &mut buffer,
-            &ProcessContext {
-                sample_rate: sr,
-                num_frames,
-            },
+            &ProcessContext::new(sr, num_frames),
         )
         .unwrap();
 

@@ -28,10 +28,7 @@ fn main() {
     let mut buffer = vec![0.0; num_frames];
     buffer[0] = 1.0; // Impulse
 
-    let ctx = ProcessContext {
-        sample_rate,
-        num_frames,
-    };
+    let ctx = ProcessContext::new(sample_rate, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
 
     // Find impulse in output
