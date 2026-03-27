@@ -62,21 +62,19 @@ mod upmixer_tests {
             .unwrap();
         assert!((plugin.center_spread.target() - 0.7).abs() < 1e-6);
 
-        // Values outside [0.0, 1.0] are rejected by validation
-        let res = plugin.set_parameter(
+        // Values outside [0.0, 1.0] are clamped by param_bridge
+        plugin.set_parameter(
             ParameterId::from("center_spread"),
             ParameterValue::Float(1.5),
-        );
-        assert!(res.is_err());
-        assert!((plugin.center_spread.target() - 0.7).abs() < 1e-6);
+        ).unwrap();
+        assert!((plugin.center_spread.target() - 1.0).abs() < 1e-6); // clamped to max
 
-        // Test lower bound rejection
-        let res = plugin.set_parameter(
+        // Test lower bound clamping
+        plugin.set_parameter(
             ParameterId::from("center_spread"),
             ParameterValue::Float(-0.5),
-        );
-        assert!(res.is_err());
-        assert!((plugin.center_spread.target() - 0.7).abs() < 1e-6);
+        ).unwrap();
+        assert!((plugin.center_spread.target() - 0.0).abs() < 1e-6); // clamped to min
     }
 
     #[test]
@@ -95,21 +93,19 @@ mod upmixer_tests {
             .unwrap();
         assert!((plugin.stereo_width.target() - 0.3).abs() < 1e-6);
 
-        // Values outside [0.0, 1.0] are rejected by validation
-        let res = plugin.set_parameter(
+        // Values outside [0.0, 1.0] are clamped by param_bridge
+        plugin.set_parameter(
             ParameterId::from("stereo_width"),
             ParameterValue::Float(2.0),
-        );
-        assert!(res.is_err());
-        assert!((plugin.stereo_width.target() - 0.3).abs() < 1e-6);
+        ).unwrap();
+        assert!((plugin.stereo_width.target() - 1.0).abs() < 1e-6); // clamped to max
 
-        // Test lower bound rejection
-        let res = plugin.set_parameter(
+        // Test lower bound clamping
+        plugin.set_parameter(
             ParameterId::from("stereo_width"),
             ParameterValue::Float(-1.0),
-        );
-        assert!(res.is_err());
-        assert!((plugin.stereo_width.target() - 0.3).abs() < 1e-6);
+        ).unwrap();
+        assert!((plugin.stereo_width.target() - 0.0).abs() < 1e-6); // clamped to min
     }
 
     #[test]
@@ -870,36 +866,37 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
 
-        // Test that parameter index 0 corresponds to 5.1
+        // Test that 5.1 corresponds to index 2 in SPEAKER_CONFIGS
+        // SPEAKER_CONFIGS = ["2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"]
         let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
-        assert_eq!(value, Some(ParameterValue::Int(0)));
+        assert_eq!(value, Some(ParameterValue::Int(2))); // "5.1" is index 2
 
-        // Test setting to 2.0 (index 8)
+        // Test setting to 2.0 (index 0)
         plugin
-            .set_parameter(ParameterId::from("speaker_config"), ParameterValue::Int(8))
+            .set_parameter(ParameterId::from("speaker_config"), ParameterValue::Int(0))
             .unwrap();
         assert_eq!(plugin.speaker_config.id, "2.0");
         assert_eq!(plugin.output_channels(), 2);
         let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
-        assert_eq!(value, Some(ParameterValue::Int(8)));
+        assert_eq!(value, Some(ParameterValue::Int(0)));
 
-        // Test setting to 5.0 (index 9)
+        // Test setting to 5.0 (index 1)
         plugin
-            .set_parameter(ParameterId::from("speaker_config"), ParameterValue::Int(9))
+            .set_parameter(ParameterId::from("speaker_config"), ParameterValue::Int(1))
             .unwrap();
         assert_eq!(plugin.speaker_config.id, "5.0");
         assert_eq!(plugin.output_channels(), 5);
         let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
-        assert_eq!(value, Some(ParameterValue::Int(9)));
+        assert_eq!(value, Some(ParameterValue::Int(1)));
 
-        // Test setting to 7.1 (index 1)
+        // Test setting to 7.1 (index 3)
         plugin
-            .set_parameter(ParameterId::from("speaker_config"), ParameterValue::Int(1))
+            .set_parameter(ParameterId::from("speaker_config"), ParameterValue::Int(3))
             .unwrap();
         assert_eq!(plugin.speaker_config.id, "7.1");
         assert_eq!(plugin.output_channels(), 8);
         let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
-        assert_eq!(value, Some(ParameterValue::Int(1)));
+        assert_eq!(value, Some(ParameterValue::Int(3)));
     }
 
     #[test]
@@ -2260,29 +2257,25 @@ mod upmixer_tests {
         let val = plugin.get_parameter(&ParameterId::from("multi_source_threshold"));
         assert_eq!(val, Some(ParameterValue::Float(0.25)));
 
-        // Values outside [0.05, 0.5] should be rejected by validation
-        let res = plugin.set_parameter(
+        // Values outside [0.05, 0.5] are clamped by param_bridge
+        plugin.set_parameter(
             ParameterId::from("multi_source_threshold"),
-            ParameterValue::Float(0.001), // Below minimum
-        );
+            ParameterValue::Float(0.001), // Below minimum -> clamped to 0.05
+        ).unwrap();
         assert!(
-            res.is_err(),
-            "Expected error for out-of-range threshold 0.001"
-        );
-        // Threshold should remain at previously set value
-        assert!(
-            (plugin.multi_source_threshold - 0.25).abs() < 1e-6,
-            "Threshold should not change on rejected set_parameter, got {}",
+            (plugin.multi_source_threshold - 0.05).abs() < 1e-6,
+            "Threshold should be clamped to min 0.05, got {}",
             plugin.multi_source_threshold
         );
 
-        let res = plugin.set_parameter(
+        plugin.set_parameter(
             ParameterId::from("multi_source_threshold"),
-            ParameterValue::Float(0.9), // Above maximum
-        );
+            ParameterValue::Float(0.9), // Above maximum -> clamped to 0.5
+        ).unwrap();
         assert!(
-            res.is_err(),
-            "Expected error for out-of-range threshold 0.9"
+            (plugin.multi_source_threshold - 0.5).abs() < 1e-6,
+            "Threshold should be clamped to max 0.5, got {}",
+            plugin.multi_source_threshold
         );
     }
 }

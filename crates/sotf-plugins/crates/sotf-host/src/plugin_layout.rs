@@ -318,4 +318,42 @@ impl PluginLayout {
     pub fn has_visualizations(&self) -> bool {
         !self.visualizations.is_empty()
     }
+
+    /// Validate that all param_index values in this layout are within bounds
+    /// of the given PARAMS array. Returns a list of errors (empty = valid).
+    ///
+    /// This catches the class of bug where a layout built for one PARAMS array
+    /// (e.g., multiband GLOBAL_PARAMS) is accidentally used with a different
+    /// one (e.g., single-band PARAMS) that has different index assignments.
+    pub fn validate(&self, params_len: usize, plugin_name: &str) -> Vec<String> {
+        let mut errors = Vec::new();
+        let check = |idx: usize, section: &str, errors: &mut Vec<String>| {
+            if idx >= params_len {
+                errors.push(format!(
+                    "{plugin_name}: {section} references param index {idx} but PARAMS only has {params_len} entries"
+                ));
+            }
+        };
+        for c in self.config {
+            if let ControlType::BarMeter { .. } = c.control_type {
+                continue; // meters don't reference params
+            }
+            check(c.param_index, "config", &mut errors);
+        }
+        for group in self.main {
+            for c in group.controls {
+                if let ControlType::BarMeter { .. } = c.control_type {
+                    continue;
+                }
+                check(c.param_index, &format!("main/{}", group.title), &mut errors);
+            }
+        }
+        for c in self.output {
+            if let ControlType::BarMeter { .. } = c.control_type {
+                continue;
+            }
+            check(c.param_index, "output", &mut errors);
+        }
+        errors
+    }
 }

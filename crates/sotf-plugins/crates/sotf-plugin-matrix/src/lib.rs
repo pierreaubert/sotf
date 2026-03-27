@@ -4,10 +4,13 @@
 
 pub mod params;
 
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
+use sotf_host::param_bridge;
+use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;
 use sotf_plugin_channel_mute_solo::ChannelState;
+
+use crate::params::PARAMS as MX;
 
 /// Smoothing time in ms for gain coefficient transitions (~5ms to avoid clicks)
 const GAIN_SMOOTH_MS: f32 = 5.0;
@@ -48,7 +51,9 @@ pub struct MatrixPlugin {
     channel_state_smoothers: Vec<Smoother>,
     active_connections: Vec<(usize, usize, usize)>,
     ch_gains_buffer: Vec<f32>,
-    cached_parameters: Vec<Parameter>,
+    cached_parameters: Vec<sotf_host::parameters::Parameter>,
+    /// Global gain (from PARAMS spec), linear coefficient 0.0–1.0
+    gain: f64,
 }
 
 impl MatrixPlugin {
@@ -75,6 +80,7 @@ impl MatrixPlugin {
             active_connections: Vec::new(),
             ch_gains_buffer: Vec::new(),
             cached_parameters: Vec::new(),
+            gain: 0.0,
         };
         plugin.update_active_connections();
         plugin.rebuild_cached_parameters();
@@ -111,6 +117,7 @@ impl MatrixPlugin {
             active_connections: Vec::new(),
             ch_gains_buffer: Vec::new(),
             cached_parameters: Vec::new(),
+            gain: 0.0,
         };
         plugin.update_active_connections();
         plugin.rebuild_cached_parameters();
@@ -165,6 +172,7 @@ impl MatrixPlugin {
             active_connections: Vec::new(),
             ch_gains_buffer: Vec::new(),
             cached_parameters: Vec::new(),
+            gain: 0.0,
         };
         plugin.update_active_connections();
         plugin.rebuild_cached_parameters();
@@ -181,7 +189,7 @@ impl MatrixPlugin {
             .iter()
             .position(|&p| p == self.preset)
             .unwrap_or(0) as i32;
-        params.push(Parameter::new_int(
+        params.push(sotf_host::parameters::Parameter::new_int(
             "preset",
             "Preset",
             preset_idx,
@@ -192,38 +200,54 @@ impl MatrixPlugin {
         for out_ch in 0..num_outputs {
             for in_ch in 0..num_inputs {
                 let idx = out_ch * num_inputs + in_ch;
-                params.push(Parameter::new_float(
+                params.push(sotf_host::parameters::Parameter::new_float(
                     &format!("gain_{}_{}", in_ch, out_ch),
                     &format!("Gain In {} Out {}", in_ch, out_ch),
                     0.0,
                     -144.0,
                     24.0,
                 ));
-                params.push(Parameter::new_bool(
+                params.push(sotf_host::parameters::Parameter::new_bool(
                     &format!("phase_invert_{}_{}", in_ch, out_ch),
                     &format!("Phase Invert In {} Out {}", in_ch, out_ch),
                     self.phase_invert.get(idx).copied().unwrap_or(false),
                 ));
             }
-            params.push(Parameter::new_bool(
+            params.push(sotf_host::parameters::Parameter::new_bool(
                 &format!("mute_{}", out_ch),
                 &format!("Mute {}", out_ch),
                 false,
             ));
-            params.push(Parameter::new_bool(
+            params.push(sotf_host::parameters::Parameter::new_bool(
                 &format!("dim_{}", out_ch),
                 &format!("Dim {}", out_ch),
                 false,
             ));
         }
 
-        params.push(Parameter::new_string(
+        params.push(sotf_host::parameters::Parameter::new_string(
             "channel_states",
             "Channel States",
             "[]".to_string(),
         ));
 
-        self.cached_parameters = params;
+        // Prepend PARAMS-based parameters (gain) before dynamic ones
+        let mut bridge_params = param_bridge::build_parameters(MX, |i| self.param_value(i));
+        bridge_params.append(&mut params);
+        self.cached_parameters = bridge_params;
+    }
+
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.gain),
+            _ => None,
+        }
+    }
+
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        if index == 0 {
+            self.gain = value;
+        }
     }
 
     fn update_active_connections(&mut self) {
@@ -458,12 +482,16 @@ impl Plugin for MatrixPlugin {
     fn output_channels(&self) -> usize {
         self.physical_output_channels
     }
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
         self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
+        // Try PARAMS-based keys first (e.g. "gain")
+        if let Ok(_idx) = param_bridge::set_parameter(MX, &id, &value, |i, v| self.set_param_value(i, v)) {
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
         let id_str = id.0.as_str();
         if id_str == "preset" {
             let idx = value
@@ -559,6 +587,10 @@ impl Plugin for MatrixPlugin {
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        // Try PARAMS-based keys first (e.g. "gain")
+        if let Some(v) = param_bridge::get_parameter(MX, id, |i| self.param_value(i)) {
+            return Some(v);
+        }
         let id_str = id.0.as_str();
         if id_str == "preset" {
             let idx = PRESET_CHOICES

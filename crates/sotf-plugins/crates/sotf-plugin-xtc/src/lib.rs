@@ -42,6 +42,7 @@ use reflections::{
     RoomReflectionData, build_reflection_data_image_source, build_reflection_data_ir,
 };
 
+use crate::params::PARAMS as XT;
 use arc_swap::ArcSwap;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -49,7 +50,8 @@ use serde::{Deserialize, Serialize};
 use math_audio_dsp::stft::generate_hann_window;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::param_bridge;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{
     complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, flush_denormals_inplace,
@@ -306,26 +308,6 @@ pub struct XtcPlugin {
     /// Cached progress increment per STFT hop (recomputed in update_filters)
     progress_per_hop: f32,
 
-    /// Parameters for dynamic updates
-    param_enabled: ParameterId,
-    param_distance: ParameterId,
-    param_speaker_angle: ParameterId,
-    param_head_offset_x: ParameterId,
-    param_head_offset_z: ParameterId,
-    param_head_yaw: ParameterId,
-    param_spectral_normalization: ParameterId,
-    param_room_reflections: ParameterId,
-    param_bypass_xtc_filters: ParameterId,
-    param_bypass_spectral_normalization: ParameterId,
-    param_bypass_neumann_refinement: ParameterId,
-    param_auto_gain_enabled: ParameterId,
-    param_auto_gain_max_db: ParameterId,
-    param_auto_gain_smoothing_ms: ParameterId,
-    param_pinna_model_enabled: ParameterId,
-    param_kappa_target: ParameterId,
-    param_hrtf_file: ParameterId,
-    param_itd_modeling: ParameterId,
-
     /// Loaded HRTF transfer functions (from SOFA file)
     hrtf_transfer_functions: Option<HrtfTransferFunctions>,
 
@@ -528,24 +510,6 @@ impl XtcPlugin {
             prev_filters: None,
             crossfade_progress: 1.0, // Start fully faded to current
             progress_per_hop: 0.0,
-            param_enabled: ParameterId::from("enabled"),
-            param_distance: ParameterId::from("distance_m"),
-            param_speaker_angle: ParameterId::from("speaker_angle_deg"),
-            param_head_offset_x: ParameterId::from("head_offset_x"),
-            param_head_offset_z: ParameterId::from("head_offset_z"),
-            param_head_yaw: ParameterId::from("head_yaw_deg"),
-            param_spectral_normalization: ParameterId::from("spectral_normalization"),
-            param_room_reflections: ParameterId::from("room_reflections_enabled"),
-            param_bypass_xtc_filters: ParameterId::from("bypass_xtc_filters"),
-            param_bypass_spectral_normalization: ParameterId::from("bypass_spectral_normalization"),
-            param_bypass_neumann_refinement: ParameterId::from("bypass_neumann_refinement"),
-            param_auto_gain_enabled: ParameterId::from("auto_gain_enabled"),
-            param_auto_gain_max_db: ParameterId::from("auto_gain_max_db"),
-            param_auto_gain_smoothing_ms: ParameterId::from("auto_gain_smoothing_ms"),
-            param_pinna_model_enabled: ParameterId::from("pinna_model_enabled"),
-            param_kappa_target: ParameterId::from("kappa_target"),
-            param_hrtf_file: ParameterId::from("hrtf_file"),
-            param_itd_modeling: ParameterId::from("itd_modeling"),
             hrtf_transfer_functions,
             room_reflection_cache,
             room_params_hash,
@@ -566,147 +530,91 @@ impl XtcPlugin {
         Ok(p)
     }
 
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.params.distance_m as f64),
+            1 => Some(self.params.speaker_angle_deg as f64),
+            2 => Some(self.params.head_radius_m as f64),
+            3 => Some(self.params.head_offset_x as f64),
+            4 => Some(self.params.head_offset_z as f64),
+            5 => Some(self.params.head_yaw_deg as f64),
+            6 => Some(self.params.head_tracking_smooth_s as f64),
+            7 => Some(self.params.beta_base as f64),
+            8 => Some(self.params.beta_low_freq_boost as f64),
+            9 => Some(self.params.beta_high_freq_boost as f64),
+            10 => Some(self.params.head_shadow_cutoff_hz as f64),
+            11 => Some(self.params.head_shadow_slope_db_per_octave as f64),
+            12 => Some(self.params.max_gain_db as f64),
+            13 => Some(if self.params.spectral_normalization { 1.0 } else { 0.0 }),
+            14 => Some(if self.params.pinna_model_enabled { 1.0 } else { 0.0 }),
+            15 => Some(if self.params.room_reflections_enabled { 1.0 } else { 0.0 }),
+            16 => Some(self.params.room_width_m as f64),
+            17 => Some(self.params.room_depth_m as f64),
+            18 => Some(self.params.wall_absorption as f64),
+            19 => Some(self.params.reflection_beta_boost as f64),
+            20 => Some(if self.params.bypass_xtc_filters { 1.0 } else { 0.0 }),
+            21 => Some(if self.params.bypass_spectral_normalization { 1.0 } else { 0.0 }),
+            22 => Some(if self.params.bypass_neumann_refinement { 1.0 } else { 0.0 }),
+            23 => Some(if self.params.auto_gain_enabled { 1.0 } else { 0.0 }),
+            24 => Some(self.params.auto_gain_max_db as f64),
+            25 => Some(self.params.auto_gain_smoothing_ms as f64),
+            26 => Some(self.params.head_model as f64),
+            _ => None,
+        }
+    }
+
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => self.params.distance_m = value as f32,
+            1 => self.params.speaker_angle_deg = value as f32,
+            2 => self.params.head_radius_m = value as f32,
+            3 => self.params.head_offset_x = value as f32,
+            4 => self.params.head_offset_z = value as f32,
+            5 => self.params.head_yaw_deg = value as f32,
+            6 => self.params.head_tracking_smooth_s = value as f32,
+            7 => self.params.beta_base = value as f32,
+            8 => self.params.beta_low_freq_boost = value as f32,
+            9 => self.params.beta_high_freq_boost = value as f32,
+            10 => self.params.head_shadow_cutoff_hz = value as f32,
+            11 => self.params.head_shadow_slope_db_per_octave = value as f32,
+            12 => self.params.max_gain_db = value as f32,
+            13 => self.params.spectral_normalization = value > 0.5,
+            14 => self.params.pinna_model_enabled = value > 0.5,
+            15 => self.params.room_reflections_enabled = value > 0.5,
+            16 => self.params.room_width_m = value as f32,
+            17 => self.params.room_depth_m = value as f32,
+            18 => self.params.wall_absorption = value as f32,
+            19 => self.params.reflection_beta_boost = value as f32,
+            20 => self.params.bypass_xtc_filters = value > 0.5,
+            21 => self.params.bypass_spectral_normalization = value > 0.5,
+            22 => self.params.bypass_neumann_refinement = value > 0.5,
+            23 => self.params.auto_gain_enabled = value > 0.5,
+            24 => self.params.auto_gain_max_db = value as f32,
+            25 => self.params.auto_gain_smoothing_ms = value as f32,
+            26 => self.params.head_model = value as usize,
+            _ => {}
+        }
+    }
+
     fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![
+        self.cached_parameters = param_bridge::build_parameters(XT, |i| self.param_value(i));
+        // Append parameters not in PARAMS
+        self.cached_parameters.push(
             Parameter::new_bool("enabled", "Enabled", self.params.enabled)
-                .with_group("General")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "distance_m",
-                "Distance (m)",
-                self.params.distance_m,
-                0.5,
-                5.0,
-            )
-            .with_group("Geometry")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "speaker_angle_deg",
-                "Speaker Angle (deg)",
-                self.params.speaker_angle_deg,
-                15.0,
-                60.0,
-            )
-            .with_group("Geometry")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "head_offset_x",
-                "Head Offset X (m)",
-                self.params.head_offset_x,
-                -0.5,
-                0.5,
-            )
-            .with_group("Head Tracking")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "head_offset_z",
-                "Head Offset Z (m)",
-                self.params.head_offset_z,
-                -0.5,
-                0.5,
-            )
-            .with_group("Head Tracking")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "head_yaw_deg",
-                "Head Yaw (deg)",
-                self.params.head_yaw_deg,
-                -90.0,
-                90.0,
-            )
-            .with_group("Head Tracking")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "pinna_model_enabled",
-                "Pinna Model",
-                self.params.pinna_model_enabled,
-            )
-            .with_group("Advanced")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "kappa_target",
-                "Kappa Target",
-                self.params.kappa_target,
-                1.0,
-                1000.0,
-            )
-            .with_group("Advanced")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_string(
-                "hrtf_file",
-                "HRTF File",
-                self.params.hrtf_file.clone().unwrap_or_default(),
-            )
-            .with_group("Advanced")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_string(
-                "itd_modeling",
-                "ITD Mode",
-                self.params.itd_modeling.clone(),
-            )
-            .with_group("Advanced")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "spectral_normalization",
-                "Spectral Normalization",
-                self.params.spectral_normalization,
-            )
-            .with_group("Advanced")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "room_reflections_enabled",
-                "Room Reflections",
-                self.params.room_reflections_enabled,
-            )
-            .with_group("Room")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "bypass_xtc_filters",
-                "Bypass XTC Filters",
-                self.params.bypass_xtc_filters,
-            )
-            .with_group("Diagnostic")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "bypass_spectral_normalization",
-                "Bypass Spectral Normalization",
-                self.params.bypass_spectral_normalization,
-            )
-            .with_group("Diagnostic")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "bypass_neumann_refinement",
-                "Bypass Neumann Refinement",
-                self.params.bypass_neumann_refinement,
-            )
-            .with_group("Diagnostic")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "auto_gain_enabled",
-                "Auto Gain",
-                self.params.auto_gain_enabled,
-            )
-            .with_group("Auto Gain")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "auto_gain_max_db",
-                "Auto Gain Max (dB)",
-                self.params.auto_gain_max_db,
-                0.0,
-                24.0,
-            )
-            .with_group("Auto Gain")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "auto_gain_smoothing_ms",
-                "Auto Gain Smoothing (ms)",
-                self.params.auto_gain_smoothing_ms,
-                10.0,
-                500.0,
-            )
-            .with_group("Auto Gain")
-            .with_importance(ParameterImportance::Useful),
-        ];
+        );
+        self.cached_parameters.push(
+            Parameter::new_float("kappa_target", "Kappa Target", self.params.kappa_target, 1.0, 1000.0)
+        );
+        self.cached_parameters.push(
+            Parameter::new_string("hrtf_file", "HRTF File", self.params.hrtf_file.clone().unwrap_or_default())
+        );
+        self.cached_parameters.push(
+            Parameter::new_string("itd_modeling", "ITD Mode", self.params.itd_modeling.clone())
+        );
     }
 
     /// Create from parameters helper
@@ -1003,121 +911,26 @@ impl Plugin for XtcPlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-        let mut needs_filter_update = false;
-
-        if id == self.param_enabled {
+        // Parameters not in PARAMS — handle separately
+        if id.0 == "enabled" {
             self.params.enabled = value
                 .as_bool()
                 .ok_or_else(|| "enabled must be a boolean".to_string())?;
-        } else if id == self.param_distance {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "distance_m must be a float".to_string())?;
-            if v.is_finite() {
-                self.params.distance_m = v.clamp(0.5, 5.0);
-                needs_filter_update = true;
-            }
-        } else if id == self.param_speaker_angle {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "speaker_angle_deg must be a float".to_string())?;
-            if v.is_finite() {
-                self.params.speaker_angle_deg = v.clamp(15.0, 60.0);
-                needs_filter_update = true;
-            }
-        } else if id == self.param_head_offset_x {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "head_offset_x must be a float".to_string())?;
-            if v.is_finite() {
-                self.params.head_offset_x = v.clamp(-0.5, 0.5);
-                needs_filter_update = true;
-            }
-        } else if id == self.param_head_offset_z {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "head_offset_z must be a float".to_string())?;
-            if v.is_finite() {
-                self.params.head_offset_z = v.clamp(-0.5, 0.5);
-                needs_filter_update = true;
-            }
-        } else if id == self.param_head_yaw {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
-            if v.is_finite() {
-                self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
-                needs_filter_update = true;
-            }
-        } else if id == self.param_pinna_model_enabled {
-            self.params.pinna_model_enabled = value
-                .as_bool()
-                .ok_or_else(|| "pinna_model_enabled must be a boolean".to_string())?;
-            needs_filter_update = true;
-        } else if id == self.param_spectral_normalization {
-            self.params.spectral_normalization = value
-                .as_bool()
-                .ok_or_else(|| "spectral_normalization must be a boolean".to_string())?;
-            needs_filter_update = true;
-        } else if id == self.param_room_reflections {
-            self.params.room_reflections_enabled = value
-                .as_bool()
-                .ok_or_else(|| "room_reflections_enabled must be a boolean".to_string())?;
-            needs_filter_update = true;
-        } else if id == self.param_bypass_xtc_filters {
-            self.params.bypass_xtc_filters = value
-                .as_bool()
-                .ok_or_else(|| "bypass_xtc_filters must be a boolean".to_string())?;
-            self.limiter_envelope = 1.0;
-        } else if id == self.param_bypass_spectral_normalization {
-            self.params.bypass_spectral_normalization = value
-                .as_bool()
-                .ok_or_else(|| "bypass_spectral_normalization must be a boolean".to_string())?;
-            needs_filter_update = true;
-        } else if id == self.param_bypass_neumann_refinement {
-            self.params.bypass_neumann_refinement = value
-                .as_bool()
-                .ok_or_else(|| "bypass_neumann_refinement must be a boolean".to_string())?;
-            needs_filter_update = true;
-        } else if id == self.param_auto_gain_enabled {
-            let v = value
-                .as_bool()
-                .ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?;
-            self.params.auto_gain_enabled = v;
-            if v && self.auto_gain.is_none() {
-                self.auto_gain = Some(AutoGain::new(
-                    2,
-                    self.sample_rate,
-                    AutoGainParams {
-                        enabled: true,
-                        loudness_type: Default::default(),
-                        max_gain_db: self.params.auto_gain_max_db,
-                        smoothing_ms: self.params.auto_gain_smoothing_ms,
-                    },
-                )?);
-            } else if !v {
-                self.auto_gain = None;
-            }
-        } else if id == self.param_auto_gain_max_db {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "auto_gain_max_db must be a float".to_string())?;
-            if v.is_finite() {
-                self.params.auto_gain_max_db = v.clamp(0.0, 24.0);
-                if let Some(ag) = &mut self.auto_gain {
-                    ag.set_max_gain_db(self.params.auto_gain_max_db);
-                }
-            }
-        } else if id == self.param_kappa_target {
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+        if id.0 == "kappa_target" {
             let v = value
                 .as_float()
                 .ok_or_else(|| "kappa_target must be a float".to_string())?;
             if v.is_finite() {
                 self.params.kappa_target = v.clamp(1.0, 1000.0);
-                needs_filter_update = true;
+                self.update_filters(false);
             }
-        } else if id == self.param_hrtf_file {
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+        if id.0 == "hrtf_file" {
             let v = value
                 .as_string()
                 .ok_or_else(|| "hrtf_file must be a string".to_string())?;
@@ -1130,18 +943,11 @@ impl Plugin for XtcPlugin {
                 self.params.hrtf_file = Some(v.to_string());
                 self.hrtf_transfer_functions = hrtf;
             }
-            needs_filter_update = true;
-        } else if id == self.param_auto_gain_smoothing_ms {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "auto_gain_smoothing_ms must be a float".to_string())?;
-            if v.is_finite() {
-                self.params.auto_gain_smoothing_ms = v.clamp(10.0, 500.0);
-                if let Some(ag) = &mut self.auto_gain {
-                    ag.set_smoothing_ms(self.params.auto_gain_smoothing_ms);
-                }
-            }
-        } else if id == self.param_itd_modeling {
+            self.update_filters(false);
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+        if id.0 == "itd_modeling" {
             let v = value
                 .as_string()
                 .ok_or_else(|| "itd_modeling must be a string".to_string())?;
@@ -1152,10 +958,62 @@ impl Plugin for XtcPlugin {
                 ));
             }
             self.params.itd_modeling = v.to_string();
-            needs_filter_update = true;
-        } else {
-            return Err(format!("Unknown parameter: {:?}", id));
+            self.update_filters(false);
+            self.rebuild_cached_parameters();
+            return Ok(());
         }
+
+        let idx = param_bridge::set_parameter(XT, &id, &value, |i, v| self.set_param_value(i, v))?;
+
+        // Side effects based on parameter index
+        let needs_filter_update = match idx {
+            0..=5 => true,    // geometry + head tracking
+            7..=9 => true,    // beta
+            10..=12 => true,  // shadow + filter
+            13 => true,       // spectral_normalization
+            14 => true,       // pinna_model_enabled
+            15..=19 => true,  // room
+            20 => {
+                // bypass_xtc_filters
+                self.limiter_envelope = 1.0;
+                false
+            }
+            21 | 22 => true, // bypass_spectral_normalization, bypass_neumann_refinement
+            23 => {
+                // auto_gain_enabled
+                if self.params.auto_gain_enabled && self.auto_gain.is_none() {
+                    self.auto_gain = Some(AutoGain::new(
+                        2,
+                        self.sample_rate,
+                        AutoGainParams {
+                            enabled: true,
+                            loudness_type: Default::default(),
+                            max_gain_db: self.params.auto_gain_max_db,
+                            smoothing_ms: self.params.auto_gain_smoothing_ms,
+                        },
+                    )?);
+                } else if !self.params.auto_gain_enabled {
+                    self.auto_gain = None;
+                }
+                false
+            }
+            24 => {
+                // auto_gain_max_db
+                if let Some(ag) = &mut self.auto_gain {
+                    ag.set_max_gain_db(self.params.auto_gain_max_db);
+                }
+                false
+            }
+            25 => {
+                // auto_gain_smoothing_ms
+                if let Some(ag) = &mut self.auto_gain {
+                    ag.set_smoothing_ms(self.params.auto_gain_smoothing_ms);
+                }
+                false
+            }
+            26 => true, // head_model
+            _ => false,
+        };
 
         if needs_filter_update {
             self.update_filters(false);
@@ -1166,49 +1024,22 @@ impl Plugin for XtcPlugin {
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_enabled {
-            Some(ParameterValue::Bool(self.params.enabled))
-        } else if id == &self.param_distance {
-            Some(ParameterValue::Float(self.params.distance_m))
-        } else if id == &self.param_speaker_angle {
-            Some(ParameterValue::Float(self.params.speaker_angle_deg))
-        } else if id == &self.param_head_offset_x {
-            Some(ParameterValue::Float(self.params.head_offset_x))
-        } else if id == &self.param_head_offset_z {
-            Some(ParameterValue::Float(self.params.head_offset_z))
-        } else if id == &self.param_head_yaw {
-            Some(ParameterValue::Float(self.params.head_yaw_deg))
-        } else if id == &self.param_pinna_model_enabled {
-            Some(ParameterValue::Bool(self.params.pinna_model_enabled))
-        } else if id == &self.param_spectral_normalization {
-            Some(ParameterValue::Bool(self.params.spectral_normalization))
-        } else if id == &self.param_room_reflections {
-            Some(ParameterValue::Bool(self.params.room_reflections_enabled))
-        } else if id == &self.param_bypass_xtc_filters {
-            Some(ParameterValue::Bool(self.params.bypass_xtc_filters))
-        } else if id == &self.param_bypass_spectral_normalization {
-            Some(ParameterValue::Bool(
-                self.params.bypass_spectral_normalization,
-            ))
-        } else if id == &self.param_bypass_neumann_refinement {
-            Some(ParameterValue::Bool(self.params.bypass_neumann_refinement))
-        } else if id == &self.param_auto_gain_enabled {
-            Some(ParameterValue::Bool(self.params.auto_gain_enabled))
-        } else if id == &self.param_auto_gain_max_db {
-            Some(ParameterValue::Float(self.params.auto_gain_max_db))
-        } else if id == &self.param_auto_gain_smoothing_ms {
-            Some(ParameterValue::Float(self.params.auto_gain_smoothing_ms))
-        } else if id == &self.param_kappa_target {
-            Some(ParameterValue::Float(self.params.kappa_target))
-        } else if id == &self.param_hrtf_file {
-            Some(ParameterValue::String(
-                self.params.hrtf_file.clone().unwrap_or_default(),
-            ))
-        } else if id == &self.param_itd_modeling {
-            Some(ParameterValue::String(self.params.itd_modeling.clone()))
-        } else {
-            None
+        // Parameters not in PARAMS — handle separately
+        if id.0 == "enabled" {
+            return Some(ParameterValue::Bool(self.params.enabled));
         }
+        if id.0 == "kappa_target" {
+            return Some(ParameterValue::Float(self.params.kappa_target));
+        }
+        if id.0 == "hrtf_file" {
+            return Some(ParameterValue::String(
+                self.params.hrtf_file.clone().unwrap_or_default(),
+            ));
+        }
+        if id.0 == "itd_modeling" {
+            return Some(ParameterValue::String(self.params.itd_modeling.clone()));
+        }
+        param_bridge::get_parameter(XT, id, |i| self.param_value(i))
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {

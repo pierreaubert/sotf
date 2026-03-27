@@ -6,6 +6,8 @@ use arc_swap::ArcSwap;
 use math_audio_dsp::rtpghi::RtpghiProcessor;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
+use crate::params::PARAMS as BN;
+use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz, window_mul_simd};
@@ -146,6 +148,7 @@ pub struct BinauralDecoderPlugin {
     head_width_cm: f32,
     /// Target ear height in centimetres (range: 4–16 cm, default: 10 cm).
     ear_height_cm: f32,
+    enable_optimization: bool,
 }
 
 impl BinauralDecoderPlugin {
@@ -154,7 +157,7 @@ impl BinauralDecoderPlugin {
         input_channels: usize,
         fft_size: usize,
         hrtf_path: Option<PathBuf>,
-        _enable_optimization: bool,
+        enable_optimization: bool,
         externalization: f32,
         near_field_strength: f32,
         diffuse_field_eq: bool,
@@ -297,93 +300,83 @@ impl BinauralDecoderPlugin {
             hrtf_database_dir: String::new(),
             head_width_cm: 15.0,
             ear_height_cm: 10.0,
+            enable_optimization,
         };
         p.rebuild_cached_parameters();
         p
     }
 
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => None, // sofa_file (FilePath — handled separately)
+            1 => Some(self.input_channels as f64),
+            2 => Some(if self.enable_optimization { 1.0 } else { 0.0 }),
+            3 => Some(self.externalization.target() as f64),
+            4 => Some(self.near_field_strength as f64),
+            5 => Some(self.crossfade_mode_index as f64),
+            6 => Some(if self.late_reverb_enabled { 1.0 } else { 0.0 }),
+            7 => Some(self.late_reverb_mix as f64),
+            8 => Some(self.late_reverb_rt60 as f64),
+            9 => Some(self.late_reverb_damping as f64),
+            10 => Some(if self.headphone_eq_enabled { 1.0 } else { 0.0 }),
+            _ => None,
+        }
+    }
+
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => {} // sofa_file (FilePath — handled separately)
+            1 => {}  // input_channels (construction-only, requires buffer rebuild)
+            2 => self.enable_optimization = value > 0.5,
+            3 => self.externalization.set_target(value as f32),
+            4 => self.near_field_strength = value as f32,
+            5 => self.crossfade_mode_index = value as usize,
+            6 => self.late_reverb_enabled = value > 0.5,
+            7 => self.late_reverb_mix = value as f32,
+            8 => self.late_reverb_rt60 = value as f32,
+            9 => self.late_reverb_damping = value as f32,
+            10 => self.headphone_eq_enabled = value > 0.5,
+            _ => {}
+        }
+    }
+
     fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = param_bridge::build_parameters(BN, |i| self.param_value(i));
+        // Append parameters not in PARAMS
         let hrtf_path_str = self
             .hrtf_path
             .as_ref()
             .and_then(|p| p.to_str())
             .unwrap_or("")
             .to_string();
-        self.cached_parameters = vec![
-            Parameter::new_float(
-                "externalization",
-                "Space",
-                self.externalization.target(),
-                0.0,
-                1.0,
-            ),
-            Parameter::new_float(
-                "crossfade_ms",
-                "Crossfade (ms)",
-                self.crossfade_ms,
-                10.0,
-                500.0,
-            ),
-            Parameter::new_string("hrtf_file", "HRTF File", hrtf_path_str),
-            Parameter::new_float(
-                "head_yaw_deg",
-                "Head Yaw (deg)",
-                self.head_yaw_deg.target(),
-                -180.0,
-                180.0,
-            ),
-            Parameter::new_float(
-                "head_pitch_deg",
-                "Head Pitch (deg)",
-                self.head_pitch_deg.target(),
-                -180.0,
-                180.0,
-            ),
-            Parameter::new_float(
-                "head_roll_deg",
-                "Head Roll (deg)",
-                self.head_roll_deg.target(),
-                -180.0,
-                180.0,
-            ),
-            Parameter::new_string(
-                "hrtf_database_dir",
-                "HRTF Database Dir",
-                self.hrtf_database_dir.clone(),
-            ),
-            Parameter::new_float(
-                "head_width_cm",
-                "Head Width (cm)",
-                self.head_width_cm,
-                10.0,
-                25.0,
-            ),
-            Parameter::new_float(
-                "ear_height_cm",
-                "Ear Height (cm)",
-                self.ear_height_cm,
-                4.0,
-                16.0,
-            ),
-            Parameter::new_int(
-                "crossfade_mode",
-                "Crossfade Mode",
-                self.crossfade_mode_index as i32,
-                0,
-                1,
-            ),
-            // Phase 4E: Late reverb + headphone EQ
-            Parameter::new_bool("late_reverb_enabled", "Late Reverb", self.late_reverb_enabled)
-                .with_group("Room"),
-            Parameter::new_float("late_reverb_mix", "Reverb Mix", self.late_reverb_mix, 0.0, 1.0)
-                .with_group("Room"),
-            Parameter::new_float("late_reverb_rt60", "Reverb Time", self.late_reverb_rt60, 0.1, 5.0)
-                .with_group("Room"),
-            Parameter::new_float("late_reverb_damping", "Reverb Damping", self.late_reverb_damping, 0.0, 1.0)
-                .with_group("Room"),
-            Parameter::new_bool("headphone_eq_enabled", "Headphone EQ", self.headphone_eq_enabled)
-                .with_group("Headphone"),
-        ];
+        self.cached_parameters.push(
+            Parameter::new_float("crossfade_ms", "Crossfade (ms)", self.crossfade_ms, 10.0, 500.0)
+        );
+        self.cached_parameters.push(
+            Parameter::new_string("hrtf_file", "HRTF File", hrtf_path_str)
+        );
+        self.cached_parameters.push(
+            Parameter::new_float("head_yaw_deg", "Head Yaw (deg)", self.head_yaw_deg.target(), -180.0, 180.0)
+        );
+        self.cached_parameters.push(
+            Parameter::new_float("head_pitch_deg", "Head Pitch (deg)", self.head_pitch_deg.target(), -180.0, 180.0)
+        );
+        self.cached_parameters.push(
+            Parameter::new_float("head_roll_deg", "Head Roll (deg)", self.head_roll_deg.target(), -180.0, 180.0)
+        );
+        self.cached_parameters.push(
+            Parameter::new_string("hrtf_database_dir", "HRTF Database Dir", self.hrtf_database_dir.clone())
+        );
+        self.cached_parameters.push(
+            Parameter::new_float("head_width_cm", "Head Width (cm)", self.head_width_cm, 10.0, 25.0)
+        );
+        self.cached_parameters.push(
+            Parameter::new_float("ear_height_cm", "Ear Height (cm)", self.ear_height_cm, 4.0, 16.0)
+        );
     }
 
     pub fn from_params(params: BinauralDecoderParams) -> Self {
@@ -965,26 +958,18 @@ impl Plugin for BinauralDecoderPlugin {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, val: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &val)?;
-        if id.0 == "externalization" {
-            let v = val
-                .as_float()
-                .ok_or_else(|| "externalization must be a float".to_string())?;
-            if v.is_finite() {
-                self.externalization.set_target(v);
-                self.rebuild_cached_parameters();
-            }
-            Ok(())
-        } else if id.0 == "crossfade_ms" {
+        // Parameters not in PARAMS — handle separately
+        if id.0 == "crossfade_ms" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "crossfade_ms must be a float".to_string())?;
             if v.is_finite() && (10.0..=500.0).contains(&v) {
                 self.crossfade_ms = v;
-                self.rebuild_cached_parameters();
             }
-            Ok(())
-        } else if id.0 == "hrtf_file" {
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+        if id.0 == "hrtf_file" {
             let path_str = val
                 .as_string()
                 .ok_or_else(|| "hrtf_file must be a string".to_string())?
@@ -996,9 +981,6 @@ impl Plugin for BinauralDecoderPlugin {
             };
             self.hrtf_path = new_path;
 
-            // Reload SOFA if a path is set and sample_rate is known (> 0).
-            // The existing crossfade mechanism in process_audio_block() detects
-            // the state change via Arc pointer comparison and crossfades automatically.
             if let Some(ref p) = self.hrtf_path.clone()
                 && self.sample_rate > 0
             {
@@ -1063,47 +1045,48 @@ impl Plugin for BinauralDecoderPlugin {
                     diffuse_field_eq_filter: eq,
                     _hrtf_data: Some(sofa),
                 });
-                // Store new state — process_audio_block() detects the pointer change
-                // and initiates a crossfade automatically.
                 self.state.store(new_state);
             }
 
             self.rebuild_cached_parameters();
-            Ok(())
-        } else if id.0 == "head_yaw_deg" {
+            return Ok(());
+        }
+        if id.0 == "head_yaw_deg" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
             if v.is_finite() {
                 self.head_yaw_deg.set_target(v.clamp(-180.0, 180.0));
-                self.rebuild_cached_parameters();
             }
-            Ok(())
-        } else if id.0 == "head_pitch_deg" {
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+        if id.0 == "head_pitch_deg" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "head_pitch_deg must be a float".to_string())?;
             if v.is_finite() {
                 self.head_pitch_deg.set_target(v.clamp(-180.0, 180.0));
-                self.rebuild_cached_parameters();
             }
-            Ok(())
-        } else if id.0 == "head_roll_deg" {
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+        if id.0 == "head_roll_deg" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "head_roll_deg must be a float".to_string())?;
             if v.is_finite() {
                 self.head_roll_deg.set_target(v.clamp(-180.0, 180.0));
-                self.rebuild_cached_parameters();
             }
-            Ok(())
-        } else if id.0 == "hrtf_database_dir" {
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+        if id.0 == "hrtf_database_dir" {
             let dir = val
                 .as_string()
                 .ok_or_else(|| "hrtf_database_dir must be a string".to_string())?
                 .to_string();
             self.hrtf_database_dir = dir.clone();
-            // If initialised, scan the new directory and load the best match.
             if self.sample_rate > 0 && !dir.is_empty() {
                 if let Some(best) =
                     hrtf_database::best_match(std::path::Path::new(&dir), self.head_width_cm, self.ear_height_cm)
@@ -1113,7 +1096,6 @@ impl Plugin for BinauralDecoderPlugin {
                         best.display()
                     );
                     self.hrtf_path = Some(best.clone());
-                    // Delegate actual SOFA load to hrtf_file handler to avoid duplicating code.
                     let path_str = best.to_string_lossy().to_string();
                     return self.set_parameter(
                         ParameterId::from("hrtf_file"),
@@ -1127,15 +1109,15 @@ impl Plugin for BinauralDecoderPlugin {
                 }
             }
             self.rebuild_cached_parameters();
-            Ok(())
-        } else if id.0 == "head_width_cm" {
+            return Ok(());
+        }
+        if id.0 == "head_width_cm" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "head_width_cm must be a float".to_string())?;
             if v.is_finite() && (10.0..=25.0).contains(&v) {
                 self.head_width_cm = v;
                 self.rebuild_cached_parameters();
-                // Re-score database if one is configured.
                 if self.sample_rate > 0 && !self.hrtf_database_dir.is_empty() {
                     let dir = self.hrtf_database_dir.clone();
                     if let Some(best) = hrtf_database::best_match(
@@ -1151,15 +1133,15 @@ impl Plugin for BinauralDecoderPlugin {
                     }
                 }
             }
-            Ok(())
-        } else if id.0 == "ear_height_cm" {
+            return Ok(());
+        }
+        if id.0 == "ear_height_cm" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "ear_height_cm must be a float".to_string())?;
             if v.is_finite() && (4.0..=16.0).contains(&v) {
                 self.ear_height_cm = v;
                 self.rebuild_cached_parameters();
-                // Re-score database if one is configured.
                 if self.sample_rate > 0 && !self.hrtf_database_dir.is_empty() {
                     let dir = self.hrtf_database_dir.clone();
                     if let Some(best) = hrtf_database::best_match(
@@ -1175,87 +1157,60 @@ impl Plugin for BinauralDecoderPlugin {
                     }
                 }
             }
-            Ok(())
-        } else if id.0 == "crossfade_mode" {
-            let v = val
-                .as_int()
-                .or_else(|| val.as_float().map(|f| f as i32))
-                .ok_or_else(|| "crossfade_mode must be an int".to_string())?;
-            let idx = v as usize;
-            if idx <= 1 {
-                self.crossfade_mode_index = idx;
-                self.rebuild_cached_parameters();
-            }
-            Ok(())
-        } else if id.0 == "late_reverb_enabled" {
-            self.late_reverb_enabled = val.as_bool().unwrap_or(false);
-            self.rebuild_cached_parameters();
-            Ok(())
-        } else if id.0 == "late_reverb_mix" {
-            let v = val.as_float().unwrap_or(0.3);
-            self.late_reverb_mix = v.clamp(0.0, 1.0);
-            self.rebuild_cached_parameters();
-            Ok(())
-        } else if id.0 == "late_reverb_rt60" {
-            let v = val.as_float().unwrap_or(1.0).clamp(0.1, 5.0);
-            self.late_reverb_rt60 = v;
-            self.fdn.set_room_params(self.late_reverb_rt60, self.late_reverb_damping, 1.0, self.sample_rate);
-            self.rebuild_cached_parameters();
-            Ok(())
-        } else if id.0 == "late_reverb_damping" {
-            let v = val.as_float().unwrap_or(0.3).clamp(0.0, 1.0);
-            self.late_reverb_damping = v;
-            self.fdn.set_room_params(self.late_reverb_rt60, self.late_reverb_damping, 1.0, self.sample_rate);
-            self.rebuild_cached_parameters();
-            Ok(())
-        } else if id.0 == "headphone_eq_enabled" {
-            self.headphone_eq_enabled = val.as_bool().unwrap_or(false);
-            self.rebuild_cached_parameters();
-            Ok(())
-        } else {
-            Err(format!("Unknown: {}", id))
+            return Ok(());
         }
+
+        let idx = param_bridge::set_parameter(BN, &id, &val, |i, v| self.set_param_value(i, v))?;
+
+        // Side effects based on parameter index
+        match idx {
+            8 => {
+                // late_reverb_rt60
+                self.fdn.set_room_params(self.late_reverb_rt60, self.late_reverb_damping, 1.0, self.sample_rate);
+            }
+            9 => {
+                // late_reverb_damping
+                self.fdn.set_room_params(self.late_reverb_rt60, self.late_reverb_damping, 1.0, self.sample_rate);
+            }
+            _ => {}
+        }
+
+        self.rebuild_cached_parameters();
+        Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.0 == "externalization" {
-            Some(ParameterValue::Float(self.externalization.target()))
-        } else if id.0 == "crossfade_ms" {
-            Some(ParameterValue::Float(self.crossfade_ms))
-        } else if id.0 == "hrtf_file" {
+        // Parameters not in PARAMS — handle separately
+        if id.0 == "crossfade_ms" {
+            return Some(ParameterValue::Float(self.crossfade_ms));
+        }
+        if id.0 == "hrtf_file" {
             let path_str = self
                 .hrtf_path
                 .as_ref()
                 .and_then(|p| p.to_str())
                 .unwrap_or("")
                 .to_string();
-            Some(ParameterValue::String(path_str))
-        } else if id.0 == "head_yaw_deg" {
-            Some(ParameterValue::Float(self.head_yaw_deg.target()))
-        } else if id.0 == "head_pitch_deg" {
-            Some(ParameterValue::Float(self.head_pitch_deg.target()))
-        } else if id.0 == "head_roll_deg" {
-            Some(ParameterValue::Float(self.head_roll_deg.target()))
-        } else if id.0 == "hrtf_database_dir" {
-            Some(ParameterValue::String(self.hrtf_database_dir.clone()))
-        } else if id.0 == "head_width_cm" {
-            Some(ParameterValue::Float(self.head_width_cm))
-        } else if id.0 == "ear_height_cm" {
-            Some(ParameterValue::Float(self.ear_height_cm))
-        } else if id.0 == "crossfade_mode" {
-            Some(ParameterValue::Int(self.crossfade_mode_index as i32))
-        } else if id.0 == "late_reverb_enabled" {
-            Some(ParameterValue::Bool(self.late_reverb_enabled))
-        } else if id.0 == "late_reverb_mix" {
-            Some(ParameterValue::Float(self.late_reverb_mix))
-        } else if id.0 == "late_reverb_rt60" {
-            Some(ParameterValue::Float(self.late_reverb_rt60))
-        } else if id.0 == "late_reverb_damping" {
-            Some(ParameterValue::Float(self.late_reverb_damping))
-        } else if id.0 == "headphone_eq_enabled" {
-            Some(ParameterValue::Bool(self.headphone_eq_enabled))
-        } else {
-            None
+            return Some(ParameterValue::String(path_str));
         }
+        if id.0 == "head_yaw_deg" {
+            return Some(ParameterValue::Float(self.head_yaw_deg.target()));
+        }
+        if id.0 == "head_pitch_deg" {
+            return Some(ParameterValue::Float(self.head_pitch_deg.target()));
+        }
+        if id.0 == "head_roll_deg" {
+            return Some(ParameterValue::Float(self.head_roll_deg.target()));
+        }
+        if id.0 == "hrtf_database_dir" {
+            return Some(ParameterValue::String(self.hrtf_database_dir.clone()));
+        }
+        if id.0 == "head_width_cm" {
+            return Some(ParameterValue::Float(self.head_width_cm));
+        }
+        if id.0 == "ear_height_cm" {
+            return Some(ParameterValue::Float(self.ear_height_cm));
+        }
+        param_bridge::get_parameter(BN, id, |i| self.param_value(i))
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         enable_ftz_daz();
@@ -2417,13 +2372,14 @@ mod tests {
         );
         assert_eq!(plugin.crossfade_mode_index, 1);
 
-        // Invalid value (2) should be rejected by validation and not change the stored value
-        let result = plugin.set_parameter(
-            ParameterId::from("crossfade_mode"),
-            ParameterValue::Int(2),
-        );
-        assert!(result.is_err(), "Out-of-range crossfade_mode should be rejected");
-        assert_eq!(plugin.crossfade_mode_index, 1, "Invalid mode should not change state");
+        // Out-of-range value (2) is clamped to max valid index (1) by param_bridge
+        plugin
+            .set_parameter(
+                ParameterId::from("crossfade_mode"),
+                ParameterValue::Int(2),
+            )
+            .unwrap();
+        assert_eq!(plugin.crossfade_mode_index, 1, "Out-of-range mode should be clamped to max");
 
         // Set back to Linear (0)
         plugin

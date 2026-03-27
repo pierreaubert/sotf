@@ -6,7 +6,9 @@ pub mod params;
 
 use sotf_host::param_specs::find_by_key as pk;
 use crate::params::PARAMS as DM;
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
+use sotf_host::param_bridge;
+use sotf_host::parameters::ParameterValue;
+use sotf_host::parameters::ParameterId;
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 
@@ -136,14 +138,7 @@ pub struct DownmixPlugin {
     /// Each surround channel gets one allpass filter.
     ltrt_allpass: Vec<LtRtAllpass>,
 
-    param_center_gain_db: ParameterId,
-    param_surround_gain_db: ParameterId,
-    param_height_gain_db: ParameterId,
-    param_lfe_gain_db: ParameterId,
-    param_phase_coherence: ParameterId,
-    param_itu_mode: ParameterId,
-    param_matrix_ltrt: ParameterId,
-    cached_parameters: Vec<Parameter>,
+    cached_parameters: Vec<sotf_host::parameters::Parameter>,
 }
 
 /// First-order allpass filter state for 90° phase shift approximation.
@@ -246,13 +241,6 @@ impl DownmixPlugin {
             itu_mode: pk(DM, "itu_mode").default_bool(),
             matrix_ltrt: false,
             ltrt_allpass: Vec::new(),
-            param_center_gain_db: ParameterId::from("center_gain_db"),
-            param_surround_gain_db: ParameterId::from("surround_gain_db"),
-            param_height_gain_db: ParameterId::from("height_gain_db"),
-            param_lfe_gain_db: ParameterId::from("lfe_gain_db"),
-            param_phase_coherence: ParameterId::from("phase_coherence"),
-            param_itu_mode: ParameterId::from("itu_mode"),
-            param_matrix_ltrt: ParameterId::from("matrix_ltrt"),
             cached_parameters: Vec::new(),
         };
         p.compute_coefficients(true);
@@ -260,40 +248,40 @@ impl DownmixPlugin {
         p
     }
 
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.center_gain_db as f64),
+            1 => Some(self.surround_gain_db as f64),
+            2 => Some(self.height_gain_db as f64),
+            3 => Some(self.lfe_gain_db as f64),
+            4 => Some(if self.phase_coherence { 1.0 } else { 0.0 }),
+            5 => Some(self.phase_blend_low_hz as f64),
+            6 => Some(self.phase_blend_high_hz as f64),
+            7 => Some(if self.itu_mode { 1.0 } else { 0.0 }),
+            _ => None,
+        }
+    }
+
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => self.center_gain_db = value as f32,
+            1 => self.surround_gain_db = value as f32,
+            2 => self.height_gain_db = value as f32,
+            3 => self.lfe_gain_db = value as f32,
+            4 => self.phase_coherence = value > 0.5,
+            5 => self.phase_blend_low_hz = value as f32,
+            6 => self.phase_blend_high_hz = value as f32,
+            7 => self.itu_mode = value > 0.5,
+            _ => {}
+        }
+    }
+
     fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![
-            Parameter::new_float(
-                "center_gain_db",
-                "Center Gain",
-                self.center_gain_db,
-                pk(DM, "center_gain_db").min_f64() as f32,
-                pk(DM, "center_gain_db").max_f64() as f32,
-            ),
-            Parameter::new_float(
-                "surround_gain_db",
-                "Surround Gain",
-                self.surround_gain_db,
-                pk(DM, "surround_gain_db").min_f64() as f32,
-                pk(DM, "surround_gain_db").max_f64() as f32,
-            ),
-            Parameter::new_float(
-                "height_gain_db",
-                "Height Gain",
-                self.height_gain_db,
-                pk(DM, "height_gain_db").min_f64() as f32,
-                pk(DM, "height_gain_db").max_f64() as f32,
-            ),
-            Parameter::new_float(
-                "lfe_gain_db",
-                "LFE Gain",
-                self.lfe_gain_db,
-                pk(DM, "lfe_gain_db").min_f64() as f32,
-                pk(DM, "lfe_gain_db").max_f64() as f32,
-            ),
-            Parameter::new_bool("phase_coherence", "Phase Coherence", self.phase_coherence),
-            Parameter::new_bool("itu_mode", "ITU-R BS.775 Mode", self.itu_mode),
-            Parameter::new_bool("matrix_ltrt", "Matrix Lt/Rt", self.matrix_ltrt),
-        ];
+        self.cached_parameters = param_bridge::build_parameters(DM, |i| self.param_value(i));
     }
 
     pub fn from_params(params: DownmixPluginParams) -> Self {
@@ -849,75 +837,17 @@ impl Plugin for DownmixPlugin {
     fn output_channels(&self) -> usize {
         2
     }
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-
-        if id == self.param_center_gain_db {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DM, "center_gain_db").default_f64() as f32);
-            if v.is_finite() {
-                self.center_gain_db = v;
-            }
-        } else if id == self.param_surround_gain_db {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DM, "surround_gain_db").default_f64() as f32);
-            if v.is_finite() {
-                self.surround_gain_db = v;
-            }
-        } else if id == self.param_height_gain_db {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DM, "height_gain_db").default_f64() as f32);
-            if v.is_finite() {
-                self.height_gain_db = v;
-            }
-        } else if id == self.param_lfe_gain_db {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DM, "lfe_gain_db").default_f64() as f32);
-            if v.is_finite() {
-                self.lfe_gain_db = v;
-            }
-        } else if id == self.param_phase_coherence {
-            self.phase_coherence = value
-                .as_bool()
-                .unwrap_or(pk(DM, "phase_coherence").default_bool());
-        } else if id == self.param_itu_mode {
-            self.itu_mode = value
-                .as_bool()
-                .unwrap_or(pk(DM, "itu_mode").default_bool());
-        } else if id == self.param_matrix_ltrt {
-            self.matrix_ltrt = value.as_bool().unwrap_or(false);
-        } else {
-            return Err(format!("Unknown parameter: {}", id));
-        }
+        param_bridge::set_parameter(DM, &id, &value, |i, v| self.set_param_value(i, v))?;
         self.compute_coefficients(false);
         self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_center_gain_db {
-            Some(ParameterValue::Float(self.center_gain_db))
-        } else if id == &self.param_surround_gain_db {
-            Some(ParameterValue::Float(self.surround_gain_db))
-        } else if id == &self.param_height_gain_db {
-            Some(ParameterValue::Float(self.height_gain_db))
-        } else if id == &self.param_lfe_gain_db {
-            Some(ParameterValue::Float(self.lfe_gain_db))
-        } else if id == &self.param_phase_coherence {
-            Some(ParameterValue::Bool(self.phase_coherence))
-        } else if id == &self.param_itu_mode {
-            Some(ParameterValue::Bool(self.itu_mode))
-        } else if id == &self.param_matrix_ltrt {
-            Some(ParameterValue::Bool(self.matrix_ltrt))
-        } else {
-            None
-        }
+        param_bridge::get_parameter(DM, id, |i| self.param_value(i))
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;

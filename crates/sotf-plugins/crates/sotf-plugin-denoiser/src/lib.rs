@@ -24,7 +24,8 @@ pub mod params;
 
 use crate::params::PARAMS as DN;
 use sotf_host::param_specs::find_by_key as pk;
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::param_bridge;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_plugin_pnd::analysis::PndAnalyzer;
 use std::any::Any;
@@ -147,43 +148,24 @@ pub struct DenoiserPlugin {
     fft_inverse: Arc<dyn ComplexToReal<f32>>,
 
     // Parameters (runtime adjustable)
-    param_reduction_db: ParameterId,
     reduction_db: f32,
-
-    param_floor_db: ParameterId,
     floor_db: f32,
-
-    param_smoothing: ParameterId,
     smoothing: f32,
-
-    param_attack_ms: ParameterId,
     attack_ms: f32,
-
-    param_release_ms: ParameterId,
     release_ms: f32,
-
-    param_low_latency: ParameterId,
     low_latency: bool,
-
-    param_polyphonic_detection: ParameterId,
     polyphonic_detection: bool,
-
-    param_crack_sensitivity: ParameterId,
     crack_sensitivity: f32,
 
     // Transparency: blend gain toward 1.0 (0 = full denoising, 1 = pass-through)
-    param_transparency: ParameterId,
     transparency: f32,
 
     // Decision-Directed SNR parameters
-    param_dd_enabled: ParameterId,
     dd_enabled: bool,
-    param_dd_alpha: ParameterId,
     dd_alpha: f32,
     prev_power: Vec<Vec<f32>>, // [channels][spectrum_size] previous frame power
 
     // Psychoacoustic masking
-    param_psychoacoustic_masking: ParameterId,
     psychoacoustic_masking: bool,
     bark_map: Vec<f32>, // [spectrum_size] frequency-to-Bark mapping
     bark_bin_range: Vec<(usize, usize)>, // [spectrum_size] precomputed (lo, hi) bin range within MAX_SPREAD_BARK
@@ -191,9 +173,6 @@ pub struct DenoiserPlugin {
     masking_signal_power: Vec<f32>,      // [spectrum_size] scratch for signal power
 
     // Noise profile capture
-    param_learn_noise: ParameterId,
-    param_use_captured_profile: ParameterId,
-    param_clear_profile: ParameterId,
     use_captured_profile: bool,
     has_noise_profile: bool,
     noise_profile_storage: Vec<Vec<f32>>, // [channels][spectrum_size] pre-allocated
@@ -255,31 +234,21 @@ pub struct DenoiserPlugin {
     mcra_delta: f32,
 
     // Technique enable flags
-    param_transient_enabled: ParameterId,
     transient_enabled: bool,
-    param_spectral_smoothing_enabled: ParameterId,
     spectral_smoothing_enabled: bool,
-    param_temporal_smoothing_enabled: ParameterId,
     temporal_smoothing_enabled: bool,
 
     // Hiss remover
-    param_hiss_enabled: ParameterId,
     hiss_enabled: bool,
-    param_hiss_threshold_db: ParameterId,
     hiss_threshold_db: f32,
-    param_hiss_frequency_hz: ParameterId,
     hiss_frequency_hz: f32,
-    param_hiss_strength: ParameterId,
     hiss_strength: f32,
     hiss_cutoff_bin: usize,
     hiss_threshold_linear: f32,
 
     // Spectral subtraction
-    param_spectral_sub_enabled: ParameterId,
     spectral_sub_enabled: bool,
-    param_spectral_sub_alpha: ParameterId,
     spectral_sub_alpha: f32,
-    param_spectral_sub_beta: ParameterId,
     spectral_sub_beta: f32,
 
     // Transient Suppressor
@@ -289,23 +258,20 @@ pub struct DenoiserPlugin {
     pnd_analyzers: Vec<PndAnalyzer>,
 
     // Formant preservation
-    param_formant_preservation: ParameterId,
-    param_formant_strength: ParameterId,
     formant_preserver: wiener::FormantPreserver,
 
     // Multi-resolution dual-STFT processing
-    param_multi_resolution: ParameterId,
     multi_resolution: bool,
     /// `Some(state)` when multi_resolution is enabled, `None` otherwise.
     /// Stored as an Option so that when disabled the extra RAM is not held.
     multi_res_state: Option<multi_resolution::MultiResState>,
 
+    // Algorithm selection (Choice param, index 29)
+    algorithm: usize,
+
     // --- Phase 4B: SOTA additions ---
-    param_harmonic_percussive: ParameterId,
     harmonic_percussive: bool,
-    param_spatial_denoise: ParameterId,
     spatial_denoise: bool,
-    param_spatial_strength: ParameterId,
     spatial_strength: f32,
     /// Per-channel tonal/transient separator for harmonic/percussive mode
     tonal_transient_seps: Vec<math_audio_dsp::tonal_transient::TonalTransientSeparator>,
@@ -382,49 +348,26 @@ impl DenoiserPlugin {
             fft_forward,
             fft_inverse,
 
-            param_reduction_db: ParameterId::from("reduction_db"),
             reduction_db: pk(DN, "reduction_db").default_f32(),
-
-            param_floor_db: ParameterId::from("floor_db"),
             floor_db: pk(DN, "floor_db").default_f32(),
-
-            param_smoothing: ParameterId::from("smoothing"),
             smoothing: pk(DN, "smoothing").default_f32(),
-
-            param_attack_ms: ParameterId::from("attack_ms"),
             attack_ms: pk(DN, "attack_ms").default_f32(),
-
-            param_release_ms: ParameterId::from("release_ms"),
             release_ms: pk(DN, "release_ms").default_f32(),
-
-            param_low_latency: ParameterId::from("low_latency"),
             low_latency,
-
-            param_polyphonic_detection: ParameterId::from("polyphonic_detection"),
             polyphonic_detection: pk(DN, "polyphonic_detection").default_bool(),
-
-            param_crack_sensitivity: ParameterId::from("crack_sensitivity"),
             crack_sensitivity: pk(DN, "crack_sensitivity").default_f32(),
-
-            param_transparency: ParameterId::from("transparency"),
             transparency: pk(DN, "transparency").default_f32(),
 
-            param_dd_enabled: ParameterId::from("dd_enabled"),
             dd_enabled: pk(DN, "dd_enabled").default_bool(),
-            param_dd_alpha: ParameterId::from("dd_alpha"),
             dd_alpha: pk(DN, "dd_alpha").default_f32(),
             prev_power: vec![vec![0.0_f32; spectrum_size]; channels],
 
-            param_psychoacoustic_masking: ParameterId::from("psychoacoustic_masking"),
             psychoacoustic_masking: pk(DN, "psychoacoustic_masking").default_bool(),
             bark_map: vec![0.0_f32; spectrum_size],
             bark_bin_range: vec![(0, 0); spectrum_size],
             masking_threshold: vec![0.0_f32; spectrum_size],
             masking_signal_power: vec![0.0_f32; spectrum_size],
 
-            param_learn_noise: ParameterId::from("learn_noise"),
-            param_use_captured_profile: ParameterId::from("use_captured_profile"),
-            param_clear_profile: ParameterId::from("clear_profile"),
             use_captured_profile: pk(DN, "use_captured_profile").default_bool(),
             has_noise_profile: false,
             noise_profile_storage: vec![vec![0.0_f32; spectrum_size]; channels],
@@ -473,46 +416,32 @@ impl DenoiserPlugin {
             mcra_l: pk(DN, "mcra_l").default_usize(),
             mcra_delta: pk(DN, "mcra_delta").default_f32(),
 
-            param_transient_enabled: ParameterId::from("transient_enabled"),
             transient_enabled: pk(DN, "transient_enabled").default_bool(),
-            param_spectral_smoothing_enabled: ParameterId::from("spectral_smoothing_enabled"),
             spectral_smoothing_enabled: pk(DN, "spectral_smoothing_enabled").default_bool(),
-            param_temporal_smoothing_enabled: ParameterId::from("temporal_smoothing_enabled"),
             temporal_smoothing_enabled: pk(DN, "temporal_smoothing_enabled").default_bool(),
 
-            param_hiss_enabled: ParameterId::from("hiss_enabled"),
             hiss_enabled: pk(DN, "hiss_enabled").default_bool(),
-            param_hiss_threshold_db: ParameterId::from("hiss_threshold_db"),
             hiss_threshold_db: pk(DN, "hiss_threshold_db").default_f32(),
-            param_hiss_frequency_hz: ParameterId::from("hiss_frequency_hz"),
             hiss_frequency_hz: pk(DN, "hiss_frequency_hz").default_f32(),
-            param_hiss_strength: ParameterId::from("hiss_strength"),
             hiss_strength: pk(DN, "hiss_strength").default_f32(),
             hiss_cutoff_bin: 0, // computed in initialize()
             hiss_threshold_linear: 10.0_f32.powf(pk(DN, "hiss_threshold_db").default_f32() / 10.0),
 
-            param_spectral_sub_enabled: ParameterId::from("spectral_sub_enabled"),
             spectral_sub_enabled: pk(DN, "spectral_sub_enabled").default_bool(),
-            param_spectral_sub_alpha: ParameterId::from("spectral_sub_alpha"),
             spectral_sub_alpha: pk(DN, "spectral_sub_alpha").default_f32(),
-            param_spectral_sub_beta: ParameterId::from("spectral_sub_beta"),
             spectral_sub_beta: pk(DN, "spectral_sub_beta").default_f32(),
 
             transient_suppressor: transient::TransientSuppressor::new(channels),
             pnd_analyzers,
 
-            param_formant_preservation: ParameterId::from("formant_preservation"),
-            param_formant_strength: ParameterId::from("formant_strength"),
             formant_preserver: wiener::FormantPreserver::new(spectrum_size),
 
-            param_multi_resolution: ParameterId::from("multi_resolution"),
             multi_resolution: pk(DN, "multi_resolution").default_bool(),
-            // Phase 4B: SOTA
-            param_harmonic_percussive: ParameterId::from("harmonic_percussive"),
+
+            algorithm: pk(DN, "algorithm").default_usize(),
+
             harmonic_percussive: false,
-            param_spatial_denoise: ParameterId::from("spatial_denoise"),
             spatial_denoise: false,
-            param_spatial_strength: ParameterId::from("spatial_strength"),
             spatial_strength: 0.5,
             tonal_transient_seps: (0..channels)
                 .map(|_| math_audio_dsp::tonal_transient::TonalTransientSeparator::new(spectrum_size, 7, 7))
@@ -534,220 +463,97 @@ impl DenoiserPlugin {
         p
     }
 
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly (36 params).
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.reduction_db as f64),
+            1 => Some(self.floor_db as f64),
+            2 => Some(self.smoothing as f64),
+            3 => Some(self.attack_ms as f64),
+            4 => Some(self.release_ms as f64),
+            5 => Some(if self.low_latency { 1.0 } else { 0.0 }),
+            6 => Some(if self.polyphonic_detection { 1.0 } else { 0.0 }),
+            7 => Some(self.crack_sensitivity as f64),
+            8 => Some(self.mcra_alpha_s as f64),
+            9 => Some(self.mcra_alpha_p as f64),
+            10 => Some(self.mcra_l as f64),
+            11 => Some(self.mcra_delta as f64),
+            12 => Some(self.transparency as f64),
+            13 => Some(if self.dd_enabled { 1.0 } else { 0.0 }),
+            14 => Some(self.dd_alpha as f64),
+            15 => Some(if self.psychoacoustic_masking { 1.0 } else { 0.0 }),
+            16 => Some(if self.transient_enabled { 1.0 } else { 0.0 }),
+            17 => Some(if self.spectral_smoothing_enabled { 1.0 } else { 0.0 }),
+            18 => Some(if self.temporal_smoothing_enabled { 1.0 } else { 0.0 }),
+            19 => Some(if self.hiss_enabled { 1.0 } else { 0.0 }),
+            20 => Some(self.hiss_threshold_db as f64),
+            21 => Some(self.hiss_frequency_hz as f64),
+            22 => Some(self.hiss_strength as f64),
+            23 => Some(if self.spectral_sub_enabled { 1.0 } else { 0.0 }),
+            24 => Some(self.spectral_sub_alpha as f64),
+            25 => Some(self.spectral_sub_beta as f64),
+            26 => Some(if self.is_learning { 1.0 } else { 0.0 }),
+            27 => Some(if self.use_captured_profile { 1.0 } else { 0.0 }),
+            28 => Some(0.0), // clear_profile: trigger-only, always reads as false
+            29 => Some(self.algorithm as f64),
+            30 => Some(if self.formant_preserver.enabled { 1.0 } else { 0.0 }),
+            31 => Some(self.formant_preserver.strength as f64),
+            32 => Some(if self.multi_resolution { 1.0 } else { 0.0 }),
+            33 => Some(if self.harmonic_percussive { 1.0 } else { 0.0 }),
+            34 => Some(if self.spatial_denoise { 1.0 } else { 0.0 }),
+            35 => Some(self.spatial_strength as f64),
+            _ => None,
+        }
+    }
+
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly (36 params).
+    /// Side effects are dispatched separately after param_bridge::set_parameter.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => self.reduction_db = value as f32,
+            1 => self.floor_db = value as f32,
+            2 => self.smoothing = value as f32,
+            3 => self.attack_ms = value as f32,
+            4 => self.release_ms = value as f32,
+            5 => self.low_latency = value > 0.5,
+            6 => self.polyphonic_detection = value > 0.5,
+            7 => self.crack_sensitivity = value as f32,
+            8 => self.mcra_alpha_s = value as f32,
+            9 => self.mcra_alpha_p = value as f32,
+            10 => self.mcra_l = value as usize,
+            11 => self.mcra_delta = value as f32,
+            12 => self.transparency = value as f32,
+            13 => self.dd_enabled = value > 0.5,
+            14 => self.dd_alpha = value as f32,
+            15 => self.psychoacoustic_masking = value > 0.5,
+            16 => self.transient_enabled = value > 0.5,
+            17 => self.spectral_smoothing_enabled = value > 0.5,
+            18 => self.temporal_smoothing_enabled = value > 0.5,
+            19 => self.hiss_enabled = value > 0.5,
+            20 => self.hiss_threshold_db = value as f32,
+            21 => self.hiss_frequency_hz = value as f32,
+            22 => self.hiss_strength = value as f32,
+            23 => self.spectral_sub_enabled = value > 0.5,
+            24 => self.spectral_sub_alpha = value as f32,
+            25 => self.spectral_sub_beta = value as f32,
+            26 => {} // learn_noise: side effect handled in set_parameter
+            27 => self.use_captured_profile = value > 0.5,
+            28 => {} // clear_profile: side effect handled in set_parameter
+            29 => self.algorithm = value as usize,
+            30 => self.formant_preserver.enabled = value > 0.5,
+            31 => self.formant_preserver.strength = value as f32,
+            32 => self.multi_resolution = value > 0.5,
+            33 => self.harmonic_percussive = value > 0.5,
+            34 => self.spatial_denoise = value > 0.5,
+            35 => self.spatial_strength = value as f32,
+            _ => {}
+        }
+    }
+
     fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![
-            Parameter::new_float(
-                "reduction_db",
-                "Reduction",
-                self.reduction_db,
-                pk(DN, "reduction_db").min_f64() as f32,
-                pk(DN, "reduction_db").max_f64() as f32,
-            )
-            .with_unit("dB")
-            .with_group("Noise Reduction")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "floor_db",
-                "Floor",
-                self.floor_db,
-                pk(DN, "floor_db").min_f64() as f32,
-                pk(DN, "floor_db").max_f64() as f32,
-            )
-            .with_unit("dB")
-            .with_group("Noise Reduction")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "smoothing",
-                "Spectral Smoothing",
-                self.smoothing,
-                pk(DN, "smoothing").min_f64() as f32,
-                pk(DN, "smoothing").max_f64() as f32,
-            )
-            .with_group("Noise Reduction")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "attack_ms",
-                "Attack",
-                self.attack_ms,
-                pk(DN, "attack_ms").min_f64() as f32,
-                pk(DN, "attack_ms").max_f64() as f32,
-            )
-            .with_unit("ms")
-            .with_group("Envelope")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "release_ms",
-                "Release",
-                self.release_ms,
-                pk(DN, "release_ms").min_f64() as f32,
-                pk(DN, "release_ms").max_f64() as f32,
-            )
-            .with_unit("ms")
-            .with_group("Envelope")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("low_latency", "Low Latency", self.low_latency)
-                .with_group("General")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool(
-                "polyphonic_detection",
-                "Polyphonic Detection",
-                self.polyphonic_detection,
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "crack_sensitivity",
-                "Crack Sensitivity",
-                self.crack_sensitivity,
-                pk(DN, "crack_sensitivity").min_f64() as f32,
-                pk(DN, "crack_sensitivity").max_f64() as f32,
-            )
-            .with_group("Transient")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "transparency",
-                "Transparency",
-                self.transparency,
-                pk(DN, "transparency").min_f64() as f32,
-                pk(DN, "transparency").max_f64() as f32,
-            )
-            .with_group("Noise Reduction")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "psychoacoustic_masking",
-                "Psychoacoustic Masking",
-                self.psychoacoustic_masking,
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool("dd_enabled", "Dialogue Detection", self.dd_enabled)
-                .with_group("Analysis")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "dd_alpha",
-                "DD Sensitivity",
-                self.dd_alpha,
-                pk(DN, "dd_alpha").min_f64() as f32,
-                pk(DN, "dd_alpha").max_f64() as f32,
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool("transient_enabled", "Transient", self.transient_enabled)
-                .with_group("Analysis")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "spectral_smoothing_enabled",
-                "Spectral Smoothing",
-                self.spectral_smoothing_enabled,
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "temporal_smoothing_enabled",
-                "Temporal Smoothing",
-                self.temporal_smoothing_enabled,
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("hiss_enabled", "Hiss Remover", self.hiss_enabled)
-                .with_group("Hiss")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "hiss_threshold_db",
-                "Hiss Threshold",
-                self.hiss_threshold_db,
-                pk(DN, "hiss_threshold_db").min_f64() as f32,
-                pk(DN, "hiss_threshold_db").max_f64() as f32,
-            )
-            .with_unit("dB")
-            .with_group("Hiss")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "hiss_frequency_hz",
-                "Hiss Frequency",
-                self.hiss_frequency_hz,
-                pk(DN, "hiss_frequency_hz").min_f64() as f32,
-                pk(DN, "hiss_frequency_hz").max_f64() as f32,
-            )
-            .with_unit("Hz")
-            .with_group("Hiss")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "hiss_strength",
-                "Hiss Strength",
-                self.hiss_strength,
-                pk(DN, "hiss_strength").min_f64() as f32,
-                pk(DN, "hiss_strength").max_f64() as f32,
-            )
-            .with_group("Hiss")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool(
-                "spectral_sub_enabled",
-                "Spectral Subtraction",
-                self.spectral_sub_enabled,
-            )
-            .with_group("Spectral Sub")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "spectral_sub_alpha",
-                "Oversubtraction",
-                self.spectral_sub_alpha,
-                pk(DN, "spectral_sub_alpha").min_f64() as f32,
-                pk(DN, "spectral_sub_alpha").max_f64() as f32,
-            )
-            .with_group("Spectral Sub")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "spectral_sub_beta",
-                "Spectral Floor",
-                self.spectral_sub_beta,
-                pk(DN, "spectral_sub_beta").min_f64() as f32,
-                pk(DN, "spectral_sub_beta").max_f64() as f32,
-            )
-            .with_group("Spectral Sub")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool("learn_noise", "Learn Noise", false).with_group("Profile"),
-            Parameter::new_bool(
-                "use_captured_profile",
-                "Use Captured Profile",
-                self.use_captured_profile,
-            )
-            .with_group("Profile"),
-            Parameter::new_bool("clear_profile", "Clear Profile", false).with_group("Profile"),
-            Parameter::new_bool(
-                "formant_preservation",
-                "Formant Preservation",
-                self.formant_preserver.enabled,
-            )
-            .with_group("Formant")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "formant_strength",
-                "Formant Strength",
-                self.formant_preserver.strength,
-                pk(DN, "formant_strength").min_f64() as f32,
-                pk(DN, "formant_strength").max_f64() as f32,
-            )
-            .with_group("Formant")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool(
-                "multi_resolution",
-                "Multi-Resolution",
-                self.multi_resolution,
-            )
-            .with_group("General")
-            .with_importance(ParameterImportance::Useful),
-            // Phase 4B
-            Parameter::new_bool("harmonic_percussive", "Harmonic/Percussive", self.harmonic_percussive)
-                .with_group("Advanced")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("spatial_denoise", "Spatial Denoise", self.spatial_denoise)
-                .with_group("Advanced")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("spatial_strength", "Spatial Strength", self.spatial_strength, 0.0, 1.0)
-                .with_group("Advanced")
-                .with_importance(ParameterImportance::Useful),
-        ];
+        self.cached_parameters = param_bridge::build_parameters(DN, |i| self.param_value(i));
     }
 
     /// Create a new denoiser plugin from configuration parameters
@@ -1004,302 +810,72 @@ impl InPlacePlugin for DenoiserPlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-
-        if id == self.param_reduction_db {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "reduction_db").default_f32());
-            if val.is_finite() {
-                self.reduction_db = val.clamp(
-                    pk(DN, "reduction_db").min_f64() as f32,
-                    pk(DN, "reduction_db").max_f64() as f32,
-                );
+        let idx = param_bridge::set_parameter(DN, &id, &value, |i, v| self.set_param_value(i, v))?;
+        // Side effects based on which parameter changed
+        match idx {
+            0 => {
+                // reduction_db -> recompute reduction_linear
                 self.reduction_linear = 10.0_f32.powf(self.reduction_db / 10.0);
             }
-        } else if id == self.param_floor_db {
-            let val = value.as_float().unwrap_or(pk(DN, "floor_db").default_f32());
-            if val.is_finite() {
-                self.floor_db = val.clamp(
-                    pk(DN, "floor_db").min_f64() as f32,
-                    pk(DN, "floor_db").max_f64() as f32,
-                );
+            1 => {
+                // floor_db -> recompute floor_linear
                 self.floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
             }
-        } else if id == self.param_smoothing {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "smoothing").default_f32());
-            if val.is_finite() {
-                self.smoothing = val.clamp(
-                    pk(DN, "smoothing").min_f64() as f32,
-                    pk(DN, "smoothing").max_f64() as f32,
-                );
+            2 => {
+                // smoothing -> recompute frequency smoothing kernel
                 self.freq_smooth_kernel = Self::compute_smoothing_kernel(self.smoothing);
             }
-        } else if id == self.param_attack_ms {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "attack_ms").default_f32());
-            if val.is_finite() {
-                self.attack_ms = val.clamp(
-                    pk(DN, "attack_ms").min_f64() as f32,
-                    pk(DN, "attack_ms").max_f64() as f32,
-                );
+            3 | 4 => {
+                // attack_ms or release_ms -> recompute envelope coefficients
                 self.update_envelope_coefficients();
             }
-        } else if id == self.param_release_ms {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "release_ms").default_f32());
-            if val.is_finite() {
-                self.release_ms = val.clamp(
-                    pk(DN, "release_ms").min_f64() as f32,
-                    pk(DN, "release_ms").max_f64() as f32,
-                );
-                self.update_envelope_coefficients();
-            }
-        } else if id == self.param_low_latency {
-            self.low_latency = value
-                .as_bool()
-                .unwrap_or(pk(DN, "low_latency").default_bool());
-        } else if id == self.param_polyphonic_detection {
-            self.polyphonic_detection = value
-                .as_bool()
-                .unwrap_or(pk(DN, "polyphonic_detection").default_bool());
-        } else if id == self.param_crack_sensitivity {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "crack_sensitivity").default_f32());
-            if val.is_finite() {
-                self.crack_sensitivity = val.max(pk(DN, "crack_sensitivity").min_f64() as f32);
+            7 => {
+                // crack_sensitivity -> update transient suppressor
                 self.transient_suppressor
                     .set_sensitivity(self.crack_sensitivity);
             }
-        } else if id == self.param_transparency {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "transparency").default_f32());
-            if val.is_finite() {
-                self.transparency = val.clamp(
-                    pk(DN, "transparency").min_f64() as f32,
-                    pk(DN, "transparency").max_f64() as f32,
-                );
-            }
-        } else if id == self.param_psychoacoustic_masking {
-            self.psychoacoustic_masking = value
-                .as_bool()
-                .unwrap_or(pk(DN, "psychoacoustic_masking").default_bool());
-        } else if id == self.param_dd_enabled {
-            self.dd_enabled = value
-                .as_bool()
-                .unwrap_or(pk(DN, "dd_enabled").default_bool());
-        } else if id == self.param_dd_alpha {
-            let val = value.as_float().unwrap_or(pk(DN, "dd_alpha").default_f32());
-            if val.is_finite() {
-                self.dd_alpha = val.clamp(
-                    pk(DN, "dd_alpha").min_f64() as f32,
-                    pk(DN, "dd_alpha").max_f64() as f32,
-                );
-            }
-        } else if id == self.param_transient_enabled {
-            self.transient_enabled = value
-                .as_bool()
-                .unwrap_or(pk(DN, "transient_enabled").default_bool());
-        } else if id == self.param_spectral_smoothing_enabled {
-            self.spectral_smoothing_enabled = value
-                .as_bool()
-                .unwrap_or(pk(DN, "spectral_smoothing_enabled").default_bool());
-        } else if id == self.param_temporal_smoothing_enabled {
-            self.temporal_smoothing_enabled = value
-                .as_bool()
-                .unwrap_or(pk(DN, "temporal_smoothing_enabled").default_bool());
-        } else if id == self.param_hiss_enabled {
-            self.hiss_enabled = value
-                .as_bool()
-                .unwrap_or(pk(DN, "hiss_enabled").default_bool());
-        } else if id == self.param_hiss_threshold_db {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "hiss_threshold_db").default_f32());
-            if val.is_finite() {
-                self.hiss_threshold_db = val.clamp(
-                    pk(DN, "hiss_threshold_db").min_f64() as f32,
-                    pk(DN, "hiss_threshold_db").max_f64() as f32,
-                );
+            20 => {
+                // hiss_threshold_db -> recompute hiss_threshold_linear
                 self.update_hiss_threshold_linear();
             }
-        } else if id == self.param_hiss_frequency_hz {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "hiss_frequency_hz").default_f32());
-            if val.is_finite() {
-                self.hiss_frequency_hz = val.clamp(
-                    pk(DN, "hiss_frequency_hz").min_f64() as f32,
-                    pk(DN, "hiss_frequency_hz").max_f64() as f32,
-                );
+            21 => {
+                // hiss_frequency_hz -> recompute hiss_cutoff_bin
                 self.update_hiss_cutoff_bin();
             }
-        } else if id == self.param_hiss_strength {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "hiss_strength").default_f32());
-            if val.is_finite() {
-                self.hiss_strength = val.clamp(
-                    pk(DN, "hiss_strength").min_f64() as f32,
-                    pk(DN, "hiss_strength").max_f64() as f32,
-                );
+            26 => {
+                // learn_noise (trigger param)
+                if value.as_bool().unwrap_or(false) {
+                    self.start_learning();
+                }
             }
-        } else if id == self.param_spectral_sub_enabled {
-            self.spectral_sub_enabled = value
-                .as_bool()
-                .unwrap_or(pk(DN, "spectral_sub_enabled").default_bool());
-        } else if id == self.param_spectral_sub_alpha {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "spectral_sub_alpha").default_f32());
-            if val.is_finite() {
-                self.spectral_sub_alpha = val.clamp(
-                    pk(DN, "spectral_sub_alpha").min_f64() as f32,
-                    pk(DN, "spectral_sub_alpha").max_f64() as f32,
-                );
+            28 => {
+                // clear_profile (trigger param)
+                if value.as_bool().unwrap_or(false) {
+                    self.clear_noise_profile();
+                }
             }
-        } else if id == self.param_spectral_sub_beta {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "spectral_sub_beta").default_f32());
-            if val.is_finite() {
-                self.spectral_sub_beta = val.clamp(
-                    pk(DN, "spectral_sub_beta").min_f64() as f32,
-                    pk(DN, "spectral_sub_beta").max_f64() as f32,
-                );
+            32 => {
+                // multi_resolution -> allocate/deallocate state
+                if self.multi_resolution && self.multi_res_state.is_none() {
+                    self.multi_res_state = Some(multi_resolution::MultiResState::new(
+                        self.channels,
+                        self.mcra_alpha_s,
+                        self.mcra_alpha_p,
+                        self.mcra_l,
+                        self.mcra_delta,
+                    ));
+                } else if !self.multi_resolution {
+                    self.multi_res_state = None;
+                }
             }
-        } else if id == self.param_learn_noise {
-            let trigger = value.as_bool().unwrap_or(false);
-            if trigger {
-                self.start_learning();
-            }
-        } else if id == self.param_use_captured_profile {
-            self.use_captured_profile = value
-                .as_bool()
-                .unwrap_or(pk(DN, "use_captured_profile").default_bool());
-        } else if id == self.param_clear_profile {
-            let trigger = value.as_bool().unwrap_or(false);
-            if trigger {
-                self.clear_noise_profile();
-            }
-        } else if id == self.param_formant_preservation {
-            self.formant_preserver.enabled = value
-                .as_bool()
-                .unwrap_or(pk(DN, "formant_preservation").default_bool());
-        } else if id == self.param_formant_strength {
-            let val = value
-                .as_float()
-                .unwrap_or(pk(DN, "formant_strength").default_f32());
-            if val.is_finite() {
-                self.formant_preserver.strength = val.clamp(
-                    pk(DN, "formant_strength").min_f64() as f32,
-                    pk(DN, "formant_strength").max_f64() as f32,
-                );
-            }
-        } else if id == self.param_multi_resolution {
-            let enabled = value
-                .as_bool()
-                .unwrap_or(pk(DN, "multi_resolution").default_bool());
-            if enabled && self.multi_res_state.is_none() {
-                self.multi_res_state = Some(multi_resolution::MultiResState::new(
-                    self.channels,
-                    self.mcra_alpha_s,
-                    self.mcra_alpha_p,
-                    self.mcra_l,
-                    self.mcra_delta,
-                ));
-            } else if !enabled {
-                self.multi_res_state = None;
-            }
-            self.multi_resolution = enabled;
-        } else if id == self.param_harmonic_percussive {
-            self.harmonic_percussive = value.as_bool().unwrap_or(false);
-        } else if id == self.param_spatial_denoise {
-            self.spatial_denoise = value.as_bool().unwrap_or(false);
-        } else if id == self.param_spatial_strength {
-            let v = value.as_float().unwrap_or(0.5);
-            if v.is_finite() {
-                self.spatial_strength = v.clamp(0.0, 1.0);
-            }
-        } else {
-            return Err(format!("Unknown parameter: {}", id));
+            _ => {}
         }
         self.rebuild_cached_parameters();
         Ok(())
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_reduction_db {
-            Some(ParameterValue::Float(self.reduction_db))
-        } else if id == &self.param_floor_db {
-            Some(ParameterValue::Float(self.floor_db))
-        } else if id == &self.param_smoothing {
-            Some(ParameterValue::Float(self.smoothing))
-        } else if id == &self.param_attack_ms {
-            Some(ParameterValue::Float(self.attack_ms))
-        } else if id == &self.param_release_ms {
-            Some(ParameterValue::Float(self.release_ms))
-        } else if id == &self.param_low_latency {
-            Some(ParameterValue::Bool(self.low_latency))
-        } else if id == &self.param_polyphonic_detection {
-            Some(ParameterValue::Bool(self.polyphonic_detection))
-        } else if id == &self.param_crack_sensitivity {
-            Some(ParameterValue::Float(self.crack_sensitivity))
-        } else if id == &self.param_transparency {
-            Some(ParameterValue::Float(self.transparency))
-        } else if id == &self.param_psychoacoustic_masking {
-            Some(ParameterValue::Bool(self.psychoacoustic_masking))
-        } else if id == &self.param_dd_enabled {
-            Some(ParameterValue::Bool(self.dd_enabled))
-        } else if id == &self.param_dd_alpha {
-            Some(ParameterValue::Float(self.dd_alpha))
-        } else if id == &self.param_transient_enabled {
-            Some(ParameterValue::Bool(self.transient_enabled))
-        } else if id == &self.param_spectral_smoothing_enabled {
-            Some(ParameterValue::Bool(self.spectral_smoothing_enabled))
-        } else if id == &self.param_temporal_smoothing_enabled {
-            Some(ParameterValue::Bool(self.temporal_smoothing_enabled))
-        } else if id == &self.param_hiss_enabled {
-            Some(ParameterValue::Bool(self.hiss_enabled))
-        } else if id == &self.param_hiss_threshold_db {
-            Some(ParameterValue::Float(self.hiss_threshold_db))
-        } else if id == &self.param_hiss_frequency_hz {
-            Some(ParameterValue::Float(self.hiss_frequency_hz))
-        } else if id == &self.param_hiss_strength {
-            Some(ParameterValue::Float(self.hiss_strength))
-        } else if id == &self.param_spectral_sub_enabled {
-            Some(ParameterValue::Bool(self.spectral_sub_enabled))
-        } else if id == &self.param_spectral_sub_alpha {
-            Some(ParameterValue::Float(self.spectral_sub_alpha))
-        } else if id == &self.param_spectral_sub_beta {
-            Some(ParameterValue::Float(self.spectral_sub_beta))
-        } else if id == &self.param_learn_noise {
-            Some(ParameterValue::Bool(self.is_learning))
-        } else if id == &self.param_use_captured_profile {
-            Some(ParameterValue::Bool(self.use_captured_profile))
-        } else if id == &self.param_clear_profile {
-            Some(ParameterValue::Bool(false)) // Trigger-only, always reads as false
-        } else if id == &self.param_formant_preservation {
-            Some(ParameterValue::Bool(self.formant_preserver.enabled))
-        } else if id == &self.param_formant_strength {
-            Some(ParameterValue::Float(self.formant_preserver.strength))
-        } else if id == &self.param_multi_resolution {
-            Some(ParameterValue::Bool(self.multi_resolution))
-        } else if id == &self.param_harmonic_percussive {
-            Some(ParameterValue::Bool(self.harmonic_percussive))
-        } else if id == &self.param_spatial_denoise {
-            Some(ParameterValue::Bool(self.spatial_denoise))
-        } else if id == &self.param_spatial_strength {
-            Some(ParameterValue::Float(self.spatial_strength))
-        } else {
-            None
-        }
+        param_bridge::get_parameter(DN, id, |i| self.param_value(i))
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

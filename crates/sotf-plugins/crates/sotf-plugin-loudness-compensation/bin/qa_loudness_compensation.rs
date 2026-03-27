@@ -27,6 +27,7 @@ fn main() {
         auto_gain_position: "post".to_string(),
         mode: 0,
         playback_level_db: 70.0,
+        playback_volume_db: 0.0,
         reference_level_db: 83.0,
     };
 

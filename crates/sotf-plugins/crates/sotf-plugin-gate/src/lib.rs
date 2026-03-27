@@ -8,9 +8,10 @@ use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{peq_butterworth_highpass, Biquad};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
+use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use crate::params::{HPF_ORDERS, PARAMS as GT};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
@@ -136,37 +137,22 @@ impl GateData {
 pub struct GatePlugin {
     channels: usize,
     sample_rate: u32,
-    param_threshold: ParameterId,
     threshold_db: f32,
-    param_ratio: ParameterId,
     ratio: f32,
-    param_attack: ParameterId,
     attack_ms: f32,
-    param_hold: ParameterId,
     hold_ms: f32,
-    param_release: ParameterId,
     release_ms: f32,
-    param_mix: ParameterId,
     mix: f32,
-    param_link_channels: ParameterId,
     link_channels: bool,
-    param_sidechain_hpf_hz: ParameterId,
     sidechain_hpf_hz: f32,
-    param_sidechain_hpf_order: ParameterId,
     /// 0 = 2nd order (-12dB/oct), 1 = 4th order (-24dB/oct)
     sidechain_hpf_order_index: usize,
-    param_detection_mode: ParameterId,
     /// 0 = Peak, 1 = RMS
     detection_mode_index: usize,
-    param_sidechain_external: ParameterId,
     sidechain_external: bool,
-    param_range_db: ParameterId,
     range_db: f32,
-    param_hysteresis_db: ParameterId,
     hysteresis_db: f32,
-    param_knee_db: ParameterId,
     knee_db: f32,
-    param_lookahead: ParameterId,
     lookahead_ms: f32,
     lookahead_buffers: Vec<LookaheadBuffer>,
     /// Gate state per channel for hysteresis
@@ -186,7 +172,7 @@ pub struct GatePlugin {
     monitoring_levels: Vec<f32>,
     cache: RealTimeCache<GateData>,
     cache_update_counter: usize,
-    cached_parameters: Vec<Parameter>,
+    cached_parameters: Vec<sotf_host::parameters::Parameter>,
 }
 
 impl GatePlugin {
@@ -202,35 +188,20 @@ impl GatePlugin {
         let mut p = Self {
             channels,
             sample_rate: sr,
-            param_threshold: ParameterId::from("threshold"),
             threshold_db,
-            param_ratio: ParameterId::from("ratio"),
             ratio,
-            param_attack: ParameterId::from("attack"),
             attack_ms,
-            param_hold: ParameterId::from("hold"),
             hold_ms,
-            param_release: ParameterId::from("release"),
             release_ms,
-            param_mix: ParameterId::from("mix"),
             mix: 1.0,
-            param_link_channels: ParameterId::from("link_channels"),
             link_channels: true,
-            param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
             sidechain_hpf_hz: 0.0,
-            param_sidechain_hpf_order: ParameterId::from("sidechain_hpf_order"),
             sidechain_hpf_order_index: 0,
-            param_detection_mode: ParameterId::from("detection_mode"),
             detection_mode_index: 0,
-            param_sidechain_external: ParameterId::from("sidechain_external"),
             sidechain_external: false,
-            param_range_db: ParameterId::from("range_db"),
             range_db: default_range_db(),
-            param_hysteresis_db: ParameterId::from("hysteresis_db"),
             hysteresis_db: 0.0,
-            param_knee_db: ParameterId::from("knee_db"),
             knee_db: 0.0,
-            param_lookahead: ParameterId::from("lookahead"),
             lookahead_ms: 0.0,
             lookahead_buffers: (0..channels)
                 .map(|_| LookaheadBuffer::from_ms(MAX_LOOKAHEAD_MS, sr, 1))
@@ -255,143 +226,54 @@ impl GatePlugin {
         p
     }
 
-    fn sidechain_hpf_order_string(&self) -> String {
-        match self.sidechain_hpf_order_index {
-            1 => "4th".to_string(),
-            _ => "2nd".to_string(),
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.threshold_db as f64),
+            1 => Some(self.ratio as f64),
+            2 => Some(self.attack_ms as f64),
+            3 => Some(self.hold_ms as f64),
+            4 => Some(self.release_ms as f64),
+            5 => Some(self.mix as f64),
+            6 => Some(if self.link_channels { 1.0 } else { 0.0 }),
+            7 => Some(self.sidechain_hpf_hz as f64),
+            8 => Some(self.sidechain_hpf_order_index as f64),
+            9 => Some(self.detection_mode_index as f64),
+            10 => Some(if self.sidechain_external { 1.0 } else { 0.0 }),
+            11 => Some(self.range_db as f64),
+            12 => Some(self.hysteresis_db as f64),
+            13 => Some(self.knee_db as f64),
+            14 => Some(self.lookahead_ms as f64),
+            _ => None,
         }
     }
 
-    fn detection_mode_string(&self) -> String {
-        match self.detection_mode_index {
-            0 => "peak".to_string(),
-            _ => "rms".to_string(),
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => self.threshold_db = value as f32,
+            1 => self.ratio = value as f32,
+            2 => self.attack_ms = value as f32,
+            3 => self.hold_ms = value as f32,
+            4 => self.release_ms = value as f32,
+            5 => self.mix = value as f32,
+            6 => self.link_channels = value > 0.5,
+            7 => self.sidechain_hpf_hz = value as f32,
+            8 => self.sidechain_hpf_order_index = value as usize,
+            9 => self.detection_mode_index = value as usize,
+            10 => self.sidechain_external = value > 0.5,
+            11 => self.range_db = value as f32,
+            12 => self.hysteresis_db = value as f32,
+            13 => self.knee_db = value as f32,
+            14 => self.lookahead_ms = value as f32,
+            _ => {}
         }
     }
 
     fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![
-            Parameter::new_float(
-                "threshold",
-                "Threshold",
-                self.threshold_db,
-                pk(GT, "threshold").min_f64() as f32,
-                pk(GT, "threshold").max_f64() as f32,
-            )
-            .with_description("Level below which gating starts (dB)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "ratio",
-                "Ratio",
-                self.ratio,
-                pk(GT, "ratio").min_f64() as f32,
-                pk(GT, "ratio").max_f64() as f32,
-            )
-            .with_description("Gate ratio (1:1 to 100:1)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "attack",
-                "Attack",
-                self.attack_ms,
-                pk(GT, "attack").min_f64() as f32,
-                pk(GT, "attack").max_f64() as f32,
-            )
-            .with_description("Attack time (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "hold",
-                "Hold",
-                self.hold_ms,
-                pk(GT, "hold").min_f64() as f32,
-                pk(GT, "hold").max_f64() as f32,
-            )
-            .with_description("Hold time before closing (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "release",
-                "Release",
-                self.release_ms,
-                pk(GT, "release").min_f64() as f32,
-                pk(GT, "release").max_f64() as f32,
-            )
-            .with_description("Release time (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "mix",
-                "Mix",
-                self.mix,
-                pk(GT, "mix").min_f64() as f32,
-                pk(GT, "mix").max_f64() as f32,
-            )
-            .with_description("Dry/wet mix (0 = dry, 1 = gated)")
-            .with_group("Output")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
-                .with_description("Use linked sidechain for all channels")
-                .with_group("Channels")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "sidechain_hpf_hz",
-                "Sidechain HPF",
-                self.sidechain_hpf_hz,
-                pk(GT, "sidechain_hpf_hz").min_f64() as f32,
-                pk(GT, "sidechain_hpf_hz").max_f64() as f32,
-            )
-            .with_description("High-pass filter frequency for sidechain (Hz)")
-            .with_group("Sidechain")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_string(
-                "sidechain_hpf_order",
-                "Sidechain HPF Order",
-                self.sidechain_hpf_order_string(),
-            )
-            .with_description("Butterworth HPF slope (2nd = -12dB/oct, 4th = -24dB/oct)")
-            .with_group("Sidechain")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_string(
-                "detection_mode",
-                "Detection Mode",
-                self.detection_mode_string(),
-            )
-            .with_description("Level detection mode: peak or rms")
-            .with_group("Sidechain")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "sidechain_external",
-                "External Sidechain",
-                self.sidechain_external,
-            )
-            .with_description("Use external sidechain signal from extra input channels")
-            .with_group("Sidechain")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("range_db", "Range", self.range_db, 0.0, 120.0)
-                .with_description("Maximum attenuation in dB (0 = unlimited)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("hysteresis_db", "Hysteresis", self.hysteresis_db, 0.0, 20.0)
-                .with_description("Hysteresis between open/close thresholds (dB)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float("knee_db", "Knee", self.knee_db, 0.0, 24.0)
-                .with_description("Soft knee width (dB)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "lookahead",
-                "Lookahead",
-                self.lookahead_ms,
-                0.0,
-                MAX_LOOKAHEAD_MS,
-            )
-            .with_description("Lookahead delay for gain computation (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Useful),
-        ];
+        self.cached_parameters = param_bridge::build_parameters(GT, |i| self.param_value(i));
     }
 
     pub fn from_params(channels: usize, params: GatePluginParams) -> Self {
@@ -550,166 +432,36 @@ impl InPlacePlugin for GatePlugin {
             self.channels
         }
     }
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-
-        if id == self.param_threshold {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(GT, "threshold").default_f64() as f32);
-            if v.is_finite() {
-                self.threshold_db = v;
-                self.threshold_smoother.set_target(self.threshold_db);
-            }
-        } else if id == self.param_ratio {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(GT, "ratio").default_f64() as f32);
-            if v.is_finite() {
-                self.ratio = v.max(1.0);
-            }
-        } else if id == self.param_attack {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(GT, "attack").default_f64() as f32);
-            if v.is_finite() {
-                self.attack_ms = v;
-                self.update_coefficients();
-            }
-        } else if id == self.param_hold {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(GT, "hold").default_f64() as f32);
-            if v.is_finite() {
-                self.hold_ms = v;
-            }
-        } else if id == self.param_release {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(GT, "release").default_f64() as f32);
-            if v.is_finite() {
-                self.release_ms = v;
-                self.update_coefficients();
-            }
-        } else if id == self.param_mix {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(GT, "mix").default_f64() as f32);
-            if v.is_finite() {
-                self.mix = v.clamp(0.0, 1.0);
-                self.mix_smoother.set_target(self.mix);
-            }
-        } else if id == self.param_link_channels {
-            self.link_channels = value
-                .as_bool()
-                .unwrap_or(pk(GT, "link_channels").default_bool());
-        } else if id == self.param_sidechain_hpf_hz {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(GT, "sidechain_hpf_hz").default_f64() as f32);
-            if v.is_finite() {
-                self.sidechain_hpf_hz = v.max(0.0);
-                self.rebuild_sidechain_hpf();
-            }
-        } else if id == self.param_sidechain_hpf_order {
-            let new_index = if let Some(s) = value.as_string() {
-                match s {
-                    "4th" => 1,
-                    _ => 0,
+        let idx = param_bridge::set_parameter(GT, &id, &value, |i, v| self.set_param_value(i, v))?;
+        // Side effects
+        match idx {
+            0 => self.threshold_smoother.set_target(self.threshold_db), // threshold
+            2 | 4 => self.update_coefficients(),                        // attack or release
+            5 => self.mix_smoother.set_target(self.mix),                // mix
+            7 | 8 => self.rebuild_sidechain_hpf(),                      // sidechain_hpf_hz or order
+            9 => {
+                // detection_mode
+                let mode = if self.detection_mode_index == 1 {
+                    DetectionMode::Rms { window_ms: 10.0 }
+                } else {
+                    DetectionMode::Peak
+                };
+                for det in &mut self.level_detectors {
+                    det.set_mode(mode);
                 }
-            } else if let Some(v) = value.as_float() {
-                (v as usize).min(1)
-            } else {
-                0
-            };
-            self.sidechain_hpf_order_index = new_index;
-            self.rebuild_sidechain_hpf();
-        } else if id == self.param_detection_mode {
-            let new_index = if let Some(s) = value.as_string() {
-                match s {
-                    "rms" | "RMS" => 1,
-                    _ => 0,
-                }
-            } else if let Some(v) = value.as_float() {
-                (v as usize).min(1)
-            } else {
-                0
-            };
-            self.detection_mode_index = new_index;
-            let mode = if new_index == 1 {
-                DetectionMode::Rms { window_ms: 10.0 }
-            } else {
-                DetectionMode::Peak
-            };
-            for det in &mut self.level_detectors {
-                det.set_mode(mode);
             }
-        } else if id == self.param_sidechain_external {
-            self.sidechain_external = value
-                .as_bool()
-                .unwrap_or(pk(GT, "sidechain_external").default_bool());
-        } else if id == self.param_range_db {
-            if let Some(v) = value.as_float()
-                && v.is_finite() {
-                    self.range_db = v.max(0.0);
-                }
-        } else if id == self.param_hysteresis_db {
-            if let Some(v) = value.as_float()
-                && v.is_finite() {
-                    self.hysteresis_db = v.max(0.0);
-                }
-        } else if id == self.param_knee_db {
-            if let Some(v) = value.as_float()
-                && v.is_finite() {
-                    self.knee_db = v.max(0.0);
-                }
-        } else if id == self.param_lookahead {
-            let v = value.as_float().unwrap_or(0.0);
-            if v.is_finite() {
-                self.lookahead_ms = v.clamp(0.0, MAX_LOOKAHEAD_MS);
-                self.update_lookahead_delay();
-            }
+            14 => self.update_lookahead_delay(), // lookahead_ms
+            _ => {}
         }
         self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_threshold {
-            Some(ParameterValue::Float(self.threshold_db))
-        } else if id == &self.param_ratio {
-            Some(ParameterValue::Float(self.ratio))
-        } else if id == &self.param_attack {
-            Some(ParameterValue::Float(self.attack_ms))
-        } else if id == &self.param_hold {
-            Some(ParameterValue::Float(self.hold_ms))
-        } else if id == &self.param_release {
-            Some(ParameterValue::Float(self.release_ms))
-        } else if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix))
-        } else if id == &self.param_link_channels {
-            Some(ParameterValue::Bool(self.link_channels))
-        } else if id == &self.param_sidechain_hpf_hz {
-            Some(ParameterValue::Float(self.sidechain_hpf_hz))
-        } else if id == &self.param_sidechain_hpf_order {
-            Some(ParameterValue::String(self.sidechain_hpf_order_string()))
-        } else if id == &self.param_detection_mode {
-            Some(ParameterValue::String(self.detection_mode_string()))
-        } else if id == &self.param_sidechain_external {
-            Some(ParameterValue::Bool(self.sidechain_external))
-        } else if id == &self.param_range_db {
-            Some(ParameterValue::Float(self.range_db))
-        } else if id == &self.param_hysteresis_db {
-            Some(ParameterValue::Float(self.hysteresis_db))
-        } else if id == &self.param_knee_db {
-            Some(ParameterValue::Float(self.knee_db))
-        } else if id == &self.param_lookahead {
-            Some(ParameterValue::Float(self.lookahead_ms))
-        } else {
-            None
-        }
+        param_bridge::get_parameter(GT, id, |i| self.param_value(i))
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;

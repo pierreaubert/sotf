@@ -1,20 +1,122 @@
-[group('bench')]
-bench-plugins:
-	cargo bench -p sotf-plugin-binaural --bench binaural-decoder-benchmark
-	cargo bench -p sotf-plugin-upmixer --bench upmixer-benchmark
+# ==============================================================================
+# sotf-plugins — test, example, QA, bench recipes
+# ==============================================================================
 
 # ----------------------------------------------------------------------
-# QA PLUGINS
+# TESTS
 # ----------------------------------------------------------------------
 
-[group('qa-plugins')]
-qa-plugins: qa-plugin-fuzzer qa-plugin-diagnostics
+# Run all plugin tests (lib + integration)
+[group('plugins')]
+plugins-test: plugins-test-lib plugins-test-integration plugins-test-host
 
-[group('qa-plugins')]
-qa-plugin-fuzzer: qa-plugin-fuzzer-simple qa-plugin-fuzzer-1ch qa-plugin-fuzzer-2ch qa-plugin-fuzzer-6ch
+# Library tests for all plugin crates
+[group('plugins')]
+plugins-test-lib:
+	cargo test -p sotf-plugins --lib
 
-[group('qa-plugins')]
-qa-plugin-fuzzer-simple:
+# Integration / external test files for individual plugin crates
+[group('plugins')]
+plugins-test-integration:
+	cargo test -p sotf-plugin-binaural --test binaural_decoder_integration
+	cargo test -p sotf-plugin-binaural --test test_binaural_decoder
+	cargo test -p sotf-plugin-delay --test test_basic
+	cargo test -p sotf-plugin-denoiser --test test_polyphonic_denoiser
+	cargo test -p sotf-plugin-eq --test test_eq_plugin
+	cargo test -p sotf-plugin-gain --test test_basic
+	cargo test -p sotf-plugin-gate --test test_dynamics
+	cargo test -p sotf-plugin-limiter --test test_dynamics
+	cargo test -p sotf-plugin-loudness-compensation --test test_loudness_compensation
+	cargo test -p sotf-plugin-matrix --test matrix_mixing_test
+	cargo test -p sotf-plugin-matrix --test matrix_mute_test
+	cargo test -p sotf-plugin-matrix --test test_basic
+	cargo test -p sotf-plugin-multiband-compressor --test test_multiband
+	cargo test -p sotf-plugin-multiband-expander --test test_multiband
+	cargo test -p sotf-plugin-pnd --test test_pnd_plugin
+	cargo test -p sotf-plugin-resampler --test test_resampler_plugin
+	cargo test -p sotf-plugin-upmixer --test test_upmixer_integration
+	cargo test -p sotf-plugin-upmixer --test upmixer_audio_regression
+	cargo test -p sotf-plugin-upmixer --test upmixer_quality_tests
+	cargo test -p sotf-plugin-xtc --test test_xtc_plugin
+	cargo test -p sotf-plugin-xtc --test xtc_quality_tests
+	cargo test -p sotf-plugin-xtc --test xtc_validation
+
+# Host infrastructure tests (DawHost, automation, STFT, etc.)
+[group('plugins')]
+plugins-test-host:
+	cargo test -p sotf-host
+
+# Top-level integration test suites (host_integration, property, realtime, etc.)
+[group('plugins')]
+plugins-test-suites:
+	cargo test -p sotf-plugins --test host_integration_tests
+	cargo test -p sotf-plugins --test automation_tests
+	cargo test -p sotf-plugins --test property_tests
+	cargo test -p sotf-plugins --test realtime_tests
+	cargo test -p sotf-plugins --test realtime_allocation_tests
+	cargo test -p sotf-plugins --test rt_safety_tests
+	cargo test -p sotf-plugins --test stft_normalization_tests
+	cargo test -p sotf-plugins --test parameter_robustness_tests
+	cargo test -p sotf-plugins --test layout_invariants
+	cargo test -p sotf-plugins --test render_plan_snapshots
+	cargo test -p sotf-plugins --test test_plugins
+	cargo test -p sotf-plugins --test test_dynamics_plugins
+	cargo test -p sotf-plugins --test test_chain_perf
+	cargo test -p sotf-plugins --test test_sample_rate_support
+	cargo test -p sotf-plugins --test test_harness_sanity
+	cargo test -p sotf-plugins --test distortion_regression_tests
+
+# Run everything: lib + integration + host + suites
+[group('plugins')]
+plugins-test-all: plugins-test plugins-test-suites
+
+# ----------------------------------------------------------------------
+# EXAMPLES
+# ----------------------------------------------------------------------
+
+[group('plugins')]
+plugins-examples:
+	cargo run -p sotf-plugin-denoiser --example denoiser_demo --release
+	cargo run -p sotf-plugin-pnd --example pnd_demo --release
+	cargo run -p sotf-plugin-xtc --example xtc_demo --release
+	cargo run -p sotf-plugins --example restore_mono --release
+
+# ----------------------------------------------------------------------
+# QA DIAGNOSTICS (per-plugin QA binaries)
+# ----------------------------------------------------------------------
+
+[group('plugins')]
+plugins-qa: plugins-qa-diagnostics plugins-qa-fuzzer
+
+[group('plugins')]
+plugins-qa-diagnostics:
+	cargo run --release -p sotf-plugin-ab-compare --bin qa-ab-compare --features qa
+	cargo run --release -p sotf-plugin-aec --bin qa-aec --features qa
+	cargo run --release -p sotf-plugin-ambisonics --bin qa-ambisonics --features qa
+	cargo run --release -p sotf-plugin-beamformer --bin qa-beamformer --features qa
+	cargo run --release -p sotf-plugin-delay --bin qa-delay --features qa
+	cargo run --release -p sotf-plugin-downmix --bin qa-downmix --features qa
+	cargo run --release -p sotf-plugin-eq --bin qa-eq --features qa
+	cargo run --release -p sotf-plugin-gain --bin qa-gain --features qa
+	cargo run --release -p sotf-plugin-gate --bin qa-gate --features qa
+	cargo run --release -p sotf-plugin-limiter --bin qa-limiter --features qa
+	cargo run --release -p sotf-plugin-loudness-compensation --bin qa-loudness-compensation --features qa
+	cargo run --release -p sotf-plugin-mono-to-stereo --bin qa-mono-to-stereo --features qa
+	cargo run --release -p sotf-plugin-multiband-compressor --bin qa-multiband-compressor --features qa
+	cargo run --release -p sotf-plugin-multiband-expander --bin qa-multiband-expander --features qa
+	cargo run --release -p sotf-plugin-pnd --bin qa-pnd --features qa
+	cargo run --release -p sotf-plugin-upmixer --bin qa-upmixer --features qa
+	cargo run --release -p sotf-plugin-xtc --bin qa-xtc --features qa
+
+# ----------------------------------------------------------------------
+# QA FUZZER
+# ----------------------------------------------------------------------
+
+[group('plugins')]
+plugins-qa-fuzzer: plugins-qa-fuzzer-simple plugins-qa-fuzzer-1ch plugins-qa-fuzzer-2ch plugins-qa-fuzzer-6ch
+
+[group('plugins')]
+plugins-qa-fuzzer-simple:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_*.wav; do \
 		for plugin in gain eq compressor limiter gate delay loudness_monitor abcompare expander mbcomp mbexp matrix mutesolo denoiser spectrum pnd; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
@@ -22,8 +124,8 @@ qa-plugin-fuzzer-simple:
 		done; \
 	done
 
-[group('qa-plugins')]
-qa-plugin-fuzzer-1ch:
+[group('plugins')]
+plugins-qa-fuzzer-1ch:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch1_*.wav; do \
 		for plugin in mono_to_stereo; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
@@ -31,8 +133,8 @@ qa-plugin-fuzzer-1ch:
 		done; \
 	done
 
-[group('qa-plugins')]
-qa-plugin-fuzzer-2ch:
+[group('plugins')]
+plugins-qa-fuzzer-2ch:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch2_*.wav; do \
 		for plugin in fletcher upmixer xtc crossfeed; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
@@ -40,8 +142,8 @@ qa-plugin-fuzzer-2ch:
 		done; \
 	done
 
-[group('qa-plugins')]
-qa-plugin-fuzzer-6ch:
+[group('plugins')]
+plugins-qa-fuzzer-6ch:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch6_*.wav; do \
 		for plugin in downmix; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
@@ -50,19 +152,47 @@ qa-plugin-fuzzer-6ch:
 	done
 
 # ----------------------------------------------------------------------
+# BENCHMARKS
+# ----------------------------------------------------------------------
+
+[group('plugins')]
+plugins-bench: plugins-bench-all plugins-bench-allocation plugins-bench-individual
+
+# Top-level benchmarks
+[group('plugins')]
+plugins-bench-all:
+	cargo bench -p sotf-plugins --bench all-plugins-benchmark
+
+[group('plugins')]
+plugins-bench-allocation:
+	cargo bench -p sotf-plugins --bench allocation-benchmark
+
+# Per-crate benchmarks
+[group('plugins')]
+plugins-bench-individual:
+	cargo bench -p sotf-plugin-binaural --bench binaural-decoder-benchmark
+	cargo bench -p sotf-plugin-loudness-compensation --bench loudness-benchmark
+	cargo bench -p sotf-plugin-upmixer --bench upmixer-benchmark
+	cargo bench -p sotf-plugin-xtc --bench xtc-validation-benchmark
+
+# Ambisonics requires iamf feature
+[group('plugins')]
+plugins-bench-ambisonics:
+	cargo bench -p sotf-plugin-ambisonics --bench ambisonics-benchmark --features iamf
+
+# ----------------------------------------------------------------------
 # QA FORMAT VALIDATION (AU, VST3, CLAP)
 # ----------------------------------------------------------------------
 
 # Run all format-level QA (AU + VST3 + CLAP + cross-format comparison)
-[group('qa-formats')]
-qa-formats: qa-au-validate qa-vst3-validate qa-clap-validate qa-cross-format
+[group('plugins')]
+plugins-qa-formats: plugins-qa-au-validate plugins-qa-vst3-validate plugins-qa-clap-validate plugins-qa-cross-format
 
 # Validate all installed Audio Units via auval
-[group('qa-formats')]
-qa-au-validate:
+[group('plugins')]
+plugins-qa-au-validate:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	# AU subtypes extracted from Info.plist files
 	SUBTYPES=( SOAb SOBn SOCs SOCP SOCv SOCf SOCx SODs SODY SODn SODm SODq SOEQ SOEx SOFm SOGN SOGT SOLM SOLc SOMx SOM2 SOMc SOMe SOPn SOSt SOSi SOTs SOUp SOXt )
 	NAMES=(    ABCompare Binaural ChannelMuteSolo Compressor Convolution Crossfeed Crossover DeEsser Delay Denoiser Downmix DynamicEQ EQ Expander FletcherMunson Gain Gate Limiter LoudnessComp Matrix MonoToStereo MultibandComp MultibandExp PND Saturation StereoImager TransientShaper Upmixer XTC )
 	FAILED=0
@@ -82,8 +212,8 @@ qa-au-validate:
 	[ "$FAILED" -eq 0 ]
 
 # Validate all VST3 plugins via pluginval
-[group('qa-formats')]
-qa-vst3-validate:
+[group('plugins')]
+plugins-qa-vst3-validate:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	if ! command -v pluginval &>/dev/null; then
@@ -113,14 +243,13 @@ qa-vst3-validate:
 	[ "$FAILED" -eq 0 ]
 
 # Validate all CLAP plugins via clap-validator
-[group('qa-formats')]
-qa-clap-validate:
+[group('plugins')]
+plugins-qa-clap-validate:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	if ! command -v clap-validator &>/dev/null; then
 		echo "clap-validator not found. Install from:"
 		echo "  https://github.com/free-audio/clap-validator/releases"
-		echo "  cd /tmp && curl -sL https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-macos-universal.tar.gz | tar xz && cp binaries/clap-validator ~/.local/bin/"
 		exit 1
 	fi
 	CLAP_DIR="dist/clap"
@@ -145,14 +274,14 @@ qa-clap-validate:
 	echo "CLAP validation: $PASSED passed, $FAILED failed"
 	[ "$FAILED" -eq 0 ]
 
-# Cross-format audio comparison: core vs bridge parameter round-trip
-[group('qa-formats')]
-qa-cross-format:
+# Cross-format audio comparison
+[group('plugins')]
+plugins-qa-cross-format:
 	cargo test -p plugins-bridge --test cross_format_comparison --release
 
 # VST3 stress test (pluginval at maximum strictness)
-[group('qa-formats')]
-qa-vst3-stress:
+[group('plugins')]
+plugins-qa-vst3-stress:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	if ! command -v pluginval &>/dev/null; then
@@ -174,21 +303,13 @@ qa-vst3-stress:
 	[ "$FAILED" -eq 0 ]
 
 # ----------------------------------------------------------------------
+# CHECK / CLIPPY
+# ----------------------------------------------------------------------
 
-[group('qa-plugins')]
-qa-plugin-diagnostics:
-	cargo run --release --package sotf-plugin-ab-compare --bin qa-ab-compare --features qa
-	cargo run --release --package sotf-plugin-delay --bin qa-delay --features qa
-	cargo run --release --package sotf-plugin-downmix --bin qa-downmix --features qa
-	cargo run --release --package sotf-plugin-eq --bin qa-eq --features qa
-	cargo run --release --package sotf-plugin-gain --bin qa-gain --features qa
-	cargo run --release --package sotf-plugin-gate --bin qa-gate --features qa
-	cargo run --release --package sotf-plugin-limiter --bin qa-limiter --features qa
-	cargo run --release --package sotf-plugin-loudness-compensation --bin qa-loudness-compensation --features qa
-	cargo run --release --package sotf-plugin-mono-to-stereo --bin qa-mono-to-stereo --features qa
-	cargo run --release --package sotf-plugin-multiband-compressor --bin qa-multiband-compressor --features qa
-	cargo run --release --package sotf-plugin-multiband-expander --bin qa-multiband-expander --features qa
-	cargo run --release --package sotf-plugin-pnd --bin qa-pnd --features qa
-	cargo run --release --package sotf-plugin-upmixer --bin qa-upmixer --features qa
-	cargo run --release --package sotf-plugin-xtc --bin qa-xtc --features qa
+[group('plugins')]
+plugins-check:
+	cargo check -p sotf-plugins --no-default-features
 
+[group('plugins')]
+plugins-clippy:
+	cargo clippy -p sotf-plugins --no-default-features

@@ -26,6 +26,7 @@ pub mod lookahead;
 pub mod lr4_crossover;
 pub mod lufs_target;
 pub mod oversampling;
+pub mod param_bridge;
 pub mod param_registry;
 pub mod param_specs;
 pub mod parameters;
@@ -89,3 +90,33 @@ pub use speaker_config::{
 };
 
 pub type PluginHost = DawHost;
+
+// ============================================================================
+// Shared audio utility functions
+// ============================================================================
+
+/// Convert dB to linear gain.
+#[inline]
+pub fn db_to_linear(db: f32) -> f32 {
+    10.0_f32.powf(db / 20.0)
+}
+
+/// Convert linear gain to dB. Returns `NEG_INFINITY` for zero or negative input.
+#[inline]
+pub fn linear_to_db(linear: f32) -> f32 {
+    if linear <= 0.0 {
+        f32::NEG_INFINITY
+    } else {
+        20.0 * linear.log10()
+    }
+}
+
+// ============================================================================
+// Shared audio constants
+// ============================================================================
+
+// Re-export from math-iir-fir (canonical location)
+pub use math_audio_iir_fir::{AUDIBLE_MAX_FREQ, AUDIBLE_MIN_FREQ};
+
+/// Default sample rate used for UI preview calculations (Hz).
+pub const DEFAULT_PREVIEW_SAMPLE_RATE: f64 = 48_000.0;

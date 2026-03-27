@@ -7,9 +7,10 @@ pub mod params;
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
+use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use crate::params::PARAMS as EX;
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
@@ -176,35 +177,23 @@ enum GateState {
 pub struct ExpanderPlugin {
     channels: usize,
     sample_rate: u32,
-    param_threshold: ParameterId,
+
+    // Parameters (order matches params::PARAMS)
     threshold_db: f32,
-    param_ratio: ParameterId,
     ratio: f32,
-    param_attack: ParameterId,
     attack_ms: f32,
-    param_release: ParameterId,
     release_ms: f32,
-    param_range: ParameterId,
     range_db: f32,
-    param_knee: ParameterId,
     knee_db: f32,
-    param_hysteresis: ParameterId,
     hysteresis_db: f32,
-    param_hold: ParameterId,
     hold_ms: f32,
-    param_mix: ParameterId,
     mix: f32,
-    param_link_channels: ParameterId,
-    link_channels: bool,
-    param_sidechain_hpf_hz: ParameterId,
-    sidechain_hpf_hz: f32,
-    param_auto_makeup: ParameterId,
     auto_makeup: bool,
-    param_lookahead: ParameterId,
+    link_channels: bool,
+    sidechain_hpf_hz: f32,
     lookahead_ms: f32,
-    param_detection_mode: ParameterId,
-    detection_mode_str: String,
-    param_measured_auto_makeup: ParameterId,
+    /// 0 = Peak, 1 = RMS
+    detection_mode_index: usize,
     measured_auto_makeup: bool,
     lookahead_buffers: Vec<LookaheadBuffer>,
     level_detectors: Vec<LevelDetector>,
@@ -233,38 +222,24 @@ impl ExpanderPlugin {
         let sr = 44100;
         let lookahead_ms = params.lookahead_ms.clamp(0.0, MAX_LOOKAHEAD_MS);
         let detection_mode = parse_detection_mode(&params.detection_mode);
+        let detection_mode_index = if params.detection_mode.eq_ignore_ascii_case("rms") { 1 } else { 0 };
         let mut p = Self {
             channels,
             sample_rate: sr,
-            param_threshold: ParameterId::from("threshold"),
             threshold_db: params.threshold_db,
-            param_ratio: ParameterId::from("ratio"),
             ratio: params.ratio,
-            param_attack: ParameterId::from("attack"),
             attack_ms: params.attack_ms,
-            param_release: ParameterId::from("release"),
             release_ms: params.release_ms,
-            param_range: ParameterId::from("range"),
             range_db: params.range_db,
-            param_knee: ParameterId::from("knee"),
             knee_db: params.knee_db,
-            param_hysteresis: ParameterId::from("hysteresis"),
             hysteresis_db: params.hysteresis_db,
-            param_hold: ParameterId::from("hold"),
             hold_ms: params.hold_ms,
-            param_mix: ParameterId::from("mix"),
             mix: params.mix.clamp(0.0, 1.0),
-            param_link_channels: ParameterId::from("link_channels"),
-            link_channels: params.link_channels,
-            param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
-            sidechain_hpf_hz: params.sidechain_hpf_hz.max(0.0),
-            param_auto_makeup: ParameterId::from("auto_makeup"),
             auto_makeup: params.auto_makeup,
-            param_lookahead: ParameterId::from("lookahead"),
+            link_channels: params.link_channels,
+            sidechain_hpf_hz: params.sidechain_hpf_hz.max(0.0),
             lookahead_ms,
-            param_detection_mode: ParameterId::from("detection_mode"),
-            detection_mode_str: params.detection_mode.clone(),
-            param_measured_auto_makeup: ParameterId::from("measured_auto_makeup"),
+            detection_mode_index,
             measured_auto_makeup: params.measured_auto_makeup,
             lookahead_buffers: (0..channels)
                 .map(|_| LookaheadBuffer::from_ms(MAX_LOOKAHEAD_MS, sr, 1))
@@ -299,146 +274,54 @@ impl ExpanderPlugin {
         }
     }
 
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.threshold_db as f64),                        // threshold
+            1 => Some(self.ratio as f64),                               // ratio
+            2 => Some(self.attack_ms as f64),                           // attack
+            3 => Some(self.release_ms as f64),                          // release
+            4 => Some(self.range_db as f64),                            // range
+            5 => Some(self.knee_db as f64),                             // knee
+            6 => Some(self.hysteresis_db as f64),                       // hysteresis
+            7 => Some(self.hold_ms as f64),                             // hold
+            8 => Some(self.mix as f64),                                 // mix
+            9 => Some(if self.auto_makeup { 1.0 } else { 0.0 }),       // auto_makeup
+            10 => Some(if self.link_channels { 1.0 } else { 0.0 }),    // link_channels
+            11 => Some(self.sidechain_hpf_hz as f64),                  // sidechain_hpf_hz
+            12 => Some(self.lookahead_ms as f64),                       // lookahead_ms
+            13 => Some(self.detection_mode_index as f64),               // detection_mode
+            14 => Some(if self.measured_auto_makeup { 1.0 } else { 0.0 }), // measured_auto_makeup
+            _ => None,
+        }
+    }
+
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => self.threshold_db = value as f32,                      // threshold
+            1 => self.ratio = value as f32,                             // ratio
+            2 => self.attack_ms = value as f32,                         // attack
+            3 => self.release_ms = value as f32,                        // release
+            4 => self.range_db = value as f32,                          // range
+            5 => self.knee_db = value as f32,                           // knee
+            6 => self.hysteresis_db = value as f32,                     // hysteresis
+            7 => self.hold_ms = value as f32,                           // hold
+            8 => self.mix = value as f32,                               // mix
+            9 => self.auto_makeup = value > 0.5,                        // auto_makeup
+            10 => self.link_channels = value > 0.5,                     // link_channels
+            11 => self.sidechain_hpf_hz = value as f32,                // sidechain_hpf_hz
+            12 => self.lookahead_ms = value as f32,                     // lookahead_ms
+            13 => self.detection_mode_index = value as usize,           // detection_mode
+            14 => self.measured_auto_makeup = value > 0.5,              // measured_auto_makeup
+            _ => {}
+        }
+    }
+
     fn rebuild_cached_parameters(&mut self) {
-        let det_idx = if self.detection_mode_str == "rms" {
-            1.0f32
-        } else {
-            0.0
-        };
-        self.cached_parameters = vec![
-            Parameter::new_float(
-                "threshold",
-                "Threshold",
-                self.threshold_db,
-                pk(EX, "threshold").min_f64() as f32,
-                pk(EX, "threshold").max_f64() as f32,
-            )
-            .with_description("Level below which expansion starts (dB)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "ratio",
-                "Ratio",
-                self.ratio,
-                pk(EX, "ratio").min_f64() as f32,
-                pk(EX, "ratio").max_f64() as f32,
-            )
-            .with_description("Expansion ratio (1:1 to 20:1)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "attack",
-                "Attack",
-                self.attack_ms,
-                pk(EX, "attack").min_f64() as f32,
-                pk(EX, "attack").max_f64() as f32,
-            )
-            .with_description("Attack time (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "release",
-                "Release",
-                self.release_ms,
-                pk(EX, "release").min_f64() as f32,
-                pk(EX, "release").max_f64() as f32,
-            )
-            .with_description("Release time (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "range",
-                "Range",
-                self.range_db,
-                pk(EX, "range").min_f64() as f32,
-                pk(EX, "range").max_f64() as f32,
-            )
-            .with_description("Maximum attenuation depth (dB)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "knee",
-                "Knee",
-                self.knee_db,
-                pk(EX, "knee").min_f64() as f32,
-                pk(EX, "knee").max_f64() as f32,
-            )
-            .with_description("Soft knee width (dB)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "hysteresis",
-                "Hysteresis",
-                self.hysteresis_db,
-                pk(EX, "hysteresis").min_f64() as f32,
-                pk(EX, "hysteresis").max_f64() as f32,
-            )
-            .with_description("Hysteresis between open and close thresholds (dB)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "hold",
-                "Hold",
-                self.hold_ms,
-                pk(EX, "hold").min_f64() as f32,
-                pk(EX, "hold").max_f64() as f32,
-            )
-            .with_description("Hold time before closing (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "mix",
-                "Mix",
-                self.mix,
-                pk(EX, "mix").min_f64() as f32,
-                pk(EX, "mix").max_f64() as f32,
-            )
-            .with_description("Dry/wet mix (0 = dry, 1 = expanded)")
-            .with_group("Output")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
-                .with_description("Use linked sidechain for all channels")
-                .with_group("Channels")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("auto_makeup", "Auto Makeup", self.auto_makeup)
-                .with_description("Automatically compensate for expansion attenuation")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "sidechain_hpf_hz",
-                "Sidechain HPF",
-                self.sidechain_hpf_hz,
-                pk(EX, "sidechain_hpf_hz").min_f64() as f32,
-                pk(EX, "sidechain_hpf_hz").max_f64() as f32,
-            )
-            .with_description("High-pass filter frequency for sidechain (Hz)")
-            .with_group("Sidechain")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "lookahead",
-                "Lookahead",
-                self.lookahead_ms,
-                0.0,
-                MAX_LOOKAHEAD_MS,
-            )
-            .with_description("Lookahead delay for gain computation (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("detection_mode", "Detection Mode", det_idx, 0.0, 1.0)
-                .with_description("Level detection mode (0=peak, 1=rms)")
-                .with_group("Sidechain")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "measured_auto_makeup",
-                "Measured Makeup",
-                self.measured_auto_makeup,
-            )
-            .with_description(
-                "Use measured gain reduction for auto-makeup instead of heuristic",
-            )
-            .with_group("Output")
-            .with_importance(ParameterImportance::FineTuning),
-        ];
+        self.cached_parameters = param_bridge::build_parameters(EX, |i| self.param_value(i));
     }
     pub fn from_params(channels: usize, params: ExpanderPluginParams) -> Self {
         Self::with_params(channels, params)
@@ -554,153 +437,47 @@ impl InPlacePlugin for ExpanderPlugin {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-
-        if id == self.param_threshold {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "threshold").default_f64() as f32);
-            if v.is_finite() {
-                self.threshold_db = v;
+        let idx = param_bridge::set_parameter(EX, &id, &value, |i, v| self.set_param_value(i, v))?;
+        // Side effects for specific params
+        match idx {
+            0 => {
+                // threshold changed
                 self.threshold_smoother.set_target(self.threshold_db);
             }
-        } else if id == self.param_ratio {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "ratio").default_f64() as f32);
-            if v.is_finite() {
-                self.ratio = v.max(1.0);
-            }
-        } else if id == self.param_attack {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "attack").default_f64() as f32);
-            if v.is_finite() {
-                self.attack_ms = v;
+            2 | 3 => {
+                // attack or release changed
                 self.update_coefficients();
             }
-        } else if id == self.param_release {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "release").default_f64() as f32);
-            if v.is_finite() {
-                self.release_ms = v;
-                self.update_coefficients();
-            }
-        } else if id == self.param_range {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "range").default_f64() as f32);
-            if v.is_finite() {
-                self.range_db = v.max(0.0);
-            }
-        } else if id == self.param_knee {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "knee").default_f64() as f32);
-            if v.is_finite() {
-                self.knee_db = v.max(0.0);
-            }
-        } else if id == self.param_hysteresis {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "hysteresis").default_f64() as f32);
-            if v.is_finite() {
-                self.hysteresis_db = v.max(0.0);
-            }
-        } else if id == self.param_hold {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "hold").default_f64() as f32);
-            if v.is_finite() {
-                self.hold_ms = v.max(0.0);
-            }
-        } else if id == self.param_mix {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "mix").default_f64() as f32);
-            if v.is_finite() {
-                self.mix = v.clamp(0.0, 1.0);
+            8 => {
+                // mix changed
                 self.mix_smoother.set_target(self.mix);
             }
-        } else if id == self.param_link_channels {
-            self.link_channels = value
-                .as_bool()
-                .unwrap_or(pk(EX, "link_channels").default_bool());
-        } else if id == self.param_auto_makeup {
-            self.auto_makeup = value
-                .as_bool()
-                .unwrap_or(pk(EX, "auto_makeup").default_bool());
-        } else if id == self.param_sidechain_hpf_hz {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(EX, "sidechain_hpf_hz").default_f64() as f32);
-            if v.is_finite() {
-                self.sidechain_hpf_hz = v.max(0.0);
+            11 => {
+                // sidechain_hpf_hz changed
                 self.update_coefficients();
             }
-        } else if id == self.param_lookahead {
-            let v = value.as_float().unwrap_or(0.0);
-            if v.is_finite() {
-                self.lookahead_ms = v.clamp(0.0, MAX_LOOKAHEAD_MS);
+            12 => {
+                // lookahead_ms changed
                 self.update_lookahead_delay();
             }
-        } else if id == self.param_detection_mode {
-            // Accept float index: 0=peak, 1=rms
-            let idx = value.as_float().unwrap_or(0.0) as usize;
-            let mode_str = if idx >= 1 { "rms" } else { "peak" };
-            self.detection_mode_str = mode_str.to_string();
-            let mode = parse_detection_mode(mode_str);
-            for det in &mut self.level_detectors {
-                det.set_mode(mode);
+            13 => {
+                // detection_mode changed
+                let mode = if self.detection_mode_index >= 1 {
+                    DetectionMode::Rms { window_ms: RMS_WINDOW_MS }
+                } else {
+                    DetectionMode::Peak
+                };
+                for det in &mut self.level_detectors {
+                    det.set_mode(mode);
+                }
             }
-        } else if id == self.param_measured_auto_makeup {
-            self.measured_auto_makeup = value.as_bool().unwrap_or(false);
-        } else {
-            return Err(format!("Unknown parameter: {}", id));
+            _ => {}
         }
         self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_threshold {
-            Some(ParameterValue::Float(self.threshold_db))
-        } else if id == &self.param_ratio {
-            Some(ParameterValue::Float(self.ratio))
-        } else if id == &self.param_attack {
-            Some(ParameterValue::Float(self.attack_ms))
-        } else if id == &self.param_release {
-            Some(ParameterValue::Float(self.release_ms))
-        } else if id == &self.param_range {
-            Some(ParameterValue::Float(self.range_db))
-        } else if id == &self.param_knee {
-            Some(ParameterValue::Float(self.knee_db))
-        } else if id == &self.param_hysteresis {
-            Some(ParameterValue::Float(self.hysteresis_db))
-        } else if id == &self.param_hold {
-            Some(ParameterValue::Float(self.hold_ms))
-        } else if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix))
-        } else if id == &self.param_link_channels {
-            Some(ParameterValue::Bool(self.link_channels))
-        } else if id == &self.param_auto_makeup {
-            Some(ParameterValue::Bool(self.auto_makeup))
-        } else if id == &self.param_sidechain_hpf_hz {
-            Some(ParameterValue::Float(self.sidechain_hpf_hz))
-        } else if id == &self.param_lookahead {
-            Some(ParameterValue::Float(self.lookahead_ms))
-        } else if id == &self.param_detection_mode {
-            let idx = if self.detection_mode_str == "rms" {
-                1.0
-            } else {
-                0.0
-            };
-            Some(ParameterValue::Float(idx))
-        } else if id == &self.param_measured_auto_makeup {
-            Some(ParameterValue::Bool(self.measured_auto_makeup))
-        } else {
-            None
-        }
+        param_bridge::get_parameter(EX, id, |i| self.param_value(i))
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
@@ -713,7 +490,11 @@ impl InPlacePlugin for ExpanderPlugin {
             buf.resize(max_samples, 1);
         }
         self.update_lookahead_delay();
-        let mode = parse_detection_mode(&self.detection_mode_str);
+        let mode = if self.detection_mode_index >= 1 {
+            DetectionMode::Rms { window_ms: RMS_WINDOW_MS }
+        } else {
+            DetectionMode::Peak
+        };
         self.level_detectors = (0..self.channels)
             .map(|_| LevelDetector::new(mode, sample_rate))
             .collect();

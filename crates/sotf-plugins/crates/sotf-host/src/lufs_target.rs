@@ -141,7 +141,7 @@ impl LufsTarget {
 
 #[inline]
 fn db_to_linear(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
+    crate::db_to_linear(db)
 }
 
 #[cfg(test)]

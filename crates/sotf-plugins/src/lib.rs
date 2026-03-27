@@ -263,6 +263,11 @@ pub use plugin_upmixer::{
     default_subharmonic_gain as upmixer_default_subharmonic_gain,
 };
 pub use plugin_xtc::{XtcPlugin, XtcPluginParams, validation};
+// Shared audio utility functions and constants
+pub use sotf_host::{
+    AUDIBLE_MAX_FREQ, AUDIBLE_MIN_FREQ, DEFAULT_PREVIEW_SAMPLE_RATE, db_to_linear, linear_to_db,
+};
+
 pub use sotf_host::analyzer::{AnalyzerData, LoudnessData, SpectrumData};
 pub use sotf_host::analyzer_loudness_monitor::{
     LoudnessInfo, LoudnessMonitor, LoudnessMonitorPlugin,

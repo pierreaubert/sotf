@@ -12,7 +12,8 @@ use rubato::{Fft, FixedSync, Resampler};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::param_bridge;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{complex_mul_add_simd, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
@@ -59,14 +60,14 @@ struct ConvolutionState {
     fft_inverse: Arc<dyn rustfft::Fft<f32>>,
 }
 
+use crate::params::PARAMS as CV;
+
 pub struct ConvolutionPlugin {
     channels: usize,
     sample_rate: u32,
     ir_file: String,
-    param_mix: ParameterId,
     mix: Smoother,
     mix_value: f32,
-    param_gain_db: ParameterId,
     gain_linear: Smoother,
     gain_db_value: f32,
     state: Arc<ArcSwap<Option<ConvolutionState>>>,
@@ -97,10 +98,8 @@ impl ConvolutionPlugin {
             channels,
             sample_rate,
             ir_file: String::new(),
-            param_mix: ParameterId::from("mix"),
             mix: Smoother::new(1.0, 20.0, sample_rate),
             mix_value: 1.0,
-            param_gain_db: ParameterId::from("gain_db"),
             gain_linear: Smoother::new(1.0, 20.0, sample_rate),
             gain_db_value: 0.0,
             state: Arc::new(ArcSwap::from_pointee(None)),
@@ -123,31 +122,43 @@ impl ConvolutionPlugin {
         p
     }
 
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => None, // ir_file (FilePath -- handled separately)
+            1 => Some(self.mix_value as f64),
+            2 => Some(self.gain_db_value as f64),
+            3 => Some(if self.use_nupc { 1.0 } else { 0.0 }),
+            4 => Some(if self.zero_latency_head { 1.0 } else { 0.0 }),
+            5 => Some(self.head_taps as f64),
+            _ => None,
+        }
+    }
+
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => {} // ir_file (FilePath -- handled separately)
+            1 => {
+                self.mix_value = value as f32;
+                self.mix.set_target(value as f32);
+            }
+            2 => {
+                self.gain_db_value = value as f32;
+                self.gain_linear
+                    .set_target(10.0f32.powf(value as f32 / 20.0));
+            }
+            3 => self.use_nupc = value > 0.5,
+            4 => self.zero_latency_head = value > 0.5,
+            5 => self.head_taps = value as usize,
+            _ => {}
+        }
+    }
+
     fn rebuild_cached_parameters(&mut self) {
-        use sotf_host::param_specs::find_by_key as pk;
-        use crate::params::PARAMS as CV;
-        self.cached_parameters = vec![
-            Parameter::new_float(
-                "mix",
-                "Mix",
-                self.mix_value,
-                pk(CV, "mix").min_f64() as f32,
-                pk(CV, "mix").max_f64() as f32,
-            )
-            .with_description("Dry/wet mix (0 = dry, 1 = convolved)")
-            .with_group("Output")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "gain_db",
-                "Gain",
-                self.gain_db_value,
-                pk(CV, "gain_db").min_f64() as f32,
-                pk(CV, "gain_db").max_f64() as f32,
-            )
-            .with_description("Output gain (dB)")
-            .with_group("Output")
-            .with_importance(ParameterImportance::Useful),
-        ];
+        self.cached_parameters = param_bridge::build_parameters(CV, |i| self.param_value(i));
     }
 
     pub fn from_params(
@@ -456,35 +467,12 @@ impl InPlacePlugin for ConvolutionPlugin {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-        if id == self.param_mix {
-            let val = value.as_float().unwrap_or(1.0);
-            if val.is_finite() {
-                let val = val.clamp(0.0, 1.0);
-                self.mix_value = val;
-                self.mix.set_target(val);
-                self.rebuild_cached_parameters();
-            }
-        } else if id == self.param_gain_db {
-            let val = value.as_float().unwrap_or(0.0);
-            if val.is_finite() {
-                self.gain_db_value = val;
-                self.gain_linear.set_target(10.0f32.powf(val / 20.0));
-                self.rebuild_cached_parameters();
-            }
-        } else {
-            return Err(format!("Unknown parameter: {}", id));
-        }
+        param_bridge::set_parameter(CV, &id, &value, |i, v| self.set_param_value(i, v))?;
+        self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix_value))
-        } else if id == &self.param_gain_db {
-            Some(ParameterValue::Float(self.gain_db_value))
-        } else {
-            None
-        }
+        param_bridge::get_parameter(CV, id, |i| self.param_value(i))
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;

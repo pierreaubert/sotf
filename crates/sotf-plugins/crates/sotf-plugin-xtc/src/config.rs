@@ -26,6 +26,14 @@ pub struct XtcPluginParams {
     #[serde(default = "default_beta_base")]
     pub beta_base: f32,
 
+    /// Extra regularization at low frequencies (default: 10.0)
+    #[serde(default = "default_beta_low_freq_boost")]
+    pub beta_low_freq_boost: f32,
+
+    /// Extra regularization at high frequencies (default: 10.0)
+    #[serde(default = "default_beta_high_freq_boost")]
+    pub beta_high_freq_boost: f32,
+
     /// Condition number target for regularization (default: 100.0).
     /// Controls how aggressively the inverse is regularized at ill-conditioned
     /// frequency bins. Lower values = more regularization = less cancellation.
@@ -175,6 +183,12 @@ fn default_fft_size() -> usize {
 fn default_beta_base() -> f32 {
     0.01 // Increased from 0.0003 for better stability and less ringing
 }
+fn default_beta_low_freq_boost() -> f32 {
+    10.0
+}
+fn default_beta_high_freq_boost() -> f32 {
+    10.0
+}
 fn default_max_gain_db() -> f32 {
     12.0 // Increased from 6.0 for better cancellation depth
 }
@@ -229,6 +243,8 @@ impl Default for XtcPluginParams {
             head_radius_m: default_head_radius(),
             fft_size: default_fft_size(),
             beta_base: default_beta_base(),
+            beta_low_freq_boost: default_beta_low_freq_boost(),
+            beta_high_freq_boost: default_beta_high_freq_boost(),
             kappa_target: default_kappa_target(),
             max_gain_db: default_max_gain_db(),
             head_shadow_cutoff_hz: default_head_shadow_cutoff(),

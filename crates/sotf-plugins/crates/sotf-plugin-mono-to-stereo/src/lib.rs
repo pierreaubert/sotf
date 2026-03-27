@@ -9,7 +9,9 @@ use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use sotf_host::param_specs::find_by_key as pk;
 use crate::params::PARAMS as MS;
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
+use sotf_host::param_bridge;
+use sotf_host::parameters::{Parameter, ParameterValue};
+use sotf_host::parameters::ParameterId;
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;
 use std::sync::Arc;
@@ -81,9 +83,14 @@ pub struct MonoToStereoPlugin {
     ifft_input_buf: Vec<Complex<f32>>,
     ifft_output_buf: Vec<f32>,
 
-    param_stereo_width: ParameterId,
-    param_freq_dependent: ParameterId,
-    param_haas_delay_ms: ParameterId,
+    /// Compensation EQ enabled
+    enable_comp_eq: bool,
+    /// Compensation EQ depth in dB
+    comp_eq_depth_db: f32,
+    /// Decorrelation low crossover frequency
+    decor_low_hz: f32,
+    /// Decorrelation high crossover frequency
+    decor_high_hz: f32,
 
     /// Haas delay: target delay in ms for the right channel
     haas_delay_ms: f32,
@@ -148,9 +155,10 @@ impl MonoToStereoPlugin {
             fft_output_buf: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_input_buf: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_output_buf: vec![0.0; FFT_SIZE],
-            param_stereo_width: ParameterId::from("stereo_width"),
-            param_freq_dependent: ParameterId::from("freq_dependent"),
-            param_haas_delay_ms: ParameterId::from("haas_delay_ms"),
+            enable_comp_eq: pk(MS, "enable_comp_eq").default_bool(),
+            comp_eq_depth_db: pk(MS, "comp_eq_depth_db").default_f64() as f32,
+            decor_low_hz: pk(MS, "decor_low_hz").default_f64() as f32,
+            decor_high_hz: pk(MS, "decor_high_hz").default_f64() as f32,
             haas_delay_ms: default_haas_delay_ms(),
             haas_delay_samples: 0,
             haas_delay_buf: vec![0.0; HAAS_DELAY_BUF_SIZE],
@@ -163,24 +171,41 @@ impl MonoToStereoPlugin {
         p
     }
 
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.stereo_width.target() as f64),
+            1 => Some(self.haas_delay_ms as f64),
+            2 => Some(if self.enable_comp_eq { 1.0 } else { 0.0 }),
+            3 => Some(self.comp_eq_depth_db as f64),
+            4 => Some(self.decor_low_hz as f64),
+            5 => Some(self.decor_high_hz as f64),
+            6 => Some(if self.freq_dependent { 1.0 } else { 0.0 }),
+            _ => None,
+        }
+    }
+
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => self.stereo_width.set_target(value as f32),
+            1 => {
+                self.haas_delay_ms = value as f32;
+                self.update_haas_delay_samples();
+            }
+            2 => self.enable_comp_eq = value > 0.5,
+            3 => self.comp_eq_depth_db = value as f32,
+            4 => self.decor_low_hz = value as f32,
+            5 => self.decor_high_hz = value as f32,
+            6 => self.freq_dependent = value > 0.5,
+            _ => {}
+        }
+    }
+
     fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![
-            Parameter::new_float(
-                "stereo_width",
-                "Stereo Width",
-                self.stereo_width.target(),
-                0.0,
-                1.0,
-            ),
-            Parameter::new_bool("freq_dependent", "Freq Dependent", self.freq_dependent),
-            Parameter::new_float(
-                "haas_delay_ms",
-                "Haas Delay",
-                self.haas_delay_ms,
-                pk(MS, "haas_delay_ms").min_f64() as f32,
-                pk(MS, "haas_delay_ms").max_f64() as f32,
-            ),
-        ];
+        self.cached_parameters = param_bridge::build_parameters(MS, |i| self.param_value(i));
     }
 
     pub fn from_params(_channels: usize, params: MonoToStereoPluginParams) -> Self {
@@ -332,42 +357,13 @@ impl Plugin for MonoToStereoPlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-
-        if id == self.param_stereo_width {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(MS, "stereo_width").default_f64() as f32);
-            if v.is_finite() {
-                self.stereo_width.set_target(v);
-            }
-        } else if id == self.param_freq_dependent {
-            self.freq_dependent = value
-                .as_bool()
-                .unwrap_or(pk(MS, "freq_dependent").default_bool());
-        } else if id == self.param_haas_delay_ms {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(MS, "haas_delay_ms").default_f64() as f32);
-            if v.is_finite() {
-                self.haas_delay_ms = v;
-                self.update_haas_delay_samples();
-            }
-        }
+        param_bridge::set_parameter(MS, &id, &value, |i, v| self.set_param_value(i, v))?;
         self.rebuild_cached_parameters();
         Ok(())
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_stereo_width {
-            Some(ParameterValue::Float(self.stereo_width.target()))
-        } else if id == &self.param_freq_dependent {
-            Some(ParameterValue::Bool(self.freq_dependent))
-        } else if id == &self.param_haas_delay_ms {
-            Some(ParameterValue::Float(self.haas_delay_ms))
-        } else {
-            None
-        }
+        param_bridge::get_parameter(MS, id, |i| self.param_value(i))
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {

@@ -8,6 +8,7 @@ use sotf_host::lr4_crossover::MultibandLr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
 
 use crate::params::PARAMS as CF;
+use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{deinterleave_stereo, enable_ftz_daz, interleave_stereo};
@@ -411,129 +412,80 @@ impl CrossfeedPlugin {
         Ok(plugin)
     }
 
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.params.mode as usize as f64),
+            1 => Some(self.params.preset as usize as f64),
+            2 => Some(if self.params.enabled { 1.0 } else { 0.0 }),
+            3 => Some(self.params.mix as f64),
+            4 => Some(self.params.bauer_fcut_hz as f64),
+            5 => Some(self.params.bauer_feed_db as f64),
+            6 => Some(self.params.meier_level as f64),
+            7 => Some(self.params.mb_low_freq_hz as f64),
+            8 => Some(self.params.mb_mid_high_freq_hz as f64),
+            9 => Some(self.params.mb_low_feed_db as f64),
+            10 => Some(self.params.mb_mid_feed_db as f64),
+            11 => Some(self.params.mb_high_feed_db as f64),
+            12 => Some(self.params.itd_delay_ms as f64),
+            13 => Some(if self.params.autogain_enabled { 1.0 } else { 0.0 }),
+            14 => Some(self.params.autogain_target_lufs as f64),
+            15 => Some(self.params.autogain_max_gain_db as f64),
+            16 => Some(self.params.autogain_smoothing_ms as f64),
+            _ => None,
+        }
+    }
+
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => {
+                self.params.mode = match value as usize {
+                    0 => CrossfeedMode::Off,
+                    1 => CrossfeedMode::Bauer,
+                    2 => CrossfeedMode::Meier,
+                    3 => CrossfeedMode::Mb,
+                    _ => CrossfeedMode::Off,
+                };
+            }
+            1 => {
+                self.params.preset = match value as usize {
+                    0 => CrossfeedPreset::Default,
+                    1 => CrossfeedPreset::Cmoy,
+                    2 => CrossfeedPreset::Meier,
+                    3 => CrossfeedPreset::Mb,
+                    4 => CrossfeedPreset::Off,
+                    _ => CrossfeedPreset::Default,
+                };
+            }
+            2 => self.params.enabled = value > 0.5,
+            3 => self.params.mix = value as f32,
+            4 => self.params.bauer_fcut_hz = value as f32,
+            5 => self.params.bauer_feed_db = value as f32,
+            6 => self.params.meier_level = value as f32,
+            7 => self.params.mb_low_freq_hz = value as f32,
+            8 => self.params.mb_mid_high_freq_hz = value as f32,
+            9 => self.params.mb_low_feed_db = value as f32,
+            10 => self.params.mb_mid_feed_db = value as f32,
+            11 => self.params.mb_high_feed_db = value as f32,
+            12 => self.params.itd_delay_ms = value as f32,
+            13 => self.params.autogain_enabled = value > 0.5,
+            14 => self.params.autogain_target_lufs = value as f32,
+            15 => self.params.autogain_max_gain_db = value as f32,
+            16 => self.params.autogain_smoothing_ms = value as f32,
+            _ => {}
+        }
+    }
+
     fn rebuild_cached_parameters(&mut self) {
-        self.cached_parameters = vec![
-            Parameter::new_bool("enabled", "Enabled", self.params.enabled).with_group("General"),
-            Parameter::new_float(
-                "mix",
-                "Mix",
-                self.params.mix,
-                pk(CF, "mix").min_f64() as f32,
-                pk(CF, "mix").max_f64() as f32,
-            )
-            .with_group("General"),
-            Parameter::new_float(
-                "bauer_fcut_hz",
-                "Bauer Cutoff",
-                self.params.bauer_fcut_hz,
-                pk(CF, "bauer_fcut_hz").min_f64() as f32,
-                pk(CF, "bauer_fcut_hz").max_f64() as f32,
-            )
-            .with_group("Bauer"),
-            Parameter::new_float(
-                "bauer_feed_db",
-                "Bauer Feed",
-                self.params.bauer_feed_db,
-                pk(CF, "bauer_feed_db").min_f64() as f32,
-                pk(CF, "bauer_feed_db").max_f64() as f32,
-            )
-            .with_group("Bauer"),
-            Parameter::new_float(
-                "meier_level",
-                "Meier Level",
-                self.params.meier_level,
-                pk(CF, "meier_level").min_f64() as f32,
-                pk(CF, "meier_level").max_f64() as f32,
-            )
-            .with_group("Meier"),
-            Parameter::new_float(
-                "mb_low_freq_hz",
-                "MB Low Freq",
-                self.params.mb_low_freq_hz,
-                pk(CF, "mb_low_freq_hz").min_f64() as f32,
-                pk(CF, "mb_low_freq_hz").max_f64() as f32,
-            )
-            .with_group("Multiband"),
-            Parameter::new_float(
-                "mb_mid_high_freq_hz",
-                "MB High Freq",
-                self.params.mb_mid_high_freq_hz,
-                pk(CF, "mb_mid_high_freq_hz").min_f64() as f32,
-                pk(CF, "mb_mid_high_freq_hz").max_f64() as f32,
-            )
-            .with_group("Multiband"),
-            Parameter::new_float(
-                "mb_low_feed_db",
-                "MB Low Feed",
-                self.params.mb_low_feed_db,
-                pk(CF, "mb_low_feed_db").min_f64() as f32,
-                pk(CF, "mb_low_feed_db").max_f64() as f32,
-            )
-            .with_group("Multiband"),
-            Parameter::new_float(
-                "mb_mid_feed_db",
-                "MB Mid Feed",
-                self.params.mb_mid_feed_db,
-                pk(CF, "mb_mid_feed_db").min_f64() as f32,
-                pk(CF, "mb_mid_feed_db").max_f64() as f32,
-            )
-            .with_group("Multiband"),
-            Parameter::new_float(
-                "mb_high_feed_db",
-                "MB High Feed",
-                self.params.mb_high_feed_db,
-                pk(CF, "mb_high_feed_db").min_f64() as f32,
-                pk(CF, "mb_high_feed_db").max_f64() as f32,
-            )
-            .with_group("Multiband"),
-            Parameter::new_float(
-                "itd_delay_ms",
-                "ITD Delay",
-                self.params.itd_delay_ms,
-                0.0,
-                1.0,
-            )
-            .with_group("General"),
-            Parameter::new_float(
-                "head_yaw_deg",
-                "Head Yaw",
-                self.params.head_yaw_deg,
-                -90.0,
-                90.0,
-            )
-            .with_description("Head rotation in degrees, dynamically adjusts ITD")
-            .with_group("Head Tracking"),
-            Parameter::new_bool(
-                "autogain_enabled",
-                "Auto Gain",
-                self.params.autogain_enabled,
-            )
-            .with_group("Auto Gain"),
-            Parameter::new_float(
-                "autogain_target_lufs",
-                "Target LUFS",
-                self.params.autogain_target_lufs,
-                pk(CF, "autogain_target_lufs").min_f64() as f32,
-                pk(CF, "autogain_target_lufs").max_f64() as f32,
-            )
-            .with_group("Auto Gain"),
-            Parameter::new_float(
-                "autogain_max_gain_db",
-                "Max Gain",
-                self.params.autogain_max_gain_db,
-                pk(CF, "autogain_max_gain_db").min_f64() as f32,
-                pk(CF, "autogain_max_gain_db").max_f64() as f32,
-            )
-            .with_group("Auto Gain"),
-            Parameter::new_float(
-                "autogain_smoothing_ms",
-                "Smoothing",
-                self.params.autogain_smoothing_ms,
-                pk(CF, "autogain_smoothing_ms").min_f64() as f32,
-                pk(CF, "autogain_smoothing_ms").max_f64() as f32,
-            )
-            .with_group("Auto Gain"),
-        ];
+        self.cached_parameters = param_bridge::build_parameters(CF, |i| self.param_value(i));
+        // Append parameters not in PARAMS
+        self.cached_parameters.push(
+            Parameter::new_float("head_yaw_deg", "Head Yaw", self.params.head_yaw_deg, -90.0, 90.0)
+                .with_group("Head Tracking")
+        );
     }
 
     fn update_filters(&mut self) {
@@ -684,126 +636,44 @@ impl InPlacePlugin for CrossfeedPlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-        let name = id.0.as_str();
-        match name {
-            "enabled" => {
-                self.params.enabled = value
-                    .as_bool()
-                    .ok_or_else(|| "enabled must be a boolean".to_string())?
+        // head_yaw_deg is not in PARAMS — handle separately
+        if id.0 == "head_yaw_deg" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
+            if v.is_finite() {
+                self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
+                self.yaw_smoother.set_target(self.params.head_yaw_deg);
+                let effective = compute_dynamic_itd_ms(
+                    self.params.head_yaw_deg,
+                    self.params.itd_delay_ms,
+                );
+                self.itd_delay_l.set_delay(effective, self.sample_rate);
+                self.itd_delay_r.set_delay(effective, self.sample_rate);
             }
-            "mix" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "mix must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.mix = v;
-                    self.mix_smoother.set_target(v);
-                }
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+
+        let idx = param_bridge::set_parameter(CF, &id, &value, |i, v| self.set_param_value(i, v))?;
+
+        // Side effects based on parameter index
+        match idx {
+            3 => self.mix_smoother.set_target(self.params.mix), // mix
+            4 | 5 => self.update_filters(),                     // bauer_fcut_hz, bauer_feed_db
+            7 | 8 => self.update_filters(),                     // mb_low_freq_hz, mb_mid_high_freq_hz
+            12 => {
+                // itd_delay_ms
+                let effective = compute_dynamic_itd_ms(
+                    self.params.head_yaw_deg,
+                    self.params.itd_delay_ms,
+                );
+                self.itd_delay_l.set_delay(effective, self.sample_rate);
+                self.itd_delay_r.set_delay(effective, self.sample_rate);
             }
-            "bauer_fcut_hz" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "bauer_fcut_hz must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.bauer_fcut_hz = v;
-                    self.update_filters();
-                }
-            }
-            "bauer_feed_db" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "bauer_feed_db must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.bauer_feed_db = v;
-                    self.update_filters();
-                }
-            }
-            "meier_level" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "meier_level must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.meier_level = v;
-                }
-            }
-            "mb_low_freq_hz" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "mb_low_freq_hz must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.mb_low_freq_hz = v;
-                    self.update_filters();
-                }
-            }
-            "mb_mid_high_freq_hz" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "mb_mid_high_freq_hz must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.mb_mid_high_freq_hz = v;
-                    self.update_filters();
-                }
-            }
-            "mb_low_feed_db" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "mb_low_feed_db must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.mb_low_feed_db = v;
-                }
-            }
-            "mb_mid_feed_db" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "mb_mid_feed_db must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.mb_mid_feed_db = v;
-                }
-            }
-            "mb_high_feed_db" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "mb_high_feed_db must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.mb_high_feed_db = v;
-                }
-            }
-            "itd_delay_ms" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "itd_delay_ms must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.itd_delay_ms = v.clamp(0.0, 1.0);
-                    let effective = compute_dynamic_itd_ms(
-                        self.params.head_yaw_deg,
-                        self.params.itd_delay_ms,
-                    );
-                    self.itd_delay_l.set_delay(effective, self.sample_rate);
-                    self.itd_delay_r.set_delay(effective, self.sample_rate);
-                }
-            }
-            "head_yaw_deg" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
-                    self.yaw_smoother.set_target(self.params.head_yaw_deg);
-                    let effective = compute_dynamic_itd_ms(
-                        self.params.head_yaw_deg,
-                        self.params.itd_delay_ms,
-                    );
-                    self.itd_delay_l.set_delay(effective, self.sample_rate);
-                    self.itd_delay_r.set_delay(effective, self.sample_rate);
-                }
-            }
-            "autogain_enabled" => {
-                let v = value
-                    .as_bool()
-                    .ok_or_else(|| "autogain_enabled must be a boolean".to_string())?;
-                self.params.autogain_enabled = v;
-                if v && self.auto_gain.is_none() {
+            13 => {
+                // autogain_enabled
+                if self.params.autogain_enabled && self.auto_gain.is_none() {
                     self.auto_gain = Some(sotf_host::auto_gain::AutoGain::new(
                         2,
                         self.sample_rate,
@@ -814,68 +684,35 @@ impl InPlacePlugin for CrossfeedPlugin {
                             smoothing_ms: self.params.autogain_smoothing_ms,
                         },
                     )?);
-                } else if !v {
+                } else if !self.params.autogain_enabled {
                     self.auto_gain = None;
                 }
             }
-            "autogain_target_lufs" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "autogain_target_lufs must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.autogain_target_lufs = v;
+            15 => {
+                // autogain_max_gain_db
+                if let Some(ag) = &mut self.auto_gain {
+                    ag.set_max_gain_db(self.params.autogain_max_gain_db);
                 }
             }
-            "autogain_max_gain_db" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "autogain_max_gain_db must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.autogain_max_gain_db = v;
-                    if let Some(ag) = &mut self.auto_gain {
-                        ag.set_max_gain_db(v);
-                    }
+            16 => {
+                // autogain_smoothing_ms
+                if let Some(ag) = &mut self.auto_gain {
+                    ag.set_smoothing_ms(self.params.autogain_smoothing_ms);
                 }
             }
-            "autogain_smoothing_ms" => {
-                let v = value
-                    .as_float()
-                    .ok_or_else(|| "autogain_smoothing_ms must be a float".to_string())?;
-                if v.is_finite() {
-                    self.params.autogain_smoothing_ms = v;
-                    if let Some(ag) = &mut self.auto_gain {
-                        ag.set_smoothing_ms(v);
-                    }
-                }
-            }
-            _ => return Err(format!("Unknown: {}", name)),
+            _ => {}
         }
+
         self.rebuild_cached_parameters();
         Ok(())
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        match id.0.as_str() {
-            "enabled" => Some(ParameterValue::Bool(self.params.enabled)),
-            "mix" => Some(ParameterValue::Float(self.params.mix)),
-            "bauer_fcut_hz" => Some(ParameterValue::Float(self.params.bauer_fcut_hz)),
-            "bauer_feed_db" => Some(ParameterValue::Float(self.params.bauer_feed_db)),
-            "meier_level" => Some(ParameterValue::Float(self.params.meier_level)),
-            "mb_low_freq_hz" => Some(ParameterValue::Float(self.params.mb_low_freq_hz)),
-            "mb_mid_high_freq_hz" => Some(ParameterValue::Float(self.params.mb_mid_high_freq_hz)),
-            "mb_low_feed_db" => Some(ParameterValue::Float(self.params.mb_low_feed_db)),
-            "mb_mid_feed_db" => Some(ParameterValue::Float(self.params.mb_mid_feed_db)),
-            "mb_high_feed_db" => Some(ParameterValue::Float(self.params.mb_high_feed_db)),
-            "itd_delay_ms" => Some(ParameterValue::Float(self.params.itd_delay_ms)),
-            "head_yaw_deg" => Some(ParameterValue::Float(self.params.head_yaw_deg)),
-            "autogain_enabled" => Some(ParameterValue::Bool(self.params.autogain_enabled)),
-            "autogain_target_lufs" => Some(ParameterValue::Float(self.params.autogain_target_lufs)),
-            "autogain_max_gain_db" => Some(ParameterValue::Float(self.params.autogain_max_gain_db)),
-            "autogain_smoothing_ms" => {
-                Some(ParameterValue::Float(self.params.autogain_smoothing_ms))
-            }
-            _ => None,
+        // head_yaw_deg is not in PARAMS — handle separately
+        if id.0 == "head_yaw_deg" {
+            return Some(ParameterValue::Float(self.params.head_yaw_deg));
         }
+        param_bridge::get_parameter(CF, id, |i| self.param_value(i))
     }
 
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {

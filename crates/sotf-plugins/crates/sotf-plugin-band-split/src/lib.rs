@@ -6,7 +6,9 @@ pub mod params;
 
 use serde::{Deserialize, Serialize};
 use sotf_host::lr4_crossover::MultibandLr4Crossover;
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
+use sotf_host::param_bridge;
+use crate::params::{CROSSOVER_TYPES, PARAMS as BS};
+use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::LogSmoother;
@@ -55,7 +57,9 @@ pub struct BandSplitPlugin {
     band_gains_db: [f32; MAX_BANDS],
     /// Pre-computed linear multipliers from band_gains_db.
     band_gains_linear: [f32; MAX_BANDS],
-    cached_parameters: Vec<Parameter>,
+    /// Crossover type string for param_bridge (Choice index <-> string)
+    crossover_type_index: usize,
+    cached_parameters: Vec<sotf_host::parameters::Parameter>,
     /// Pre-allocated flat scratch buffer: [num_bands * input_channels] for per-frame band output.
     band_flat: Vec<f32>,
 }
@@ -102,6 +106,7 @@ impl BandSplitPlugin {
             freq_smoothers: smoothers,
             band_gains_db: [0.0; MAX_BANDS],
             band_gains_linear: [1.0; MAX_BANDS],
+            crossover_type_index: 0, // LR24 default
             cached_parameters: Vec::new(),
             band_flat: vec![0.0f32; num_bands * input_channels],
         };
@@ -138,26 +143,47 @@ impl BandSplitPlugin {
         Self::new_multiband(input_channels, &freqs, &params.crossover_type)
     }
 
-    fn rebuild_cached_parameters(&mut self) {
-        let mut params = Vec::new();
-        for (i, smoother) in self.freq_smoothers.iter().enumerate() {
-            let label = if self.freq_smoothers.len() == 1 {
-                "Frequency".to_string()
-            } else {
-                format!("Frequency {}", i + 1)
-            };
-            let key = if i == 0 {
-                "frequency".to_string()
-            } else {
-                format!("frequency_{}", i + 1)
-            };
-            params.push(Parameter::new_float(&key, &label, smoother.target(), 20.0, 20000.0));
+    /// Get the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.freq_smoothers.first().map(|s| s.target() as f64).unwrap_or(300.0)),
+            1 => Some(self.crossover_type_index as f64),
+            _ => None,
         }
+    }
+
+    /// Set the f64 value of parameter at PARAMS index.
+    /// Order must match params::PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => {
+                if let Some(s) = self.freq_smoothers.first_mut() {
+                    s.set_target(value as f32);
+                }
+            }
+            1 => {
+                self.crossover_type_index = (value as usize).min(CROSSOVER_TYPES.len() - 1);
+            }
+            _ => {}
+        }
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        // Start with the static PARAMS entries (frequency, crossover_type)
+        let mut params = param_bridge::build_parameters(BS, |i| self.param_value(i));
+        // Add dynamic frequency parameters (frequency_2, frequency_3, ...)
+        for (i, smoother) in self.freq_smoothers.iter().enumerate().skip(1) {
+            let key = format!("frequency_{}", i + 1);
+            let label = format!("Frequency {}", i + 1);
+            params.push(sotf_host::parameters::Parameter::new_float(&key, &label, smoother.target(), 20.0, 20000.0));
+        }
+        // Add dynamic per-band gain parameters
         for i in 0..self.num_bands {
             let key = format!("band_{}_gain_db", i);
             let label = format!("Band {} Gain (dB)", i + 1);
             params.push(
-                Parameter::new_float(&key, &label, self.band_gains_db[i], -24.0, 24.0)
+                sotf_host::parameters::Parameter::new_float(&key, &label, self.band_gains_db[i], -24.0, 24.0)
                     .with_group("Band Gains"),
             );
         }
@@ -175,14 +201,23 @@ impl Plugin for BandSplitPlugin {
     fn output_channels(&self) -> usize {
         self.input_channels * self.num_bands
     }
-    fn parameters(&self) -> Vec<Parameter> {
+    fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
         let name = &id.0;
 
-        // Match "band_N_gain_db"
+        // Try static PARAMS first (frequency at index 0, crossover_type at index 1)
+        if let Ok(idx) = param_bridge::set_parameter(BS, &id, &value, |i, v| self.set_param_value(i, v)) {
+            // Side effect: frequency change needs to propagate to crossover
+            if idx == 0 {
+                // frequency was already set via set_param_value -> smoother.set_target
+            }
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+
+        // Match dynamic "band_N_gain_db"
         if let Some(rest) = name.strip_prefix("band_")
             && let Some(idx_str) = rest.strip_suffix("_gain_db")
             && let Ok(band_idx) = idx_str.parse::<usize>()
@@ -200,17 +235,12 @@ impl Plugin for BandSplitPlugin {
             return Ok(());
         }
 
-        // Match "frequency" (index 0) or "frequency_N" (index N-1)
-        let idx = if name == "frequency" {
-            Some(0)
-        } else if let Some(suffix) = name.strip_prefix("frequency_") {
-            suffix.parse::<usize>().ok().map(|n| n - 1)
-        } else {
-            None
-        };
-
-        match idx {
-            Some(i) if i < self.freq_smoothers.len() => {
+        // Match dynamic "frequency_N" (index N-1, for multiband splits)
+        if let Some(suffix) = name.strip_prefix("frequency_")
+            && let Ok(n) = suffix.parse::<usize>()
+        {
+            let i = n - 1;
+            if i < self.freq_smoothers.len() {
                 let v = value
                     .as_float()
                     .ok_or_else(|| "frequency must be a float".to_string())?;
@@ -218,15 +248,21 @@ impl Plugin for BandSplitPlugin {
                     self.freq_smoothers[i].set_target(v);
                     self.rebuild_cached_parameters();
                 }
-                Ok(())
+                return Ok(());
             }
-            _ => Err(format!("Unknown parameter: {}", id)),
         }
+
+        Err(format!("Unknown parameter: {}", id))
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        // Try static PARAMS first
+        if let Some(val) = param_bridge::get_parameter(BS, id, |i| self.param_value(i)) {
+            return Some(val);
+        }
+
         let name = &id.0;
 
-        // Match "band_N_gain_db"
+        // Match dynamic "band_N_gain_db"
         if let Some(rest) = name.strip_prefix("band_")
             && let Some(idx_str) = rest.strip_suffix("_gain_db")
             && let Ok(band_idx) = idx_str.parse::<usize>()
@@ -235,20 +271,17 @@ impl Plugin for BandSplitPlugin {
             return Some(ParameterValue::Float(self.band_gains_db[band_idx]));
         }
 
-        let idx = if name == "frequency" {
-            Some(0)
-        } else if let Some(suffix) = name.strip_prefix("frequency_") {
-            suffix.parse::<usize>().ok().map(|n| n - 1)
-        } else {
-            None
-        };
-
-        match idx {
-            Some(i) if i < self.freq_smoothers.len() => {
-                Some(ParameterValue::Float(self.freq_smoothers[i].target()))
+        // Match dynamic "frequency_N"
+        if let Some(suffix) = name.strip_prefix("frequency_")
+            && let Ok(n) = suffix.parse::<usize>()
+        {
+            let i = n - 1;
+            if i < self.freq_smoothers.len() {
+                return Some(ParameterValue::Float(self.freq_smoothers[i].target()));
             }
-            _ => None,
         }
+
+        None
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;

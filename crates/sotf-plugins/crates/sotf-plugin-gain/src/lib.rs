@@ -193,10 +193,11 @@ impl GainPlugin {
     }
     #[inline]
     fn db_to_linear(db: f32) -> f32 {
-        10.0_f32.powf(db / 20.0)
+        sotf_host::db_to_linear(db)
     }
+    #[inline]
     fn linear_to_db(l: f32) -> f32 {
-        20.0 * l.log10()
+        sotf_host::linear_to_db(l)
     }
 }
 

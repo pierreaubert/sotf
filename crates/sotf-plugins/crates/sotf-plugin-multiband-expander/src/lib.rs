@@ -14,8 +14,9 @@ use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_makeup::MeasuredMakeup;
 use sotf_host::detector::{DetectionMode, LevelDetector};
 use crate::params::{BAND_TEMPLATE as MEB, GLOBAL_PARAMS as ME};
+use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LogSmoother, Smoother};
@@ -573,86 +574,72 @@ impl MultibandExpanderPlugin {
         p
     }
 
-    fn rebuild_cached_parameters(&mut self) {
-        let det_mode_idx = if self.detection_mode == "rms" { 1 } else { 0 };
-        let proc_mode_idx = if self.processing_mode == "spectral" { 1 } else { 0 };
-        let mut params = vec![
-            Parameter::new_int(
-                "num_bands",
-                "Bands",
-                self.num_bands as i32,
-                pk(ME, "num_bands").min_f64() as i32,
-                pk(ME, "num_bands").max_f64() as i32,
-            )
-            .with_group("General")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
-                .with_group("General")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "mix",
-                "Mix",
-                self.mix,
-                pk(ME, "mix").min_f64() as f32,
-                pk(ME, "mix").max_f64() as f32,
-            )
-            .with_group("General")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_int("detection_mode", "Detection Mode", det_mode_idx, 0, 1)
-                .with_group("General")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_int("processing_mode", "Processing Mode", proc_mode_idx, 0, 1)
-                .with_group("General")
-                .with_importance(ParameterImportance::Useful),
-        ];
-
-        // Crossover frequencies
-        for i in 0..(self.num_bands - 1) {
-            let name = format!("crossover_freq_{}", i + 1);
-            let label = format!("X-Over {}", i + 1);
-            params.push(
-                Parameter::new_float(&name, &label, self.crossover_frequencies[i], 20.0, 20000.0)
-                    .with_group("Crossover"),
-            );
+    /// Get the f64 value of parameter at GLOBAL_PARAMS index.
+    /// Order must match params::GLOBAL_PARAMS exactly.
+    fn param_value(&self, index: usize) -> Option<f64> {
+        match index {
+            0 => Some(self.num_bands as f64),                            // num_bands
+            1 => Some(self._crossover_preset as f64),                    // crossover_preset
+            2 => Some(self.crossover_frequencies[0] as f64),             // crossover_freq_1
+            3 => Some(self.crossover_frequencies[1] as f64),             // crossover_freq_2
+            4 => Some(self.crossover_frequencies[2] as f64),             // crossover_freq_3
+            5 => Some(self.crossover_frequencies[3] as f64),             // crossover_freq_4
+            6 => Some(self.threshold_db as f64),                         // threshold
+            7 => Some(self.ratio as f64),                                // ratio
+            8 => Some(self.attack_ms as f64),                            // attack
+            9 => Some(self.release_ms as f64),                           // release
+            10 => Some(self.range_db as f64),                            // range
+            11 => Some(self.knee_db as f64),                             // knee
+            12 => Some(self.hysteresis_db as f64),                       // hysteresis
+            13 => Some(self.hold_ms as f64),                             // hold
+            14 => Some(self.mix as f64),                                 // mix
+            15 => Some(if self.link_channels { 1.0 } else { 0.0 }),     // link_channels
+            16 => {                                                       // detection_mode
+                let idx = if self.detection_mode == "rms" { 1 } else { 0 };
+                Some(idx as f64)
+            }
+            _ => None,
         }
+    }
 
-        // Global dynamics (defaults for bands)
-        params.extend(vec![
-            Parameter::new_float(
-                "threshold",
-                "Threshold",
-                self.threshold_db,
-                pk(ME, "threshold").min_f64() as f32,
-                pk(ME, "threshold").max_f64() as f32,
-            )
-            .with_group("Global Dynamics"),
-            Parameter::new_float(
-                "ratio",
-                "Ratio",
-                self.ratio,
-                pk(ME, "ratio").min_f64() as f32,
-                pk(ME, "ratio").max_f64() as f32,
-            )
-            .with_group("Global Dynamics"),
-            Parameter::new_float(
-                "attack",
-                "Attack",
-                self.attack_ms,
-                pk(ME, "attack").min_f64() as f32,
-                pk(ME, "attack").max_f64() as f32,
-            )
-            .with_group("Global Dynamics"),
-            Parameter::new_float(
-                "release",
-                "Release",
-                self.release_ms,
-                pk(ME, "release").min_f64() as f32,
-                pk(ME, "release").max_f64() as f32,
-            )
-            .with_group("Global Dynamics"),
-        ]);
+    /// Set the f64 value of parameter at GLOBAL_PARAMS index.
+    /// Order must match params::GLOBAL_PARAMS exactly.
+    fn set_param_value(&mut self, index: usize, value: f64) {
+        match index {
+            0 => self.num_bands = value as usize,                        // num_bands
+            1 => self._crossover_preset = value as i32,                  // crossover_preset
+            2 => self.crossover_frequencies[0] = value as f32,           // crossover_freq_1
+            3 => self.crossover_frequencies[1] = value as f32,           // crossover_freq_2
+            4 => self.crossover_frequencies[2] = value as f32,           // crossover_freq_3
+            5 => self.crossover_frequencies[3] = value as f32,           // crossover_freq_4
+            6 => self.threshold_db = value as f32,                       // threshold
+            7 => self.ratio = value as f32,                              // ratio
+            8 => self.attack_ms = value as f32,                          // attack
+            9 => self.release_ms = value as f32,                         // release
+            10 => self.range_db = value as f32,                          // range
+            11 => self.knee_db = value as f32,                           // knee
+            12 => self.hysteresis_db = value as f32,                     // hysteresis
+            13 => self.hold_ms = value as f32,                           // hold
+            14 => self.mix = value as f32,                               // mix
+            15 => self.link_channels = value > 0.5,                      // link_channels
+            16 => {                                                       // detection_mode
+                self.detection_mode = if value as i32 == 1 { "rms".to_string() } else { "peak".to_string() };
+            }
+            _ => {}
+        }
+    }
 
-        // Per-band dynamics
+    fn rebuild_cached_parameters(&mut self) {
+        let mut params = param_bridge::build_parameters(ME, |i| self.param_value(i));
+
+        // processing_mode is not in GLOBAL_PARAMS, add manually
+        let proc_mode_idx = if self.processing_mode == "spectral" { 1 } else { 0 };
+        params.push(
+            Parameter::new_int("processing_mode", "Processing Mode", proc_mode_idx, 0, 1)
+                .with_group("General"),
+        );
+
+        // Per-band dynamics (not covered by GLOBAL_PARAMS)
         for i in 0..self.num_bands {
             let group = format!("Band {}", i + 1);
             let bp = &self.band_params[i];
@@ -1152,75 +1139,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        let name = &id.0;
-
-        if name == "num_bands" {
-            let nb = value
-                .as_int()
-                .ok_or_else(|| "Bands must be an integer".to_string())?
-                as usize;
-            let nb = nb.clamp(
-                pk(ME, "num_bands").min_f64() as usize,
-                pk(ME, "num_bands").max_f64() as usize,
-            );
-            if nb != self.num_bands {
-                self.num_bands = nb;
-                self.build_crossovers();
-                while self.band_params.len() < self.num_bands {
-                    self.band_params.push(BandExpanderParams::default());
-                }
-                while self.band_expanders.len() < self.num_bands {
-                    self.band_expanders.push(BandExpander {
-                        envelope: vec![0.0; self.channels],
-                        gate_state: vec![GateState::Open; self.channels],
-                        hold_counter: vec![0; self.channels],
-                        attack_coeff: 0.0,
-                        release_coeff: 0.0,
-                    });
-                }
-                while self.measured_makeups.len() < self.num_bands {
-                    self.measured_makeups
-                        .push(MeasuredMakeup::new(1000.0, self.sample_rate));
-                }
-                let det_mode = parse_detection_mode(&self.detection_mode);
-                while self.level_detectors.len() < self.num_bands {
-                    self.level_detectors.push(
-                        (0..self.channels)
-                            .map(|_| LevelDetector::new(det_mode, self.sample_rate))
-                            .collect(),
-                    );
-                }
-                self.band_levels_db.resize(self.num_bands, -100.0);
-                self.attenuation_flattened
-                    .resize(self.num_bands * self.channels, 0.0);
-                self.is_open_buffer.resize(self.num_bands, false);
-                self.update_coefficients();
-
-                // Rebuild spectral bin→band mapping
-                if let Some(ss) = &mut self.spectral {
-                    ss.update_bin_to_band(
-                        self.sample_rate,
-                        &self.crossover_frequencies,
-                        self.num_bands,
-                    );
-                    ss.update_band_coefficients(
-                        self.num_bands,
-                        &self.band_params,
-                        self.attack_ms,
-                        self.release_ms,
-                        self.sample_rate,
-                    );
-                    // Resize bin_states if needed
-                    for ch_states in &mut ss.bin_states {
-                        ch_states.resize_with(ss.num_bins, SpectralBinState::new);
-                    }
-                }
-            }
-            self.rebuild_cached_parameters();
-            return Ok(());
-        }
-
-        if name == "processing_mode" {
+        // Handle processing_mode separately (not in GLOBAL_PARAMS)
+        if id.0 == "processing_mode" {
             let idx = value
                 .as_int()
                 .ok_or_else(|| "processing_mode must be an integer".to_string())?;
@@ -1252,50 +1172,70 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             return Ok(());
         }
 
-        self.validate_parameter(&id, &value)?;
+        // Try global params via param_bridge
+        if let Ok(idx) = param_bridge::set_parameter(ME, &id, &value, |i, v| self.set_param_value(i, v)) {
+            // Side effects for specific global params
+            match idx {
+                0 => {
+                    // num_bands changed
+                    let nb = self.num_bands;
+                    self.build_crossovers();
+                    while self.band_params.len() < nb {
+                        self.band_params.push(BandExpanderParams::default());
+                    }
+                    while self.band_expanders.len() < nb {
+                        self.band_expanders.push(BandExpander {
+                            envelope: vec![0.0; self.channels],
+                            gate_state: vec![GateState::Open; self.channels],
+                            hold_counter: vec![0; self.channels],
+                            attack_coeff: 0.0,
+                            release_coeff: 0.0,
+                        });
+                    }
+                    while self.measured_makeups.len() < nb {
+                        self.measured_makeups
+                            .push(MeasuredMakeup::new(1000.0, self.sample_rate));
+                    }
+                    let det_mode = parse_detection_mode(&self.detection_mode);
+                    while self.level_detectors.len() < nb {
+                        self.level_detectors.push(
+                            (0..self.channels)
+                                .map(|_| LevelDetector::new(det_mode, self.sample_rate))
+                                .collect(),
+                        );
+                    }
+                    self.band_levels_db.resize(nb, -100.0);
+                    self.attenuation_flattened
+                        .resize(nb * self.channels, 0.0);
+                    self.is_open_buffer.resize(nb, false);
+                    self.update_coefficients();
 
-        if name == "link_channels" {
-            self.link_channels = value
-                .as_bool()
-                .ok_or_else(|| "link_channels must be a boolean".to_string())?;
-        } else if name == "mix" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "mix must be a float".to_string())?;
-            if v.is_finite() {
-                self.mix = v.clamp(0.0, 1.0);
-                self.mix_smoother.set_target(self.mix);
-            }
-        } else if name == "detection_mode" {
-            let idx = value
-                .as_int()
-                .ok_or_else(|| "detection_mode must be an integer".to_string())?;
-            let mode_str = if idx == 1 { "rms" } else { "peak" };
-            if mode_str != self.detection_mode {
-                self.detection_mode = mode_str.to_string();
-                let det_mode = parse_detection_mode(mode_str);
-                for band_dets in &mut self.level_detectors {
-                    for det in band_dets {
-                        det.set_mode(det_mode);
+                    // Rebuild spectral bin->band mapping
+                    if let Some(ss) = &mut self.spectral {
+                        ss.update_bin_to_band(
+                            self.sample_rate,
+                            &self.crossover_frequencies,
+                            nb,
+                        );
+                        ss.update_band_coefficients(
+                            nb,
+                            &self.band_params,
+                            self.attack_ms,
+                            self.release_ms,
+                            self.sample_rate,
+                        );
+                        for ch_states in &mut ss.bin_states {
+                            ch_states.resize_with(ss.num_bins, SpectralBinState::new);
+                        }
                     }
                 }
-            }
-        } else if name.starts_with("crossover_freq_") {
-            let idx = name
-                .replace("crossover_freq_", "")
-                .parse::<usize>()
-                .map_err(|e| format!("Invalid crossover index: {}", e))?
-                .checked_sub(1)
-                .ok_or_else(|| "Crossover index must be at least 1".to_string())?;
-
-            if idx < self.xover_smoothers.len() {
-                let f = value
-                    .as_float()
-                    .ok_or_else(|| format!("{} must be a float", name))?;
-                if f.is_finite() {
-                    self.crossover_frequencies[idx] = f;
-                    self.xover_smoothers[idx].set_target(f);
-                    // Update spectral bin→band mapping
+                2..=5 => {
+                    // crossover_freq_1..4 changed
+                    let xover_idx = idx - 2;
+                    if xover_idx < self.xover_smoothers.len() {
+                        self.xover_smoothers[xover_idx].set_target(self.crossover_frequencies[xover_idx]);
+                    }
+                    // Update spectral bin->band mapping
                     if let Some(ss) = &mut self.spectral {
                         ss.update_bin_to_band(
                             self.sample_rate,
@@ -1304,41 +1244,36 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         );
                     }
                 }
-            } else {
-                return Err(format!("Crossover index {} out of range", idx + 1));
+                6 => {
+                    // threshold changed
+                    self.threshold_smoother.set_target(self.threshold_db);
+                }
+                8 | 9 => {
+                    // attack or release changed
+                    self.update_coefficients();
+                }
+                14 => {
+                    // mix changed
+                    self.mix_smoother.set_target(self.mix);
+                }
+                16 => {
+                    // detection_mode changed
+                    let det_mode = parse_detection_mode(&self.detection_mode);
+                    for band_dets in &mut self.level_detectors {
+                        for det in band_dets {
+                            det.set_mode(det_mode);
+                        }
+                    }
+                }
+                _ => {}
             }
-        } else if name == "threshold" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "threshold must be a float".to_string())?;
-            if v.is_finite() {
-                self.threshold_db = v;
-                self.threshold_smoother.set_target(self.threshold_db);
-            }
-        } else if name == "ratio" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "ratio must be a float".to_string())?;
-            if v.is_finite() {
-                self.ratio = v.max(1.0);
-            }
-        } else if name == "attack" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "attack must be a float".to_string())?;
-            if v.is_finite() {
-                self.attack_ms = v;
-                self.update_coefficients();
-            }
-        } else if name == "release" {
-            let v = value
-                .as_float()
-                .ok_or_else(|| "release must be a float".to_string())?;
-            if v.is_finite() {
-                self.release_ms = v;
-                self.update_coefficients();
-            }
-        } else if name.starts_with("band_") {
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+
+        // Fall through to band-level param handling
+        let name = &id.0;
+        if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {
                 let b_idx = parts[1]
@@ -1446,78 +1381,24 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 }
             }
         } else {
-            // Support legacy names or other fields
-            match name.as_str() {
-                "knee" => {
-                    let v = value
-                        .as_float()
-                        .ok_or_else(|| "knee must be a float".to_string())?;
-                    if v.is_finite() {
-                        self.knee_db = v;
-                    }
-                }
-                "range" => {
-                    let v = value
-                        .as_float()
-                        .ok_or_else(|| "range must be a float".to_string())?;
-                    if v.is_finite() {
-                        self.range_db = v;
-                    }
-                }
-                "hysteresis" => {
-                    let v = value
-                        .as_float()
-                        .ok_or_else(|| "hysteresis must be a float".to_string())?;
-                    if v.is_finite() {
-                        self.hysteresis_db = v;
-                    }
-                }
-                "hold" => {
-                    let v = value
-                        .as_float()
-                        .ok_or_else(|| "hold must be a float".to_string())?;
-                    if v.is_finite() {
-                        self.hold_ms = v;
-                    }
-                }
-                _ => return Err(format!("Unknown parameter: {}", id)),
-            }
+            return Err(format!("Unknown parameter: {}", id));
         }
         self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        let name = &id.0;
-        if name == "num_bands" {
-            Some(ParameterValue::Int(self.num_bands as i32))
-        } else if name == "link_channels" {
-            Some(ParameterValue::Bool(self.link_channels))
-        } else if name == "mix" {
-            Some(ParameterValue::Float(self.mix))
-        } else if name == "detection_mode" {
-            let idx = if self.detection_mode == "rms" { 1 } else { 0 };
-            Some(ParameterValue::Int(idx))
-        } else if name == "processing_mode" {
+        // Handle processing_mode separately (not in GLOBAL_PARAMS)
+        if id.0 == "processing_mode" {
             let idx = if self.processing_mode == "spectral" { 1 } else { 0 };
-            Some(ParameterValue::Int(idx))
-        } else if name == "threshold" {
-            Some(ParameterValue::Float(self.threshold_db))
-        } else if name == "ratio" {
-            Some(ParameterValue::Float(self.ratio))
-        } else if name == "attack" {
-            Some(ParameterValue::Float(self.attack_ms))
-        } else if name == "release" {
-            Some(ParameterValue::Float(self.release_ms))
-        } else if name.starts_with("crossover_freq_") {
-            let idx = name
-                .replace("crossover_freq_", "")
-                .parse::<usize>()
-                .map(|i| i - 1)
-                .unwrap_or(0);
-            self.crossover_frequencies
-                .get(idx)
-                .map(|&f| ParameterValue::Float(f))
-        } else if name.starts_with("band_") {
+            return Some(ParameterValue::Int(idx));
+        }
+        // Try global params first
+        if let Some(v) = param_bridge::get_parameter(ME, id, |i| self.param_value(i)) {
+            return Some(v);
+        }
+        // Fall through to band-level params
+        let name = &id.0;
+        if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {
                 let b_idx = parts[1].parse::<usize>().unwrap_or(0);
@@ -1557,13 +1438,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 None
             }
         } else {
-            match name.as_str() {
-                "knee" => Some(ParameterValue::Float(self.knee_db)),
-                "range" => Some(ParameterValue::Float(self.range_db)),
-                "hysteresis" => Some(ParameterValue::Float(self.hysteresis_db)),
-                "hold" => Some(ParameterValue::Float(self.hold_ms)),
-                _ => None,
-            }
+            None
         }
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
