@@ -126,6 +126,12 @@ fn trim_thread_local_storage() -> (usize, usize) {
     (focus_evicted, edit_evicted)
 }
 
+/// Returns true if any `Input` component is currently in editing mode.
+/// Useful for parent views that need to suppress keybindings during text entry.
+pub fn is_input_editing() -> bool {
+    EDIT_STATES.with(|states| states.borrow().values().any(|state| state.borrow().editing))
+}
+
 /// Clean up thread-local state for an Input element.
 ///
 /// Call this when removing an Input with a dynamic element ID to prevent

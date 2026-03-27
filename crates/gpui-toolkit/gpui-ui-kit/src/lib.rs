@@ -139,7 +139,7 @@ pub use color::Color;
 pub use color_picker::{ColorPickerMode, ColorPickerView};
 pub use input::{
     Input, InputSize, InputVariant, cleanup_input_state, cleanup_stale_input_states,
-    clear_all_input_states, input_state_count,
+    clear_all_input_states, input_state_count, is_input_editing,
 };
 pub use number_input::{
     NumberInput, NumberInputSize, NumberInputTheme, cleanup_number_input_state,
