@@ -4,6 +4,7 @@
 //! (GPUI, TUI, etc.) become thin wrappers that delegate business operations
 //! and only manage UI-specific state.
 
+pub mod ab_compare_path;
 pub mod library;
 pub mod playback;
 pub mod playlist;

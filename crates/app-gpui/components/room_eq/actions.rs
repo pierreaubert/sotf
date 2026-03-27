@@ -160,7 +160,7 @@ impl PlayerView {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             use crate::app::types::{
-                ChannelMeasurement, RecordingResult, RoomEqDataSource, RoomEqMeasurementsFile,
+                ChannelMeasurement, RoomEqDataSource, RoomEqMeasurementsFile,
                 RoomEqSpeakerConfig, SpeakerConfigType,
             };
 

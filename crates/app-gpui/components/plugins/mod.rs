@@ -15,6 +15,7 @@ pub mod level_meters;
 pub mod theme;
 pub mod ticks;
 
+mod ui_ab_compare;
 mod ui_compressor;
 mod ui_downmix;
 pub mod ui_eq;

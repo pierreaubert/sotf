@@ -94,6 +94,7 @@ impl GpuiViewRegistry {
         views.insert("loudness_monitor", render_loudness);
         views.insert("multiband_compressor", render_mb_compressor);
         views.insert("multiband_expander", render_mb_expander);
+        views.insert("ab_compare", render_ab_compare);
 
         Self { views }
     }
@@ -424,4 +425,11 @@ fn render_mb_expander(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerVie
     } else {
         Empty.into_any_element()
     }
+}
+
+fn render_ab_compare(
+    ctx: &CustomViewRenderContext,
+    cx: &mut Context<PlayerView>,
+) -> AnyElement {
+    super::ui_ab_compare::render_ab_compare(ctx, cx)
 }

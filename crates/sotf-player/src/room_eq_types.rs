@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::recording_types::RecordingResult;
+use crate::ReleaseChannel;
 
 /// Room EQ workflow step
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -403,6 +404,11 @@ impl RoomEqCrossoverType {
     }
 }
 
+/// Shorter alias for `RoomEqSpeakerConfigType`.
+pub type SpeakerConfigType = RoomEqSpeakerConfigType;
+/// Shorter alias for `RoomEqCrossoverType`.
+pub type CrossoverType = RoomEqCrossoverType;
+
 /// Configuration for a speaker channel
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomEqSpeakerConfig {
@@ -442,6 +448,15 @@ impl MultiSpeakerMode {
         match self {
             MultiSpeakerMode::Sequential => "Sequential (per-channel)",
             MultiSpeakerMode::Combined => "Combined (all channels)",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            MultiSpeakerMode::Sequential => "Optimize each speaker independently, one at a time",
+            MultiSpeakerMode::Combined => {
+                "Optimize all speakers together for globally optimal solution"
+            }
         }
     }
 }
@@ -526,6 +541,38 @@ impl RoomEqOptimizationMode {
             "mixed_phase" => RoomEqOptimizationMode::MixedPhase,
             _ => RoomEqOptimizationMode::Iir,
         }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            RoomEqOptimizationMode::Iir => "Uses standard biquad filters. Low latency, efficient.",
+            RoomEqOptimizationMode::Fir => {
+                "Uses impulse response convolution. Can correct phase, but higher latency."
+            }
+            RoomEqOptimizationMode::Mixed => {
+                "Combines IIR for high frequencies and FIR for low frequencies."
+            }
+            RoomEqOptimizationMode::MixedPhase => {
+                "IIR for minimum-phase + short FIR for excess phase. Low latency (~10ms)."
+            }
+        }
+    }
+
+    pub fn maturity(&self) -> ReleaseChannel {
+        match self {
+            RoomEqOptimizationMode::Iir => ReleaseChannel::Beta,
+            RoomEqOptimizationMode::Fir => ReleaseChannel::Alpha,
+            RoomEqOptimizationMode::Mixed => ReleaseChannel::Alpha,
+            RoomEqOptimizationMode::MixedPhase => ReleaseChannel::Alpha,
+        }
+    }
+
+    pub fn available(channel: ReleaseChannel) -> Vec<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .filter(|mode| channel.allows(mode.maturity()))
+            .collect()
     }
 }
 
@@ -943,6 +990,12 @@ pub struct ChannelOptResult {
     pub original_response: Option<Vec<(f64, f64)>>,
     pub corrected_response: Option<Vec<(f64, f64)>>,
     pub normalized_response: Option<Vec<(f64, f64)>>,
+    /// Target curve points (frequency_hz, level_db)
+    pub target_curve: Option<Vec<(f64, f64)>>,
+    /// Group delay before correction (frequency_hz, delay_ms)
+    pub group_delay_before: Option<Vec<(f64, f64)>>,
+    /// Group delay after correction (frequency_hz, delay_ms)
+    pub group_delay_after: Option<Vec<(f64, f64)>>,
 }
 
 /// DSP chain output format
@@ -950,6 +1003,14 @@ pub struct ChannelOptResult {
 pub struct DspChainOutput {
     pub channels: std::collections::HashMap<String, ChannelDspChain>,
     pub metadata: Option<DspChainMetadata>,
+}
+
+impl DspChainOutput {
+    /// Returns true if the DSP output can be applied to a linear rack
+    /// (no multi-driver crossovers requiring parallel paths).
+    pub fn is_rack_compatible(&self) -> bool {
+        self.channels.values().all(|chain| chain.drivers.is_none())
+    }
 }
 
 /// DSP chain for a single channel
@@ -1017,6 +1078,43 @@ impl CustomTargetCurve {
         }
     }
 
+    /// Create Near-field target: Flat 20-1000Hz, then down to -1dB at 20kHz
+    pub fn new_near_field() -> Self {
+        Self {
+            control_points: vec![
+                TargetCurveControlPoint::new(20.0, 0.0),
+                TargetCurveControlPoint::new(1000.0, 0.0),
+                TargetCurveControlPoint::new(20000.0, -1.0),
+            ],
+        }
+    }
+
+    /// Create Mid-field target: +4dB at 40Hz, down to -3dB at 20kHz
+    pub fn new_mid_field() -> Self {
+        Self {
+            control_points: vec![
+                TargetCurveControlPoint::new(20.0, 4.0),
+                TargetCurveControlPoint::new(40.0, 4.0),
+                TargetCurveControlPoint::new(160.0, 0.5),
+                TargetCurveControlPoint::new(20000.0, -3.0),
+            ],
+        }
+    }
+
+    /// Create Far-field target: Flat up to 2kHz, then rolloff 3dB/oct
+    pub fn new_far_field() -> Self {
+        Self {
+            control_points: vec![
+                TargetCurveControlPoint::new(20.0, 0.0),
+                TargetCurveControlPoint::new(2000.0, 0.0),
+                TargetCurveControlPoint::new(4000.0, -3.0),
+                TargetCurveControlPoint::new(8000.0, -6.0),
+                TargetCurveControlPoint::new(16000.0, -9.0),
+                TargetCurveControlPoint::new(20000.0, -9.96),
+            ],
+        }
+    }
+
     pub fn add_point(&mut self, point: TargetCurveControlPoint) {
         self.control_points.push(point);
         self.control_points
@@ -1041,8 +1139,8 @@ impl CustomTargetCurve {
     /// Generate the target curve as 200 log-spaced points
     pub fn generate_curve(&self) -> Vec<(f64, f64)> {
         const NUM_POINTS: usize = 200;
-        const MIN_FREQ: f64 = 20.0;
-        const MAX_FREQ: f64 = 20000.0;
+        const MIN_FREQ: f64 = math_audio_iir_fir::AUDIBLE_MIN_FREQ;
+        const MAX_FREQ: f64 = math_audio_iir_fir::AUDIBLE_MAX_FREQ;
 
         if self.control_points.len() < 2 {
             return (0..NUM_POINTS)

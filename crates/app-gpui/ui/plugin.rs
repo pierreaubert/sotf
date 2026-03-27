@@ -196,6 +196,31 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn select_band_global(&mut self, _: &SelectBandGlobal, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 0; });
+        cx.notify();
+    }
+    fn select_band_1(&mut self, _: &SelectBand1, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 1; });
+        cx.notify();
+    }
+    fn select_band_2(&mut self, _: &SelectBand2, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 2; });
+        cx.notify();
+    }
+    fn select_band_3(&mut self, _: &SelectBand3, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 3; });
+        cx.notify();
+    }
+    fn select_band_4(&mut self, _: &SelectBand4, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 4; });
+        cx.notify();
+    }
+    fn select_band_5(&mut self, _: &SelectBand5, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| { state.app.plugin_state.selected_eq_band = 5; });
+        cx.notify();
+    }
+
     fn toggle_simple_view(&mut self, _: &ToggleSimpleView, _: &mut Window, cx: &mut Context<Self>) {
         use crate::app::state::plugin::PluginUiView;
         self.state.update(cx, |state, _cx| {

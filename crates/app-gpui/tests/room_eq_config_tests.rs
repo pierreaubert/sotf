@@ -250,6 +250,7 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         broadband_target_matching: None,
         multi_measurement: None,
         decomposed_correction: None,
+        cea2034_correction: None,
         strategy: "lshade".to_string(),
         target_response: None,
     }

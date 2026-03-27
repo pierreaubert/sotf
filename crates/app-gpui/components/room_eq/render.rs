@@ -331,7 +331,7 @@ fn render_response_comparison_graph(
     // Use a large width that will be constrained by the parent container
     const GRAPH_WIDTH: f32 = 1200.0;
     const GRAPH_HEIGHT: f32 = 400.0;
-    const SAMPLE_RATE: f64 = 48000.0;
+    const SAMPLE_RATE: f64 = sotf_plugins::DEFAULT_PREVIEW_SAMPLE_RATE;
 
     // CEA2034 standard colors for consistency
     const BLUE: u32 = 0x1f77b4;

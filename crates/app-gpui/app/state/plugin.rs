@@ -35,6 +35,14 @@ pub struct PluginState {
     /// File paths for AB Compare loaded configs (for display)
     pub ab_compare_file_a: Option<String>,
     pub ab_compare_file_b: Option<String>,
+    /// Parsed sub-rack contents for A/B paths (kept in sync with engine JSON)
+    pub ab_path_a: Vec<sotf_audio_player::controllers::ab_compare_path::PluginInRack>,
+    pub ab_path_b: Vec<sotf_audio_player::controllers::ab_compare_path::PluginInRack>,
+    /// Selected sub-plugin index within each A/B path
+    pub ab_path_a_selected: Option<usize>,
+    pub ab_path_b_selected: Option<usize>,
+    /// Which path's "add plugin" menu is currently open
+    pub ab_add_menu_target: Option<ABPathTarget>,
     /// Which plugin UI view mode to show
     pub plugin_ui_view: PluginUiView,
     /// Whether the controller picker dropdown is open
@@ -80,6 +88,13 @@ impl DerefMut for PluginState {
 pub struct ABCompareDropdowns {
     pub path_a_open: bool,
     pub path_b_open: bool,
+}
+
+/// Which A/B path the add menu targets
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ABPathTarget {
+    A,
+    B,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -146,6 +161,11 @@ impl Default for PluginState {
             ab_compare_dropdowns: ABCompareDropdowns::default(),
             ab_compare_file_a: None,
             ab_compare_file_b: None,
+            ab_path_a: Vec::new(),
+            ab_path_b: Vec::new(),
+            ab_path_a_selected: None,
+            ab_path_b_selected: None,
+            ab_add_menu_target: None,
             plugin_ui_view: PluginUiView::UI,
             controller_picker_open: false,
             midi_mapping: MidiMappingEngine::new(),
@@ -174,5 +194,33 @@ impl PluginState {
     pub fn clear_confirmations(&mut self) {
         self.confirm_remove_plugin = None;
         self.confirm_delete_preset = None;
+    }
+
+    /// Sync the parsed A/B path state from the engine-side JSON config strings.
+    /// Call this when selecting an AB Compare plugin or after loading a preset.
+    pub fn sync_ab_path_state(&mut self, path_a_json: &str, path_b_json: &str) {
+        use sotf_audio_player::controllers::ab_compare_path::parse_path_config;
+        self.ab_path_a = parse_path_config(path_a_json);
+        self.ab_path_b = parse_path_config(path_b_json);
+        // Clamp selections to valid range
+        if let Some(sel) = self.ab_path_a_selected {
+            if sel >= self.ab_path_a.len() {
+                self.ab_path_a_selected = None;
+            }
+        }
+        if let Some(sel) = self.ab_path_b_selected {
+            if sel >= self.ab_path_b.len() {
+                self.ab_path_b_selected = None;
+            }
+        }
+    }
+
+    /// Clear all A/B path state (called when an AB Compare plugin is removed).
+    pub fn clear_ab_path_state(&mut self) {
+        self.ab_path_a.clear();
+        self.ab_path_b.clear();
+        self.ab_path_a_selected = None;
+        self.ab_path_b_selected = None;
+        self.ab_add_menu_target = None;
     }
 }

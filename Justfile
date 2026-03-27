@@ -2,6 +2,10 @@
 # How to install Just?
 #	  cargo install just
 # ----------------------------------------------------------------------
+
+_default:
+	just --list
+
 import? 'builds/aggregates.just'
 import? 'builds/cross.just'
 import? 'builds/macos.just'
@@ -19,9 +23,6 @@ import? 'crates/sotf-plugins/crates/plugins-bridge/Justfile'
 import? 'crates/sotf-plugins/crates/plugins-ffi/Justfile'
 import? 'crates/sotf-plugins/crates/plugins-nih/Justfile'
 import? 'crates/sotf-plugins/crates/plugins-au/Justfile'
-
-default:
-	just --list
 
 # ----------------------------------------------------------------------
 # Downloads

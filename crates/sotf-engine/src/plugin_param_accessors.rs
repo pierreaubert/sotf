@@ -367,7 +367,7 @@ impl_param_accessors! {
     },
     Compressor {
         params: param_specs::compressor::PARAMS,
-        layout: Some(&param_specs::compressor::LAYOUT),
+        layout: Some(&param_specs::compressor::SINGLE_BAND_LAYOUT),
         fields: [
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             knee_db: f64, makeup_gain_db: f64, mix: f64,
@@ -392,7 +392,7 @@ impl_param_accessors! {
     },
     Expander {
         params: param_specs::expander::PARAMS,
-        layout: Some(&param_specs::expander::LAYOUT),
+        layout: Some(&param_specs::expander::SINGLE_BAND_LAYOUT),
         fields: [
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             range_db: f64, knee_db: f64, hysteresis_db: f64, hold_ms: f64,
@@ -787,6 +787,71 @@ impl PluginSettings {
             param_specs::ParamType::Float { .. } => {
                 self.param_value(index).map(|v| spec.format_value(v))
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sotf_plugins::param_specs;
+
+    /// Validate that every plugin's LAYOUT indices are within bounds of its PARAMS.
+    ///
+    /// This prevents the class of bug where a layout built for one param set
+    /// (e.g., multiband GLOBAL_PARAMS with crossover entries at 0-5) is accidentally
+    /// paired with a different param set (e.g., single-band PARAMS starting at threshold=0).
+    #[test]
+    fn validate_all_plugin_layout_indices() {
+        let plugins: Vec<(&str, &[param_specs::ParamSpec], Option<&sotf_plugins::plugin_layout::PluginLayout>)> = vec![
+            ("gain", param_specs::gain::PARAMS, Some(&param_specs::gain::LAYOUT)),
+            ("compressor", param_specs::compressor::PARAMS, Some(&param_specs::compressor::SINGLE_BAND_LAYOUT)),
+            ("gate", param_specs::gate::PARAMS, Some(&param_specs::gate::LAYOUT)),
+            ("expander", param_specs::expander::PARAMS, Some(&param_specs::expander::SINGLE_BAND_LAYOUT)),
+            ("limiter", param_specs::limiter::PARAMS, Some(&param_specs::limiter::LAYOUT)),
+            ("loudness_compensation", param_specs::loudness_compensation::PARAMS, Some(&param_specs::loudness_compensation::LAYOUT)),
+            ("upmixer", param_specs::upmixer::PARAMS, Some(&param_specs::upmixer::LAYOUT)),
+            ("convolution", param_specs::convolution::PARAMS, Some(&param_specs::convolution::LAYOUT)),
+            ("binaural", param_specs::binaural::PARAMS, Some(&param_specs::binaural::LAYOUT)),
+            ("xtc", param_specs::xtc::PARAMS, Some(&param_specs::xtc::LAYOUT)),
+            ("denoiser", param_specs::denoiser::PARAMS, Some(&param_specs::denoiser::LAYOUT)),
+            ("pnd", param_specs::pnd::PARAMS, Some(&param_specs::pnd::LAYOUT)),
+            ("ab_compare", param_specs::ab_compare::PARAMS, Some(&param_specs::ab_compare::LAYOUT)),
+            ("band_split", param_specs::band_split::PARAMS, Some(&param_specs::band_split::LAYOUT)),
+            ("band_merge", param_specs::band_merge::PARAMS, Some(&param_specs::band_merge::LAYOUT)),
+            ("downmix", param_specs::downmix::PARAMS, Some(&param_specs::downmix::LAYOUT)),
+            ("mono_to_stereo", param_specs::mono_to_stereo::PARAMS, Some(&param_specs::mono_to_stereo::LAYOUT)),
+            ("crossfeed", param_specs::crossfeed::PARAMS, Some(&param_specs::crossfeed::LAYOUT)),
+            ("delay", param_specs::delay::PARAMS, Some(&param_specs::delay::LAYOUT)),
+            ("aec", param_specs::aec::PARAMS, Some(&param_specs::aec::LAYOUT)),
+            ("beamformer", param_specs::beamformer::PARAMS, Some(&param_specs::beamformer::LAYOUT)),
+            ("ambisonics", param_specs::ambisonics::PARAMS, Some(&param_specs::ambisonics::LAYOUT)),
+            ("multiband_compressor", param_specs::multiband_compressor::GLOBAL_PARAMS, Some(&param_specs::multiband_compressor::LAYOUT)),
+            ("multiband_expander", param_specs::multiband_expander::GLOBAL_PARAMS, Some(&param_specs::multiband_expander::LAYOUT)),
+            ("stereo_imager", param_specs::stereo_imager::PARAMS, Some(&param_specs::stereo_imager::LAYOUT)),
+            ("de_esser", param_specs::de_esser::PARAMS, Some(&param_specs::de_esser::LAYOUT)),
+            ("transient_shaper", param_specs::transient_shaper::PARAMS, Some(&param_specs::transient_shaper::LAYOUT)),
+            ("saturation", param_specs::saturation::PARAMS, Some(&param_specs::saturation::LAYOUT)),
+            ("dynamic_eq", param_specs::dynamic_eq::PARAMS, Some(&param_specs::dynamic_eq::LAYOUT)),
+            ("spectral_compressor", param_specs::spectral_compressor::PARAMS, Some(&param_specs::spectral_compressor::LAYOUT)),
+            ("linear_phase_eq", param_specs::linear_phase_eq::PARAMS, Some(&param_specs::linear_phase_eq::LAYOUT)),
+            ("matrix", param_specs::matrix::PARAMS, Some(&param_specs::matrix::LAYOUT)),
+            ("channel_mute_solo", param_specs::channel_mute_solo::PARAMS, Some(&param_specs::channel_mute_solo::LAYOUT)),
+            ("dither", param_specs::dither::PARAMS, Some(&param_specs::dither::LAYOUT)),
+        ];
+
+        let mut all_errors = Vec::new();
+        for (name, params, layout) in &plugins {
+            if let Some(layout) = layout {
+                let errors = layout.validate(params.len(), name);
+                all_errors.extend(errors);
+            }
+        }
+
+        if !all_errors.is_empty() {
+            panic!(
+                "LAYOUT/PARAMS index mismatches found:\n  {}",
+                all_errors.join("\n  ")
+            );
         }
     }
 }

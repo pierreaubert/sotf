@@ -24,8 +24,8 @@ const CHART_TOP_MARGIN: f32 = 10.0;
 const CHART_BOTTOM_MARGIN: f32 = 40.0;
 const GPUI_PX_MARGIN_TOP: f32 = 10.0;
 
-const MIN_FREQ: f64 = 20.0;
-const MAX_FREQ: f64 = 20000.0;
+const MIN_FREQ: f64 = sotf_plugins::AUDIBLE_MIN_FREQ;
+const MAX_FREQ: f64 = sotf_plugins::AUDIBLE_MAX_FREQ;
 const MIN_DB: f64 = -24.0;
 const MAX_DB: f64 = 24.0;
 

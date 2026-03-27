@@ -144,5 +144,12 @@ actions!(
         PlayPlaylist,
         ImportPlaylist,
         ExportPlaylist,
+        // Band selection for multiband plugins (0 = Global, 1-5 = bands)
+        SelectBandGlobal,
+        SelectBand1,
+        SelectBand2,
+        SelectBand3,
+        SelectBand4,
+        SelectBand5,
     ]
 );

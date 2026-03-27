@@ -302,17 +302,13 @@ pub fn create_shared_channel_volumes(num_channels: usize) -> SharedChannelVolume
 /// Convert dB to linear gain
 #[inline]
 pub fn db_to_linear(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
+    sotf_plugins::db_to_linear(db)
 }
 
 /// Convert linear gain to dB
 #[inline]
 pub fn linear_to_db(linear: f32) -> f32 {
-    if linear <= 0.0 {
-        f32::NEG_INFINITY
-    } else {
-        20.0 * linear.log10()
-    }
+    sotf_plugins::linear_to_db(linear)
 }
 
 /// Clamp volume to valid range

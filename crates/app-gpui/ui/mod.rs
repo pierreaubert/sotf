@@ -1158,6 +1158,99 @@ impl PlayerView {
         }
     }
 
+    pub(crate) fn on_ab_path_add_plugin(
+        &mut self,
+        action: &crate::components::plugins::actions::ABPathAddPlugin,
+        _: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        use sotf_audio_player::controllers::ab_compare_path::{add_path_plugin, encode_path_config};
+        let plugin_idx = action.plugin_idx;
+        let param_idx: usize = if action.path == 0 { 9 } else { 10 };
+
+        self.state.update(cx, |state, _cx| {
+            let plugins = if action.path == 0 {
+                &mut state.app.plugin_state.ab_path_a
+            } else {
+                &mut state.app.plugin_state.ab_path_b
+            };
+            add_path_plugin(plugins, &action.plugin_type);
+            let json = encode_path_config(plugins);
+            state.app.set_plugin_param_string(plugin_idx, param_idx, json);
+            state.app.plugin_state.ab_add_menu_target = None;
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn on_ab_path_remove_plugin(
+        &mut self,
+        action: &crate::components::plugins::actions::ABPathRemovePlugin,
+        _: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        use sotf_audio_player::controllers::ab_compare_path::{encode_path_config, remove_path_plugin};
+        let plugin_idx = action.plugin_idx;
+        let param_idx: usize = if action.path == 0 { 9 } else { 10 };
+
+        self.state.update(cx, |state, _cx| {
+            let plugins = if action.path == 0 {
+                &mut state.app.plugin_state.ab_path_a
+            } else {
+                &mut state.app.plugin_state.ab_path_b
+            };
+            remove_path_plugin(plugins, action.sub_idx);
+            let json = encode_path_config(plugins);
+            state.app.set_plugin_param_string(plugin_idx, param_idx, json);
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn on_ab_path_move_plugin(
+        &mut self,
+        action: &crate::components::plugins::actions::ABPathMovePlugin,
+        _: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        use sotf_audio_player::controllers::ab_compare_path::{encode_path_config, move_path_plugin};
+        let plugin_idx = action.plugin_idx;
+        let param_idx: usize = if action.path == 0 { 9 } else { 10 };
+
+        self.state.update(cx, |state, _cx| {
+            let plugins = if action.path == 0 {
+                &mut state.app.plugin_state.ab_path_a
+            } else {
+                &mut state.app.plugin_state.ab_path_b
+            };
+            move_path_plugin(plugins, action.from, action.to);
+            let json = encode_path_config(plugins);
+            state.app.set_plugin_param_string(plugin_idx, param_idx, json);
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn on_ab_path_toggle_add_menu(
+        &mut self,
+        action: &crate::components::plugins::actions::ABPathToggleAddMenu,
+        _: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        use crate::app::state::plugin::ABPathTarget;
+        self.state.update(cx, |state, _cx| {
+            let target = if action.path == 0 {
+                ABPathTarget::A
+            } else {
+                ABPathTarget::B
+            };
+            state.app.plugin_state.ab_add_menu_target =
+                if state.app.plugin_state.ab_add_menu_target == Some(target) {
+                    None
+                } else {
+                    Some(target)
+                };
+        });
+        cx.notify();
+    }
+
     /// Recalculate library pagination based on current layout.
     /// Uses the responsive scale to compute card sizes that match rem-based rendering.
     pub(crate) fn recalculate_pagination(&self, cx: &mut Context<Self>, force_reset: bool) {

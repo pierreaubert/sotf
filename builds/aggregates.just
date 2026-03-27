@@ -3,7 +3,7 @@
 # Justfile) won't fail on unknown dependencies.
 
 [group('bench')]
-bench: bench-plugins bench-autoeq bench-math
+bench: plugins-bench bench-autoeq bench-math
 
 [group('demo')]
 demo: demo-d3rs demo-px demo-ui-kit demo-headphone-loss
@@ -25,7 +25,7 @@ publish: publish-autoeq publish-math
 [group('qa')]
 qa: qa-autoeq \
 	qa-math \
-	qa-plugins \
+	plugins-qa \
 	qa-roomeq \
 	qa-engine \
 	qa-bridge \

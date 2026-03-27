@@ -14,6 +14,7 @@ pub mod constants;
 pub mod debug;
 pub mod i18n;
 pub mod keybindings;
+pub mod federation;
 pub mod library;
 pub mod manager;
 pub mod navigation;

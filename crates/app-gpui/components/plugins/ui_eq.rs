@@ -24,7 +24,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 /// Sample rate for filter calculations
-pub const SAMPLE_RATE: f64 = 48000.0;
+pub const SAMPLE_RATE: f64 = sotf_plugins::DEFAULT_PREVIEW_SAMPLE_RATE;
 
 /// Wrapper element to capture bounds for coordinate transformation
 struct EqChartWrapper {
@@ -256,8 +256,8 @@ pub const CHART_BOTTOM_MARGIN: f32 = 30.0;
 pub const CHART_HEIGHT: f32 = 300.0;
 // gpui-px uses 10.0 for margin_top in plot_height calculation by default
 pub const GPUI_PX_MARGIN_TOP: f32 = 10.0;
-pub const MIN_FREQ: f64 = 20.0;
-pub const MAX_FREQ: f64 = 20000.0;
+pub const MIN_FREQ: f64 = sotf_plugins::AUDIBLE_MIN_FREQ;
+pub const MAX_FREQ: f64 = sotf_plugins::AUDIBLE_MAX_FREQ;
 const CONTROL_POINT_RADIUS: f32 = 8.0;
 
 /// Calculate dynamic y-axis range based on filter gains.

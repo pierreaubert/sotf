@@ -238,8 +238,8 @@ pub fn render_mb_compressor_plugin(
         theme,
     );
 
-    // Band sliders
-    let sliders = div()
+    // Band sliders (DYNAMICS + TIMING side by side, transfer curve below both)
+    let slider_row = div()
         .flex()
         .gap_4()
         .child(
@@ -297,8 +297,7 @@ pub fn render_mb_compressor_plugin(
                             SLIDER_HEIGHT,
                             theme,
                         )),
-                )
-                .child(transfer_curve),
+                ),
         )
         .child(
             div()
@@ -359,6 +358,14 @@ pub fn render_mb_compressor_plugin(
                         }),
                 ),
         );
+
+    // Stack sliders and transfer curve vertically
+    let sliders = div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(slider_row)
+        .child(transfer_curve);
 
     let mut center_col = div()
         .flex()
@@ -431,16 +438,6 @@ pub fn render_mb_compressor_plugin(
             "Link Ch",
             state.link_channels,
             12,
-            state.selected_param,
-            state.is_editing,
-            theme,
-        ))
-        .child(render_toggle(
-            entity.clone(),
-            plugin_idx,
-            "Auto Gain",
-            state.auto_makeup,
-            get_param_idx(16),
             state.selected_param,
             state.is_editing,
             theme,

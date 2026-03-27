@@ -3,7 +3,10 @@
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, StackSpacing, Text, TextSize, VStack};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, Divider, HStack, Input, InputSize, StackSpacing, Text,
+    TextSize, TextWeight, VStack,
+};
 
 impl PlayerView {
     /// Render server settings content
@@ -13,7 +16,8 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let server_config = &state.app.server_config;
+        let translations = state.app.ui_state.translations.clone();
+        let server_config = state.app.server_config.clone();
 
         div()
             .flex()
@@ -33,146 +37,391 @@ impl PlayerView {
                     .child("Configure servers that expose your library to other players. MPD uses TLS for security. DLNA uses plain HTTP for device compatibility."),
             )
             // MPD Server section
+            .child(self.render_mpd_section(&server_config, &theme, &translations, cx))
+            // DLNA Server section
+            .child(self.render_dlna_section(&server_config, &theme, &translations, cx))
+    }
+
+    fn render_mpd_section(
+        &self,
+        server_config: &sotf_audio_player::federation_config::ServerConfig,
+        theme: &crate::app::theme::Theme,
+        translations: &crate::app::i18n::Translations,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let mpd = &server_config.mpd;
+        let mpd_enabled = mpd.enabled;
+        let bind_address = mpd.bind_address.clone();
+        let port = mpd.port.to_string();
+        let tls_enabled = mpd.tls_enabled;
+        let has_password = mpd.password.is_some();
+        let cert_auth = mpd.auth_mode == sotf_audio_player::federation_config::MpdAuthMode::Certificate;
+
+        let state_for_bind = self.state.clone();
+        let state_for_port = self.state.clone();
+        let state_for_pw = self.state.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_4()
+            .bg(theme.background_secondary)
+            .rounded_md()
+            .border_1()
+            .border_color(if mpd_enabled {
+                theme.accent
+            } else {
+                theme.border
+            })
+            // Header with toggle
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .p_4()
-                    .bg(theme.background_secondary)
-                    .rounded_md()
-                    .border_1()
-                    .border_color(theme.border)
+                HStack::new()
+                    .spacing(StackSpacing::Md)
                     .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new("MPD Server")
-                                    .size(TextSize::Sm)
-                                    .weight(gpui_ui_kit::TextWeight::Bold)
-                                    .color(theme.text_primary),
-                            )
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py(px(2.0))
-                                    .rounded_sm()
-                                    .text_xs()
-                                    .text_color(if server_config.mpd.enabled {
-                                        theme.success
-                                    } else {
-                                        theme.text_muted
-                                    })
-                                    .child(if server_config.mpd.enabled {
-                                        "Enabled"
-                                    } else {
-                                        "Disabled"
-                                    }),
-                            ),
+                        Text::new("MPD Server")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary),
                     )
+                    .child(div().flex_1())
                     .child(
-                        VStack::new()
-                            .spacing(StackSpacing::Xs)
-                            .child(server_field_row(
-                                "Bind Address",
-                                &server_config.mpd.bind_address,
-                                &theme,
-                            ))
-                            .child(server_field_row(
-                                "Port",
-                                &server_config.mpd.port.to_string(),
-                                &theme,
-                            ))
-                            .child(server_field_row(
-                                "TLS",
-                                if server_config.mpd.tls_enabled {
-                                    "Enabled"
-                                } else {
-                                    "Disabled"
-                                },
-                                &theme,
-                            ))
-                            .child(server_field_row(
-                                "Password",
-                                if server_config.mpd.password.is_some() {
-                                    "(set)"
-                                } else {
-                                    "(none)"
-                                },
-                                &theme,
-                            ))
-                            .build(),
+                        Button::new(
+                            "toggle-mpd",
+                            if mpd_enabled {
+                                translations.settings_on
+                            } else {
+                                translations.settings_off
+                            },
+                        )
+                        .variant(if mpd_enabled {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Secondary
+                        })
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .build()
+                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                state.app.toggle_mpd_server();
+                            });
+                            cx.notify();
+                        })),
                     ),
             )
-            // DLNA Server section
+            .child(Divider::new().color(theme.border))
+            // Editable fields
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .p_4()
-                    .bg(theme.background_secondary)
-                    .rounded_md()
-                    .border_1()
-                    .border_color(theme.border)
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    // Bind Address
+                    .child(server_editable_field(
+                        "mpd-bind",
+                        "Bind Address",
+                        &bind_address,
+                        "0.0.0.0",
+                        theme,
+                        move |val, _window, cx| {
+                            let v = val.to_string();
+                            state_for_bind.update(cx, |state, _cx| {
+                                state.app.update_mpd_field("bind_address", &v);
+                            });
+                        },
+                    ))
+                    // Port
+                    .child(server_editable_field(
+                        "mpd-port",
+                        "Port",
+                        &port,
+                        "6600",
+                        theme,
+                        move |val, _window, cx| {
+                            let v = val.to_string();
+                            state_for_port.update(cx, |state, _cx| {
+                                state.app.update_mpd_field("port", &v);
+                            });
+                        },
+                    ))
+                    // TLS toggle
                     .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
                             .child(
-                                Text::new("DLNA Server")
-                                    .size(TextSize::Sm)
-                                    .weight(gpui_ui_kit::TextWeight::Bold)
-                                    .color(theme.text_primary),
+                                div()
+                                    .w(px(120.0))
+                                    .text_xs()
+                                    .text_color(theme.text_secondary)
+                                    .child("TLS"),
+                            )
+                            .child(
+                                Button::new(
+                                    "mpd-tls-toggle",
+                                    if tls_enabled {
+                                        translations.settings_on
+                                    } else {
+                                        translations.settings_off
+                                    },
+                                )
+                                .variant(if tls_enabled {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .build()
+                                .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                                    let new_val = (!tls_enabled).to_string();
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.update_mpd_field("tls_enabled", &new_val);
+                                    });
+                                    cx.notify();
+                                })),
+                            ),
+                    )
+                    // Auth mode toggle (Certificate / Password)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .w(px(120.0))
+                                    .text_xs()
+                                    .text_color(theme.text_secondary)
+                                    .child("Auth"),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(
+                                        Button::new("mpd-auth-cert", "Certificate")
+                                            .variant(if cert_auth {
+                                                ButtonVariant::Primary
+                                            } else {
+                                                ButtonVariant::Ghost
+                                            })
+                                            .size(ButtonSize::Xs)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                move |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state
+                                                            .app
+                                                            .update_mpd_field("auth_mode", "certificate");
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        Button::new("mpd-auth-pw", "Password")
+                                            .variant(if cert_auth {
+                                                ButtonVariant::Ghost
+                                            } else {
+                                                ButtonVariant::Primary
+                                            })
+                                            .size(ButtonSize::Xs)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                move |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state
+                                                            .app
+                                                            .update_mpd_field("auth_mode", "password");
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    )
+                                    .build(),
+                            ),
+                    )
+                    // Password (only shown when auth mode is Password)
+                    .when(!cert_auth, |stack| {
+                        stack.child(server_editable_field(
+                            "mpd-password",
+                            "Password",
+                            "",
+                            if has_password {
+                                "Password is set (enter new to replace)"
+                            } else {
+                                "Enter password"
+                            },
+                            theme,
+                            move |val, _window, cx| {
+                                let v = val.to_string();
+                                state_for_pw.update(cx, |state, _cx| {
+                                    state.app.update_mpd_field("password", &v);
+                                });
+                            },
+                        ))
+                    })
+                    // Certificate info (shown when auth mode is Certificate)
+                    .when(cert_auth, |stack| {
+                        stack.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .w(px(120.0))
+                                        .text_xs()
+                                        .text_color(theme.text_secondary)
+                                        .child(""),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .child("Clients authenticate via TLS certificate. Add trusted client fingerprints to allow access."),
+                                ),
+                        )
+                    })
+                    .build(),
+            )
+    }
+
+    fn render_dlna_section(
+        &self,
+        server_config: &sotf_audio_player::federation_config::ServerConfig,
+        theme: &crate::app::theme::Theme,
+        translations: &crate::app::i18n::Translations,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let dlna = &server_config.dlna;
+        let dlna_enabled = dlna.enabled;
+        let friendly_name = dlna.friendly_name.clone();
+        let port = dlna.port.to_string();
+
+        let state_for_name = self.state.clone();
+        let state_for_port = self.state.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_4()
+            .bg(theme.background_secondary)
+            .rounded_md()
+            .border_1()
+            .border_color(if dlna_enabled {
+                theme.accent
+            } else {
+                theme.border
+            })
+            // Header with toggle
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(
+                        Text::new("DLNA Server")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        Button::new(
+                            "toggle-dlna",
+                            if dlna_enabled {
+                                translations.settings_on
+                            } else {
+                                translations.settings_off
+                            },
+                        )
+                        .variant(if dlna_enabled {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Secondary
+                        })
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .build()
+                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                state.app.toggle_dlna_server();
+                            });
+                            cx.notify();
+                        })),
+                    ),
+            )
+            .child(Divider::new().color(theme.border))
+            // Editable fields
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    // Friendly Name
+                    .child(server_editable_field(
+                        "dlna-name",
+                        "Friendly Name",
+                        &friendly_name,
+                        "SOTF Media Server",
+                        theme,
+                        move |val, _window, cx| {
+                            let v = val.to_string();
+                            state_for_name.update(cx, |state, _cx| {
+                                state.app.update_dlna_field("friendly_name", &v);
+                            });
+                        },
+                    ))
+                    // Port
+                    .child(server_editable_field(
+                        "dlna-port",
+                        "Port",
+                        &port,
+                        "8200",
+                        theme,
+                        move |val, _window, cx| {
+                            let v = val.to_string();
+                            state_for_port.update(cx, |state, _cx| {
+                                state.app.update_dlna_field("port", &v);
+                            });
+                        },
+                    ))
+                    // Protocol (read-only info)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .w(px(120.0))
+                                    .text_xs()
+                                    .text_color(theme.text_secondary)
+                                    .child("Protocol"),
                             )
                             .child(
                                 div()
-                                    .px_2()
-                                    .py(px(2.0))
-                                    .rounded_sm()
                                     .text_xs()
-                                    .text_color(if server_config.dlna.enabled {
-                                        theme.success
-                                    } else {
-                                        theme.text_muted
-                                    })
-                                    .child(if server_config.dlna.enabled {
-                                        "Enabled"
-                                    } else {
-                                        "Disabled"
-                                    }),
+                                    .text_color(theme.text_muted)
+                                    .child("HTTP (no TLS - device compat)"),
                             ),
                     )
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::Xs)
-                            .child(server_field_row(
-                                "Friendly Name",
-                                &server_config.dlna.friendly_name,
-                                &theme,
-                            ))
-                            .child(server_field_row(
-                                "Port",
-                                &server_config.dlna.port.to_string(),
-                                &theme,
-                            ))
-                            .child(server_field_row(
-                                "Protocol",
-                                "HTTP (no TLS - device compat)",
-                                &theme,
-                            ))
-                            .build(),
-                    ),
+                    .build(),
             )
     }
 }
 
-fn server_field_row(
+fn server_editable_field(
+    id: &str,
     label: &str,
     value: &str,
+    placeholder: &str,
     theme: &crate::app::theme::Theme,
+    on_change: impl Fn(&str, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
     div()
         .flex()
+        .items_center()
         .gap_2()
         .child(
             div()
@@ -182,9 +431,12 @@ fn server_field_row(
                 .child(label.to_string()),
         )
         .child(
-            div()
-                .text_xs()
-                .text_color(theme.text_primary)
-                .child(value.to_string()),
+            div().flex_1().child(
+                Input::new(SharedString::from(id.to_string()))
+                    .value(SharedString::from(value.to_string()))
+                    .placeholder(SharedString::from(placeholder.to_string()))
+                    .size(InputSize::Sm)
+                    .on_change(on_change),
+            ),
         )
 }

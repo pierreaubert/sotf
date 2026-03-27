@@ -1066,8 +1066,8 @@ fn test_add_and_remove_eq_band_roundtrip() {
 // ============================================================================
 
 // Constants matching ui_eq.rs
-const MIN_FREQ: f64 = 20.0;
-const MAX_FREQ: f64 = 20000.0;
+const MIN_FREQ: f64 = sotf_plugins::AUDIBLE_MIN_FREQ;
+const MAX_FREQ: f64 = sotf_plugins::AUDIBLE_MAX_FREQ;
 const MIN_GAIN_DB: f64 = -24.0;
 const MAX_GAIN_DB: f64 = 24.0;
 const CHART_LEFT_MARGIN: f32 = 50.0;

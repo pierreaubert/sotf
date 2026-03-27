@@ -33,15 +33,8 @@ pub enum PlaybackSource {
     HalDevice,
 }
 
-/// View mode for plugin management (Rack vs Graph)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PluginViewMode {
-    /// Traditional linear plugin chain view
-    #[default]
-    Rack,
-    /// 2D graph view with node connections
-    Graph,
-}
+// PluginViewMode is defined in state::plugin and re-exported from state::mod
+pub use crate::app::state::plugin::PluginViewMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {

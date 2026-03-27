@@ -19,6 +19,9 @@ pub enum SourceConnectionConfig {
         #[serde(default = "default_mpd_port")]
         port: u16,
         password: Option<String>,
+        /// Use client certificate for mTLS authentication (default: true).
+        #[serde(default = "default_true")]
+        use_client_cert: bool,
     },
     Dlna {
         location_url: Option<String>,
@@ -62,6 +65,7 @@ impl SourceConnectionConfig {
                 host: "localhost".to_string(),
                 port: 6600,
                 password: None,
+                use_client_cert: true,
             },
             "dlna" => Self::Dlna {
                 location_url: None,
@@ -76,6 +80,7 @@ impl SourceConnectionConfig {
                 host: "localhost".to_string(),
                 port: 6600,
                 password: None,
+                use_client_cert: true,
             },
         }
     }
@@ -85,7 +90,7 @@ impl SourceConnectionConfig {
     pub fn field_names(&self) -> Vec<&'static str> {
         match self {
             Self::Subsonic { .. } => vec!["URL", "Username", "Password", "Legacy Auth"],
-            Self::Mpd { .. } => vec!["Host", "Port", "Password"],
+            Self::Mpd { .. } => vec!["Host", "Port", "Certificate Auth", "Password"],
             Self::Dlna { .. } => vec!["Location URL", "Friendly Name"],
             Self::Peer { .. } => vec!["Host", "Port", "Fingerprint"],
         }
@@ -111,10 +116,12 @@ impl SourceConnectionConfig {
                 host,
                 port,
                 password,
+                use_client_cert,
             } => match index {
                 0 => host.clone(),
                 1 => port.to_string(),
-                2 => password
+                2 => use_client_cert.to_string(),
+                3 => password
                     .as_ref()
                     .map_or_else(String::new, |p| "*".repeat(p.len().min(8))),
                 _ => String::new(),
@@ -159,6 +166,7 @@ impl SourceConnectionConfig {
                 host,
                 port,
                 password,
+                use_client_cert,
             } => match index {
                 0 => *host = value.to_string(),
                 1 => {
@@ -166,7 +174,8 @@ impl SourceConnectionConfig {
                         *port = p;
                     }
                 }
-                2 => {
+                2 => *use_client_cert = value == "true",
+                3 => {
                     *password = if value.is_empty() {
                         None
                     } else {
@@ -259,6 +268,17 @@ pub struct ServerConfig {
     pub dlna: DlnaSettings,
 }
 
+/// Authentication mode for the MPD server.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub enum MpdAuthMode {
+    /// Mutual TLS — clients must present a certificate whose fingerprint is trusted.
+    /// No password needed; identity is proven cryptographically.
+    #[default]
+    Certificate,
+    /// Legacy password-based authentication (MPD `password` command).
+    Password,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MpdSettings {
     #[serde(default)]
@@ -269,8 +289,15 @@ pub struct MpdSettings {
     pub port: u16,
     #[serde(default = "default_true")]
     pub tls_enabled: bool,
+    /// Authentication mode (default: Certificate/mTLS).
+    #[serde(default)]
+    pub auth_mode: MpdAuthMode,
+    /// Password (only used when auth_mode == Password).
     #[serde(default)]
     pub password: Option<String>,
+    /// SHA-256 fingerprints of trusted client certificates (for mTLS auth).
+    #[serde(default)]
+    pub trusted_client_fingerprints: Vec<String>,
 }
 
 impl Default for MpdSettings {
@@ -280,7 +307,9 @@ impl Default for MpdSettings {
             bind_address: default_bind_address(),
             port: 6600,
             tls_enabled: true,
+            auth_mode: MpdAuthMode::Certificate,
             password: None,
+            trusted_client_fingerprints: Vec::new(),
         }
     }
 }
@@ -338,6 +367,7 @@ mod tests {
                 host: "192.168.1.5".to_string(),
                 port: 6600,
                 password: None,
+                use_client_cert: true,
             },
             SourceConnectionConfig::Dlna {
                 location_url: Some("http://192.168.1.10:8200/description.xml".to_string()),

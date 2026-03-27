@@ -6,8 +6,8 @@
 // Constants
 // =============================================================================
 
-const MIN_FREQUENCY: f64 = 20.0;
-const MAX_FREQUENCY: f64 = 20000.0;
+const MIN_FREQUENCY: f64 = sotf_plugins::AUDIBLE_MIN_FREQ;
+const MAX_FREQUENCY: f64 = sotf_plugins::AUDIBLE_MAX_FREQ;
 const MIN_DB: f64 = -90.0;
 const MAX_DB: f64 = 0.0;
 

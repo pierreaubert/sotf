@@ -192,3 +192,36 @@ impl gpui::Action for OpenAbConfigFile {
         Err(anyhow::anyhow!("Not supported via keymaps"))
     }
 }
+
+// ============================================================================
+// A/B Compare Sub-Rack Actions
+// ============================================================================
+
+macro_rules! ab_action {
+    ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
+        #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+        pub struct $name {
+            $(pub $field: $ty),*
+        }
+        impl gpui::Action for $name {
+            fn boxed_clone(&self) -> Box<dyn gpui::Action> { Box::new(self.clone()) }
+            fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
+                other.as_any().downcast_ref::<Self>() == Some(self)
+            }
+            fn name(&self) -> &'static str { stringify!($name) }
+            fn name_for_type() -> &'static str { stringify!($name) }
+            fn build(_: serde_json::Value) -> anyhow::Result<Box<dyn gpui::Action>> {
+                Err(anyhow::anyhow!("Not supported via keymaps"))
+            }
+        }
+    };
+}
+
+// Add a plugin to an A/B path sub-rack. path: 0=A, 1=B.
+ab_action!(ABPathAddPlugin { plugin_idx: usize, path: u8, plugin_type: String });
+// Remove a plugin from an A/B path sub-rack.
+ab_action!(ABPathRemovePlugin { plugin_idx: usize, path: u8, sub_idx: usize });
+// Move a plugin within an A/B path sub-rack.
+ab_action!(ABPathMovePlugin { plugin_idx: usize, path: u8, from: usize, to: usize });
+// Toggle the "add plugin" dropdown for an A/B path.
+ab_action!(ABPathToggleAddMenu { plugin_idx: usize, path: u8 });

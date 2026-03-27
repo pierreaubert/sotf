@@ -44,13 +44,14 @@ pub fn linear_to_db_string(linear: f32) -> String {
     if linear < SILENCE_THRESHOLD {
         "-∞".to_string()
     } else {
-        format!("{:.1}", 20.0 * linear.log10())
+        format!("{:.1}", sotf_plugins::linear_to_db(linear))
     }
 }
 
 /// Convert dB value to linear gain
+#[inline]
 pub fn db_to_linear(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
+    sotf_plugins::db_to_linear(db)
 }
 
 /// Convert plugin entries from a preset file into a PathConfig JSON string

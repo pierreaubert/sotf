@@ -54,5 +54,12 @@ pub(super) fn plugin_control_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("=", actions::IncrementPluginParam, Some("plugin-control")),
         KeyBinding::new("-", actions::DecrementPluginParam, Some("plugin-control")),
         KeyBinding::new("_", actions::DecrementPluginParam, Some("plugin-control")),
+        // Band selection for multiband plugins
+        KeyBinding::new("0", actions::SelectBandGlobal, Some("plugin-control")),
+        KeyBinding::new("1", actions::SelectBand1, Some("plugin-control")),
+        KeyBinding::new("2", actions::SelectBand2, Some("plugin-control")),
+        KeyBinding::new("3", actions::SelectBand3, Some("plugin-control")),
+        KeyBinding::new("4", actions::SelectBand4, Some("plugin-control")),
+        KeyBinding::new("5", actions::SelectBand5, Some("plugin-control")),
     ]
 }
