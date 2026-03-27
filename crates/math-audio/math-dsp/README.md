@@ -3,14 +3,28 @@
 DSP utilities for audio signal generation and FFT-based analysis.
 
 **Library name:** `math_audio_dsp`
-**Version:** 0.3.1
+**Version:** 0.4.8
 
 ## Overview
 
-This crate provides two core modules:
+This crate provides signal generation, FFT-based analysis, and audio feature extraction:
 
-- **`signals`** -- Test signal generation (tones, sweeps, noise) with utility functions for fade, padding, and channel manipulation
-- **`analysis`** -- FFT-based frequency analysis including spectrum computation (Welch's method and single-FFT), acoustic metrics (RT60, clarity C50/C80, THD), microphone compensation, and CSV I/O
+| Module | Description |
+|---|---|
+| **`signals`** | Test signal generation (tones, sweeps, noise) with fade, padding, and channel utilities |
+| **`analysis`** | FFT-based frequency analysis (Welch/single-FFT), acoustic metrics (RT60, C50/C80, THD), microphone compensation, CSV I/O |
+| **`simd`** | SIMD-optimized DSP operations |
+| **`stft`** | Short-Time Fourier Transform |
+| **`rtpghi`** | Real-Time Phase Gradient Heap Integration (phase reconstruction from magnitude STFT) |
+| **`ebur128`** | EBU R128 loudness standard implementation |
+| **`esprit`** | ESPRIT algorithm for sinusoidal frequency estimation |
+| **`instantaneous_frequency`** | Instantaneous frequency extraction from analytic signal |
+| **`tonal_transient`** | Tonal vs transient signal separation |
+| **`fdn`** | Feedback Delay Network for artificial reverberation |
+| **`fast_math`** | Fast math approximations (exp, log, pow) |
+| **`audio_features`** | Audio feature extraction: chroma, spectral features, tempo, loudness, zero-crossing rate |
+| **`replaygain`** | Replay Gain analysis based on EBU R128 (`ReplayGainAnalyzer`, `compute_album_gain`) |
+| **`waveform`** | Waveform visualization data (`compute_waveform`) |
 
 ## Signal Generation
 
@@ -167,6 +181,14 @@ write_analysis_csv(&recording_result, Path::new("output.csv"), Some(&mic_compens
 let loaded = read_analysis_csv(Path::new("output.csv"))?;
 ```
 
+## Binary: `simd-fuzzer`
+
+Fuzz testing tool for SIMD-optimized DSP operations. Validates SIMD implementations against scalar reference code.
+
+```bash
+cargo run --bin simd-fuzzer --release
+```
+
 ## Binary: `wav2csv`
 
 CLI tool to analyze a WAV file and output frequency/SPL/phase as CSV.
@@ -188,12 +210,15 @@ Options: `--num-points`, `--min-freq`, `--max-freq`, `--fft-size`, `--overlap`, 
 
 | Crate | Purpose |
 |---|---|
-| `rustfft` | FFT computation |
+| `rustfft`, `realfft` | FFT computation (complex and real-only) |
 | `num-complex` | Complex number types |
+| `ndarray`, `nalgebra` | Numerical arrays and linear algebra |
 | `hound` | WAV file I/O |
 | `math-iir-fir` | Biquad filters (bandpass for octave-band analysis) |
+| `serde` | Serialization |
+| `rand` | RNG for noise generation |
 | `log` | Logging |
-| `clap` | CLI argument parsing (for `wav2csv`) |
+| `clap` | CLI argument parsing (for `wav2csv`, `simd-fuzzer`) |
 
 ## Testing
 

@@ -1,4 +1,4 @@
-# math-delaunay (lib: `math_delaunay`)
+# math-delaunay (lib: `math_delaunay`, version: 0.4.1)
 
 Delaunay triangulation and Voronoi diagram -- port of d3-delaunay.
 

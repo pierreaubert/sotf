@@ -10,10 +10,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::error::Error;
 
-/// Standard display frequency range: 20 Hz
-const DISPLAY_MIN_FREQ: f64 = 20.0;
-/// Standard display frequency range: 20 kHz
-const DISPLAY_MAX_FREQ: f64 = 20000.0;
+const DISPLAY_MIN_FREQ: f64 = math_audio_iir_fir::AUDIBLE_MIN_FREQ;
+const DISPLAY_MAX_FREQ: f64 = math_audio_iir_fir::AUDIBLE_MAX_FREQ;
 
 /// Extend a curve's frequency range to cover 20 Hz – 20 kHz for display.
 ///

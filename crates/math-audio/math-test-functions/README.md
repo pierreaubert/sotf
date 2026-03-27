@@ -159,7 +159,7 @@ cargo clippy
 cargo fmt
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 The library is organized into modular components:
 

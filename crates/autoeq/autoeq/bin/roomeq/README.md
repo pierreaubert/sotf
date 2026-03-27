@@ -645,6 +645,5 @@ The roomeq binary uses autoeq's proven optimization infrastructure:
   - `output.rs`: DSP chain JSON generation
 
 - **Dependencies**:
-  - `autoeq`: Core optimization algorithms
-  - `autoeq-iir`: Biquad filter implementation
-  - `autoeq-cea2034`: Curve data structures
+  - `autoeq`: Core optimization algorithms (includes `cea2034` module for curve data structures)
+  - `math-iir-fir`: Biquad filter implementation

@@ -15,13 +15,19 @@ This crate provides IIR (Infinite Impulse Response) filter implementations for a
 - **PEQ (Parametric Equalizer)**: Multi-band parametric equalization with advanced features
   - SPL response computation
   - Preamp gain calculation
-  - EqualizerAPO format export
+  - Fast loudness compensation (K-weighting and A-weighting)
+  - 9 export formats: APO, RME Channel, RME Room, AU Preset, CamillaDSP, EasyEffects, PipeWire, Roon, Wavelet
   - PEQ comparison and manipulation
+- **FIR Filters**: Windowed sinc filter bank for linear-phase filtering
+  - FIR design from target frequency response
+  - Kirkeby correction for inverse filters
+  - Pre-ringing analysis and suppression
+- **SVF (State Variable Filter)**: Zero-Delay Feedback filter (Zavalishin TPT topology)
 - **Filter Design**: Specialized filter design algorithms
   - Butterworth filters (lowpass/highpass)
   - Linkwitz-Riley filters (lowpass/highpass)
 - **Response Computation**: Calculate frequency and phase response
-- **Filter Conversion**: Convert between different filter representations
+- **Phase Smoothing**: Phase unwrapping, smoothing via group delay, complex interpolation
 
 ## Filter Types
 
@@ -391,10 +397,11 @@ Potential enhancements:
 
 ## See Also
 
-- `src-iir/src/mod.rs`: Implementation
-- `src-audio/src/replaygain.rs`: Full Replay Gain implementation
+- `math-iir-fir/src/mod.rs`: Library root and common helpers
+- `math-dsp/src/replaygain.rs`: Full Replay Gain implementation (EBU R128)
 - EBU R128 standard: <https://tech.ebu.ch/docs/r/r128.pdf>
 - A-weighting standard: IEC 61672-1
+
 ## License
 
 GPL-3.0-or-later

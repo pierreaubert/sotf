@@ -285,7 +285,6 @@ AUTOEQ_DIR=$(pwd) cargo test --lib test_name
 
 # Run tests for a specific crate
 AUTOEQ_DIR=$(pwd) cargo test -p autoeq --lib
-AUTOEQ_DIR=$(pwd) cargo test -p autoeq-cea2034 --lib
 ```
 
 ### Fuzzing

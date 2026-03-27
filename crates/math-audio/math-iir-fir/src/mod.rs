@@ -94,6 +94,11 @@ pub const DEFAULT_Q_HIGH_LOW_SHELF: f64 = 1.0668676536332304; // Value of bw2q(0
 /// Sample rate constant (matching Python SRATE)
 pub const SRATE: f64 = 48000.0;
 
+/// Lower bound of human hearing (Hz).
+pub const AUDIBLE_MIN_FREQ: f64 = 20.0;
+/// Upper bound of human hearing (Hz).
+pub const AUDIBLE_MAX_FREQ: f64 = 20_000.0;
+
 // ============================================================================
 // Tests for Common Functions
 // ============================================================================

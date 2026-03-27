@@ -140,21 +140,37 @@ cargo run --bin plot_functions -- --functions rosenbrock,sphere
 cargo run --bin plot_functions -- --csv-dir traces/ --show-traces
 ```
 
+## Levenberg-Marquardt
+
+The crate also includes a Levenberg-Marquardt local optimizer for nonlinear least-squares refinement:
+
+```rust
+use math_audio_optimisation::levenberg_marquardt::{levenberg_marquardt, LMConfigBuilder};
+
+let config = LMConfigBuilder::new()
+    .max_iterations(100)
+    .build();
+
+let result = levenberg_marquardt(&residual_fn, &jacobian_fn, &x0, config);
+```
+
 ## Integration
 
 This crate is part of the Math Audio ecosystem:
 
 - Used by `autoeq` for filter parameter optimization
-- Integrates with `math-audio-testfunctions` for validation
-- Works with `math-audio-iir-fir` for audio filter optimization
+- Integrates with `math-test-functions` for validation
+- Works with `math-iir-fir` for audio filter optimization
 
 ## Examples
 
 The crate includes several example programs demonstrating different DE capabilities:
 
-- `basic_de`: Simple unconstrained optimization
-- `linear_constraints`: Linear constraint handling
-- `nonlinear_constraints`: Complex constraint optimization
+- `optde_basic`: Simple unconstrained optimization
+- `optde_adaptive_demo`: Adaptive mutation strategy
+- `optde_linear_constraints`: Linear constraint handling
+- `optde_nonlinear_constraints`: Nonlinear constraint optimization
+- `optde_parallel`: Parallel population evaluation
 
 ## Performance Tips
 
