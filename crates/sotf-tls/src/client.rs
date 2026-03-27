@@ -108,7 +108,7 @@ impl ServerCertVerifier for TofuVerifier {
     }
 }
 
-/// Build a client TLS config that uses TOFU verification.
+/// Build a client TLS config that uses TOFU verification (no client certificate).
 ///
 /// # Errors
 /// This function currently always succeeds but returns `Result` for forward compatibility.
@@ -121,6 +121,29 @@ pub fn build_client_tls_config(
         .dangerous()
         .with_custom_certificate_verifier(verifier)
         .with_no_client_auth();
+
+    Ok(Arc::new(config))
+}
+
+/// Build a client TLS config that uses TOFU verification AND presents a client certificate.
+///
+/// The client certificate is used for mutual TLS — the server verifies our identity
+/// via our certificate fingerprint instead of a password.
+///
+/// # Errors
+/// Returns an error if the client certificate or key is invalid.
+pub fn build_client_tls_config_with_cert(
+    tofu_store: Arc<Mutex<TofuStore>>,
+    client_cert: rustls::pki_types::CertificateDer<'static>,
+    client_key: rustls::pki_types::PrivateKeyDer<'static>,
+) -> Result<Arc<rustls::ClientConfig>, String> {
+    let verifier = Arc::new(TofuVerifier::new(tofu_store));
+
+    let config = rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(verifier)
+        .with_client_auth_cert(vec![client_cert], client_key)
+        .map_err(|e| format!("client cert config error: {e}"))?;
 
     Ok(Arc::new(config))
 }

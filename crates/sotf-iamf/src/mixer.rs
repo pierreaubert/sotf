@@ -112,7 +112,7 @@ impl MixState {
 }
 
 fn db_to_linear(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
+    sotf_host::db_to_linear(db)
 }
 
 #[cfg(test)]

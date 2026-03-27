@@ -12,6 +12,16 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
+/// Authentication mode for the MPD server.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum MpdAuthMode {
+    /// Mutual TLS — client cert fingerprint must be in the trusted set.
+    #[default]
+    Certificate,
+    /// Legacy password-based authentication.
+    Password,
+}
+
 /// MPD server configuration.
 pub struct MpdServerConfig {
     /// Address to bind to (default "0.0.0.0").
@@ -20,8 +30,13 @@ pub struct MpdServerConfig {
     pub port: u16,
     /// Enable TLS (requires `tls` feature). Default: true.
     pub tls_enabled: bool,
-    /// Optional password for MPD authentication.
+    /// Authentication mode (default: Certificate/mTLS).
+    pub auth_mode: MpdAuthMode,
+    /// Optional password for MPD authentication (only used when auth_mode == Password).
     pub password: Option<String>,
+    /// Trusted client certificate fingerprints (only used when auth_mode == Certificate).
+    #[cfg(feature = "tls")]
+    pub trusted_client_fingerprints: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
 }
 
 impl Default for MpdServerConfig {
@@ -30,7 +45,12 @@ impl Default for MpdServerConfig {
             bind_address: "0.0.0.0".to_string(),
             port: 6600,
             tls_enabled: true,
+            auth_mode: MpdAuthMode::Certificate,
             password: None,
+            #[cfg(feature = "tls")]
+            trusted_client_fingerprints: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashSet::new(),
+            )),
         }
     }
 }
@@ -93,7 +113,12 @@ impl MpdServer {
                             log::debug!("[MPD] New connection from {peer}");
                             let adapter = Arc::clone(&self.adapter);
                             let cancel = cancel.clone();
-                            let password = self.config.password.clone();
+                            // mTLS: client is authenticated by TLS handshake, no password needed.
+                            let password = if self.config.auth_mode == MpdAuthMode::Certificate {
+                                None
+                            } else {
+                                self.config.password.clone()
+                            };
 
                             #[cfg(feature = "tls")]
                             let tls_acceptor = if self.config.tls_enabled {
