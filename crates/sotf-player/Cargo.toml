@@ -30,6 +30,8 @@ math-optimisation = { workspace = true }
 autoeq = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
+sotf-mpd = { workspace = true }
+sotf-dlna = { workspace = true }
 
 # math
 ndarray = { workspace = true }

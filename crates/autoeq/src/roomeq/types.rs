@@ -898,6 +898,12 @@ pub struct LowFreqFilterConfig {
     /// Default: false (cuts only for low frequencies)
     #[serde(default)]
     pub allow_boost: bool,
+
+    /// Maximum boost/cut in dB for below-Schroeder filters.
+    /// Room modes can be 15+ dB, so this allows wider range than the global max_db.
+    /// When None, uses the optimizer's global max_db.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_db: Option<f64>,
 }
 
 fn default_low_freq_max_q() -> f64 {
@@ -910,6 +916,7 @@ impl Default for LowFreqFilterConfig {
             max_q: default_low_freq_max_q(),
             min_q: default_min_q(),
             allow_boost: false,
+            max_db: None,
         }
     }
 }
@@ -1127,6 +1134,127 @@ impl Default for MultiSeatConfig {
 }
 
 // ============================================================================
+// Channel Matching Configuration
+// ============================================================================
+
+/// Inter-channel consistency correction configuration.
+///
+/// After independent per-channel EQ optimization, channels may have residual
+/// SPL differences at specific frequencies. This post-hoc correction pass adds
+/// a small number of parametric filters per channel to reduce the deviation
+/// from the group average.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ChannelMatchingConfig {
+    /// Enable inter-channel matching correction
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// ICD RMS threshold in dB below which no correction is applied
+    #[serde(default = "default_channel_matching_threshold")]
+    pub threshold_db: f64,
+
+    /// Maximum number of additional PEQ filters per channel for matching
+    #[serde(default = "default_channel_matching_max_filters")]
+    pub max_filters: usize,
+}
+
+fn default_channel_matching_threshold() -> f64 {
+    1.5
+}
+fn default_channel_matching_max_filters() -> usize {
+    3
+}
+
+impl Default for ChannelMatchingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold_db: default_channel_matching_threshold(),
+            max_filters: default_channel_matching_max_filters(),
+        }
+    }
+}
+
+// ============================================================================
+// Subwoofer Optimizer Configuration
+// ============================================================================
+
+/// Subwoofer-specific optimizer overrides.
+///
+/// Subwoofers deal with dense room modes that can be 15+ dB. They need more
+/// filters and wider dB range than main speakers. When present, these values
+/// override the global OptimizerConfig for channels identified as subwoofers.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SubOptimizerConfig {
+    /// Number of PEQ filters for subwoofer channels
+    #[serde(default = "default_sub_num_filters")]
+    pub num_filters: usize,
+
+    /// Maximum boost in dB (room gain can be 15+ dB at resonances)
+    #[serde(default = "default_sub_max_db")]
+    pub max_db: f64,
+
+    /// Maximum cut in dB
+    #[serde(default = "default_sub_min_db")]
+    pub min_db: f64,
+
+    /// Minimum Q factor
+    #[serde(default = "default_min_q")]
+    pub min_q: f64,
+
+    /// Maximum Q factor (higher Q for narrow room modes)
+    #[serde(default = "default_sub_max_q")]
+    pub max_q: f64,
+}
+
+fn default_sub_num_filters() -> usize {
+    10
+}
+fn default_sub_max_db() -> f64 {
+    18.0
+}
+fn default_sub_min_db() -> f64 {
+    -18.0
+}
+fn default_sub_max_q() -> f64 {
+    10.0
+}
+
+impl Default for SubOptimizerConfig {
+    fn default() -> Self {
+        Self {
+            num_filters: default_sub_num_filters(),
+            max_db: default_sub_max_db(),
+            min_db: default_sub_min_db(),
+            min_q: default_min_q(),
+            max_q: default_sub_max_q(),
+        }
+    }
+}
+
+// ============================================================================
+// Inter-Channel Deviation Result
+// ============================================================================
+
+/// Measurement of inter-channel SPL consistency after optimization.
+///
+/// At each frequency, the max-min spread across all channels is computed.
+/// RMS and peak statistics summarize the deviation in key frequency bands.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct InterChannelDeviation {
+    /// Per-frequency max deviation (freq_hz, spread_db) — sampled at measurement points
+    pub deviation_per_freq: Vec<(f64, f64)>,
+    /// RMS of deviation in the midrange (200-4000 Hz)
+    pub midrange_rms_db: f64,
+    /// RMS of deviation from F3 to 10 kHz
+    pub passband_rms_db: f64,
+    /// Maximum single-point deviation in midrange
+    pub midrange_peak_db: f64,
+    /// Frequency of maximum midrange deviation
+    pub midrange_peak_freq: f64,
+}
+
+// ============================================================================
 // Optimizer Configuration
 // ============================================================================
 
@@ -1334,6 +1462,16 @@ pub struct OptimizerConfig {
     ///   Pass 3: User preference (bass/treble shelves)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cea2034_correction: Option<Cea2034CorrectionConfig>,
+
+    /// Subwoofer-specific optimizer overrides.
+    /// When present, sub/LFE channels use these parameters instead of the global ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_config: Option<SubOptimizerConfig>,
+
+    /// Inter-channel consistency correction configuration.
+    /// Post-hoc PEQ correction to bring all channels to similar SPL across midrange.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_matching: Option<ChannelMatchingConfig>,
 
     /// Runtime-only: path to a measured room impulse response WAV file.
     /// When set alongside `decomposed_correction`, SSIR analysis is used to
@@ -1738,6 +1876,8 @@ impl Default for OptimizerConfig {
             multi_measurement: None,
             decomposed_correction: None,
             cea2034_correction: None,
+            sub_config: None,
+            channel_matching: None,
             ssir_wav_path: None,
         }
     }
@@ -1928,6 +2068,10 @@ pub struct OptimizationMetadata {
 
     /// Timestamp
     pub timestamp: String,
+
+    /// Inter-channel deviation metric (computed when >1 channel)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inter_channel_deviation: Option<InterChannelDeviation>,
 }
 
 #[cfg(test)]

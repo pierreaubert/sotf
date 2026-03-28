@@ -596,12 +596,43 @@ pub(super) fn process_single_speaker(
         let p = std::path::PathBuf::from(&wp);
         if p.exists() { Some(p) } else { None }
     });
+    // Detect whether this is a subwoofer/LFE channel
+    let is_sub_channel = if let Some(sys) = &room_config.system {
+        if let Some(subs) = &sys.subwoofers {
+            // v2.1: check if this channel is in the subwoofer mapping
+            sys.speakers
+                .get(channel_name)
+                .is_some_and(|meas_key| subs.mapping.contains_key(meas_key))
+        } else {
+            false
+        }
+    } else {
+        // Legacy: name-based detection
+        channel_name.eq_ignore_ascii_case("lfe") || channel_name.to_lowercase().starts_with("sub")
+    };
+
     let clamped_optimizer = {
         let mut opt = room_config.optimizer.clone();
         if min_freq != room_config.optimizer.min_freq {
             opt.min_freq = min_freq;
         }
         opt.ssir_wav_path = wav_path_for_ssir;
+
+        // Apply subwoofer-specific optimizer overrides
+        if is_sub_channel
+            && let Some(sub_cfg) = &room_config.optimizer.sub_config
+        {
+            info!(
+                "  Applying sub_config overrides: num_filters={}, max_db={:+.1}, min_db={:+.1}, max_q={:.1}",
+                sub_cfg.num_filters, sub_cfg.max_db, sub_cfg.min_db, sub_cfg.max_q,
+            );
+            opt.num_filters = sub_cfg.num_filters;
+            opt.max_db = sub_cfg.max_db;
+            opt.min_db = sub_cfg.min_db;
+            opt.min_q = sub_cfg.min_q;
+            opt.max_q = sub_cfg.max_q;
+        }
+
         opt
     };
 
@@ -1464,12 +1495,21 @@ pub(super) fn optimize_with_schroeder_split(
         .unwrap_or(false)
         || optimizer.target_tilt.is_some();
 
-    let low_max_db = if low_config.allow_boost {
+    let low_max_db = if let Some(configured_max) = low_config.max_db {
+        // Explicit max_db override for below-Schroeder (handles large room modes)
+        configured_max
+    } else if low_config.allow_boost {
         optimizer.max_db
     } else if has_non_flat_target {
         (optimizer.max_db / 2.0).min(3.0) // limited boost for tilt tracking
     } else {
         0.0
+    };
+    let low_min_db = if low_config.max_db.is_some() {
+        // When max_db is explicitly set, allow symmetric range
+        -low_max_db.abs()
+    } else {
+        optimizer.min_db
     };
     let low_optimizer = OptimizerConfig {
         num_filters: low_filters,
@@ -1477,7 +1517,7 @@ pub(super) fn optimize_with_schroeder_split(
         max_freq: schroeder_freq,
         min_q: low_config.min_q,
         max_q: low_config.max_q,
-        min_db: optimizer.min_db,
+        min_db: low_min_db,
         max_db: low_max_db,
         ..optimizer.clone()
     };

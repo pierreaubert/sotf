@@ -161,6 +161,317 @@ pub fn compute_spectral_alignment(
     results
 }
 
+/// Compute inter-channel deviation (ICD) across all channels.
+///
+/// At each shared frequency point, computes the max-min spread across channels.
+/// Returns RMS and peak statistics in the midrange (200-4000 Hz) and full
+/// passband (f3 to 10 kHz).
+///
+/// Curves are normalized to their own mean in the analysis range before
+/// comparison, so absolute level differences don't inflate the metric —
+/// only spectral shape differences count.
+pub fn compute_inter_channel_deviation(
+    final_curves: &HashMap<String, crate::Curve>,
+    f3_hz: f64,
+) -> super::types::InterChannelDeviation {
+    use super::types::InterChannelDeviation;
+
+    let empty = InterChannelDeviation {
+        deviation_per_freq: Vec::new(),
+        midrange_rms_db: 0.0,
+        passband_rms_db: 0.0,
+        midrange_peak_db: 0.0,
+        midrange_peak_freq: 0.0,
+    };
+
+    if final_curves.len() <= 1 {
+        return empty;
+    }
+
+    // Use the first curve's frequency grid as reference
+    let first_curve = match final_curves.values().next() {
+        Some(c) => c,
+        None => return empty,
+    };
+    let freq = &first_curve.freq;
+    let n = freq.len();
+
+    // Normalize each curve: subtract its mean in the analysis range (f3..10kHz)
+    // so we compare spectral shape, not absolute level
+    let normalized: Vec<(&String, Vec<f64>)> = final_curves
+        .iter()
+        .map(|(name, curve)| {
+            let mut sum = 0.0;
+            let mut count = 0usize;
+            for i in 0..curve.spl.len().min(n) {
+                let f = freq[i];
+                if f >= f3_hz && f <= 10000.0 {
+                    sum += curve.spl[i];
+                    count += 1;
+                }
+            }
+            let mean = if count > 0 { sum / count as f64 } else { 0.0 };
+            let norm_spl: Vec<f64> = curve.spl.iter().map(|&s| s - mean).collect();
+            (name, norm_spl)
+        })
+        .collect();
+
+    // Compute per-frequency max-min spread
+    let mut deviation_per_freq = Vec::with_capacity(n);
+    let mut midrange_sum_sq = 0.0;
+    let mut midrange_count = 0usize;
+    let mut midrange_peak_db: f64 = 0.0;
+    let mut midrange_peak_freq: f64 = 0.0;
+    let mut passband_sum_sq = 0.0;
+    let mut passband_count = 0usize;
+
+    for i in 0..n {
+        let f = freq[i];
+
+        let mut min_spl = f64::INFINITY;
+        let mut max_spl = f64::NEG_INFINITY;
+
+        for (_name, spl) in &normalized {
+            if i < spl.len() {
+                min_spl = min_spl.min(spl[i]);
+                max_spl = max_spl.max(spl[i]);
+            }
+        }
+
+        let spread = max_spl - min_spl;
+        deviation_per_freq.push((f, spread));
+
+        // Midrange: 200-4000 Hz
+        if (200.0..=4000.0).contains(&f) {
+            midrange_sum_sq += spread * spread;
+            midrange_count += 1;
+            if spread > midrange_peak_db {
+                midrange_peak_db = spread;
+                midrange_peak_freq = f;
+            }
+        }
+
+        // Passband: F3 to 10 kHz
+        if f >= f3_hz && f <= 10000.0 {
+            passband_sum_sq += spread * spread;
+            passband_count += 1;
+        }
+    }
+
+    let midrange_rms = if midrange_count > 0 {
+        (midrange_sum_sq / midrange_count as f64).sqrt()
+    } else {
+        0.0
+    };
+    let passband_rms = if passband_count > 0 {
+        (passband_sum_sq / passband_count as f64).sqrt()
+    } else {
+        0.0
+    };
+
+    InterChannelDeviation {
+        deviation_per_freq,
+        midrange_rms_db: midrange_rms,
+        passband_rms_db: passband_rms,
+        midrange_peak_db,
+        midrange_peak_freq,
+    }
+}
+
+/// Result of inter-channel matching correction for a single channel.
+#[derive(Debug, Clone)]
+pub struct ChannelMatchingResult {
+    /// Channel name
+    pub channel_name: String,
+    /// PEQ filters added for matching
+    pub filters: Vec<Biquad>,
+    /// Plugin to add to the DSP chain (labeled "channel_matching")
+    pub plugin: Option<super::types::PluginConfigWrapper>,
+}
+
+/// Correct inter-channel deviations by adding targeted PEQ filters.
+///
+/// For each channel, finds the N largest deviations from the group average
+/// and adds parametric EQ filters to reduce them. Filters are designed as
+/// corrections (if channel is above average → cut, if below → boost).
+///
+/// Returns one `ChannelMatchingResult` per channel (empty filters if no correction needed).
+pub fn correct_inter_channel_deviation(
+    final_curves: &HashMap<String, crate::Curve>,
+    f3_hz: f64,
+    max_filters: usize,
+    sample_rate: f64,
+) -> Vec<ChannelMatchingResult> {
+    if final_curves.len() <= 1 || max_filters == 0 {
+        return Vec::new();
+    }
+
+    let first_curve = match final_curves.values().next() {
+        Some(c) => c,
+        None => return Vec::new(),
+    };
+    let freq = &first_curve.freq;
+    let n = freq.len();
+
+    // Compute pointwise average (reference) — normalize each to its own passband mean first
+    let passband_means: HashMap<String, f64> = final_curves
+        .iter()
+        .map(|(name, curve)| {
+            let mut sum = 0.0;
+            let mut count = 0usize;
+            for i in 0..curve.spl.len().min(n) {
+                if freq[i] >= f3_hz && freq[i] <= 10000.0 {
+                    sum += curve.spl[i];
+                    count += 1;
+                }
+            }
+            let mean = if count > 0 { sum / count as f64 } else { 0.0 };
+            (name.clone(), mean)
+        })
+        .collect();
+
+    let mut reference = vec![0.0; n];
+    for (name, curve) in final_curves {
+        let mean = passband_means[name];
+        for (i, ref_val) in reference.iter_mut().enumerate().take(n.min(curve.spl.len())) {
+            *ref_val += (curve.spl[i] - mean) / final_curves.len() as f64;
+        }
+    }
+
+    let mut results = Vec::new();
+
+    for (name, curve) in final_curves {
+        let mean = passband_means[name];
+        // diff = channel (normalized) - reference → positive means channel is louder
+        let diff: Vec<f64> = (0..n.min(curve.spl.len()))
+            .map(|i| (curve.spl[i] - mean) - reference[i])
+            .collect();
+
+        // Find the N largest deviation peaks in the midrange (f3..10kHz)
+        // Use 1/3 octave smoothing to avoid chasing noise
+        let smoothed_diff = smooth_for_peak_finding(&diff, freq, n);
+
+        let mut peaks: Vec<(usize, f64)> = Vec::new(); // (index, signed_deviation)
+        for i in 1..smoothed_diff.len().saturating_sub(1) {
+            let f = freq[i];
+            if f < f3_hz || f > 10000.0 {
+                continue;
+            }
+            let abs_val = smoothed_diff[i].abs();
+            if abs_val < 1.0 {
+                continue; // Skip small deviations
+            }
+            // Local extremum (peak or dip in deviation)
+            let is_peak = smoothed_diff[i].abs() >= smoothed_diff[i - 1].abs()
+                && smoothed_diff[i].abs() >= smoothed_diff[i + 1].abs();
+            if is_peak {
+                peaks.push((i, smoothed_diff[i]));
+            }
+        }
+
+        // Sort by absolute deviation (largest first), take up to max_filters
+        peaks.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap());
+        peaks.truncate(max_filters);
+
+        // Enforce minimum 1/3 octave spacing between selected peaks
+        let mut selected: Vec<(usize, f64)> = Vec::new();
+        for &(idx, dev) in &peaks {
+            let f = freq[idx];
+            let too_close = selected.iter().any(|&(sidx, _)| {
+                let sf = freq[sidx];
+                (f / sf).abs().log2().abs() < 1.0 / 3.0
+            });
+            if !too_close {
+                selected.push((idx, dev));
+            }
+        }
+
+        // Create PEQ filters to correct the deviations
+        let mut filters = Vec::new();
+        for &(idx, dev) in &selected {
+            let f = freq[idx];
+            // Correction = negative of deviation (if channel is +3dB above average → -3dB cut)
+            let gain_db = -dev;
+            // Q based on deviation width: narrow for sharp peaks, broader for gentle humps
+            let q = estimate_correction_q(&smoothed_diff, freq, idx);
+
+            filters.push(Biquad::new(
+                math_audio_iir_fir::BiquadFilterType::Peak,
+                f,
+                sample_rate,
+                q,
+                gain_db,
+            ));
+        }
+
+        let plugin = if filters.is_empty() {
+            None
+        } else {
+            Some(output::create_labeled_eq_plugin(&filters, "channel_matching"))
+        };
+
+        results.push(ChannelMatchingResult {
+            channel_name: name.clone(),
+            filters,
+            plugin,
+        });
+    }
+
+    results
+}
+
+/// Simple 1/3 octave smoothing for peak finding (avoids chasing noise).
+fn smooth_for_peak_finding(diff: &[f64], freq: &Array1<f64>, n: usize) -> Vec<f64> {
+    let mut smoothed = vec![0.0; n];
+    let octave_width = 1.0 / 3.0;
+    for i in 0..n {
+        let center = freq[i];
+        let lo = center / 2.0_f64.powf(octave_width / 2.0);
+        let hi = center * 2.0_f64.powf(octave_width / 2.0);
+        let mut sum = 0.0;
+        let mut count = 0;
+        for j in 0..n.min(diff.len()) {
+            if freq[j] >= lo && freq[j] <= hi {
+                sum += diff[j];
+                count += 1;
+            }
+        }
+        smoothed[i] = if count > 0 { sum / count as f64 } else { diff.get(i).copied().unwrap_or(0.0) };
+    }
+    smoothed
+}
+
+/// Estimate Q for a correction filter based on the width of the deviation peak.
+fn estimate_correction_q(diff: &[f64], freq: &Array1<f64>, peak_idx: usize) -> f64 {
+    let peak_val = diff[peak_idx].abs();
+    let half_val = peak_val * 0.5;
+    let peak_freq = freq[peak_idx];
+
+    // Find -6dB (half) points on each side
+    let mut lo_freq = peak_freq;
+    for i in (0..peak_idx).rev() {
+        if diff[i].abs() < half_val {
+            lo_freq = freq[i];
+            break;
+        }
+    }
+    let mut hi_freq = peak_freq;
+    for i in (peak_idx + 1)..diff.len().min(freq.len()) {
+        if diff[i].abs() < half_val {
+            hi_freq = freq[i];
+            break;
+        }
+    }
+
+    // Q = f_center / bandwidth
+    let bw = hi_freq - lo_freq;
+    if bw > 0.0 {
+        (peak_freq / bw).clamp(0.5, 8.0)
+    } else {
+        2.0 // Default moderate Q
+    }
+}
+
 /// Create alignment plugins (EQ with shelves + gain) from an alignment result.
 ///
 /// Returns `(Option<EQ plugin with shelves>, Option<gain plugin>)`.

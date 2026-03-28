@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 // Use the library types
 use autoeq::roomeq::{
-    CallbackAction, DspChainOutput, ExportFormat, RoomOptimizationCallback,
+    CallbackAction, DspChainOutput, ExportFormat, RoomConfig, RoomOptimizationCallback,
     RoomOptimizationProgress, export_dsp_chain, load_config, optimize_room, save_dsp_chain,
 };
 
@@ -47,9 +47,9 @@ struct Args {
     #[arg(short, long)]
     verbose: bool,
 
-    /// Dump JSON schema for the output format
-    #[arg(long)]
-    schema: bool,
+    /// Dump JSON schema and exit. Values: "input" (RoomConfig), "output" (DspChainOutput)
+    #[arg(long, value_name = "TYPE")]
+    schema: Option<String>,
 
     /// Path to override config JSON file (overrides any section: optimizer, speakers, crossovers, group_delay, etc.)
     #[arg(long, alias = "optim-config")]
@@ -74,9 +74,22 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    if args.schema {
-        let schema = schema_for!(DspChainOutput);
-        println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+    if let Some(schema_type) = &args.schema {
+        let json = match schema_type.as_str() {
+            "input" => {
+                let schema = schema_for!(RoomConfig);
+                serde_json::to_string_pretty(&schema).unwrap()
+            }
+            "output" => {
+                let schema = schema_for!(DspChainOutput);
+                serde_json::to_string_pretty(&schema).unwrap()
+            }
+            other => {
+                eprintln!("Unknown schema type: {other}. Use 'input' or 'output'.");
+                std::process::exit(1);
+            }
+        };
+        println!("{json}");
         return Ok(());
     }
 

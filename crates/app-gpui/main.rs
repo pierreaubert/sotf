@@ -31,6 +31,10 @@ struct Args {
     /// Use a custom data directory (for QA testing)
     #[arg(long)]
     qa: Option<PathBuf>,
+
+    /// Run in headless server mode (MPD/DLNA) without UI
+    #[arg(long)]
+    server: bool,
 }
 
 actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
@@ -92,6 +96,17 @@ fn main() {
             .filter_level(log::LevelFilter::Debug)
             .filter_module("symphonia_core", log::LevelFilter::Debug)
             .init();
+    }
+
+    // Headless server mode — skip UI entirely
+    if args.server {
+        match sotf_audio_player::server::run_server_mode() {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("Server error: {}", e);
+                std::process::exit(1);
+            }
+        }
     }
 
     let t_startup = std::time::Instant::now();

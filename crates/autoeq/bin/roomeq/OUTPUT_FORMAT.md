@@ -353,7 +353,14 @@ Information about the optimization process.
     "post_score": 0.125,
     "algorithm": "autoeq:de",
     "iterations": 50000,
-    "timestamp": "2025-01-15T12:34:56Z"
+    "timestamp": "2025-01-15T12:34:56Z",
+    "inter_channel_deviation": {
+      "deviation_per_freq": [[200, 1.2], [500, 3.5], [1000, 0.8]],
+      "midrange_rms_db": 1.8,
+      "passband_rms_db": 2.1,
+      "midrange_peak_db": 3.5,
+      "midrange_peak_freq": 500
+    }
   }
 }
 ```
@@ -365,6 +372,19 @@ Information about the optimization process.
 | `algorithm` | string | Algorithm used for optimization |
 | `iterations` | integer | Maximum iterations configured |
 | `timestamp` | string | ISO 8601 timestamp of optimization |
+| `inter_channel_deviation` | object or null | Inter-channel SPL consistency metric (present when >1 channel) |
+
+### Inter-Channel Deviation (ICD)
+
+Measures how closely all channels match each other in SPL after optimization. Computed as the max-min spread across channels at each frequency, with each channel normalized to its own passband mean.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `deviation_per_freq` | array of [freq, spread_db] | Per-frequency max-min spread across channels |
+| `midrange_rms_db` | number (dB) | RMS of deviation in the midrange (200-4000 Hz) |
+| `passband_rms_db` | number (dB) | RMS of deviation from F3 to 10 kHz |
+| `midrange_peak_db` | number (dB) | Maximum single-point deviation in midrange |
+| `midrange_peak_freq` | number (Hz) | Frequency of maximum midrange deviation |
 
 ---
 

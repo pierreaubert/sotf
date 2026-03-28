@@ -117,6 +117,10 @@ struct Args {
     /// Number of scanner threads for waveform/bliss/replaygain analysis (1-8, default: auto)
     #[arg(long, value_parser = clap::value_parser!(u8).range(1..=8))]
     scanner_threads: Option<u8>,
+
+    /// Run in headless server mode (MPD/DLNA) without UI
+    #[arg(long)]
+    server: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -150,6 +154,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Apply QA directory override before any config dir access
     if let Some(qa_dir) = args.qa {
         sotf_audio_player::config::set_config_dir_override(qa_dir);
+    }
+
+    // Headless server mode — skip UI entirely
+    if args.server {
+        match sotf_audio_player::server::run_server_mode() {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("Server error: {}", e);
+                std::process::exit(1);
+            }
+        }
     }
 
     let t_startup = std::time::Instant::now();

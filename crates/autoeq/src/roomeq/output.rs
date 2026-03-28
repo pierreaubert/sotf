@@ -1148,6 +1148,7 @@ mod tests {
             algorithm: "cobyla".to_string(),
             iterations: 1000,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
+            inter_channel_deviation: None,
         };
 
         let output = create_dsp_chain_output(channels, Some(metadata));

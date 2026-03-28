@@ -89,8 +89,8 @@ pub use progress::{MultiStageProgress, ProgressReporter};
 // Spectral channel alignment (shelf filters + gain)
 mod spectral_align;
 pub use spectral_align::{
-    SpectralAlignmentResult, compute_spectral_alignment, create_alignment_plugins,
-    log_spectral_alignment,
+    SpectralAlignmentResult, compute_inter_channel_deviation, compute_spectral_alignment,
+    create_alignment_plugins, log_spectral_alignment,
 };
 
 // Voice of God (timbre matching between channels)

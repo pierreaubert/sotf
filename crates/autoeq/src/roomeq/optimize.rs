@@ -565,6 +565,11 @@ pub fn optimize_room(
                     }
                 }
 
+                // Compute inter-channel deviation and optionally correct it
+                if result.channel_results.len() > 1 {
+                    compute_and_correct_icd(&mut result, config, sample_rate);
+                }
+
                 return Ok(result);
             }
         }
@@ -1254,15 +1259,143 @@ pub fn optimize_room(
         algorithm: config.optimizer.algorithm.clone(),
         iterations: config.optimizer.max_iter,
         timestamp: chrono::Utc::now().to_rfc3339(),
+        inter_channel_deviation: None,
     };
 
-    Ok(RoomOptimizationResult {
+    let mut result = RoomOptimizationResult {
         channels: channel_chains,
         channel_results,
         combined_pre_score: avg_pre_score,
         combined_post_score: avg_post_score,
         metadata,
-    })
+    };
+
+    // Compute inter-channel deviation and optionally correct it
+    if curves.len() > 1 {
+        compute_and_correct_icd(&mut result, config, sample_rate);
+    }
+
+    Ok(result)
+}
+
+/// Compute inter-channel deviation and optionally apply correction filters.
+///
+/// Called after per-channel optimization on any result with >1 channel.
+/// If `channel_matching` config is enabled and ICD exceeds threshold, adds
+/// targeted PEQ filters to bring channels closer together.
+fn compute_and_correct_icd(
+    result: &mut RoomOptimizationResult,
+    config: &RoomConfig,
+    sample_rate: f64,
+) {
+    let final_curves: HashMap<String, crate::Curve> = result
+        .channel_results
+        .iter()
+        .map(|(name, ch)| (name.clone(), ch.final_curve.clone()))
+        .collect();
+
+    let f3 = final_curves
+        .values()
+        .filter_map(|c| super::excursion::detect_f3(c, None).ok().map(|r| r.f3_hz))
+        .reduce(f64::min)
+        .unwrap_or(50.0);
+
+    let icd = super::spectral_align::compute_inter_channel_deviation(&final_curves, f3);
+    info!(
+        "Inter-channel deviation: midrange_rms={:.2}dB, peak={:.1}dB @{:.0}Hz, passband_rms={:.2}dB",
+        icd.midrange_rms_db, icd.midrange_peak_db, icd.midrange_peak_freq, icd.passband_rms_db,
+    );
+
+    // Check if correction is enabled and needed
+    let matching_cfg = config.optimizer.channel_matching.as_ref();
+    let enabled = matching_cfg.is_some_and(|c| c.enabled);
+    let threshold = matching_cfg.map_or(1.5, |c| c.threshold_db);
+    let max_filters = matching_cfg.map_or(3, |c| c.max_filters);
+
+    if enabled && icd.midrange_rms_db > threshold {
+        info!(
+            "ICD midrange_rms={:.2}dB > threshold={:.1}dB — applying channel matching correction (max {} filters/ch)",
+            icd.midrange_rms_db, threshold, max_filters,
+        );
+
+        let corrections = super::spectral_align::correct_inter_channel_deviation(
+            &final_curves,
+            f3,
+            max_filters,
+            sample_rate,
+        );
+
+        for correction in &corrections {
+            if let Some(plugin) = &correction.plugin {
+                info!(
+                    "  Channel '{}': {} matching filters",
+                    correction.channel_name,
+                    correction.filters.len(),
+                );
+                for f in &correction.filters {
+                    info!(
+                        "    PK @ {:.0} Hz, Q={:.2}, gain={:+.1} dB",
+                        f.freq, f.q, f.db_gain,
+                    );
+                }
+
+                // Add plugin to DSP chain
+                if let Some(chain) = result.channels.get_mut(&correction.channel_name) {
+                    chain.plugins.push(plugin.clone());
+                }
+
+                // Update the final curve with the correction applied
+                if let Some(ch_result) = result.channel_results.get_mut(&correction.channel_name) {
+                    let resp = crate::response::compute_peq_complex_response(
+                        &correction.filters,
+                        &ch_result.final_curve.freq,
+                        sample_rate,
+                    );
+                    ch_result.final_curve =
+                        crate::response::apply_complex_response(&ch_result.final_curve, &resp);
+
+                    // Also update the display final_curve in the chain
+                    if let Some(chain) = result.channels.get_mut(&correction.channel_name)
+                        && let Some(ref display_final) = chain.final_curve
+                    {
+                        let display_curve: crate::Curve = display_final.clone().into();
+                        let display_resp = crate::response::compute_peq_complex_response(
+                            &correction.filters,
+                            &display_curve.freq,
+                            sample_rate,
+                        );
+                        let corrected = crate::response::apply_complex_response(
+                            &display_curve,
+                            &display_resp,
+                        );
+                        chain.final_curve = Some((&corrected).into());
+                    }
+                }
+            }
+        }
+
+        // Re-compute ICD after correction
+        let corrected_curves: HashMap<String, crate::Curve> = result
+            .channel_results
+            .iter()
+            .map(|(name, ch)| (name.clone(), ch.final_curve.clone()))
+            .collect();
+        let icd_after = super::spectral_align::compute_inter_channel_deviation(&corrected_curves, f3);
+        info!(
+            "ICD after correction: midrange_rms={:.2}dB (was {:.2}dB), peak={:.1}dB @{:.0}Hz",
+            icd_after.midrange_rms_db, icd.midrange_rms_db,
+            icd_after.midrange_peak_db, icd_after.midrange_peak_freq,
+        );
+        result.metadata.inter_channel_deviation = Some(icd_after);
+    } else {
+        if enabled {
+            info!(
+                "ICD midrange_rms={:.2}dB <= threshold={:.1}dB — no correction needed",
+                icd.midrange_rms_db, threshold,
+            );
+        }
+        result.metadata.inter_channel_deviation = Some(icd);
+    }
 }
 
 /// Identify Acoustic Groups from RoomConfig

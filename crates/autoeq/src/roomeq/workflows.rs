@@ -509,6 +509,7 @@ pub fn optimize_stereo_2_0(
             algorithm: config.optimizer.algorithm.clone(),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            inter_channel_deviation: None,
         },
     })
 }
@@ -1101,6 +1102,7 @@ pub fn optimize_stereo_2_1(
             algorithm: config.optimizer.algorithm.clone(),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            inter_channel_deviation: None,
         },
     })
 }
@@ -1325,6 +1327,7 @@ fn optimize_home_cinema_no_sub(
             algorithm: config.optimizer.algorithm.clone(),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            inter_channel_deviation: None,
         },
     })
 }
@@ -1807,6 +1810,7 @@ fn optimize_home_cinema_with_sub(
             algorithm: config.optimizer.algorithm.clone(),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
+            inter_channel_deviation: None,
         },
     })
 }

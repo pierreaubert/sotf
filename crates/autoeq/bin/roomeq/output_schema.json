@@ -1,516 +1,368 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/pierreaubert/autoeq/roomeq/output_schema.json",
-  "title": "RoomEQ DSP Chain Output",
-  "description": "Output schema for the roomeq room equalization optimizer (AudioEngine-compatible DSP chain)",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DspChainOutput",
+  "description": "DSP chain output (AudioEngine PluginConfig format)",
   "type": "object",
-  "required": ["version", "channels"],
   "properties": {
     "version": {
+      "description": "Output version",
       "type": "string",
-      "description": "Output format version (semantic versioning)",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+      "default": "1.3.0"
     },
     "channels": {
+      "description": "Per-channel DSP chains",
       "type": "object",
-      "description": "Map of channel names to DSP chains",
       "additionalProperties": {
         "$ref": "#/$defs/ChannelDspChain"
-      },
-      "minProperties": 1
+      }
     },
     "metadata": {
-      "$ref": "#/$defs/OptimizationMetadata",
-      "description": "Optimization metadata"
+      "description": "Metadata about the optimization",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OptimizationMetadata"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
+  "required": [
+    "channels"
+  ],
   "$defs": {
-    "CurveData": {
-      "type": "object",
-      "description": "Frequency response curve data",
-      "properties": {
-        "freq": {
-          "type": "array",
-          "description": "Frequency points in Hz",
-          "items": {
-            "type": "number",
-            "minimum": 0
-          }
-        },
-        "spl": {
-          "type": "array",
-          "description": "Sound Pressure Level in dB (normalized)",
-          "items": {
-            "type": "number"
-          }
-        },
-        "phase": {
-          "type": "array",
-          "description": "Phase in degrees (optional)",
-          "items": {
-            "type": "number"
-          }
-        },
-        "norm_range": {
-          "type": "array",
-          "description": "Frequency range used for normalization [min_hz, max_hz] (optional)",
-          "items": {
-            "type": "number"
-          },
-          "minItems": 2,
-          "maxItems": 2
-        }
-      },
-      "required": ["freq", "spl"],
-      "additionalProperties": false
-    },
-    "IrWaveform": {
-      "type": "object",
-      "description": "Impulse response waveform (time-domain)",
-      "required": ["time_ms", "amplitude"],
-      "properties": {
-        "time_ms": {
-          "type": "array",
-          "description": "Time axis in milliseconds",
-          "items": {
-            "type": "number"
-          }
-        },
-        "amplitude": {
-          "type": "array",
-          "description": "Amplitude (normalized so pre-IR peak = 1.0)",
-          "items": {
-            "type": "number"
-          }
-        }
-      },
-      "additionalProperties": false
-    },
     "ChannelDspChain": {
-      "type": "object",
       "description": "DSP chain for a single channel",
-      "required": ["channel", "plugins"],
+      "type": "object",
       "properties": {
         "channel": {
-          "type": "string",
-          "description": "Channel name"
+          "description": "Channel name",
+          "type": "string"
         },
         "plugins": {
+          "description": "Ordered list of plugins (AudioEngine PluginConfig format)",
           "type": "array",
-          "description": "Ordered list of plugins",
           "items": {
-            "$ref": "#/$defs/PluginConfig"
+            "$ref": "#/$defs/PluginConfigWrapper"
           }
         },
         "drivers": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "type": "array",
-              "description": "Per-driver DSP chains for multi-driver speakers",
-              "items": {
-                "$ref": "#/$defs/DriverDspChain"
-              }
-            }
-          ]
+          "description": "Per-driver DSP chains for active crossover (optional)",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/DriverDspChain"
+          }
         },
         "initial_curve": {
-          "oneOf": [
+          "description": "Initial frequency response curve before optimization (optional)",
+          "anyOf": [
             {
-              "type": "null"
+              "$ref": "#/$defs/CurveData"
             },
             {
-              "$ref": "#/$defs/CurveData",
-              "description": "Initial frequency response curve before optimization (normalized)"
+              "type": "null"
             }
           ]
         },
         "final_curve": {
-          "oneOf": [
+          "description": "Final frequency response curve after applying correction (optional)",
+          "anyOf": [
             {
-              "type": "null"
+              "$ref": "#/$defs/CurveData"
             },
             {
-              "$ref": "#/$defs/CurveData",
-              "description": "Final frequency response curve after applying correction (normalized)"
+              "type": "null"
             }
           ]
         },
         "eq_response": {
-          "oneOf": [
+          "description": "EQ filter response curve (correction magnitude in dB) (optional)",
+          "anyOf": [
             {
-              "type": "null"
+              "$ref": "#/$defs/CurveData"
             },
             {
-              "$ref": "#/$defs/CurveData",
-              "description": "EQ filter response curve (correction magnitude in dB)"
+              "type": "null"
             }
           ]
         },
         "target_curve": {
-          "oneOf": [
+          "description": "Effective target curve the optimizer worked against (optional).\nThis is the mean-shifted + tilt target in absolute SPL coordinates,\nso the frontend can display what the optimizer was actually aiming for.",
+          "anyOf": [
             {
-              "type": "null"
+              "$ref": "#/$defs/CurveData"
             },
             {
-              "$ref": "#/$defs/CurveData",
-              "description": "Effective target curve the optimizer worked against (mean-shifted + tilt, in absolute SPL coordinates)"
+              "type": "null"
             }
           ]
         },
         "pre_ir": {
-          "oneOf": [
+          "description": "Impulse response before correction (optional, requires phase data)",
+          "anyOf": [
             {
-              "type": "null"
+              "$ref": "#/$defs/IrWaveform"
             },
             {
-              "$ref": "#/$defs/IrWaveform",
-              "description": "Impulse response before correction (requires phase data in measurement)"
+              "type": "null"
             }
           ]
         },
         "post_ir": {
-          "oneOf": [
+          "description": "Impulse response after correction (optional, requires phase data)",
+          "anyOf": [
             {
-              "type": "null"
+              "$ref": "#/$defs/IrWaveform"
             },
             {
-              "$ref": "#/$defs/IrWaveform",
-              "description": "Impulse response after correction (requires phase data in measurement)"
+              "type": "null"
             }
           ]
         }
       },
-      "additionalProperties": false
+      "required": [
+        "channel",
+        "plugins"
+      ]
+    },
+    "PluginConfigWrapper": {
+      "description": "Wrapper for AudioEngine PluginConfig (re-exported from src-audio)",
+      "type": "object",
+      "properties": {
+        "plugin_type": {
+          "type": "string"
+        },
+        "parameters": true
+      },
+      "required": [
+        "plugin_type",
+        "parameters"
+      ]
     },
     "DriverDspChain": {
+      "description": "DSP chain for an individual driver in a multi-driver speaker",
       "type": "object",
-      "description": "DSP chain for an individual driver",
-      "required": ["name", "index", "plugins"],
       "properties": {
         "name": {
-          "type": "string",
-          "description": "Driver name (e.g., 'woofer', 'tweeter', 'midrange')"
+          "description": "Driver name (e.g., \"woofer\", \"tweeter\")",
+          "type": "string"
         },
         "index": {
+          "description": "Driver index in the array (0 = lowest frequency)",
           "type": "integer",
-          "description": "Driver index (0 = lowest frequency driver)",
+          "format": "uint",
           "minimum": 0
         },
         "plugins": {
+          "description": "Ordered list of plugins for this driver (gain, crossover filters)",
           "type": "array",
-          "description": "Ordered list of plugins for this driver",
           "items": {
-            "$ref": "#/$defs/PluginConfig"
+            "$ref": "#/$defs/PluginConfigWrapper"
           }
         },
         "initial_curve": {
-          "oneOf": [
+          "description": "Initial frequency response curve for this driver before optimization (optional)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CurveData"
+            },
             {
               "type": "null"
-            },
-            {
-              "$ref": "#/$defs/CurveData",
-              "description": "Initial frequency response curve for this driver before optimization"
             }
           ]
         }
       },
-      "additionalProperties": false
+      "required": [
+        "name",
+        "index",
+        "plugins"
+      ]
     },
-    "PluginConfig": {
+    "CurveData": {
+      "description": "Frequency response curve data for serialization\n\nRepresents a curve with frequency points and SPL values.\nSPL values are normalized (mean-subtracted in the 1000-2000 Hz range)\nfor consistent comparison across measurements.",
       "type": "object",
-      "description": "Plugin configuration wrapper",
-      "required": ["plugin_type", "parameters"],
       "properties": {
-        "plugin_type": {
-          "type": "string",
-          "description": "Plugin type identifier",
-          "enum": ["gain", "eq", "crossover", "delay", "convolution", "band_split", "band_merge"]
-        },
-        "parameters": {
-          "description": "Plugin-specific parameters",
-          "oneOf": [
-            {
-              "$ref": "#/$defs/GainParameters"
-            },
-            {
-              "$ref": "#/$defs/EqParameters"
-            },
-            {
-              "$ref": "#/$defs/CrossoverParameters"
-            },
-            {
-              "$ref": "#/$defs/DelayParameters"
-            },
-            {
-              "$ref": "#/$defs/ConvolutionParameters"
-            },
-            {
-              "$ref": "#/$defs/BandSplitParameters"
-            },
-            {
-              "$ref": "#/$defs/BandMergeParameters"
-            }
-          ]
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": { "plugin_type": { "const": "gain" } }
-          },
-          "then": {
-            "properties": {
-              "parameters": { "$ref": "#/$defs/GainParameters" }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": { "plugin_type": { "const": "eq" } }
-          },
-          "then": {
-            "properties": {
-              "parameters": { "$ref": "#/$defs/EqParameters" }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": { "plugin_type": { "const": "crossover" } }
-          },
-          "then": {
-            "properties": {
-              "parameters": { "$ref": "#/$defs/CrossoverParameters" }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": { "plugin_type": { "const": "delay" } }
-          },
-          "then": {
-            "properties": {
-              "parameters": { "$ref": "#/$defs/DelayParameters" }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": { "plugin_type": { "const": "convolution" } }
-          },
-          "then": {
-            "properties": {
-              "parameters": { "$ref": "#/$defs/ConvolutionParameters" }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": { "plugin_type": { "const": "band_split" } }
-          },
-          "then": {
-            "properties": {
-              "parameters": { "$ref": "#/$defs/BandSplitParameters" }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": { "plugin_type": { "const": "band_merge" } }
-          },
-          "then": {
-            "properties": {
-              "parameters": { "$ref": "#/$defs/BandMergeParameters" }
-            }
-          }
-        }
-      ],
-      "additionalProperties": false
-    },
-    "GainParameters": {
-      "type": "object",
-      "description": "Gain plugin parameters",
-      "required": ["gain_db"],
-      "properties": {
-        "gain_db": {
-          "type": "number",
-          "description": "Gain adjustment in dB (positive = boost, negative = cut)"
-        },
-        "invert": {
-          "type": "boolean",
-          "description": "Polarity inversion",
-          "default": false
-        }
-      },
-      "additionalProperties": false
-    },
-    "EqParameters": {
-      "type": "object",
-      "description": "EQ plugin parameters",
-      "required": ["filters"],
-      "properties": {
-        "filters": {
-          "type": "array",
-          "description": "Array of filter configurations",
-          "items": {
-            "$ref": "#/$defs/FilterConfig"
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "FilterConfig": {
-      "type": "object",
-      "description": "Individual EQ filter configuration",
-      "required": ["filter_type", "freq", "q", "db_gain"],
-      "properties": {
-        "filter_type": {
-          "type": "string",
-          "description": "Filter type",
-          "enum": ["peak", "lowshelf", "highshelf"]
-        },
         "freq": {
-          "type": "number",
-          "description": "Center/corner frequency in Hz",
-          "minimum": 1,
-          "maximum": 48000
-        },
-        "q": {
-          "type": "number",
-          "description": "Q factor (higher = narrower bandwidth)",
-          "minimum": 0.1,
-          "maximum": 50
-        },
-        "db_gain": {
-          "type": "number",
-          "description": "Gain adjustment in dB"
-        }
-      },
-      "additionalProperties": false
-    },
-    "CrossoverParameters": {
-      "type": "object",
-      "description": "Crossover plugin parameters",
-      "required": ["type", "frequency", "output"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "description": "Crossover type",
-          "enum": ["LR24", "LR4", "LR48", "LR8", "Butterworth12", "BW12", "Butterworth24", "BW24"]
-        },
-        "frequency": {
-          "type": "number",
-          "description": "Crossover frequency in Hz",
-          "minimum": 20,
-          "maximum": 20000
-        },
-        "output": {
-          "type": "string",
-          "description": "Band selection",
-          "enum": ["low", "high"]
-        }
-      },
-      "additionalProperties": false
-    },
-    "DelayParameters": {
-      "type": "object",
-      "description": "Delay plugin parameters",
-      "required": ["delay_ms"],
-      "properties": {
-        "delay_ms": {
-          "type": "number",
-          "description": "Delay amount in milliseconds",
-          "minimum": 0,
-          "maximum": 1000
-        }
-      },
-      "additionalProperties": false
-    },
-    "ConvolutionParameters": {
-      "type": "object",
-      "description": "Convolution plugin parameters for FIR filter correction. The WAV file contains the impulse response (FIR coefficients) generated during optimization. For FIR mode, each channel gets a separate WAV file (e.g., 'left_fir.wav', 'right_fir.wav').",
-      "required": ["ir_file"],
-      "properties": {
-        "ir_file": {
-          "type": "string",
-          "description": "Path to WAV file containing impulse response (FIR coefficients). Path is relative to the output JSON file location. The WAV file is 32-bit float mono format at the configured sample rate."
-        },
-        "channels": {
+          "description": "Frequency points in Hz",
           "type": "array",
-          "description": "Optional: specific channel indices to apply convolution to (used in mixed mode with band splitting). If omitted, applies to all channels.",
           "items": {
-            "type": "integer",
-            "minimum": 0
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "spl": {
+          "description": "Sound Pressure Level in dB (normalized)",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "phase": {
+          "description": "Phase in degrees (optional)",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "norm_range": {
+          "description": "Optional frequency range used for normalization",
+          "type": [
+            "array",
+            "null"
+          ],
+          "prefixItems": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "number",
+              "format": "double"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "freq",
+        "spl"
+      ]
+    },
+    "IrWaveform": {
+      "description": "Impulse response waveform (time-domain)",
+      "type": "object",
+      "properties": {
+        "time_ms": {
+          "description": "Time axis in milliseconds",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "amplitude": {
+          "description": "Amplitude (normalized so pre-IR peak = 1.0)",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
-      "additionalProperties": false
-    },
-    "BandSplitParameters": {
-      "type": "object",
-      "description": "Band split plugin parameters for frequency-based mixed mode. Splits audio into low and high frequency bands using a crossover filter.",
-      "required": ["frequency", "type"],
-      "properties": {
-        "frequency": {
-          "type": "number",
-          "description": "Crossover frequency in Hz",
-          "minimum": 20,
-          "maximum": 20000
-        },
-        "type": {
-          "type": "string",
-          "description": "Crossover filter type",
-          "enum": ["LR24", "LR4", "LR48", "LR8", "Butterworth12", "BW12", "Butterworth24", "BW24"]
-        }
-      },
-      "additionalProperties": false
-    },
-    "BandMergeParameters": {
-      "type": "object",
-      "description": "Band merge plugin parameters. Recombines frequency bands that were split by band_split.",
-      "required": ["bands"],
-      "properties": {
-        "bands": {
-          "type": "integer",
-          "description": "Number of bands to merge",
-          "minimum": 2
-        }
-      },
-      "additionalProperties": false
+      "required": [
+        "time_ms",
+        "amplitude"
+      ]
     },
     "OptimizationMetadata": {
+      "description": "Optimization metadata",
       "type": "object",
-      "description": "Metadata about the optimization process",
-      "required": ["pre_score", "post_score", "algorithm", "iterations", "timestamp"],
       "properties": {
         "pre_score": {
+          "description": "Pre-optimization score",
           "type": "number",
-          "description": "Loss function value before optimization"
+          "format": "double"
         },
         "post_score": {
+          "description": "Post-optimization score",
           "type": "number",
-          "description": "Loss function value after optimization (lower is better)"
+          "format": "double"
         },
         "algorithm": {
-          "type": "string",
-          "description": "Optimization algorithm used"
+          "description": "Optimization algorithm used",
+          "type": "string"
         },
         "iterations": {
+          "description": "Number of iterations",
           "type": "integer",
-          "description": "Maximum iterations configured",
+          "format": "uint",
           "minimum": 0
         },
         "timestamp": {
-          "type": "string",
-          "description": "ISO 8601 timestamp of optimization",
-          "format": "date-time"
+          "description": "Timestamp",
+          "type": "string"
+        },
+        "inter_channel_deviation": {
+          "description": "Inter-channel deviation metric (computed when >1 channel)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InterChannelDeviation"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
-      "additionalProperties": false
+      "required": [
+        "pre_score",
+        "post_score",
+        "algorithm",
+        "iterations",
+        "timestamp"
+      ]
+    },
+    "InterChannelDeviation": {
+      "description": "Measurement of inter-channel SPL consistency after optimization.\n\nAt each frequency, the max-min spread across all channels is computed.\nRMS and peak statistics summarize the deviation in key frequency bands.",
+      "type": "object",
+      "properties": {
+        "deviation_per_freq": {
+          "description": "Per-frequency max deviation (freq_hz, spread_db) — sampled at measurement points",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number",
+                "format": "double"
+              },
+              {
+                "type": "number",
+                "format": "double"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "midrange_rms_db": {
+          "description": "RMS of deviation in the midrange (200-4000 Hz)",
+          "type": "number",
+          "format": "double"
+        },
+        "passband_rms_db": {
+          "description": "RMS of deviation from F3 to 10 kHz",
+          "type": "number",
+          "format": "double"
+        },
+        "midrange_peak_db": {
+          "description": "Maximum single-point deviation in midrange",
+          "type": "number",
+          "format": "double"
+        },
+        "midrange_peak_freq": {
+          "description": "Frequency of maximum midrange deviation",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "deviation_per_freq",
+        "midrange_rms_db",
+        "passband_rms_db",
+        "midrange_peak_db",
+        "midrange_peak_freq"
+      ]
     }
   }
 }

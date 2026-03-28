@@ -1109,6 +1109,7 @@ mod tests {
                 algorithm: "cobyla".to_string(),
                 iterations: 1000,
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
+                inter_channel_deviation: None,
             }),
         }
     }

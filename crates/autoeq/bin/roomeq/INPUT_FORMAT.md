@@ -449,6 +449,8 @@ Controls the optimization algorithm, constraints, and advanced features.
 | `vog` | object | - | Voice of God (timbre matching) |
 | `multi_measurement` | object | - | Multi-measurement optimization strategy |
 | `decomposed_correction` | object | - | Decomposed correction |
+| `sub_config` | object | - | Subwoofer-specific optimizer overrides (num_filters, max_db, Q range) |
+| `channel_matching` | object | - | Inter-channel consistency correction (post-hoc PEQ matching) |
 
 ### Optimization Algorithms
 
@@ -744,6 +746,7 @@ With automatic Schroeder frequency from room dimensions:
 | `max_q` | number | `10.0` | Maximum Q factor for low frequency filters |
 | `min_q` | number | `0.5` | Minimum Q factor |
 | `allow_boost` | boolean | `false` | Allow boost (`true`) or cuts only (`false`). Cuts-only is recommended for room modes. |
+| `max_db` | number | - | Maximum boost/cut in dB for below-Schroeder filters. Room modes can be 15+ dB. When set, allows wider range than the global `max_db`. Omit to use global `max_db`. |
 
 **HighFreqFilterConfig Fields:**
 
@@ -965,6 +968,60 @@ Applies frequency-dependent correction weights based on acoustic decomposition. 
 | `mode_correction_weight` | number | `1.0` | Correction weight for room modes (0.0-1.0) |
 | `early_reflection_weight` | number | `0.3` | Correction weight for early reflections (0.0-1.0) |
 | `steady_state_weight` | number | `0.5` | Correction weight for steady-state above Schroeder (0.0-1.0) |
+
+---
+
+## Subwoofer Optimizer Configuration
+
+Subwoofers deal with dense room modes that can be 15+ dB. They need more filters and wider dB range than main speakers. When `sub_config` is set, these values override the global optimizer parameters for channels identified as subwoofers (via `system.subwoofers` mapping or name-based detection for "lfe"/"sub*" channels).
+
+```json
+{
+  "optimizer": {
+    "sub_config": {
+      "num_filters": 10,
+      "max_db": 18.0,
+      "min_db": -18.0,
+      "min_q": 0.5,
+      "max_q": 10.0
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `num_filters` | integer | `10` | Number of PEQ filters for subwoofer channels |
+| `max_db` | number (dB) | `18.0` | Maximum boost (room gain can be 15+ dB at resonances) |
+| `min_db` | number (dB) | `-18.0` | Maximum cut |
+| `min_q` | number | `0.5` | Minimum Q factor |
+| `max_q` | number | `10.0` | Maximum Q factor (higher Q for narrow room modes) |
+
+---
+
+## Channel Matching Configuration
+
+After independent per-channel EQ optimization, channels may have residual SPL differences at specific frequencies. The channel matching post-processing pass adds a small number of parametric filters per channel to reduce the deviation from the group average.
+
+```json
+{
+  "optimizer": {
+    "channel_matching": {
+      "enabled": true,
+      "threshold_db": 1.5,
+      "max_filters": 3
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Enable inter-channel matching correction |
+| `threshold_db` | number (dB) | `1.5` | Midrange ICD RMS threshold below which no correction is applied |
+| `max_filters` | integer | `3` | Maximum additional PEQ filters per channel for matching |
+
+The matching filters are labeled `"channel_matching"` in the output DSP chain and target the largest per-frequency deviations from the group average. The inter-channel deviation (ICD) metric is reported in the output metadata.
 
 ---
 

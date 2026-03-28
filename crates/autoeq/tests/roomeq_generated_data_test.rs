@@ -272,6 +272,9 @@ fn run_roomeq_with_mode(
     config.optimizer.fir = mode_config.fir.clone();
     config.optimizer.mixed_phase = mode_config.mixed_phase.clone();
 
+    // Enable channel matching correction
+    config.optimizer.channel_matching = Some(autoeq::roomeq::ChannelMatchingConfig::default());
+
     // Reduced iterations for speed, fixed seed for reproducibility
     config.optimizer.max_iter = 2000;
     config.optimizer.refine = false;
@@ -512,6 +515,19 @@ fn run_multimode_comparison(scenario_name: &str) {
                     ));
                 }
             }
+        }
+    }
+
+    // Inter-channel deviation from metadata
+    println!("\n  Inter-channel deviation (ICD) per mode:");
+    for (mode_name, result) in &results {
+        if let Some(icd) = &result.metadata.inter_channel_deviation {
+            println!(
+                "    {:12} midrange_rms={:.2}dB  peak={:.1}dB @{:.0}Hz  passband_rms={:.2}dB",
+                mode_name, icd.midrange_rms_db, icd.midrange_peak_db, icd.midrange_peak_freq, icd.passband_rms_db,
+            );
+        } else {
+            println!("    {:12} (no ICD data)", mode_name);
         }
     }
 
