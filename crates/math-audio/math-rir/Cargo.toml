@@ -1,0 +1,18 @@
+[package]
+name = "math-rir"
+version = "0.4.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Room Impulse Response analysis: SSIR-based reflection detection, segmentation, and mixing time estimation"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["rir", "impulse-response", "reflection", "spatial-audio", "room-acoustics"]
+categories = ["science", "multimedia::audio"]
+
+[lib]
+name = "math_rir"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]

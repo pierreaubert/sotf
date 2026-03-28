@@ -35,6 +35,10 @@ mod iir;
 mod phase_smooth;
 /// Zero-Delay Feedback State Variable Filter (Zavalishin TPT topology).
 pub mod svf;
+/// Linkwitz-Riley 4th-order IIR crossover.
+pub mod lr4_crossover;
+/// Linear-phase FIR crossover (windowed sinc).
+pub mod fir_crossover;
 
 // Re-export error types
 pub use error::{IirError, Result};
@@ -68,6 +72,10 @@ pub use phase_smooth::{interpolate_phase_complex, smooth_phase_via_group_delay, 
 
 // Re-export SVF filter types
 pub use svf::{SvfFilter, SvfFilterType};
+
+// Re-export crossover types
+pub use lr4_crossover::{CROSSOVER_PRESETS, Lr4Crossover, MultibandLr4Crossover};
+pub use fir_crossover::{FirCrossover, MultibandFirCrossover};
 
 // ============================================================================
 // Common Helper Functions and Constants

@@ -93,18 +93,36 @@ plugins-qa-diagnostics:
 	cargo run --release -p sotf-plugin-ab-compare --bin qa-ab-compare --features qa
 	cargo run --release -p sotf-plugin-aec --bin qa-aec --features qa
 	cargo run --release -p sotf-plugin-ambisonics --bin qa-ambisonics --features qa
+	cargo run --release -p sotf-plugin-band-merge --bin qa-band-merge --features qa
+	cargo run --release -p sotf-plugin-band-split --bin qa-band-split --features qa
 	cargo run --release -p sotf-plugin-beamformer --bin qa-beamformer --features qa
+	cargo run --release -p sotf-plugin-binaural --bin qa-binaural --features qa
+	cargo run --release -p sotf-plugin-channel-mute-solo --bin qa-channel-mute-solo --features qa
+	cargo run --release -p sotf-plugin-convolution --bin qa-convolution --features qa
+	cargo run --release -p sotf-plugin-crossfeed --bin qa-crossfeed --features qa
+	cargo run --release -p sotf-plugin-crossover --bin qa-crossover --features qa
+	cargo run --release -p sotf-plugin-de-esser --bin qa-de-esser --features qa
 	cargo run --release -p sotf-plugin-delay --bin qa-delay --features qa
+	cargo run --release -p sotf-plugin-denoiser --bin qa-denoiser --features qa
+	cargo run --release -p sotf-plugin-dither --bin qa-dither --features qa
 	cargo run --release -p sotf-plugin-downmix --bin qa-downmix --features qa
+	cargo run --release -p sotf-plugin-dynamic-eq --bin qa-dynamic-eq --features qa
 	cargo run --release -p sotf-plugin-eq --bin qa-eq --features qa
 	cargo run --release -p sotf-plugin-gain --bin qa-gain --features qa
 	cargo run --release -p sotf-plugin-gate --bin qa-gate --features qa
 	cargo run --release -p sotf-plugin-limiter --bin qa-limiter --features qa
+	cargo run --release -p sotf-plugin-linear-phase-eq --bin qa-linear-phase-eq --features qa
 	cargo run --release -p sotf-plugin-loudness-compensation --bin qa-loudness-compensation --features qa
+	cargo run --release -p sotf-plugin-matrix --bin qa-matrix --features qa
 	cargo run --release -p sotf-plugin-mono-to-stereo --bin qa-mono-to-stereo --features qa
 	cargo run --release -p sotf-plugin-multiband-compressor --bin qa-multiband-compressor --features qa
 	cargo run --release -p sotf-plugin-multiband-expander --bin qa-multiband-expander --features qa
 	cargo run --release -p sotf-plugin-pnd --bin qa-pnd --features qa
+	cargo run --release -p sotf-plugin-resampler --bin qa-resampler --features qa
+	cargo run --release -p sotf-plugin-saturation --bin qa-saturation --features qa
+	cargo run --release -p sotf-plugin-spectral-compressor --bin qa-spectral-compressor --features qa
+	cargo run --release -p sotf-plugin-stereo-imager --bin qa-stereo-imager --features qa
+	cargo run --release -p sotf-plugin-transient-shaper --bin qa-transient-shaper --features qa
 	cargo run --release -p sotf-plugin-upmixer --bin qa-upmixer --features qa
 	cargo run --release -p sotf-plugin-xtc --bin qa-xtc --features qa
 

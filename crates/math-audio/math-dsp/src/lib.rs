@@ -33,6 +33,20 @@ pub mod stft;
 pub mod tonal_transient;
 pub mod waveform;
 
+// DSP building blocks (moved from sotf-host)
+pub mod adaa;
+pub mod auto_makeup;
+pub mod channel_linking;
+pub mod dc_blocker;
+pub mod delta_monitor;
+pub mod detector;
+pub mod envelope;
+pub mod envelope_follower;
+pub mod lookahead;
+pub mod smoothing;
+pub mod true_peak;
+pub mod dynamics_core;
+
 // Re-export commonly used types
 pub use analysis::{
     AnalysisResult, MicrophoneCompensation, WavAnalysisConfig, WavAnalysisOutput,

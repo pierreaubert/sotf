@@ -11,6 +11,7 @@ Mathematical and DSP libraries for the SOTF audio processing project.
 | [math-optimisation](math-optimisation/) | `math_audio_optimisation` | Differential Evolution optimizer, L-SHADE, Levenberg-Marquardt |
 | [math-test-functions](math-test-functions/) | `math_audio_test_functions` | 56+ benchmark functions for optimizer validation |
 | [math-delaunay](math-delaunay/) | `math_delaunay` | Delaunay triangulation and Voronoi diagrams (port of d3-delaunay) |
+| [math-rir](math-rir/) | `math_rir` | Room Impulse Response analysis: SSIR reflection detection, segmentation, mixing time |
 
 ## Dependency Graph
 
@@ -26,6 +27,8 @@ math-iir-fir  (independent)
 math-dsp  (depends on math-iir-fir)
 
 math-delaunay  (independent)
+
+math-rir  (independent)
 ```
 
 ## Build & Test
@@ -35,7 +38,7 @@ math-delaunay  (independent)
 just prod-math
 
 # Run all tests
-cargo test -p math-iir-fir -p math-dsp -p math-optimisation -p math-test-functions -p math-delaunay --lib
+cargo test -p math-iir-fir -p math-dsp -p math-optimisation -p math-test-functions -p math-delaunay -p math-rir --lib
 
 # Run benchmarks
 just bench-math
