@@ -3,6 +3,10 @@ name = "sotf-plugin-xtc"
 description = "SOTF XTC plugin - crosstalk cancellation"
 version = "0.5.35"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_xtc"

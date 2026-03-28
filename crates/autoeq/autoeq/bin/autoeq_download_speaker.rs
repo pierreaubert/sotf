@@ -196,7 +196,6 @@ async fn write_json(path: &PathBuf, value: &Value) -> Result<(), Box<dyn Error>>
 #[cfg(test)]
 mod tests {
     use autoeq::read;
-    use autoeq_env::DATA_CACHED;
 
     #[test]
     fn sanitize_replaces_forbidden() {
@@ -210,7 +209,7 @@ mod tests {
     fn data_dir_builds_expected_path() {
         let p = read::data_dir_for("KEF LS50 Meta");
         let expected =
-            std::path::Path::new(DATA_CACHED).join("speakers/org.spinorama/KEF LS50 Meta");
+            std::path::Path::new("data_cached").join("speakers/org.spinorama/KEF LS50 Meta");
         assert!(p.ends_with(expected));
     }
 }

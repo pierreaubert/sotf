@@ -3,6 +3,10 @@ name = "sotf-plugin-downmix"
 description = "SOTF Downmix plugin - multichannel to stereo downmixing"
 version = "0.5.22"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_downmix"

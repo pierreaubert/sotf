@@ -33,7 +33,7 @@ pub fn run_recorded_differential_evolution<F>(
 where
     F: Fn(&Array1<f64>) -> f64 + Send + Sync + 'static,
 {
-    // Get the records directory from AUTOEQ_DIR environment variable
+    // Get the records directory from the directories crate
     let records_dir =
         get_records_dir().map_err(|e| format!("Failed to get records directory: {}", e))?;
     let output_dir = records_dir.to_string_lossy().to_string();

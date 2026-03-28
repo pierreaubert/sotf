@@ -3,6 +3,11 @@ name = "sotf-plugin-spectral-compressor"
 description = "SOTF Spectral Compressor plugin - per-bin frequency domain dynamics"
 version = "0.5.20"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [lib]
 name = "sotf_plugin_spectral_compressor"

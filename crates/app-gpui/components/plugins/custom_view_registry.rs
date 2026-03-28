@@ -105,6 +105,12 @@ impl GpuiViewRegistry {
     }
 }
 
+impl Default for GpuiViewRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ============================================================================
 // Render function wrappers
 // ============================================================================

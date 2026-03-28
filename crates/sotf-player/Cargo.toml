@@ -3,6 +3,8 @@ name = "sotf-player"
 version = "0.5.114"
 authors.workspace = true
 edition.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Shared business logic for SOTF audio players"
 license.workspace = true
 repository.workspace = true
@@ -25,7 +27,6 @@ path = "src/bin/bliss_scan.rs"
 [dependencies]
 math-iir-fir = { workspace = true }
 math-optimisation = { workspace = true }
-autoeq-env = { workspace = true }
 autoeq = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }

@@ -3,6 +3,10 @@ name = "sotf-plugin-pnd"
 description = "SOTF PND plugin - Perceptual Noise Diffusion"
 version = "0.5.1"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_pnd"

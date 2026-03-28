@@ -836,6 +836,17 @@ fn create_plugin(
     channels: usize,
     sample_rate: u32,
 ) -> Result<Box<dyn Plugin>, String> {
+    sotf_plugins::create_plugin(plugin_type, parameters, channels, sample_rate)
+}
+
+/// Legacy inline factory -- kept for reference, replaced by `sotf_plugins::create_plugin`.
+#[allow(dead_code, unreachable_code)]
+fn create_plugin_legacy(
+    plugin_type: &str,
+    parameters: &serde_json::Value,
+    channels: usize,
+    sample_rate: u32,
+) -> Result<Box<dyn Plugin>, String> {
     use sotf_plugins::{
         BinauralDecoderPlugin, CompressorPlugin, CrossfeedPlugin, CrossfeedPluginParams, EqPlugin,
         ExpanderPlugin, GainPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin,

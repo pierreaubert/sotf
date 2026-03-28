@@ -3,6 +3,10 @@ name = "plugins-nih"
 description = "VST3/CLAP plugin wrappers for SOTF audio plugins via nih-plug"
 version = "0.5.3"
 edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 authors.workspace = true
 license.workspace = true
 

@@ -37,6 +37,7 @@ pub struct AtomicParamCache {
 // AtomicU64 and Vec<ParamMeta> (containing String) are both Send+Sync,
 // so AtomicParamCache auto-derives Send+Sync. Compile-time assertion:
 const _: () = {
+    #[expect(dead_code, reason = "compile-time Send+Sync assertion")]
     fn assert_send_sync<T: Send + Sync>() {}
     fn _check() { assert_send_sync::<AtomicParamCache>(); }
 };

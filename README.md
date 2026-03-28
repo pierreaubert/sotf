@@ -200,10 +200,6 @@ Status: ok-ish
 
 [CEA2034/Spinorama](./crates/autoeq-cea2034/README.md) calculations (listening window, early reflections, predicted in-room response, speaker scores)
 
-#### autoeq-env
-
-Environment utilities and constants shared across crates (soon deprecated)
-
 #### autoeq-roomsim
 
 WASM-targeted [room acoustic simulator](./crates/autoeq-roomsim/README.md) using BEM (boundary element method)

@@ -57,7 +57,7 @@ pub struct OptimizationRecord {
 
 impl OptimizationRecorder {
     /// Create a new optimization recorder for the given function
-    /// Uses the default records directory under AUTOEQ_DIR/data_generated/records
+    /// Uses the default records directory under ./data_generated/records
     pub fn new(function_name: String) -> Self {
         Self::with_output_dir(function_name, "./data_generated/records".to_string())
     }
@@ -389,7 +389,7 @@ mod tests {
             }
             Err(e) => {
                 panic!(
-                    "Test requires AUTOEQ_DIR to be set. Error: {}\nPlease run: export AUTOEQ_DIR=/path/to/autoeq",
+                    "Test failed to resolve records directory. Error: {}",
                     e
                 );
             }

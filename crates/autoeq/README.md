@@ -7,7 +7,6 @@ Automatic equalization for speakers, headphones, and rooms.
 | Crate | Lib Name | Description |
 |---|---|---|
 | [autoeq](autoeq/) | `autoeq` | Core optimization library and CLI tools for speaker, headphone, and room EQ |
-| [autoeq-env](autoeq-env/) | `autoeq_env` | Shared environment utilities (paths, constants) |
 
 ## Binaries
 
@@ -31,7 +30,7 @@ Automatic equalization for speakers, headphones, and rooms.
 just prod-autoeq
 
 # Run tests
-cargo test -p autoeq -p autoeq-env --lib
+cargo test -p autoeq --lib
 
 # QA suites
 just qa-autoeq       # Speaker optimization benchmarks
@@ -44,8 +43,5 @@ just bench-autoeq
 ## Dependency Graph
 
 ```
-autoeq-env  (independent, minimal)
-    |
-    v
-autoeq  (depends on autoeq-env, math-iir-fir, math-dsp, math-optimisation)
+autoeq  (depends on math-iir-fir, math-dsp, math-optimisation)
 ```

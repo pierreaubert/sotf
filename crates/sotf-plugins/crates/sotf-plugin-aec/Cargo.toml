@@ -3,6 +3,11 @@ name = "sotf-plugin-aec"
 description = "SOTF Acoustic Echo Cancellation plugin - PBFDAF with two-path and post-filter"
 version = "0.5.0"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [lib]
 name = "sotf_plugin_aec"

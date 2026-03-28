@@ -3,6 +3,10 @@ name = "sotf-dlna"
 description = "DLNA/UPnP MediaRenderer and MediaServer for SOTF"
 version = "0.1.0"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 log = { workspace = true }

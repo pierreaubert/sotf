@@ -33,6 +33,7 @@ pub fn build_server_tls_config(
 ///
 /// # Errors
 /// Returns an error if the server certificate or key is invalid.
+#[allow(clippy::implicit_hasher, reason = "HashSet is stored in Arc<Mutex<>> so generalizing the hasher is impractical")]
 pub fn build_server_tls_config_mtls(
     cert: CertificateDer<'static>,
     key: PrivateKeyDer<'static>,

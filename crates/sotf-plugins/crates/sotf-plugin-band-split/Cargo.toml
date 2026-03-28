@@ -3,6 +3,10 @@ name = "sotf-plugin-band-split"
 description = "SOTF Band Split plugin - split signal into frequency bands"
 version = "0.5.1"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_band_split"

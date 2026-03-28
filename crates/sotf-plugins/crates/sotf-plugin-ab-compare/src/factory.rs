@@ -4,6 +4,7 @@ use super::config::{GraphEdgeConfig, GraphNodeConfig, PathConfig};
 use sotf_host::InPlacePluginAdapter;
 use sotf_host::host::{DawHost, GraphEdge};
 use sotf_host::plugin::Plugin;
+use sotf_host::PluginFactoryFn;
 use sotf_plugin_multiband_compressor::{MultibandCompressorPlugin, MultibandCompressorPluginParams};
 use sotf_plugin_delay::{DelayPlugin, DelayPluginParams};
 use sotf_plugin_eq::{EqPlugin, EqPluginParams};
@@ -12,8 +13,25 @@ use sotf_plugin_gate::{GatePlugin, GatePluginParams};
 use sotf_plugin_limiter::{LimiterPlugin, LimiterPluginParams};
 use std::collections::HashMap;
 
-/// Create a plugin from type name and parameters
-pub fn create_plugin(
+/// Create a plugin, delegating to the external factory if provided,
+/// falling back to the built-in limited factory.
+fn create_plugin(
+    plugin_type: &str,
+    parameters: &serde_json::Value,
+    num_channels: usize,
+    sample_rate: u32,
+    external_factory: Option<PluginFactoryFn>,
+) -> Result<Box<dyn Plugin>, String> {
+    if let Some(factory) = external_factory {
+        return factory(plugin_type, parameters, num_channels, sample_rate);
+    }
+    // Fallback: built-in limited factory (6 types)
+    create_plugin_builtin(plugin_type, parameters, num_channels, sample_rate)
+}
+
+/// Built-in factory supporting a minimal set of plugin types.
+/// Used when no external factory is provided (e.g., in unit tests).
+fn create_plugin_builtin(
     plugin_type: &str,
     parameters: &serde_json::Value,
     num_channels: usize,
@@ -60,11 +78,21 @@ pub fn create_plugin(
     }
 }
 
-/// Build a DawHost from a PathConfig
+/// Build a DawHost from a PathConfig, optionally using an external plugin factory.
 pub fn build_path_from_config(
     config: &PathConfig,
     num_channels: usize,
     sample_rate: u32,
+) -> Result<DawHost, String> {
+    build_path_from_config_with_factory(config, num_channels, sample_rate, None)
+}
+
+/// Build a DawHost from a PathConfig with an explicit factory function.
+pub fn build_path_from_config_with_factory(
+    config: &PathConfig,
+    num_channels: usize,
+    sample_rate: u32,
+    factory: Option<PluginFactoryFn>,
 ) -> Result<DawHost, String> {
     let mut host = DawHost::new(num_channels, sample_rate);
 
@@ -76,18 +104,18 @@ pub fn build_path_from_config(
             plugin_type,
             parameters,
         } => {
-            let plugin = create_plugin(plugin_type, parameters, num_channels, sample_rate)?;
+            let plugin = create_plugin(plugin_type, parameters, num_channels, sample_rate, factory)?;
             host.add_plugin(plugin)?;
         }
         PathConfig::Rack { plugins } => {
             for p in plugins {
                 let plugin =
-                    create_plugin(&p.plugin_type, &p.parameters, num_channels, sample_rate)?;
+                    create_plugin(&p.plugin_type, &p.parameters, num_channels, sample_rate, factory)?;
                 host.add_plugin(plugin)?;
             }
         }
         PathConfig::Graph { nodes, edges } => {
-            build_graph(&mut host, nodes, edges, num_channels, sample_rate)?;
+            build_graph(&mut host, nodes, edges, num_channels, sample_rate, factory)?;
         }
     }
 
@@ -100,22 +128,22 @@ fn build_graph(
     edges: &[GraphEdgeConfig],
     num_channels: usize,
     sample_rate: u32,
+    factory: Option<PluginFactoryFn>,
 ) -> Result<(), String> {
     let mut node_ids: HashMap<String, usize> = HashMap::new();
 
-    // Add all nodes
     for node in nodes {
         let plugin = create_plugin(
             &node.plugin_type,
             &node.parameters,
             num_channels,
             sample_rate,
+            factory,
         )?;
         let id = host.add_node(node.id.clone(), plugin)?;
         node_ids.insert(node.id.clone(), id);
     }
 
-    // Add all edges
     for edge in edges {
         let from_id = *node_ids
             .get(&edge.from)
@@ -131,8 +159,6 @@ fn build_graph(
         host.add_edge(graph_edge)?;
     }
 
-    // Build the graph
     host.build()?;
-
     Ok(())
 }

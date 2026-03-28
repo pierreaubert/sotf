@@ -2,6 +2,10 @@
 name = "sofa-reader"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Pure-Rust SOFA (HDF5/NetCDF4) file reader and writer for HRTF data"
 
 [features]

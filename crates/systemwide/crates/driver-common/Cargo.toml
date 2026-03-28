@@ -2,6 +2,10 @@
 name = "driver-common"
 version = "0.1.0"
 edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Platform-agnostic audio driver trait for system-wide audio capture"

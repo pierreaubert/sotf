@@ -4,7 +4,7 @@
 //! 'A Statistical Model that Predicts Listeners' Preference Ratings of In-Ear Headphones'
 //! by Sean Olive et al. Lower scores indicate better predicted preference.
 //!
-//! Output plots are automatically saved to $AUTOEQ_DIR/data_generated/headphone_loss_plots.html
+//! Output plots are automatically saved to data_generated/headphone_loss_plots.html
 //!
 //! Usage:
 //!   cargo run --example headphone_loss_demo -- --spl <file> --target <file> [--smooth] [--smooth-n <n>]
@@ -15,8 +15,6 @@ use autoeq::read::{
     create_log_frequency_grid, normalize_and_interpolate_response, read_curve_from_csv,
     smooth_one_over_n_octave,
 };
-use autoeq_env::get_data_generated_dir;
-
 use clap::Parser;
 use plotly::common::Mode;
 use plotly::{Plot, Scatter};
@@ -111,9 +109,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Headphone Loss Score: {:.3}", -score);
     println!("{}", "=".repeat(50));
 
-    // Get data_generated directory and create output path
-    let data_generated_dir = get_data_generated_dir()
-        .map_err(|e| format!("Failed to get data_generated directory: {}", e))?;
+    // Create output path in data_generated directory
+    let data_generated_dir = std::path::PathBuf::from("data_generated");
+    std::fs::create_dir_all(&data_generated_dir)?;
     let output_path = data_generated_dir.join("headphone_loss_plots.html");
 
     // Generate plots

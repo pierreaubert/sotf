@@ -61,7 +61,7 @@ mod tests {
             .build()
             .expect("popsize must be >= 4");
 
-        // Run the recorded optimization (requires AUTOEQ_DIR to be set)
+        // Run the recorded optimization
         let result =
             run_recorded_differential_evolution("rosenbrock_metadata", rosenbrock, &bounds, config);
 
@@ -89,7 +89,7 @@ mod tests {
             }
             Err(e) => {
                 panic!(
-                    "Test requires AUTOEQ_DIR to be set. Error: {}\nPlease run: export AUTOEQ_DIR=/path/to/autoeq",
+                    "Test failed to resolve records directory. Error: {}",
                     e
                 );
             }

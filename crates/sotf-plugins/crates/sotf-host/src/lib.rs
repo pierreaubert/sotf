@@ -47,6 +47,15 @@ pub mod test_utils;
 
 pub use adaa::{Adaa1, Adaa2, adaa1_hardclip, adaa1_softclip, adaa1_tanh, adaa2_hardclip, adaa2_softclip, adaa2_tanh};
 pub use analyzer::{AnalyzerData, LoudnessData, SpectrumData};
+
+/// Function signature for plugin factories.
+/// Takes (plugin_type, parameters, channels, sample_rate) and returns a boxed Plugin.
+pub type PluginFactoryFn = fn(
+    plugin_type: &str,
+    parameters: &serde_json::Value,
+    channels: usize,
+    sample_rate: u32,
+) -> Result<Box<dyn plugin::Plugin>, String>;
 pub use auto_makeup::MeasuredMakeup;
 pub use channel_linking::{compute_linked_levels, link_stereo};
 pub use dc_blocker::DcBlocker;

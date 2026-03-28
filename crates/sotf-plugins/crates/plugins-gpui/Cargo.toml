@@ -3,6 +3,10 @@ name = "plugins-gpui"
 description = "Common GPUI rendering infrastructure for SOTF audio plugin UIs"
 version = "0.5.3"
 edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 authors.workspace = true
 license.workspace = true
 

@@ -3,6 +3,10 @@ name = "sotf-types"
 description = "Shared configuration types for the SOTF audio system"
 version.workspace = true
 edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 license.workspace = true
 
 [lib]

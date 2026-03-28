@@ -3,6 +3,10 @@ name = "sotf-plugin-matrix"
 description = "SOTF Matrix plugin - channel matrix mixing"
 version = "0.5.88"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_matrix"

@@ -3,6 +3,10 @@ name = "sotf-plugin-ab-compare"
 description = "SOTF AB Compare plugin - A/B comparison"
 version = "0.5.2"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_ab_compare"

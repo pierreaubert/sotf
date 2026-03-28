@@ -79,11 +79,11 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Export active playlist — ensure a playlist is open first
             use crate::app::{FilePickerMode, FilePickerOrigin};
             let has_active = app.playlist_controller.active_playlist().is_some();
-            if !has_active {
-                if let Some(db) = app.library.get_database() {
-                    let idx = app.playlist_controller.selected_playlist_index;
-                    let _ = app.playlist_controller.open_playlist(db, idx);
-                }
+            if !has_active
+                && let Some(db) = app.library.get_database()
+            {
+                let idx = app.playlist_controller.selected_playlist_index;
+                let _ = app.playlist_controller.open_playlist(db, idx);
             }
             if app.playlist_controller.active_playlist().is_some() {
                 app.open_file_explorer(
@@ -129,19 +129,19 @@ fn handle_tracks_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Char('K') => {
             // Move track up
-            if let Some(db) = app.library.get_database() {
-                if let Err(e) = app.playlist_controller.move_track_up(db) {
-                    app.status_message = Some(format!("Error: {}", e));
-                }
+            if let Some(db) = app.library.get_database()
+                && let Err(e) = app.playlist_controller.move_track_up(db)
+            {
+                app.status_message = Some(format!("Error: {}", e));
             }
             None
         }
         KeyCode::Char('J') => {
             // Move track down
-            if let Some(db) = app.library.get_database() {
-                if let Err(e) = app.playlist_controller.move_track_down(db) {
-                    app.status_message = Some(format!("Error: {}", e));
-                }
+            if let Some(db) = app.library.get_database()
+                && let Err(e) = app.playlist_controller.move_track_down(db)
+            {
+                app.status_message = Some(format!("Error: {}", e));
             }
             None
         }
@@ -165,19 +165,19 @@ fn handle_text_input(app: &mut App, key: KeyEvent, is_create: bool) -> Option<Pl
         }
         KeyCode::Enter => {
             let name = app.playlist_name_input.trim().to_string();
-            if !name.is_empty() {
-                if let Some(db) = app.library.get_database() {
-                    if is_create {
-                        match app.playlist_controller.create_playlist(db, &name, None) {
-                            Ok(_) => app.status_message = Some(format!("Created '{}'", name)),
-                            Err(e) => app.status_message = Some(format!("Error: {}", e)),
-                        }
-                    } else {
-                        let idx = app.playlist_controller.selected_playlist_index;
-                        match app.playlist_controller.rename_playlist(db, idx, &name) {
-                            Ok(()) => app.status_message = Some(format!("Renamed to '{}'", name)),
-                            Err(e) => app.status_message = Some(format!("Error: {}", e)),
-                        }
+            if !name.is_empty()
+                && let Some(db) = app.library.get_database()
+            {
+                if is_create {
+                    match app.playlist_controller.create_playlist(db, &name, None) {
+                        Ok(_) => app.status_message = Some(format!("Created '{}'", name)),
+                        Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                    }
+                } else {
+                    let idx = app.playlist_controller.selected_playlist_index;
+                    match app.playlist_controller.rename_playlist(db, idx, &name) {
+                        Ok(()) => app.status_message = Some(format!("Renamed to '{}'", name)),
+                        Err(e) => app.status_message = Some(format!("Error: {}", e)),
                     }
                 }
             }

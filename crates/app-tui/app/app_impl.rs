@@ -352,10 +352,10 @@ impl App {
         };
 
         // Load playlists from database
-        if let Some(db) = app.library.get_database() {
-            if let Err(e) = app.playlist_controller.load_playlists(db) {
-                log::warn!("Failed to load playlists: {}", e);
-            }
+        if let Some(db) = app.library.get_database()
+            && let Err(e) = app.playlist_controller.load_playlists(db)
+        {
+            log::warn!("Failed to load playlists: {}", e);
         }
 
         app

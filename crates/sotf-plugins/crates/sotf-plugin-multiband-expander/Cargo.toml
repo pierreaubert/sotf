@@ -3,6 +3,10 @@ name = "sotf-plugin-multiband-expander"
 description = "SOTF Multiband Expander plugin - multiband dynamic range expansion"
 version = "0.5.20"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_multiband_expander"

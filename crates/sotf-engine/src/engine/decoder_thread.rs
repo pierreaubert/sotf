@@ -347,7 +347,7 @@ impl DecoderState {
                             let excess = new_staging_len - MAX_RESAMPLE_STAGING_SAMPLES;
                             // Round up to whole frame chunks to keep alignment
                             let drain_amount = if send_chunk_len_here > 0 {
-                                ((excess + send_chunk_len_here - 1) / send_chunk_len_here)
+                                excess.div_ceil(send_chunk_len_here)
                                     * send_chunk_len_here
                             } else {
                                 excess

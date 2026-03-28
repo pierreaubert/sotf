@@ -87,7 +87,7 @@ impl Fdn {
             if new_len != self.delay_lengths[i] {
                 self.delay_lengths[i] = new_len;
                 self.delay_lines[i].resize(new_len, 0.0);
-                self.write_positions[i] = self.write_positions[i] % new_len;
+                self.write_positions[i] %= new_len;
             }
         }
 
@@ -219,10 +219,10 @@ fn prime_delays(n: usize, sample_rate: u32) -> Vec<usize> {
 fn is_prime(n: usize) -> bool {
     if n < 2 { return false; }
     if n < 4 { return true; }
-    if n % 2 == 0 || n % 3 == 0 { return false; }
+    if n.is_multiple_of(2) || n.is_multiple_of(3) { return false; }
     let mut i = 5;
     while i * i <= n {
-        if n % i == 0 || n % (i + 2) == 0 { return false; }
+        if n.is_multiple_of(i) || n.is_multiple_of(i + 2) { return false; }
         i += 6;
     }
     true

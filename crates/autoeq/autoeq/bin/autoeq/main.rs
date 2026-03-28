@@ -17,7 +17,6 @@
 
 use anyhow::{Context, Result, anyhow};
 use autoeq::plot;
-use autoeq_env::DATA_GENERATED;
 use clap::Parser;
 use log::{error, info, warn};
 use std::path::PathBuf;
@@ -208,7 +207,7 @@ async fn run(args: autoeq::cli::Args) -> Result<()> {
 
     // Normal mode: plot and report
     let output_path = args.output.clone().unwrap_or_else(|| {
-        let mut path = PathBuf::from(DATA_GENERATED);
+        let mut path = PathBuf::from("data_generated");
         path.push("autoeq");
         if let Some(speaker) = &args.speaker {
             // Use speaker name for default filename
@@ -369,7 +368,7 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()> {
 
     // Generate plot
     let output_path = args.output.clone().unwrap_or_else(|| {
-        let mut path = std::path::PathBuf::from(autoeq_env::DATA_GENERATED);
+        let mut path = std::path::PathBuf::from("data_generated");
         path.push("autoeq");
         path.push("drivers_crossover_results");
         path

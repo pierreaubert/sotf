@@ -3,6 +3,10 @@ name = "app-cli"
 description = "an audio player and recorder that support audio plugins"
 version = "0.5.21"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [[bin]]
 name = "player-cli"
@@ -34,7 +38,6 @@ env_logger = { workspace = true }
 directories = { workspace = true }
 rusqlite = { workspace = true }
 walkdir = { workspace = true }
-autoeq-env = { workspace = true }
 math-iir-fir = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }

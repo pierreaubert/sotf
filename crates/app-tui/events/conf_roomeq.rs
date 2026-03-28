@@ -656,6 +656,9 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
                                 .collect(),
                         ),
                         normalized_response: None,
+                        target_curve: None,
+                        group_delay_before: None,
+                        group_delay_after: None,
                     })
                     .collect();
                 app.room_eq.opt_status = OptimizationStatus::Completed;

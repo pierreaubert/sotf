@@ -57,7 +57,7 @@ static AU_WINDOW: std::sync::Mutex<Option<AuWindowPtr>> = std::sync::Mutex::new(
 
 /// Get a reference to the current AU window, if any.
 /// Returns None if no window is registered or the pointer is null.
-pub fn au_window() -> Option<&'static AuWindow> {
+pub(crate) fn au_window() -> Option<&'static AuWindow> {
     let guard = AU_WINDOW.lock().ok()?;
     guard
         .as_ref()

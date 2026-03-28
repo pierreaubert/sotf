@@ -3,6 +3,10 @@ name = "sotf-tls"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 license.workspace = true
 description = "TLS infrastructure for SotF — self-signed certs, TOFU trust store, server/client helpers"
 

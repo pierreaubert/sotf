@@ -598,11 +598,10 @@ impl InPlacePlugin for ConvolutionPlugin {
                             .for_each(|(idx, acc)| {
                                 let start = idx * chunk_size;
                                 let end = (start + chunk_size).min(num_partitions);
-                                for p in start..end {
+                                for (p, ir_slice) in ir_partitions.iter().enumerate().take(end).skip(start) {
                                     let fdl_p = (fdl_head + p) % num_partitions;
                                     let fdl_off = (fdl_p * channels + ch) * FFT_SIZE;
                                     let fdl_slice = &fdl_flat[fdl_off..fdl_off + FFT_SIZE];
-                                    let ir_slice = &ir_partitions[p];
                                     complex_mul_add_simd(acc, fdl_slice, ir_slice);
                                 }
                             });

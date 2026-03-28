@@ -269,11 +269,7 @@ just dev              # Build debug binaries
 
 ### Testing
 
-Tests require the `AUTOEQ_DIR` environment variable:
-
 ```bash
-export AUTOEQ_DIR=$(pwd)
-
 # Run all tests
 just test             # cargo check + cargo test --workspace --lib
 
@@ -281,10 +277,10 @@ just test             # cargo check + cargo test --workspace --lib
 just ntest
 
 # Run specific test
-AUTOEQ_DIR=$(pwd) cargo test --lib test_name
+cargo test --lib test_name
 
 # Run tests for a specific crate
-AUTOEQ_DIR=$(pwd) cargo test -p autoeq --lib
+cargo test -p autoeq --lib
 ```
 
 ### Fuzzing

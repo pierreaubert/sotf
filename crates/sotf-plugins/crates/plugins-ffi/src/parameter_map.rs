@@ -147,10 +147,7 @@ impl ParameterMap {
         // Use bridge for correct denormalization (handles log scaling for Hz params)
         self.bridge
             .denormalize(index, normalized)
-            .or_else(|| {
-                // Fallback: linear denormalization
-                Some(info.min_value + normalized * (info.max_value - info.min_value))
-            })
+            .or(Some(info.min_value + normalized * (info.max_value - info.min_value)))
     }
 
     /// Set denormalized parameter value by index.

@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::recording_types::RecordingResult;
 use crate::ReleaseChannel;
 
+/// (frequencies, magnitude_db, phase_deg, wav_path, csv_path)
+type MeasurementData = (Vec<f32>, Vec<f32>, Vec<f32>, Option<String>, Option<String>);
+
 /// Room EQ workflow step
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RoomEqStep {
@@ -276,7 +279,7 @@ impl RoomEqMeasurementsFile {
     fn load_measurement_ref(
         measurement_ref: &autoeq::read::MeasurementRef,
         resolve_path: &dyn Fn(&str) -> String,
-    ) -> (Vec<f32>, Vec<f32>, Vec<f32>, Option<String>, Option<String>) {
+    ) -> MeasurementData {
         match measurement_ref {
             autoeq::read::MeasurementRef::Inline(data) => {
                 let wav_path = data.wav_path.as_deref().map(resolve_path);

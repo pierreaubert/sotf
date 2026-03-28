@@ -2,6 +2,9 @@
 name = "driver-hal"
 version = "0.1.10"
 edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 authors.workspace = true
 license.workspace = true
 description = "Shared memory interface for Swift HAL driver communication"

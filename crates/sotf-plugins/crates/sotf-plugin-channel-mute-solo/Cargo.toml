@@ -3,6 +3,10 @@ name = "sotf-plugin-channel-mute-solo"
 description = "SOTF Channel Mute/Solo plugin - per-channel mute/solo/dim"
 version = "0.5.60"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_channel_mute_solo"

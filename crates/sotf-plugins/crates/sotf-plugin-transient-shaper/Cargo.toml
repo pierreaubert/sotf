@@ -3,6 +3,11 @@ name = "sotf-plugin-transient-shaper"
 description = "SOTF Transient Shaper plugin - SPL Transient Designer approach"
 version = "0.5.4"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [lib]
 name = "sotf_plugin_transient_shaper"

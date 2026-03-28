@@ -2,6 +2,10 @@
 name = "gpui-au"
 version = "0.6.2"
 edition = "2024"
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "macOS Audio Unit platform backend for GPUI — embeds GPUI rendering inside AUv3 ViewControllers"
 license = "ISC"
 

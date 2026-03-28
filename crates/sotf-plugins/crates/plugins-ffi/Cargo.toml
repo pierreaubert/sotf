@@ -2,6 +2,9 @@
 name = "plugins-ffi"
 version = "0.5.3"
 edition.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 authors.workspace = true
 description = "C FFI bindings for SOTF audio plugins (for Audio Unit integration)"
 license.workspace = true

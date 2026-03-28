@@ -92,6 +92,9 @@ edition = "2024"
 documentation = "https://docs.rs/sotf"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/pierreaubert/sotf"
+keywords = ["audio", "dsp", "eq"]
+categories = ["multimedia::audio"]
+readme = "README.md"
 
 [workspace.dependencies]
 
@@ -165,7 +168,6 @@ math-iir-fir = { path = "crates/math-audio/math-iir-fir", version = "0.4" }
 math-optimisation = { path = "crates/math-audio/math-optimisation", version = "0.4" }
 math-dsp = { path = "crates/math-audio/math-dsp", version = "0.4" }
 
-autoeq-env = { version = "0.4", path = "crates/autoeq/autoeq-env" }
 autoeq = { version = "0.4", path = "crates/autoeq/autoeq" }
 
 # using git version

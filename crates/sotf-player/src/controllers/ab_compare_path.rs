@@ -5,17 +5,45 @@
 
 pub use sotf_plugins::plugin_ab_compare::{PathConfig, PluginInRack};
 
-/// Allowed plugin types for A/B sub-racks.
+/// Plugin types available in A/B sub-racks.
 ///
-/// Excludes plugins that duplicate the main host's mandatory rack
-/// (LoudnessMonitor, Gain/ReplayGain, Matrix, LoudnessMonitor) and
-/// infrastructure plugins (Limiter) that belong in the main chain.
-/// The A/B plugin's built-in auto-gain handles level matching.
+/// Includes all processing plugins. Excludes only:
+/// - `ab_compare` (no nesting)
+/// - `loudness_monitor`, `spectrum_analyzer` (analyzers)
+/// - `resampler` (infrastructure)
+/// - `hal_input`, `hal_output` (platform-specific I/O)
 pub const ALLOWED_PLUGIN_TYPES: &[(&str, &str)] = &[
     ("eq", "EQ"),
+    ("gain", "Gain"),
     ("compressor", "Compressor"),
+    ("expander", "Expander"),
+    ("limiter", "Limiter"),
     ("gate", "Gate"),
     ("delay", "Delay"),
+    ("convolution", "Convolution"),
+    ("upmixer", "Upmixer"),
+    ("downmix", "Downmix"),
+    ("mono_to_stereo", "Mono to Stereo"),
+    ("matrix", "Matrix"),
+    ("channel_mute_solo", "Mute/Solo"),
+    ("crossover", "Crossover"),
+    ("crossfeed", "Crossfeed"),
+    ("xtc", "XTC"),
+    ("binaural_decoder", "Binaural"),
+    ("loudness_compensation", "Loudness Comp"),
+    ("denoiser", "Denoiser"),
+    ("pnd", "PND"),
+    ("multiband_compressor", "MB Compressor"),
+    ("multiband_expander", "MB Expander"),
+    ("de_esser", "De-Esser"),
+    ("dynamic_eq", "Dynamic EQ"),
+    ("linear_phase_eq", "Linear Phase EQ"),
+    ("spectral_compressor", "Spectral Comp"),
+    ("stereo_imager", "Stereo Imager"),
+    ("transient_shaper", "Transient Shaper"),
+    ("saturation", "Saturation"),
+    ("band_split", "Band Split"),
+    ("band_merge", "Band Merge"),
 ];
 
 /// Parse a path config JSON string into a flat list of plugins.

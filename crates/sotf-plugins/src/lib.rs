@@ -8,6 +8,10 @@
 // Re-export the serde_param_default macro from sotf-host
 pub use sotf_host::serde_param_default;
 
+// Shared plugin factory
+pub mod factory;
+pub use factory::create_plugin;
+
 // Re-export infrastructure modules from sotf-host
 pub use sotf_host::analyzer;
 pub use sotf_host::analyzer_loudness_monitor;

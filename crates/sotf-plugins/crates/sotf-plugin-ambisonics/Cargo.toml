@@ -3,6 +3,11 @@ name = "sotf-plugin-ambisonics"
 description = "SOTF Ambisonics Decoder plugin - AllRAD decoding from HOA to speaker layouts"
 version = "0.5.3"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [lib]
 name = "sotf_plugin_ambisonics"

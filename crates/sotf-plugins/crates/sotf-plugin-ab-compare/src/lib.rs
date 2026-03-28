@@ -111,6 +111,10 @@ pub struct ABComparePlugin {
     num_channels: usize,
     sample_rate: u32,
 
+    /// External plugin factory -- when set, supports all plugin types.
+    /// Falls back to the built-in limited factory when None.
+    plugin_factory: Option<sotf_host::PluginFactoryFn>,
+
     // Processing paths - use DawHost for flexibility
     host_a: DawHost,
     host_b: DawHost,
@@ -170,6 +174,12 @@ impl ABComparePlugin {
         Self::from_params(num_channels, ABComparePluginParams::default())
     }
 
+    /// Set the external plugin factory, enabling all plugin types in sub-racks.
+    /// Call this after construction but before initialize() or processing.
+    pub fn set_plugin_factory(&mut self, factory: sotf_host::PluginFactoryFn) {
+        self.plugin_factory = Some(factory);
+    }
+
     /// Create from parameters
     pub fn from_params(num_channels: usize, params: ABComparePluginParams) -> Result<Self, String> {
         let sample_rate = 48000; // Will be updated in initialize()
@@ -218,6 +228,7 @@ impl ABComparePlugin {
         let mut p = Self {
             num_channels,
             sample_rate,
+            plugin_factory: None,
             host_a,
             host_b,
             path_a_config: params.path_a,
@@ -381,18 +392,26 @@ impl ABComparePlugin {
         ];
     }
 
-    /// Rebuild path A from config
+    /// Rebuild path A from config (uses external factory if available)
     fn rebuild_path_a(&mut self) -> Result<(), String> {
-        self.host_a =
-            build_path_from_config(&self.path_a_config, self.num_channels, self.sample_rate)?;
+        self.host_a = factory::build_path_from_config_with_factory(
+            &self.path_a_config,
+            self.num_channels,
+            self.sample_rate,
+            self.plugin_factory,
+        )?;
         self.update_latency_compensation();
         Ok(())
     }
 
-    /// Rebuild path B from config
+    /// Rebuild path B from config (uses external factory if available)
     fn rebuild_path_b(&mut self) -> Result<(), String> {
-        self.host_b =
-            build_path_from_config(&self.path_b_config, self.num_channels, self.sample_rate)?;
+        self.host_b = factory::build_path_from_config_with_factory(
+            &self.path_b_config,
+            self.num_channels,
+            self.sample_rate,
+            self.plugin_factory,
+        )?;
         self.update_latency_compensation();
         Ok(())
     }

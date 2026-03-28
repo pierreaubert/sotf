@@ -3,6 +3,10 @@ name = "sotf-plugin-mono-to-stereo"
 description = "SOTF Mono to Stereo plugin - mono to stereo widening"
 version = "0.5.3"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_mono_to_stereo"

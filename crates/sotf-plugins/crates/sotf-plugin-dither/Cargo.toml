@@ -3,6 +3,11 @@ name = "sotf-plugin-dither"
 description = "SOTF Dither plugin - TPDF dither with F-weighted noise shaping for bit-depth reduction"
 version = "0.5.8"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [lib]
 name = "sotf_plugin_dither"

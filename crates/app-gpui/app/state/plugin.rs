@@ -203,15 +203,15 @@ impl PluginState {
         self.ab_path_a = parse_path_config(path_a_json);
         self.ab_path_b = parse_path_config(path_b_json);
         // Clamp selections to valid range
-        if let Some(sel) = self.ab_path_a_selected {
-            if sel >= self.ab_path_a.len() {
-                self.ab_path_a_selected = None;
-            }
+        if let Some(sel) = self.ab_path_a_selected
+            && sel >= self.ab_path_a.len()
+        {
+            self.ab_path_a_selected = None;
         }
-        if let Some(sel) = self.ab_path_b_selected {
-            if sel >= self.ab_path_b.len() {
-                self.ab_path_b_selected = None;
-            }
+        if let Some(sel) = self.ab_path_b_selected
+            && sel >= self.ab_path_b.len()
+        {
+            self.ab_path_b_selected = None;
         }
     }
 

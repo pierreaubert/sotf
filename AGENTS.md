@@ -61,8 +61,6 @@ This is a Cargo workspace with distinct crates organized by functionality:
 **AutoEQ & Optimization:**
 - **`autoeq/`**: Core CLI for EQ optimization with multiple binaries (autoeq, roomeq, benchmarks)
 - **`autoeq-cea2034/`**: CEA2034 (Spinorama) speaker measurement metrics
-- **`autoeq-env/`**: Shared environment utilities and constants
-
 **Mathematical Libraries:**
 - **`math-de/`**: Differential Evolution optimizer forked from SciPy with NLopt/MetaHeuristics interfaces
 - **`math-iir/`**: IIR filter implementations (autoeq-iir) and parametric EQ utilities (Biquad struct)
@@ -415,10 +413,6 @@ Plugins are configured via JSON and loaded dynamically:
 5. **PluginHost** chains plugins and processes audio
 
 Channel count can change between plugins (e.g., upmixer: 2ch → 5ch).
-
-### Environment Variables
-
-- `AUTOEQ_DIR`: Project root for test infrastructure (CSV traces, generated data)
 
 ### Git Workflow
 

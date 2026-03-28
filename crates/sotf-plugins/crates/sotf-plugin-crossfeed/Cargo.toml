@@ -3,6 +3,10 @@ name = "sotf-plugin-crossfeed"
 description = "SOTF Crossfeed plugin - stereo crossfeed for headphones"
 version = "0.5.2"
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugin_crossfeed"

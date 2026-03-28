@@ -3,6 +3,10 @@ name = "sotf-plugins"
 description = "an audio player and recorder that support audio plugins"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 name = "sotf_plugins"
@@ -10,6 +14,7 @@ path = "src/lib.rs"
 
 [features]
 default = []
+iamf = []
 onnx = ["dep:ort", "sotf-plugin-upmixer/onnx"]
 hal = ["sotf-plugin-hal-input", "sotf-plugin-hal-input/hal", "sotf-plugin-hal-output", "sotf-plugin-hal-output/hal", "driver-hal"]
 qa = ["sotf-host/qa", "dep:criterion"]
@@ -74,7 +79,6 @@ env_logger = { workspace = true }
 directories = { workspace = true }
 rusqlite = { workspace = true }
 walkdir = { workspace = true }
-autoeq-env = { workspace = true }
 math-dsp = { workspace = true }
 math-iir-fir = { workspace = true }
 rand = { workspace = true }

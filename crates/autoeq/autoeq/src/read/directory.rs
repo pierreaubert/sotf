@@ -1,5 +1,6 @@
-use autoeq_env::DATA_CACHED;
 use std::path::PathBuf;
+
+const DATA_CACHED: &str = "data_cached";
 
 /// Return the cache directory for a given speaker under `data_cached/speakers/org.spinorama/` using sanitized name
 pub fn data_dir_for(speaker: &str) -> PathBuf {
