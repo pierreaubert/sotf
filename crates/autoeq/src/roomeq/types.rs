@@ -1334,6 +1334,13 @@ pub struct OptimizerConfig {
     ///   Pass 3: User preference (bass/treble shelves)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cea2034_correction: Option<Cea2034CorrectionConfig>,
+
+    /// Runtime-only: path to a measured room impulse response WAV file.
+    /// When set alongside `decomposed_correction`, SSIR analysis is used to
+    /// build data-driven correction weights instead of the static Schroeder split.
+    /// Not serialized — set programmatically before optimization.
+    #[serde(skip)]
+    pub ssir_wav_path: Option<std::path::PathBuf>,
 }
 
 // ============================================================================
@@ -1731,6 +1738,7 @@ impl Default for OptimizerConfig {
             multi_measurement: None,
             decomposed_correction: None,
             cea2034_correction: None,
+            ssir_wav_path: None,
         }
     }
 }

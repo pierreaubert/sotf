@@ -317,6 +317,119 @@ fn build_correction_weights(
     weights
 }
 
+// ============================================================================
+// SSIR-informed correction weights
+// ============================================================================
+
+/// Build per-frequency correction weights informed by SSIR time-domain analysis
+/// of a measured room impulse response.
+///
+/// Instead of using a static Schroeder frequency to divide modal/diffuse regions,
+/// this uses SSIR's detected reflection boundaries and mixing time to set data-driven
+/// correction depths:
+///
+/// - **Direct sound segment**: full correction (weight = 1.0) — this is the speaker's
+///   intrinsic response, correctable regardless of position.
+/// - **Early reflection segments** (detected by SSIR): reduced correction — these are
+///   position-dependent; over-correcting them creates a correction that only works
+///   at the exact measurement position.
+/// - **Reverberant tail** (after mixing time): moderate correction — the diffuse field
+///   is spatially stable but represents room character rather than speaker defects.
+/// - **Room modes**: full correction regardless of region — narrow resonances are
+///   room-intrinsic and spatially consistent.
+///
+/// The result is the same shape as the frequency array, ready to multiply with
+/// the deviation curve in the EQ optimizer.
+pub fn build_ssir_correction_weights(
+    freq: &Array1<f64>,
+    spl: &Array1<f64>,
+    ssir_result: &math_rir::SsirResult,
+    config: &DecomposedCorrectionConfig,
+) -> DecomposedCorrectionResult {
+    let n = freq.len();
+
+    // 1. Detect room modes from frequency-domain data (same as before)
+    let room_modes = detect_room_modes(freq, spl, config);
+
+    // 2. Use SSIR mixing time to derive a data-driven Schroeder-like boundary.
+    //    The mixing time tells us where early reflections end and the diffuse tail
+    //    begins. We map this to a frequency boundary: f_boundary ≈ 1 / T_mix.
+    //    This is a rough heuristic — the actual Schroeder frequency depends on
+    //    room volume and RT60, but the mixing time is a measured proxy.
+    let mixing_time_s = ssir_result.mixing_time_samples as f64 / ssir_result.sample_rate;
+    let ssir_boundary_freq = if mixing_time_s > 0.001 {
+        // Heuristic: the modal region extends up to roughly 1/T_mix.
+        // Clamp to a reasonable range (50-500 Hz).
+        (1.0 / mixing_time_s).clamp(50.0, 500.0)
+    } else {
+        config.schroeder_freq
+    };
+
+    // 3. Determine the time extent of early reflections for energy-based weighting.
+    //    If SSIR detected many reflections, the early sound field is rich and
+    //    position-dependent → lower correction weight above the modal region.
+    //    If few reflections (dry room), we can correct more aggressively.
+    let num_reflections = ssir_result.num_reflections();
+    let reflection_weight = if num_reflections > 8 {
+        // Rich early reflection field — be conservative
+        config.early_reflection_weight * 0.7
+    } else if num_reflections > 4 {
+        config.early_reflection_weight
+    } else {
+        // Dry room — can correct more
+        config.early_reflection_weight * 1.5_f64.min(1.0)
+    };
+
+    // 4. Build per-frequency correction weights using the SSIR-derived boundary
+    let mut weights = Array1::zeros(n);
+
+    let boundary_log = ssir_boundary_freq.log2();
+    let half_transition = config.transition_width_oct / 2.0;
+
+    for i in 0..n {
+        let f = freq[i];
+        let f_log = f.log2();
+
+        // Smooth transition from modal to diffuse region
+        let blend = if config.transition_width_oct <= 0.0 {
+            if f <= ssir_boundary_freq {
+                0.0
+            } else {
+                1.0
+            }
+        } else {
+            let x = (f_log - boundary_log) / half_transition;
+            1.0 / (1.0 + (-x).exp())
+        };
+
+        // Below boundary: early_reflection_weight (modal region)
+        // Above boundary: steady_state_weight (diffuse field)
+        let base_weight =
+            reflection_weight + (config.steady_state_weight - reflection_weight) * blend;
+
+        weights[i] = base_weight;
+    }
+
+    // 5. Boost weights at detected room mode frequencies (full correction)
+    for mode in &room_modes {
+        let bandwidth = mode.frequency / mode.q;
+        let f_low = mode.frequency - bandwidth / 2.0;
+        let f_high = mode.frequency + bandwidth / 2.0;
+
+        for i in 0..n {
+            if freq[i] >= f_low && freq[i] <= f_high {
+                weights[i] = weights[i].max(config.mode_correction_weight);
+            }
+        }
+    }
+
+    DecomposedCorrectionResult {
+        room_modes,
+        correction_weights: weights,
+        schroeder_freq: ssir_boundary_freq,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

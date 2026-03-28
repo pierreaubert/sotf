@@ -16,6 +16,7 @@ use super::impulse_analysis;
 use super::spatial_robustness::{self, SpatialRobustnessConfig};
 use super::types::{MultiMeasurementConfig, MultiMeasurementStrategy, OptimizerConfig, TargetCurveConfig};
 use crate::optim::MultiObjectiveData;
+use hound;
 
 /// Optimize EQ filters for a single channel using autoeq's workflow
 ///
@@ -103,13 +104,42 @@ fn optimize_channel_eq_inner(
             steady_state_weight: dc_config.steady_state_weight,
             ..Default::default()
         };
-        let result = impulse_analysis::analyze_decomposed_correction(
-            &normalized_curve_unsmoothed.freq,
-            &normalized_curve_unsmoothed.spl,
-            &dc_analysis_config,
-        );
+
+        // Try SSIR-informed weights when a measured WAV is available
+        let result = if let Some(path) = config.ssir_wav_path.as_deref() {
+            match try_ssir_analysis(path, sample_rate) {
+                Some(ssir_result) => {
+                    log::info!(
+                        "  SSIR analysis: {} reflections, mixing time={:.1} ms",
+                        ssir_result.num_reflections(),
+                        ssir_result.mixing_time_ms(),
+                    );
+                    impulse_analysis::build_ssir_correction_weights(
+                        &normalized_curve_unsmoothed.freq,
+                        &normalized_curve_unsmoothed.spl,
+                        &ssir_result,
+                        &dc_analysis_config,
+                    )
+                }
+                None => {
+                    log::info!("  SSIR analysis failed, falling back to Schroeder-based decomposition");
+                    impulse_analysis::analyze_decomposed_correction(
+                        &normalized_curve_unsmoothed.freq,
+                        &normalized_curve_unsmoothed.spl,
+                        &dc_analysis_config,
+                    )
+                }
+            }
+        } else {
+            impulse_analysis::analyze_decomposed_correction(
+                &normalized_curve_unsmoothed.freq,
+                &normalized_curve_unsmoothed.spl,
+                &dc_analysis_config,
+            )
+        };
+
         log::info!(
-            "  Decomposed correction: {} room modes detected, Schroeder={:.0} Hz",
+            "  Decomposed correction: {} room modes detected, boundary={:.0} Hz",
             result.room_modes.len(),
             result.schroeder_freq,
         );
@@ -1088,5 +1118,58 @@ mod tests {
 
         assert!(!filters.is_empty(), "should produce filters");
         assert!(loss < 5.0, "loss should be reasonable, got {:.4}", loss);
+    }
+}
+
+/// Try to run SSIR analysis on a measured WAV file.
+///
+/// Returns None if the WAV can't be loaded or the RIR is too short for analysis.
+fn try_ssir_analysis(
+    wav_path: &std::path::Path,
+    _sample_rate: f64,
+) -> Option<math_rir::SsirResult> {
+    let reader = hound::WavReader::open(wav_path).ok()?;
+    let spec = reader.spec();
+    let wav_sr = spec.sample_rate;
+
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => reader.into_samples::<f32>().filter_map(|s| s.ok()).collect(),
+        hound::SampleFormat::Int => {
+            let scale = 1.0 / (1i64 << (spec.bits_per_sample - 1)) as f32;
+            reader
+                .into_samples::<i32>()
+                .filter_map(|s| s.ok())
+                .map(|v| v as f32 * scale)
+                .collect()
+        }
+    };
+
+    if samples.is_empty() {
+        return None;
+    }
+
+    // Use first channel for mono analysis (roomeq measurements are typically mono)
+    let num_channels = spec.channels as usize;
+    let num_frames = samples.len() / num_channels;
+    let mono: Vec<f32> = if num_channels == 1 {
+        samples
+    } else {
+        (0..num_frames).map(|i| samples[i * num_channels]).collect()
+    };
+
+    // Minimum useful RIR length: 10ms
+    let min_samples = (0.010 * wav_sr as f64) as usize;
+    if mono.len() < min_samples {
+        return None;
+    }
+
+    let config = math_rir::SsirConfig::new(wav_sr as f64);
+    let result = math_rir::analyze_rir(&mono, &config);
+
+    // Only return if we actually detected something meaningful
+    if result.num_events() >= 1 {
+        Some(result)
+    } else {
+        None
     }
 }

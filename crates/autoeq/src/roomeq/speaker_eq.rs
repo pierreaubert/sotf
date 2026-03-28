@@ -591,12 +591,18 @@ pub(super) fn process_single_speaker(
 
     // Build optimizer config with the clamped min_freq so the optimizer
     // doesn't place filters below the speaker's rolloff when tilt is active.
-    let clamped_optimizer = if min_freq != room_config.optimizer.min_freq {
+    // Also inject the WAV path for SSIR analysis if available.
+    let wav_path_for_ssir = extract_wav_path(source).and_then(|wp| {
+        let p = std::path::PathBuf::from(&wp);
+        if p.exists() { Some(p) } else { None }
+    });
+    let clamped_optimizer = {
         let mut opt = room_config.optimizer.clone();
-        opt.min_freq = min_freq;
+        if min_freq != room_config.optimizer.min_freq {
+            opt.min_freq = min_freq;
+        }
+        opt.ssir_wav_path = wav_path_for_ssir;
         opt
-    } else {
-        room_config.optimizer.clone()
     };
 
     match room_config.optimizer.processing_mode {

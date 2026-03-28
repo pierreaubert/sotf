@@ -1130,3 +1130,303 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
     )
 
     return fig
+
+
+# ============================================================================
+# Multi-mode comparison figures
+# ============================================================================
+
+# Color scheme for processing modes
+MODE_COLORS: dict[str, str] = {
+    "iir": "#4a90d9",
+    "fir": "#2ecc71",
+    "hybrid": "#e67e22",
+    "mixed_phase": "#9b59b6",
+}
+
+MODE_DISPLAY_NAMES: dict[str, str] = {
+    "iir": "IIR (LowLatency)",
+    "fir": "FIR (PhaseLinear)",
+    "hybrid": "Hybrid (IIR+FIR)",
+    "mixed_phase": "MixedPhase",
+}
+
+
+def _mode_color(mode_name: str) -> str:
+    return MODE_COLORS.get(mode_name, "#888888")
+
+
+def _mode_label(mode_name: str) -> str:
+    return MODE_DISPLAY_NAMES.get(mode_name, mode_name)
+
+
+def create_comparison_overlay_figure(
+    channel_name: str,
+    mode_data: list[tuple[str, dict]],
+    title_suffix: str = "",
+) -> go.Figure:
+    """Overlay final curves from multiple modes on the same plot."""
+    fig = go.Figure()
+
+    initial_curve = None
+    for _, ch_data in mode_data:
+        initial_curve = ch_data.get("initial_curve")
+        if initial_curve:
+            break
+
+    all_curves: list[dict | None] = [initial_curve]
+
+    if initial_curve:
+        spl_smoothed = smooth_octave(
+            initial_curve["freq"], initial_curve["spl"], DEFAULT_SMOOTHING
+        )
+        fig.add_trace(go.Scatter(
+            x=initial_curve["freq"], y=spl_smoothed, mode="lines",
+            name="Before EQ",
+            line=dict(color="rgba(200, 200, 200, 0.6)", width=2),
+        ))
+
+    for mode_name, ch_data in mode_data:
+        final_curve = ch_data.get("final_curve")
+        all_curves.append(final_curve)
+        if final_curve:
+            spl_smoothed = smooth_octave(
+                final_curve["freq"], final_curve["spl"], DEFAULT_SMOOTHING
+            )
+            fig.add_trace(go.Scatter(
+                x=final_curve["freq"], y=spl_smoothed, mode="lines",
+                name=_mode_label(mode_name),
+                line=dict(color=_mode_color(mode_name), width=2),
+            ))
+
+    if initial_curve:
+        freq = initial_curve["freq"]
+        fig.add_trace(go.Scatter(
+            x=[freq[0], freq[-1]], y=[0, 0], mode="lines",
+            name="Target (0 dB)",
+            line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
+        ))
+
+    y_min, y_max = compute_y_range(all_curves)
+    freq_axis = get_freq_axis_config()
+    freq_axis["range"] = [1.3, 4.3]
+
+    fig.update_layout(
+        title=dict(text=f"{channel_name}: Mode Comparison{title_suffix}", font=dict(size=14)),
+        xaxis=freq_axis,
+        yaxis=get_spl_axis_config((y_min, y_max)),
+        legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=60, r=40, t=60, b=60), height=400,
+    )
+    return fig
+
+
+def create_comparison_zoomed_figure(
+    channel_name: str,
+    mode_data: list[tuple[str, dict]],
+    min_freq: float = 20.0,
+    max_freq: float = 500.0,
+    y_half_range: float = 12.0,
+) -> go.Figure:
+    """Zoomed overlay of final curves (bass region) from multiple modes."""
+    fig = go.Figure()
+
+    initial_curve = None
+    for _, ch_data in mode_data:
+        initial_curve = ch_data.get("initial_curve")
+        if initial_curve:
+            break
+
+    ref_curve = None
+    for _, ch_data in mode_data:
+        ref_curve = ch_data.get("final_curve")
+        if ref_curve:
+            break
+    if ref_curve is None:
+        ref_curve = initial_curve
+
+    avg_spl = compute_average_spl_in_range(ref_curve, min_freq, max_freq) if ref_curve else 0.0
+
+    if initial_curve:
+        spl_smoothed = smooth_octave(initial_curve["freq"], initial_curve["spl"], DEFAULT_SMOOTHING)
+        fig.add_trace(go.Scatter(
+            x=initial_curve["freq"], y=spl_smoothed, mode="lines",
+            name="Before EQ",
+            line=dict(color="rgba(200, 200, 200, 0.6)", width=2),
+        ))
+
+    for mode_name, ch_data in mode_data:
+        final_curve = ch_data.get("final_curve")
+        if final_curve:
+            spl_smoothed = smooth_octave(final_curve["freq"], final_curve["spl"], DEFAULT_SMOOTHING)
+            fig.add_trace(go.Scatter(
+                x=final_curve["freq"], y=spl_smoothed, mode="lines",
+                name=_mode_label(mode_name),
+                line=dict(color=_mode_color(mode_name), width=2),
+            ))
+
+    log_min = math.log10(min_freq)
+    log_max = math.log10(max_freq)
+    freq_axis = get_freq_axis_config()
+    freq_axis["range"] = [log_min, log_max]
+    freq_axis["tickvals"] = [20, 50, 100, 200, 500]
+    freq_axis["ticktext"] = ["20", "50", "100", "200", "500"]
+
+    fig.update_layout(
+        title=dict(text=f"{channel_name}: Bass ({int(min_freq)}-{int(max_freq)} Hz)", font=dict(size=14)),
+        xaxis=freq_axis,
+        yaxis=dict(title=dict(text="SPL (dB)", font=dict(size=11)), tickfont=dict(size=10),
+                   gridcolor="rgba(128, 128, 128, 0.2)",
+                   range=[avg_spl - y_half_range, avg_spl + y_half_range], dtick=5),
+        legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=60, r=40, t=60, b=60), height=400,
+    )
+    return fig
+
+
+def create_comparison_eq_overlay_figure(
+    channel_name: str,
+    mode_data: list[tuple[str, dict]],
+) -> go.Figure | None:
+    """Overlay EQ response curves from multiple modes."""
+    fig = go.Figure()
+    has_data = False
+    freq_points = generate_freq_points(20.0, 20000.0, 500)
+
+    for mode_name, ch_data in mode_data:
+        eq_response_data = ch_data.get("eq_response")
+        if eq_response_data and "freq" in eq_response_data and "spl" in eq_response_data:
+            eq_freq = eq_response_data["freq"]
+            eq_spl = eq_response_data["spl"]
+        else:
+            plugins = ch_data.get("plugins", [])
+            eq_filters = []
+            for plugin in plugins:
+                if plugin.get("plugin_type") == "eq":
+                    filters = plugin.get("parameters", {}).get("filters", [])
+                    eq_filters.extend(filters)
+            eq_freq = freq_points if eq_filters else None
+            eq_spl = compute_eq_response(eq_filters, freq_points) if eq_filters else None
+
+        if eq_spl:
+            has_data = True
+            fig.add_trace(go.Scatter(
+                x=eq_freq, y=eq_spl, mode="lines",
+                name=_mode_label(mode_name),
+                line=dict(color=_mode_color(mode_name), width=2),
+            ))
+
+    if not has_data:
+        return None
+
+    fig.add_trace(go.Scatter(
+        x=[freq_points[0], freq_points[-1]], y=[0, 0], mode="lines",
+        name="0 dB", line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
+    ))
+
+    freq_axis = get_freq_axis_config()
+    freq_axis["range"] = [1.3, 4.3]
+    fig.update_layout(
+        title=dict(text=f"EQ Response Comparison: {channel_name}", font=dict(size=14)),
+        xaxis=freq_axis,
+        yaxis=dict(title=dict(text="Gain (dB)", font=dict(size=11)), tickfont=dict(size=10),
+                   gridcolor="rgba(128, 128, 128, 0.2)", range=[-15, 15], dtick=5),
+        legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=60, r=40, t=60, b=60), height=400,
+    )
+    return fig
+
+
+def create_mode_subplots_figure(
+    channel_name: str,
+    mode_data: list[tuple[str, dict]],
+) -> go.Figure:
+    """Create a 1xN subplot grid with one before/after plot per mode."""
+    n_modes = len(mode_data)
+    titles = [_mode_label(name) for name, _ in mode_data]
+
+    fig = make_subplots(rows=1, cols=n_modes, subplot_titles=titles, horizontal_spacing=0.05)
+
+    all_curves: list[dict | None] = []
+    for _, ch_data in mode_data:
+        all_curves.append(ch_data.get("initial_curve"))
+        all_curves.append(ch_data.get("final_curve"))
+    y_min, y_max = compute_y_range(all_curves)
+
+    for col, (mode_name, ch_data) in enumerate(mode_data, start=1):
+        initial_curve = ch_data.get("initial_curve")
+        final_curve = ch_data.get("final_curve")
+        color = _mode_color(mode_name)
+
+        if initial_curve:
+            spl_sm = smooth_octave(initial_curve["freq"], initial_curve["spl"], DEFAULT_SMOOTHING)
+            fig.add_trace(go.Scatter(
+                x=initial_curve["freq"], y=spl_sm, mode="lines",
+                name="Before EQ", line=dict(color="rgba(200, 200, 200, 0.6)", width=1.5),
+                showlegend=(col == 1), legendgroup="before",
+            ), row=1, col=col)
+
+        if final_curve:
+            spl_sm = smooth_octave(final_curve["freq"], final_curve["spl"], DEFAULT_SMOOTHING)
+            fig.add_trace(go.Scatter(
+                x=final_curve["freq"], y=spl_sm, mode="lines",
+                name=_mode_label(mode_name), line=dict(color=color, width=2),
+                showlegend=(col == 1), legendgroup=mode_name,
+            ), row=1, col=col)
+
+        if initial_curve:
+            freq = initial_curve["freq"]
+            fig.add_trace(go.Scatter(
+                x=[freq[0], freq[-1]], y=[0, 0], mode="lines",
+                line=dict(color="rgba(150, 150, 150, 0.3)", width=1, dash="dash"),
+                showlegend=False,
+            ), row=1, col=col)
+
+        fig.update_xaxes(
+            type="log", tickvals=[20, 100, 500, 2000, 10000],
+            ticktext=["20", "100", "500", "2k", "10k"], tickfont=dict(size=9),
+            gridcolor="rgba(128, 128, 128, 0.2)", range=[1.3, 4.3], row=1, col=col,
+        )
+        fig.update_yaxes(
+            tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
+            range=[y_min, y_max], row=1, col=col,
+        )
+
+    fig.update_yaxes(title_text="SPL (dB)", title_font=dict(size=10), row=1, col=1)
+    fig.update_layout(
+        title=dict(text=f"{channel_name}: Per-Mode Detail", font=dict(size=14)),
+        plot_bgcolor="white", paper_bgcolor="white", height=350,
+        margin=dict(l=60, r=30, t=60, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5, font=dict(size=9)),
+    )
+    return fig
+
+
+def create_score_comparison_figure(
+    mode_scores: list[tuple[str, float, float]],
+) -> go.Figure:
+    """Bar chart comparing pre/post scores across modes (lower is better)."""
+    fig = go.Figure()
+
+    mode_names = [_mode_label(n) for n, _, _ in mode_scores]
+    pre_scores = [pre for _, pre, _ in mode_scores]
+    post_scores = [post for _, _, post in mode_scores]
+    colors = [_mode_color(n) for n, _, _ in mode_scores]
+
+    fig.add_trace(go.Bar(name="Before EQ", x=mode_names, y=pre_scores,
+                         marker_color="rgba(200, 200, 200, 0.7)"))
+    fig.add_trace(go.Bar(name="After EQ", x=mode_names, y=post_scores,
+                         marker_color=colors))
+
+    fig.update_layout(
+        title=dict(text="Score Comparison (lower is better)", font=dict(size=14)),
+        barmode="group",
+        yaxis=dict(title=dict(text="Flat Loss Score", font=dict(size=11)), tickfont=dict(size=10)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        height=350, margin=dict(l=60, r=30, t=60, b=50),
+        legend=dict(font=dict(size=10)),
+    )
+    return fig

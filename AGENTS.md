@@ -66,6 +66,7 @@ This is a Cargo workspace with distinct crates organized by functionality:
 - **`math-iir/`**: IIR filter implementations (autoeq-iir) and parametric EQ utilities (Biquad struct)
 - **`math-testfunctions/`**: Test functions for validating optimization algorithms
 - **`math-convexhull3d/`**: 3D convex hull computation
+- **`math-rir/`**: Room Impulse Response analysis — SSIR reflection detection, segmentation, mixing time estimation
 - **`math-bem/`**: Boundary Element Method solver (experimental)
 
 **macOS-specific:**

@@ -818,7 +818,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.17"
+version = "0.4.18"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -832,6 +832,7 @@ dependencies = [
  "math-dsp",
  "math-iir-fir",
  "math-optimisation",
+ "math-rir",
  "metaheuristics-nature",
  "ndarray",
  "nlopt",
@@ -5807,7 +5808,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "approx",
  "clap",
@@ -5826,7 +5827,7 @@ dependencies = [
 
 [[package]]
 name = "math-iir-fir"
-version = "0.4.5"
+version = "0.4.7"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -5853,6 +5854,10 @@ dependencies = [
  "rayon",
  "thiserror 2.0.18",
 ]
+
+[[package]]
+name = "math-rir"
+version = "0.4.0"
 
 [[package]]
 name = "math-test-functions"
@@ -10280,8 +10285,10 @@ dependencies = [
  "arc-swap",
  "audioadapter-buffers",
  "criterion",
+ "hound",
  "log",
  "math-dsp",
+ "math-rir",
  "realfft",
  "rubato",
  "rustfft 6.4.1",
