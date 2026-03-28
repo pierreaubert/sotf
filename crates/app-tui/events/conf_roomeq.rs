@@ -942,6 +942,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
             strategy: "lshade".to_string(),
             target_response: None,
             cea2034_correction: None,
+            ssir_wav_path: None,
         };
 
         let room_config = RoomConfig {

@@ -325,6 +325,7 @@ pub fn run_multi_speaker_optimization(
             decomposed_correction: None,
             target_response: None,
             cea2034_correction: None,
+            ssir_wav_path: None,
         },
         recording_config: None,
         cea2034_cache: None,
@@ -492,6 +493,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         decomposed_correction: None,
         target_response: None,
         cea2034_correction: None,
+        ssir_wav_path: None,
     }
 }
 

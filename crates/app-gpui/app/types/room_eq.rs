@@ -1122,6 +1122,7 @@ impl RoomEqState {
             decomposed_correction: None,
             target_response: None,
             cea2034_correction: None,
+            ssir_wav_path: None,
         };
 
         log::info!(
