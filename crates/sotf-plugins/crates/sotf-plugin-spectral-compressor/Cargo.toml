@@ -21,5 +21,13 @@ serde_json = { workspace = true }
 realfft = { workspace = true }
 rustfft = { workspace = true }
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-spectral-compressor"
+path = "bin/qa_spectral_compressor.rs"
+required-features = ["qa"]
+
 [dev-dependencies]
 serde_json = { workspace = true }

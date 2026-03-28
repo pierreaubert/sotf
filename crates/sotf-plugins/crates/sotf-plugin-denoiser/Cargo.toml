@@ -22,5 +22,13 @@ serde_json = { workspace = true }
 sotf-plugin-pnd = { workspace = true }
 nnnoiseless = { workspace = true }
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-denoiser"
+path = "bin/qa_denoiser.rs"
+required-features = ["qa"]
+
 [dev-dependencies]
 hound = { workspace = true }

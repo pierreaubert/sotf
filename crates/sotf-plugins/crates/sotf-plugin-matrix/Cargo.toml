@@ -12,6 +12,14 @@ categories.workspace = true
 name = "sotf_plugin_matrix"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-matrix"
+path = "bin/qa_matrix.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 sotf-plugin-channel-mute-solo = { workspace = true }

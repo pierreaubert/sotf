@@ -12,6 +12,14 @@ categories.workspace = true
 name = "sotf_plugin_convolution"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-convolution"
+path = "bin/qa_convolution.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 arc-swap = { workspace = true }

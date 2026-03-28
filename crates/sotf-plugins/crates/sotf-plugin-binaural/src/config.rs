@@ -47,6 +47,10 @@ fn default_hrtf_database_dir() -> String {
     "".to_string()
 }
 
+fn default_srir_file() -> String {
+    "".to_string()
+}
+
 fn default_head_width_cm() -> f32 {
     15.0
 }
@@ -82,6 +86,11 @@ pub struct BinauralDecoderParams {
     pub lfe_level: f32,
     #[serde(default)]
     pub room_model: RoomModel,
+    /// Path to a measured Spatial Room Impulse Response (WAV file).
+    /// When set, SSIR analysis replaces the synthetic ISM room model.
+    /// Supports mono (energy-based) or B-format (4+ channels, full DOA).
+    #[serde(default = "default_srir_file")]
+    pub srir_file: String,
     #[serde(default = "default_hrtf_database_dir")]
     pub hrtf_database_dir: String,
     #[serde(default = "default_head_width_cm")]

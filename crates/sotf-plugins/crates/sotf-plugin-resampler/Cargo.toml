@@ -12,6 +12,14 @@ categories.workspace = true
 name = "sotf_plugin_resampler"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-resampler"
+path = "bin/qa_resampler.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 rubato = { workspace = true }

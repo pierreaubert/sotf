@@ -15,7 +15,9 @@ path = "src/lib.rs"
 [dependencies]
 sotf-host = { workspace = true }
 math-dsp = { workspace = true }
+math-rir = { workspace = true }
 arc-swap = { workspace = true }
+hound = { workspace = true }
 audioadapter-buffers = { workspace = true }
 log = { workspace = true }
 realfft = { workspace = true }
@@ -23,6 +25,14 @@ rubato = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-binaural"
+path = "bin/qa_binaural.rs"
+required-features = ["qa"]
 
 [dev-dependencies]
 criterion = { workspace = true }

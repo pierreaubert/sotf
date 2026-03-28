@@ -29,7 +29,7 @@ pub use self::config::{
     BinauralDecoderParams, default_enable_optimization as binaural_default_enable_optimization,
 };
 pub use self::error::BinauralError;
-pub use self::room::{Reflection, RoomModel};
+pub use self::room::{Reflection, ReflectionHrtf, RoomModel};
 
 struct BinauralState {
     hrtf_filters_freq: Vec<Vec<Complex<f32>>>,
@@ -83,6 +83,8 @@ pub struct BinauralDecoderPlugin {
     lfe_distance: f32,
     lfe_level: f32,
     room_model: RoomModel,
+    /// Path to a measured SRIR WAV file. When set, replaces ISM room model.
+    srir_file: Option<PathBuf>,
     cached_reflections: Vec<Reflection>,
 
     /// Delay line for room reflections
@@ -264,6 +266,7 @@ impl BinauralDecoderPlugin {
             lfe_distance,
             lfe_level,
             room_model,
+            srir_file: None,
             cached_reflections: Vec::new(),
             reflection_delay_line: vec![0.0; delay_size * 2],
             reflection_delay_pos: 0,
@@ -401,6 +404,9 @@ impl BinauralDecoderPlugin {
         plugin.hrtf_database_dir = params.hrtf_database_dir;
         plugin.head_width_cm = params.head_width_cm;
         plugin.ear_height_cm = params.ear_height_cm;
+        if !params.srir_file.is_empty() {
+            plugin.srir_file = Some(PathBuf::from(params.srir_file));
+        }
         plugin.rebuild_cached_parameters();
         plugin
     }
@@ -765,8 +771,19 @@ impl BinauralDecoderPlugin {
                     let r_pos = (self.reflection_delay_pos + delay_mask + 1 - ref_.delay_samples)
                         & delay_mask;
                     let g = ref_.gain * ext;
-                    rl += self.reflection_delay_line[r_pos * 2] * g * ref_.left_gain;
-                    rr += self.reflection_delay_line[r_pos * 2 + 1] * g * ref_.right_gain;
+
+                    // Use HRTF-derived L/R gains when available (SSIR reflections),
+                    // otherwise fall back to simple azimuth-based panning (ISM reflections).
+                    let (lg, rg) = if let Some(hrtf) = &ref_.hrtf_filter {
+                        // Broadband energy from pre-computed HRTF gives perceptually
+                        // accurate ILD (interaural level difference) for each reflection DOA.
+                        (hrtf.left_gain_broadband, hrtf.right_gain_broadband)
+                    } else {
+                        (ref_.left_gain, ref_.right_gain)
+                    };
+
+                    rl += self.reflection_delay_line[r_pos * 2] * g * lg;
+                    rr += self.reflection_delay_line[r_pos * 2 + 1] * g * rg;
                 }
                 output[i * 2] += rl;
                 output[i * 2 + 1] += rr;
@@ -1238,10 +1255,38 @@ impl Plugin for BinauralDecoderPlugin {
         self.lfe_lowpass_filter = f;
         self.lfe_gain = g;
         self.cached_reflections.clear();
-        let refs = room::calculate_reflections(&self.room_model, self.speaker_config, sr);
-        for (ch, cr) in refs.into_iter().enumerate() {
-            if !self.lfe_channels.contains(&ch) {
-                self.cached_reflections.extend(cr);
+        if let Some(srir_path) = &self.srir_file {
+            // SSIR-based measured room reflections
+            match room::calculate_reflections_from_srir(srir_path, sr) {
+                Ok(refs) => {
+                    log::info!(
+                        "[BinauralDecoder] SSIR: detected {} reflections from '{}'",
+                        refs.len(),
+                        srir_path.display()
+                    );
+                    self.cached_reflections = refs;
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[BinauralDecoder] Failed to load SRIR '{}': {}. Falling back to ISM.",
+                        srir_path.display(),
+                        e
+                    );
+                    let refs = room::calculate_reflections(&self.room_model, self.speaker_config, sr);
+                    for (ch, cr) in refs.into_iter().enumerate() {
+                        if !self.lfe_channels.contains(&ch) {
+                            self.cached_reflections.extend(cr);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Synthetic ISM room model (existing behavior)
+            let refs = room::calculate_reflections(&self.room_model, self.speaker_config, sr);
+            for (ch, cr) in refs.into_iter().enumerate() {
+                if !self.lfe_channels.contains(&ch) {
+                    self.cached_reflections.extend(cr);
+                }
             }
         }
 
@@ -1319,6 +1364,32 @@ impl Plugin for BinauralDecoderPlugin {
             } else {
                 None
             };
+            // Pre-compute per-reflection HRTF filters for SSIR reflections
+            for refl in &mut self.cached_reflections {
+                if refl.hrtf_filter.is_some() {
+                    continue;
+                }
+                let tgt = sotf_host::sofa::SourcePosition::new(
+                    refl.azimuth_deg,
+                    refl.elevation_deg,
+                    1.0,
+                );
+                let near = sofa.find_three_nearest(&tgt);
+                let gains_vbap = hrtf::calculate_vbap_gains(&tgt, &near, &sofa);
+                let (l_fft, r_fft) = hrtf::interpolate_hrtf_frequency_domain(
+                    &near,
+                    &gains_vbap,
+                    &sofa,
+                    self.fft_size,
+                    sr,
+                    &self.fft_r2c,
+                    0.0, // no near-field for reflections
+                    refl.azimuth_deg,
+                    refl.elevation_deg,
+                );
+                refl.hrtf_filter = Some(room::ReflectionHrtf::from_freq_domain(l_fft, r_fft));
+            }
+
             let new_state = Arc::new(BinauralState {
                 hrtf_filters_freq: filters,
                 diffuse_field_eq_filter: eq,

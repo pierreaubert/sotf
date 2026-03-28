@@ -7,16 +7,22 @@
 //   w(k) = R^{-1} d(k) / (d(k)^H R^{-1} d(k))
 //
 // where R is the noise spatial covariance matrix and d(k) is the steering vector.
+//
+// All math is done with pre-allocated flat buffers — zero heap allocations
+// in update_noise_covariance, compute_weights, and apply_weights_into.
 
-use nalgebra::{Complex, DMatrix};
+use nalgebra::Complex;
+
+/// Maximum number of microphones supported.
+const MAX_MICS: usize = 8;
 
 /// MVDR beamformer core.
 #[derive(Debug)]
 pub struct MvdrBeamformer {
     num_mics: usize,
     spectrum_size: usize,
-    /// Per-bin noise covariance matrices [bin] → M×M complex matrix
-    noise_cov: Vec<DMatrix<Complex<f32>>>,
+    /// Per-bin noise covariance matrices, stored as flat row-major [bin * M*M]
+    noise_cov: Vec<Complex<f32>>,
     /// Diagonal loading factor
     diag_load: f32,
     /// Smoothing factor for covariance estimation
@@ -29,35 +35,50 @@ pub struct MvdrBeamformer {
     pub weights_buf: Vec<Vec<Complex<f32>>>,
     /// Pre-allocated beamformed output buffer: [bin]
     pub output_buf: Vec<Complex<f32>>,
+    // Scratch buffers for compute_weights (avoid per-call allocation)
+    scratch_r_loaded: [Complex<f32>; MAX_MICS * MAX_MICS],
+    scratch_r_inv: [Complex<f32>; MAX_MICS * MAX_MICS],
+    scratch_r_inv_d: [Complex<f32>; MAX_MICS],
+    scratch_outer: [Complex<f32>; MAX_MICS * MAX_MICS],
 }
 
 impl MvdrBeamformer {
     /// Create a new MVDR beamformer.
     ///
     /// # Arguments
-    /// * `num_mics` - Number of microphones
+    /// * `num_mics` - Number of microphones (max MAX_MICS)
     /// * `spectrum_size` - Number of frequency bins (fft_size/2 + 1)
     pub fn new(num_mics: usize, spectrum_size: usize) -> Self {
-        let identity = DMatrix::identity(num_mics, num_mics)
-            .map(|x: f64| Complex::new(x as f32, 0.0));
+        assert!(num_mics <= MAX_MICS, "num_mics ({num_mics}) > MAX_MICS ({MAX_MICS})");
+
+        // Initialize noise covariance as identity for each bin
+        let mut noise_cov = vec![Complex::new(0.0, 0.0); spectrum_size * num_mics * num_mics];
+        for k in 0..spectrum_size {
+            for i in 0..num_mics {
+                noise_cov[k * num_mics * num_mics + i * num_mics + i] = Complex::new(1.0, 0.0);
+            }
+        }
 
         Self {
             num_mics,
             spectrum_size,
-            noise_cov: vec![identity.clone(); spectrum_size],
+            noise_cov,
             diag_load: 0.01,
             alpha: 0.95,
             noise_threshold: 0.01,
             frame_count: 0,
             weights_buf: vec![vec![Complex::new(0.0, 0.0); num_mics]; spectrum_size],
             output_buf: vec![Complex::new(0.0, 0.0); spectrum_size],
+            scratch_r_loaded: [Complex::new(0.0, 0.0); MAX_MICS * MAX_MICS],
+            scratch_r_inv: [Complex::new(0.0, 0.0); MAX_MICS * MAX_MICS],
+            scratch_r_inv_d: [Complex::new(0.0, 0.0); MAX_MICS],
+            scratch_outer: [Complex::new(0.0, 0.0); MAX_MICS * MAX_MICS],
         }
     }
 
     /// Update noise covariance estimate from input frame.
     ///
-    /// # Arguments
-    /// * `stft_channels` - STFT data per mic: [mic][bin]
+    /// Zero allocations: uses inline math on the flat noise_cov buffer.
     pub fn update_noise_covariance(&mut self, stft_channels: &[Vec<Complex<f32>>]) {
         let m = self.num_mics.min(stft_channels.len());
 
@@ -65,7 +86,6 @@ impl MvdrBeamformer {
         let total_energy: f32 = stft_channels[0].iter().map(|c| c.norm_sqr()).sum::<f32>()
             / self.spectrum_size as f32;
 
-        // During initial frames or when energy is low, assume noise
         let is_noise = self.frame_count < 20 || total_energy < self.noise_threshold;
         self.frame_count += 1;
 
@@ -73,36 +93,46 @@ impl MvdrBeamformer {
             return;
         }
 
+        let a = Complex::new(self.alpha, 0.0);
+        let b = Complex::new(1.0 - self.alpha, 0.0);
+        let mm = m * m;
+
         for k in 0..self.spectrum_size {
-            // Build observation vector x(k) for this bin
-            let mut x = DMatrix::zeros(m, 1).map(|_: f64| Complex::new(0.0f32, 0.0));
+            let cov_off = k * self.num_mics * self.num_mics;
+
+            // Build outer product x * x^H directly into scratch_outer
+            // x[i] = stft_channels[i][k]
             for i in 0..m {
-                if k < stft_channels[i].len() {
-                    x[(i, 0)] = stft_channels[i][k];
+                let xi = if k < stft_channels[i].len() {
+                    stft_channels[i][k]
+                } else {
+                    Complex::new(0.0, 0.0)
+                };
+                for j in 0..m {
+                    let xj = if k < stft_channels[j].len() {
+                        stft_channels[j][k]
+                    } else {
+                        Complex::new(0.0, 0.0)
+                    };
+                    // outer[i,j] = x[i] * conj(x[j])
+                    self.scratch_outer[i * m + j] = xi * xj.conj();
                 }
             }
 
-            // Rank-1 update: R = α*R + (1-α)*x*x^H
-            let x_h = x.adjoint();
-            let outer = &x * &x_h;
-
-            let a = Complex::new(self.alpha, 0.0);
-            let b = Complex::new(1.0 - self.alpha, 0.0);
-            self.noise_cov[k] = &self.noise_cov[k] * a + outer * b;
+            // R = α*R + (1-α)*outer
+            for idx in 0..mm {
+                self.noise_cov[cov_off + idx] =
+                    self.noise_cov[cov_off + idx] * a + self.scratch_outer[idx] * b;
+            }
         }
     }
 
     /// Compute MVDR weights for all bins.
     ///
-    /// # Arguments
-    /// * `steering` - Steering vectors per bin: [bin][mic]
-    ///
-    /// # Returns
-    /// Beamforming weights per bin: [bin][mic]
-    /// Compute MVDR weights into the pre-allocated weights_buf.
-    /// Returns a reference to the internal buffer.
+    /// Zero allocations: uses fixed-size scratch buffers for all matrix math.
     pub fn compute_weights(&mut self, steering: &[Vec<Complex<f32>>]) -> &[Vec<Complex<f32>>] {
         let m = self.num_mics;
+        let mm = m * m;
 
         for (k, d_vec) in steering.iter().enumerate() {
             if k >= self.spectrum_size || d_vec.len() != m {
@@ -110,49 +140,122 @@ impl MvdrBeamformer {
                 continue;
             }
 
-            // Build steering vector as column matrix
-            let d = DMatrix::from_fn(m, 1, |i, _| d_vec[i]);
+            let cov_off = k * m * m;
 
             // Diagonal loading: R_loaded = R + σ*I
-            let trace: f32 = (0..m).map(|i| self.noise_cov[k][(i, i)].re).sum();
+            let trace: f32 = (0..m).map(|i| self.noise_cov[cov_off + i * m + i].re).sum();
             let sigma = self.diag_load * trace / m as f32;
-            let r_loaded = &self.noise_cov[k]
-                + DMatrix::identity(m, m).map(|x: f64| Complex::new(x as f32 * sigma, 0.0));
 
-            // Compute R^{-1} d
-            let r_inv_d = match r_loaded.clone().try_inverse() {
-                Some(r_inv) => &r_inv * &d,
-                None => d.clone(), // Fallback to delay-and-sum
-            };
+            // Copy R into scratch_r_loaded and add diagonal loading
+            self.scratch_r_loaded[..mm]
+                .copy_from_slice(&self.noise_cov[cov_off..cov_off + mm]);
+            for i in 0..m {
+                self.scratch_r_loaded[i * m + i] += Complex::new(sigma, 0.0);
+            }
 
-            // Compute d^H R^{-1} d (scalar)
-            let d_h = d.adjoint();
-            let denom = (&d_h * &r_inv_d)[(0, 0)];
+            // Invert R_loaded in-place using Gauss-Jordan on scratch buffers
+            let invertible = self.invert_matrix(m);
 
-            // w = R^{-1} d / (d^H R^{-1} d)
-            if denom.norm_sqr() > 1e-20 {
-                let w = &r_inv_d / denom;
+            if invertible {
+                // r_inv_d = R^{-1} * d
                 for i in 0..m {
-                    self.weights_buf[k][i] = w[(i, 0)];
+                    let mut sum = Complex::new(0.0, 0.0);
+                    for j in 0..m {
+                        sum += self.scratch_r_inv[i * m + j] * d_vec[j];
+                    }
+                    self.scratch_r_inv_d[i] = sum;
+                }
+
+                // denom = d^H * r_inv_d (scalar)
+                let mut denom = Complex::new(0.0, 0.0);
+                for i in 0..m {
+                    denom += d_vec[i].conj() * self.scratch_r_inv_d[i];
+                }
+
+                if denom.norm_sqr() > 1e-20 {
+                    // w = r_inv_d / denom
+                    for i in 0..m {
+                        self.weights_buf[k][i] = self.scratch_r_inv_d[i] / denom;
+                    }
+                } else {
+                    self.weights_buf[k]
+                        .fill(Complex::new(1.0 / m as f32, 0.0));
                 }
             } else {
-                // Fallback: uniform weights
-                self.weights_buf[k].fill(Complex::new(1.0 / m as f32, 0.0));
+                // Fallback to delay-and-sum (uniform weights)
+                self.weights_buf[k]
+                    .fill(Complex::new(1.0 / m as f32, 0.0));
             }
         }
         &self.weights_buf
     }
 
+    /// Gauss-Jordan inversion of scratch_r_loaded into scratch_r_inv.
+    /// Returns false if the matrix is singular.
+    fn invert_matrix(&mut self, m: usize) -> bool {
+        // Initialize scratch_r_inv as identity
+        for i in 0..m {
+            for j in 0..m {
+                self.scratch_r_inv[i * m + j] = if i == j {
+                    Complex::new(1.0, 0.0)
+                } else {
+                    Complex::new(0.0, 0.0)
+                };
+            }
+        }
+
+        // Gauss-Jordan elimination with partial pivoting
+        for col in 0..m {
+            // Find pivot (largest magnitude in column)
+            let mut max_mag = self.scratch_r_loaded[col * m + col].norm_sqr();
+            let mut pivot_row = col;
+            for row in (col + 1)..m {
+                let mag = self.scratch_r_loaded[row * m + col].norm_sqr();
+                if mag > max_mag {
+                    max_mag = mag;
+                    pivot_row = row;
+                }
+            }
+
+            if max_mag < 1e-30 {
+                return false; // Singular
+            }
+
+            // Swap rows if needed
+            if pivot_row != col {
+                for j in 0..m {
+                    self.scratch_r_loaded.swap(col * m + j, pivot_row * m + j);
+                    self.scratch_r_inv.swap(col * m + j, pivot_row * m + j);
+                }
+            }
+
+            // Scale pivot row
+            let pivot = self.scratch_r_loaded[col * m + col];
+            let inv_pivot = Complex::new(1.0, 0.0) / pivot;
+            for j in 0..m {
+                self.scratch_r_loaded[col * m + j] *= inv_pivot;
+                self.scratch_r_inv[col * m + j] *= inv_pivot;
+            }
+
+            // Eliminate column in all other rows
+            for row in 0..m {
+                if row == col {
+                    continue;
+                }
+                let factor = self.scratch_r_loaded[row * m + col];
+                for j in 0..m {
+                    self.scratch_r_loaded[row * m + j] -= factor * self.scratch_r_loaded[col * m + j];
+                    self.scratch_r_inv[row * m + j] -= factor * self.scratch_r_inv[col * m + j];
+                }
+            }
+        }
+
+        true
+    }
+
     /// Apply beamforming weights to produce single-channel output.
     ///
-    /// # Arguments
-    /// * `stft_channels` - STFT data per mic: [mic][bin]
-    /// * `weights` - Beamforming weights: [bin][mic]
-    ///
-    /// # Returns
-    /// Single-channel STFT output
-    /// Apply beamforming weights in-place, writing to the pre-allocated output buffer.
-    /// Returns a slice of the output.
+    /// Zero allocations: writes directly to pre-allocated output_buf.
     pub fn apply_weights_into(
         &mut self,
         stft_channels: &[Vec<Complex<f32>>],
@@ -175,11 +278,14 @@ impl MvdrBeamformer {
 
     /// Reset noise covariance to identity.
     pub fn reset(&mut self) {
-        // Reset noise covariance matrices in-place (avoids heap allocation)
-        for mat in &mut self.noise_cov {
-            mat.fill(Complex::new(0.0, 0.0));
-            for i in 0..self.num_mics.min(mat.nrows()) {
-                mat[(i, i)] = Complex::new(1.0, 0.0);
+        let m = self.num_mics;
+        for k in 0..self.spectrum_size {
+            let off = k * m * m;
+            for idx in 0..(m * m) {
+                self.noise_cov[off + idx] = Complex::new(0.0, 0.0);
+            }
+            for i in 0..m {
+                self.noise_cov[off + i * m + i] = Complex::new(1.0, 0.0);
             }
         }
         self.frame_count = 0;

@@ -13,6 +13,14 @@ readme.workspace = true
 name = "sotf_plugin_stereo_imager"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-stereo-imager"
+path = "bin/qa_stereo_imager.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 serde = { workspace = true }

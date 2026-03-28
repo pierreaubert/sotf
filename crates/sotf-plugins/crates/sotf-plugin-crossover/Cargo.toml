@@ -12,6 +12,14 @@ categories.workspace = true
 name = "sotf_plugin_crossover"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-crossover"
+path = "bin/qa_crossover.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 serde = { workspace = true }

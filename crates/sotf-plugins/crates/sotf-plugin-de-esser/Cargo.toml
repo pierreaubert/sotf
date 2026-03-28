@@ -13,6 +13,14 @@ readme.workspace = true
 name = "sotf_plugin_de_esser"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-de-esser"
+path = "bin/qa_de_esser.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 math-dsp = { workspace = true }

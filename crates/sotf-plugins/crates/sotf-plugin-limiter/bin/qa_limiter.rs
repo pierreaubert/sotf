@@ -18,6 +18,7 @@ fn main() {
         dual_release: false,
         mix: 1.0,
         feed_forward: false,
+        link_amount: 1.0,
     };
 
     let mut inner = LimiterPlugin::from_params(channels, params);

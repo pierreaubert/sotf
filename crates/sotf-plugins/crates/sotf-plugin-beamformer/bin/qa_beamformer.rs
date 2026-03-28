@@ -1,5 +1,6 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
+use sotf_host::{CountingAlloc, assert_no_allocs, run_standard_tests};
 use sotf_host::{Plugin, ProcessContext};
+use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_plugin_beamformer::BeamformerPlugin;
 
 #[global_allocator]
@@ -24,7 +25,6 @@ fn main() {
         num_frames,
     };
 
-    use sotf_host::parameters::{ParameterId, ParameterValue};
     plugin
         .set_parameter(ParameterId::from("beamformer_type"), ParameterValue::Int(2))
         .unwrap(); // GSC mode
@@ -40,7 +40,21 @@ fn main() {
     plugin.process(&input, &mut output2, &ctx).unwrap();
     println!("  MVDR process completed: PASS");
 
-    // Run standard QA tests
+    // Test 3: MVDR zero-allocation check
+    println!("\n[Test 3] MVDR Real-time Safety (Zero Allocations)");
+    // Warm up MVDR path
+    for _ in 0..10 {
+        plugin.process(&input, &mut output2, &ctx).unwrap();
+    }
+    assert_no_allocs("BeamformerPlugin::MVDR::process", || {
+        plugin.process(&input, &mut output2, &ctx).unwrap();
+    });
+    println!("  MVDR Zero Allocations: PASS");
+
+    // Run standard QA tests (tests GSC allocation safety + perf benchmark)
+    plugin
+        .set_parameter(ParameterId::from("beamformer_type"), ParameterValue::Int(2))
+        .unwrap();
     run_standard_tests(&mut plugin, "BeamformerPlugin");
 
     println!("\n[ALL PASS] Beamformer QA Complete.");

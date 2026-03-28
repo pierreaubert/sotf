@@ -12,6 +12,14 @@ categories.workspace = true
 name = "sotf_plugin_crossfeed"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-crossfeed"
+path = "bin/qa_crossfeed.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 math-dsp = { workspace = true }

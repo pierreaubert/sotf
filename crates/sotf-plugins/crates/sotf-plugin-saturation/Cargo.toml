@@ -13,6 +13,14 @@ readme.workspace = true
 name = "sotf_plugin_saturation"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-saturation"
+path = "bin/qa_saturation.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 math-dsp = { workspace = true }

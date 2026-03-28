@@ -13,6 +13,14 @@ readme.workspace = true
 name = "sotf_plugin_transient_shaper"
 path = "src/lib.rs"
 
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-transient-shaper"
+path = "bin/qa_transient_shaper.rs"
+required-features = ["qa"]
+
 [dependencies]
 sotf-host = { workspace = true }
 serde = { workspace = true }
