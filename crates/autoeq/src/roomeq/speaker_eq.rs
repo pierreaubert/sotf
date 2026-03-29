@@ -567,7 +567,7 @@ pub(super) fn process_single_speaker(
                     temp_curve.spl += result.flat_gain_db;
 
                     // 2. Filters
-                    let final_curve = if !filters.is_empty() {
+                    let corrected_curve = if !filters.is_empty() {
                         let resp = response::compute_peq_complex_response(
                             &filters,
                             &curve.freq,
@@ -578,7 +578,33 @@ pub(super) fn process_single_speaker(
                         temp_curve
                     };
 
-                    (final_curve, plugins, filters, result.flat_gain_db)
+                    // 3. Validate: reject broadband correction if it makes things worse.
+                    // Measure deviation from the tilted target — broadband should move
+                    // us CLOSER to the target, not further away.  When combined with
+                    // excursion HPF + room modes, the shelf fitting can produce bad
+                    // results that then compound with the optimizer's tilt subtraction.
+                    let target_spl = &target.spl;  // mean_spl + tilt (or just mean_spl if flat)
+                    let pre_bb_dev = &curve.spl - target_spl;
+                    let pre_bb_score = crate::loss::flat_loss(
+                        &curve.freq, &pre_bb_dev, min_freq, max_freq,
+                    );
+                    let post_bb_dev = &corrected_curve.spl - target_spl;
+                    let post_bb_score = crate::loss::flat_loss(
+                        &corrected_curve.freq, &post_bb_dev, min_freq, max_freq,
+                    );
+
+                    if post_bb_score > pre_bb_score * 1.5 {
+                        warn!(
+                            "  Broadband correction rejected: deviation from target {:.4} -> {:.4} \
+                             (worse by {:.0}%). Shelf fit likely confused by room modes or HPF rolloff.",
+                            pre_bb_score,
+                            post_bb_score,
+                            (post_bb_score / pre_bb_score - 1.0) * 100.0,
+                        );
+                        (curve.clone(), Vec::new(), Vec::new(), 0.0)
+                    } else {
+                        (corrected_curve, plugins, filters, result.flat_gain_db)
+                    }
                 } else {
                     (curve.clone(), Vec::new(), Vec::new(), 0.0)
                 }

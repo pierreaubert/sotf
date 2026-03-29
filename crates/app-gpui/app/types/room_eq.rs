@@ -62,8 +62,8 @@ pub use sotf_audio_player::room_eq_types::{
     MixedPhaseUiConfig, MultiMeasurementUiConfig, MultiSeatConfig, MultiSpeakerMode,
     PhaseAlignmentConfig, PreRingingConfig, RecordingConfiguration, RoomEqDataSource,
     RoomEqFirConfig, RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqSpeakerConfig,
-    RoomEqStep, SchroederSplitConfig, SpeakerConfigType, TargetCurveControlPoint, TargetTiltConfig,
-    VoGConfig,
+    RoomEqStep, SchroederSplitConfig, SpeakerConfigType, SubOptimizerUiConfig,
+    ChannelMatchingUiConfig, TargetCurveControlPoint, TargetTiltConfig, VoGConfig,
 };
 pub type CrossoverType = sotf_audio_player::room_eq_types::RoomEqCrossoverType;
 pub use sotf_audio_player::room_eq_types::AutoEqField;
@@ -185,6 +185,14 @@ pub struct RoomEqOptimizerConfig {
     #[serde(default)]
     pub multi_measurement: MultiMeasurementUiConfig,
 
+    // --- Subwoofer & Channel Matching ---
+    /// Subwoofer-specific optimizer overrides
+    #[serde(default)]
+    pub sub_config: SubOptimizerUiConfig,
+    /// Inter-channel consistency correction
+    #[serde(default)]
+    pub channel_matching: ChannelMatchingUiConfig,
+
     /// True when settings were imported from a backend config file (recordings.json).
     /// When set, `apply_smart_defaults()` skips overriding feature toggles.
     #[serde(default)]
@@ -233,6 +241,8 @@ impl Default for RoomEqOptimizerConfig {
             phase_alignment: PhaseAlignmentConfig::default(),
             multi_seat: MultiSeatConfig::default(),
             multi_measurement: MultiMeasurementUiConfig::default(),
+            sub_config: SubOptimizerUiConfig::default(),
+            channel_matching: ChannelMatchingUiConfig::default(),
             imported_from_file: false,
         }
     }
@@ -329,6 +339,7 @@ impl RoomEqOptimizerConfig {
             self.schroeder_split.schroeder_freq = ss.schroeder_freq;
             self.schroeder_split.low_freq_max_q = ss.low_freq_config.max_q;
             self.schroeder_split.low_freq_allow_boost = ss.low_freq_config.allow_boost;
+            self.schroeder_split.low_freq_max_db = ss.low_freq_config.max_db;
             self.schroeder_split.high_freq_max_q = ss.high_freq_config.max_q;
             self.schroeder_split.high_freq_shelving_only = ss.high_freq_config.shelving_only;
         }
@@ -379,6 +390,23 @@ impl RoomEqOptimizerConfig {
             self.multi_measurement.weights = mm.weights.clone().unwrap_or_default();
         } else {
             self.multi_measurement.enabled = false;
+        }
+
+        // Sub-specific optimizer overrides
+        self.sub_config.enabled = backend.sub_config.is_some();
+        if let Some(ref sc) = backend.sub_config {
+            self.sub_config.num_filters = sc.num_filters;
+            self.sub_config.max_db = sc.max_db;
+            self.sub_config.min_db = sc.min_db;
+            self.sub_config.min_q = sc.min_q;
+            self.sub_config.max_q = sc.max_q;
+        }
+
+        // Channel matching correction
+        self.channel_matching.enabled = backend.channel_matching.as_ref().is_some_and(|c| c.enabled);
+        if let Some(ref cm) = backend.channel_matching {
+            self.channel_matching.threshold_db = cm.threshold_db;
+            self.channel_matching.max_filters = cm.max_filters;
         }
 
         self.imported_from_file = true;
@@ -1036,6 +1064,7 @@ impl RoomEqState {
                         max_q: self.optimizer_config.schroeder_split.low_freq_max_q,
                         min_q: 0.5,
                         allow_boost: self.optimizer_config.schroeder_split.low_freq_allow_boost,
+                        max_db: self.optimizer_config.schroeder_split.low_freq_max_db,
                     },
                     high_freq_config: HighFreqFilterConfig {
                         max_q: self.optimizer_config.schroeder_split.high_freq_max_q,
@@ -1122,6 +1151,26 @@ impl RoomEqState {
             decomposed_correction: None,
             target_response: None,
             cea2034_correction: None,
+            sub_config: if self.optimizer_config.sub_config.enabled {
+                Some(autoeq::roomeq::SubOptimizerConfig {
+                    num_filters: self.optimizer_config.sub_config.num_filters,
+                    max_db: self.optimizer_config.sub_config.max_db,
+                    min_db: self.optimizer_config.sub_config.min_db,
+                    min_q: self.optimizer_config.sub_config.min_q,
+                    max_q: self.optimizer_config.sub_config.max_q,
+                })
+            } else {
+                None
+            },
+            channel_matching: if self.optimizer_config.channel_matching.enabled {
+                Some(autoeq::roomeq::ChannelMatchingConfig {
+                    enabled: true,
+                    threshold_db: self.optimizer_config.channel_matching.threshold_db,
+                    max_filters: self.optimizer_config.channel_matching.max_filters,
+                })
+            } else {
+                None
+            },
             ssir_wav_path: None,
         };
 

@@ -1,0 +1,34 @@
+[package]
+name = "gpui-builder"
+version = "0.6.0"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license = "MIT"
+repository.workspace = true
+description = "Generic constraint-based layout solver for GPUI applications"
+
+[dependencies]
+# Core library has zero dependencies.
+# GPUI deps are optional, enabled by the `gpui` feature for the showcase binary.
+gpui = { workspace = true, optional = true }
+gpui-ui-kit = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+gpui_macos = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui_linux = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+gpui_windows = { workspace = true, optional = true }
+
+[features]
+default = []
+showcase = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui_macos", "dep:gpui_linux", "dep:gpui_windows"]
+
+[[bin]]
+name = "layout-showcase"
+path = "src/bin/layout_showcase.rs"
+required-features = ["showcase"]

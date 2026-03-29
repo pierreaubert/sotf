@@ -1298,9 +1298,25 @@ pub struct OptimizerConfig {
     #[serde(default = "default_strategy")]
     pub strategy: String,
 
-    /// Number of PEQ filters per channel
+    /// Maximum number of PEQ filters per channel.
+    /// When `min_filter_improvement > 0`, the optimizer will use up to this many
+    /// filters, stopping early when additional filters don't improve the result.
     #[serde(default = "default_num_filters")]
     pub num_filters: usize,
+
+    /// Minimum loss improvement to justify adding another filter.
+    /// The optimizer iterates from 1 to `num_filters`, stopping when the loss
+    /// decrease from the k-th filter is below this threshold.
+    /// Set to 0.0 to always use exactly `num_filters` (legacy behavior).
+    /// Default: 0.01
+    #[serde(default = "default_min_filter_improvement")]
+    pub min_filter_improvement: f64,
+
+    /// Backward elimination threshold.
+    /// After optimization, removes any filter whose removal increases loss by
+    /// less than this amount. Default: 0.005
+    #[serde(default = "default_elimination_threshold")]
+    pub elimination_threshold: f64,
 
     /// Minimum Q factor
     #[serde(default = "default_min_q")]
@@ -1785,6 +1801,12 @@ fn default_phase_smoothing() -> f64 {
 fn default_num_filters() -> usize {
     7
 }
+fn default_min_filter_improvement() -> f64 {
+    0.01
+}
+fn default_elimination_threshold() -> f64 {
+    0.005
+}
 fn default_min_q() -> f64 {
     0.5
 }
@@ -1838,6 +1860,8 @@ impl Default for OptimizerConfig {
             algorithm: default_algorithm(),
             strategy: default_strategy(),
             num_filters: default_num_filters(),
+            min_filter_improvement: default_min_filter_improvement(),
+            elimination_threshold: default_elimination_threshold(),
             min_q: default_min_q(),
             max_q: default_max_q(),
             min_db: default_min_db(),

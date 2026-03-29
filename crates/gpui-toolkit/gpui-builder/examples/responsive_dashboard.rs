@@ -1,0 +1,169 @@
+//! Example: Responsive dashboard with nested containers.
+//!
+//! Demonstrates:
+//! - Deeply nested layout (3 levels)
+//! - Multiple flex children with different weights
+//! - Display tiers for adaptive content
+//! - Simulating a window resize sequence
+//!
+//! Run: cargo run -p gpui-builder --example responsive_dashboard
+
+use gpui_builder::{
+    Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode, solve,
+};
+
+static CHART_TIERS: &[DisplayTier<'_>] = &[
+    DisplayTier { name: "full", min_size: 300.0 },
+    DisplayTier { name: "compact", min_size: 150.0 },
+    DisplayTier { name: "sparkline", min_size: 50.0 },
+];
+
+fn main() {
+    // Dashboard layout:
+    //
+    // ┌──────────────────────────────────┐
+    // │ toolbar (fixed 48px)             │
+    // ├──────────┬───────────────────────┤
+    // │ sidebar  │ main area             │
+    // │ (20%)    │ ┌───────────────────┐ │
+    // │          │ │ chart (flex 2)    │ │
+    // │          │ ├───────────────────┤ │
+    // │          │ │ table (flex 1)    │ │
+    // │          │ └───────────────────┘ │
+    // ├──────────┴───────────────────────┤
+    // │ status bar (fixed 24px)          │
+    // └──────────────────────────────────┘
+
+    let main_area_children = [
+        LayoutNode::Slot(SlotNode {
+            id: "chart",
+            sizing: Sizing::Flex { min: 100.0, weight: 2.0 },
+            priority: 1.0,
+            collapsible: false,
+            display_tiers: CHART_TIERS,
+            collapse_label: None,
+        }),
+        LayoutNode::Slot(SlotNode {
+            id: "table",
+            sizing: Sizing::Flex { min: 80.0, weight: 1.0 },
+            priority: 0.8,
+            collapsible: true,
+            display_tiers: &[],
+            collapse_label: Some("Table"),
+        }),
+    ];
+
+    let content_children = [
+        LayoutNode::Slot(SlotNode {
+            id: "sidebar",
+            sizing: Sizing::fractional(0.20, 120.0),
+            priority: 0.4,
+            collapsible: true,
+            display_tiers: &[],
+            collapse_label: Some("Nav"),
+        }),
+        LayoutNode::Container(ContainerNode {
+            id: "main_area",
+            axis: Axis::Vertical,
+            auto_axis: None,
+            sizing: Sizing::flex(200.0),
+            children: &main_area_children,
+            divider_size: 2.0,
+        }),
+    ];
+
+    let root_children = [
+        LayoutNode::Slot(SlotNode {
+            id: "toolbar",
+            sizing: Sizing::Fixed(48.0),
+            priority: 1.0,
+            collapsible: false,
+            display_tiers: &[],
+            collapse_label: None,
+        }),
+        LayoutNode::Container(ContainerNode {
+            id: "content",
+            axis: Axis::Horizontal,
+            auto_axis: Some(1.0),
+            sizing: Sizing::flex(0.0),
+            children: &content_children,
+            divider_size: 4.0,
+        }),
+        LayoutNode::Slot(SlotNode {
+            id: "status_bar",
+            sizing: Sizing::Fixed(24.0),
+            priority: 1.0,
+            collapsible: false,
+            display_tiers: &[],
+            collapse_label: None,
+        }),
+    ];
+
+    let root = LayoutNode::Container(ContainerNode {
+        id: "root",
+        axis: Axis::Vertical,
+        auto_axis: None,
+        sizing: Sizing::flex(0.0),
+        children: &root_children,
+        divider_size: 0.0,
+    });
+
+    // Simulate a window resize sequence
+    let sizes = [
+        (1920.0, 1080.0, "Full HD desktop"),
+        (1280.0, 720.0, "Laptop"),
+        (800.0, 600.0, "Small window"),
+        (500.0, 800.0, "Tall/narrow (portrait)"),
+        (400.0, 300.0, "Very small"),
+    ];
+
+    for (w, h, label) in sizes {
+        println!("=== {label} ({w:.0}x{h:.0}) ===");
+        let solved = solve(&root, w, h, &LayoutPreferences::default());
+        print_tree(&solved, 0);
+
+        let tabs = solved.collapsed_tabs();
+        if !tabs.is_empty() {
+            let labels: Vec<&str> = tabs.iter().map(|(_, l)| *l).collect();
+            println!("  Collapsed → tabs: {labels:?}");
+        }
+        println!();
+    }
+
+    // Show flex weight effect: chart gets 2x the space of table
+    println!("=== Flex weight demo (1200x800) ===");
+    let solved = solve(&root, 1200.0, 800.0, &LayoutPreferences::default());
+    let chart = solved.find("chart").unwrap();
+    let table = solved.find("table").unwrap();
+    println!(
+        "  chart: {:.0}px (weight=2)  table: {:.0}px (weight=1)  ratio: {:.2}",
+        chart.height,
+        table.height,
+        chart.height / table.height,
+    );
+}
+
+fn print_tree(node: &gpui_builder::SolvedNode, indent: usize) {
+    let pad = " ".repeat(indent);
+    if !node.visible {
+        println!("{pad}{} (collapsed)", node.id);
+        return;
+    }
+    let axis = match node.resolved_axis {
+        Some(Axis::Horizontal) => " [row]",
+        Some(Axis::Vertical) => " [col]",
+        None => "",
+    };
+    let tier = node
+        .active_tier
+        .as_deref()
+        .map(|t| format!(" tier={t}"))
+        .unwrap_or_default();
+    println!(
+        "{pad}{}{axis}  {:.0}x{:.0}{tier}",
+        node.id, node.width, node.height,
+    );
+    for child in &node.children {
+        print_tree(child, indent + 2);
+    }
+}

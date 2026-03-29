@@ -708,6 +708,9 @@ pub struct SchroederSplitConfig {
     pub schroeder_freq: f64,
     pub low_freq_max_q: f64,
     pub low_freq_allow_boost: bool,
+    /// Maximum boost/cut in dB for below-Schroeder filters (None = use global max_db)
+    #[serde(default)]
+    pub low_freq_max_db: Option<f64>,
     pub high_freq_max_q: f64,
     pub high_freq_shelving_only: bool,
 }
@@ -719,8 +722,51 @@ impl Default for SchroederSplitConfig {
             schroeder_freq: 300.0,
             low_freq_max_q: 10.0,
             low_freq_allow_boost: false,
+            low_freq_max_db: None,
             high_freq_max_q: 1.0,
             high_freq_shelving_only: false,
+        }
+    }
+}
+
+/// Subwoofer-specific optimizer overrides
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubOptimizerUiConfig {
+    pub enabled: bool,
+    pub num_filters: usize,
+    pub max_db: f64,
+    pub min_db: f64,
+    pub min_q: f64,
+    pub max_q: f64,
+}
+
+impl Default for SubOptimizerUiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            num_filters: 10,
+            max_db: 18.0,
+            min_db: -18.0,
+            min_q: 0.5,
+            max_q: 10.0,
+        }
+    }
+}
+
+/// Inter-channel consistency correction configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelMatchingUiConfig {
+    pub enabled: bool,
+    pub threshold_db: f64,
+    pub max_filters: usize,
+}
+
+impl Default for ChannelMatchingUiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_db: 1.5,
+            max_filters: 3,
         }
     }
 }
@@ -902,6 +948,10 @@ pub struct RoomEqOptimizerConfig {
     pub multi_seat: MultiSeatConfig,
     #[serde(default)]
     pub multi_measurement: MultiMeasurementUiConfig,
+    #[serde(default)]
+    pub sub_config: SubOptimizerUiConfig,
+    #[serde(default)]
+    pub channel_matching: ChannelMatchingUiConfig,
 }
 
 impl Default for RoomEqOptimizerConfig {
@@ -944,6 +994,8 @@ impl Default for RoomEqOptimizerConfig {
             phase_alignment: PhaseAlignmentConfig::default(),
             multi_seat: MultiSeatConfig::default(),
             multi_measurement: MultiMeasurementUiConfig::default(),
+            sub_config: SubOptimizerUiConfig::default(),
+            channel_matching: ChannelMatchingUiConfig::default(),
         }
     }
 }

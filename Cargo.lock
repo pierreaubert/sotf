@@ -3920,6 +3920,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-builder"
+version = "0.6.0"
+dependencies = [
+ "gpui",
+ "gpui-ui-kit",
+ "gpui_linux",
+ "gpui_macos",
+ "gpui_windows",
+]
+
+[[package]]
 name = "gpui-d3rs"
 version = "0.6.5"
 dependencies = [
@@ -3968,6 +3979,13 @@ dependencies = [
  "uuid",
  "wgpu",
  "zed-font-kit",
+]
+
+[[package]]
+name = "gpui-pretext"
+version = "0.6.2"
+dependencies = [
+ "unicode-segmentation",
 ]
 
 [[package]]

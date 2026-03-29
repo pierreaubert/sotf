@@ -71,6 +71,8 @@ members = [
     "crates/3rdparties/sofa-reader",
     "crates/gpui-toolkit/gpui-ios",
     "crates/gpui-toolkit/gpui-au",
+    "crates/gpui-toolkit/gpui-builder",
+    "crates/gpui-toolkit/gpui-pretext",
     # iOS/tvOS app shells — compile on macOS (cargo check) but only link for iOS/tvOS targets
     "crates/gpui-toolkit/gpui-ui-kit/ios",
     "crates/app-ios",
@@ -180,6 +182,8 @@ gpui-ui-kit = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
 gpui-ios = { version = "0.6", path = "crates/gpui-toolkit/gpui-ios" }
 gpui-au = { version = "0.6", path = "crates/gpui-toolkit/gpui-au" }
+gpui-builder = { version = "0.6", path = "crates/gpui-toolkit/gpui-builder" }
+gpui-pretext = { version = "0.6", path = "crates/gpui-toolkit/gpui-pretext" }
 
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }

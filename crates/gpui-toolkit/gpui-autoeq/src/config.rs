@@ -252,6 +252,28 @@ pub struct AutoEqConfig {
     pub schroeder_high_max_q: f64,
     /// High freq shelving only
     pub schroeder_high_shelving_only: bool,
+    /// Low freq max_db override (None = use global max_db)
+    pub schroeder_low_max_db: Option<f64>,
+
+    // --- Subwoofer & Channel Matching ---
+    /// Enable subwoofer-specific optimizer overrides
+    pub use_sub_config: bool,
+    /// Sub: number of PEQ filters
+    pub sub_num_filters: usize,
+    /// Sub: maximum boost in dB
+    pub sub_max_db: f64,
+    /// Sub: maximum cut in dB
+    pub sub_min_db: f64,
+    /// Sub: minimum Q
+    pub sub_min_q: f64,
+    /// Sub: maximum Q
+    pub sub_max_q: f64,
+    /// Enable inter-channel matching correction
+    pub use_channel_matching: bool,
+    /// Channel matching: ICD RMS threshold in dB
+    pub channel_matching_threshold_db: f64,
+    /// Channel matching: max additional filters per channel
+    pub channel_matching_max_filters: usize,
 
     // --- v2 fields ---
     /// Allow inter-speaker delay optimization
@@ -369,6 +391,17 @@ impl Default for AutoEqConfig {
             schroeder_low_allow_boost: false,
             schroeder_high_max_q: 1.0,
             schroeder_high_shelving_only: false,
+            schroeder_low_max_db: None,
+
+            use_sub_config: false,
+            sub_num_filters: 10,
+            sub_max_db: 18.0,
+            sub_min_db: -18.0,
+            sub_min_q: 0.5,
+            sub_max_q: 10.0,
+            use_channel_matching: false,
+            channel_matching_threshold_db: 1.5,
+            channel_matching_max_filters: 3,
 
             // v2 defaults
             allow_delay: false,

@@ -94,6 +94,17 @@ impl PlayerView {
             schroeder_low_allow_boost: config.schroeder_split.low_freq_allow_boost,
             schroeder_high_max_q: config.schroeder_split.high_freq_max_q,
             schroeder_high_shelving_only: config.schroeder_split.high_freq_shelving_only,
+            schroeder_low_max_db: config.schroeder_split.low_freq_max_db,
+
+            use_sub_config: config.sub_config.enabled,
+            sub_num_filters: config.sub_config.num_filters,
+            sub_max_db: config.sub_config.max_db,
+            sub_min_db: config.sub_config.min_db,
+            sub_min_q: config.sub_config.min_q,
+            sub_max_q: config.sub_config.max_q,
+            use_channel_matching: config.channel_matching.enabled,
+            channel_matching_threshold_db: config.channel_matching.threshold_db,
+            channel_matching_max_filters: config.channel_matching.max_filters,
 
             // Scenario A
             use_phase_alignment: config.phase_alignment.enabled,

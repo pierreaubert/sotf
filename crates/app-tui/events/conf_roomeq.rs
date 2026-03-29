@@ -880,6 +880,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
                         max_q: config.schroeder_split.low_freq_max_q,
                         min_q: 0.5,
                         allow_boost: config.schroeder_split.low_freq_allow_boost,
+                        max_db: config.schroeder_split.low_freq_max_db,
                     },
                     high_freq_config: HighFreqFilterConfig {
                         max_q: config.schroeder_split.high_freq_max_q,
@@ -942,6 +943,26 @@ fn spawn_room_eq_optimization(app: &mut App) {
             strategy: "lshade".to_string(),
             target_response: None,
             cea2034_correction: None,
+            sub_config: if config.sub_config.enabled {
+                Some(autoeq::roomeq::SubOptimizerConfig {
+                    num_filters: config.sub_config.num_filters,
+                    max_db: config.sub_config.max_db,
+                    min_db: config.sub_config.min_db,
+                    min_q: config.sub_config.min_q,
+                    max_q: config.sub_config.max_q,
+                })
+            } else {
+                None
+            },
+            channel_matching: if config.channel_matching.enabled {
+                Some(autoeq::roomeq::ChannelMatchingConfig {
+                    enabled: true,
+                    threshold_db: config.channel_matching.threshold_db,
+                    max_filters: config.channel_matching.max_filters,
+                })
+            } else {
+                None
+            },
             ssir_wav_path: None,
         };
 
