@@ -7,9 +7,11 @@ use crate::traits::FilterFloat;
 
 /// A bank of biquad filters sharing coefficients but with independent per-channel state.
 ///
+/// Generic over [`FilterFloat`] (`f32` or `f64`, default `f64`).
+///
 /// This is the common case in audio plugins where the same EQ band is applied to
 /// all channels. By processing channels in pairs, the compiler can auto-vectorize
-/// the inner loop into f64x2 SIMD instructions (SSE2 on x86-64, NEON on aarch64).
+/// the inner loop into SIMD instructions (f64x2 on SSE2, f32x4 on NEON, etc.).
 ///
 /// # No allocations in hot path
 ///
@@ -21,15 +23,17 @@ use crate::traits::FilterFloat;
 /// ```rust
 /// use math_audio_iir_fir::{Biquad, BiquadBank, BiquadFilterType};
 ///
-/// // Create a peak filter template
+/// // f64 (default)
 /// let template = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
-///
-/// // Create a bank for 8 channels
 /// let mut bank = BiquadBank::new(&template, 8);
-///
-/// // Process one interleaved frame (8 samples, one per channel)
-/// let mut frame = [0.5_f64; 8];
+/// let mut frame = [0.5f64; 8];
 /// bank.process_interleaved_frame(&mut frame);
+///
+/// // f32 — same API
+/// let template_f32 = Biquad::<f32>::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
+/// let mut bank_f32 = BiquadBank::new(&template_f32, 8);
+/// let mut frame_f32 = [0.5f32; 8];
+/// bank_f32.process_interleaved_frame(&mut frame_f32);
 /// ```
 #[derive(Debug, Clone)]
 pub struct BiquadBank<T: FilterFloat = f64> {
@@ -158,7 +162,7 @@ impl<T: FilterFloat> BiquadBank<T> {
     /// elements are read and written.
     ///
     /// The inner loop processes channels in pairs of 2, which enables the compiler
-    /// to auto-vectorize into f64x2 SIMD (SSE2 on x86-64, NEON on aarch64).
+    /// to auto-vectorize into paired-element SIMD (e.g., f64x2 on SSE2, f32x4 on NEON).
     #[inline]
     pub fn process_interleaved_frame(&mut self, samples: &mut [T]) {
         let nc = self.num_channels;
@@ -185,7 +189,7 @@ impl<T: FilterFloat> BiquadBank<T> {
         let a2 = self.a2;
 
         // Process pairs of channels — the compiler can auto-vectorize this
-        // into f64x2 SIMD (SSE2 on x86-64, NEON on aarch64) because the
+        // into paired-element SIMD (e.g., f64x2 on SSE2, f32x4 on NEON) because the
         // two iterations are independent (no data dependency between them).
         let mut ch = 0;
         while ch + 1 < nc {

@@ -1,0 +1,499 @@
+//! Forward-reverse (zero-phase) filtering for offline signal processing.
+//!
+//! Provides [`filtfilt`] — a forward-backward IIR filter that achieves zero phase
+//! distortion, equivalent to MATLAB's `filtfilt` or `scipy.signal.sosfiltfilt`.
+//!
+//! This is ideal for pre-processing room impulse responses before analysis,
+//! where preserving temporal features (phase) is critical.
+//!
+//! All functions are generic over [`FilterFloat`](crate::FilterFloat) — the signal
+//! type and coefficient type must match (`f32` with `f32`, or `f64` with `f64`).
+//!
+//! # Example
+//!
+//! ```rust
+//! use math_audio_iir_fir::{peq_butterworth_lowpass, BiquadCoefficients};
+//! use math_audio_iir_fir::filtfilt::{filtfilt, peq_to_coefficients};
+//!
+//! // Design a 4th-order Butterworth lowpass at 4kHz (returns Peq<f64>)
+//! let peq = peq_butterworth_lowpass(4, 4000.0, 48000.0);
+//! let sections = peq_to_coefficients(&peq);
+//!
+//! // Signal type must match coefficient type
+//! let signal: Vec<f64> = vec![0.0; 480];
+//! let filtered = filtfilt(&signal, &sections);
+//! ```
+
+use crate::traits::{FilterFloat, lit};
+use crate::{BiquadCoefficients, Peq};
+
+/// Extract [`BiquadCoefficients`] from a [`Peq`] chain, folding per-stage gains
+/// into the feedforward coefficients.
+///
+/// This bridges the `Peq`-based filter design functions
+/// ([`peq_butterworth_lowpass`](crate::peq_butterworth_lowpass), etc.)
+/// with the coefficient-based [`sosfilt`] / [`filtfilt`] functions.
+pub fn peq_to_coefficients<T: FilterFloat>(peq: &Peq<T>) -> Vec<BiquadCoefficients<T>> {
+    peq.iter()
+        .map(|(gain, biquad)| {
+            let c = biquad.coefficients();
+            BiquadCoefficients {
+                b0: c.b0 * *gain,
+                b1: c.b1 * *gain,
+                b2: c.b2 * *gain,
+                a1: c.a1,
+                a2: c.a2,
+            }
+        })
+        .collect()
+}
+
+/// Apply a single-pass IIR filter through a cascade of biquad sections.
+///
+/// Equivalent to `scipy.signal.sosfilt`. This introduces phase distortion —
+/// use [`filtfilt`] for zero-phase filtering.
+pub fn sosfilt<T: FilterFloat>(signal: &[T], sections: &[BiquadCoefficients<T>]) -> Vec<T> {
+    if signal.is_empty() || sections.is_empty() {
+        return signal.to_vec();
+    }
+
+    let mut data: Vec<T> = signal.to_vec();
+
+    for section in sections {
+        data = biquad_filter(&data, section, [T::zero(), T::zero()]);
+    }
+
+    data
+}
+
+/// Apply forward-reverse filtering (zero-phase) through a cascade of biquad sections.
+///
+/// Equivalent to MATLAB's `filtfilt` or `scipy.signal.sosfiltfilt`.
+///
+/// The signal is extended at both ends using odd reflection to reduce edge
+/// transients. Steady-state initial conditions are computed for each section
+/// to further minimize startup artifacts.
+///
+/// Because the filter is applied twice (forward + backward), the effective
+/// filter order is doubled and the magnitude response is squared. A 2nd-order
+/// Butterworth becomes effectively 4th-order with -80 dB/decade rolloff.
+///
+/// # Returns
+///
+/// A filtered signal of the same length as the input, with zero phase distortion.
+pub fn filtfilt<T: FilterFloat>(signal: &[T], sections: &[BiquadCoefficients<T>]) -> Vec<T> {
+    if signal.is_empty() || sections.is_empty() {
+        return signal.to_vec();
+    }
+
+    let n = signal.len();
+
+    // Minimum useful length: need at least 2 samples for reflection
+    if n < 2 {
+        return signal.to_vec();
+    }
+
+    // Pad length: enough for the impulse response to decay
+    let padlen = (3 * (2 * sections.len() + 1)).min(n - 1);
+    let two = lit::<T>(2.0);
+
+    // Build padded signal with odd reflection at both ends
+    let mut padded = Vec::with_capacity(n + 2 * padlen);
+
+    // Prepend: odd extension at left boundary
+    let x0 = signal[0];
+    for i in (1..=padlen).rev() {
+        padded.push(two * x0 - signal[i]);
+    }
+
+    // Original signal
+    padded.extend_from_slice(signal);
+
+    // Append: odd extension at right boundary
+    let xlast = signal[n - 1];
+    for i in (1..=padlen).rev() {
+        padded.push(two * xlast - signal[n - 1 - i]);
+    }
+
+    // Compute steady-state initial conditions for each section
+    let zi_base: Vec<[T; 2]> = sections.iter().map(biquad_zi).collect();
+
+    // Forward pass: cascade all sections
+    let mut data = padded;
+    for (sec_idx, section) in sections.iter().enumerate() {
+        let scale = data[0];
+        let zi = [zi_base[sec_idx][0] * scale, zi_base[sec_idx][1] * scale];
+        data = biquad_filter(&data, section, zi);
+    }
+
+    // Reverse
+    data.reverse();
+
+    // Backward pass: cascade all sections again
+    for (sec_idx, section) in sections.iter().enumerate() {
+        let scale = data[0];
+        let zi = [zi_base[sec_idx][0] * scale, zi_base[sec_idx][1] * scale];
+        data = biquad_filter(&data, section, zi);
+    }
+
+    // Reverse back to original order
+    data.reverse();
+
+    // Trim padding
+    data[padlen..padlen + n].to_vec()
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Compute steady-state initial conditions for a biquad section (direct form II transposed).
+///
+/// Returns `[z1, z2]` such that filtering a constant signal `x[n] = 1` produces
+/// constant output from the very first sample (no transient).
+///
+/// Usage: multiply by `signal[0]` to get the actual initial conditions.
+fn biquad_zi<T: FilterFloat>(section: &BiquadCoefficients<T>) -> [T; 2] {
+    let one = T::one();
+    let denom = one + section.a1 + section.a2;
+    if denom.abs() < lit(1e-15) {
+        return [T::zero(), T::zero()];
+    }
+    let z1 = (section.b1 + section.b2 - (section.a1 + section.a2) * section.b0) / denom;
+    let z2 = (section.b2 - section.a2 * section.b0) - section.a2 * z1;
+    [z1, z2]
+}
+
+/// Apply a single biquad section using direct form II transposed.
+fn biquad_filter<T: FilterFloat>(
+    input: &[T],
+    section: &BiquadCoefficients<T>,
+    zi: [T; 2],
+) -> Vec<T> {
+    let mut output = Vec::with_capacity(input.len());
+    let mut d0 = zi[0];
+    let mut d1 = zi[1];
+
+    for &x in input {
+        let y = section.b0 * x + d0;
+        d0 = section.b1 * x - section.a1 * y + d1;
+        d1 = section.b2 * x - section.a2 * y;
+        output.push(y);
+    }
+
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{peq_butterworth_highpass, peq_butterworth_lowpass};
+    use std::f64::consts::PI;
+
+    /// Helper: design lowpass sections via peq_butterworth_lowpass
+    fn lowpass(order: usize, freq: f64, srate: f64) -> Vec<BiquadCoefficients> {
+        peq_to_coefficients(&peq_butterworth_lowpass(order, freq, srate))
+    }
+
+    /// Helper: design highpass sections via peq_butterworth_highpass
+    fn highpass(order: usize, freq: f64, srate: f64) -> Vec<BiquadCoefficients> {
+        peq_to_coefficients(&peq_butterworth_highpass(order, freq, srate))
+    }
+
+    /// Helper: design bandpass as cascaded highpass + lowpass
+    fn bandpass(
+        order: usize,
+        low_hz: f64,
+        high_hz: f64,
+        srate: f64,
+    ) -> Vec<BiquadCoefficients> {
+        let mut sections = highpass(order, low_hz, srate);
+        sections.extend(lowpass(order, high_hz, srate));
+        sections
+    }
+
+    /// Generate a sine wave at the given frequency.
+    fn sine_wave(freq_hz: f64, sample_rate: f64, duration_secs: f64) -> Vec<f64> {
+        let n = (sample_rate * duration_secs) as usize;
+        (0..n)
+            .map(|i| (2.0 * PI * freq_hz * i as f64 / sample_rate).sin())
+            .collect()
+    }
+
+    /// RMS energy of a signal.
+    fn rms(signal: &[f64]) -> f64 {
+        let sum_sq: f64 = signal.iter().map(|&x| x * x).sum();
+        (sum_sq / signal.len() as f64).sqrt()
+    }
+
+    // -- peq_to_coefficients --
+
+    #[test]
+    fn test_peq_to_coefficients_folds_gain() {
+        let peq: crate::Peq<f64> = vec![(2.0, crate::Biquad::new(crate::BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 3.0))];
+        let coeffs = peq_to_coefficients(&peq);
+        let raw = peq[0].1.coefficients();
+        assert!((coeffs[0].b0 - raw.b0 * 2.0_f64).abs() < 1e-12);
+        assert!((coeffs[0].b1 - raw.b1 * 2.0_f64).abs() < 1e-12);
+        assert!((coeffs[0].b2 - raw.b2 * 2.0_f64).abs() < 1e-12);
+        assert!((coeffs[0].a1 - raw.a1).abs() < 1e-12);
+        assert!((coeffs[0].a2 - raw.a2).abs() < 1e-12);
+    }
+
+    // -- sosfilt tests --
+
+    #[test]
+    fn test_sosfilt_lowpass_attenuates_high_freq() {
+        let sections = lowpass(4, 1000.0, 48000.0);
+
+        // 100 Hz should pass through mostly intact
+        let low = sine_wave(100.0, 48000.0, 0.1);
+        let low_filt = sosfilt(&low, &sections);
+        let ratio_low = rms(&low_filt) / rms(&low);
+        assert!(
+            ratio_low > 0.95,
+            "100 Hz should pass, got ratio {ratio_low}"
+        );
+
+        // 10 kHz should be heavily attenuated
+        let high = sine_wave(10000.0, 48000.0, 0.1);
+        let high_filt = sosfilt(&high, &sections);
+        let ratio_high = rms(&high_filt) / rms(&high);
+        assert!(
+            ratio_high < 0.01,
+            "10 kHz should be attenuated, got ratio {ratio_high}"
+        );
+    }
+
+    // -- filtfilt tests --
+
+    #[test]
+    fn test_filtfilt_zero_phase() {
+        let n = 480;
+        let center = n / 2;
+        let mut signal = vec![0.0f64; n];
+        for i in 0..n {
+            let dist = (i as f64 - center as f64).abs();
+            signal[i] = (-dist * dist / 200.0).exp();
+        }
+
+        let sections = lowpass(2, 2000.0, 48000.0);
+        let filtered = filtfilt(&signal, &sections);
+
+        for k in 1..100 {
+            let left = filtered[center - k];
+            let right = filtered[center + k];
+            let diff = (left - right).abs();
+            assert!(
+                diff < 1e-5,
+                "asymmetry at k={k}: left={left}, right={right}, diff={diff}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_filtfilt_preserves_dc() {
+        let signal = vec![0.42f64; 1000];
+        let sections = lowpass(4, 5000.0, 48000.0);
+        let filtered = filtfilt(&signal, &sections);
+
+        for (i, &v) in filtered.iter().enumerate() {
+            assert!(
+                (v - 0.42).abs() < 1e-5,
+                "sample {i}: expected 0.42, got {v}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_filtfilt_lowpass_removes_high_freq() {
+        let sections = lowpass(4, 1000.0, 48000.0);
+        let high = sine_wave(10000.0, 48000.0, 0.5);
+        let filtered = filtfilt(&high, &sections);
+
+        let interior = &filtered[500..filtered.len() - 500];
+        let interior_rms = rms(interior);
+        assert!(
+            interior_rms < 1e-5,
+            "10 kHz should be removed, rms = {interior_rms}"
+        );
+    }
+
+    #[test]
+    fn test_filtfilt_highpass_removes_low_freq() {
+        let sections = highpass(4, 5000.0, 48000.0);
+        let low = sine_wave(100.0, 48000.0, 0.5);
+        let filtered = filtfilt(&low, &sections);
+
+        let interior = &filtered[200..filtered.len() - 200];
+        let interior_rms = rms(interior);
+        assert!(
+            interior_rms < 1e-4,
+            "100 Hz should be removed, rms = {interior_rms}"
+        );
+    }
+
+    #[test]
+    fn test_filtfilt_bandpass() {
+        let sections = bandpass(2, 500.0, 2000.0, 48000.0);
+
+        // 1 kHz should pass
+        let mid = sine_wave(1000.0, 48000.0, 0.5);
+        let mid_filt = filtfilt(&mid, &sections);
+        let interior_mid = &mid_filt[500..mid_filt.len() - 500];
+        let interior_orig = &mid[500..mid.len() - 500];
+        let ratio = rms(interior_mid) / rms(interior_orig);
+        assert!(ratio > 0.8, "1 kHz should pass, got ratio {ratio}");
+
+        // 100 Hz should be removed
+        let low = sine_wave(100.0, 48000.0, 0.5);
+        let low_filt = filtfilt(&low, &sections);
+        let interior_low = &low_filt[500..low_filt.len() - 500];
+        let ratio_low = rms(interior_low) / rms(&low);
+        assert!(
+            ratio_low < 0.05,
+            "100 Hz should be removed, got ratio {ratio_low}"
+        );
+
+        // 10 kHz should be removed
+        let high = sine_wave(10000.0, 48000.0, 0.5);
+        let high_filt = filtfilt(&high, &sections);
+        let interior_high = &high_filt[500..high_filt.len() - 500];
+        let ratio_high = rms(interior_high) / rms(&high);
+        assert!(
+            ratio_high < 0.01,
+            "10 kHz should be removed, got ratio {ratio_high}"
+        );
+    }
+
+    #[test]
+    fn test_filtfilt_same_length_as_input() {
+        let signal = sine_wave(440.0, 48000.0, 0.05);
+        let sections = lowpass(2, 5000.0, 48000.0);
+        let filtered = filtfilt(&signal, &sections);
+        assert_eq!(filtered.len(), signal.len());
+    }
+
+    #[test]
+    fn test_filtfilt_empty_signal() {
+        let sections = lowpass(2, 1000.0, 48000.0);
+        let filtered: Vec<f64> = filtfilt(&[], &sections);
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_filtfilt_empty_sections() {
+        let signal = vec![1.0f64, 2.0, 3.0];
+        let filtered = filtfilt(&signal, &[]);
+        assert_eq!(filtered, signal);
+    }
+
+    #[test]
+    fn test_filtfilt_single_sample() {
+        let signal = vec![0.5f64];
+        let sections = lowpass(2, 1000.0, 48000.0);
+        let filtered = filtfilt(&signal, &sections);
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_filtfilt_short_signal() {
+        let signal = vec![0.0f64, 1.0, 0.0, -1.0, 0.0];
+        let sections = lowpass(2, 5000.0, 48000.0);
+        let filtered = filtfilt(&signal, &sections);
+        assert_eq!(filtered.len(), 5);
+    }
+
+    #[test]
+    fn test_filtfilt_doubled_order() {
+        let sections = lowpass(2, 1000.0, 48000.0);
+        let sig = sine_wave(2000.0, 48000.0, 0.1);
+        let filt = filtfilt(&sig, &sections);
+        let atten_db = 20.0 * (rms(&filt) / rms(&sig)).log10();
+        assert!(
+            atten_db < -20.0,
+            "expected ~-24 dB at 2kHz, got {atten_db:.1} dB"
+        );
+    }
+
+    #[test]
+    fn test_sosfilt_empty() {
+        let empty: Vec<f64> = sosfilt(&[], &[]);
+        assert!(empty.is_empty());
+        let sig = vec![1.0f64, 2.0];
+        assert_eq!(sosfilt(&sig, &[]), sig);
+    }
+
+    #[test]
+    fn test_biquad_zi_lowpass() {
+        let sections = lowpass(2, 1000.0, 48000.0);
+        let section = &sections[0];
+        let zi = biquad_zi(section);
+
+        let val = 3.0f64;
+        let constant_signal: Vec<f64> = vec![val; 100];
+        let output = biquad_filter(&constant_signal, section, [zi[0] * val, zi[1] * val]);
+
+        let dc = (section.b0 + section.b1 + section.b2) / (1.0 + section.a1 + section.a2);
+        for (i, &y) in output.iter().enumerate() {
+            assert!(
+                (y - val * dc).abs() < 1e-10,
+                "sample {i}: expected {}, got {y}",
+                val * dc
+            );
+        }
+    }
+
+    #[test]
+    fn test_higher_order_steeper_rolloff() {
+        let freq = 2000.0;
+        let sig = sine_wave(freq, 48000.0, 0.5);
+
+        let mut prev_atten = 0.0f64;
+        for order in [2, 4, 6] {
+            let sections = lowpass(order, 1000.0, 48000.0);
+            let filt = filtfilt(&sig, &sections);
+            let interior = &filt[1000..filt.len() - 1000];
+            let atten_db = 20.0 * (rms(interior) / rms(&sig)).log10();
+            assert!(
+                atten_db < prev_atten - 5.0,
+                "order {order} ({atten_db:.1} dB) should be steeper than previous ({prev_atten:.1} dB)"
+            );
+            prev_atten = atten_db;
+        }
+    }
+
+    // -- f32 signal tests --
+
+    #[test]
+    fn test_filtfilt_f32_signal() {
+        // Build f32 coefficients from f32 Biquad
+        let peq = vec![(
+            1.0f32,
+            crate::Biquad::<f32>::new(crate::BiquadFilterType::Lowpass, 1000.0, 48000.0, 0.0, 0.0),
+        )];
+        let sections = peq_to_coefficients(&peq);
+        let n = 4800;
+        let sig: Vec<f32> = (0..n)
+            .map(|i| (2.0 * std::f32::consts::PI * 10000.0 * i as f32 / 48000.0).sin())
+            .collect();
+        let filtered = filtfilt(&sig, &sections);
+        assert_eq!(filtered.len(), n);
+    }
+
+    #[test]
+    fn test_sosfilt_f32_signal() {
+        let peq = vec![(
+            1.0f32,
+            crate::Biquad::<f32>::new(crate::BiquadFilterType::Lowpass, 1000.0, 48000.0, 0.0, 0.0),
+        )];
+        let sections = peq_to_coefficients(&peq);
+        let sig: Vec<f32> = vec![0.42; 100];
+        let filtered = sosfilt(&sig, &sections);
+        let last = *filtered.last().unwrap();
+        assert!(
+            (last - 0.42).abs() < 0.05,
+            "DC should pass through lowpass, got {last}"
+        );
+    }
+}

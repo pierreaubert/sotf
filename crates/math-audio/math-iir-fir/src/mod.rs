@@ -1,13 +1,22 @@
 //! IIR and FIR filter library for audio processing.
 //!
 //! This crate provides digital filter implementations for audio signal processing,
-//! including biquad IIR filters and FIR filters. The filters are designed for
-//! parametric equalization and audio processing applications.
+//! including biquad IIR filters, FIR filters, SVF filters, and crossovers.
+//!
+//! # Generic precision
+//!
+//! All filter types are generic over [`FilterFloat`] (`f32` or `f64`), defaulting to
+//! `f64` for backward compatibility. Use `f32` when throughput matters more than
+//! precision (e.g., real-time processing of many channels). Convenience aliases like
+//! [`BiquadF32`], [`SvfFilterF32`], etc. are provided.
 //!
 //! # Features
 //!
 //! - **Biquad IIR filters**: Peak, Lowpass, Highpass, Lowshelf, Highshelf, Bandpass, Notch
+//! - **SVF filters**: Zero-delay feedback topology for artifact-free parameter changes
 //! - **FIR filters**: Windowed sinc filters with various window types
+//! - **Crossovers**: Linkwitz-Riley IIR and linear-phase FIR crossovers
+//! - **Offline filtering**: Zero-phase `filtfilt` for analysis (no phase distortion)
 //! - **Frequency response computation**: For both IIR and FIR filters
 //! - **Multiple output formats**: APO, RME, AU Preset
 //!
@@ -16,12 +25,15 @@
 //! ```rust
 //! use math_audio_iir_fir::{Biquad, BiquadFilterType};
 //!
-//! // Create a peak filter at 1kHz with Q=2 and +3dB gain
+//! // f64 (default)
 //! let filter = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
-//!
-//! // Get the frequency response at 1kHz (in dB)
 //! let response_db: f64 = filter.log_result(1000.0);
 //! assert!((response_db - 3.0_f64).abs() < 0.1);
+//!
+//! // f32 — same API, lower precision, higher throughput
+//! let filter_f32 = Biquad::<f32>::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
+//! let response_f32: f32 = filter_f32.log_result(1000.0);
+//! assert!((response_f32 - 3.0_f32).abs() < 0.5);
 //! ```
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]

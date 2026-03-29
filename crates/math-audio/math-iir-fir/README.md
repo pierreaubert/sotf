@@ -2,31 +2,25 @@
 
 # IIR & FIR Filters
 
-This crate provides IIR (Infinite Impulse Response) filter implementations for audio equalization.
+IIR, FIR, and SVF filter implementations for audio processing, generic over `f32`
+and `f64`.
+
+## Generic precision
+
+All filter types (`Biquad`, `SvfFilter`, `Fir`, `BiquadBank`) are generic over
+`FilterFloat` and default to `f64`. Use `f32` when throughput matters more than
+precision (e.g., real-time multi-channel processing). Convenience aliases like
+`BiquadF32`, `SvfFilterF32`, etc. are provided.
 
 ## Features
 
-- **Biquad Filters**: Implementation of common biquad filter types
-  - Low-pass filters
-  - High-pass filters
-  - Peak/notch filters
-  - Low/high shelf filters
-  - Band-pass filters
-- **PEQ (Parametric Equalizer)**: Multi-band parametric equalization with advanced features
-  - SPL response computation
-  - Preamp gain calculation
-  - Fast loudness compensation (K-weighting and A-weighting)
-  - 9 export formats: APO, RME Channel, RME Room, AU Preset, CamillaDSP, EasyEffects, PipeWire, Roon, Wavelet
-  - PEQ comparison and manipulation
-- **FIR Filters**: Windowed sinc filter bank for linear-phase filtering
-  - FIR design from target frequency response
-  - Kirkeby correction for inverse filters
-  - Pre-ringing analysis and suppression
-- **SVF (State Variable Filter)**: Zero-Delay Feedback filter (Zavalishin TPT topology)
-- **Filter Design**: Specialized filter design algorithms
-  - Butterworth filters (lowpass/highpass)
-  - Linkwitz-Riley filters (lowpass/highpass)
-- **Response Computation**: Calculate frequency and phase response
+- **Biquad Filters**: Peak, Lowpass, Highpass, Lowshelf, Highshelf, Bandpass, Notch, AllPass
+- **SVF (State Variable Filter)**: Zero-delay feedback topology (Zavalishin TPT) for artifact-free parameter changes
+- **FIR Filters**: Windowed sinc filter bank for linear-phase filtering, FIR design from frequency response, Kirkeby correction, pre-ringing suppression
+- **Crossovers**: Linkwitz-Riley 4th-order IIR and linear-phase FIR crossovers
+- **Offline filtering**: Zero-phase `filtfilt` and `sosfilt` for analysis
+- **PEQ (Parametric Equalizer)**: Multi-band parametric equalization with SPL response computation, loudness compensation, and 9 export formats (APO, RME, AU Preset, CamillaDSP, EasyEffects, PipeWire, Roon, Wavelet)
+- **Filter Design**: Butterworth and Linkwitz-Riley lowpass/highpass
 - **Phase Smoothing**: Phase unwrapping, smoothing via group delay, complex interpolation
 
 ## Filter Types
@@ -49,7 +43,7 @@ This crate provides IIR (Infinite Impulse Response) filter implementations for a
 ```rust
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
-// Create a peak filter at 1kHz with Q=1.0 and 3dB gain
+// f64 (default)
 let filter = Biquad::new(
     BiquadFilterType::Peak,
     1000.0, // frequency
@@ -57,14 +51,12 @@ let filter = Biquad::new(
     1.0,     // Q factor
     3.0      // gain in dB
 );
-
-// Apply filter to audio samples (requires mut for state updates)
-// let mut filter = Biquad::new(...); // <- use mut if processing samples
-// let output = filter.process(input_sample);
-
-// Calculate frequency response at 1kHz
 let response_db = filter.log_result(1000.0);
 print!("Response at 1kHz: {:.2} dB", response_db);
+
+// f32 — same API, less precision, higher throughput
+let mut filter_f32 = Biquad::<f32>::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 3.0);
+let output = filter_f32.process(0.5f32);
 ```
 
 ### Parametric EQ (PEQ)
@@ -198,10 +190,10 @@ fn main() {
 
 ### PEQ Type
 
-The `Peq` type is defined as `Vec<(f64, Biquad)>` where:
+The `Peq<T>` type is defined as `Vec<(T, Biquad<T>)>` where `T` defaults to `f64`:
 
-- The `f64` is the weight/amplitude multiplier for each filter
-- The `Biquad` is the individual filter definition
+- The first element is the weight/amplitude multiplier for each filter
+- The `Biquad<T>` is the individual filter definition
 - This allows for flexible filter chaining and weighting
 
 ### Filter Order vs. Sections
