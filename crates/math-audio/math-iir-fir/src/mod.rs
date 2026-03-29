@@ -140,6 +140,14 @@ pub type SvfFilterF32 = SvfFilter<f32>;
 pub type FirF32 = Fir<f32>;
 /// 32-bit FIR filter bank.
 pub type FirBankF32 = FirBank<f32>;
+/// 32-bit LR4 crossover.
+pub type Lr4CrossoverF32 = Lr4Crossover<f32>;
+/// 32-bit multiband LR4 crossover.
+pub type MultibandLr4CrossoverF32 = MultibandLr4Crossover<f32>;
+/// 32-bit FIR crossover.
+pub type FirCrossoverF32 = FirCrossover<f32>;
+/// 32-bit multiband FIR crossover.
+pub type MultibandFirCrossoverF32 = MultibandFirCrossover<f32>;
 
 // ============================================================================
 // Tests for Common Functions

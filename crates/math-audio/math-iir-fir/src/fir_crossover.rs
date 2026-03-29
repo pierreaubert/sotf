@@ -14,6 +14,7 @@
 // - No allocations in process methods
 // - All buffers pre-allocated in new()
 
+use crate::traits::FilterFloat;
 use crate::{Fir, WindowType};
 
 // ============================================================================
@@ -22,11 +23,13 @@ use crate::{Fir, WindowType};
 
 /// A single-point linear-phase FIR crossover that splits a signal into
 /// low and high bands with zero phase distortion.
-pub struct FirCrossover {
-    /// FIR lowpass coefficients (f32 for hot-path efficiency)
-    coefficients: Vec<f32>,
+///
+/// Generic over [`FilterFloat`] (`f32` or `f64`, default `f64`).
+pub struct FirCrossover<T: FilterFloat = f64> {
+    /// FIR lowpass coefficients
+    coefficients: Vec<T>,
     /// Per-channel delay lines for FIR convolution
-    delay_lines: Vec<Vec<f32>>,
+    delay_lines: Vec<Vec<T>>,
     /// Per-channel write positions
     write_positions: Vec<usize>,
     /// Number of taps
@@ -34,7 +37,7 @@ pub struct FirCrossover {
     channels: usize,
 }
 
-impl FirCrossover {
+impl<T: FilterFloat> FirCrossover<T> {
     /// Create a new linear-phase FIR crossover at the given frequency.
     ///
     /// # Arguments
@@ -42,15 +45,15 @@ impl FirCrossover {
     /// * `sample_rate` - Sample rate in Hz
     /// * `channels` - Number of audio channels
     /// * `n_taps` - Number of FIR taps (must be odd; even values are incremented)
-    pub fn new(freq: f32, sample_rate: u32, channels: usize, n_taps: usize) -> Self {
+    pub fn new(freq: T, sample_rate: T, channels: usize, n_taps: usize) -> Self {
         let n_taps = if n_taps.is_multiple_of(2) { n_taps + 1 } else { n_taps };
 
         // Design lowpass FIR using Kaiser window (beta=8 for good sidelobe rejection)
-        let fir = Fir::lowpass(n_taps, freq as f64, sample_rate as f64, WindowType::Kaiser, 8.0);
+        let fir = Fir::<T>::lowpass(n_taps, freq, sample_rate, WindowType::Kaiser, T::from_f64(8.0).unwrap());
 
-        let coefficients: Vec<f32> = fir.coeffs().iter().map(|&c| c as f32).collect();
+        let coefficients: Vec<T> = fir.coeffs().to_vec();
 
-        let delay_lines = vec![vec![0.0f32; n_taps]; channels];
+        let delay_lines = vec![vec![T::zero(); n_taps]; channels];
         let write_positions = vec![0; channels];
 
         Self {
@@ -67,7 +70,7 @@ impl FirCrossover {
     /// The highpass output is computed as `delayed_input - lowpass_output`,
     /// guaranteeing perfect reconstruction.
     #[inline]
-    pub fn process_sample(&mut self, sample: f32, channel: usize) -> (f32, f32) {
+    pub fn process_sample(&mut self, sample: T, channel: usize) -> (T, T) {
         let dl = &mut self.delay_lines[channel];
         let wp = &mut self.write_positions[channel];
 
@@ -75,7 +78,7 @@ impl FirCrossover {
         dl[*wp] = sample;
 
         // Compute lowpass output via convolution
-        let mut low = 0.0f32;
+        let mut low = T::zero();
         let mut read_pos = *wp;
         for &coeff in &self.coefficients {
             low += dl[read_pos] * coeff;
@@ -108,7 +111,7 @@ impl FirCrossover {
     /// `input`: interleaved frame (length = channels)
     /// `low_out`: interleaved low-band frame (length = channels)
     /// `high_out`: interleaved high-band frame (length = channels)
-    pub fn process_frame(&mut self, input: &[f32], low_out: &mut [f32], high_out: &mut [f32]) {
+    pub fn process_frame(&mut self, input: &[T], low_out: &mut [T], high_out: &mut [T]) {
         for ch in 0..self.channels {
             let (l, h) = self.process_sample(input[ch], ch);
             low_out[ch] = l;
@@ -124,7 +127,7 @@ impl FirCrossover {
     /// Reset all filter state.
     pub fn reset(&mut self) {
         for dl in &mut self.delay_lines {
-            dl.fill(0.0);
+            dl.fill(T::zero());
         }
         self.write_positions.fill(0);
     }
@@ -136,20 +139,21 @@ impl FirCrossover {
 
 /// N-way linear-phase FIR crossover using cascaded split points.
 ///
+/// Generic over [`FilterFloat`] (`f32` or `f64`, default `f64`).
 /// For N split frequencies, produces N+1 bands.
 /// All bands sum to the original signal (perfect reconstruction).
-pub struct MultibandFirCrossover {
-    crossovers: Vec<FirCrossover>,
+pub struct MultibandFirCrossover<T: FilterFloat = f64> {
+    crossovers: Vec<FirCrossover<T>>,
     /// Scratch buffers for intermediate band splitting
-    scratch_low: Vec<f32>,
-    scratch_high: Vec<f32>,
+    scratch_low: Vec<T>,
+    scratch_high: Vec<T>,
     /// Second high scratch buffer to avoid allocation in process_frame
-    scratch_high2: Vec<f32>,
+    scratch_high2: Vec<T>,
     channels: usize,
     num_bands: usize,
 }
 
-impl MultibandFirCrossover {
+impl<T: FilterFloat> MultibandFirCrossover<T> {
     /// Create a new multi-band FIR crossover.
     ///
     /// # Arguments
@@ -157,8 +161,8 @@ impl MultibandFirCrossover {
     /// * `sample_rate` - Sample rate in Hz
     /// * `channels` - Number of audio channels
     /// * `n_taps` - Number of FIR taps per crossover point
-    pub fn new(freqs: &[f32], sample_rate: u32, channels: usize, n_taps: usize) -> Self {
-        let crossovers: Vec<FirCrossover> = freqs
+    pub fn new(freqs: &[T], sample_rate: T, channels: usize, n_taps: usize) -> Self {
+        let crossovers: Vec<FirCrossover<T>> = freqs
             .iter()
             .map(|&freq| FirCrossover::new(freq, sample_rate, channels, n_taps))
             .collect();
@@ -166,9 +170,9 @@ impl MultibandFirCrossover {
         Self {
             num_bands: freqs.len() + 1,
             crossovers,
-            scratch_low: vec![0.0; channels],
-            scratch_high: vec![0.0; channels],
-            scratch_high2: vec![0.0; channels],
+            scratch_low: vec![T::zero(); channels],
+            scratch_high: vec![T::zero(); channels],
+            scratch_high2: vec![T::zero(); channels],
             channels,
         }
     }
@@ -178,7 +182,7 @@ impl MultibandFirCrossover {
     /// `input`: interleaved frame (length = channels)
     /// `bands`: slice of mutable slices, one per band (length = num_bands).
     ///          Each band slice has length = channels.
-    pub fn process_frame(&mut self, input: &[f32], bands: &mut [&mut [f32]]) {
+    pub fn process_frame(&mut self, input: &[T], bands: &mut [&mut [T]]) {
         debug_assert_eq!(bands.len(), self.num_bands);
 
         if self.crossovers.is_empty() {
@@ -229,9 +233,7 @@ mod tests {
 
     #[test]
     fn test_perfect_reconstruction() {
-        // Low + High should reconstruct the original signal (after latency)
-        let sr = 48000;
-        let mut xover = FirCrossover::new(1000.0, sr, 1, 127);
+        let mut xover = FirCrossover::new(1000.0, 48000.0, 1, 127);
         let latency = xover.latency_samples();
 
         let num_samples = 1000;
@@ -240,15 +242,14 @@ mod tests {
         let mut high_outputs = Vec::with_capacity(num_samples);
 
         for i in 0..num_samples {
-            let input = ((i as f32 * 0.37).sin() + (i as f32 * 0.73).cos()) * 0.5;
+            let input = ((i as f64 * 0.37).sin() + (i as f64 * 0.73).cos()) * 0.5;
             inputs.push(input);
             let (l, h) = xover.process_sample(input, 0);
             low_outputs.push(l);
             high_outputs.push(h);
         }
 
-        // After latency, sum should match original
-        let mut max_error = 0.0f32;
+        let mut max_error = 0.0f64;
         for i in (latency + 10)..num_samples {
             let reconstructed = low_outputs[i] + high_outputs[i];
             let original = inputs[i - latency];
@@ -264,18 +265,17 @@ mod tests {
 
     #[test]
     fn test_lowpass_attenuates_high_freq() {
-        let sr = 48000;
+        let sr = 48000.0;
         let mut xover = FirCrossover::new(1000.0, sr, 1, 255);
         let latency = xover.latency_samples();
 
-        // Feed 10 kHz sine (well above crossover)
         let freq = 10000.0;
         let num_samples = 2000;
-        let mut low_energy = 0.0f32;
-        let mut input_energy = 0.0f32;
+        let mut low_energy = 0.0f64;
+        let mut input_energy = 0.0f64;
         for i in 0..num_samples {
-            let t = i as f32 / sr as f32;
-            let input = (2.0 * std::f32::consts::PI * freq * t).sin();
+            let t = i as f64 / sr;
+            let input = (2.0 * std::f64::consts::PI * freq * t).sin();
             let (l, _h) = xover.process_sample(input, 0);
             if i > latency + 100 {
                 low_energy += l * l;
@@ -292,17 +292,17 @@ mod tests {
 
     #[test]
     fn test_highpass_passes_high_freq() {
-        let sr = 48000;
+        let sr = 48000.0;
         let mut xover = FirCrossover::new(1000.0, sr, 1, 255);
         let latency = xover.latency_samples();
 
         let freq = 10000.0;
         let num_samples = 2000;
-        let mut high_energy = 0.0f32;
-        let mut input_energy = 0.0f32;
+        let mut high_energy = 0.0f64;
+        let mut input_energy = 0.0f64;
         for i in 0..num_samples {
-            let t = i as f32 / sr as f32;
-            let input = (2.0 * std::f32::consts::PI * freq * t).sin();
+            let t = i as f64 / sr;
+            let input = (2.0 * std::f64::consts::PI * freq * t).sin();
             let (_l, h) = xover.process_sample(input, 0);
             if i > latency + 100 {
                 high_energy += h * h;
@@ -319,15 +319,14 @@ mod tests {
 
     #[test]
     fn test_latency() {
-        let xover = FirCrossover::new(1000.0, 48000, 2, 255);
+        let xover = FirCrossover::new(1000.0, 48000.0, 2, 255);
         assert_eq!(xover.latency_samples(), 127); // (255-1)/2
     }
 
     #[test]
     fn test_multiband_3way() {
-        let sr = 48000;
         let freqs = [200.0, 2000.0];
-        let mut xover = MultibandFirCrossover::new(&freqs, sr, 1, 127);
+        let mut xover = MultibandFirCrossover::new(&freqs, 48000.0, 1, 127);
         assert_eq!(xover.num_bands(), 3);
 
         let latency = xover.latency_samples();
@@ -337,21 +336,20 @@ mod tests {
         let mut band_sums = Vec::with_capacity(num_samples);
 
         for i in 0..num_samples {
-            let input = ((i as f32 * 0.37).sin()) * 0.5;
+            let input = (i as f64 * 0.37).sin() * 0.5;
             inputs.push(input);
 
             let input_frame = [input];
-            let mut b0 = [0.0f32];
-            let mut b1 = [0.0f32];
-            let mut b2 = [0.0f32];
-            let mut bands: Vec<&mut [f32]> = vec![&mut b0, &mut b1, &mut b2];
+            let mut b0 = [0.0f64];
+            let mut b1 = [0.0f64];
+            let mut b2 = [0.0f64];
+            let mut bands: Vec<&mut [f64]> = vec![&mut b0, &mut b1, &mut b2];
             xover.process_frame(&input_frame, &mut bands);
             band_sums.push(b0[0] + b1[0] + b2[0]);
         }
 
-        // Verify reconstruction after latency settles
         let settle = latency + 50;
-        let mut max_error = 0.0f32;
+        let mut max_error = 0.0f64;
         for i in settle..num_samples {
             let error = (band_sums[i] - inputs[i - latency]).abs();
             max_error = max_error.max(error);
@@ -365,11 +363,19 @@ mod tests {
 
     #[test]
     fn test_reset() {
-        let mut xover = FirCrossover::new(1000.0, 48000, 1, 63);
+        let mut xover = FirCrossover::new(1000.0_f64, 48000.0, 1, 63);
         xover.process_sample(1.0, 0);
         xover.reset();
         let (l, h) = xover.process_sample(0.0, 0);
         assert!(l.abs() < 1e-6);
         assert!(h.abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_fir_crossover_f32() {
+        let mut xover = FirCrossover::<f32>::new(1000.0, 48000.0, 1, 63);
+        let (low, high) = xover.process_sample(1.0f32, 0);
+        assert!(low.is_finite());
+        assert!(high.is_finite());
     }
 }
