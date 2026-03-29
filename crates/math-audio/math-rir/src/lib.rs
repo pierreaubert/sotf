@@ -40,6 +40,7 @@ mod segmentation;
 mod types;
 
 pub use config::SsirConfig;
+pub use math_audio_iir_fir::filtfilt;
 pub use types::{RirSegment, SsirResult};
 
 use detection::{detect_reflections, find_direct_sound_toa};
@@ -149,9 +150,9 @@ pub fn analyze_srir(channels: &[&[f32]], config: &SsirConfig) -> SsirResult {
         }
     };
 
-    // Step 3: Compute DOA vectors from B-format channels
+    // Step 3: Compute DOA vectors from band-limited B-format channels
     // B-format: W (omni), X (front-back), Y (left-right), Z (up-down)
-    let doa_vectors = compute_bformat_doa(channels, len);
+    let doa_vectors = compute_bformat_doa(channels, len, config);
 
     // Step 4: Detect reflections with DOA validation
     let reflections =
@@ -170,13 +171,51 @@ pub fn analyze_srir(channels: &[&[f32]], config: &SsirConfig) -> SsirResult {
 
 /// Compute per-sample DOA unit vectors from B-format (Ambisonics) channels.
 ///
+/// The channels are band-limited with a zero-phase Butterworth bandpass filter
+/// before computing the pseudo-intensity vector. This improves DOA reliability
+/// by excluding low frequencies (poor spatial resolution) and high frequencies
+/// (spatial aliasing).
+///
 /// Uses the pseudo-intensity vector: I = P * V, where P = W and V = [X, Y, Z].
 /// The DOA is the normalized intensity vector direction.
-fn compute_bformat_doa(channels: &[&[f32]], len: usize) -> Vec<[f32; 3]> {
-    let w = channels[0]; // omni
-    let x = channels[1]; // front-back
-    let y = channels[2]; // left-right
-    let z = channels[3]; // up-down
+fn compute_bformat_doa(channels: &[&[f32]], len: usize, config: &SsirConfig) -> Vec<[f32; 3]> {
+    let (low_hz, high_hz) = config.doa_bandpass_hz;
+    let order = config.doa_bandpass_order;
+    let nyquist = config.sample_rate / 2.0;
+
+    // Band-limit all 4 B-format channels with zero-phase filtering.
+    // Skip filtering if the band covers the full spectrum or the signal is too short.
+    let needs_filtering = low_hz > 0.0 && high_hz < nyquist && len >= 4 && order >= 1;
+
+    let (w, x, y, z): (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) = if needs_filtering {
+        let mut sections = filtfilt::peq_to_coefficients(
+            &math_audio_iir_fir::peq_butterworth_highpass(order as usize, low_hz, config.sample_rate),
+        );
+        sections.extend(filtfilt::peq_to_coefficients(
+            &math_audio_iir_fir::peq_butterworth_lowpass(order as usize, high_hz, config.sample_rate),
+        ));
+        // Convert f32 channels to f64, filter, convert back
+        let filter_channel = |ch: &[f32]| -> Vec<f32> {
+            let ch_f64: Vec<f64> = ch.iter().map(|&s| s as f64).collect();
+            filtfilt::filtfilt(&ch_f64, &sections)
+                .into_iter()
+                .map(|s| s as f32)
+                .collect()
+        };
+        (
+            filter_channel(channels[0]),
+            filter_channel(channels[1]),
+            filter_channel(channels[2]),
+            filter_channel(channels[3]),
+        )
+    } else {
+        (
+            channels[0].to_vec(),
+            channels[1].to_vec(),
+            channels[2].to_vec(),
+            channels[3].to_vec(),
+        )
+    };
 
     (0..len)
         .map(|i| {

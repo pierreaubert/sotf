@@ -1,19 +1,19 @@
 //! Biquad IIR filter types and implementations.
 
 use ndarray::Array1;
-use num_complex::Complex64;
-use std::f64::consts::PI;
+use num_complex::Complex;
 use std::fmt;
 
 use crate::error::IirError;
+use crate::traits::{lit, FilterFloat};
 use crate::{DEFAULT_Q_HIGH_LOW_PASS, DEFAULT_Q_HIGH_LOW_SHELF};
 
 /// Parametric EQ filter chain: a vector of (gain, Biquad) pairs.
 ///
 /// Each element is a tuple of:
-/// - `f64`: The linear gain multiplier for this stage
-/// - `Biquad`: The biquad filter for this stage
-pub type Peq = Vec<(f64, Biquad)>;
+/// - `T`: The linear gain multiplier for this stage
+/// - `Biquad<T>`: The biquad filter for this stage
+pub type Peq<T = f64> = Vec<(T, Biquad<T>)>;
 
 /// Filter types for biquad filters
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -84,25 +84,25 @@ impl BiquadFilterType {
 
 /// Biquad filter coefficients for external interpolation.
 #[derive(Debug, Clone, Copy)]
-pub struct BiquadCoefficients {
+pub struct BiquadCoefficients<T: FilterFloat = f64> {
     /// Feedforward coefficient b0
-    pub b0: f64,
+    pub b0: T,
     /// Feedforward coefficient b1
-    pub b1: f64,
+    pub b1: T,
     /// Feedforward coefficient b2
-    pub b2: f64,
+    pub b2: T,
     /// Feedback coefficient a1 (normalized, a0=1)
-    pub a1: f64,
+    pub a1: T,
     /// Feedback coefficient a2 (normalized, a0=1)
-    pub a2: f64,
+    pub a2: T,
 }
 
-impl BiquadCoefficients {
+impl<T: FilterFloat> BiquadCoefficients<T> {
     /// Linearly interpolate between two sets of coefficients.
     ///
     /// `t` ranges from 0.0 (fully `self`) to 1.0 (fully `other`).
     #[inline(always)]
-    pub fn lerp(&self, other: &BiquadCoefficients, t: f64) -> BiquadCoefficients {
+    pub fn lerp(&self, other: &BiquadCoefficients<T>, t: T) -> BiquadCoefficients<T> {
         BiquadCoefficients {
             b0: self.b0 + (other.b0 - self.b0) * t,
             b1: self.b1 + (other.b1 - self.b1) * t,
@@ -115,45 +115,46 @@ impl BiquadCoefficients {
 
 /// Represents a single biquad IIR filter.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Biquad {
+#[serde(bound = "")]
+pub struct Biquad<T: FilterFloat = f64> {
     /// The type of filter
     pub filter_type: BiquadFilterType,
     /// Center frequency in Hz
-    pub freq: f64,
+    pub freq: T,
     /// Sample rate in Hz
-    pub srate: f64,
+    pub srate: T,
     /// Q factor (quality factor)
-    pub q: f64,
+    pub q: T,
     /// Gain in dB (for peaking and shelving filters)
-    pub db_gain: f64,
+    pub db_gain: T,
     /// Filter coefficients
-    a1: f64,
-    a2: f64,
-    b0: f64,
-    b1: f64,
-    b2: f64,
+    a1: T,
+    a2: T,
+    b0: T,
+    b1: T,
+    b2: T,
     /// Filter state for DF-I (for processing samples)
-    x1: f64,
-    x2: f64,
-    y1: f64,
-    y2: f64,
+    x1: T,
+    x2: T,
+    y1: T,
+    y2: T,
     /// Filter state for Transposed Direct Form II
-    s1: f64,
-    s2: f64,
+    s1: T,
+    s2: T,
     /// When true, use Transposed Direct Form II instead of Direct Form I.
     /// TDF-II has better numerical properties for high-Q narrow filters.
     #[serde(default)]
     pub use_tdf2: bool,
     /// Pre-computed coefficients for fast frequency response calculation
-    r_up0: f64,
-    r_up1: f64,
-    r_up2: f64,
-    r_dw0: f64,
-    r_dw1: f64,
-    r_dw2: f64,
+    r_up0: T,
+    r_up1: T,
+    r_up2: T,
+    r_dw0: T,
+    r_dw1: T,
+    r_dw2: T,
 }
 
-impl Biquad {
+impl<T: FilterFloat> Biquad<T> {
     /// Creates and initializes a new Biquad filter.
     ///
     /// This constructor applies default Q values for certain filter types and clamps
@@ -171,57 +172,58 @@ impl Biquad {
     ///
     /// This method does not panic but silently clamps invalid parameters.
     /// Use [`try_new`](Self::try_new) for explicit error handling.
-    pub fn new(filter_type: BiquadFilterType, freq: f64, srate: f64, q: f64, db_gain: f64) -> Self {
+    pub fn new(filter_type: BiquadFilterType, freq: T, srate: T, q: T, db_gain: T) -> Self {
+        let zero = T::zero();
         let mut biquad = Biquad {
             filter_type,
             freq,
             srate,
             q,
             db_gain,
-            a1: 0.0,
-            a2: 0.0,
-            b0: 0.0,
-            b1: 0.0,
-            b2: 0.0,
-            x1: 0.0,
-            x2: 0.0,
-            y1: 0.0,
-            y2: 0.0,
-            s1: 0.0,
-            s2: 0.0,
+            a1: zero,
+            a2: zero,
+            b0: zero,
+            b1: zero,
+            b2: zero,
+            x1: zero,
+            x2: zero,
+            y1: zero,
+            y2: zero,
+            s1: zero,
+            s2: zero,
             use_tdf2: false,
-            r_up0: 0.0,
-            r_up1: 0.0,
-            r_up2: 0.0,
-            r_dw0: 0.0,
-            r_dw1: 0.0,
-            r_dw2: 0.0,
+            r_up0: zero,
+            r_up1: zero,
+            r_up2: zero,
+            r_dw0: zero,
+            r_dw1: zero,
+            r_dw2: zero,
         };
 
         // Adjust Q based on filter type, matching Python logic
-        if biquad.q == 0.0 {
+        if biquad.q == zero {
             match biquad.filter_type {
                 BiquadFilterType::Notch => {
-                    biquad.q = 30.0;
+                    biquad.q = lit(30.0);
                 }
                 BiquadFilterType::Bandpass
                 | BiquadFilterType::Highpass
                 | BiquadFilterType::Lowpass => {
-                    biquad.q = DEFAULT_Q_HIGH_LOW_PASS;
+                    biquad.q = lit(DEFAULT_Q_HIGH_LOW_PASS);
                 }
                 BiquadFilterType::Lowshelf
                 | BiquadFilterType::Highshelf
                 | BiquadFilterType::LowshelfOrf
                 | BiquadFilterType::HighshelfOrf => {
-                    biquad.q = DEFAULT_Q_HIGH_LOW_SHELF;
+                    biquad.q = lit(DEFAULT_Q_HIGH_LOW_SHELF);
                 }
                 _ => {}
             }
         }
 
         // Safety clamp: ensure strictly positive Q to avoid division by zero in alpha = sn/(2*q)
-        if biquad.q <= 0.0 {
-            biquad.q = 1.0e-2;
+        if biquad.q <= zero {
+            biquad.q = lit(1.0e-2);
         }
 
         biquad.compute_coeffs();
@@ -251,43 +253,54 @@ impl Biquad {
     /// # Example
     ///
     /// ```rust
-    /// use math_audio_iir_fir::{Biquad, BiquadFilterType, SRATE};
+    /// use math_audio_iir_fir::{Biquad, BiquadFilterType};
     ///
     /// // Valid filter
-    /// let filter = Biquad::try_new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0)
+    /// let filter = Biquad::try_new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0)
     ///     .expect("valid parameters");
     ///
     /// // Invalid frequency (above Nyquist)
-    /// let result = Biquad::try_new(BiquadFilterType::Peak, 30000.0, SRATE, 2.0, 0.0);
+    /// let result = Biquad::try_new(BiquadFilterType::Peak, 30000.0, 48000.0, 2.0, 0.0);
     /// assert!(result.is_err());
     /// ```
     pub fn try_new(
         filter_type: BiquadFilterType,
-        freq: f64,
-        srate: f64,
-        q: f64,
-        db_gain: f64,
+        freq: T,
+        srate: T,
+        q: T,
+        db_gain: T,
     ) -> Result<Self, IirError> {
+        let zero = T::zero();
+
         // Validate sample rate
-        if srate <= 0.0 || !srate.is_finite() {
-            return Err(IirError::InvalidSampleRate { sample_rate: srate });
+        if srate <= zero || !srate.is_finite() {
+            return Err(IirError::InvalidSampleRate {
+                sample_rate: srate.to_f64().unwrap_or(0.0),
+            });
         }
 
-        let nyquist = srate / 2.0;
+        let nyquist = srate / lit(2.0);
 
         // Validate frequency
-        if freq <= 0.0 || freq >= nyquist || !freq.is_finite() {
-            return Err(IirError::InvalidFrequency { freq, nyquist });
+        if freq <= zero || freq >= nyquist || !freq.is_finite() {
+            return Err(IirError::InvalidFrequency {
+                freq: freq.to_f64().unwrap_or(0.0),
+                nyquist: nyquist.to_f64().unwrap_or(0.0),
+            });
         }
 
         // Validate Q (0.0 is allowed as it means "use default")
-        if q < 0.0 || (q != 0.0 && !q.is_finite()) {
-            return Err(IirError::InvalidQ { q });
+        if q < zero || (q != zero && !q.is_finite()) {
+            return Err(IirError::InvalidQ {
+                q: q.to_f64().unwrap_or(0.0),
+            });
         }
 
         // Validate gain
         if !db_gain.is_finite() {
-            return Err(IirError::InvalidGain { gain_db: db_gain });
+            return Err(IirError::InvalidGain {
+                gain_db: db_gain.to_f64().unwrap_or(0.0),
+            });
         }
 
         Ok(Self::new(filter_type, freq, srate, q, db_gain))
@@ -299,31 +312,32 @@ impl Biquad {
     pub fn update_params(
         &mut self,
         filter_type: BiquadFilterType,
-        freq: f64,
-        srate: f64,
-        q: f64,
-        db_gain: f64,
+        freq: T,
+        srate: T,
+        q: T,
+        db_gain: T,
     ) {
+        let zero = T::zero();
         self.filter_type = filter_type;
         self.freq = freq;
         self.srate = srate;
-        self.q = if q == 0.0 {
+        self.q = if q == zero {
             match filter_type {
-                BiquadFilterType::Notch => 30.0,
+                BiquadFilterType::Notch => lit(30.0),
                 BiquadFilterType::Bandpass
                 | BiquadFilterType::Highpass
-                | BiquadFilterType::Lowpass => DEFAULT_Q_HIGH_LOW_PASS,
+                | BiquadFilterType::Lowpass => lit(DEFAULT_Q_HIGH_LOW_PASS),
                 BiquadFilterType::Lowshelf
                 | BiquadFilterType::Highshelf
                 | BiquadFilterType::LowshelfOrf
-                | BiquadFilterType::HighshelfOrf => DEFAULT_Q_HIGH_LOW_SHELF,
+                | BiquadFilterType::HighshelfOrf => lit(DEFAULT_Q_HIGH_LOW_SHELF),
                 _ => q,
             }
         } else {
             q
         };
-        if self.q <= 0.0 {
-            self.q = 1.0e-2;
+        if self.q <= zero {
+            self.q = lit(1.0e-2);
         }
         self.db_gain = db_gain;
         self.compute_coeffs();
@@ -331,219 +345,229 @@ impl Biquad {
 
     fn compute_coeffs(&mut self) {
         // Intermediate variables
-        let a = 10.0_f64.powf(self.db_gain / 40.0);
-        let omega = 2.0 * PI * self.freq / self.srate;
+        let a: T = lit::<T>(10.0).powf(self.db_gain / lit(40.0));
+        let omega: T = lit::<T>(2.0) * T::PI() * self.freq / self.srate;
         let sn = omega.sin();
         let cs = omega.cos();
-        let alpha = sn / (2.0 * self.q);
+        let alpha = sn / (lit::<T>(2.0) * self.q);
         let beta = (a + a).sqrt();
 
         // Raw coefficients
         let (b0, b1, b2, a0, a1, a2);
 
+        let zero = T::zero();
+        let one = T::one();
+        let two: T = lit(2.0);
+        let four: T = lit(4.0);
+        let half: T = lit(0.5);
+
         match self.filter_type {
             BiquadFilterType::Lowpass => {
-                b0 = (1.0 - cs) / 2.0;
-                b1 = 1.0 - cs;
-                b2 = (1.0 - cs) / 2.0;
-                a0 = 1.0 + alpha;
-                a1 = -2.0 * cs;
-                a2 = 1.0 - alpha;
+                b0 = (one - cs) / two;
+                b1 = one - cs;
+                b2 = (one - cs) / two;
+                a0 = one + alpha;
+                a1 = -two * cs;
+                a2 = one - alpha;
             }
             BiquadFilterType::Highpass | BiquadFilterType::HighpassVariableQ => {
-                b0 = (1.0 + cs) / 2.0;
-                b1 = -(1.0 + cs);
-                b2 = (1.0 + cs) / 2.0;
-                a0 = 1.0 + alpha;
-                a1 = -2.0 * cs;
-                a2 = 1.0 - alpha;
+                b0 = (one + cs) / two;
+                b1 = -(one + cs);
+                b2 = (one + cs) / two;
+                a0 = one + alpha;
+                a1 = -two * cs;
+                a2 = one - alpha;
             }
             BiquadFilterType::Bandpass => {
                 b0 = alpha;
-                b1 = 0.0;
+                b1 = zero;
                 b2 = -alpha;
-                a0 = 1.0 + alpha;
-                a1 = -2.0 * cs;
-                a2 = 1.0 - alpha;
+                a0 = one + alpha;
+                a1 = -two * cs;
+                a2 = one - alpha;
             }
             BiquadFilterType::Notch => {
-                b0 = 1.0;
-                b1 = -2.0 * cs;
-                b2 = 1.0;
-                a0 = 1.0 + alpha;
-                a1 = -2.0 * cs;
-                a2 = 1.0 - alpha;
+                b0 = one;
+                b1 = -two * cs;
+                b2 = one;
+                a0 = one + alpha;
+                a1 = -two * cs;
+                a2 = one - alpha;
             }
             BiquadFilterType::Peak => {
-                b0 = 1.0 + (alpha * a);
-                b1 = -2.0 * cs;
-                b2 = 1.0 - (alpha * a);
-                a0 = 1.0 + (alpha / a);
-                a1 = -2.0 * cs;
-                a2 = 1.0 - (alpha / a);
+                b0 = one + (alpha * a);
+                b1 = -two * cs;
+                b2 = one - (alpha * a);
+                a0 = one + (alpha / a);
+                a1 = -two * cs;
+                a2 = one - (alpha / a);
             }
             BiquadFilterType::Lowshelf => {
-                b0 = a * ((a + 1.0) - (a - 1.0) * cs + beta * sn);
-                b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cs);
-                b2 = a * ((a + 1.0) - (a - 1.0) * cs - beta * sn);
-                a0 = (a + 1.0) + (a - 1.0) * cs + beta * sn;
-                a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cs);
-                a2 = (a + 1.0) + (a - 1.0) * cs - beta * sn;
+                b0 = a * ((a + one) - (a - one) * cs + beta * sn);
+                b1 = two * a * ((a - one) - (a + one) * cs);
+                b2 = a * ((a + one) - (a - one) * cs - beta * sn);
+                a0 = (a + one) + (a - one) * cs + beta * sn;
+                a1 = -two * ((a - one) + (a + one) * cs);
+                a2 = (a + one) + (a - one) * cs - beta * sn;
             }
             BiquadFilterType::Highshelf => {
-                b0 = a * ((a + 1.0) + (a - 1.0) * cs + beta * sn);
-                b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cs);
-                b2 = a * ((a + 1.0) + (a - 1.0) * cs - beta * sn);
-                a0 = (a + 1.0) - (a - 1.0) * cs + beta * sn;
-                a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cs);
-                a2 = (a + 1.0) - (a - 1.0) * cs - beta * sn;
+                b0 = a * ((a + one) + (a - one) * cs + beta * sn);
+                b1 = -two * a * ((a - one) + (a + one) * cs);
+                b2 = a * ((a + one) + (a - one) * cs - beta * sn);
+                a0 = (a + one) - (a - one) * cs + beta * sn;
+                a1 = two * ((a - one) - (a + one) * cs);
+                a2 = (a + one) - (a - one) * cs - beta * sn;
             }
             BiquadFilterType::AllPass => {
-                b0 = 1.0 - alpha;
-                b1 = -2.0 * cs;
-                b2 = 1.0 + alpha;
-                a0 = 1.0 + alpha;
-                a1 = -2.0 * cs;
-                a2 = 1.0 - alpha;
+                b0 = one - alpha;
+                b1 = -two * cs;
+                b2 = one + alpha;
+                a0 = one + alpha;
+                a1 = -two * cs;
+                a2 = one - alpha;
             }
             BiquadFilterType::LowshelfOrf => {
-                let g = 10.0_f64.powf(self.db_gain / 20.0);
-                let a_val = 10.0_f64.powf(self.db_gain / 40.0);
+                let g: T = lit::<T>(10.0).powf(self.db_gain / lit(20.0));
+                let a_val: T = lit::<T>(10.0).powf(self.db_gain / lit(40.0));
                 let beta_rbj = (a_val + a_val).sqrt();
-                a0 = (a_val + 1.0) + (a_val - 1.0) * cs + beta_rbj * sn;
-                a1 = -2.0 * ((a_val - 1.0) + (a_val + 1.0) * cs);
-                a2 = (a_val + 1.0) + (a_val - 1.0) * cs - beta_rbj * sn;
+                a0 = (a_val + one) + (a_val - one) * cs + beta_rbj * sn;
+                a1 = -two * ((a_val - one) + (a_val + one) * cs);
+                a2 = (a_val + one) + (a_val - one) * cs - beta_rbj * sn;
 
                 let sum_a = a0 + a1 + a2;
                 let diff_a = a0 - a1 + a2;
                 let sum_b = g * sum_a;
                 let diff_b = diff_a;
 
-                b1 = (sum_b - diff_b) / 2.0;
-                let p = (sum_b + diff_b) / 2.0;
+                b1 = (sum_b - diff_b) / two;
+                let p = (sum_b + diff_b) / two;
 
                 let w0 = omega;
-                let cos_2w0 = (2.0 * w0).cos();
-                let sin_2w0 = (2.0 * w0).sin();
+                let cos_2w0 = (two * w0).cos();
+                let sin_2w0 = (two * w0).sin();
 
                 let a_re = a0 + a1 * cs + a2 * cos_2w0;
                 let a_im = -a1 * sn - a2 * sin_2w0;
                 let den_w0_sq = a_re * a_re + a_im * a_im;
                 let target = g * den_w0_sq;
 
-                let c1 = 2.0 * b1 * p * cs;
-                let known = p * p / 2.0 + b1 * b1 + c1 + p * p / 2.0 * cos_2w0;
-                let d_coeff = 0.5 - 0.5 * cos_2w0;
+                let c1 = two * b1 * p * cs;
+                let known = p * p / two + b1 * b1 + c1 + p * p / two * cos_2w0;
+                let d_coeff = half - half * cos_2w0;
 
-                let d_sq = if d_coeff.abs() > 1e-15 {
+                let eps: T = lit(1e-15);
+                let d_sq = if d_coeff.abs() > eps {
                     (target - known) / d_coeff
                 } else {
-                    0.0
+                    zero
                 };
-                let d_val = if d_sq >= 0.0 { d_sq.sqrt() } else { 0.0 };
-                let d_signed = if g >= 1.0 { d_val } else { -d_val };
+                let d_val = if d_sq >= zero { d_sq.sqrt() } else { zero };
+                let d_signed = if g >= one { d_val } else { -d_val };
 
-                b0 = (p + d_signed) / 2.0;
-                b2 = (p - d_signed) / 2.0;
+                b0 = (p + d_signed) / two;
+                b2 = (p - d_signed) / two;
             }
             BiquadFilterType::HighshelfOrf => {
-                let g = 10.0_f64.powf(self.db_gain / 20.0);
-                let a_val = 10.0_f64.powf(self.db_gain / 40.0);
+                let g: T = lit::<T>(10.0).powf(self.db_gain / lit(20.0));
+                let a_val: T = lit::<T>(10.0).powf(self.db_gain / lit(40.0));
                 let beta_rbj = (a_val + a_val).sqrt();
-                a0 = (a_val + 1.0) - (a_val - 1.0) * cs + beta_rbj * sn;
-                a1 = 2.0 * ((a_val - 1.0) - (a_val + 1.0) * cs);
-                a2 = (a_val + 1.0) - (a_val - 1.0) * cs - beta_rbj * sn;
+                a0 = (a_val + one) - (a_val - one) * cs + beta_rbj * sn;
+                a1 = two * ((a_val - one) - (a_val + one) * cs);
+                a2 = (a_val + one) - (a_val - one) * cs - beta_rbj * sn;
 
                 let sum_a = a0 + a1 + a2;
                 let diff_a = a0 - a1 + a2;
                 let sum_b = sum_a;
                 let diff_b = g * diff_a;
 
-                b1 = (sum_b - diff_b) / 2.0;
-                let p = (sum_b + diff_b) / 2.0;
+                b1 = (sum_b - diff_b) / two;
+                let p = (sum_b + diff_b) / two;
 
                 let w0 = omega;
-                let cos_2w0 = (2.0 * w0).cos();
-                let sin_2w0 = (2.0 * w0).sin();
+                let cos_2w0 = (two * w0).cos();
+                let sin_2w0 = (two * w0).sin();
 
                 let a_re = a0 + a1 * cs + a2 * cos_2w0;
                 let a_im = -a1 * sn - a2 * sin_2w0;
                 let den_w0_sq = a_re * a_re + a_im * a_im;
                 let target = g * den_w0_sq;
 
-                let c1 = 2.0 * b1 * p * cs;
-                let known = p * p / 2.0 + b1 * b1 + c1 + p * p / 2.0 * cos_2w0;
-                let d_coeff = 0.5 - 0.5 * cos_2w0;
+                let c1 = two * b1 * p * cs;
+                let known = p * p / two + b1 * b1 + c1 + p * p / two * cos_2w0;
+                let d_coeff = half - half * cos_2w0;
 
-                let d_sq = if d_coeff.abs() > 1e-15 {
+                let eps: T = lit(1e-15);
+                let d_sq = if d_coeff.abs() > eps {
                     (target - known) / d_coeff
                 } else {
-                    0.0
+                    zero
                 };
-                let d_val = if d_sq >= 0.0 { d_sq.sqrt() } else { 0.0 };
-                let d_signed = if g >= 1.0 { d_val } else { -d_val };
+                let d_val = if d_sq >= zero { d_sq.sqrt() } else { zero };
+                let d_signed = if g >= one { d_val } else { -d_val };
 
-                b0 = (p + d_signed) / 2.0;
-                b2 = (p - d_signed) / 2.0;
+                b0 = (p + d_signed) / two;
+                b2 = (p - d_signed) / two;
             }
             BiquadFilterType::PeakMatched => {
-                let gain_lin = 10.0_f64.powf(self.db_gain / 20.0);
+                let gain_lin: T = lit::<T>(10.0).powf(self.db_gain / lit(20.0));
                 let gain_sq = gain_lin * gain_lin;
                 let w0 = omega;
                 let bw = w0 / self.q;
-                let sigma = bw / 2.0;
+                let sigma = bw / two;
                 let r = (-sigma).exp();
                 let r_sq = r * r;
 
-                a0 = 1.0;
-                a1 = -2.0 * r * cs;
+                a0 = one;
+                a1 = -two * r * cs;
                 a2 = r_sq;
 
-                let sum_a = 1.0 + a1 + a2;
-                let diff_a = 1.0 - a1 + a2;
+                let sum_a = one + a1 + a2;
+                let diff_a = one - a1 + a2;
                 let sum_b = sum_a;
                 let diff_b = diff_a;
 
-                b1 = (sum_b - diff_b) / 2.0;
-                let p = (sum_b + diff_b) / 2.0;
+                b1 = (sum_b - diff_b) / two;
+                let p = (sum_b + diff_b) / two;
 
-                let cos_2w0 = (2.0 * w0).cos();
-                let sin_2w0 = (2.0 * w0).sin();
-                let a_re = 1.0 + a1 * cs + a2 * cos_2w0;
+                let cos_2w0 = (two * w0).cos();
+                let sin_2w0 = (two * w0).sin();
+                let a_re = one + a1 * cs + a2 * cos_2w0;
                 let a_im = -a1 * sn - a2 * sin_2w0;
                 let den_w0_sq = a_re * a_re + a_im * a_im;
                 let target_num_sq = gain_sq * den_w0_sq;
 
-                let c1 = 2.0 * b1 * p * cs;
-                let known = (p * p) / 2.0 + b1 * b1 + c1 + (p * p) / 2.0 * cos_2w0;
-                let d_coeff = 0.5 - 0.5 * cos_2w0;
+                let c1 = two * b1 * p * cs;
+                let known = (p * p) / two + b1 * b1 + c1 + (p * p) / two * cos_2w0;
+                let d_coeff = half - half * cos_2w0;
 
-                let d_sq = if d_coeff.abs() > 1e-15 {
+                let eps: T = lit(1e-15);
+                let d_sq = if d_coeff.abs() > eps {
                     (target_num_sq - known) / d_coeff
                 } else {
-                    0.0
+                    zero
                 };
-                let d_val = if d_sq >= 0.0 { d_sq.sqrt() } else { 0.0 };
-                let d_signed = if gain_lin >= 1.0 { d_val } else { -d_val };
+                let d_val = if d_sq >= zero { d_sq.sqrt() } else { zero };
+                let d_signed = if gain_lin >= one { d_val } else { -d_val };
 
-                b0 = (p + d_signed) / 2.0;
-                b2 = (p - d_signed) / 2.0;
+                b0 = (p + d_signed) / two;
+                b2 = (p - d_signed) / two;
             }
         }
 
         // Guard against degenerate a0 (extreme parameter combos)
-        if a0.abs() < 1e-15 {
-            self.b0 = 1.0;
-            self.b1 = 0.0;
-            self.b2 = 0.0;
-            self.a1 = 0.0;
-            self.a2 = 0.0;
-            self.r_up0 = 1.0;
-            self.r_up1 = 0.0;
-            self.r_up2 = 0.0;
-            self.r_dw0 = 1.0;
-            self.r_dw1 = 0.0;
-            self.r_dw2 = 0.0;
+        let eps_a0: T = lit(1e-15);
+        if a0.abs() < eps_a0 {
+            self.b0 = one;
+            self.b1 = zero;
+            self.b2 = zero;
+            self.a1 = zero;
+            self.a2 = zero;
+            self.r_up0 = one;
+            self.r_up1 = zero;
+            self.r_up2 = zero;
+            self.r_dw0 = one;
+            self.r_dw1 = zero;
+            self.r_dw2 = zero;
             return;
         }
 
@@ -556,18 +580,18 @@ impl Biquad {
 
         // Pre-compute for result()
         self.r_up0 = (self.b0 + self.b1 + self.b2).powi(2);
-        self.r_up1 = -4.0 * (self.b0 * self.b1 + 4.0 * self.b0 * self.b2 + self.b1 * self.b2);
-        self.r_up2 = 16.0 * self.b0 * self.b2;
-        self.r_dw0 = (1.0 + self.a1 + self.a2).powi(2);
-        self.r_dw1 = -4.0 * (self.a1 + 4.0 * self.a2 + self.a1 * self.a2);
-        self.r_dw2 = 16.0 * self.a2;
+        self.r_up1 = -four * (self.b0 * self.b1 + four * self.b0 * self.b2 + self.b1 * self.b2);
+        self.r_up2 = lit::<T>(16.0) * self.b0 * self.b2;
+        self.r_dw0 = (one + self.a1 + self.a2).powi(2);
+        self.r_dw1 = -four * (self.a1 + four * self.a2 + self.a1 * self.a2);
+        self.r_dw2 = lit::<T>(16.0) * self.a2;
     }
 
     /// Processes a single audio sample through the filter.
     ///
     /// When `use_tdf2` is true, uses Transposed Direct Form II which has
     /// better numerical properties for high-Q narrow filters.
-    pub fn process(&mut self, x: f64) -> f64 {
+    pub fn process(&mut self, x: T) -> T {
         if self.use_tdf2 {
             self.process_tdf2(x)
         } else {
@@ -577,7 +601,7 @@ impl Biquad {
 
     /// Processes a single sample using Direct Form I.
     #[inline(always)]
-    fn process_df1(&mut self, x: f64) -> f64 {
+    fn process_df1(&mut self, x: T) -> T {
         let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
             - self.a1 * self.y1
             - self.a2 * self.y2;
@@ -602,7 +626,7 @@ impl Biquad {
     /// This form has better numerical properties for high-Q narrow filters
     /// because it minimizes internal signal magnitudes.
     #[inline(always)]
-    fn process_tdf2(&mut self, x: f64) -> f64 {
+    fn process_tdf2(&mut self, x: T) -> T {
         let y = self.b0 * x + self.s1;
         self.s1 = self.b1 * x - self.a1 * y + self.s2;
         self.s2 = self.b2 * x - self.a2 * y;
@@ -613,7 +637,7 @@ impl Biquad {
     ///
     /// This method is more efficient than calling `process` for each sample
     /// as it avoids repeated struct field access and allows for better optimization.
-    pub fn process_block(&mut self, samples: &mut [f64]) {
+    pub fn process_block(&mut self, samples: &mut [T]) {
         if self.use_tdf2 {
             self.process_block_tdf2(samples);
         } else {
@@ -621,7 +645,7 @@ impl Biquad {
         }
     }
 
-    fn process_block_df1(&mut self, samples: &mut [f64]) {
+    fn process_block_df1(&mut self, samples: &mut [T]) {
         let b0 = self.b0;
         let b1 = self.b1;
         let b2 = self.b2;
@@ -650,7 +674,7 @@ impl Biquad {
         self.y2 = y2;
     }
 
-    fn process_block_tdf2(&mut self, samples: &mut [f64]) {
+    fn process_block_tdf2(&mut self, samples: &mut [T]) {
         let b0 = self.b0;
         let b1 = self.b1;
         let b2 = self.b2;
@@ -673,62 +697,66 @@ impl Biquad {
     }
 
     /// Calculates the filter's complex frequency response at a single frequency `f`.
-    pub fn complex_response(&self, f: f64) -> Complex64 {
-        let omega = 2.0 * PI * f / self.srate;
-        let z_inv = Complex64::from_polar(1.0, -omega);
+    pub fn complex_response(&self, f: T) -> Complex<T> {
+        let omega = lit::<T>(2.0) * T::PI() * f / self.srate;
+        let z_inv = Complex::<T>::from_polar(T::one(), -omega);
         let z_inv2 = z_inv * z_inv;
 
-        // Note: coeffs are already normalized by a0
-        let num = self.b0 + self.b1 * z_inv + self.b2 * z_inv2;
-        let den = 1.0 + self.a1 * z_inv + self.a2 * z_inv2;
+        // Note: coeffs are already normalized by a0.
+        // Use Complex<T> * T (not T * Complex<T>) because num_complex only
+        // implements Mul<T> for Complex<T>, not the reverse.
+        let num = Complex::new(self.b0, T::zero()) + z_inv * self.b1 + z_inv2 * self.b2;
+        let den = Complex::new(T::one(), T::zero()) + z_inv * self.a1 + z_inv2 * self.a2;
 
         num / den
     }
 
     /// Calculates the filter's magnitude response at a single frequency `f`.
-    pub fn result(&self, f: f64) -> f64 {
-        let phi = (PI * f / self.srate).sin().powi(2);
+    pub fn result(&self, f: T) -> T {
+        let phi = (T::PI() * f / self.srate).sin().powi(2);
         let phi2 = phi * phi;
 
         let numerator = self.r_up0 + self.r_up1 * phi + self.r_up2 * phi2;
         let denominator = self.r_dw0 + self.r_dw1 * phi + self.r_dw2 * phi2;
 
-        let result = (numerator / denominator).max(0.0);
+        let result = (numerator / denominator).max(T::zero());
         result.sqrt()
     }
 
     /// Calculates the filter's response in dB at a single frequency `f`.
-    pub fn log_result(&self, f: f64) -> f64 {
+    pub fn log_result(&self, f: T) -> T {
         let result = self.result(f);
-        if result > 0.0 {
-            20.0 * result.log10()
+        if result > T::zero() {
+            lit::<T>(20.0) * result.log10()
         } else {
-            -200.0 // Return a large negative number for silence
+            lit(-200.0) // Return a large negative number for silence
         }
     }
 
     /// Vectorized version to compute the SPL response for a vector of frequencies.
     /// This is the fast equivalent of the `np_log_result` Python method.
-    pub fn np_log_result(&self, freq: &Array1<f64>) -> Array1<f64> {
-        let coeff = PI / self.srate;
-        let phi = (freq * coeff).mapv(f64::sin).mapv(|x| x.powi(2));
+    pub fn np_log_result(&self, freq: &Array1<T>) -> Array1<T> {
+        let coeff = T::PI() / self.srate;
+        let phi = (freq * coeff).mapv(|x: T| x.sin()).mapv(|x: T| x.powi(2));
         let phi2 = &phi * &phi;
 
-        let r_up = self.r_up0 + self.r_up1 * &phi + self.r_up2 * &phi2;
-        let r_dw = self.r_dw0 + self.r_dw1 * &phi + self.r_dw2 * &phi2;
+        // ndarray ScalarOperand only supports `array op scalar`, not `scalar op array`.
+        // Use array-on-the-left form: `&phi * scalar + scalar`.
+        let r_up = &phi * self.r_up1 + &phi2 * self.r_up2 + self.r_up0;
+        let r_dw = &phi * self.r_dw1 + &phi2 * self.r_dw2 + self.r_dw0;
         let r = r_up / r_dw;
 
         // Clip to a minimum value to avoid log(0), then calculate dB
-        let min_val = 1.0e-20;
+        let min_val: T = lit(1.0e-20);
 
-        r.mapv(|val| val.max(min_val))
-            .mapv(f64::sqrt)
-            .mapv(f64::log10)
-            * 20.0
+        r.mapv(|val: T| val.max(min_val))
+            .mapv(|x: T| x.sqrt())
+            .mapv(|x: T| x.log10())
+            * lit::<T>(20.0)
     }
 
     /// Returns the normalized filter coefficients (a1, a2, b0, b1, b2).
-    pub fn coefficients(&self) -> BiquadCoefficients {
+    pub fn coefficients(&self) -> BiquadCoefficients<T> {
         BiquadCoefficients {
             b0: self.b0,
             b1: self.b1,
@@ -742,7 +770,7 @@ impl Biquad {
     ///
     /// Used for coefficient interpolation during parameter transitions.
     #[inline(always)]
-    pub fn process_with_coefficients(&mut self, x: f64, coeffs: &BiquadCoefficients) -> f64 {
+    pub fn process_with_coefficients(&mut self, x: T, coeffs: &BiquadCoefficients<T>) -> T {
         if self.use_tdf2 {
             let y = coeffs.b0 * x + self.s1;
             self.s1 = coeffs.b1 * x - coeffs.a1 * y + self.s2;
@@ -761,13 +789,13 @@ impl Biquad {
     }
 
     /// Returns the filter coefficients as a tuple.
-    pub fn constants(&self) -> (f64, f64, f64, f64, f64) {
+    pub fn constants(&self) -> (T, T, T, T, T) {
         (self.a1, self.a2, self.b0, self.b1, self.b2)
     }
 }
 
 /// Implement the Display trait for pretty-printing, similar to __str__.
-impl fmt::Display for Biquad {
+impl<T: FilterFloat> fmt::Display for Biquad<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -785,6 +813,7 @@ impl fmt::Display for Biquad {
 mod tests {
     use super::*;
     use ndarray::array;
+    use num_traits::Float;
 
     fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol
@@ -914,7 +943,7 @@ mod tests {
         }
         let resp = ap.complex_response(center);
         let phase = resp.arg();
-        assert!(approx_eq(phase.abs(), PI, 1e-9), "All-Pass phase at center freq should be PI, got {}", phase);
+        assert!(approx_eq(phase.abs(), std::f64::consts::PI, 1e-9), "All-Pass phase at center freq should be PI, got {}", phase);
     }
 
     // ========================================================================
@@ -1123,8 +1152,8 @@ mod tests {
 
     #[test]
     fn test_biquad_process_dc_lowpass() {
-        let mut lp = Biquad::new(BiquadFilterType::Lowpass, 1000.0, 48000.0, 0.0, 0.0);
-        let mut output = 0.0;
+        let mut lp = Biquad::new(BiquadFilterType::Lowpass, 1000.0_f64, 48000.0, 0.0, 0.0);
+        let mut output = 0.0_f64;
         for _ in 0..1000 {
             output = lp.process(1.0);
         }
@@ -1133,8 +1162,8 @@ mod tests {
 
     #[test]
     fn test_biquad_process_dc_highpass() {
-        let mut hp = Biquad::new(BiquadFilterType::Highpass, 1000.0, 48000.0, 0.0, 0.0);
-        let mut output = 0.0;
+        let mut hp = Biquad::new(BiquadFilterType::Highpass, 1000.0_f64, 48000.0, 0.0, 0.0);
+        let mut output = 0.0_f64;
         for _ in 0..1000 {
             output = hp.process(1.0);
         }
@@ -1143,18 +1172,18 @@ mod tests {
 
     #[test]
     fn test_biquad_process_impulse_response() {
-        let mut peak = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
-        let first = peak.process(1.0);
-        let second = peak.process(0.0);
-        let third = peak.process(0.0);
+        let mut peak = Biquad::new(BiquadFilterType::Peak, 1000.0_f64, 48000.0, 2.0, 6.0);
+        let first: f64 = peak.process(1.0);
+        let second: f64 = peak.process(0.0);
+        let third: f64 = peak.process(0.0);
         assert!(first.abs() > 0.0, "Impulse response should be non-zero");
         assert!(second.abs() > 0.0 || third.abs() > 0.0, "Peak filter should ring after impulse");
     }
 
     #[test]
     fn test_biquad_constants() {
-        let bq = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
-        let (a1, a2, b0, b1, b2) = bq.constants();
+        let bq = Biquad::new(BiquadFilterType::Peak, 1000.0_f64, 48000.0, 2.0, 6.0);
+        let (a1, a2, b0, b1, b2): (f64, f64, f64, f64, f64) = bq.constants();
         assert!(a1.is_finite());
         assert!(a2.is_finite());
         assert!(b0.is_finite());
@@ -1274,5 +1303,16 @@ mod tests {
             let y2 = f2.process_with_coefficients(x, &coeffs);
             assert!(approx_eq(y1, y2, 1e-12), "sample {}: normal={} with_coeffs={}", i, y1, y2);
         }
+    }
+
+    // ========================================================================
+    // f32 instantiation test
+    // ========================================================================
+
+    #[test]
+    fn test_biquad_f32_instantiation() {
+        let bq = Biquad::<f32>::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
+        let resp = bq.log_result(1000.0);
+        assert!((resp - 3.0).abs() < 0.5); // f32 has less precision
     }
 }

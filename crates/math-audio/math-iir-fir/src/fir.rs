@@ -1,7 +1,7 @@
 //! FIR filter implementation with windowing functions
 
+use crate::traits::{FilterFloat, lit};
 use ndarray::Array1;
-use std::f64::consts::PI;
 use std::fmt;
 
 /// Window function types for FIR filter design
@@ -84,28 +84,29 @@ impl FirFilterType {
 
 /// Represents a single FIR filter.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Fir {
+#[serde(bound = "")]
+pub struct Fir<T: FilterFloat = f64> {
     /// The type of filter
     pub filter_type: FirFilterType,
     /// Filter coefficients (taps)
-    coeffs: Vec<f64>,
+    coeffs: Vec<T>,
     /// Sample rate in Hz
-    pub srate: f64,
+    pub srate: T,
     /// Cutoff frequency (or lower cutoff for bandpass/bandstop) in Hz
-    pub freq: f64,
+    pub freq: T,
     /// Upper cutoff frequency (for bandpass/bandstop) in Hz
-    pub freq_upper: Option<f64>,
+    pub freq_upper: Option<T>,
     /// Window type used
     pub window: WindowType,
     /// Kaiser window beta parameter (if applicable)
-    pub kaiser_beta: f64,
+    pub kaiser_beta: T,
     /// Circular buffer for filter state
-    state: Vec<f64>,
+    state: Vec<T>,
     /// Current position in the circular buffer
     state_pos: usize,
 }
 
-impl Fir {
+impl<T: FilterFloat> Fir<T> {
     /// Creates a new FIR filter with custom coefficients.
     ///
     /// # Arguments
@@ -116,20 +117,20 @@ impl Fir {
     /// Panics in debug mode if:
     /// - `coeffs` is empty
     /// - `srate` is not positive
-    pub fn new_custom(coeffs: Vec<f64>, srate: f64) -> Self {
+    pub fn new_custom(coeffs: Vec<T>, srate: T) -> Self {
         debug_assert!(!coeffs.is_empty(), "FIR filter must have at least one tap");
-        debug_assert!(srate > 0.0, "Sample rate must be positive");
+        debug_assert!(srate > T::zero(), "Sample rate must be positive");
 
         let n_taps = coeffs.len();
         Fir {
             filter_type: FirFilterType::Custom,
             coeffs,
             srate,
-            freq: 0.0,
+            freq: T::zero(),
             freq_upper: None,
             window: WindowType::Rectangular,
-            kaiser_beta: 0.0,
-            state: vec![0.0; n_taps],
+            kaiser_beta: T::zero(),
+            state: vec![T::zero(); n_taps],
             state_pos: 0,
         }
     }
@@ -150,17 +151,17 @@ impl Fir {
     /// - `cutoff` is not positive or >= Nyquist frequency (srate/2)
     pub fn lowpass(
         n_taps: usize,
-        cutoff: f64,
-        srate: f64,
+        cutoff: T,
+        srate: T,
         window: WindowType,
-        kaiser_beta: f64,
+        kaiser_beta: T,
     ) -> Self {
         debug_assert!(n_taps > 0, "Number of taps must be positive");
-        debug_assert!(srate > 0.0, "Sample rate must be positive");
+        debug_assert!(srate > T::zero(), "Sample rate must be positive");
         debug_assert!(
-            cutoff > 0.0 && cutoff < srate / 2.0,
+            cutoff > T::zero() && cutoff < srate / lit(2.0),
             "Cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0,
+            srate / lit::<T>(2.0),
             cutoff
         );
 
@@ -174,7 +175,7 @@ impl Fir {
             freq_upper: None,
             window,
             kaiser_beta,
-            state: vec![0.0; n],
+            state: vec![T::zero(); n],
             state_pos: 0,
         }
     }
@@ -195,17 +196,17 @@ impl Fir {
     /// - `cutoff` is not positive or >= Nyquist frequency (srate/2)
     pub fn highpass(
         n_taps: usize,
-        cutoff: f64,
-        srate: f64,
+        cutoff: T,
+        srate: T,
         window: WindowType,
-        kaiser_beta: f64,
+        kaiser_beta: T,
     ) -> Self {
         debug_assert!(n_taps > 0, "Number of taps must be positive");
-        debug_assert!(srate > 0.0, "Sample rate must be positive");
+        debug_assert!(srate > T::zero(), "Sample rate must be positive");
         debug_assert!(
-            cutoff > 0.0 && cutoff < srate / 2.0,
+            cutoff > T::zero() && cutoff < srate / lit(2.0),
             "Cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0,
+            srate / lit::<T>(2.0),
             cutoff
         );
 
@@ -219,7 +220,7 @@ impl Fir {
             freq_upper: None,
             window,
             kaiser_beta,
-            state: vec![0.0; n],
+            state: vec![T::zero(); n],
             state_pos: 0,
         }
     }
@@ -243,24 +244,24 @@ impl Fir {
     /// - `freq_low` >= `freq_high`
     pub fn bandpass(
         n_taps: usize,
-        freq_low: f64,
-        freq_high: f64,
-        srate: f64,
+        freq_low: T,
+        freq_high: T,
+        srate: T,
         window: WindowType,
-        kaiser_beta: f64,
+        kaiser_beta: T,
     ) -> Self {
         debug_assert!(n_taps > 0, "Number of taps must be positive");
-        debug_assert!(srate > 0.0, "Sample rate must be positive");
+        debug_assert!(srate > T::zero(), "Sample rate must be positive");
         debug_assert!(
-            freq_low > 0.0 && freq_low < srate / 2.0,
+            freq_low > T::zero() && freq_low < srate / lit(2.0),
             "Lower cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0,
+            srate / lit::<T>(2.0),
             freq_low
         );
         debug_assert!(
-            freq_high > 0.0 && freq_high < srate / 2.0,
+            freq_high > T::zero() && freq_high < srate / lit(2.0),
             "Upper cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0,
+            srate / lit::<T>(2.0),
             freq_high
         );
         debug_assert!(
@@ -280,7 +281,7 @@ impl Fir {
             freq_upper: Some(freq_high),
             window,
             kaiser_beta,
-            state: vec![0.0; n],
+            state: vec![T::zero(); n],
             state_pos: 0,
         }
     }
@@ -304,24 +305,24 @@ impl Fir {
     /// - `freq_low` >= `freq_high`
     pub fn bandstop(
         n_taps: usize,
-        freq_low: f64,
-        freq_high: f64,
-        srate: f64,
+        freq_low: T,
+        freq_high: T,
+        srate: T,
         window: WindowType,
-        kaiser_beta: f64,
+        kaiser_beta: T,
     ) -> Self {
         debug_assert!(n_taps > 0, "Number of taps must be positive");
-        debug_assert!(srate > 0.0, "Sample rate must be positive");
+        debug_assert!(srate > T::zero(), "Sample rate must be positive");
         debug_assert!(
-            freq_low > 0.0 && freq_low < srate / 2.0,
+            freq_low > T::zero() && freq_low < srate / lit(2.0),
             "Lower cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0,
+            srate / lit::<T>(2.0),
             freq_low
         );
         debug_assert!(
-            freq_high > 0.0 && freq_high < srate / 2.0,
+            freq_high > T::zero() && freq_high < srate / lit(2.0),
             "Upper cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0,
+            srate / lit::<T>(2.0),
             freq_high
         );
         debug_assert!(
@@ -341,7 +342,7 @@ impl Fir {
             freq_upper: Some(freq_high),
             window,
             kaiser_beta,
-            state: vec![0.0; n],
+            state: vec![T::zero(); n],
             state_pos: 0,
         }
     }
@@ -352,23 +353,23 @@ impl Fir {
     }
 
     /// Returns a reference to the filter coefficients.
-    pub fn coeffs(&self) -> &[f64] {
+    pub fn coeffs(&self) -> &[T] {
         &self.coeffs
     }
 
     /// Resets the filter state to zero.
     pub fn reset(&mut self) {
-        self.state.fill(0.0);
+        self.state.fill(T::zero());
         self.state_pos = 0;
     }
 
     /// Processes a single audio sample through the filter.
-    pub fn process(&mut self, x: f64) -> f64 {
+    pub fn process(&mut self, x: T) -> T {
         // Store input sample in circular buffer
         self.state[self.state_pos] = x;
 
         // Compute output using convolution
-        let mut y = 0.0;
+        let mut y = T::zero();
         let n_taps = self.coeffs.len();
         for i in 0..n_taps {
             let state_idx = (self.state_pos + n_taps - i) % n_taps;
@@ -382,7 +383,7 @@ impl Fir {
     }
 
     /// Processes a block of audio samples in-place.
-    pub fn process_block(&mut self, samples: &mut [f64]) {
+    pub fn process_block(&mut self, samples: &mut [T]) {
         let n_taps = self.coeffs.len();
 
         for sample in samples.iter_mut() {
@@ -391,7 +392,7 @@ impl Fir {
             self.state[self.state_pos] = x;
 
             // Compute output using convolution
-            let mut y = 0.0;
+            let mut y = T::zero();
             for i in 0..n_taps {
                 let state_idx = (self.state_pos + n_taps - i) % n_taps;
                 y += self.coeffs[i] * self.state[state_idx];
@@ -405,13 +406,14 @@ impl Fir {
     }
 
     /// Calculates the filter's magnitude response at a single frequency `f`.
-    pub fn result(&self, f: f64) -> f64 {
-        let omega = 2.0 * PI * f / self.srate;
-        let mut real = 0.0;
-        let mut imag = 0.0;
+    pub fn result(&self, f: T) -> T {
+        let two_pi: T = lit::<T>(2.0) * T::PI();
+        let omega = two_pi * f / self.srate;
+        let mut real = T::zero();
+        let mut imag = T::zero();
 
         for (n, &coeff) in self.coeffs.iter().enumerate() {
-            let phase = -(n as f64) * omega;
+            let phase = -(lit::<T>(n as f64)) * omega;
             real += coeff * phase.cos();
             imag += coeff * phase.sin();
         }
@@ -420,12 +422,12 @@ impl Fir {
     }
 
     /// Calculates the filter's response in dB at a single frequency `f`.
-    pub fn log_result(&self, f: f64) -> f64 {
+    pub fn log_result(&self, f: T) -> T {
         let result = self.result(f);
-        if result > 0.0 {
-            20.0 * result.log10()
+        if result > T::zero() {
+            lit::<T>(20.0) * result.log10()
         } else {
-            -200.0
+            lit(-200.0)
         }
     }
 
@@ -433,15 +435,16 @@ impl Fir {
     ///
     /// # Performance
     /// This implementation avoids per-tap allocations by using a direct nested loop.
-    pub fn np_log_result(&self, freq: &Array1<f64>) -> Array1<f64> {
+    pub fn np_log_result(&self, freq: &Array1<T>) -> Array1<T> {
         let n_freqs = freq.len();
-        let omega_base = 2.0 * PI / self.srate;
+        let two_pi: T = lit::<T>(2.0) * T::PI();
+        let omega_base = two_pi / self.srate;
 
-        let mut real: Array1<f64> = Array1::zeros(n_freqs);
-        let mut imag: Array1<f64> = Array1::zeros(n_freqs);
+        let mut real: Array1<T> = Array1::zeros(n_freqs);
+        let mut imag: Array1<T> = Array1::zeros(n_freqs);
 
         for (n, &coeff) in self.coeffs.iter().enumerate() {
-            let n_f = -(n as f64);
+            let n_f: T = -(lit::<T>(n as f64));
             for i in 0..n_freqs {
                 let phase = n_f * freq[i] * omega_base;
                 real[i] += coeff * phase.cos();
@@ -451,19 +454,19 @@ impl Fir {
 
         // Compute magnitude and convert to dB
         let mut magnitude = Array1::zeros(n_freqs);
-        let min_val = 1.0e-20;
+        let min_val: T = lit(1.0e-20);
 
         for i in 0..n_freqs {
             let mag_sq = real[i] * real[i] + imag[i] * imag[i];
             let mag = mag_sq.sqrt().max(min_val);
-            magnitude[i] = 20.0 * mag.log10();
+            magnitude[i] = lit::<T>(20.0) * mag.log10();
         }
 
         magnitude
     }
 }
 
-impl fmt::Display for Fir {
+impl<T: FilterFloat> fmt::Display for Fir<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.filter_type {
             FirFilterType::Bandpass | FirFilterType::Bandstop => {
@@ -471,9 +474,9 @@ impl fmt::Display for Fir {
                     f,
                     "Type:{},Freq:{:.1}-{:.1},Rate:{:.1},Taps:{},Window:{}",
                     self.filter_type.short_name(),
-                    self.freq,
-                    self.freq_upper.unwrap_or(0.0),
-                    self.srate,
+                    self.freq.to_f64().unwrap_or(0.0),
+                    self.freq_upper.unwrap_or(T::zero()).to_f64().unwrap_or(0.0),
+                    self.srate.to_f64().unwrap_or(0.0),
                     self.n_taps(),
                     self.window.short_name()
                 )
@@ -483,8 +486,8 @@ impl fmt::Display for Fir {
                     f,
                     "Type:{},Freq:{:.1},Rate:{:.1},Taps:{},Window:{}",
                     self.filter_type.short_name(),
-                    self.freq,
-                    self.srate,
+                    self.freq.to_f64().unwrap_or(0.0),
+                    self.srate.to_f64().unwrap_or(0.0),
                     self.n_taps(),
                     self.window.short_name()
                 )
@@ -496,22 +499,22 @@ impl fmt::Display for Fir {
 // Window functions
 
 /// Modified Bessel function of the first kind (I0), used for Kaiser window.
-fn bessel_i0(x: f64) -> f64 {
-    let mut sum = 1.0;
-    let mut term = 1.0;
-    let mut k = 1.0;
+fn bessel_i0<T: FilterFloat>(x: T) -> T {
+    let mut sum = T::one();
+    let mut term = T::one();
+    let mut k = T::one();
 
-    let half_x_sq = (x / 2.0) * (x / 2.0);
+    let half_x_sq = (x / lit(2.0)) * (x / lit(2.0));
 
     // Series expansion: I₀(x) = Σ ((x/2)^k / k!)²
     // Each term is: term_k = term_{k-1} * (x/2)² / k²
     loop {
-        term *= half_x_sq / (k * k);
+        term = term * half_x_sq / (k * k);
         sum += term;
-        if term < 1e-12 * sum {
+        if term < lit::<T>(1e-12) * sum {
             break;
         }
-        k += 1.0;
+        k += T::one();
     }
 
     sum
@@ -526,41 +529,52 @@ fn bessel_i0(x: f64) -> f64 {
 ///
 /// # Returns
 /// Vector of window coefficients
-pub fn generate_window(n: usize, window_type: WindowType, kaiser_beta: f64) -> Vec<f64> {
+pub fn generate_window<T: FilterFloat>(
+    n: usize,
+    window_type: WindowType,
+    kaiser_beta: T,
+) -> Vec<T> {
     if n == 0 {
         return vec![];
     }
     if n == 1 {
-        return vec![1.0];
+        return vec![T::one()];
     }
-    let mut window = vec![0.0; n];
+    let mut window = vec![T::zero(); n];
+
+    let two_pi: T = lit::<T>(2.0) * T::PI();
 
     match window_type {
         WindowType::Rectangular => {
-            window.fill(1.0);
+            window.fill(T::one());
         }
         WindowType::Hamming => {
             for (i, w) in window.iter_mut().enumerate() {
-                *w = 0.54 - 0.46 * (2.0 * PI * i as f64 / (n - 1) as f64).cos();
+                *w = lit::<T>(0.54)
+                    - lit::<T>(0.46)
+                        * (two_pi * lit::<T>(i as f64) / lit::<T>((n - 1) as f64)).cos();
             }
         }
         WindowType::Hann => {
             for (i, w) in window.iter_mut().enumerate() {
-                *w = 0.5 * (1.0 - (2.0 * PI * i as f64 / (n - 1) as f64).cos());
+                *w = lit::<T>(0.5)
+                    * (T::one()
+                        - (two_pi * lit::<T>(i as f64) / lit::<T>((n - 1) as f64)).cos());
             }
         }
         WindowType::Blackman => {
             for (i, w) in window.iter_mut().enumerate() {
-                let arg = 2.0 * PI * i as f64 / (n - 1) as f64;
-                *w = 0.42 - 0.5 * arg.cos() + 0.08 * (2.0 * arg).cos();
+                let arg = two_pi * lit::<T>(i as f64) / lit::<T>((n - 1) as f64);
+                *w = lit::<T>(0.42) - lit::<T>(0.5) * arg.cos()
+                    + lit::<T>(0.08) * (lit::<T>(2.0) * arg).cos();
             }
         }
         WindowType::Kaiser => {
             let i0_beta = bessel_i0(kaiser_beta);
-            let n_minus_1 = (n - 1) as f64;
+            let n_minus_1: T = lit((n - 1) as f64);
             for (i, w) in window.iter_mut().enumerate() {
-                let x =
-                    kaiser_beta * (1.0 - ((2.0 * i as f64 - n_minus_1) / n_minus_1).powi(2)).sqrt();
+                let ratio = (lit::<T>(2.0) * lit::<T>(i as f64) - n_minus_1) / n_minus_1;
+                let x = kaiser_beta * (T::one() - ratio * ratio).sqrt();
                 *w = bessel_i0(x) / i0_beta;
             }
         }
@@ -570,13 +584,13 @@ pub fn generate_window(n: usize, window_type: WindowType, kaiser_beta: f64) -> V
 }
 
 /// Designs a lowpass FIR filter using the windowed-sinc method.
-fn design_fir_lowpass(
+fn design_fir_lowpass<T: FilterFloat>(
     n_taps: usize,
-    cutoff: f64,
-    srate: f64,
+    cutoff: T,
+    srate: T,
     window: WindowType,
-    kaiser_beta: f64,
-) -> Vec<f64> {
+    kaiser_beta: T,
+) -> Vec<T> {
     // Ensure odd number of taps for symmetry
     let n = if n_taps.is_multiple_of(2) {
         n_taps + 1
@@ -584,17 +598,18 @@ fn design_fir_lowpass(
         n_taps
     };
 
-    let mut h = vec![0.0; n];
+    let mut h = vec![T::zero(); n];
     let fc = cutoff / srate; // Normalized cutoff frequency
-    let m = (n - 1) as f64 / 2.0;
+    let m: T = lit::<T>((n - 1) as f64) / lit::<T>(2.0);
+    let two_pi: T = lit::<T>(2.0) * T::PI();
 
     // Generate ideal lowpass sinc function
     for (i, h_val) in h.iter_mut().enumerate() {
-        let x = i as f64 - m;
-        if x == 0.0 {
-            *h_val = 2.0 * fc;
+        let x = lit::<T>(i as f64) - m;
+        if x == T::zero() {
+            *h_val = lit::<T>(2.0) * fc;
         } else {
-            *h_val = (2.0 * PI * fc * x).sin() / (PI * x);
+            *h_val = (two_pi * fc * x).sin() / (T::PI() * x);
         }
     }
 
@@ -605,8 +620,8 @@ fn design_fir_lowpass(
     }
 
     // Normalize to unit gain at DC
-    let sum: f64 = h.iter().sum();
-    if sum.abs() > 1e-10 {
+    let sum: T = h.iter().copied().sum();
+    if sum.abs() > lit(1e-10) {
         for h_val in h.iter_mut() {
             *h_val /= sum;
         }
@@ -616,13 +631,13 @@ fn design_fir_lowpass(
 }
 
 /// Designs a highpass FIR filter using spectral inversion.
-fn design_fir_highpass(
+fn design_fir_highpass<T: FilterFloat>(
     n_taps: usize,
-    cutoff: f64,
-    srate: f64,
+    cutoff: T,
+    srate: T,
     window: WindowType,
-    kaiser_beta: f64,
-) -> Vec<f64> {
+    kaiser_beta: T,
+) -> Vec<T> {
     // Start with lowpass filter
     let mut h = design_fir_lowpass(n_taps, cutoff, srate, window, kaiser_beta);
 
@@ -631,20 +646,20 @@ fn design_fir_highpass(
     for h_val in h.iter_mut() {
         *h_val = -*h_val;
     }
-    h[m] += 1.0;
+    h[m] += T::one();
 
     h
 }
 
 /// Designs a bandpass FIR filter.
-fn design_fir_bandpass(
+fn design_fir_bandpass<T: FilterFloat>(
     n_taps: usize,
-    freq_low: f64,
-    freq_high: f64,
-    srate: f64,
+    freq_low: T,
+    freq_high: T,
+    srate: T,
     window: WindowType,
-    kaiser_beta: f64,
-) -> Vec<f64> {
+    kaiser_beta: T,
+) -> Vec<T> {
     // Ensure odd number of taps
     let n = if n_taps.is_multiple_of(2) {
         n_taps + 1
@@ -652,19 +667,20 @@ fn design_fir_bandpass(
         n_taps
     };
 
-    let mut h = vec![0.0; n];
+    let mut h = vec![T::zero(); n];
     let fc_low = freq_low / srate;
     let fc_high = freq_high / srate;
-    let m = (n - 1) as f64 / 2.0;
+    let m: T = lit::<T>((n - 1) as f64) / lit::<T>(2.0);
+    let two_pi: T = lit::<T>(2.0) * T::PI();
 
     // Generate ideal bandpass filter (difference of two sinc functions)
     for (i, h_val) in h.iter_mut().enumerate() {
-        let x = i as f64 - m;
-        if x == 0.0 {
-            *h_val = 2.0 * (fc_high - fc_low);
+        let x = lit::<T>(i as f64) - m;
+        if x == T::zero() {
+            *h_val = lit::<T>(2.0) * (fc_high - fc_low);
         } else {
-            let sinc_high = (2.0 * PI * fc_high * x).sin() / (PI * x);
-            let sinc_low = (2.0 * PI * fc_low * x).sin() / (PI * x);
+            let sinc_high = (two_pi * fc_high * x).sin() / (T::PI() * x);
+            let sinc_low = (two_pi * fc_low * x).sin() / (T::PI() * x);
             *h_val = sinc_high - sinc_low;
         }
     }
@@ -679,14 +695,14 @@ fn design_fir_bandpass(
 }
 
 /// Designs a bandstop FIR filter using spectral inversion.
-fn design_fir_bandstop(
+fn design_fir_bandstop<T: FilterFloat>(
     n_taps: usize,
-    freq_low: f64,
-    freq_high: f64,
-    srate: f64,
+    freq_low: T,
+    freq_high: T,
+    srate: T,
     window: WindowType,
-    kaiser_beta: f64,
-) -> Vec<f64> {
+    kaiser_beta: T,
+) -> Vec<T> {
     // Start with bandpass filter
     let mut h = design_fir_bandpass(n_taps, freq_low, freq_high, srate, window, kaiser_beta);
 
@@ -695,13 +711,13 @@ fn design_fir_bandstop(
     for h_val in h.iter_mut() {
         *h_val = -*h_val;
     }
-    h[m] += 1.0;
+    h[m] += T::one();
 
     h
 }
 
 /// Type alias for a collection of weighted FIR filters
-pub type FirBank = Vec<(f64, Fir)>;
+pub type FirBank<T = f64> = Vec<(T, Fir<T>)>;
 
 /// Compute the combined FIR bank response (in dB) on a given frequency grid.
 ///
@@ -711,19 +727,22 @@ pub type FirBank = Vec<(f64, Fir)>;
 ///
 /// # Returns
 /// Frequency response in dB SPL at the specified frequency points
-pub fn compute_fir_bank_response(freqs: &Array1<f64>, fir_bank: &FirBank) -> Array1<f64> {
+pub fn compute_fir_bank_response<T: FilterFloat>(
+    freqs: &Array1<T>,
+    fir_bank: &FirBank<T>,
+) -> Array1<T> {
     if fir_bank.is_empty() {
         return Array1::zeros(freqs.len());
     }
     let mut response = Array1::zeros(freqs.len());
     for (weight, filter) in fir_bank {
-        response += &(filter.np_log_result(freqs) * *weight);
+        response = response + filter.np_log_result(freqs) * *weight;
     }
     response
 }
 
 /// Compute the FIR bank SPL response at given frequencies.
-pub fn fir_bank_spl(freq: &Array1<f64>, fir_bank: &FirBank) -> Array1<f64> {
+pub fn fir_bank_spl<T: FilterFloat>(freq: &Array1<T>, fir_bank: &FirBank<T>) -> Array1<T> {
     compute_fir_bank_response(freq, fir_bank)
 }
 
@@ -731,25 +750,32 @@ pub fn fir_bank_spl(freq: &Array1<f64>, fir_bank: &FirBank) -> Array1<f64> {
 ///
 /// This computes the maximum gain across the audible frequency range
 /// and returns the negative of that value.
-pub fn fir_bank_preamp_gain(fir_bank: &FirBank) -> f64 {
+pub fn fir_bank_preamp_gain<T: FilterFloat>(fir_bank: &FirBank<T>) -> T {
     if fir_bank.is_empty() {
-        return 0.0;
+        return T::zero();
     }
 
     // Sample frequencies across the audible range
-    let freqs = Array1::logspace(10.0, 20.0_f64.log10(), 20000.0_f64.log10(), 500);
+    let freqs = Array1::logspace(
+        lit(10.0),
+        lit::<T>(20.0_f64).log10(),
+        lit::<T>(20000.0_f64).log10(),
+        500,
+    );
     let response = fir_bank_spl(&freqs, fir_bank);
 
     // Find maximum gain
-    let max_gain = response.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+    let max_gain = response.iter().copied().fold(T::neg_infinity(), |a, b| a.max(b));
 
     // Return negative of max gain (to reduce overall level)
     -max_gain
 }
+
 #[cfg(test)]
 mod fir_tests {
     use super::*;
     use ndarray::array;
+    use num_traits::Float;
 
     fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol
@@ -860,8 +886,8 @@ mod fir_tests {
 
     #[test]
     fn test_fir_np_log_result_is_finite() {
-        let fir = Fir::lowpass(51, 1000.0, 48000.0, WindowType::Hamming, 0.0);
-        let freqs = array![20.0, 100.0, 1_000.0, 10_000.0, 20_000.0];
+        let fir = Fir::lowpass(51, 1000.0_f64, 48000.0, WindowType::Hamming, 0.0);
+        let freqs = array![20.0_f64, 100.0, 1_000.0, 10_000.0, 20_000.0];
         let resp = fir.np_log_result(&freqs);
 
         for (i, v) in resp.iter().enumerate() {
@@ -871,7 +897,7 @@ mod fir_tests {
 
     #[test]
     fn test_window_rectangular() {
-        let window = generate_window(5, WindowType::Rectangular, 0.0);
+        let window = generate_window(5, WindowType::Rectangular, 0.0_f64);
         assert_eq!(window.len(), 5);
         for &w in &window {
             assert_eq!(w, 1.0);
@@ -880,7 +906,7 @@ mod fir_tests {
 
     #[test]
     fn test_window_hamming() {
-        let window = generate_window(5, WindowType::Hamming, 0.0);
+        let window = generate_window(5, WindowType::Hamming, 0.0_f64);
         assert_eq!(window.len(), 5);
 
         // Hamming window should have maximum at center
@@ -894,7 +920,7 @@ mod fir_tests {
 
     #[test]
     fn test_window_hann() {
-        let window = generate_window(5, WindowType::Hann, 0.0);
+        let window = generate_window(5, WindowType::Hann, 0.0_f64);
         assert_eq!(window.len(), 5);
 
         // Hann window edges should be near zero
@@ -907,7 +933,7 @@ mod fir_tests {
 
     #[test]
     fn test_window_blackman() {
-        let window = generate_window(5, WindowType::Blackman, 0.0);
+        let window = generate_window(5, WindowType::Blackman, 0.0_f64);
         assert_eq!(window.len(), 5);
 
         // Blackman window should have maximum at center
@@ -917,7 +943,7 @@ mod fir_tests {
 
     #[test]
     fn test_window_kaiser() {
-        let window = generate_window(5, WindowType::Kaiser, 5.0);
+        let window = generate_window(5, WindowType::Kaiser, 5.0_f64);
         assert_eq!(window.len(), 5);
 
         // All values should be positive
@@ -932,15 +958,15 @@ mod fir_tests {
     #[test]
     fn test_bessel_i0() {
         // Test modified Bessel function at known points
-        assert!(approx_eq(bessel_i0(0.0), 1.0, 1e-10));
-        assert!(approx_eq(bessel_i0(1.0), 1.266, 0.001));
-        assert!(approx_eq(bessel_i0(5.0), 27.24, 0.01));
+        assert!(approx_eq(bessel_i0(0.0_f64), 1.0, 1e-10));
+        assert!(approx_eq(bessel_i0(1.0_f64), 1.266, 0.001));
+        assert!(approx_eq(bessel_i0(5.0_f64), 27.24, 0.01));
     }
 
     #[test]
     fn test_fir_bank_empty() {
-        let bank: FirBank = vec![];
-        let freqs = array![100.0, 1000.0, 10000.0];
+        let bank: FirBank<f64> = vec![];
+        let freqs = array![100.0_f64, 1000.0, 10000.0];
         let response = fir_bank_spl(&freqs, &bank);
 
         // Empty bank should give zero response
@@ -1069,5 +1095,11 @@ mod fir_tests {
             "Response well above cutoff should be > -3 dB, got {:.2}",
             response_above
         );
+    }
+
+    #[test]
+    fn test_fir_f32() {
+        let fir = Fir::<f32>::lowpass(63, 1000.0, 48000.0, WindowType::Hann, 0.0);
+        assert_eq!(fir.coeffs().len(), 63);
     }
 }

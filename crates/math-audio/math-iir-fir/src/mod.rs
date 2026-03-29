@@ -14,14 +14,14 @@
 //! # Example
 //!
 //! ```rust
-//! use math_audio_iir_fir::{Biquad, BiquadFilterType, SRATE};
+//! use math_audio_iir_fir::{Biquad, BiquadFilterType};
 //!
 //! // Create a peak filter at 1kHz with Q=2 and +3dB gain
-//! let filter = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+//! let filter = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
 //!
 //! // Get the frequency response at 1kHz (in dB)
-//! let response_db = filter.log_result(1000.0);
-//! assert!((response_db - 3.0).abs() < 0.1);
+//! let response_db: f64 = filter.log_result(1000.0);
+//! assert!((response_db - 3.0_f64).abs() < 0.1);
 //! ```
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
@@ -29,6 +29,11 @@
 // Module declarations
 pub mod denormals;
 mod error;
+mod traits;
+
+pub use traits::FilterFloat;
+/// Forward-reverse (zero-phase) filtering for offline signal processing.
+pub mod filtfilt;
 mod fir;
 mod fir_design;
 mod iir;
@@ -99,13 +104,30 @@ pub const DEFAULT_Q_HIGH_LOW_PASS: f64 = 1.0 / std::f64::consts::SQRT_2;
 /// Default Q factor for high/low shelf filters
 pub const DEFAULT_Q_HIGH_LOW_SHELF: f64 = 1.0668676536332304; // Value of bw2q(0.9)
 
-/// Sample rate constant (matching Python SRATE)
-pub const SRATE: f64 = 48000.0;
 
 /// Lower bound of human hearing (Hz).
 pub const AUDIBLE_MIN_FREQ: f64 = 20.0;
 /// Upper bound of human hearing (Hz).
 pub const AUDIBLE_MAX_FREQ: f64 = 20_000.0;
+
+// ============================================================================
+// Convenience type aliases for f32 instantiation
+// ============================================================================
+
+/// 32-bit biquad filter.
+pub type BiquadF32 = Biquad<f32>;
+/// 32-bit biquad coefficients.
+pub type BiquadCoefficientsF32 = BiquadCoefficients<f32>;
+/// 32-bit parametric EQ chain.
+pub type PeqF32 = Peq<f32>;
+/// 32-bit biquad bank.
+pub type BiquadBankF32 = BiquadBank<f32>;
+/// 32-bit SVF filter.
+pub type SvfFilterF32 = SvfFilter<f32>;
+/// 32-bit FIR filter.
+pub type FirF32 = Fir<f32>;
+/// 32-bit FIR filter bank.
+pub type FirBankF32 = FirBank<f32>;
 
 // ============================================================================
 // Tests for Common Functions

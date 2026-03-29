@@ -1,6 +1,6 @@
 [package]
 name = "math-iir-fir"
-version = "0.4.7"
+version = "0.5.9"
 description = "Math-Audio IIR and FIR filters"
 edition = { workspace = true }
 keywords.workspace = true
@@ -11,6 +11,7 @@ license = { workspace = true }
 
 [dependencies]
 ndarray = { workspace = true }
+num-traits = { workspace = true }
 serde = { workspace = true }
 base64 = { workspace = true }
 byteorder = { workspace = true }

@@ -3,6 +3,7 @@
 use std::fmt;
 
 use super::biquad::{Biquad, BiquadFilterType};
+use crate::traits::FilterFloat;
 
 /// A bank of biquad filters sharing coefficients but with independent per-channel state.
 ///
@@ -18,10 +19,10 @@ use super::biquad::{Biquad, BiquadFilterType};
 /// # Example
 ///
 /// ```rust
-/// use math_audio_iir_fir::{Biquad, BiquadBank, BiquadFilterType, SRATE};
+/// use math_audio_iir_fir::{Biquad, BiquadBank, BiquadFilterType};
 ///
 /// // Create a peak filter template
-/// let template = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+/// let template = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
 ///
 /// // Create a bank for 8 channels
 /// let mut bank = BiquadBank::new(&template, 8);
@@ -31,25 +32,25 @@ use super::biquad::{Biquad, BiquadFilterType};
 /// bank.process_interleaved_frame(&mut frame);
 /// ```
 #[derive(Debug, Clone)]
-pub struct BiquadBank {
+pub struct BiquadBank<T: FilterFloat = f64> {
     // Shared coefficients (all filters use the same)
-    a1: f64,
-    a2: f64,
-    b0: f64,
-    b1: f64,
-    b2: f64,
+    a1: T,
+    a2: T,
+    b0: T,
+    b1: T,
+    b2: T,
     /// When true, use Transposed Direct Form II instead of Direct Form I.
     pub use_tdf2: bool,
 
     // Per-channel state (TDF-II: s1, s2 per channel)
-    s1: Vec<f64>,
-    s2: Vec<f64>,
+    s1: Vec<T>,
+    s2: Vec<T>,
 
     // Per-channel state (DF-I: x1, x2, y1, y2 per channel)
-    x1: Vec<f64>,
-    x2: Vec<f64>,
-    y1: Vec<f64>,
-    y2: Vec<f64>,
+    x1: Vec<T>,
+    x2: Vec<T>,
+    y1: Vec<T>,
+    y2: Vec<T>,
 
     num_channels: usize,
 
@@ -57,16 +58,16 @@ pub struct BiquadBank {
     /// The type of filter
     pub filter_type: BiquadFilterType,
     /// Center frequency in Hz
-    pub freq: f64,
+    pub freq: T,
     /// Sample rate in Hz
-    pub srate: f64,
+    pub srate: T,
     /// Q factor (quality factor)
-    pub q: f64,
+    pub q: T,
     /// Gain in dB (for peaking and shelving filters)
-    pub db_gain: f64,
+    pub db_gain: T,
 }
 
-impl BiquadBank {
+impl<T: FilterFloat> BiquadBank<T> {
     /// Create a bank from a template Biquad, replicated for N channels.
     ///
     /// All channels share the same coefficients but have independent filter state
@@ -76,8 +77,9 @@ impl BiquadBank {
     ///
     /// * `template` - A configured Biquad whose coefficients and parameters are copied
     /// * `num_channels` - Number of independent channels to process
-    pub fn new(template: &Biquad, num_channels: usize) -> Self {
+    pub fn new(template: &Biquad<T>, num_channels: usize) -> Self {
         let (a1, a2, b0, b1, b2) = template.constants();
+        let zero = T::zero();
         Self {
             a1,
             a2,
@@ -85,12 +87,12 @@ impl BiquadBank {
             b1,
             b2,
             use_tdf2: template.use_tdf2,
-            s1: vec![0.0; num_channels],
-            s2: vec![0.0; num_channels],
-            x1: vec![0.0; num_channels],
-            x2: vec![0.0; num_channels],
-            y1: vec![0.0; num_channels],
-            y2: vec![0.0; num_channels],
+            s1: vec![zero; num_channels],
+            s2: vec![zero; num_channels],
+            x1: vec![zero; num_channels],
+            x2: vec![zero; num_channels],
+            y1: vec![zero; num_channels],
+            y2: vec![zero; num_channels],
             num_channels,
             filter_type: template.filter_type,
             freq: template.freq,
@@ -104,7 +106,7 @@ impl BiquadBank {
     ///
     /// This does **not** reset filter state, allowing click-free parameter changes.
     /// A temporary Biquad is created internally to compute the new coefficients.
-    pub fn update_params(&mut self, freq: f64, srate: f64, q: f64, db_gain: f64) {
+    pub fn update_params(&mut self, freq: T, srate: T, q: T, db_gain: T) {
         let tmp = Biquad::new(self.filter_type, freq, srate, q, db_gain);
         self.copy_coefficients_from(&tmp);
         self.freq = freq;
@@ -117,7 +119,7 @@ impl BiquadBank {
     ///
     /// Only the filter coefficients are copied; filter state is preserved.
     /// The filter_type, freq, srate, q, and db_gain fields are also updated.
-    pub fn copy_coefficients_from(&mut self, biquad: &Biquad) {
+    pub fn copy_coefficients_from(&mut self, biquad: &Biquad<T>) {
         let (a1, a2, b0, b1, b2) = biquad.constants();
         self.a1 = a1;
         self.a2 = a2;
@@ -135,12 +137,13 @@ impl BiquadBank {
     ///
     /// Coefficients are preserved; only the per-channel delay state is cleared.
     pub fn reset(&mut self) {
-        self.s1.fill(0.0);
-        self.s2.fill(0.0);
-        self.x1.fill(0.0);
-        self.x2.fill(0.0);
-        self.y1.fill(0.0);
-        self.y2.fill(0.0);
+        let zero = T::zero();
+        self.s1.fill(zero);
+        self.s2.fill(zero);
+        self.x1.fill(zero);
+        self.x2.fill(zero);
+        self.y1.fill(zero);
+        self.y2.fill(zero);
     }
 
     /// Number of channels in this bank.
@@ -157,7 +160,7 @@ impl BiquadBank {
     /// The inner loop processes channels in pairs of 2, which enables the compiler
     /// to auto-vectorize into f64x2 SIMD (SSE2 on x86-64, NEON on aarch64).
     #[inline]
-    pub fn process_interleaved_frame(&mut self, samples: &mut [f64]) {
+    pub fn process_interleaved_frame(&mut self, samples: &mut [T]) {
         let nc = self.num_channels;
         // Subslice to exact channel count — panics if too short (same as assert),
         // but gives the compiler a length proof so all subsequent `samples[ch]`
@@ -173,7 +176,7 @@ impl BiquadBank {
 
     /// TDF-II frame processing with paired-channel loop for auto-vectorization.
     #[inline]
-    fn process_frame_tdf2(&mut self, samples: &mut [f64]) {
+    fn process_frame_tdf2(&mut self, samples: &mut [T]) {
         let nc = self.num_channels;
         let b0 = self.b0;
         let b1 = self.b1;
@@ -216,7 +219,7 @@ impl BiquadBank {
 
     /// DF-I frame processing with paired-channel loop for auto-vectorization.
     #[inline]
-    fn process_frame_df1(&mut self, samples: &mut [f64]) {
+    fn process_frame_df1(&mut self, samples: &mut [T]) {
         let nc = self.num_channels;
         let b0 = self.b0;
         let b1 = self.b1;
@@ -269,7 +272,7 @@ impl BiquadBank {
     /// # Panics
     ///
     /// Debug-asserts that `buffer.len() >= num_frames * num_channels`.
-    pub fn process_interleaved_block(&mut self, buffer: &mut [f64], num_frames: usize) {
+    pub fn process_interleaved_block(&mut self, buffer: &mut [T], num_frames: usize) {
         let nc = self.num_channels;
         let buffer = &mut buffer[..num_frames * nc];
         for frame_idx in 0..num_frames {
@@ -279,7 +282,7 @@ impl BiquadBank {
     }
 }
 
-impl fmt::Display for BiquadBank {
+impl<T: FilterFloat> fmt::Display for BiquadBank<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -300,6 +303,7 @@ impl fmt::Display for BiquadBank {
 #[cfg(test)]
 mod biquad_bank_tests {
     use super::*;
+    use crate::traits::lit;
     use crate::{Biquad, BiquadFilterType};
 
     const SRATE: f64 = 48000.0;
@@ -452,8 +456,8 @@ mod biquad_bank_tests {
         }
 
         // Verify state is non-zero
-        assert!(bank.s1.iter().any(|&v| v.abs() > 1e-15));
-        assert!(bank.s2.iter().any(|&v| v.abs() > 1e-15));
+        assert!(bank.s1.iter().any(|&v| v.abs() > lit::<f64>(1e-15)));
+        assert!(bank.s2.iter().any(|&v| v.abs() > lit::<f64>(1e-15)));
 
         // Reset
         bank.reset();
@@ -628,5 +632,15 @@ mod biquad_bank_tests {
         assert!(display.contains("8ch"));
         assert!(display.contains("PK"));
         assert!(display.contains("1000.0"));
+    }
+
+    /// Smoke test: BiquadBank works with f32 precision.
+    #[test]
+    fn test_biquad_bank_f32() {
+        let template = Biquad::<f32>::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
+        let mut bank = BiquadBank::new(&template, 2);
+        let mut frame = [0.5f32; 2];
+        bank.process_interleaved_frame(&mut frame);
+        assert!(frame[0] != 0.5);
     }
 }

@@ -1,4 +1,6 @@
-use math_audio_iir_fir::{Biquad, BiquadFilterType, SRATE};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
+
+const SRATE: f64 = 48000.0;
 
 #[test]
 fn test_allpass_magnitude() {

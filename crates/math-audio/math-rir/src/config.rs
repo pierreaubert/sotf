@@ -58,6 +58,22 @@ pub struct SsirConfig {
     /// Peaks closer than this are suppressed when searching for the direct sound.
     /// Default: 0.1 ms (5 samples @ 48kHz).
     pub min_peak_distance_ms: f64,
+
+    /// Band-limiting frequency range (Hz) for DOA estimation from B-format channels.
+    ///
+    /// The pseudo-intensity vector method is most reliable within a frequency band
+    /// where spatial aliasing is low and wavelengths are short enough for directional
+    /// resolution. Low frequencies have poor spatial resolution; high frequencies
+    /// may alias depending on the microphone array.
+    ///
+    /// Default: (500.0, 4000.0) — a commonly used range for first-order Ambisonics.
+    pub doa_bandpass_hz: (f64, f64),
+
+    /// Butterworth filter order for DOA band-limiting.
+    ///
+    /// Applied as a zero-phase (filtfilt) bandpass, so the effective order is doubled.
+    /// Default: 4 (effective 8th-order after forward-reverse filtering).
+    pub doa_bandpass_order: u32,
 }
 
 impl SsirConfig {
@@ -83,6 +99,8 @@ impl SsirConfig {
             onset_window_ms: 0.5,
             final_segment_ms: 2.0,
             min_peak_distance_ms: 0.1,
+            doa_bandpass_hz: (500.0, 4000.0),
+            doa_bandpass_order: 4,
         }
     }
 
