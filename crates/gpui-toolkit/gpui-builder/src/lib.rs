@@ -60,6 +60,9 @@ pub use types::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode,
 };
 
+// gpui-pretext re-exports for text-measured sizing
+pub use gpui_pretext::{EngineProfile as TextEngineProfile, PrepareOptions as TextPrepareOptions, TextMeasure};
+
 // Compat re-exports
 pub use compat::{
     ColumnRole, GroupDirection, KnobSize, Orientation, PluginAdaptations, PluginColumnConstraint,

@@ -20,6 +20,7 @@ gpu-3d = ["gpui-px/gpu-3d"]
 # GPUI framework
 gpui = { workspace = true }
 gpui-autoeq = { workspace = true }
+gpui-builder = { workspace = true }
 gpui-ui-kit = { workspace = true }
 gpui-px = { workspace = true, features = ["gpui"] }
 

@@ -1,7 +1,9 @@
 //! Declarative layout types.
 //!
 //! Platform-agnostic data types for describing layout trees. No rendering code,
-//! no framework dependencies. Consumed by the solver to produce resolved geometry.
+//! no GPUI framework dependencies. Consumed by the solver to produce resolved geometry.
+
+use gpui_pretext::TextMeasure;
 
 // ============================================================================
 // Axis & Direction
@@ -31,8 +33,12 @@ impl Axis {
 // ============================================================================
 
 /// How a node claims space within its parent's main axis.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Sizing {
+///
+/// The `'a` lifetime is used only by `Sizing::Text`, which borrows the text
+/// string and a [`TextMeasure`] implementation. All other variants are effectively
+/// `'static` and can be used with any lifetime.
+#[derive(Clone, Copy)]
+pub enum Sizing<'a> {
     /// Fixed size in pixels. Always gets exactly this much space.
     /// Use for: headers, footers, toolbars, fixed-width sidebars.
     Fixed(f32),
@@ -55,9 +61,67 @@ pub enum Sizing {
         min: f32,
         weight: f32,
     },
+
+    /// Text-measured: size is computed by laying out `text` with gpui-pretext.
+    ///
+    /// - In a **vertical** container (main axis = height): allocates the text's
+    ///   wrapped height given the container's full width as `max_width`.
+    /// - In a **horizontal** container (main axis = width): allocates the width
+    ///   of the longest text line (no wrapping).
+    ///
+    /// `min` is a pixel floor applied after measurement.
+    Text {
+        text: &'a str,
+        measure: &'a dyn TextMeasure,
+        line_height: f32,
+        min: f32,
+    },
 }
 
-impl Sizing {
+impl<'a> std::fmt::Debug for Sizing<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Sizing::Fixed(v) => write!(f, "Fixed({v})"),
+            Sizing::Fractional { initial, min, max } => {
+                write!(f, "Fractional {{ initial: {initial}, min: {min}, max: {max} }}")
+            }
+            Sizing::Flex { min, weight } => write!(f, "Flex {{ min: {min}, weight: {weight} }}"),
+            Sizing::Text { text, line_height, min, .. } => {
+                write!(f, "Text {{ text: {:?}, line_height: {line_height}, min: {min} }}", text)
+            }
+        }
+    }
+}
+
+impl<'a> PartialEq for Sizing<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Sizing::Fixed(a), Sizing::Fixed(b)) => a == b,
+            (
+                Sizing::Fractional { initial: i1, min: mn1, max: mx1 },
+                Sizing::Fractional { initial: i2, min: mn2, max: mx2 },
+            ) => i1 == i2 && mn1 == mn2 && mx1 == mx2,
+            (Sizing::Flex { min: mn1, weight: w1 }, Sizing::Flex { min: mn2, weight: w2 }) => {
+                mn1 == mn2 && w1 == w2
+            }
+            (
+                Sizing::Text { text: t1, measure: m1, line_height: lh1, min: mn1 },
+                Sizing::Text { text: t2, measure: m2, line_height: lh2, min: mn2 },
+            ) => {
+                t1 == t2
+                    && lh1 == lh2
+                    && mn1 == mn2
+                    && std::ptr::eq(
+                        *m1 as *const dyn TextMeasure,
+                        *m2 as *const dyn TextMeasure,
+                    )
+            }
+            _ => false,
+        }
+    }
+}
+
+impl<'a> Sizing<'a> {
     /// Shorthand for `Flex` with weight 1.0.
     pub const fn flex(min: f32) -> Self {
         Sizing::Flex { min, weight: 1.0 }
@@ -73,11 +137,15 @@ impl Sizing {
     }
 
     /// Returns the minimum size this node needs along the main axis.
+    ///
+    /// For `Sizing::Text`, this is the `min` floor, not the measured size.
+    /// The actual measured size is computed by the solver at layout time.
     pub fn min_size(&self) -> f32 {
         match self {
             Sizing::Fixed(size) => *size,
             Sizing::Fractional { min, .. } => *min,
             Sizing::Flex { min, .. } => *min,
+            Sizing::Text { min, .. } => *min,
         }
     }
 }
@@ -122,7 +190,7 @@ impl<'a> LayoutNode<'a> {
     }
 
     /// Returns the node's sizing constraint.
-    pub fn sizing(&self) -> Sizing {
+    pub fn sizing(&self) -> Sizing<'a> {
         match self {
             LayoutNode::Slot(s) => s.sizing,
             LayoutNode::Container(c) => c.sizing,
@@ -152,7 +220,7 @@ pub struct SlotNode<'a> {
     /// Unique identifier (e.g., "library", "queue", "header").
     pub id: &'a str,
     /// How this slot claims space.
-    pub sizing: Sizing,
+    pub sizing: Sizing<'a>,
     /// Collapse priority: 0.0 = collapses first, 1.0 = never collapses.
     pub priority: f32,
     /// Whether this slot can be collapsed when space is insufficient.
@@ -175,7 +243,7 @@ pub struct ContainerNode<'a> {
     /// when width > height, Vertical otherwise.
     pub auto_axis: Option<f32>,
     /// How this container claims space within its parent.
-    pub sizing: Sizing,
+    pub sizing: Sizing<'a>,
     /// Children, ordered along the main axis.
     pub children: &'a [LayoutNode<'a>],
     /// Pixel size to reserve between each pair of visible children (for dividers).

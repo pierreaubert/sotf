@@ -10,7 +10,7 @@ repository.workspace = true
 description = "Generic constraint-based layout solver for GPUI applications"
 
 [dependencies]
-# Core library has zero dependencies.
+gpui-pretext = { workspace = true }
 # GPUI deps are optional, enabled by the `gpui` feature for the showcase binary.
 gpui = { workspace = true, optional = true }
 gpui-ui-kit = { workspace = true, optional = true }

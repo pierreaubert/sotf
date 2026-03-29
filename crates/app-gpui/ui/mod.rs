@@ -1294,6 +1294,8 @@ impl PlayerView {
     }
 }
 
+pub(crate) mod layout_tree;
+
 // Split impl blocks for PlayerView
 include!("handle.rs");
 include!("playback.rs");

@@ -5,18 +5,23 @@
 impl PlayerView {
     /// Render horizontal 3-panel layout: Library | Queue | Rack
     pub fn render_horizontal_3panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (theme, library_ratio, rack_ratio, rack_mode, library_collapsed, rack_collapsed) = {
+        let (theme, solved) = {
             let state = self.state.read(cx);
             let layout = state.layout.read(cx);
+            let w = state.app.ui_state.window_width;
+            let h = state.app.ui_state.window_height;
             (
                 state.app.ui_state.theme.clone(),
-                layout.library_h_ratio,
-                layout.rack_h_ratio,
-                state.app.rack_display_mode,
-                layout.library_panel_collapsed,
-                layout.rack_panel_collapsed,
+                crate::ui::layout_tree::solve_app_layout(w, h, layout),
             )
         };
+        let library_node = solved.find("library").unwrap();
+        let rack_node = solved.find("rack").unwrap();
+        let library_visible = library_node.visible;
+        let rack_visible = rack_node.visible;
+        let library_width = library_node.width;
+        let rack_width = rack_node.width;
+        let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
         let divider_theme = PaneDividerTheme {
             background: theme.background,
@@ -134,12 +139,10 @@ impl PlayerView {
                 }),
             )
             // Library panel (left)
-            .when(!library_collapsed, |d| {
+            .when(library_visible, |d| {
                 d.child(
                     div()
-                        .w(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
-                            library_ratio,
-                        )))
+                        .w(px(library_width))
                         .h_full()
                         .overflow_hidden()
                         .child(self.render_library_screen(cx)),
@@ -149,7 +152,7 @@ impl PlayerView {
             .child({
                 PaneDivider::vertical("lib-queue-h-divider", CollapseDirection::Left)
                     .label("Library")
-                    .collapsed(library_collapsed)
+                    .collapsed(!library_visible)
                     .theme(divider_theme.clone())
                     .on_toggle({
                         let state_handle = self.state.clone();
@@ -193,11 +196,11 @@ impl PlayerView {
                     .child(self.render_queue_content(cx)),
             )
             // Queue-Rack divider + Rack panel (only when rack is open)
-            .when(!rack_collapsed, |d| {
+            .when(rack_visible, |d| {
                 d.child({
                     PaneDivider::vertical("queue-rack-h-divider", CollapseDirection::Right)
                         .label("Rack")
-                        .collapsed(false)
+                        .collapsed(!rack_visible)
                         .theme(divider_theme)
                         .on_toggle({
                             let state_handle = self.state.clone();
@@ -223,9 +226,7 @@ impl PlayerView {
                 })
                 .child(
                     div()
-                        .w(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
-                            rack_ratio,
-                        )))
+                        .w(px(rack_width))
                         .h_full()
                         .overflow_hidden()
                         .child(self.render_rack_for_mode(rack_mode, cx)),
@@ -235,18 +236,23 @@ impl PlayerView {
 
     /// Render vertical 3-panel layout: Library / Queue / Rack stacked
     pub fn render_vertical_3panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (theme, library_ratio, rack_ratio, rack_mode, library_collapsed, rack_collapsed) = {
+        let (theme, solved) = {
             let state = self.state.read(cx);
             let layout = state.layout.read(cx);
+            let w = state.app.ui_state.window_width;
+            let h = state.app.ui_state.window_height;
             (
                 state.app.ui_state.theme.clone(),
-                layout.library_v_ratio,
-                layout.rack_v_ratio,
-                state.app.rack_display_mode,
-                layout.library_panel_collapsed,
-                layout.rack_panel_collapsed,
+                crate::ui::layout_tree::solve_app_layout(w, h, layout),
             )
         };
+        let library_node = solved.find("library").unwrap();
+        let rack_node = solved.find("rack").unwrap();
+        let library_visible = library_node.visible;
+        let rack_visible = rack_node.visible;
+        let library_height = library_node.height;
+        let rack_height = rack_node.height;
+        let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
         let divider_theme = PaneDividerTheme {
             background: theme.background,
@@ -353,12 +359,10 @@ impl PlayerView {
                 }),
             )
             // Library panel (top)
-            .when(!library_collapsed, |d| {
+            .when(library_visible, |d| {
                 d.child(
                     div()
-                        .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
-                            library_ratio,
-                        )))
+                        .h(px(library_height))
                         .w_full()
                         .overflow_hidden()
                         .child(self.render_library_screen(cx)),
@@ -368,7 +372,7 @@ impl PlayerView {
             .child({
                 PaneDivider::horizontal("lib-queue-v-divider", CollapseDirection::Up)
                     .label("Library")
-                    .collapsed(library_collapsed)
+                    .collapsed(!library_visible)
                     .theme(divider_theme.clone())
                     .on_toggle({
                         let state_handle = self.state.clone();
@@ -401,11 +405,11 @@ impl PlayerView {
                     .child(self.render_queue_content(cx)),
             )
             // Queue-Rack divider + Rack panel (only when rack is open)
-            .when(!rack_collapsed, |d| {
+            .when(rack_visible, |d| {
                 d.child({
                     PaneDivider::horizontal("queue-rack-v-divider", CollapseDirection::Down)
                         .label("Rack")
-                        .collapsed(false)
+                        .collapsed(!rack_visible)
                         .theme(divider_theme)
                         .on_toggle({
                             let state_handle = self.state.clone();
@@ -431,9 +435,7 @@ impl PlayerView {
                 })
                 .child(
                     div()
-                        .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
-                            rack_ratio,
-                        )))
+                        .h(px(rack_height))
                         .w_full()
                         .overflow_hidden()
                         .child(self.render_rack_for_mode(rack_mode, cx)),

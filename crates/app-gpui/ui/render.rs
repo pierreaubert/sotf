@@ -46,37 +46,21 @@ impl Render for PlayerView {
                                     crate::app::LayoutMode::Compact
                                 };
 
-                            // Update 3-panel layout orientation based on aspect ratio
-                            state.app.layout_orientation = if window_width > window_height {
-                                crate::app::LayoutOrientation::Horizontal
-                            } else {
-                                crate::app::LayoutOrientation::Vertical
-                            };
-
-                            // Determine rack display mode based on available space
-                            let rack_dimension = match state.app.layout_orientation {
-                                crate::app::LayoutOrientation::Horizontal => {
-                                    window_width * layout.rack_h_ratio
-                                }
-                                crate::app::LayoutOrientation::Vertical => {
-                                    window_height * layout.rack_v_ratio
-                                }
-                            };
-                            state.app.rack_display_mode = if layout.rack_panel_collapsed
-                                || rack_dimension < 100.0
-                            {
-                                crate::app::RackDisplayMode::Collapsed
-                            } else if rack_dimension < 200.0 {
-                                crate::app::RackDisplayMode::Mini
-                            } else {
-                                crate::app::RackDisplayMode::Full
-                            };
-
-                            // Hide queue meters when rack is visible to avoid duplicate meters
-                            state.app.hide_queue_meters_for_rack = matches!(
-                                state.app.rack_display_mode,
-                                crate::app::RackDisplayMode::Full | crate::app::RackDisplayMode::Mini
+                            // Derive layout orientation, rack display mode, and
+                            // queue-meter visibility from the constraint solver.
+                            let solved = crate::ui::layout_tree::solve_app_layout(
+                                window_width, window_height, layout,
                             );
+                            state.app.layout_orientation =
+                                if crate::ui::layout_tree::solved_is_horizontal(&solved) {
+                                    crate::app::LayoutOrientation::Horizontal
+                                } else {
+                                    crate::app::LayoutOrientation::Vertical
+                                };
+                            state.app.rack_display_mode =
+                                crate::ui::layout_tree::solved_rack_display_mode(&solved);
+                            state.app.hide_queue_meters_for_rack =
+                                crate::ui::layout_tree::solved_hide_queue_meters(&solved);
                         });
                     });
                     

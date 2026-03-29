@@ -14,6 +14,8 @@
 //! 4. Determine display tiers for each slot
 //! 5. Recurse into container children
 
+use gpui_pretext::{layout, layout_with_lines, prepare, prepare_with_segments, EngineProfile, PrepareOptions};
+
 use crate::solved::SolvedNode;
 use crate::types::{Axis, ContainerNode, LayoutNode, LayoutPreferences, Sizing, SlotNode};
 
@@ -101,17 +103,31 @@ fn solve_container(
         Axis::Vertical => width,
     };
 
-    // Step 2: Classify children and apply user collapse
+    // Step 2: Classify children, apply user collapse, pre-compute Text sizes
+    let profile = EngineProfile::default();
+    let options = PrepareOptions::default();
     let mut child_infos: Vec<ChildInfo<'_>> = container
         .children
         .iter()
         .map(|child| {
             let user_collapsed = child.collapsible() && prefs.is_collapsed(child.id());
+            let computed_text_size = if !user_collapsed {
+                if let Sizing::Text { text, measure, line_height, min } = child.sizing() {
+                    Some(compute_text_size(
+                        text, measure, line_height, min, axis, cross_size, &profile, &options,
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             ChildInfo {
                 node: child,
                 user_collapsed,
                 solver_collapsed: false,
                 allocated_size: 0.0,
+                computed_text_size,
             }
         })
         .collect();
@@ -210,6 +226,38 @@ struct ChildInfo<'a> {
     user_collapsed: bool,
     solver_collapsed: bool,
     allocated_size: f32,
+    /// Pre-computed size for `Sizing::Text` nodes (None for other sizing types).
+    computed_text_size: Option<f32>,
+}
+
+/// Compute the size for a `Sizing::Text` node using gpui-pretext.
+///
+/// - In a **vertical** container (main axis = height): returns text height
+///   with `cross_size` (the container's width) as `max_width`.
+/// - In a **horizontal** container (main axis = width): returns the maximum
+///   line width with no wrapping constraint.
+fn compute_text_size(
+    text: &str,
+    measure: &dyn gpui_pretext::TextMeasure,
+    line_height: f32,
+    min: f32,
+    axis: Axis,
+    cross_size: f32,
+    profile: &EngineProfile,
+    options: &PrepareOptions,
+) -> f32 {
+    let size = match axis {
+        Axis::Vertical => {
+            let prepared = prepare(text, measure, profile, options);
+            layout(&prepared, cross_size as f64, line_height as f64, profile).height as f32
+        }
+        Axis::Horizontal => {
+            let prepared = prepare_with_segments(text, measure, profile, options);
+            let result = layout_with_lines(&prepared, f64::MAX, line_height as f64, profile);
+            result.lines.iter().map(|l| l.width).fold(0.0_f64, f64::max) as f32
+        }
+    };
+    size.max(min)
 }
 
 fn allocate_main_axis(
@@ -219,18 +267,27 @@ fn allocate_main_axis(
     axis: Axis,
     prefs: &LayoutPreferences<'_>,
 ) {
-    // Pass A: Allocate non-collapsible Fixed children unconditionally.
-    // Collapsible Fixed children participate in collapse logic below.
+    // Pass A: Allocate non-collapsible Fixed and Text children unconditionally.
+    // Collapsible Fixed/Text children participate in collapse logic below.
     let mut unconditional_fixed = 0.0_f32;
     for child in children.iter_mut() {
         if child.user_collapsed {
             continue;
         }
-        if let Sizing::Fixed(size) = child.node.sizing()
-            && !child.node.collapsible()
-        {
-            child.allocated_size = size;
-            unconditional_fixed += size;
+        if child.node.collapsible() {
+            continue;
+        }
+        match child.node.sizing() {
+            Sizing::Fixed(size) => {
+                child.allocated_size = size;
+                unconditional_fixed += size;
+            }
+            Sizing::Text { .. } => {
+                let size = child.computed_text_size.expect("text size pre-computed");
+                child.allocated_size = size;
+                unconditional_fixed += size;
+            }
+            _ => {}
         }
     }
 
@@ -245,12 +302,13 @@ fn allocate_main_axis(
     let space_after_fixed = (available - unconditional_fixed - initial_divider_space).max(0.0);
 
     // Pass B: Sum minimums of all non-unconditional-fixed visible children
-    // (collapsible Fixed + Fractional + Flex)
+    // (collapsible Fixed/Text + Fractional + Flex)
     let total_minimums: f32 = children
         .iter()
         .filter(|c| {
             !c.user_collapsed
-                && (!matches!(c.node.sizing(), Sizing::Fixed(_)) || c.node.collapsible())
+                && (c.node.collapsible()
+                    || !matches!(c.node.sizing(), Sizing::Fixed(_) | Sizing::Text { .. }))
         })
         .map(|c| c.node.sizing().min_size())
         .sum();
@@ -306,17 +364,26 @@ fn distribute_remaining(
     axis: Axis,
     prefs: &LayoutPreferences<'_>,
 ) {
-    // Collapsible Fixed nodes that survived collapse get their fixed size
+    // Collapsible Fixed/Text nodes that survived collapse get their fixed/measured size
     let mut used_by_fixed = 0.0_f32;
     for child in children.iter_mut() {
         if child.user_collapsed || child.solver_collapsed {
             continue;
         }
-        if let Sizing::Fixed(size) = child.node.sizing()
-            && child.node.collapsible()
-        {
-            child.allocated_size = size;
-            used_by_fixed += size;
+        if !child.node.collapsible() {
+            continue;
+        }
+        match child.node.sizing() {
+            Sizing::Fixed(size) => {
+                child.allocated_size = size;
+                used_by_fixed += size;
+            }
+            Sizing::Text { .. } => {
+                let size = child.computed_text_size.expect("text size pre-computed");
+                child.allocated_size = size;
+                used_by_fixed += size;
+            }
+            _ => {}
         }
     }
 
@@ -340,7 +407,7 @@ fn distribute_remaining(
             Sizing::Flex { weight, .. } => {
                 flex_total_weight += weight;
             }
-            Sizing::Fixed(_) => {}
+            Sizing::Fixed(_) | Sizing::Text { .. } => {}
         }
     }
 
@@ -417,7 +484,7 @@ mod tests {
     use super::*;
     use crate::types::{ContainerNode, DisplayTier, SlotNode};
 
-    fn simple_slot(id: &str, sizing: Sizing) -> LayoutNode<'_> {
+    fn simple_slot<'a>(id: &'a str, sizing: Sizing<'a>) -> LayoutNode<'a> {
         LayoutNode::Slot(SlotNode {
             id,
             sizing,
@@ -430,7 +497,7 @@ mod tests {
 
     fn collapsible_slot<'a>(
         id: &'a str,
-        sizing: Sizing,
+        sizing: Sizing<'a>,
         priority: f32,
         label: &'a str,
     ) -> LayoutNode<'a> {
@@ -956,5 +1023,127 @@ mod tests {
         let solved = solve(&root, 500.0, 900.0, &LayoutPreferences::default());
         let content = solved.find("content").unwrap();
         assert_eq!(content.resolved_axis, Some(Axis::Vertical));
+    }
+
+    // ===== Sizing::Text tests =====
+
+    struct FixedWidthMeasure {
+        char_width: f64,
+    }
+
+    impl gpui_pretext::TextMeasure for FixedWidthMeasure {
+        fn measure_width(&self, text: &str) -> f64 {
+            text.chars().count() as f64 * self.char_width
+        }
+    }
+
+    #[test]
+    fn text_sizing_vertical_container() {
+        // Each char is 10px wide. "hello world" = 110px wide, wraps at 80px.
+        // At 80px max_width: "hello " on line 1, "world" on line 2 → height = 2 * 20 = 40.
+        let measure = FixedWidthMeasure { char_width: 10.0 };
+        let line_height = 20.0_f32;
+
+        let children = [
+            simple_slot("header", Sizing::Fixed(30.0)),
+            LayoutNode::Slot(SlotNode {
+                id: "label",
+                sizing: Sizing::Text {
+                    text: "hello world",
+                    measure: &measure,
+                    line_height,
+                    min: 0.0,
+                },
+                priority: 1.0,
+                collapsible: false,
+                display_tiers: &[],
+                collapse_label: None,
+            }),
+            simple_slot("footer", Sizing::Fixed(10.0)),
+        ];
+        let root = LayoutNode::Container(ContainerNode {
+            id: "root",
+            axis: Axis::Vertical,
+            auto_axis: None,
+            sizing: Sizing::flex(0.0),
+            children: &children,
+            divider_size: 0.0,
+        });
+
+        // Container is 80px wide → text wraps to 2 lines → label height = 40
+        let solved = solve(&root, 80.0, 500.0, &LayoutPreferences::default());
+
+        assert_eq!(solved.find("header").unwrap().height, 30.0);
+        let label = solved.find("label").unwrap();
+        assert!(label.visible);
+        assert_eq!(label.height, 40.0);
+        assert_eq!(solved.find("footer").unwrap().height, 10.0);
+    }
+
+    #[test]
+    fn text_sizing_horizontal_container() {
+        // Each char is 10px wide. "hi" = 20px wide → single line, width = 20.
+        let measure = FixedWidthMeasure { char_width: 10.0 };
+
+        let children = [
+            LayoutNode::Slot(SlotNode {
+                id: "tag",
+                sizing: Sizing::Text {
+                    text: "hi",
+                    measure: &measure,
+                    line_height: 20.0,
+                    min: 0.0,
+                },
+                priority: 1.0,
+                collapsible: false,
+                display_tiers: &[],
+                collapse_label: None,
+            }),
+            simple_slot("rest", Sizing::flex(0.0)),
+        ];
+        let root = LayoutNode::Container(ContainerNode {
+            id: "root",
+            axis: Axis::Horizontal,
+            auto_axis: None,
+            sizing: Sizing::flex(0.0),
+            children: &children,
+            divider_size: 0.0,
+        });
+
+        let solved = solve(&root, 500.0, 100.0, &LayoutPreferences::default());
+        let tag = solved.find("tag").unwrap();
+        assert!(tag.visible);
+        assert_eq!(tag.width, 20.0); // "hi" = 2 chars * 10px
+    }
+
+    #[test]
+    fn text_sizing_respects_min_floor() {
+        // Empty text → height = 0, but min = 50 → height = 50.
+        let measure = FixedWidthMeasure { char_width: 10.0 };
+
+        let children = [LayoutNode::Slot(SlotNode {
+            id: "label",
+            sizing: Sizing::Text {
+                text: "",
+                measure: &measure,
+                line_height: 20.0,
+                min: 50.0,
+            },
+            priority: 1.0,
+            collapsible: false,
+            display_tiers: &[],
+            collapse_label: None,
+        })];
+        let root = LayoutNode::Container(ContainerNode {
+            id: "root",
+            axis: Axis::Vertical,
+            auto_axis: None,
+            sizing: Sizing::flex(0.0),
+            children: &children,
+            divider_size: 0.0,
+        });
+
+        let solved = solve(&root, 200.0, 500.0, &LayoutPreferences::default());
+        assert_eq!(solved.find("label").unwrap().height, 50.0);
     }
 }
