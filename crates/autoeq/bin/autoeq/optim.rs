@@ -75,7 +75,7 @@ eprintln!("   - Final Mean Squared Error: {:.6}", final_value);
                 post_objective = Some(local_val);
                 if args.qa.is_none() {
                     print_freq_spacing(&x, args, "local");
-                    autoeq::x2peq::peq_print_from_x(&x, args.effective_peq_model());
+                    autoeq::x2peq::peq_print_from_x(&x, args.sample_rate, args.effective_peq_model());
                 }
             }
             Err((e, final_value)) => {

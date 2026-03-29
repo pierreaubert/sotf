@@ -179,7 +179,7 @@ pub fn build_sorted_filters(x: &[f64], peq_model: PeqModel) -> Vec<crate::iir::F
 ///
 /// The filters are printed with any non-Peak filters marked according to the PEQ model,
 /// with all filters sorted by frequency.
-pub fn peq_print_from_x(x: &[f64], peq_model: PeqModel) {
-    let peq = x2peq(x, crate::iir::SRATE, peq_model);
+pub fn peq_print_from_x(x: &[f64], srate: f64, peq_model: PeqModel) {
+    let peq = x2peq(x, srate, peq_model);
     crate::iir::peq_print(&peq);
 }

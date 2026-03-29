@@ -1286,6 +1286,13 @@ pub struct OptimizerConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mixed_phase: Option<MixedPhaseSerdeConfig>,
 
+    /// Standalone phase correction (rePhase-style).
+    /// When set, a phase-only FIR is appended after magnitude correction
+    /// (any mode). The FIR has unity magnitude and only corrects excess phase.
+    /// Independent of `processing_mode` — works with IIR, FIR, or Hybrid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_correction: Option<MixedPhaseSerdeConfig>,
+
     /// Loss function type ("flat" or "score")
     #[serde(default = "default_loss_type")]
     pub loss_type: String,
@@ -1876,6 +1883,7 @@ impl Default for OptimizerConfig {
             fir: None,
             mixed_config: None,
             mixed_phase: None,
+            phase_correction: None,
             seed: None,
             refine: default_refine(),
             local_algo: default_local_algo(),

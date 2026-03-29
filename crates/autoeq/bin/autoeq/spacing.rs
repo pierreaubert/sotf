@@ -34,5 +34,5 @@ pub(super) fn print_freq_spacing(x: &[f64], args: &autoeq::cli::Args, label: &st
     } else {
         println!("  - Not enough filters to compute spacing.");
     }
-    autoeq::x2peq::peq_print_from_x(x, args.effective_peq_model());
+    autoeq::x2peq::peq_print_from_x(x, args.sample_rate, args.effective_peq_model());
 }

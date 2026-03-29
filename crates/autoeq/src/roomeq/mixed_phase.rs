@@ -229,7 +229,10 @@ pub fn generate_excess_phase_fir_with_depth(
 /// Generate a phase-only FIR filter (unity magnitude, specified phase).
 ///
 /// Constructs a complex spectrum with |H(f)| = 1 and φ(f) = correction_phase,
-/// then performs IFFT and windowing to get the FIR coefficients.
+/// then performs IFFT, windowing, and pre-ringing suppression. After these
+/// time-domain modifications, the magnitude is re-normalized to unity via a
+/// second FFT/IFFT round-trip so the FIR corrects phase without coloring
+/// the magnitude response.
 fn generate_phase_only_fir(
     freqs: &[f64],
     _magnitude_db: &[f64],
@@ -313,7 +316,37 @@ fn generate_phase_only_fir(
         math_audio_iir_fir::suppress_pre_ringing(&mut final_ir, pr_config, sample_rate);
     }
 
-    final_ir
+    // --- Magnitude re-normalization ---
+    // Windowing and pre-ringing suppression destroy the unity-magnitude property.
+    // Re-normalize: FFT the modified IR, force |H(f)| = 1 while keeping the
+    // resulting phase, then IFFT back.
+    let mut renorm_spectrum: Vec<Complex64> = vec![Complex64::new(0.0, 0.0); fft_size];
+    for (i, &v) in final_ir.iter().enumerate() {
+        renorm_spectrum[i] = Complex64::new(v, 0.0);
+    }
+
+    let fft = planner.plan_fft_forward(fft_size);
+    fft.process(&mut renorm_spectrum);
+
+    // Force unity magnitude, preserve phase
+    for bin in renorm_spectrum.iter_mut() {
+        let mag = bin.norm();
+        if mag > 1e-12 {
+            *bin /= mag;
+        }
+    }
+
+    // IFFT back
+    let ifft2 = planner.plan_fft_inverse(fft_size);
+    ifft2.process(&mut renorm_spectrum);
+
+    let inv = 1.0 / fft_size as f64;
+    let mut renorm_ir = vec![0.0; n_taps];
+    for (i, val) in renorm_ir.iter_mut().enumerate() {
+        *val = renorm_spectrum[i].re * inv;
+    }
+
+    renorm_ir
 }
 
 /// Interpolate phase values from log-spaced source frequencies to a linear target grid.
@@ -468,6 +501,8 @@ mod tests {
 
     #[test]
     fn test_phase_only_fir_near_unity_magnitude() {
+        use num_complex::Complex64;
+
         // A phase-only FIR should have approximately unity magnitude response
         let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
         let magnitude_db = vec![0.0; 5];
@@ -483,12 +518,27 @@ mod tests {
         let fir = generate_phase_only_fir(&freqs, &magnitude_db, &phase_deg, &config);
         assert_eq!(fir.len(), 511);
 
-        // Energy should be close to 1.0 (Parseval's theorem for unit-magnitude filter)
-        let energy: f64 = fir.iter().map(|x| x * x).sum();
+        // Verify magnitude response is near-unity across audio band
+        // Compute frequency response at test points
+        let test_freqs: Vec<f64> = (0..50)
+            .map(|i| 20.0 * (20000.0 / 20.0_f64).powf(i as f64 / 49.0))
+            .collect();
+        let sr = 48000.0;
+        let mut max_deviation_db: f64 = 0.0;
+        for &f in &test_freqs {
+            let w = 2.0 * std::f64::consts::PI * f / sr;
+            let mut h = Complex64::new(0.0, 0.0);
+            for (n, &val) in fir.iter().enumerate() {
+                let angle = -w * n as f64;
+                h += Complex64::from_polar(val, angle);
+            }
+            let mag_db = 20.0 * h.norm().log10();
+            max_deviation_db = max_deviation_db.max(mag_db.abs());
+        }
         assert!(
-            energy > 0.01 && energy < 10.0,
-            "FIR energy should be reasonable, got {:.4}",
-            energy
+            max_deviation_db < 0.5,
+            "magnitude deviation should be < 0.5 dB, got {:.2} dB",
+            max_deviation_db,
         );
     }
 

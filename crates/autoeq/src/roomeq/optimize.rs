@@ -161,6 +161,150 @@ fn post_generate_fir(
     }
 }
 
+/// Post-generate a short excess-phase FIR for MixedPhase mode.
+///
+/// The workflow path only runs IIR optimisation.  For MixedPhase we still need
+/// the short FIR that corrects residual excess phase.  This mirrors the logic
+/// in `optimize_speaker_eq` MixedPhase branch but runs after the workflow.
+fn post_generate_mixed_phase_fir(
+    name: &str,
+    initial_curve: &Curve,
+    config: &super::types::OptimizerConfig,
+    sample_rate: f64,
+    output_dir: Option<&Path>,
+) -> Option<Vec<f64>> {
+    let phase = initial_curve.phase.as_ref()?;
+    if phase.is_empty() {
+        return None;
+    }
+
+    let mp_config = match &config.mixed_phase {
+        Some(sc) => super::mixed_phase::MixedPhaseConfig {
+            max_fir_length_ms: sc.max_fir_length_ms,
+            pre_ringing_threshold_db: sc.pre_ringing_threshold_db,
+            min_spatial_depth: sc.min_spatial_depth,
+            phase_smoothing_octaves: sc.phase_smoothing_octaves,
+        },
+        None => super::mixed_phase::MixedPhaseConfig::default(),
+    };
+
+    match super::mixed_phase::decompose_phase(initial_curve, &mp_config) {
+        Ok((_min_phase, _excess, delay_ms, residual)) => {
+            info!(
+                "  Mixed-phase (post-workflow) '{}': delay={:.2} ms",
+                name, delay_ms
+            );
+            let coeffs = super::mixed_phase::generate_excess_phase_fir(
+                &initial_curve.freq,
+                &residual,
+                &mp_config,
+                sample_rate,
+            );
+
+            if let Some(out_dir) = output_dir {
+                let filename = format!("{}_excess_phase_fir.wav", name);
+                let wav_path = out_dir.join(&filename);
+                if let Err(e) =
+                    crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
+                {
+                    warn!("Failed to save excess phase FIR for {}: {}", name, e);
+                } else {
+                    info!("  Saved excess phase FIR to {}", wav_path.display());
+                }
+            }
+
+            Some(coeffs)
+        }
+        Err(e) => {
+            warn!(
+                "  Mixed-phase decomposition failed for '{}': {}. Using IIR only.",
+                name, e
+            );
+            None
+        }
+    }
+}
+
+/// Apply standalone phase correction to a channel (rePhase-style).
+///
+/// Generates a phase-only FIR from the measurement's excess phase and appends it
+/// to the channel's DSP chain. If the channel already has a magnitude FIR, the
+/// two are convolved together so `fir_coeffs` remains a single filter for IR
+/// computation.
+fn apply_phase_correction(
+    name: &str,
+    ch: &mut ChannelOptimizationResult,
+    chain: &mut super::types::ChannelDspChain,
+    config: &super::types::MixedPhaseSerdeConfig,
+    sample_rate: f64,
+    output_dir: Option<&Path>,
+) {
+    let phase = match ch.initial_curve.phase.as_ref() {
+        Some(p) if !p.is_empty() => p,
+        _ => return,
+    };
+    let _ = phase; // used via initial_curve below
+
+    let mp_config = super::mixed_phase::MixedPhaseConfig {
+        max_fir_length_ms: config.max_fir_length_ms,
+        pre_ringing_threshold_db: config.pre_ringing_threshold_db,
+        min_spatial_depth: config.min_spatial_depth,
+        phase_smoothing_octaves: config.phase_smoothing_octaves,
+    };
+
+    let phase_fir = match super::mixed_phase::decompose_phase(&ch.initial_curve, &mp_config) {
+        Ok((_min, _excess, delay_ms, residual)) => {
+            info!(
+                "  Phase correction '{}': delay={:.2} ms, generating phase-only FIR",
+                name, delay_ms
+            );
+            super::mixed_phase::generate_excess_phase_fir(
+                &ch.initial_curve.freq,
+                &residual,
+                &mp_config,
+                sample_rate,
+            )
+        }
+        Err(e) => {
+            warn!("  Phase correction failed for '{}': {}", name, e);
+            return;
+        }
+    };
+
+    // Save phase FIR WAV and add convolution plugin
+    let filename = format!("{}_phase_correction.wav", name);
+    if let Some(out_dir) = output_dir {
+        let wav_path = out_dir.join(&filename);
+        if let Err(e) = crate::fir::save_fir_to_wav(&phase_fir, sample_rate as u32, &wav_path) {
+            warn!("Failed to save phase correction FIR for {}: {}", name, e);
+        } else {
+            info!("  Saved phase correction FIR to {}", wav_path.display());
+        }
+    }
+    chain
+        .plugins
+        .push(super::output::create_convolution_plugin(&filename));
+
+    // Combine with existing FIR for IR computation (convolve the two)
+    if let Some(ref existing) = ch.fir_coeffs {
+        ch.fir_coeffs = Some(convolve(existing, &phase_fir));
+    } else {
+        ch.fir_coeffs = Some(phase_fir);
+    }
+}
+
+/// Linear convolution of two FIR filters.
+fn convolve(a: &[f64], b: &[f64]) -> Vec<f64> {
+    let len = a.len() + b.len() - 1;
+    let mut out = vec![0.0; len];
+    for (i, &av) in a.iter().enumerate() {
+        for (j, &bv) in b.iter().enumerate() {
+            out[i + j] += av * bv;
+        }
+    }
+    out
+}
+
 /// Threshold in dB above which to warn about channel level differences
 const LEVEL_DIFFERENCE_WARNING_THRESHOLD: f64 = 6.0;
 
@@ -522,10 +666,9 @@ pub fn optimize_room(
                         )),
                     },
                 );
-                // Workflows only do IIR. If FIR/mixed mode is requested, post-generate
-                // FIR coefficients for each channel from its initial measurement curve.
-                // MixedPhase handles its own FIR generation internally.
-                if !matches!(config.optimizer.processing_mode, ProcessingMode::LowLatency | ProcessingMode::MixedPhase) {
+                // Workflows only do IIR. If FIR/Hybrid mode is requested, post-generate
+                // full FIR coefficients for each channel.
+                if matches!(config.optimizer.processing_mode, ProcessingMode::PhaseLinear | ProcessingMode::Hybrid) {
                     let out_dir = output_dir.unwrap_or(Path::new("."));
                     for (name, ch) in result.channel_results.iter_mut() {
                         if ch.fir_coeffs.is_some() {
@@ -542,6 +685,46 @@ pub fn optimize_room(
                         );
                     }
                 }
+                // MixedPhase: post-generate short excess-phase FIR for each channel
+                // and add convolution plugin to the DSP chain.
+                if config.optimizer.processing_mode == ProcessingMode::MixedPhase {
+                    let out_dir = output_dir.unwrap_or(Path::new("."));
+                    for (name, ch) in result.channel_results.iter_mut() {
+                        if ch.fir_coeffs.is_some() {
+                            continue;
+                        }
+                        ch.fir_coeffs = post_generate_mixed_phase_fir(
+                            name,
+                            &ch.initial_curve,
+                            &config.optimizer,
+                            sample_rate,
+                            Some(out_dir),
+                        );
+                        if ch.fir_coeffs.is_some() {
+                            if let Some(chain) = result.channels.get_mut(name) {
+                                let filename = format!("{}_excess_phase_fir.wav", name);
+                                chain.plugins.push(
+                                    super::output::create_convolution_plugin(&filename),
+                                );
+                            }
+                        }
+                    }
+                }
+                // Standalone phase correction (rePhase-style)
+                if let Some(ref pc_config) = config.optimizer.phase_correction {
+                    let out_dir = output_dir.unwrap_or(Path::new("."));
+                    let names: Vec<String> = result.channel_results.keys().cloned().collect();
+                    for name in &names {
+                        if let Some(ch) = result.channel_results.get_mut(name)
+                            && let Some(chain) = result.channels.get_mut(name)
+                        {
+                            apply_phase_correction(
+                                name, ch, chain, pc_config, sample_rate, Some(out_dir),
+                            );
+                        }
+                    }
+                }
+
                 // Compute IR waveforms for the workflow result
                 for (channel_name, ch_result) in &result.channel_results {
                     let delay_ms = result
@@ -1199,6 +1382,20 @@ pub fn optimize_room(
                 warn!(
                     "GD-Opt: Channel '{}' or '{}' not found in results",
                     sub_name, main_name
+                );
+            }
+        }
+    }
+
+    // Standalone phase correction (rePhase-style)
+    if let Some(ref pc_config) = config.optimizer.phase_correction {
+        let names: Vec<String> = channel_results.keys().cloned().collect();
+        for name in &names {
+            if let Some(ch) = channel_results.get_mut(name.as_str())
+                && let Some(chain) = channel_chains.get_mut(name.as_str())
+            {
+                apply_phase_correction(
+                    name, ch, chain, pc_config, sample_rate, output_dir,
                 );
             }
         }
