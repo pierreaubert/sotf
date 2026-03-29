@@ -5820,14 +5820,14 @@ dependencies = [
 
 [[package]]
 name = "math-delaunay"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "delaunator",
 ]
 
 [[package]]
 name = "math-dsp"
-version = "0.4.9"
+version = "0.5.10"
 dependencies = [
  "approx",
  "clap",
@@ -5846,7 +5846,7 @@ dependencies = [
 
 [[package]]
 name = "math-iir-fir"
-version = "0.4.7"
+version = "0.5.9"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -5854,6 +5854,7 @@ dependencies = [
  "hound",
  "ndarray",
  "num-complex 0.4.6",
+ "num-traits",
  "rustfft 6.4.1",
  "serde",
  "thiserror 2.0.18",
@@ -5861,7 +5862,7 @@ dependencies = [
 
 [[package]]
 name = "math-optimisation"
-version = "0.4.1"
+version = "0.5.1"
 dependencies = [
  "clap",
  "directories",
@@ -5876,11 +5877,14 @@ dependencies = [
 
 [[package]]
 name = "math-rir"
-version = "0.4.0"
+version = "0.5.2"
+dependencies = [
+ "math-iir-fir",
+]
 
 [[package]]
 name = "math-test-functions"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "clap",
  "directories",

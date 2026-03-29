@@ -12,6 +12,9 @@ from .figures import (
     create_comparison_overlay_figure,
     create_comparison_zoomed_figure,
     create_comparison_eq_overlay_figure,
+    create_comparison_phase_figure,
+    create_comparison_group_delay_figure,
+    create_comparison_ir_figure,
     create_mode_subplots_figure,
     create_score_comparison_figure,
     _mode_label,
@@ -552,11 +555,26 @@ def create_comparison_html_report(
         html_parts.append(f'<div class="plot-container">{fig_zoom.to_html(full_html=False, include_plotlyjs=False)}</div>\n')
         html_parts.append("</div>\n")
 
-        # 2. Per-mode subplots
+        # 2. Phase before/after per mode
+        fig_phase = create_comparison_phase_figure(ch_name, mode_data)
+        if fig_phase:
+            html_parts.append(f'<div class="plot-container">{fig_phase.to_html(full_html=False, include_plotlyjs=False)}</div>\n')
+
+        # 3. Group delay before/after per mode
+        fig_gd = create_comparison_group_delay_figure(ch_name, mode_data)
+        if fig_gd:
+            html_parts.append(f'<div class="plot-container">{fig_gd.to_html(full_html=False, include_plotlyjs=False)}</div>\n')
+
+        # 4. Impulse response before/after per mode
+        fig_ir = create_comparison_ir_figure(ch_name, mode_data)
+        if fig_ir:
+            html_parts.append(f'<div class="plot-container">{fig_ir.to_html(full_html=False, include_plotlyjs=False)}</div>\n')
+
+        # 5. Per-mode subplots
         fig_subplots = create_mode_subplots_figure(ch_name, mode_data)
         html_parts.append(f'<div class="plot-container">{fig_subplots.to_html(full_html=False, include_plotlyjs=False)}</div>\n')
 
-        # 3. EQ response overlay
+        # 6. EQ response overlay
         fig_eq = create_comparison_eq_overlay_figure(ch_name, mode_data)
         if fig_eq:
             html_parts.append(f'<div class="plot-container">{fig_eq.to_html(full_html=False, include_plotlyjs=False)}</div>\n')

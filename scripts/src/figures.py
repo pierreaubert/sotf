@@ -9,6 +9,7 @@ from . import SMOOTHING_OPTIONS, DEFAULT_SMOOTHING
 from .dsp import (
     smooth_octave,
     compute_eq_response,
+    compute_group_delay,
     generate_freq_points,
 )
 from .data_extract import (
@@ -1398,6 +1399,213 @@ def create_mode_subplots_figure(
     fig.update_yaxes(title_text="SPL (dB)", title_font=dict(size=10), row=1, col=1)
     fig.update_layout(
         title=dict(text=f"{channel_name}: Per-Mode Detail", font=dict(size=14)),
+        plot_bgcolor="white", paper_bgcolor="white", height=350,
+        margin=dict(l=60, r=30, t=60, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5, font=dict(size=9)),
+    )
+    return fig
+
+
+def create_comparison_phase_figure(
+    channel_name: str,
+    mode_data: list[tuple[str, dict]],
+) -> go.Figure | None:
+    """Create a 1xN subplot grid showing phase before/after for each mode."""
+    # Check if any mode has phase data
+    has_phase = False
+    for _, ch_data in mode_data:
+        for key in ("initial_curve", "final_curve"):
+            curve = ch_data.get(key)
+            if curve and curve.get("phase"):
+                has_phase = True
+                break
+        if has_phase:
+            break
+    if not has_phase:
+        return None
+
+    n_modes = len(mode_data)
+    titles = [_mode_label(name) for name, _ in mode_data]
+    fig = make_subplots(rows=1, cols=n_modes, subplot_titles=titles, horizontal_spacing=0.05)
+
+    for col, (mode_name, ch_data) in enumerate(mode_data, start=1):
+        initial_curve = ch_data.get("initial_curve")
+        final_curve = ch_data.get("final_curve")
+        color = _mode_color(mode_name)
+
+        if initial_curve and initial_curve.get("phase"):
+            phase_sm = smooth_octave(initial_curve["freq"], initial_curve["phase"], 1.0 / 3.0)
+            fig.add_trace(go.Scatter(
+                x=initial_curve["freq"], y=phase_sm, mode="lines",
+                name="Before EQ", line=dict(color="rgba(200, 200, 200, 0.6)", width=1.5),
+                showlegend=(col == 1), legendgroup="phase_before",
+            ), row=1, col=col)
+
+        if final_curve and final_curve.get("phase"):
+            phase_sm = smooth_octave(final_curve["freq"], final_curve["phase"], 1.0 / 3.0)
+            fig.add_trace(go.Scatter(
+                x=final_curve["freq"], y=phase_sm, mode="lines",
+                name=_mode_label(mode_name), line=dict(color=color, width=2),
+                showlegend=(col == 1), legendgroup=f"phase_{mode_name}",
+            ), row=1, col=col)
+
+        fig.update_xaxes(
+            type="log", tickvals=[20, 100, 500, 2000, 10000],
+            ticktext=["20", "100", "500", "2k", "10k"], tickfont=dict(size=9),
+            gridcolor="rgba(128, 128, 128, 0.2)", range=[1.3, 4.3], row=1, col=col,
+        )
+        fig.update_yaxes(
+            tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
+            row=1, col=col,
+        )
+
+    fig.update_yaxes(title_text="Phase (\u00b0)", title_font=dict(size=10), row=1, col=1)
+    fig.update_layout(
+        title=dict(text=f"{channel_name}: Phase Before / After EQ", font=dict(size=14)),
+        plot_bgcolor="white", paper_bgcolor="white", height=350,
+        margin=dict(l=60, r=30, t=60, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5, font=dict(size=9)),
+    )
+    return fig
+
+
+def create_comparison_group_delay_figure(
+    channel_name: str,
+    mode_data: list[tuple[str, dict]],
+) -> go.Figure | None:
+    """Create a 1xN subplot grid showing group delay before/after for each mode.
+
+    Group delay is computed from unwrapped phase: GD = -d(phase)/d(omega).
+    """
+    has_phase = False
+    for _, ch_data in mode_data:
+        for key in ("initial_curve", "final_curve"):
+            curve = ch_data.get(key)
+            if curve and curve.get("phase"):
+                has_phase = True
+                break
+        if has_phase:
+            break
+    if not has_phase:
+        return None
+
+    n_modes = len(mode_data)
+    titles = [_mode_label(name) for name, _ in mode_data]
+    fig = make_subplots(rows=1, cols=n_modes, subplot_titles=titles, horizontal_spacing=0.05)
+
+    all_gd: list[list[float]] = []
+
+    for col, (mode_name, ch_data) in enumerate(mode_data, start=1):
+        initial_curve = ch_data.get("initial_curve")
+        final_curve = ch_data.get("final_curve")
+        color = _mode_color(mode_name)
+
+        if initial_curve and initial_curve.get("phase"):
+            gd_freq, gd_ms = compute_group_delay(initial_curve["freq"], initial_curve["phase"])
+            if gd_freq:
+                gd_sm = smooth_octave(gd_freq, gd_ms, 1.0 / 3.0)
+                all_gd.append(gd_sm)
+                fig.add_trace(go.Scatter(
+                    x=gd_freq, y=gd_sm, mode="lines",
+                    name="Before EQ", line=dict(color="rgba(200, 200, 200, 0.6)", width=1.5),
+                    showlegend=(col == 1), legendgroup="gd_before",
+                ), row=1, col=col)
+
+        if final_curve and final_curve.get("phase"):
+            gd_freq, gd_ms = compute_group_delay(final_curve["freq"], final_curve["phase"])
+            if gd_freq:
+                gd_sm = smooth_octave(gd_freq, gd_ms, 1.0 / 3.0)
+                all_gd.append(gd_sm)
+                fig.add_trace(go.Scatter(
+                    x=gd_freq, y=gd_sm, mode="lines",
+                    name=_mode_label(mode_name), line=dict(color=color, width=2),
+                    showlegend=(col == 1), legendgroup=f"gd_{mode_name}",
+                ), row=1, col=col)
+
+        fig.update_xaxes(
+            type="log", tickvals=[20, 100, 500, 2000, 10000],
+            ticktext=["20", "100", "500", "2k", "10k"], tickfont=dict(size=9),
+            gridcolor="rgba(128, 128, 128, 0.2)", range=[1.3, 4.3], row=1, col=col,
+        )
+        fig.update_yaxes(
+            tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
+            row=1, col=col,
+        )
+
+    # Compute a shared y-range from all GD data
+    if all_gd:
+        flat = [v for gd in all_gd for v in gd]
+        # Clip outliers for display
+        sorted_vals = sorted(flat)
+        n = len(sorted_vals)
+        lo = sorted_vals[max(0, int(n * 0.02))]
+        hi = sorted_vals[min(n - 1, int(n * 0.98))]
+        margin = (hi - lo) * 0.15
+        y_lo = lo - margin
+        y_hi = hi + margin
+        for col in range(1, n_modes + 1):
+            fig.update_yaxes(range=[y_lo, y_hi], row=1, col=col)
+
+    fig.update_yaxes(title_text="Group Delay (ms)", title_font=dict(size=10), row=1, col=1)
+    fig.update_layout(
+        title=dict(text=f"{channel_name}: Group Delay Before / After EQ", font=dict(size=14)),
+        plot_bgcolor="white", paper_bgcolor="white", height=350,
+        margin=dict(l=60, r=30, t=60, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5, font=dict(size=9)),
+    )
+    return fig
+
+
+def create_comparison_ir_figure(
+    channel_name: str,
+    mode_data: list[tuple[str, dict]],
+    display_ms: float = 100.0,
+) -> go.Figure | None:
+    """Create a 1xN subplot grid showing impulse response before/after for each mode."""
+    has_ir = False
+    for _, ch_data in mode_data:
+        if ch_data.get("pre_ir") or ch_data.get("post_ir"):
+            has_ir = True
+            break
+    if not has_ir:
+        return None
+
+    n_modes = len(mode_data)
+    titles = [_mode_label(name) for name, _ in mode_data]
+    fig = make_subplots(rows=1, cols=n_modes, subplot_titles=titles, horizontal_spacing=0.05)
+
+    for col, (mode_name, ch_data) in enumerate(mode_data, start=1):
+        pre_ir = ch_data.get("pre_ir")
+        post_ir = ch_data.get("post_ir")
+        color = _mode_color(mode_name)
+
+        if pre_ir:
+            fig.add_trace(go.Scatter(
+                x=pre_ir["time_ms"], y=pre_ir["amplitude"], mode="lines",
+                name="Before EQ", line=dict(color="rgba(200, 200, 200, 0.6)", width=1),
+                showlegend=(col == 1), legendgroup="ir_before",
+            ), row=1, col=col)
+
+        if post_ir:
+            fig.add_trace(go.Scatter(
+                x=post_ir["time_ms"], y=post_ir["amplitude"], mode="lines",
+                name=_mode_label(mode_name), line=dict(color=color, width=1),
+                showlegend=(col == 1), legendgroup=f"ir_{mode_name}",
+            ), row=1, col=col)
+
+        fig.update_xaxes(
+            title_text="Time (ms)" if col == 1 else None,
+            tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
+            range=[0, display_ms], row=1, col=col,
+        )
+        fig.update_yaxes(
+            tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
+            range=[-1.1, 1.1], row=1, col=col,
+        )
+
+    fig.update_yaxes(title_text="Amplitude", title_font=dict(size=10), row=1, col=1)
+    fig.update_layout(
+        title=dict(text=f"{channel_name}: Impulse Response Before / After EQ", font=dict(size=14)),
         plot_bgcolor="white", paper_bgcolor="white", height=350,
         margin=dict(l=60, r=30, t=60, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5, font=dict(size=9)),

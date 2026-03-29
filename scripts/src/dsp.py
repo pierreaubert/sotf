@@ -160,6 +160,57 @@ def compute_eq_response(
     return combined_db
 
 
+def unwrap_phase(phase_deg: list[float]) -> list[float]:
+    """Unwrap phase in degrees to remove discontinuities.
+
+    Handles arbitrarily large jumps by rounding the correction to the
+    nearest multiple of 360 degrees.
+    """
+    if not phase_deg:
+        return phase_deg
+    unwrapped = [phase_deg[0]]
+    for i in range(1, len(phase_deg)):
+        diff = phase_deg[i] - unwrapped[-1]
+        # Round to nearest multiple of 360 to remove wrapping
+        correction = round(diff / 360.0) * 360.0
+        unwrapped.append(phase_deg[i] - correction)
+    return unwrapped
+
+
+def compute_group_delay(
+    freq: list[float], phase_deg: list[float],
+) -> tuple[list[float], list[float]]:
+    """Compute group delay from frequency and phase data.
+
+    Group delay = -d(phase)/d(omega), where omega = 2*pi*f.
+    Phase is unwrapped before differentiation.
+
+    Returns:
+        (freq_out, gd_ms): Frequency points and group delay in milliseconds.
+        Output has len(freq)-1 points (centered between input points).
+    """
+    if len(freq) < 2 or len(phase_deg) < 2:
+        return [], []
+
+    unwrapped = unwrap_phase(phase_deg)
+
+    freq_out: list[float] = []
+    gd_ms: list[float] = []
+    for i in range(len(freq) - 1):
+        f0, f1 = freq[i], freq[i + 1]
+        if f0 <= 0 or f1 <= 0 or f1 == f0:
+            continue
+        omega0 = 2 * math.pi * f0
+        omega1 = 2 * math.pi * f1
+        dphi = math.radians(unwrapped[i + 1] - unwrapped[i])
+        domega = omega1 - omega0
+        gd_s = -dphi / domega
+        freq_out.append(math.sqrt(f0 * f1))  # geometric mean
+        gd_ms.append(gd_s * 1000.0)
+
+    return freq_out, gd_ms
+
+
 def generate_freq_points(min_freq: float = 20.0, max_freq: float = 20000.0, n_points: int = 200) -> list[float]:
     """Generate logarithmically spaced frequency points."""
     log_min = math.log10(min_freq)
