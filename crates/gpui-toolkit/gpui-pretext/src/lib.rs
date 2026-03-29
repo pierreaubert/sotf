@@ -1,0 +1,52 @@
+/// gpui-pretext: High-performance text measurement and multiline layout.
+///
+/// Rust port of [chenglou/pretext](https://github.com/chenglou/pretext).
+///
+/// # Architecture
+///
+/// Two-phase approach for efficient text layout:
+///
+/// 1. **Prepare phase** ([`prepare`] / [`prepare_with_segments`]):
+///    Segments text, measures segment widths via a [`TextMeasure`] implementation,
+///    and caches all width data. Run once per text block.
+///
+/// 2. **Layout phase** ([`layout`] / [`layout_with_lines`] / [`layout_next_line`]):
+///    Pure arithmetic line breaking using cached widths. Fast enough to run on
+///    every resize.
+///
+/// # Usage
+///
+/// ```rust,no_run
+/// use gpui_pretext::{prepare, layout, TextMeasure, EngineProfile, PrepareOptions};
+///
+/// struct MyMeasure; // Backed by your text rendering system
+/// impl TextMeasure for MyMeasure {
+///     fn measure_width(&self, text: &str) -> f64 {
+///         text.len() as f64 * 8.0 // placeholder
+///     }
+/// }
+///
+/// let measure = MyMeasure;
+/// let profile = EngineProfile::default();
+/// let options = PrepareOptions::default();
+///
+/// let prepared = prepare("Hello, world!", &measure, &profile, &options);
+/// let result = layout(&prepared, 100.0, 20.0, &profile);
+/// println!("Lines: {}, Height: {}", result.line_count, result.height);
+/// ```
+pub mod analysis;
+pub mod bidi;
+pub mod layout;
+#[allow(unused_assignments, unused_variables, unused_mut)]
+pub mod line_break;
+pub mod measurement;
+
+// Re-export the main public API at the crate root
+pub use analysis::{SegmentBreakKind, WhiteSpaceMode};
+pub use layout::{
+    layout, layout_next_line, layout_with_lines, prepare, prepare_with_segments,
+    profile_prepare, walk_line_ranges, LayoutCursor, LayoutLine, LayoutLineRange,
+    LayoutLinesResult, LayoutResult, PrepareOptions, PrepareProfile, PreparedText,
+    PreparedTextWithSegments,
+};
+pub use measurement::{EngineProfile, TextMeasure};
