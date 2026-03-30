@@ -29,8 +29,8 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-// Core types and configuration
-mod types;
+// Core types and configuration (modular)
+pub mod types;
 pub use types::*;
 // Re-export RecordingConfiguration explicitly for clarity
 pub use types::RecordingConfiguration;

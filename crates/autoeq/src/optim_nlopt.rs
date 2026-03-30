@@ -1,10 +1,10 @@
 // NLOPT-specific optimization code
 
 use super::constraints::{
-    CeilingConstraintData, CrossoverMonotonicityConstraintData, MinGainConstraintData,
     constraint_ceiling, constraint_crossover_monotonicity, constraint_min_gain,
+    CeilingConstraintData, CrossoverMonotonicityConstraintData, MinGainConstraintData,
 };
-use super::optim::{ObjectiveData, PenaltyMode, compute_fitness_penalties};
+use super::optim::{compute_fitness_penalties, ObjectiveData, PenaltyMode};
 use crate::LossType;
 use nlopt::{Algorithm, Nlopt, Target};
 
@@ -91,22 +91,35 @@ pub fn optimize_filters_nlopt(
 
     // Register inequality constraints when not using penalties.
     if !use_penalties {
-        let _ = optimizer.add_inequality_constraint(constraint_ceiling, ceiling_data, 1e-6);
-        // let _ = optimizer.add_inequality_constraint(constraint_spacing, spacing_data, 1e-9);
-        let _ = optimizer.add_inequality_constraint(constraint_min_gain, min_gain_data, 1e-6);
+        if let Err(e) = optimizer.add_inequality_constraint(constraint_ceiling, ceiling_data, 1e-6)
+        {
+            log::warn!("Failed to add ceiling constraint: {:?}", e);
+        }
+        // Note: spacing constraint disabled - not yet implemented
+        if let Err(e) =
+            optimizer.add_inequality_constraint(constraint_min_gain, min_gain_data, 1e-6)
+        {
+            log::warn!("Failed to add min gain constraint: {:?}", e);
+        }
 
         // Add crossover monotonicity constraint for multi-driver optimization
-        if let Some(xover_data) = crossover_monotonicity_data {
-            let _ = optimizer.add_inequality_constraint(
+        if let Some(xover_data) = crossover_monotonicity_data
+            && let Err(e) = optimizer.add_inequality_constraint(
                 constraint_crossover_monotonicity,
                 xover_data,
                 1e-6,
-            );
+            )
+        {
+            log::warn!("Failed to add crossover monotonicity constraint: {:?}", e);
         }
     }
 
-    let _ = optimizer.set_population(population);
-    let _ = optimizer.set_maxeval(maxeval as u32);
+    if let Err(e) = optimizer.set_population(population) {
+        log::warn!("Failed to set population size {}: {:?}", population, e);
+    }
+    if let Err(e) = optimizer.set_maxeval(maxeval as u32) {
+        log::warn!("Failed to set max evaluations {}: {:?}", maxeval, e);
+    }
     // Stopping criteria - these should never fail with valid positive values
     optimizer
         .set_stopval(1e-4)

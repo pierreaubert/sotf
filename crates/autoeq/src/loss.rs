@@ -16,10 +16,10 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::Curve;
 use crate::cea2034 as score;
 use crate::error::{AutoeqError, Result};
 use crate::read;
+use crate::Curve;
 use clap::ValueEnum;
 use ndarray::{Array1, Zip};
 use num_complex::Complex64;
@@ -318,6 +318,13 @@ pub fn mixed_loss(
     }
 }
 
+/// Default bass/treble split frequency in Hz.
+///
+/// This is a heuristic split point - bass frequencies are weighted more heavily
+/// because room acoustics are typically more problematic in the low frequencies.
+/// The value of 3000 Hz is based on practical experience but is somewhat arbitrary.
+const DEFAULT_BASS_TREBLE_SPLIT_HZ: f64 = 3000.0;
+
 /// Compute weighted mean squared error with frequency-dependent weighting within a frequency range
 ///
 /// # Arguments
@@ -331,13 +338,41 @@ pub fn mixed_loss(
 ///
 /// # Details
 /// Filters frequencies to the specified range, then computes RMS error separately
-/// for frequencies below and above 3000 Hz, with higher weight given to the lower frequency band.
+/// for frequencies below and above the bass/treble split (default 3000 Hz),
+/// with higher weight given to the lower frequency band.
 /// If the frequency range excludes all data points, returns 0.0.
 fn weighted_mse(freqs: &Array1<f64>, error: &Array1<f64>, min_freq: f64, max_freq: f64) -> f64 {
+    weighted_mse_with_split(
+        freqs,
+        error,
+        min_freq,
+        max_freq,
+        DEFAULT_BASS_TREBLE_SPLIT_HZ,
+    )
+}
+
+/// Compute weighted mean squared error with configurable bass/treble split frequency
+///
+/// # Arguments
+/// * `freqs` - Frequency points in Hz
+/// * `error` - Error values at each frequency point
+/// * `min_freq` - Minimum frequency in Hz (inclusive)
+/// * `max_freq` - Maximum frequency in Hz (inclusive)
+/// * `bass_treble_split_hz` - Frequency in Hz that divides bass and treble bands
+///
+/// # Returns
+/// * Weighted error value computed only for frequencies within [min_freq, max_freq]
+fn weighted_mse_with_split(
+    freqs: &Array1<f64>,
+    error: &Array1<f64>,
+    min_freq: f64,
+    max_freq: f64,
+    bass_treble_split_hz: f64,
+) -> f64 {
     // Create masks for frequency bands using ndarray's vectorized operations
     let _in_range = freqs.mapv(|f| f >= min_freq && f <= max_freq);
-    let bass_band = freqs.mapv(|f| f < 3000.0 && f >= min_freq && f <= max_freq);
-    let treble_band = freqs.mapv(|f| f >= 3000.0 && f >= min_freq && f <= max_freq);
+    let bass_band = freqs.mapv(|f| f < bass_treble_split_hz && f >= min_freq && f <= max_freq);
+    let treble_band = freqs.mapv(|f| f >= bass_treble_split_hz && f >= min_freq && f <= max_freq);
 
     // Count points in each band
     let n1: usize = bass_band.iter().filter(|&&b| b).count();
@@ -430,9 +465,28 @@ pub fn weighted_mse_asymmetric(
     max_freq: f64,
     config: &AsymmetricLossConfig,
 ) -> f64 {
+    weighted_mse_asymmetric_with_split(
+        freqs,
+        error,
+        min_freq,
+        max_freq,
+        config,
+        DEFAULT_BASS_TREBLE_SPLIT_HZ,
+    )
+}
+
+/// Compute asymmetric weighted mean squared error with configurable bass/treble split
+pub fn weighted_mse_asymmetric_with_split(
+    freqs: &Array1<f64>,
+    error: &Array1<f64>,
+    min_freq: f64,
+    max_freq: f64,
+    config: &AsymmetricLossConfig,
+    bass_treble_split_hz: f64,
+) -> f64 {
     // Create masks for frequency bands
-    let bass_band = freqs.mapv(|f| f < 3000.0 && f >= min_freq && f <= max_freq);
-    let treble_band = freqs.mapv(|f| f >= 3000.0 && f >= min_freq && f <= max_freq);
+    let bass_band = freqs.mapv(|f| f < bass_treble_split_hz && f >= min_freq && f <= max_freq);
+    let treble_band = freqs.mapv(|f| f >= bass_treble_split_hz && f >= min_freq && f <= max_freq);
 
     // Count points in each band
     let n1: usize = bass_band.iter().filter(|&&b| b).count();
@@ -1057,8 +1111,8 @@ pub fn headphone_loss_with_target(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::Array1;
     use ndarray::array;
+    use ndarray::Array1;
     use std::collections::HashMap;
 
     #[test]
@@ -1382,7 +1436,7 @@ mod tests {
         let freqs = array![1000.0, 2000.0, 4000.0, 8000.0];
         let err = array![1.0, 1.0, 1.0, 1.0];
         let v = weighted_mse(&freqs, &err, 100.0, 10000.0); // Full range
-        // RMS below = 1, RMS above = 1 -> total = 1 + 1/3 = 1.333...
+                                                            // RMS below = 1, RMS above = 1 -> total = 1 + 1/3 = 1.333...
         assert!((v - (1.0 + 1.0 / 3.0)).abs() < 1e-12, "got {}", v);
     }
 
@@ -1606,7 +1660,11 @@ mod tests {
         let error = Array1::from_vec(vec![2.0, 2.0, 2.0]);
         let result = weighted_mse(&freqs, &error, 4000.0, 16000.0);
         // With all treble, should return err2 (not err2/3)
-        assert!((result - 2.0).abs() < 1e-10, "treble-only loss should be full RMS, got {}", result);
+        assert!(
+            (result - 2.0).abs() < 1e-10,
+            "treble-only loss should be full RMS, got {}",
+            result
+        );
     }
 
     #[test]
@@ -1616,7 +1674,11 @@ mod tests {
         let error = Array1::from_vec(vec![3.0, 3.0, 3.0]);
         let result = weighted_mse(&freqs, &error, 100.0, 2000.0);
         // With all bass, should return err1
-        assert!((result - 3.0).abs() < 1e-10, "bass-only loss should be full RMS, got {}", result);
+        assert!(
+            (result - 3.0).abs() < 1e-10,
+            "bass-only loss should be full RMS, got {}",
+            result
+        );
     }
 
     #[test]
@@ -1627,7 +1689,11 @@ mod tests {
         let result = weighted_mse(&freqs, &error, 100.0, 10000.0);
         // err1 (bass RMS) = 3.0, err2 (treble RMS) = 6.0
         // result = 3.0 + 6.0/3.0 = 5.0
-        assert!((result - 5.0).abs() < 1e-10, "two-band loss incorrect, got {}", result);
+        assert!(
+            (result - 5.0).abs() < 1e-10,
+            "two-band loss incorrect, got {}",
+            result
+        );
     }
 
     #[test]
@@ -1636,6 +1702,10 @@ mod tests {
         let freq = Array1::from_vec(vec![1000.0, 1000.0, 1000.0]);
         let y = Array1::from_vec(vec![80.0, 85.0, 90.0]);
         let result = regression_slope_per_octave_in_range(&freq, &y, 999.0, 1001.0);
-        assert!(result.is_none(), "identical frequencies should return None, got {:?}", result);
+        assert!(
+            result.is_none(),
+            "identical frequencies should return None, got {:?}",
+            result
+        );
     }
 }

@@ -332,6 +332,16 @@ pub struct MultiObjectiveData {
 ///
 /// Different optimizers require different penalty weights depending on whether
 /// they support native constraints or need penalty-based enforcement.
+///
+/// # Penalty Scale Rationale
+///
+/// - **Disabled**: Optimizers with native constraint support (DE) - penalties are handled by the optimizer
+/// - **Standard**: Traditional optimizers (NLOPT algorithms like COBYLA, Nelder-Mead) - use 1e4 scale
+/// - **Pso**: Particle Swarm Optimization - uses 5e2 scale because PSO needs more exploration space
+///
+/// The penalty weight determines how strongly constraint violations are penalized.
+/// Higher weights push the optimizer away from constraint violations but can also
+/// restrict exploration of the solution space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PenaltyMode {
     /// Disable all penalties (use native constraints)
@@ -342,30 +352,41 @@ pub enum PenaltyMode {
     Pso,
 }
 
+impl PenaltyMode {
+    /// Ceiling penalty weight - penalizes exceeding the target response ceiling
+    pub const fn ceiling_weight(&self) -> f64 {
+        match self {
+            PenaltyMode::Disabled => 0.0,
+            PenaltyMode::Standard => 1e4,
+            PenaltyMode::Pso => 5e2,
+        }
+    }
+
+    /// Minimum gain penalty weight - penalizes going below minimum gain
+    pub const fn mingain_weight(&self) -> f64 {
+        match self {
+            PenaltyMode::Disabled => 0.0,
+            PenaltyMode::Standard => 1e3,
+            PenaltyMode::Pso => 50.0,
+        }
+    }
+}
+
 impl ObjectiveData {
     /// Configure penalty weights based on the optimizer's requirements.
     ///
     /// Call this before optimization to set appropriate penalty weights.
     /// Use `PenaltyMode::Disabled` when the optimizer supports native constraints.
     pub fn configure_penalties(&mut self, mode: PenaltyMode) {
-        match mode {
-            PenaltyMode::Disabled => {
-                self.penalty_w_ceiling = 0.0;
-                self.penalty_w_spacing = 0.0;
-                self.penalty_w_mingain = 0.0;
-            }
-            PenaltyMode::Standard => {
-                self.penalty_w_ceiling = 1e4;
-                self.penalty_w_spacing = self.spacing_weight.max(0.0) * 1e3;
-                self.penalty_w_mingain = 1e3;
-            }
-            PenaltyMode::Pso => {
-                // PSO needs balanced penalties - not too harsh to allow exploration
-                self.penalty_w_ceiling = 5e2;
-                self.penalty_w_spacing = self.spacing_weight.max(0.0) * 5e2;
-                self.penalty_w_mingain = 50.0;
-            }
-        }
+        self.penalty_w_ceiling = mode.ceiling_weight();
+        self.penalty_w_mingain = mode.mingain_weight();
+        // Spacing weight is computed from spacing_weight config, scaled by mode
+        let spacing_scale = match mode {
+            PenaltyMode::Disabled => 0.0,
+            PenaltyMode::Standard => 1e3,
+            PenaltyMode::Pso => 5e2,
+        };
+        self.penalty_w_spacing = self.spacing_weight.max(0.0) * spacing_scale;
     }
 }
 

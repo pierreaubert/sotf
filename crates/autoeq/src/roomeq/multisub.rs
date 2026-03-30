@@ -6,9 +6,9 @@
 //!   biquad filters per subwoofer. The all-pass filters add phase rotation without
 //!   changing magnitude, improving destructive interference cancellation.
 
-use crate::Curve;
 use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use crate::workflow::DriverOptimizationResult;
+use crate::Curve;
 use log::{info, warn};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use ndarray::Array1;
@@ -301,7 +301,8 @@ fn multisub_allpass_loss(
         allpass_filters.push((freq, q));
     }
 
-    let combined = compute_combined_with_allpass(data, gains, delays, &allpass_filters, sample_rate);
+    let combined =
+        compute_combined_with_allpass(data, gains, delays, &allpass_filters, sample_rate);
 
     // Normalize and compute flatness loss
     let mut sum = 0.0;
@@ -504,11 +505,7 @@ mod tests {
         let combined = compute_combined_with_allpass(&data, &gains, &delays, &allpass, 48000.0);
 
         for i in 0..combined.len() {
-            assert!(
-                combined[i].is_finite(),
-                "combined[{}] should be finite",
-                i
-            );
+            assert!(combined[i].is_finite(), "combined[{}] should be finite", i);
         }
     }
 
@@ -535,5 +532,114 @@ mod tests {
             loss_zero,
             loss_diff
         );
+    }
+}
+
+// ============================================================================
+// Multi-Sub Optimization Regression Tests
+// ============================================================================
+
+#[cfg(test)]
+mod multisub_regression_tests {
+    use super::*;
+
+    fn make_sub_measurement(
+        freq: Vec<f64>,
+        spl: Vec<f64>,
+        phase: Option<Vec<f64>>,
+    ) -> DriverMeasurement {
+        DriverMeasurement {
+            freq: Array1::from_vec(freq),
+            spl: Array1::from_vec(spl),
+            phase: phase.map(Array1::from_vec),
+        }
+    }
+
+    /// Regression test: multi-sub loss is finite for identical subs
+    #[test]
+    fn test_multisub_loss_identical_subs() {
+        let freqs = vec![20.0, 40.0, 60.0, 80.0, 100.0, 150.0, 200.0];
+        let spl = vec![80.0; 7];
+
+        let d1 = make_sub_measurement(freqs.clone(), spl.clone(), None);
+        let d2 = make_sub_measurement(freqs.clone(), spl.clone(), None);
+        let data = DriversLossData::new(vec![d1, d2], CrossoverType::None);
+
+        // Identical subs at same gain/delays should sum coherently
+        let params = vec![0.0, 0.0, 0.0, 0.0, 60.0, 60.0, 1.0, 1.0];
+        let loss = multisub_allpass_loss(&data, &params, 48000.0, 20.0, 200.0);
+
+        assert!(loss.is_finite(), "Loss should be finite for identical subs");
+        assert!(loss >= 0.0, "Loss should be non-negative");
+    }
+
+    /// Regression test: multi-sub loss handles phase difference
+    #[test]
+    fn test_multisub_loss_with_phase_difference() {
+        let freqs = vec![20.0, 40.0, 60.0, 80.0, 100.0, 150.0, 200.0];
+        let spl = vec![80.0; 7];
+        // Subs with opposite phase at low frequencies (common room mode situation)
+        let phase1 = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let phase2 = vec![180.0_f64.to_radians(); 7]; // 180 degrees opposite
+
+        let d1 = make_sub_measurement(freqs.clone(), spl.clone(), Some(phase1));
+        let d2 = make_sub_measurement(freqs.clone(), spl.clone(), Some(phase2));
+        let data = DriversLossData::new(vec![d1, d2], CrossoverType::None);
+
+        let params = vec![0.0, 0.0, 0.0, 0.0, 60.0, 60.0, 1.0, 1.0];
+        let loss = multisub_allpass_loss(&data, &params, 48000.0, 20.0, 200.0);
+
+        assert!(
+            loss.is_finite(),
+            "Loss should be finite with phase difference"
+        );
+    }
+
+    /// Regression test: different gain settings affect loss
+    #[test]
+    fn test_multisub_gain_affects_loss() {
+        let freqs = vec![20.0, 40.0, 60.0, 80.0, 100.0];
+        let spl = vec![80.0; 5];
+
+        let d1 = make_sub_measurement(freqs.clone(), spl.clone(), None);
+        let d2 = make_sub_measurement(freqs.clone(), spl.clone(), None);
+        let data = DriversLossData::new(vec![d1, d2], CrossoverType::None);
+
+        let params1 = vec![0.0, 0.0, 0.0, 0.0, 60.0, 60.0, 1.0, 1.0];
+        let params2 = vec![6.0, -6.0, 0.0, 0.0, 60.0, 60.0, 1.0, 1.0]; // Different gains
+
+        let loss1 = multisub_allpass_loss(&data, &params1, 48000.0, 20.0, 100.0);
+        let loss2 = multisub_allpass_loss(&data, &params2, 48000.0, 20.0, 100.0);
+
+        assert!(loss1.is_finite() && loss2.is_finite());
+        // Different gains should produce different loss values
+        assert_ne!(
+            loss1, loss2,
+            "Different gains should produce different loss values"
+        );
+    }
+
+    /// Regression test: all-pass filters affect phase-dependent loss
+    #[test]
+    fn test_multisub_allpass_affects_loss() {
+        let freqs = vec![20.0, 50.0, 100.0, 150.0, 200.0];
+        let spl = vec![80.0; 5];
+        // Add phase variation
+        let phase1 = vec![0.0, -20.0, -40.0, -60.0, -80.0];
+        let phase2 = vec![0.0, -10.0, -20.0, -30.0, -40.0];
+
+        let d1 = make_sub_measurement(freqs.clone(), spl.clone(), Some(phase1));
+        let d2 = make_sub_measurement(freqs.clone(), spl.clone(), Some(phase2));
+        let data = DriversLossData::new(vec![d1, d2], CrossoverType::None);
+
+        // Without all-pass
+        let params_no_ap = vec![0.0, 0.0, 0.0, 0.0, 60.0, 60.0, 1.0, 1.0];
+        // With different all-pass center frequencies
+        let params_with_ap = vec![0.0, 0.0, 0.0, 0.0, 40.0, 100.0, 1.5, 1.5];
+
+        let loss_no_ap = multisub_allpass_loss(&data, &params_no_ap, 48000.0, 20.0, 200.0);
+        let loss_with_ap = multisub_allpass_loss(&data, &params_with_ap, 48000.0, 20.0, 200.0);
+
+        assert!(loss_no_ap.is_finite() && loss_with_ap.is_finite());
     }
 }

@@ -2,10 +2,10 @@
 //!
 //! Provides per-channel PEQ optimization using autoeq's workflow.
 
-use crate::Curve;
 use crate::cli::{Args, PeqModel};
 use crate::loss::LossType;
 use crate::workflow::setup_objective_data;
+use crate::Curve;
 use clap::{Parser, ValueEnum};
 use log::debug;
 use math_audio_iir_fir::Biquad;
@@ -14,7 +14,9 @@ use std::error::Error;
 
 use super::impulse_analysis;
 use super::spatial_robustness::{self, SpatialRobustnessConfig};
-use super::types::{MultiMeasurementConfig, MultiMeasurementStrategy, OptimizerConfig, TargetCurveConfig};
+use super::types::{
+    MultiMeasurementConfig, MultiMeasurementStrategy, OptimizerConfig, TargetCurveConfig,
+};
 use crate::optim::MultiObjectiveData;
 use hound;
 use math_audio_iir_fir::Peq;
@@ -129,7 +131,9 @@ fn prepare_single_channel_eq(
                     )
                 }
                 None => {
-                    log::info!("  SSIR analysis failed, falling back to Schroeder-based decomposition");
+                    log::info!(
+                        "  SSIR analysis failed, falling back to Schroeder-based decomposition"
+                    );
                     impulse_analysis::analyze_decomposed_correction(
                         &normalized_curve_unsmoothed.freq,
                         &normalized_curve_unsmoothed.spl,
@@ -197,13 +201,11 @@ fn prepare_single_channel_eq(
                 }
             }
         }
-        None => {
-            Curve {
-                freq: normalized_curve.freq.clone(),
-                spl: Array1::zeros(normalized_curve.freq.len()),
-                phase: None,
-            }
-        }
+        None => Curve {
+            freq: normalized_curve.freq.clone(),
+            spl: Array1::zeros(normalized_curve.freq.len()),
+            phase: None,
+        },
     };
 
     // Parse loss type
@@ -306,7 +308,11 @@ fn run_optimization_pass(
             (msg, loss)
         }
     };
-    log::info!("  Global optimizer result: {} (loss={:.6})", converged_msg, global_loss);
+    log::info!(
+        "  Global optimizer result: {} (loss={:.6})",
+        converged_msg,
+        global_loss
+    );
 
     // Local refinement (COBYLA)
     let final_loss = if config.refine {
@@ -381,8 +387,7 @@ fn optimize_channel_eq_adaptive(
     );
 
     for k in 1..=max_filters {
-        let (filters, loss, _x) =
-            run_optimization_pass(&prep, k, budget_per_step, config, None)?;
+        let (filters, loss, _x) = run_optimization_pass(&prep, k, budget_per_step, config, None)?;
 
         let improvement = best_loss - loss;
         log::info!(
@@ -536,7 +541,14 @@ pub fn optimize_channel_eq_multi(
     target_config: Option<&TargetCurveConfig>,
     sample_rate: f64,
 ) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
-    optimize_channel_eq_multi_inner(curves, config, multi_config, target_config, sample_rate, None)
+    optimize_channel_eq_multi_inner(
+        curves,
+        config,
+        multi_config,
+        target_config,
+        sample_rate,
+        None,
+    )
 }
 
 /// Optimize EQ across multiple measurement curves with per-iteration progress callback
@@ -1023,12 +1035,8 @@ fn optimize_spatial_robustness(
             ) {
                 Ok(curve) => curve,
                 Err(_) => {
-                    let target =
-                        crate::read::read_curve_from_csv(&std::path::PathBuf::from(name))?;
-                    crate::read::normalize_and_interpolate_response(
-                        &normalized_curve.freq,
-                        &target,
-                    )
+                    let target = crate::read::read_curve_from_csv(&std::path::PathBuf::from(name))?;
+                    crate::read::normalize_and_interpolate_response(&normalized_curve.freq, &target)
                 }
             }
         }
@@ -1086,13 +1094,7 @@ fn optimize_spatial_robustness(
             cb,
         )
     } else {
-        crate::optim::optimize_filters(
-            &mut x,
-            &lower_bounds,
-            &upper_bounds,
-            objective_data,
-            &args,
-        )
+        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &args)
     };
 
     let (_converged_msg, final_loss) = match opt_result {
@@ -1175,9 +1177,8 @@ mod tests {
             ..config_no_refine.clone()
         };
 
-        let (filters_no, loss_no) =
-            optimize_channel_eq(&curve, &config_no_refine, None, 48000.0)
-                .expect("optimization should succeed");
+        let (filters_no, loss_no) = optimize_channel_eq(&curve, &config_no_refine, None, 48000.0)
+            .expect("optimization should succeed");
         let (filters_yes, loss_yes) =
             optimize_channel_eq(&curve, &config_with_refine, None, 48000.0)
                 .expect("optimization should succeed");
@@ -1219,6 +1220,334 @@ mod tests {
     }
 }
 
+// ============================================================================
+// Processing Mode Integration Tests
+// ============================================================================
+
+#[cfg(test)]
+mod processing_mode_tests {
+    use super::*;
+    use crate::roomeq::mixed_phase::MixedPhaseConfig;
+    use crate::roomeq::types::{FirConfig, ProcessingMode};
+
+    fn make_simple_room_curve() -> Curve {
+        let n = 100;
+        let log_min = 20.0_f64.ln();
+        let log_max = 20000.0_f64.ln();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| (log_min + (log_max - log_min) * i as f64 / (n - 1) as f64).exp())
+            .collect();
+        let spl: Vec<f64> = freqs
+            .iter()
+            .map(|&f| {
+                let mode = 10.0 * (-((f.log2() - 80.0_f64.log2()).powi(2) / 0.3).exp());
+                mode
+            })
+            .collect();
+        Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::from_vec(spl),
+            phase: None,
+        }
+    }
+
+    fn make_room_curve_with_phase() -> Curve {
+        let n = 100;
+        let log_min = 20.0_f64.ln();
+        let log_max = 20000.0_f64.ln();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| (log_min + (log_max - log_min) * i as f64 / (n - 1) as f64).exp())
+            .collect();
+        let spl: Vec<f64> = freqs
+            .iter()
+            .map(|&f| {
+                let mode = 10.0 * (-((f.log2() - 80.0_f64.log2()).powi(2) / 0.3).exp());
+                mode
+            })
+            .collect();
+        // Add minimum phase (negative group delay = phase leading)
+        let phase: Vec<f64> = freqs
+            .iter()
+            .map(|&f| -30.0 * (f / 1000.0).log10())
+            .collect();
+        Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::from_vec(spl),
+            phase: Some(Array1::from_vec(phase)),
+        }
+    }
+
+    /// Test LowLatency mode (IIR only) - default processing mode
+    #[test]
+    fn test_processing_mode_lowlatency_config() {
+        let config = OptimizerConfig {
+            processing_mode: ProcessingMode::LowLatency,
+            ..OptimizerConfig::default()
+        };
+        assert_eq!(config.processing_mode, ProcessingMode::LowLatency);
+    }
+
+    /// Test LowLatency mode produces valid IIR filters
+    #[test]
+    fn test_optimize_channel_eq_lowlatency() {
+        let curve = make_simple_room_curve();
+        let config = OptimizerConfig {
+            processing_mode: ProcessingMode::LowLatency,
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 3,
+            max_iter: 1000,
+            population: 10,
+            seed: Some(42),
+            ..OptimizerConfig::default()
+        };
+
+        let result = optimize_channel_eq(&curve, &config, None, 48000.0);
+        assert!(result.is_ok(), "LowLatency optimization should succeed");
+        let (filters, loss) = result.unwrap();
+        assert!(!filters.is_empty(), "should produce IIR filters");
+        assert!(loss.is_finite(), "loss should be finite, got {}", loss);
+    }
+
+    /// Test PhaseLinear mode configuration
+    #[test]
+    fn test_processing_mode_phaselinear_config() {
+        let fir_config = FirConfig {
+            taps: 4096,
+            phase: "kirkeby".to_string(),
+            correct_excess_phase: false,
+            phase_smoothing: 0.167,
+            pre_ringing: None,
+        };
+        let config = OptimizerConfig {
+            processing_mode: ProcessingMode::PhaseLinear,
+            fir: Some(fir_config),
+            ..OptimizerConfig::default()
+        };
+        assert_eq!(config.processing_mode, ProcessingMode::PhaseLinear);
+        assert!(config.fir.is_some());
+    }
+
+    /// Test Hybrid mode configuration
+    #[test]
+    fn test_processing_mode_hybrid_config() {
+        let fir_config = FirConfig {
+            taps: 4096,
+            phase: "kirkeby".to_string(),
+            correct_excess_phase: false,
+            phase_smoothing: 0.167,
+            pre_ringing: None,
+        };
+        let config = OptimizerConfig {
+            processing_mode: ProcessingMode::Hybrid,
+            fir: Some(fir_config),
+            ..OptimizerConfig::default()
+        };
+        assert_eq!(config.processing_mode, ProcessingMode::Hybrid);
+    }
+
+    /// Test MixedPhase mode configuration
+    #[test]
+    fn test_processing_mode_mixedphase_config() {
+        use crate::roomeq::types::MixedPhaseSerdeConfig;
+        let mixed_phase_config = MixedPhaseSerdeConfig {
+            max_fir_length_ms: 10.0,
+            pre_ringing_threshold_db: -30.0,
+            min_spatial_depth: 0.5,
+            phase_smoothing_octaves: 1.0 / 6.0,
+        };
+        let config = OptimizerConfig {
+            processing_mode: ProcessingMode::MixedPhase,
+            mixed_phase: Some(mixed_phase_config),
+            ..OptimizerConfig::default()
+        };
+        assert_eq!(config.processing_mode, ProcessingMode::MixedPhase);
+        assert!(config.mixed_phase.is_some());
+    }
+
+    /// Test MixedPhase mode requires phase data
+    #[test]
+    fn test_mixedphase_requires_phase_data() {
+        let curve_without_phase = make_simple_room_curve();
+        assert!(curve_without_phase.phase.is_none());
+
+        // MixedPhaseConfig should be used but decompose_phase will fail without phase
+        let config = MixedPhaseConfig::default();
+        let result = crate::roomeq::mixed_phase::decompose_phase(&curve_without_phase, &config);
+        assert!(result.is_err(), "MixedPhase should fail without phase data");
+    }
+
+    /// Test MixedPhase mode with phase data succeeds
+    #[test]
+    fn test_mixedphase_with_phase_data() {
+        let curve_with_phase = make_room_curve_with_phase();
+        assert!(curve_with_phase.phase.is_some());
+
+        let config = MixedPhaseConfig::default();
+        let result = crate::roomeq::mixed_phase::decompose_phase(&curve_with_phase, &config);
+        assert!(
+            result.is_ok(),
+            "MixedPhase should succeed with phase data: {:?}",
+            result.err()
+        );
+    }
+
+    /// Test that ProcessingMode enum has expected variants
+    #[test]
+    fn test_processing_mode_variants() {
+        // Verify all variants exist and can be compared
+        let modes = [
+            ProcessingMode::LowLatency,
+            ProcessingMode::PhaseLinear,
+            ProcessingMode::Hybrid,
+            ProcessingMode::MixedPhase,
+        ];
+
+        // Verify each variant is different from others
+        assert_ne!(modes[0], modes[1]);
+        assert_ne!(modes[0], modes[2]);
+        assert_ne!(modes[0], modes[3]);
+        assert_ne!(modes[1], modes[2]);
+        assert_ne!(modes[1], modes[3]);
+        assert_ne!(modes[2], modes[3]);
+    }
+}
+
+// ============================================================================
+// Regression Tests for Harman Target Curve
+// ============================================================================
+
+#[cfg(test)]
+mod harman_regression_tests {
+    use super::*;
+    use crate::roomeq::target_tilt::{
+        build_harman_target_curve, build_harman_target_curve_with_bass_boost,
+    };
+
+    fn make_curve_with_freqs(freqs: Vec<f64>, spl: Vec<f64>) -> Curve {
+        Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::from_vec(spl),
+            phase: None,
+        }
+    }
+
+    /// Regression test: optimization should not produce NaN or Inf loss with Harman target
+    #[test]
+    fn test_harman_target_no_nan_loss() {
+        let freqs = vec![100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0];
+        let spl = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let curve = make_curve_with_freqs(freqs, spl);
+
+        let config = OptimizerConfig {
+            algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
+            num_filters: 3,
+            max_iter: 1000,
+            population: 10,
+            seed: Some(42),
+            tolerance: 1e-3,
+            atolerance: 1e-3,
+            ..OptimizerConfig::default()
+        };
+
+        let result = optimize_channel_eq(&curve, &config, None, 48000.0);
+        assert!(
+            result.is_ok(),
+            "Optimization should succeed with Harman target"
+        );
+
+        let (_, loss) = result.unwrap();
+        assert!(loss.is_finite(), "Loss should be finite, got {}", loss);
+        assert!(loss >= 0.0, "Loss should be non-negative");
+    }
+
+    /// Regression test: Harman target curve at reference frequency should be ~0 dB
+    #[test]
+    fn test_harman_target_reference_frequency() {
+        let freqs: Vec<f64> = (0..100)
+            .map(|i| 20.0 * (1000.0 / 20.0_f64).powf(i as f64 / 99.0))
+            .collect();
+        let curve = build_harman_target_curve(&Array1::from_vec(freqs.clone()));
+
+        // Find index closest to 1000 Hz (reference frequency)
+        let idx_ref = freqs
+            .iter()
+            .position(|f| (f - 1000.0).abs() < freqs[1] - freqs[0])
+            .unwrap_or(freqs.len() / 2);
+
+        // At reference frequency, target should be ~0 dB
+        assert!(
+            curve.spl[idx_ref].abs() < 0.1,
+            "At 1kHz reference, target should be ~0 dB, got {:.4}",
+            curve.spl[idx_ref]
+        );
+    }
+
+    /// Regression test: Harman target with bass boost adds bass below shelf freq
+    #[test]
+    fn test_harman_target_with_bass_boost() {
+        let freqs: Vec<f64> = (0..100)
+            .map(|i| 20.0 * (1000.0 / 20.0_f64).powf(i as f64 / 99.0))
+            .collect();
+        let curve =
+            build_harman_target_curve_with_bass_boost(&Array1::from_vec(freqs.clone()), 6.0);
+
+        // Use approximate frequency spacing to find close indices
+        let freq_step = freqs[1] - freqs[0];
+
+        // Find index close to 100 Hz (well below 200 Hz shelf)
+        let idx_bass = freqs
+            .iter()
+            .position(|f| (f - 100.0).abs() < freq_step * 2.0)
+            .unwrap_or(5);
+
+        // At 100 Hz, should have significant bass boost
+        assert!(
+            curve.spl[idx_bass] > 4.0,
+            "At 100Hz with +6dB bass boost, should have >4dB boost, got {:.2}",
+            curve.spl[idx_bass]
+        );
+
+        // Find index close to 1 kHz (should be near 0)
+        let idx_ref = freqs
+            .iter()
+            .position(|f| (f - 1000.0).abs() < freq_step * 2.0)
+            .unwrap_or(freqs.len() / 2);
+        assert!(
+            curve.spl[idx_ref].abs() < 0.5,
+            "At 1kHz reference, should be ~0 dB, got {:.4}",
+            curve.spl[idx_ref]
+        );
+    }
+
+    /// Regression test: Harman target has downward tilt at high frequencies
+    #[test]
+    fn test_harman_target_high_frequency_tilt() {
+        let freqs: Vec<f64> = (0..100)
+            .map(|i| 20.0 * (1000.0 / 20.0_f64).powf(i as f64 / 99.0))
+            .collect();
+        let curve = build_harman_target_curve(&Array1::from_vec(freqs.clone()));
+
+        let freq_step = freqs[1] - freqs[0];
+
+        // Find index close to 200 Hz (low frequency end)
+        let idx_low = freqs
+            .iter()
+            .position(|f| (f - 200.0).abs() < freq_step * 2.0)
+            .unwrap_or(10);
+        let idx_high = freqs.len() - 1;
+
+        // High frequency should have negative tilt relative to low frequency
+        assert!(
+            curve.spl[idx_high] < curve.spl[idx_low] - 1.0,
+            "High freq should be significantly below low freq (tilt), got low={:.2}, high={:.2}",
+            curve.spl[idx_low],
+            curve.spl[idx_high]
+        );
+    }
+}
+
 /// Try to run SSIR analysis on a measured WAV file.
 ///
 /// Returns None if the WAV can't be loaded or the RIR is too short for analysis.
@@ -1231,7 +1560,10 @@ fn try_ssir_analysis(
     let wav_sr = spec.sample_rate;
 
     let samples: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Float => reader.into_samples::<f32>().filter_map(|s| s.ok()).collect(),
+        hound::SampleFormat::Float => reader
+            .into_samples::<f32>()
+            .filter_map(|s| s.ok())
+            .collect(),
         hound::SampleFormat::Int => {
             let scale = 1.0 / (1i64 << (spec.bits_per_sample - 1)) as f32;
             reader
