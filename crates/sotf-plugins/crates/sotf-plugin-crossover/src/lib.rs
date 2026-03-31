@@ -57,12 +57,12 @@ pub struct CrossoverPlugin {
     cached_parameters: Vec<Parameter>,
 
     /// Single crossover for 2-way operation
-    crossover_2way: Lr4Crossover,
+    crossover_2way: Lr4Crossover<f32>,
     freq_smoother: LogSmoother,
 
     /// Multi-band crossover for 3-way and 4-way operation.
     /// None when in 2-way mode.
-    multiband: Option<MultibandLr4Crossover>,
+    multiband: Option<MultibandLr4Crossover<f32>>,
     extra_freq_smoothers: Vec<LogSmoother>,
 
     /// Sorted crossover frequencies for multi-way mode (including primary).
@@ -105,7 +105,7 @@ impl CrossoverPlugin {
         let num_bands = all_freqs.len() + 1;
 
         let (multiband, extra_smoothers) = if all_freqs.len() > 1 {
-            let mb = MultibandLr4Crossover::new(&all_freqs, sr, num_channels);
+            let mb = MultibandLr4Crossover::new(&all_freqs, sr as f32, num_channels);
             let smoothers: Vec<LogSmoother> = all_freqs
                 .iter()
                 .skip(1) // first freq uses the primary smoother
@@ -120,7 +120,7 @@ impl CrossoverPlugin {
             num_channels,
             sample_rate: sr,
             mode,
-            crossover_2way: Lr4Crossover::new(frequency as f32, sr, num_channels),
+            crossover_2way: Lr4Crossover::new(frequency as f32, sr as f32, num_channels),
             freq_smoother: LogSmoother::new(frequency as f32, 20.0, sr),
             multiband,
             extra_freq_smoothers: extra_smoothers,
@@ -278,7 +278,7 @@ impl Plugin for CrossoverPlugin {
             LogSmoother::new(self.freq_smoother.target(), 20.0, sample_rate);
         self.crossover_2way.reinit(
             self.freq_smoother.target(),
-            sample_rate,
+            sample_rate as f32,
             self.num_channels,
         );
         self.low_buf.resize(self.num_channels, 0.0);
@@ -288,7 +288,7 @@ impl Plugin for CrossoverPlugin {
             for smoother in &mut self.extra_freq_smoothers {
                 *smoother = LogSmoother::new(smoother.target(), 20.0, sample_rate);
             }
-            mb.reinit(&self.all_frequencies, sample_rate, self.num_channels);
+            mb.reinit(&self.all_frequencies, sample_rate as f32, self.num_channels);
         }
 
         // Resize band flat buffer

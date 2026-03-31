@@ -124,7 +124,7 @@ pub struct DeEsserPlugin {
     param_mode: ParameterId,
     /// 0=wideband, 1=split-band
     mode_index: usize,
-    crossovers: Vec<Lr4Crossover>,
+    crossovers: Vec<Lr4Crossover<f32>>,
 
     // Mix
     param_mix: ParameterId,
@@ -175,7 +175,7 @@ impl DeEsserPlugin {
             param_mode: ParameterId::from("mode"),
             mode_index: 1, // default: split-band
             crossovers: (0..channels)
-                .map(|_| Lr4Crossover::new(freq, sr, 1))
+                .map(|_| Lr4Crossover::new(freq, sr as f32, 1))
                 .collect(),
 
             param_mix: ParameterId::from("mix"),
@@ -496,7 +496,7 @@ impl InPlacePlugin for DeEsserPlugin {
 
         // Reinit crossovers
         for xo in &mut self.crossovers {
-            xo.reinit(self.frequency, sample_rate, 1);
+            xo.reinit(self.frequency, sample_rate as f32, 1);
         }
 
         // Reinit dynamics cores

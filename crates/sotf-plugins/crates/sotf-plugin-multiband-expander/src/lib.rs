@@ -430,7 +430,7 @@ pub struct MultibandExpanderPlugin {
     /// Processing mode: "time_domain" or "spectral"
     processing_mode: String,
     band_params: Vec<BandExpanderParams>,
-    crossover_points: Vec<Lr4Crossover>,
+    crossover_points: Vec<Lr4Crossover<f32>>,
     band_expanders: Vec<BandExpander>,
     band_buffers: Vec<f32>,
     band_levels_db: Vec<f32>,
@@ -765,7 +765,7 @@ impl MultibandExpanderPlugin {
         for i in 0..(self.num_bands - 1) {
             let f = self.xover_smoothers[i].target();
             self.crossover_points
-                .push(Lr4Crossover::new(f, self.sample_rate, self.channels));
+                .push(Lr4Crossover::new(f, self.sample_rate as f32, self.channels));
         }
     }
 

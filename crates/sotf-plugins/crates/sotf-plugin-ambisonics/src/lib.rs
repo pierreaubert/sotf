@@ -47,7 +47,7 @@ pub struct AmbisonicsDecoderPlugin {
     basic_matrix: Option<DecodeMatrix>,
     /// LR4 crossover used in dual-band mode.  One filter bank per ambisonics
     /// input channel (each channel processed independently).
-    crossover: Option<Lr4Crossover>,
+    crossover: Option<Lr4Crossover<f32>>,
     /// Scratch buffer for LF-filtered ambisonics channels: `[frame][channel]`
     /// stored flat as `[frame * in_ch + ch]`, same layout as `input`.
     lf_buffer: Vec<f32>,
@@ -118,7 +118,7 @@ impl AmbisonicsDecoderPlugin {
             // Rebuild crossover for the (possibly changed) channel count.
             self.crossover = Some(Lr4Crossover::new(
                 DUAL_BAND_CROSSOVER_HZ,
-                self.sample_rate,
+                self.sample_rate as f32,
                 self.input_channels,
             ));
         } else {
@@ -259,7 +259,7 @@ impl Plugin for AmbisonicsDecoderPlugin {
         if self.dual_band {
             self.crossover = Some(Lr4Crossover::new(
                 DUAL_BAND_CROSSOVER_HZ,
-                sample_rate,
+                sample_rate as f32,
                 self.input_channels,
             ));
             // Pre-allocate scratch buffers for max expected frame size (4096)

@@ -964,6 +964,9 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 None
             },
             ssir_wav_path: None,
+            phase_correction: None,
+            min_filter_improvement: 0.0,
+            elimination_threshold: 0.0,
         };
 
         let room_config = RoomConfig {

@@ -146,9 +146,9 @@ impl Surface3DRenderer {
     }
 
     async fn create_device() -> (wgpu::Device, wgpu::Queue) {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
 
         let adapter = instance
@@ -226,7 +226,7 @@ impl Surface3DRenderer {
         // Create pipeline layout
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Surface3D Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
 
@@ -281,8 +281,8 @@ impl Surface3DRenderer {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -323,8 +323,8 @@ impl Surface3DRenderer {
                     },
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: true,
-                        depth_compare: wgpu::CompareFunction::LessEqual,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(wgpu::CompareFunction::LessEqual),
                         stencil: Default::default(),
                         bias: wgpu::DepthBiasState {
                             constant: -4,      // Stronger bias to pull lines forward
@@ -375,8 +375,8 @@ impl Surface3DRenderer {
                     },
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: true,
-                        depth_compare: wgpu::CompareFunction::Less,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(wgpu::CompareFunction::Less),
                         stencil: Default::default(),
                         bias: Default::default(),
                     }),
@@ -428,13 +428,13 @@ impl Surface3DRenderer {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true, // Write depth so surface is occluded by grid if behind?
+                depth_write_enabled: Some(true), // Write depth so surface is occluded by grid if behind?
                 // No, grid is "behind" surface.
                 // If we render grid first, we write depth.
                 // Then surface renders. If surface is in front, it overdraws.
                 // If surface is behind (impossible if inside box), it would be occluded.
                 // So yes, depth write enabled.
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),

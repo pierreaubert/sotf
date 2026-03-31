@@ -193,7 +193,7 @@ pub struct SaturationPlugin {
 
     // DSP state
     oversampler: Option<Oversampler>,
-    crossovers: Vec<Lr4Crossover>, // For exciter mode (one per channel)
+    crossovers: Vec<Lr4Crossover<f32>>, // For exciter mode (one per channel)
 
     // --- Phase 3A: SOTA DSP state ---
     dc_blocker: DcBlocker,
@@ -308,7 +308,7 @@ impl SaturationPlugin {
 
             oversampler: None,
             crossovers: (0..channels)
-                .map(|_| Lr4Crossover::new(exciter_freq, sr, 1))
+                .map(|_| Lr4Crossover::new(exciter_freq, sr as f32, 1))
                 .collect(),
 
             // Phase 3A: SOTA DSP state
@@ -685,7 +685,7 @@ impl InPlacePlugin for SaturationPlugin {
 
         // Reinit crossovers
         for xo in &mut self.crossovers {
-            xo.reinit(self.exciter_freq, sample_rate, 1);
+            xo.reinit(self.exciter_freq, sample_rate as f32, 1);
         }
 
         // Reinit smoothers

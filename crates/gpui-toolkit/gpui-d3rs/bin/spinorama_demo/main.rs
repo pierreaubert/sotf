@@ -26,6 +26,7 @@ fn main() {
                     MenuItem::separator(),
                     MenuItem::action("Quit Spinorama Viewer", Quit),
                 ],
+                disabled: false,
             }]);
 
             cx.open_window(

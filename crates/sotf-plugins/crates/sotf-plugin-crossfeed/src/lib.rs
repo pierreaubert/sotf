@@ -275,8 +275,8 @@ pub struct CrossfeedPlugin {
     meier_allpass_r: Biquad,
 
     // Multiband: true LR4 crossover (3-band: low/mid/high)
-    mb_crossover_l: MultibandLr4Crossover,
-    mb_crossover_r: MultibandLr4Crossover,
+    mb_crossover_l: MultibandLr4Crossover<f32>,
+    mb_crossover_r: MultibandLr4Crossover<f32>,
 
     // ITD delay lines (one per crossfeed path)
     itd_delay_l: DelayLine,
@@ -369,12 +369,12 @@ impl CrossfeedPlugin {
             // Multiband: true LR4 crossover with 2 crossover points → 3 bands
             mb_crossover_l: MultibandLr4Crossover::new(
                 &[params.mb_low_freq_hz, params.mb_mid_high_freq_hz],
-                sr,
+                sr as f32,
                 1,
             ),
             mb_crossover_r: MultibandLr4Crossover::new(
                 &[params.mb_low_freq_hz, params.mb_mid_high_freq_hz],
-                sr,
+                sr as f32,
                 1,
             ),
 
@@ -510,12 +510,12 @@ impl CrossfeedPlugin {
         // Multiband: true LR4 crossover
         self.mb_crossover_l.reinit(
             &[self.params.mb_low_freq_hz, self.params.mb_mid_high_freq_hz],
-            self.sample_rate,
+            self.sample_rate as f32,
             1,
         );
         self.mb_crossover_r.reinit(
             &[self.params.mb_low_freq_hz, self.params.mb_mid_high_freq_hz],
-            self.sample_rate,
+            self.sample_rate as f32,
             1,
         );
     }

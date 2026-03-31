@@ -164,7 +164,7 @@ pub struct MultibandCompressorPlugin {
     /// Layout: [band][channel]. Empty when tilt_db ≈ 0.
     sidechain_tilt_biquads: Vec<Vec<Biquad>>,
     band_params: Vec<BandCompressorParams>,
-    crossover_points: Vec<Lr4Crossover>,
+    crossover_points: Vec<Lr4Crossover<f32>>,
     band_compressors: Vec<BandCompressor>,
     band_buffers: Vec<f32>,
     band_levels_db: Vec<f32>,
@@ -440,7 +440,7 @@ impl MultibandCompressorPlugin {
         for i in 0..(self.num_bands - 1) {
             let f = self.xover_smoothers[i].target();
             self.crossover_points
-                .push(Lr4Crossover::new(f, self.sample_rate, self.channels));
+                .push(Lr4Crossover::new(f, self.sample_rate as f32, self.channels));
         }
     }
 

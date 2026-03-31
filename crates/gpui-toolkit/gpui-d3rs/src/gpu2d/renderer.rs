@@ -148,7 +148,7 @@ impl Chart2DRenderer {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Line Pipeline Layout"),
-            bind_group_layouts: &[uniform_layout],
+            bind_group_layouts: &[Some(uniform_layout)],
             immediate_size: 0,
         });
 
@@ -213,7 +213,7 @@ impl Chart2DRenderer {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Rect Pipeline Layout"),
-            bind_group_layouts: &[uniform_layout],
+            bind_group_layouts: &[Some(uniform_layout)],
             immediate_size: 0,
         });
 
@@ -288,7 +288,7 @@ impl Chart2DRenderer {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Circle Pipeline Layout"),
-            bind_group_layouts: &[uniform_layout],
+            bind_group_layouts: &[Some(uniform_layout)],
             immediate_size: 0,
         });
 
@@ -358,7 +358,7 @@ impl Chart2DRenderer {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Triangle Pipeline Layout"),
-            bind_group_layouts: &[uniform_layout],
+            bind_group_layouts: &[Some(uniform_layout)],
             immediate_size: 0,
         });
 
@@ -419,7 +419,7 @@ impl Chart2DRenderer {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Text Pipeline Layout"),
-            bind_group_layouts: &[uniform_layout, atlas_layout],
+            bind_group_layouts: &[Some(uniform_layout), Some(atlas_layout)],
             immediate_size: 0,
         });
 

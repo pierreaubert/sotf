@@ -15,7 +15,7 @@ use gpui::{
     PromptButton, PromptLevel, RequestFrameOptions, Scene, Size, TileId, WindowAppearance,
     WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowParams,
 };
-use gpui_wgpu::{WgpuContext, WgpuRenderer, WgpuSurfaceConfig};
+use gpui_wgpu::{GpuContext, WgpuRenderer, WgpuSurfaceConfig};
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
 use parking_lot::Mutex;
 use raw_window_handle::{
@@ -71,6 +71,50 @@ pub(crate) fn unregister_au_window() {
         *guard = None;
     }
 }
+
+// ── Raw window handle for WgpuRenderer ───────────────────────────────────────
+
+/// Lightweight handle struct passed to `WgpuRenderer::new()`.
+///
+/// `WgpuRenderer::new` requires `W: HasWindowHandle + HasDisplayHandle + Debug +
+/// Send + Sync + Clone + 'static`. `AuWindow` itself cannot satisfy those bounds
+/// (it contains callbacks, RefCells, etc.), so we extract just the NSView pointer
+/// into this small struct -- the same pattern used by gpui_linux's `RawWindow`.
+///
+/// SAFETY: The raw pointer is only dereferenced on the main thread by wgpu's
+/// Metal backend during surface creation. The pointer's lifetime is guaranteed
+/// by the Swift AUViewController that owns the NSView.
+#[derive(Debug, Clone, Copy)]
+struct AuRawWindow {
+    ns_view: *mut c_void,
+}
+
+unsafe impl Send for AuRawWindow {}
+unsafe impl Sync for AuRawWindow {}
+
+impl HasWindowHandle for AuRawWindow {
+    fn window_handle(
+        &self,
+    ) -> std::result::Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError>
+    {
+        let view = NonNull::new(self.ns_view)
+            .ok_or(raw_window_handle::HandleError::Unavailable)?;
+        let handle = AppKitWindowHandle::new(view);
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
+    }
+}
+
+impl HasDisplayHandle for AuRawWindow {
+    fn display_handle(
+        &self,
+    ) -> std::result::Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError>
+    {
+        let handle = AppKitDisplayHandle::new();
+        Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(handle.into()) })
+    }
+}
+
+// ── AuWindow ─────────────────────────────────────────────────────────────────
 
 pub(crate) struct AuWindow {
     /// The NSView we render into (owned by the Swift AUViewController)
@@ -183,34 +227,15 @@ impl AuWindow {
             transparent: false,
         };
 
-        let metal_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::METAL,
-            flags: wgpu::InstanceFlags::default(),
-            ..Default::default()
-        });
-
-        let window_handle = au_window
-            .window_handle()
-            .map_err(|e| anyhow::anyhow!("Window handle unavailable: {e}"))?;
-        let display_handle = au_window
-            .display_handle()
-            .map_err(|e| anyhow::anyhow!("Display handle unavailable: {e}"))?;
-
-        let target = wgpu::SurfaceTargetUnsafe::RawHandle {
-            raw_display_handle: display_handle.as_raw(),
-            raw_window_handle: window_handle.as_raw(),
+        // Create a lightweight raw window handle for WgpuRenderer::new().
+        // WgpuRenderer::new handles instance + surface creation internally.
+        let raw_window = AuRawWindow {
+            ns_view: ns_view as *mut c_void,
         };
+        let gpu_context: GpuContext = Rc::new(RefCell::new(None));
 
-        nslog("SOTF AuWindow::new: creating wgpu surface\0");
-        match (|| -> anyhow::Result<WgpuRenderer> {
-            let surface = unsafe { metal_instance.create_surface_unsafe(target)? };
-            nslog("SOTF AuWindow::new: surface created, creating WgpuContext\0");
-            let context = WgpuContext::new(metal_instance, &surface)?;
-            nslog("SOTF AuWindow::new: WgpuContext created, creating WgpuRenderer\0");
-            let mut gpu_context: Option<WgpuContext> = Some(context);
-            drop(surface);
-            WgpuRenderer::new(&mut gpu_context, &au_window, config)
-        })() {
+        nslog("SOTF AuWindow::new: creating wgpu renderer\0");
+        match WgpuRenderer::new(gpu_context, &raw_window, config, None) {
             Ok(renderer) => {
                 nslog("SOTF AuWindow::new: wgpu renderer created OK\0");
                 *au_window.renderer.lock() = Some(renderer);

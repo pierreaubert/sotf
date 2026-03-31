@@ -1174,6 +1174,7 @@ impl RoomEqState {
             min_filter_improvement: 0.0,
             elimination_threshold: 0.0,
             ssir_wav_path: None,
+            phase_correction: None,
         };
 
         log::info!(

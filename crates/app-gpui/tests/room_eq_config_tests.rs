@@ -253,6 +253,12 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         cea2034_correction: None,
         strategy: "lshade".to_string(),
         target_response: None,
+        sub_config: None,
+        channel_matching: None,
+        ssir_wav_path: None,
+        phase_correction: None,
+        min_filter_improvement: 0.0,
+        elimination_threshold: 0.0,
     }
 }
 
@@ -407,6 +413,7 @@ fn test_import_with_features_enabled_preserves_them() {
             max_q: 8.0,
             min_q: 0.5,
             allow_boost: true,
+            max_db: Some(12.0),
         },
         high_freq_config: autoeq::roomeq::HighFreqFilterConfig {
             max_q: 2.0,
