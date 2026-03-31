@@ -44,9 +44,11 @@ pub mod measurement;
 // Re-export the main public API at the crate root
 pub use analysis::{SegmentBreakKind, WhiteSpaceMode};
 pub use layout::{
-    layout, layout_next_line, layout_with_lines, prepare, prepare_with_segments,
-    profile_prepare, walk_line_ranges, LayoutCursor, LayoutLine, LayoutLineRange,
-    LayoutLinesResult, LayoutResult, PrepareOptions, PrepareProfile, PreparedText,
-    PreparedTextWithSegments,
+    layout, layout_next_line, layout_optimal, layout_with_lines, layout_with_lines_and_strategy,
+    layout_with_lines_optimal, layout_with_strategy, prepare, prepare_with_segments,
+    profile_prepare, walk_line_ranges, walk_line_ranges_optimal, LayoutCursor, LayoutLine,
+    LayoutLineRange, LayoutLinesResult, LayoutResult, PrepareOptions, PrepareProfile,
+    PreparedText, PreparedTextWithSegments,
 };
+pub use line_break::{KnuthPlassParams, LineBreakStrategy};
 pub use measurement::{EngineProfile, TextMeasure};

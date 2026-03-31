@@ -7,8 +7,10 @@
 /// - Punctuation (.,!?:;()[]{}"'): 0.4× font_size
 /// - Regular characters: 0.6× font_size
 use gpui_pretext::{
-    layout, layout_next_line, layout_with_lines, prepare, prepare_with_segments, walk_line_ranges,
-    EngineProfile, LayoutCursor, PrepareOptions, TextMeasure, WhiteSpaceMode,
+    layout, layout_next_line, layout_optimal, layout_with_lines, layout_with_lines_optimal,
+    layout_with_strategy, prepare, prepare_with_segments, walk_line_ranges,
+    walk_line_ranges_optimal, EngineProfile, KnuthPlassParams, LayoutCursor, LineBreakStrategy,
+    PrepareOptions, TextMeasure, WhiteSpaceMode,
 };
 
 // ---------------------------------------------------------------------------
@@ -415,4 +417,247 @@ fn test_grapheme_widths_cache_correctness() {
     // Verify cached on second call
     let widths2 = cache.get_grapheme_widths("hello", &measure);
     assert_eq!(widths, widths2);
+}
+
+// ===========================================================================
+// Knuth-Plass optimal layout integration tests
+// ===========================================================================
+
+fn kp_params() -> KnuthPlassParams {
+    KnuthPlassParams::default()
+}
+
+#[test]
+fn test_optimal_empty_string() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare("", &m, &p, &o);
+    let result = layout_optimal(&prepared, 300.0, 20.0, &p, &kp_params());
+    assert_eq!(result.line_count, 0);
+    assert_eq!(result.height, 0.0);
+}
+
+#[test]
+fn test_optimal_single_word_fits() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare("hello", &m, &p, &o);
+    let result = layout_optimal(&prepared, 300.0, 20.0, &p, &kp_params());
+    assert_eq!(result.line_count, 1);
+    assert_eq!(result.height, 20.0);
+}
+
+#[test]
+fn test_optimal_two_words_one_line() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare("hello world", &m, &p, &o);
+    let result = layout_optimal(&prepared, 200.0, 20.0, &p, &kp_params());
+    assert_eq!(result.line_count, 1);
+}
+
+#[test]
+fn test_optimal_two_words_wrap() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare("hello world", &m, &p, &o);
+    let result = layout_optimal(&prepared, 80.0, 20.0, &p, &kp_params());
+    assert_eq!(result.line_count, 2);
+}
+
+#[test]
+fn test_optimal_layout_with_lines_content() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare_with_segments("hello world", &m, &p, &o);
+    let result = layout_with_lines_optimal(&prepared, 60.0, 20.0, &p, &kp_params());
+    assert_eq!(result.line_count, 2);
+    assert_eq!(result.lines.len(), 2);
+    // First line should contain "hello" (with or without trailing space).
+    assert!(result.lines[0].text.contains("hello"));
+    // Second line should contain "world".
+    assert!(result.lines[1].text.contains("world"));
+}
+
+#[test]
+fn test_optimal_walk_line_ranges() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare_with_segments("hello world foo bar", &m, &p, &o);
+    let mut count = 0;
+    let total = walk_line_ranges_optimal(&prepared, 80.0, &p, &kp_params(), |_range| {
+        count += 1;
+    });
+    assert_eq!(total, count);
+    assert!(count >= 2);
+}
+
+#[test]
+fn test_optimal_count_matches_lines() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+
+    let text = "the quick brown fox jumps over the lazy dog";
+    for width in [50.0, 100.0, 150.0, 200.0, 300.0] {
+        let fast = layout_optimal(&prepare(text, &m, &p, &o), width, 20.0, &p, &kp_params());
+        let rich = layout_with_lines_optimal(
+            &prepare_with_segments(text, &m, &p, &o),
+            width,
+            20.0,
+            &p,
+            &kp_params(),
+        );
+        assert_eq!(
+            fast.line_count, rich.line_count,
+            "optimal count mismatch at width {width}"
+        );
+    }
+}
+
+#[test]
+fn test_optimal_monotonic_line_counts() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+
+    let text = "the quick brown fox jumps over the lazy dog and more words follow after";
+    let prepared = prepare(text, &m, &p, &o);
+
+    let widths = [500.0, 300.0, 200.0, 150.0, 100.0, 80.0, 50.0];
+    let mut prev_count = 0;
+    for &width in &widths {
+        let result = layout_optimal(&prepared, width, 20.0, &p, &kp_params());
+        assert!(
+            result.line_count >= prev_count,
+            "line count decreased at width {width}: {} < {prev_count}",
+            result.line_count
+        );
+        prev_count = result.line_count;
+    }
+}
+
+#[test]
+fn test_optimal_line_widths_positive() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare_with_segments("the quick brown fox", &m, &p, &o);
+    let result = layout_with_lines_optimal(&prepared, 100.0, 20.0, &p, &kp_params());
+    for line in &result.lines {
+        assert!(line.width > 0.0, "line should have positive width");
+    }
+}
+
+#[test]
+fn test_strategy_dispatch_greedy() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare("hello world", &m, &p, &o);
+
+    let greedy = layout(&prepared, 80.0, 20.0, &p);
+    let via_strategy =
+        layout_with_strategy(&prepared, 80.0, 20.0, &p, LineBreakStrategy::Greedy, &kp_params());
+
+    assert_eq!(greedy.line_count, via_strategy.line_count);
+    assert_eq!(greedy.height, via_strategy.height);
+}
+
+#[test]
+fn test_strategy_dispatch_optimal() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare("hello world", &m, &p, &o);
+
+    let optimal = layout_optimal(&prepared, 80.0, 20.0, &p, &kp_params());
+    let via_strategy = layout_with_strategy(
+        &prepared,
+        80.0,
+        20.0,
+        &p,
+        LineBreakStrategy::Optimal,
+        &kp_params(),
+    );
+
+    assert_eq!(optimal.line_count, via_strategy.line_count);
+    assert_eq!(optimal.height, via_strategy.height);
+}
+
+#[test]
+fn test_optimal_paragraph_quality() {
+    // Test the classic Knuth-Plass advantage: a paragraph where greedy
+    // produces a very uneven last line but optimal distributes better.
+    //
+    // 7 words of varying widths.
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+
+    let text = "aaa bbb ccc ddd eee fff ggg";
+    let prepared_rich = prepare_with_segments(text, &m, &p, &o);
+
+    let greedy = layout_with_lines(&prepared_rich, 70.0, 20.0, &p);
+    let optimal = layout_with_lines_optimal(&prepared_rich, 70.0, 20.0, &p, &kp_params());
+
+    // Both should produce valid results.
+    assert!(greedy.line_count >= 2);
+    assert!(optimal.line_count >= 2);
+
+    // Optimal should have lines — verify text coverage.
+    let greedy_text: String = greedy.lines.iter().map(|l| l.text.as_str()).collect();
+    let optimal_text: String = optimal.lines.iter().map(|l| l.text.as_str()).collect();
+    assert!(greedy_text.contains("aaa"));
+    assert!(optimal_text.contains("aaa"));
+    assert!(greedy_text.contains("ggg"));
+    assert!(optimal_text.contains("ggg"));
+}
+
+#[test]
+fn test_optimal_very_narrow_width() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+    let prepared = prepare("a b c d", &m, &p, &o);
+    let result = layout_optimal(&prepared, 1.0, 20.0, &p, &kp_params());
+    // Each letter on its own line.
+    assert_eq!(result.line_count, 4);
+}
+
+#[test]
+fn test_optimal_pre_wrap_hard_breaks() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = pre_wrap_options();
+    let prepared = prepare("a\nb\nc", &m, &p, &o);
+    let result = layout_optimal(&prepared, 300.0, 20.0, &p, &kp_params());
+    assert_eq!(result.line_count, 3);
+}
+
+#[test]
+fn test_optimal_custom_params() {
+    let m = FakeMeasure::new(16.0);
+    let p = default_profile();
+    let o = default_options();
+
+    let text = "the quick brown fox jumps over the lazy dog";
+    let prepared = prepare(text, &m, &p, &o);
+
+    // With very high hyphen penalty, should avoid hyphenation.
+    let mut params = kp_params();
+    params.hyphen_penalty = 10000.0;
+    let result = layout_optimal(&prepared, 100.0, 20.0, &p, &params);
+    assert!(result.line_count >= 2);
+
+    // With very loose tolerance, might produce different results.
+    params.tolerance = 10.0;
+    let loose = layout_optimal(&prepared, 100.0, 20.0, &p, &params);
+    assert!(loose.line_count >= 1);
 }

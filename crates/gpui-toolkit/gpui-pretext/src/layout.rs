@@ -12,8 +12,9 @@ use crate::analysis::{
 };
 use crate::bidi::compute_segment_levels;
 use crate::line_break::{
-    count_prepared_lines, layout_next_line_range, walk_prepared_lines, InternalLayoutLine,
-    LineBreakCursor, PreparedLineBreakData, PreparedLineChunk,
+    count_prepared_lines, count_prepared_lines_optimal, layout_next_line_range,
+    walk_prepared_lines, walk_prepared_lines_optimal, InternalLayoutLine, KnuthPlassParams,
+    LineBreakCursor, LineBreakStrategy, PreparedLineBreakData, PreparedLineChunk,
 };
 use crate::measurement::{EngineProfile, MeasureCache, TextMeasure};
 
@@ -665,6 +666,150 @@ pub fn walk_line_ranges(
             on_line(&to_layout_line_range(line));
         }),
     )
+}
+
+// ---------------------------------------------------------------------------
+// Optimal (Knuth-Plass) layout API
+// ---------------------------------------------------------------------------
+
+/// Fast layout using Knuth-Plass optimal line breaking: returns line count and
+/// total height. Minimizes total demerits across the entire paragraph rather
+/// than making greedy local decisions.
+///
+/// Falls back to greedy if no feasible solution exists within the tolerance.
+pub fn layout_optimal(
+    prepared: &PreparedText,
+    max_width: f64,
+    line_height: f64,
+    profile: &EngineProfile,
+    params: &KnuthPlassParams,
+) -> LayoutResult {
+    let data = to_line_break_data(&prepared.core);
+    let line_count = count_prepared_lines_optimal(&data, max_width, profile, params);
+    LayoutResult {
+        line_count,
+        height: line_count as f64 * line_height,
+    }
+}
+
+/// Layout with full line data using Knuth-Plass optimal line breaking.
+pub fn layout_with_lines_optimal(
+    prepared: &PreparedTextWithSegments,
+    max_width: f64,
+    line_height: f64,
+    profile: &EngineProfile,
+    params: &KnuthPlassParams,
+) -> LayoutLinesResult {
+    let data = to_line_break_data(&prepared.core);
+
+    if prepared.core.widths.is_empty() {
+        return LayoutLinesResult {
+            line_count: 0,
+            height: 0.0,
+            lines: Vec::new(),
+        };
+    }
+
+    let mut lines = Vec::new();
+    let segments = &prepared.segments;
+    let kinds = &prepared.core.kinds;
+
+    let line_count = walk_prepared_lines_optimal(
+        &data,
+        max_width,
+        profile,
+        params,
+        Some(&mut |line: &InternalLayoutLine| {
+            lines.push(LayoutLine {
+                text: build_line_text(
+                    segments,
+                    kinds,
+                    line.start_segment_index,
+                    line.start_grapheme_index,
+                    line.end_segment_index,
+                    line.end_grapheme_index,
+                ),
+                width: line.width,
+                start: LayoutCursor {
+                    segment_index: line.start_segment_index,
+                    grapheme_index: line.start_grapheme_index,
+                },
+                end: LayoutCursor {
+                    segment_index: line.end_segment_index,
+                    grapheme_index: line.end_grapheme_index,
+                },
+            });
+        }),
+    );
+
+    LayoutLinesResult {
+        line_count,
+        height: line_count as f64 * line_height,
+        lines,
+    }
+}
+
+/// Iterate line ranges using Knuth-Plass optimal line breaking.
+pub fn walk_line_ranges_optimal(
+    prepared: &PreparedTextWithSegments,
+    max_width: f64,
+    profile: &EngineProfile,
+    params: &KnuthPlassParams,
+    mut on_line: impl FnMut(&LayoutLineRange),
+) -> usize {
+    let data = to_line_break_data(&prepared.core);
+
+    if prepared.core.widths.is_empty() {
+        return 0;
+    }
+
+    walk_prepared_lines_optimal(
+        &data,
+        max_width,
+        profile,
+        params,
+        Some(&mut |line: &InternalLayoutLine| {
+            on_line(&to_layout_line_range(line));
+        }),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Strategy-based dispatch
+// ---------------------------------------------------------------------------
+
+/// Layout dispatching to either greedy or optimal based on strategy.
+pub fn layout_with_strategy(
+    prepared: &PreparedText,
+    max_width: f64,
+    line_height: f64,
+    profile: &EngineProfile,
+    strategy: LineBreakStrategy,
+    params: &KnuthPlassParams,
+) -> LayoutResult {
+    match strategy {
+        LineBreakStrategy::Greedy => layout(prepared, max_width, line_height, profile),
+        LineBreakStrategy::Optimal => {
+            layout_optimal(prepared, max_width, line_height, profile, params)
+        }
+    }
+}
+
+/// Layout with full line data, dispatching based on strategy.
+pub fn layout_with_lines_and_strategy(
+    prepared: &PreparedTextWithSegments,
+    max_width: f64,
+    line_height: f64,
+    profile: &EngineProfile,
+    strategy: LineBreakStrategy,
+    params: &KnuthPlassParams,
+) -> LayoutLinesResult {
+    match strategy {
+        LineBreakStrategy::Greedy => layout_with_lines(prepared, max_width, line_height, profile),
+        LineBreakStrategy::Optimal => {
+            layout_with_lines_optimal(prepared, max_width, line_height, profile, params)
+        }
+    }
 }
 
 /// Layout a single line starting from a cursor position.
