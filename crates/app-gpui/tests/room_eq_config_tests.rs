@@ -251,8 +251,14 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         multi_measurement: None,
         decomposed_correction: None,
         cea2034_correction: None,
+        sub_config: None,
+        channel_matching: None,
         strategy: "lshade".to_string(),
         target_response: None,
+        phase_correction: None,
+        min_filter_improvement: 0.01,
+        elimination_threshold: 0.005,
+        ssir_wav_path: None,
     }
 }
 
@@ -407,6 +413,7 @@ fn test_import_with_features_enabled_preserves_them() {
             max_q: 8.0,
             min_q: 0.5,
             allow_boost: true,
+            max_db: None,
         },
         high_freq_config: autoeq::roomeq::HighFreqFilterConfig {
             max_q: 2.0,
@@ -517,6 +524,9 @@ fn build_mock_results(
             target_curve: None,
             group_delay_before: None,
             group_delay_after: None,
+            phase_response_before: None,
+            phase_response_after: None,
+            impulse_response: None,
         });
 
         channels.insert(

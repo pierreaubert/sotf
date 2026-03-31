@@ -231,9 +231,7 @@ impl RoomEqMeasurementsFile {
                 let measurement_ref = match speaker_config {
                     autoeq::SpeakerConfig::Single(source) => match source {
                         autoeq::MeasurementSource::Single(s) => Some(s.measurement),
-                        autoeq::MeasurementSource::Multiple(m) => {
-                            m.measurements.into_iter().next()
-                        }
+                        autoeq::MeasurementSource::Multiple(m) => m.measurements.into_iter().next(),
                         autoeq::MeasurementSource::InMemory(_)
                         | autoeq::MeasurementSource::InMemoryMultiple(_) => None,
                     },
@@ -667,8 +665,8 @@ pub struct TargetTiltConfig {
 impl Default for TargetTiltConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
-            tilt_type: "flat".to_string(),
+            enabled: true,
+            tilt_type: "harman".to_string(),
             slope: -0.8,
             reference_freq: 1000.0,
             bass_shelf_db: 0.0,
@@ -1051,6 +1049,12 @@ pub struct ChannelOptResult {
     pub group_delay_before: Option<Vec<(f64, f64)>>,
     /// Group delay after correction (frequency_hz, delay_ms)
     pub group_delay_after: Option<Vec<(f64, f64)>>,
+    /// Phase response before correction (frequency_hz, phase_radians)
+    pub phase_response_before: Option<Vec<(f64, f64)>>,
+    /// Phase response after correction (frequency_hz, phase_radians)
+    pub phase_response_after: Option<Vec<(f64, f64)>>,
+    /// Impulse response after correction (sample_index, amplitude)
+    pub impulse_response: Option<Vec<(f64, f64)>>,
 }
 
 /// DSP chain output format

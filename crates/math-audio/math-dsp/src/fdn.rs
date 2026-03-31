@@ -309,7 +309,7 @@ mod tests {
         }
         // All should be in 20-80ms range
         for &d in &delays {
-            assert!(d >= 960 && d <= 3840, "Delay {d} out of range");
+            assert!((960..=3840).contains(&d), "Delay {d} out of range");
         }
     }
 }

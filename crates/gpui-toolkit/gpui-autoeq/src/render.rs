@@ -1,8 +1,7 @@
 //! RenderOnce implementation for the AutoEQ form.
 //!
-//! This is a direct port of the render implementation from gpui-ui-kit's autoeq module.
-//! The render function is intentionally kept as a single large function to match the
-//! original structure and avoid complex parameter threading through helper functions.
+//! Renders a two-panel layout: form parameters on the left, contextual
+//! documentation on the right. The docs panel collapses on narrow screens.
 
 // Allow large render function - UI layout code is inherently verbose
 #![allow(clippy::too_many_lines)]
@@ -21,11 +20,93 @@ use gpui_ui_kit::toggle::{Toggle, ToggleSize, ToggleTheme};
 
 use crate::config::ParamLimits;
 use crate::constants::*;
+use crate::docs;
 use crate::form::{
-    AutoEqForm, AutoEqLayoutMode, is_narrow_default_layout, is_narrow_room_eq_layout,
-    is_single_column_default_grid,
+    is_narrow_default_layout, is_narrow_room_eq_layout, is_single_column_default_grid, AutoEqForm,
+    AutoEqLayoutMode,
 };
+use crate::layout_tree::solve_autoeq_layout;
 use crate::theme::AutoEqFormTheme;
+
+/// Render the documentation panel for the given focused block.
+fn render_docs_panel(
+    focused_block: Option<&'static str>,
+    theme: &AutoEqFormTheme,
+) -> impl IntoElement {
+    let block_id = focused_block.unwrap_or(docs::BLOCK_OVERVIEW);
+    let doc = docs::block_doc(block_id);
+
+    let mut panel = VStack::new().spacing(StackSpacing::Md);
+
+    // Title
+    panel = panel.child(
+        Text::new(doc.title)
+            .size(TextSize::Sm)
+            .weight(TextWeight::Semibold)
+            .color(theme.header_color),
+    );
+
+    // Overview
+    panel = panel.child(
+        Text::new(doc.overview)
+            .size(TextSize::Xs)
+            .color(theme.description_color),
+    );
+
+    // Per-field docs
+    for field in doc.fields {
+        let mut field_section = VStack::new().spacing(StackSpacing::None);
+
+        field_section = field_section.child(
+            Text::new(field.name)
+                .size(TextSize::Xs)
+                .weight(TextWeight::Semibold)
+                .color(theme.header_color),
+        );
+
+        field_section = field_section.child(
+            Text::new(field.description)
+                .size(TextSize::Xs)
+                .color(theme.description_color),
+        );
+
+        if !field.default.is_empty() {
+            field_section = field_section.child(
+                HStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(
+                        Text::new("Default:")
+                            .size(TextSize::Xs)
+                            .weight(TextWeight::Semibold)
+                            .color(theme.description_color),
+                    )
+                    .child(
+                        Text::new(field.default)
+                            .size(TextSize::Xs)
+                            .color(theme.description_color),
+                    ),
+            );
+        }
+
+        if !field.tip.is_empty() {
+            field_section = field_section.child(
+                Text::new(format!("Tip: {}", field.tip))
+                    .size(TextSize::Xs)
+                    .color(theme.accent),
+            );
+        }
+
+        panel = panel.child(
+            div()
+                .py(px(4.0))
+                .border_b_1()
+                .border_color(theme.border)
+                .child(field_section),
+        );
+    }
+
+    div().size_full().px(px(12.0)).py(px(8.0)).child(panel)
+}
 
 impl RenderOnce for AutoEqForm {
     #[allow(clippy::cognitive_complexity)]
@@ -58,6 +139,7 @@ impl RenderOnce for AutoEqForm {
         let hide_multi_measurement = self.hide_multi_measurement;
         let available_width = self.available_width;
         let layout_mode = self.layout_mode;
+        let focused_block = ui_state.focused_block;
 
         // Wrap callbacks in Rc for sharing
         let on_opt_mode_change_rc = self.on_opt_mode_change.map(std::rc::Rc::new);
@@ -203,14 +285,54 @@ impl RenderOnce for AutoEqForm {
             .on_multi_measurement_weight_change
             .map(std::rc::Rc::new);
 
-        // Include the render body from the separate file
-        match layout_mode {
+        let on_block_focus_rc = self.on_block_focus.map(std::rc::Rc::new);
+
+        // Solve the two-panel layout
+        let solved = solve_autoeq_layout(available_width, 800.0);
+        let form_node = solved.find("form");
+        let docs_node = solved.find("docs");
+        let form_width = form_node.map_or(available_width, |n| n.width);
+        let docs_visible = docs_node.is_some_and(|n| n.visible && n.width > 10.0);
+        let docs_width = docs_node.map_or(0.0, |n| n.width);
+
+        // Override available_width for the form body to use the solved form width
+        let available_width = form_width;
+
+        // Build the form body
+        let form_body = match layout_mode {
             AutoEqLayoutMode::Default => {
                 include!("render_body.rs")
             }
             AutoEqLayoutMode::RoomEq => {
                 include!("render_body_room_eq.rs")
             }
+        };
+
+        // Two-panel layout: form (left) + docs (right)
+        let mut root = HStack::new().spacing(StackSpacing::None).full();
+
+        // Left panel: form
+        root = root.child(
+            div()
+                .flex_shrink_0()
+                .w(px(form_width))
+                .h_full()
+                .child(form_body),
+        );
+
+        // Right panel: documentation (only when space permits)
+        if docs_visible {
+            root = root.child(
+                div()
+                    .border_l_1()
+                    .border_color(theme.border)
+                    .w(px(docs_width))
+                    .h_full()
+                    .flex_shrink_0()
+                    .child(render_docs_panel(focused_block, &theme)),
+            );
         }
+
+        root
     }
 }

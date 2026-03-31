@@ -209,6 +209,6 @@ mod tests {
         let store = Arc::new(Mutex::new(store));
 
         let config = build_client_tls_config(store);
-        assert!(config.is_ok());
+        config.unwrap();
     }
 }

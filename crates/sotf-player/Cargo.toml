@@ -1,6 +1,6 @@
 [package]
 name = "sotf-player"
-version = "0.5.114"
+version = "0.5.115"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -32,6 +32,7 @@ sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
 sotf-mpd = { workspace = true }
 sotf-dlna = { workspace = true }
+sotf-federation = { workspace = true }
 
 # math
 ndarray = { workspace = true }

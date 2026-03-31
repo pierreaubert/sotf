@@ -315,6 +315,18 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     style,
                 )));
             }
+
+            // Add slope recommendation line
+            if let Some((slope, rec_min, rec_max)) = s.compute_lr_slope() {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "  Slope: {:.2} dB/oct  |  Rec: [{:.2}, {:.2}] dB/oct",
+                        slope, rec_min, rec_max
+                    ),
+                    Style::default().fg(app.theme.fg_secondary),
+                )));
+            }
+
             lines.push(Line::from(""));
             let hint = if s.editing_value {
                 " Type value, Enter=confirm  Esc=cancel"

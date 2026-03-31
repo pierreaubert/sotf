@@ -1735,8 +1735,6 @@ mod tests {
 
     #[test]
     fn test_parameter_sync_get_matches_parameters_list() {
-        use sotf_plugins::parameters::ParameterId;
-
         let sample_rate = 48000;
 
         for plugin_type in PluginType::all() {
@@ -1778,7 +1776,7 @@ mod tests {
 
     #[test]
     fn test_parameter_set_then_get_roundtrip() {
-        use sotf_plugins::parameters::{ParameterId, ParameterValue};
+        use sotf_plugins::parameters::ParameterValue;
 
         let sample_rate = 48000;
 
@@ -1840,7 +1838,7 @@ mod tests {
 
     #[test]
     fn test_nan_parameter_values_rejected_or_safe() {
-        use sotf_plugins::parameters::{ParameterId, ParameterValue};
+        use sotf_plugins::parameters::ParameterValue;
 
         let sample_rate = 48000;
         let mut panicked_plugins = Vec::new();
@@ -2044,7 +2042,7 @@ mod tests {
             assert_eq!(frame.num_samples(), total);
             assert_eq!(frame.data.len(), total);
             // All samples in [-1, 1) range for this test data
-            assert!(frame.data.iter().all(|&s| s >= 0.0 && s < 1.0));
+            assert!(frame.data.iter().all(|&s| (0.0..1.0).contains(&s)));
         }
     }
 }

@@ -51,7 +51,7 @@ pub struct BandSplitPlugin {
     input_channels: usize,
     sample_rate: u32,
     num_bands: usize,
-    crossover: MultibandLr4Crossover,
+    crossover: MultibandLr4Crossover<f32>,
     freq_smoothers: Vec<LogSmoother>,
     /// Per-band gain in dB (one per band, up to MAX_BANDS). Default 0.0 dB.
     band_gains_db: [f32; MAX_BANDS],
@@ -102,7 +102,7 @@ impl BandSplitPlugin {
             input_channels,
             sample_rate: sr,
             num_bands,
-            crossover: MultibandLr4Crossover::new(&freq_f32, sr, input_channels),
+            crossover: MultibandLr4Crossover::new(&freq_f32, sr as f32, input_channels),
             freq_smoothers: smoothers,
             band_gains_db: [0.0; MAX_BANDS],
             band_gains_linear: [1.0; MAX_BANDS],
@@ -290,7 +290,7 @@ impl Plugin for BandSplitPlugin {
             *s = LogSmoother::new(s.target(), 20.0, sample_rate);
         }
         self.crossover
-            .reinit(&freqs, sample_rate, self.input_channels);
+            .reinit(&freqs, sample_rate as f32, self.input_channels);
         Ok(())
     }
     fn reset(&mut self) {

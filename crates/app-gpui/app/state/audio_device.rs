@@ -81,6 +81,19 @@ pub fn format_buffer_size(buffer_frames: u32, sample_rate: u32) -> String {
     format!("{} (~{:.1}ms)", buffer_frames, latency_ms)
 }
 
+/// A discovered Cast device (Chromecast or AirPlay) on the local network.
+#[derive(Debug, Clone)]
+pub struct CastDeviceInfo {
+    /// Display name (e.g., "Living Room HomePod")
+    pub name: String,
+    /// Device type ("AirPlay" or "Chromecast")
+    pub device_type: String,
+    /// IP address
+    pub address: String,
+    /// Service port
+    pub port: u16,
+}
+
 /// Audio device state for input and output device selection
 #[derive(Debug, Clone, Default)]
 pub struct AudioDeviceState {
@@ -106,6 +119,13 @@ pub struct AudioDeviceState {
 
     /// HAL dropdown open states
     pub hal_dropdowns: HalDropdownState,
+
+    /// Discovered Cast devices on the local network
+    pub cast_devices: Vec<CastDeviceInfo>,
+    /// Currently selected Cast device index (None = local output)
+    pub selected_cast_device: Option<usize>,
+    /// Whether a Cast device discovery scan is in progress
+    pub cast_discovery_running: bool,
 }
 
 impl AudioDeviceState {

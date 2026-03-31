@@ -1218,5 +1218,25 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                 },
             },
         );
+        migrations.insert(
+            20,
+            Migration {
+                description: "Add is_available column to library_sources for tracking source reachability",
+                apply: |db| {
+                    db.conn.execute(
+                        "ALTER TABLE library_sources ADD COLUMN is_available INTEGER",
+                        [],
+                    )?;
+
+                    // Local source is always available
+                    db.conn.execute(
+                        "UPDATE library_sources SET is_available = 1 WHERE source_id = 'local'",
+                        [],
+                    )?;
+
+                    Ok(())
+                },
+            },
+        );
     migrations
 }

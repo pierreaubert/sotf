@@ -1,5 +1,6 @@
 //! Federation Sources settings content
 
+use crate::app::federation::test_federation_connection;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -7,6 +8,7 @@ use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Divider, HStack, Input, InputSize, StackSpacing, Text,
     TextSize, VStack,
 };
+use sotf_audio_player::federation_config::ConnectionStatus;
 
 impl PlayerView {
     /// Render federation sources settings content
@@ -34,7 +36,7 @@ impl PlayerView {
                 div()
                     .text_xs()
                     .text_color(theme.text_secondary)
-                    .child("Configure remote music libraries (Subsonic, MPD, DLNA, Peer). All connections use TLS except DLNA (plain HTTP for device compatibility)."),
+                    .child("Configure remote libraries, streaming services, and radio stations."),
             )
             // Add Source buttons
             .child(
@@ -55,7 +57,10 @@ impl PlayerView {
                             .child(self.add_source_button("subsonic", "Subsonic", &theme, cx))
                             .child(self.add_source_button("mpd", "MPD", &theme, cx))
                             .child(self.add_source_button("dlna", "DLNA", &theme, cx))
-                            .child(self.add_source_button("peer", "Peer", &theme, cx)),
+                            .child(self.add_source_button("peer", "Peer", &theme, cx))
+                            .child(self.add_source_button("tidal", "Tidal", &theme, cx))
+                            .child(self.add_source_button("spotify", "Spotify", &theme, cx))
+                            .child(self.add_source_button("icy_radio", "Radio", &theme, cx)),
                     ),
             );
 
@@ -129,6 +134,30 @@ impl PlayerView {
             .map(|i| source.connection.field_value(i))
             .collect();
 
+        let status = self
+            .state
+            .read(cx)
+            .app
+            .get_federation_source_status(&source.source_id)
+            .cloned();
+        let status_label = status
+            .as_ref()
+            .map(|s| s.label().to_string())
+            .unwrap_or_else(|| "untested".to_string());
+        let status_color = match &status {
+            Some(ConnectionStatus::Connected { .. }) => theme.success,
+            Some(ConnectionStatus::Error(_)) => theme.error,
+            Some(ConnectionStatus::Testing) => theme.warning,
+            Some(ConnectionStatus::Diagnostic(d)) => {
+                if d.is_success() { theme.success } else { theme.error }
+            }
+            _ => theme.text_muted,
+        };
+        let diagnostic = match &status {
+            Some(ConnectionStatus::Diagnostic(d)) => Some(d.clone()),
+            _ => None,
+        };
+
         div()
             .flex()
             .flex_col()
@@ -193,14 +222,14 @@ impl PlayerView {
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
                         .build()
-                        .on_click(
-                            cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                        .on_click(cx.listener(
+                            move |view, _: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.toggle_federation_source(source_idx);
                                 });
                                 cx.notify();
-                            }),
-                        ),
+                            },
+                        )),
                     )
                     // Remove button
                     .child(
@@ -220,9 +249,135 @@ impl PlayerView {
                                 cx.notify();
                             }),
                         ),
+                    )
+                    // Test button
+                    .child(
+                        Button::new(
+                            SharedString::from(format!("test-source-{source_idx}")),
+                            "Test",
+                        )
+                        .variant(ButtonVariant::Secondary)
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .build()
+                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                            let source_idx = source_idx;
+                            let state_entity = view.state.clone();
+
+                            let test_result = state_entity.update(cx, |state, _cx| {
+                                state.app.start_federation_source_test(source_idx)
+                            });
+
+                            if let Some((source_id, source)) = test_result {
+                                cx.spawn(async move |_: WeakEntity<PlayerView>, cx| {
+                                    let status = test_federation_connection(&source);
+                                    state_entity.update(cx, |state, cx| {
+                                        state.app.set_federation_source_status(&source_id, status);
+                                        cx.notify();
+                                    });
+                                }).detach();
+                            }
+                            cx.notify();
+                        })),
+                    )
+                    // Scan button
+                    .child(
+                        Button::new(
+                            SharedString::from(format!("scan-source-{source_idx}")),
+                            "Scan",
+                        )
+                        .variant(ButtonVariant::Secondary)
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .build()
+                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                state.app.scan_federation_source(source_idx);
+                            });
+                            cx.notify();
+                        })),
                     ),
             )
             .child(Divider::new().color(theme.border))
+            // Status row
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_secondary)
+                            .child("Status:"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(status_color)
+                            .child(status_label),
+                    ),
+            )
+            // Diagnostic steps (shown after a test with diagnostic results)
+            .when(diagnostic.is_some(), {
+                let theme = theme.clone();
+                move |card| {
+                    let diag = diagnostic.as_ref().unwrap();
+                    let mut steps_col = div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .p_2()
+                        .bg(theme.background)
+                        .rounded_sm()
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.text_secondary)
+                                .child(format!("Connection diagnostic: {}:{}", diag.host, diag.port)),
+                        );
+
+                    for (label, result) in diag.steps() {
+                        use sotf_audio_player::federation_config::StepResult;
+                        let (icon, color) = match result {
+                            StepResult::Ok(_) => ("OK ", theme.success),
+                            StepResult::Fail(_) => ("FAIL", theme.error),
+                            StepResult::Skipped(_) => ("SKIP", theme.text_muted),
+                        };
+                        steps_col = steps_col.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(color)
+                                        .w(px(36.0))
+                                        .child(icon),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_secondary)
+                                        .w(px(100.0))
+                                        .child(label),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(color)
+                                        .child(result.message().to_string()),
+                                ),
+                        );
+                    }
+
+                    card.child(steps_col)
+                }
+            })
             // Editable fields
             .child(
                 VStack::new()
@@ -235,42 +390,178 @@ impl PlayerView {
                                 let value = field_values[field_idx].clone();
                                 let state_entity = self.state.clone();
 
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .w(px(120.0))
-                                            .text_xs()
-                                            .text_color(theme.text_secondary)
-                                            .child(field_name),
-                                    )
-                                    .child(
-                                        div().flex_1().child(
-                                            Input::new(SharedString::from(format!(
-                                                "source-{source_idx}-field-{field_idx}"
-                                            )))
-                                            .value(SharedString::from(value))
-                                            .placeholder(SharedString::from(format!(
-                                                "Enter {field_name}"
-                                            )))
-                                            .size(InputSize::Sm)
-                                            .on_change(move |val: &str, _window, cx| {
-                                                let v = val.to_string();
-                                                state_entity.update(cx, |state, _cx| {
-                                                    state.app.update_federation_source_field(
-                                                        source_idx, field_idx, &v,
-                                                    );
-                                                });
-                                            }),
-                                        ),
-                                    )
-                                    .into_any_element()
+                                if field_name == "Auth Mode" {
+                                    // Render radio buttons for auth mode
+                                    let auth_options = ["None", "Password", "SSL"];
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .child(
+                                            div()
+                                                .w(px(120.0))
+                                                .text_xs()
+                                                .text_color(theme.text_secondary)
+                                                .child(field_name),
+                                        )
+                                        .child(
+                                            HStack::new()
+                                                .spacing(StackSpacing::Xs)
+                                                .children(auth_options.iter().map(|option| {
+                                                    let is_selected = value == *option;
+                                                    Button::new(
+                                                        SharedString::from(format!("auth-{}-{}", source_idx, option)),
+                                                        *option,
+                                                    )
+                                                    .variant(if is_selected {
+                                                        ButtonVariant::Primary
+                                                    } else {
+                                                        ButtonVariant::Secondary
+                                                    })
+                                                    .size(ButtonSize::Xs)
+                                                    .theme(theme.to_button_theme())
+                                                    .build()
+                                                    .on_click(cx.listener({
+                                                        let option = (*option).to_string();
+                                                        let state_entity = state_entity.clone();
+                                                        move |_, _: &ClickEvent, _window, cx| {
+                                                            state_entity.update(cx, |state, _cx| {
+                                                                state.app.update_federation_source_field(
+                                                                    source_idx, field_idx, &option,
+                                                                );
+                                                            });
+                                                        }
+                                                    }))
+                                                    .into_any_element()
+                                                }))
+                                                .into_any_element(),
+                                        )
+                                        .into_any_element()
+                                } else {
+                                    // Regular input field
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .child(
+                                            div()
+                                                .w(px(120.0))
+                                                .text_xs()
+                                                .text_color(theme.text_secondary)
+                                                .child(field_name),
+                                        )
+                                        .child(
+                                            div().flex_1().child(
+                                                Input::new(SharedString::from(format!(
+                                                    "source-{source_idx}-field-{field_idx}"
+                                                )))
+                                                    .value(SharedString::from(value))
+                                                    .placeholder(SharedString::from(format!(
+                                                        "Enter {field_name}"
+                                                    )))
+                                                    .size(InputSize::Sm)
+                                                    .on_change(move |val: &str, _window, cx| {
+                                                        let v = val.to_string();
+                                                        state_entity.update(cx, |state, _cx| {
+                                                            state.app.update_federation_source_field(
+                                                                source_idx, field_idx, &v,
+                                                            );
+                                                        });
+                                                    }),
+                                            ),
+                                        )
+                                        .into_any_element()
+                                }
                             })
                             .collect::<Vec<_>>(),
                     )
                     .build(),
             )
+    }
+
+    /// Render a single-line progress row for an active federation scan.
+    /// Shown above the footer.
+    pub(crate) fn render_federation_scan_progress(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let progress = state.app.federation_scan_progress.clone();
+
+        let (text, pct) = match &progress {
+            Some(p) if p.albums_total > 0 => {
+                let pct = (p.albums_merged as f32 / p.albums_total as f32).min(1.0);
+                (
+                    format!(
+                        "Syncing \"{}\" — {}/{} albums, {} tracks",
+                        p.source_name, p.albums_merged, p.albums_total, p.tracks_merged
+                    ),
+                    pct,
+                )
+            }
+            Some(p) => (
+                format!("Fetching albums from \"{}\"...", p.source_name),
+                0.0,
+            ),
+            None => return div().into_any_element(),
+        };
+
+        let bar_width_pct = (pct * 100.0) as i32;
+
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_4()
+            .h(px(28.0))
+            .bg(theme.background_secondary)
+            .border_t_1()
+            .border_color(theme.border)
+            // Progress bar background
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    // Thin progress bar
+                    .child(
+                        div()
+                            .w(px(120.0))
+                            .h(px(4.0))
+                            .bg(theme.background)
+                            .rounded_sm()
+                            .child(
+                                div()
+                                    .h_full()
+                                    .rounded_sm()
+                                    .bg(theme.accent)
+                                    .w(relative(bar_width_pct as f32 / 100.0)),
+                            ),
+                    )
+                    // Status text
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_secondary)
+                            .child(text),
+                    ),
+            )
+            // Cancel button
+            .child(
+                Button::new("cancel-federation-scan", "x")
+                    .variant(ButtonVariant::Ghost)
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .build()
+                    .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            state.app.cancel_federation_scan();
+                        });
+                        cx.notify();
+                    })),
+            )
+            .into_any_element()
     }
 }

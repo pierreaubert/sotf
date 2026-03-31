@@ -38,4 +38,8 @@ pub struct AutoEqFormUiState {
     pub vog_reference_channel_open: bool,
     /// Multi-measurement strategy dropdown open state
     pub multi_measurement_strategy_open: bool,
+
+    /// Currently focused parameter block (drives the docs panel).
+    /// Set by hovering over a block section. `None` shows the overview.
+    pub focused_block: Option<&'static str>,
 }

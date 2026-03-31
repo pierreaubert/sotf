@@ -1,6 +1,6 @@
 [package]
 name = "sotf-tui"
-version = "0.5.203"
+version = "0.5.204"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -15,6 +15,8 @@ autotests = false
 default = []
 hal = ["sotf-engine/hal", "sotf-player/hal"]
 onnx = ["sotf-plugins/onnx"]
+tidal = ["dep:sotf-services", "sotf-services/tidal"]
+spotify = ["dep:sotf-services", "sotf-services/spotify"]
 
 [dependencies]
 # Shared audio player library (provides business logic, database, plugins, etc.)
@@ -23,6 +25,8 @@ sotf-player = { workspace = true }
 # Audio engine
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
+sotf-federation = { workspace = true }
+sotf-services = { workspace = true, optional = true }
 math-iir-fir = { workspace = true }
 autoeq = { workspace = true }
 

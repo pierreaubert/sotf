@@ -1502,6 +1502,7 @@ impl Plugin for BinauralDecoderPlugin {
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
     use sotf_host::plugin::ProcessContext;

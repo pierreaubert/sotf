@@ -182,6 +182,31 @@ pub fn create_decoder_from_source(source: &AudioSource) -> AudioDecoderResult<Bo
             url,
             format_hint,
             seekable: _,
+        } if url.starts_with("mpd-stream://") => {
+            use symphonia::core::probe::Hint;
+
+            let (mpd_source, _metadata_rx) = sotf_streaming::MpdStreamSource::open(url)
+                .map_err(AudioDecoderError::NetworkError)?;
+
+            let mut hint = Hint::new();
+            if let Some(fh) = format_hint {
+                hint.with_extension(fh);
+            } else if let Some(detected) = mpd_source.format_hint() {
+                hint.with_extension(&detected);
+            }
+
+            let decoder = SymphoniaDecoder::from_media_source(
+                Box::new(mpd_source),
+                hint,
+                url,
+            )?;
+            Ok(Box::new(decoder))
+        }
+        #[cfg(feature = "streaming")]
+        AudioSource::Url {
+            url,
+            format_hint,
+            seekable: _,
         } => {
             use symphonia::core::probe::Hint;
 

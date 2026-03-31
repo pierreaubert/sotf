@@ -153,6 +153,7 @@ impl PlayerView {
             mixed_fir_band_open: room_eq.dropdowns.mixed_fir_band_open,
             vog_reference_channel_open: room_eq.dropdowns.vog_reference_channel_open,
             multi_measurement_strategy_open: room_eq.dropdowns.multi_measurement_strategy_open,
+            focused_block: None,
         };
 
         // Compute available modes: if no phase data, only IIR
@@ -179,7 +180,7 @@ impl PlayerView {
             .show_optimization_tuning(show_advanced) // Only in advanced mode
             .hide_de_params(true) // Always hidden (internal to DE algorithm)
             .hide_smoothing(true) // Smoothing is handled directly in the room config card
-            .hide_spacing(true)   // Always hidden (internal)
+            .hide_spacing(true) // Always hidden (internal)
             .hide_tolerance(!show_advanced) // Only in advanced mode
             .hide_sample_rate(true) // Always hidden (auto-detected)
             .hide_phase_alignment(is_iir_mode || !show_advanced)
@@ -545,11 +546,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        let cfg = &mut state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config;
+                        let cfg = &mut state.app.measurement_state.room_eq_state.optimizer_config;
                         cfg.psychoacoustic = value;
                         if value {
                             cfg.smooth = false;
@@ -562,11 +559,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        let cfg = &mut state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config;
+                        let cfg = &mut state.app.measurement_state.room_eq_state.optimizer_config;
                         cfg.smooth = value;
                         if value {
                             cfg.psychoacoustic = false;
@@ -1548,11 +1541,7 @@ impl PlayerView {
 
         // Basic/Advanced toggle
         let toggle_state = self.state.clone();
-        let toggle_label = if show_advanced {
-            "Basic"
-        } else {
-            "Advanced"
-        };
+        let toggle_label = if show_advanced { "Basic" } else { "Advanced" };
 
         let mut content = VStack::new()
             .spacing(StackSpacing::Md)
@@ -1594,7 +1583,8 @@ impl PlayerView {
             )
             // Mode selector inline
             .child(mode_selector)
-            .child(autoeq_form);
+            .child(autoeq_form)
+            .child(self.render_slope_recommendation(cx));
 
         // Only show channel configuration for multi-driver measurements
         if has_multi_driver {
@@ -1613,6 +1603,39 @@ impl PlayerView {
         }
 
         content.child(self.render_room_eq_validation_summary(cx))
+    }
+
+    /// Render slope recommendation based on L and R channel measurements.
+    /// Shows computed slope and recommended range.
+    fn render_slope_recommendation(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let room_eq = &state.app.measurement_state.room_eq_state;
+
+        let (slope, rec_min, rec_max) = match room_eq.compute_lr_slope() {
+            Some((s, rmin, rmax)) => (s, rmin, rmax),
+            None => return div().into_any_element(),
+        };
+
+        let slope_text = format!("Current slope: {:.2} dB/oct", slope);
+        let rec_text = format!(
+            "Slope recommendation: [{:.2}, {:.2}] dB/oct",
+            rec_min, rec_max
+        );
+
+        VStack::new()
+            .spacing(StackSpacing::Xs)
+            .child(
+                Text::new(slope_text.clone())
+                    .size(TextSize::Sm)
+                    .color(theme.text_primary),
+            )
+            .child(
+                Text::new(rec_text.clone())
+                    .size(TextSize::Sm)
+                    .color(theme.text_secondary),
+            )
+            .into_any_element()
     }
 
     /// Render validation summary based on current config

@@ -808,6 +808,7 @@ fn index_to_filter_type(index: usize) -> BiquadFilterType {
 // ============================================================================
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
 

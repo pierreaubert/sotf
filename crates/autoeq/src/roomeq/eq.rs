@@ -1239,10 +1239,7 @@ mod processing_mode_tests {
             .collect();
         let spl: Vec<f64> = freqs
             .iter()
-            .map(|&f| {
-                let mode = 10.0 * (-((f.log2() - 80.0_f64.log2()).powi(2) / 0.3).exp());
-                mode
-            })
+            .map(|&f| 10.0 * (-((f.log2() - 80.0_f64.log2()).powi(2) / 0.3).exp()))
             .collect();
         Curve {
             freq: Array1::from_vec(freqs),
@@ -1260,10 +1257,7 @@ mod processing_mode_tests {
             .collect();
         let spl: Vec<f64> = freqs
             .iter()
-            .map(|&f| {
-                let mode = 10.0 * (-((f.log2() - 80.0_f64.log2()).powi(2) / 0.3).exp());
-                mode
-            })
+            .map(|&f| 10.0 * (-((f.log2() - 80.0_f64.log2()).powi(2) / 0.3).exp()))
             .collect();
         // Add minimum phase (negative group delay = phase leading)
         let phase: Vec<f64> = freqs

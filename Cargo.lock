@@ -3915,6 +3915,7 @@ name = "gpui-autoeq"
 version = "0.6.4"
 dependencies = [
  "gpui",
+ "gpui-builder",
  "gpui-ui-kit",
  "gpui-ui-kit-macros",
 ]
@@ -10025,7 +10026,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-federation"
-version = "0.1.0"
+version = "0.5.1"
 dependencies = [
  "log",
  "serde",
@@ -10077,10 +10078,13 @@ dependencies = [
  "serde_json",
  "signal-hook 0.4.3",
  "smol",
+ "sotf-cast",
  "sotf-engine",
+ "sotf-federation",
  "sotf-midi",
  "sotf-player",
  "sotf-plugins",
+ "sotf-services",
  "souvlaki",
  "strsim",
  "symphonia",
@@ -10178,7 +10182,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-mpd"
-version = "0.1.0"
+version = "0.5.1"
 dependencies = [
  "env_logger",
  "log",
@@ -10189,7 +10193,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-player"
-version = "0.5.114"
+version = "0.5.115"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
@@ -10214,6 +10218,7 @@ dependencies = [
  "serde_json",
  "sotf-dlna",
  "sotf-engine",
+ "sotf-federation",
  "sotf-mpd",
  "sotf-player",
  "sotf-plugins",
@@ -10864,12 +10869,12 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.203"
+version = "0.5.204"
 dependencies = [
  "autoeq",
  "chrono",
  "clap",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys 0.7.0",
  "crossterm",
  "directories",
  "env_logger",
@@ -10887,8 +10892,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sotf-engine",
+ "sotf-federation",
  "sotf-player",
  "sotf-plugins",
+ "sotf-services",
  "souvlaki",
  "symphonia",
  "symphonia-bundle-flac",

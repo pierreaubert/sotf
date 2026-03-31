@@ -308,9 +308,10 @@ impl RoomEqOptimizerConfig {
             BackendProcessingMode::MixedPhase => RoomEqOptimizationMode::MixedPhase,
         };
 
-        // Feature toggles: None in backend = feature was not configured = disabled.
-        self.target_tilt.enabled = backend.target_tilt.is_some();
+        // Feature toggles: only override from backend when explicitly present.
+        // When absent (None), keep the default (enabled + harman).
         if let Some(ref tilt) = backend.target_tilt {
+            self.target_tilt.enabled = true;
             self.target_tilt.tilt_type = match tilt.tilt_type {
                 TiltType::Harman => "harman".to_string(),
                 TiltType::Custom => "custom".to_string(),
@@ -414,7 +415,7 @@ impl RoomEqOptimizerConfig {
 }
 
 /// UI state for Room EQ dropdowns
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RoomEqDropdowns {
     pub data_source_open: bool,
     pub opt_mode_open: bool,
@@ -457,6 +458,38 @@ pub struct RoomEqDropdowns {
     pub custom_target_presets_open: bool,
     /// Currently dragging control point index (None if not dragging)
     pub dragging_control_point: Option<usize>,
+}
+
+impl Default for RoomEqDropdowns {
+    fn default() -> Self {
+        Self {
+            data_source_open: false,
+            opt_mode_open: false,
+            fir_phase_open: false,
+            algorithm_open: false,
+            peq_model_open: false,
+            crossover_type_open: false,
+            export_format_open: false,
+            strategy_open: false,
+            local_algo_open: false,
+            loss_type_open: false,
+            target_curve_open: false,
+            system_type_open: false,
+            tilt_type_open: true,
+            excursion_filter_type_open: false,
+            multi_seat_strategy_open: false,
+            mixed_crossover_type_open: false,
+            mixed_fir_band_open: false,
+            vog_reference_channel_open: false,
+            multi_measurement_strategy_open: false,
+            review_smoothing_open: false,
+            autoeq_editing_field: None,
+            autoeq_edit_text: String::new(),
+            custom_target_modal_open: false,
+            custom_target_presets_open: false,
+            dragging_control_point: None,
+        }
+    }
 }
 
 /// Complete Room EQ screen state
@@ -1174,6 +1207,7 @@ impl RoomEqState {
             min_filter_improvement: 0.0,
             elimination_threshold: 0.0,
             ssir_wav_path: None,
+            phase_correction: None,
         };
 
         log::info!(
@@ -1240,5 +1274,71 @@ impl RoomEqState {
     /// Normalize a set of points by subtracting an offset.
     pub fn normalize_points(points: &[(f64, f64)], offset: f64) -> Vec<(f64, f64)> {
         points.iter().map(|&(f, db)| (f, db - offset)).collect()
+    }
+
+    /// Compute the average slope for L and R channels in dB/octave.
+    /// Computed on the 200Hz-20kHz range using linear regression.
+    /// Returns (slope, recommendation_min, recommendation_max) where recommendations are +/- range.
+    pub fn compute_lr_slope(&self) -> Option<(f64, f64, f64)> {
+        let lr_names = ["L", "R"];
+
+        let mut slopes = Vec::new();
+
+        for meas in &self.channel_measurements {
+            let name_upper = meas.channel_name.to_uppercase();
+            if !lr_names.iter().any(|&n| name_upper == n) {
+                continue;
+            }
+
+            let freqs = &meas.measurement.frequencies;
+            let spl = &meas.measurement.magnitude_db;
+
+            // Filter to 200Hz - 20kHz and compute slope
+            let mut log_freqs = Vec::new();
+            let mut dbs = Vec::new();
+
+            for (i, &f) in freqs.iter().enumerate() {
+                if (200.0..=20000.0).contains(&f)
+                    && let Some(&db) = spl.get(i)
+                {
+                    log_freqs.push(f64::from(f).log10());
+                    dbs.push(f64::from(db));
+                }
+            }
+
+            if log_freqs.len() < 2 {
+                continue;
+            }
+
+            // Linear regression: db = slope * log_freq + intercept
+            let n = log_freqs.len() as f64;
+            let sum_x: f64 = log_freqs.iter().sum();
+            let sum_y: f64 = dbs.iter().sum();
+            let sum_xy: f64 = log_freqs.iter().zip(dbs.iter()).map(|(x, y)| x * y).sum();
+            let sum_xx: f64 = log_freqs.iter().map(|x| x * x).sum();
+
+            let denom = n * sum_xx - sum_x * sum_x;
+            if denom.abs() < 1e-10 {
+                continue;
+            }
+
+            // slope in dB per log10(Hz) = dB/decade
+            // Convert to dB/octave: 1 octave = log10(2) ≈ 0.301 in log10 space
+            // So dB/oct = dB/decade * log10(2)
+            let slope_log10 = (n * sum_xy - sum_x * sum_y) / denom;
+            let slope_db_per_octave = slope_log10 * std::f64::consts::LOG10_2;
+
+            slopes.push(slope_db_per_octave);
+        }
+
+        if slopes.is_empty() {
+            return None;
+        }
+
+        let avg_slope: f64 = slopes.iter().sum::<f64>() / slopes.len() as f64;
+        let recommendation_min = avg_slope * 0.8; // -20%
+        let recommendation_max = avg_slope * 1.1; // +10%
+
+        Some((avg_slope, recommendation_min, recommendation_max))
     }
 }

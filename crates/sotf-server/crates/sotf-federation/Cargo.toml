@@ -1,7 +1,7 @@
 [package]
 name = "sotf-federation"
 description = "Library federation — multi-source library providers, merge engine, and sync"
-version = "0.1.0"
+version = "0.5.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -14,7 +14,7 @@ log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync", "rt", "time"] }
+tokio = { workspace = true, features = ["sync", "rt", "net", "time", "io-util"] }
 uuid = { workspace = true, features = ["v5"] }
 
 sotf-engine = { workspace = true }

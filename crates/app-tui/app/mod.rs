@@ -15,7 +15,7 @@ mod parameters;
 mod test;
 mod types;
 
-pub use app_impl::App;
+pub use app_impl::{App, FederationScanResult};
 pub use parameters::{TuiEditablePlugin, TuiParamDescriptor, TuiParamSpec, TuiParamType};
 pub use types::{
     ArtistNode, ChannelConflictChoice, ChannelFilter, ChannelGroup, ChannelInfo,

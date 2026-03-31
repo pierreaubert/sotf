@@ -13,6 +13,9 @@ mutants.out
 # signing certificates (NEVER commit private keys)
 /certs/
 
+# dont commit env file if any
+.env
+
 # marketing/product/insights ...
 /product
 

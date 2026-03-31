@@ -700,13 +700,13 @@ pub fn optimize_room(
                             sample_rate,
                             Some(out_dir),
                         );
-                        if ch.fir_coeffs.is_some() {
-                            if let Some(chain) = result.channels.get_mut(name) {
-                                let filename = format!("{}_excess_phase_fir.wav", name);
-                                chain.plugins.push(
-                                    super::output::create_convolution_plugin(&filename),
-                                );
-                            }
+                        if ch.fir_coeffs.is_some()
+                            && let Some(chain) = result.channels.get_mut(name)
+                        {
+                            let filename = format!("{}_excess_phase_fir.wav", name);
+                            chain
+                                .plugins
+                                .push(super::output::create_convolution_plugin(&filename));
                         }
                     }
                 }

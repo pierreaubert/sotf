@@ -33,6 +33,9 @@ pub enum SourceType {
     Mpd,
     Dlna,
     Peer,
+    Tidal,
+    Spotify,
+    IcyRadio,
 }
 
 impl std::fmt::Display for SourceType {
@@ -43,6 +46,9 @@ impl std::fmt::Display for SourceType {
             SourceType::Mpd => write!(f, "mpd"),
             SourceType::Dlna => write!(f, "dlna"),
             SourceType::Peer => write!(f, "peer"),
+            SourceType::Tidal => write!(f, "tidal"),
+            SourceType::Spotify => write!(f, "spotify"),
+            SourceType::IcyRadio => write!(f, "icy_radio"),
         }
     }
 }

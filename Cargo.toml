@@ -61,13 +61,13 @@ members = [
     "crates/math-audio/math-rir",
     "crates/autoeq",
     "crates/sotf-iamf",
-    "crates/sotf-streaming",
-    "crates/sotf-mpd",
-    "crates/sotf-services",
-    "crates/sotf-dlna",
-    "crates/sotf-cast",
-    "crates/sotf-federation",
-    "crates/sotf-tls",
+    "crates/sotf-server/crates/sotf-streaming",
+    "crates/sotf-server/crates/sotf-mpd",
+    "crates/sotf-server/crates/sotf-services",
+    "crates/sotf-server/crates/sotf-dlna",
+    "crates/sotf-server/crates/sotf-cast",
+    "crates/sotf-server/crates/sotf-federation",
+    "crates/sotf-server/crates/sotf-tls",
     "crates/3rdparties/sofa-reader",
     "crates/gpui-toolkit/gpui-ios",
     "crates/gpui-toolkit/gpui-au",
@@ -225,13 +225,13 @@ sotf-plugin-transient-shaper = { path = "crates/sotf-plugins/crates/sotf-plugin-
 sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer", default-features = false }
 sotf-plugin-xtc = { path = "crates/sotf-plugins/crates/sotf-plugin-xtc" }
 sotf-iamf = { path = "crates/sotf-iamf" }
-sotf-streaming = { path = "crates/sotf-streaming" }
-sotf-mpd = { path = "crates/sotf-mpd" }
-sotf-services = { path = "crates/sotf-services", default-features = false }
-sotf-dlna = { path = "crates/sotf-dlna" }
-sotf-cast = { path = "crates/sotf-cast" }
-sotf-federation = { path = "crates/sotf-federation" }
-sotf-tls = { path = "crates/sotf-tls" }
+sotf-streaming = { path = "crates/sotf-server/crates/sotf-streaming" }
+sotf-mpd = { path = "crates/sotf-server/crates/sotf-mpd" }
+sotf-services = { path = "crates/sotf-server/crates/sotf-services", default-features = false }
+sotf-dlna = { path = "crates/sotf-server/crates/sotf-dlna" }
+sotf-cast = { path = "crates/sotf-server/crates/sotf-cast" }
+sotf-federation = { path = "crates/sotf-server/crates/sotf-federation" }
+sotf-tls = { path = "crates/sotf-server/crates/sotf-tls" }
 sotf-engine = { path = "crates/sotf-engine", default-features = false }
 sotf-types = { path = "crates/sotf-types" }
 sotf-player = { path = "crates/sotf-player" }

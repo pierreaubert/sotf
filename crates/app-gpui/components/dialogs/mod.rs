@@ -303,7 +303,7 @@ impl PlayerView {
 
         Dialog::new("empty-library-prompt")
             .title("Welcome to SotF Player")
-            .size(DialogSize::Sm)
+            .size(DialogSize::Md)
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Md)
@@ -332,7 +332,7 @@ impl PlayerView {
                                     .color(theme.text_primary),
                             )
                             .child(
-                                Text::new("Would you like to add some music folders to scan?")
+                                Text::new("Would you like to add music folders or remote sources?")
                                     .size(TextSize::Sm)
                                     .color(theme.text_secondary),
                             ),
@@ -391,6 +391,35 @@ impl PlayerView {
                                                     Screen::Settings;
                                                 state.app.ui_state.active_settings_tab =
                                                     crate::app::SettingsTab::Library;
+                                            });
+                                        }
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("empty-library-remote")
+                                    .px_4()
+                                    .py_2()
+                                    .rounded_md()
+                                    .bg(theme.surface_hover)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.border))
+                                    .child(
+                                        Text::new("Add Remote Source")
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .on_click({
+                                        let state = self.state.clone();
+                                        move |_, _window, cx| {
+                                            state.update(cx, |state, _| {
+                                                // Navigate to Settings > Federation Sources tab
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                                state.app.ui_state.current_screen =
+                                                    Screen::Settings;
+                                                state.app.ui_state.active_settings_tab =
+                                                    crate::app::SettingsTab::Federation;
                                             });
                                         }
                                     }),

@@ -305,6 +305,7 @@ impl<T: FilterFloat> fmt::Display for BiquadBank<T> {
 // ============================================================================
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod biquad_bank_tests {
     use super::*;
     use crate::traits::lit;

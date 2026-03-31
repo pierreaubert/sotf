@@ -1,6 +1,8 @@
 // ============================================================================
 // MVDR Beamformer — Minimum Variance Distortionless Response
 // ============================================================================
+// Matrix math uses index-based loops for clarity with multi-array access.
+#![allow(clippy::needless_range_loop)]
 //
 // Adaptive beamformer that minimizes output power while preserving signals
 // from the look direction. The weight computation is:

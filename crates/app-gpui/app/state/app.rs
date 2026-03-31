@@ -212,8 +212,39 @@ pub struct App {
 
     // Federation & Server configuration
     pub federation_sources: Vec<sotf_audio_player::federation_config::FederationSourceEntry>,
+    pub federation_source_statuses: HashMap<String, sotf_audio_player::federation_config::ConnectionStatus>,
     pub server_config: sotf_audio_player::federation_config::ServerConfig,
+    /// Receiver for background federation scan messages (progress + final result).
+    pub federation_scan_receiver: Option<std::sync::mpsc::Receiver<FederationScanMessage>>,
+    /// Cancel flag for federation scan (set to true to abort).
+    pub federation_scan_cancel: Arc<std::sync::atomic::AtomicBool>,
+    /// Current federation scan progress (for rendering the progress bar).
+    pub federation_scan_progress: Option<FederationScanProgress>,
+    /// Receiver for Cast device discovery results.
+    pub cast_discovery_receiver: Option<std::sync::mpsc::Receiver<Vec<crate::app::state::audio_device::CastDeviceInfo>>>,
 }
+
+/// Progress state shown in the UI during a federation scan.
+#[derive(Debug, Clone)]
+pub struct FederationScanProgress {
+    pub source_name: String,
+    pub albums_total: usize,
+    pub albums_merged: usize,
+    pub tracks_merged: usize,
+}
+
+/// Messages sent from the federation scan background thread.
+#[derive(Debug)]
+pub enum FederationScanMessage {
+    /// Fetched album list from provider — now starting merge.
+    FetchedAlbums { total: usize },
+    /// Progress update after merging an album.
+    Progress { albums_merged: usize, tracks_merged: usize },
+    /// Scan completed (or failed).
+    Done(sotf_audio_player::federation_scan::FederationScanResult),
+}
+
+pub use sotf_audio_player::federation_scan::FederationScanResult;
 
 /// GPUI-compatible state wrapper
 pub struct AppState {
@@ -315,7 +346,12 @@ impl App {
             current_hint: None,
 
             federation_sources: Vec::new(),
+            federation_source_statuses: HashMap::new(),
             server_config: sotf_audio_player::federation_config::ServerConfig::default(),
+            federation_scan_receiver: None,
+            federation_scan_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            federation_scan_progress: None,
+            cast_discovery_receiver: None,
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts

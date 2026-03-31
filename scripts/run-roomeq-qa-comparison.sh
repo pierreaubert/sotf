@@ -88,13 +88,13 @@ cat > "${TMPDIR_MODES}/hybrid.json" <<'EOF'
         "processing_mode": "hybrid",
         "max_freq": 1500.0,
         "fir": {
-            "taps": 4096,
+            "taps": 2048,
             "phase": "kirkeby",
             "correct_excess_phase": false,
             "phase_smoothing": 0.167
         },
         "phase_correction": {
-            "max_fir_length_ms": 42.0,
+            "max_fir_length_ms": 10.0,
             "pre_ringing_threshold_db": -30.0,
             "min_spatial_depth": 0.5,
             "phase_smoothing_octaves": 0.167

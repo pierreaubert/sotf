@@ -63,15 +63,18 @@ impl MusicDatabase {
         // Prepare the tracks statement ONCE outside the loop (was N+1 before —
         // preparing per album is expensive for large libraries)
         let mut tracks_stmt = self.conn.prepare(
-            "SELECT path, title, artist, track_number, duration_secs, channels,
-                    sample_rate, bit_depth,
-                    replay_gain, replay_peak, album_gain, album_peak, waveform,
-                    genre, composer, disc_number, conductor, performer,
-                    isrc, album_artist, ensemble,
-                    COALESCE(is_favorite, 0), uuid
-             FROM tracks
-             WHERE album_id = ?1
-             ORDER BY disc_number, track_number",
+            "SELECT t.path, t.title, t.artist, t.track_number, t.duration_secs, t.channels,
+                    t.sample_rate, t.bit_depth,
+                    t.replay_gain, t.replay_peak, t.album_gain, t.album_peak, t.waveform,
+                    t.genre, t.composer, t.disc_number, t.conductor, t.performer,
+                    t.isrc, t.album_artist, t.ensemble,
+                    COALESCE(t.is_favorite, 0), t.uuid,
+                    (SELECT ts.audio_source_json FROM track_sources ts
+                     WHERE ts.track_id = t.id AND ts.audio_source_json IS NOT NULL
+                     LIMIT 1)
+             FROM tracks t
+             WHERE t.album_id = ?1
+             ORDER BY t.disc_number, t.track_number",
         )?;
 
         albums.reserve(album_data.len());
@@ -109,7 +112,8 @@ impl MusicDatabase {
                         edition: None,
                         is_favorite: is_fav,
                         play_count,
-                        source: None,
+                        source: row.get::<_, Option<String>>(23)?
+                            .and_then(|json| serde_json::from_str(&json).ok()),
                         uuid: row.get::<_, Option<String>>(22)?,
                     })
                 })?

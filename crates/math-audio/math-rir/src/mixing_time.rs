@@ -122,11 +122,11 @@ mod tests {
         let mut amplitude = 0.1f32;
         let decay = 0.9997f32;
         let mut rng_state: u32 = 42;
-        for i in mixing_start..len {
+        for sample in rir.iter_mut().take(len).skip(mixing_start) {
             // Simple LCG pseudo-random
             rng_state = rng_state.wrapping_mul(1103515245).wrapping_add(12345);
             let noise = ((rng_state >> 16) as f32 / 32768.0) - 1.0;
-            rir[i] = noise * amplitude;
+            *sample = noise * amplitude;
             amplitude *= decay;
         }
 
@@ -135,7 +135,7 @@ mod tests {
 
         // Should be in the range 20-60ms for this synthetic room
         assert!(
-            mt_ms >= 15.0 && mt_ms <= 80.0,
+            (15.0..=80.0).contains(&mt_ms),
             "mixing time {mt_ms:.1}ms outside expected range 15-80ms"
         );
     }

@@ -197,6 +197,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::semicolon_outside_block, reason = "conflicts with semicolon_if_nothing_returned")]
     fn test_persistence() {
         let tmp = tempfile::tempdir().expect("tmpdir");
 

@@ -1296,10 +1296,7 @@ mod tests {
 
     fn simple_prepared(widths: Vec<f64>, kinds: Vec<SegmentBreakKind>) -> PreparedLineBreakData {
         let len = widths.len();
-        let fit = widths.iter().map(|&w| {
-            // For spaces, fitAdvance = 0; for text, fitAdvance = width
-            w
-        }).collect::<Vec<_>>();
+        let fit = widths.to_vec();
         let paint = fit.clone();
         PreparedLineBreakData {
             widths,

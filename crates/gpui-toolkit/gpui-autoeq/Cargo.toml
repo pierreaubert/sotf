@@ -16,6 +16,9 @@ gpui = { workspace = true }
 # UI components
 gpui-ui-kit = { workspace = true }
 
+# Layout solver
+gpui-builder = { workspace = true }
+
 # Proc macros for theme generation
 gpui-ui-kit-macros = { workspace = true }
 

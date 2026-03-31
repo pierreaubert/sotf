@@ -3,7 +3,7 @@ use crate::app::{
     App, FederationEditState, FederationMode, InputMode, ADD_SOURCE_TYPE_IDX, SOURCE_TYPE_NAMES,
 };
 use crossterm::event::{KeyCode, KeyEvent};
-use sotf_audio_player::federation_config::{FederationSourceEntry, SourceConnectionConfig};
+use sotf_audio_player::federation_config::{ConnectionStatus, FederationSourceEntry, SourceConnectionConfig};
 
 pub(super) fn handle_federation_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match app.federation_state.mode {
@@ -65,6 +65,12 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                     let _ = db.toggle_federation_source(&source.source_id);
                 }
             }
+        }
+        KeyCode::Char('t') => {
+            test_federation_source(app);
+        }
+        KeyCode::Char('s') => {
+            scan_federation_source(app);
         }
         _ => {}
     }
@@ -173,6 +179,7 @@ fn handle_add_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 priority: 50,
                 is_enabled: true,
                 connection,
+                is_available: None,
             };
             state.edit = Some(FederationEditState::new(source, true));
             state.mode = FederationMode::EditSource;
@@ -190,3 +197,187 @@ fn uuid_short() -> String {
         .map_or(0, |d| d.as_millis());
     format!("{:x}", ts & 0xFFFF_FFFF)
 }
+
+fn test_federation_source(app: &mut App) {
+    let state = &mut app.federation_state;
+    let source_idx = state.selected_idx;
+    let source = match state.sources.get(source_idx) {
+        Some(s) => s.clone(),
+        None => return,
+    };
+
+    if source.source_id == "local" {
+        return;
+    }
+
+    let source_id = source.source_id.clone();
+    state.statuses.insert(source_id.clone(), ConnectionStatus::Testing);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.federation_test_receiver = Some(rx);
+
+    std::thread::spawn(move || {
+        let status = sotf_audio_player::federation_scan::run_connection_diagnostic(&source);
+        let _ = tx.send((source_id, status));
+    });
+}
+
+fn scan_federation_source(app: &mut App) {
+    if app.federation_scan_receiver.is_some() {
+        app.status_message = Some("A federation scan is already running.".to_string());
+        return;
+    }
+
+    let state = &app.federation_state;
+    let source = match state.sources.get(state.selected_idx) {
+        Some(s) => s.clone(),
+        None => return,
+    };
+
+    if source.source_id == "local" {
+        return;
+    }
+
+    app.status_message = Some(format!("Scanning {}...", source.display_name));
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.federation_scan_receiver = Some(rx);
+
+    std::thread::Builder::new()
+        .name("federation-scan".into())
+        .spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+            let result = rt.block_on(do_federation_scan(&source));
+            let _ = tx.send(result);
+        })
+        .expect("spawn federation scan thread");
+}
+
+async fn do_federation_scan(
+    source: &FederationSourceEntry,
+) -> crate::app::FederationScanResult {
+    use sotf_audio_player::federation_scan;
+
+    let source_id = source.source_id.clone();
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+
+    let albums = match federation_scan::fetch_source_albums(source).await {
+        Ok(albums) => albums,
+        Err(result) => return crate::app::FederationScanResult {
+            source_id: result.source_id,
+            albums: result.albums,
+            tracks: result.tracks,
+            error: result.error,
+        },
+    };
+
+    let result = federation_scan::merge_albums_to_db(&source_id, &albums, &cancel, None);
+    crate::app::FederationScanResult {
+        source_id: result.source_id,
+        albums: result.albums,
+        tracks: result.tracks,
+        error: result.error,
+    }
+}
+
+/// Poll for federation scan completion. Call from the main tick loop.
+/// Returns true if the UI needs a redraw.
+pub fn poll_federation_scan(app: &mut App) -> bool {
+    let result = match &app.federation_scan_receiver {
+        Some(rx) => match rx.try_recv() {
+            Ok(result) => Some(result),
+            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                app.federation_scan_receiver = None;
+                return false;
+            }
+        },
+        None => return false,
+    };
+
+    app.federation_scan_receiver = None;
+
+    if let Some(result) = result {
+        if let Some(ref err) = result.error {
+            app.status_message = Some(format!("Federation scan failed: {err}"));
+            // Mark source as unavailable
+            if let Some(source) = app.federation_state.sources.iter_mut().find(|s| s.source_id == result.source_id) {
+                source.is_available = Some(false);
+            }
+            if let Some(db) = app.library.get_database() {
+                let _ = db.set_source_availability(&result.source_id, false);
+            }
+            app.federation_state.statuses.insert(
+                result.source_id,
+                ConnectionStatus::Error(err.clone()),
+            );
+        } else {
+            app.status_message = Some(format!(
+                "Scan complete: {} albums, {} tracks merged.",
+                result.albums, result.tracks
+            ));
+            // Mark source as available
+            if let Some(source) = app.federation_state.sources.iter_mut().find(|s| s.source_id == result.source_id) {
+                source.is_available = Some(true);
+            }
+            if let Some(db) = app.library.get_database() {
+                let _ = db.set_source_availability(&result.source_id, true);
+                let _ = db.update_federation_source_sync_time(&result.source_id);
+            }
+            app.federation_state.statuses.insert(
+                result.source_id,
+                ConnectionStatus::Connected { version: None },
+            );
+            // Reload library to pick up newly merged albums
+            if let Some(db) = app.library.get_database() {
+                match db.load_library() {
+                    Ok(albums) => {
+                        app.library.albums = albums;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to reload library after federation scan: {e}");
+                    }
+                }
+            }
+        }
+    }
+
+    true
+}
+
+/// Poll for federation connection test completion. Call from the main tick loop.
+/// Returns true if the UI needs a redraw.
+pub fn poll_federation_test(app: &mut App) -> bool {
+    let rx = match &app.federation_test_receiver {
+        Some(rx) => rx,
+        None => return false,
+    };
+
+    match rx.try_recv() {
+        Ok((sid, status)) => {
+            app.federation_test_receiver = None;
+
+            let available = match &status {
+                ConnectionStatus::Connected { .. } => true,
+                ConnectionStatus::Diagnostic(d) => d.is_success(),
+                _ => false,
+            };
+
+            if let Some(src) = app.federation_state.sources.iter_mut().find(|s| s.source_id == sid) {
+                src.is_available = Some(available);
+            }
+            if let Some(db) = app.library.get_database() {
+                let _ = db.set_source_availability(&sid, available);
+            }
+
+            app.federation_state.statuses.insert(sid, status);
+            true
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => false,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            app.federation_test_receiver = None;
+            false
+        }
+    }
+}
+

@@ -185,6 +185,7 @@ fn biquad_filter<T: FilterFloat>(
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
     use crate::{peq_butterworth_highpass, peq_butterworth_lowpass};

@@ -1208,15 +1208,55 @@
 
             // Assemble Room Config and Optimiser Config side-by-side when wide enough
             if !is_narrow_layout {
+                let on_block_focus_tilt = on_block_focus_rc.clone();
+                let on_block_focus_opt = on_block_focus_rc.clone();
                 form = form.child(
                     HStack::new()
                         .spacing(StackSpacing::Md)
                         .align(StackAlign::Start)
-                        .child(div().flex_1().child(room_config_card))
-                        .child(div().flex_1().child(opt_config_card)),
+                        .child(
+                            div()
+                                .flex_1()
+                                .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                                    if let Some(ref cb) = on_block_focus_tilt {
+                                        cb(docs::BLOCK_TARGET_TILT, _window, _cx);
+                                    }
+                                })
+                                .child(room_config_card),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                                    if let Some(ref cb) = on_block_focus_opt {
+                                        cb(docs::BLOCK_OPTIMIZER, _window, _cx);
+                                    }
+                                })
+                                .child(opt_config_card),
+                        ),
                 );
             } else {
-                form = form.child(room_config_card).child(opt_config_card);
+                let on_block_focus_tilt = on_block_focus_rc.clone();
+                let on_block_focus_opt = on_block_focus_rc.clone();
+                form = form
+                    .child(
+                        div()
+                            .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                                if let Some(ref cb) = on_block_focus_tilt {
+                                    cb(docs::BLOCK_TARGET_TILT, _window, _cx);
+                                }
+                            })
+                            .child(room_config_card),
+                    )
+                    .child(
+                        div()
+                            .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                                if let Some(ref cb) = on_block_focus_opt {
+                                    cb(docs::BLOCK_OPTIMIZER, _window, _cx);
+                                }
+                            })
+                            .child(opt_config_card),
+                    );
             }
         }
 

@@ -629,6 +629,7 @@ impl InPlacePlugin for LimiterPlugin {
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use crate::*;
     #[test]

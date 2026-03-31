@@ -198,6 +198,9 @@ pub struct AutoEqForm {
     pub(crate) on_multi_measurement_variance_lambda_change: Option<F64Callback>,
     pub(crate) on_multi_measurement_weight_change:
         Option<Box<dyn Fn(usize, f64, &mut Window, &mut App)>>,
+
+    /// Callback when the user hovers over a parameter block (drives the docs panel).
+    pub(crate) on_block_focus: Option<StringCallback>,
 }
 
 impl AutoEqForm {
@@ -318,6 +321,7 @@ impl AutoEqForm {
             on_multi_measurement_strategy_toggle: None,
             on_multi_measurement_variance_lambda_change: None,
             on_multi_measurement_weight_change: None,
+            on_block_focus: None,
         }
     }
 
@@ -1232,6 +1236,16 @@ impl AutoEqForm {
         handler: impl Fn(usize, f64, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_multi_measurement_weight_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set a callback fired when the user hovers over a parameter block.
+    /// The callback receives the block id (e.g., `"goals"`, `"eq-design"`).
+    pub fn on_block_focus(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_block_focus = Some(Box::new(handler));
         self
     }
 }

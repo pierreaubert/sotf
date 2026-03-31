@@ -23,6 +23,7 @@ pub mod conf_roomeq;
 pub mod conf_servers;
 pub mod conf_spinoramaeq;
 
+pub use conf_federation::{poll_federation_scan, poll_federation_test};
 pub use conf_headphoneeq::poll_headphone_eq_optimization;
 pub use conf_recordings::poll_recording;
 pub use conf_roomeq::poll_room_eq_optimization;

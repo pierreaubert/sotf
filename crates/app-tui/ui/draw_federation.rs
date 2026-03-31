@@ -1,31 +1,51 @@
 use super::*;
 use crate::app::{FederationMode, ADD_SOURCE_TYPE_IDX, SOURCE_TYPE_NAMES};
+use sotf_audio_player::federation_config::ConnectionStatus;
 
 pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
     let state = &app.federation_state;
 
+    // Check if we should show the diagnostic panel below the list
+    let has_diagnostic = state
+        .sources
+        .get(state.selected_idx)
+        .and_then(|s| state.statuses.get(&s.source_id))
+        .is_some_and(|s| s.is_diagnostic());
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Help
-            Constraint::Min(5),    // Source list or edit form
-        ])
+        .constraints(if has_diagnostic {
+            vec![
+                Constraint::Length(1),  // Help
+                Constraint::Min(5),     // Source list or edit form
+                Constraint::Length(8),  // Diagnostic panel
+            ]
+        } else {
+            vec![
+                Constraint::Length(1), // Help
+                Constraint::Min(5),    // Source list or edit form
+                Constraint::Length(0), // No diagnostic panel
+            ]
+        })
         .split(area);
 
     let help_text = match state.mode {
         FederationMode::List => {
-            " a=Add  e/Enter=Edit  d=Delete  Space=Toggle  Esc=Back"
+            " a=Add  e/Enter=Edit  d=Delete  t=Test  s=Scan  Space=Toggle  Esc=Back"
         }
-        FederationMode::EditSource => {
-            " Up/Down=Navigate  Enter=Edit field  s/Tab=Save  Esc=Cancel"
-        }
+        FederationMode::EditSource => " Up/Down=Navigate  Enter=Edit field  s/Tab=Save  Esc=Cancel",
         FederationMode::AddSource => " Up/Down=Select type  Enter=Confirm  Esc=Cancel",
     };
     let help = Paragraph::new(help_text).style(Style::default().fg(app.theme.fg_secondary));
     f.render_widget(help, chunks[0]);
 
     match state.mode {
-        FederationMode::List => draw_source_list(f, chunks[1], app),
+        FederationMode::List => {
+            draw_source_list(f, chunks[1], app);
+            if has_diagnostic {
+                draw_diagnostic_panel(f, chunks[2], app);
+            }
+        }
         FederationMode::EditSource => draw_edit_form(f, chunks[1], app),
         FederationMode::AddSource => draw_add_source(f, chunks[1], app),
     }
@@ -35,14 +55,13 @@ fn draw_source_list(f: &mut Frame, area: Rect, app: &App) {
     let state = &app.federation_state;
 
     if state.sources.is_empty() {
-        let text =
-            Paragraph::new(" No sources configured. Press 'a' to add one.")
-                .style(Style::default().fg(app.theme.fg_secondary))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Library Sources "),
-                );
+        let text = Paragraph::new(" No sources configured. Press 'a' to add one.")
+            .style(Style::default().fg(app.theme.fg_secondary))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Library Sources "),
+            );
         f.render_widget(text, area);
         return;
     }
@@ -93,7 +112,10 @@ fn draw_source_list(f: &mut Frame, area: Rect, app: &App) {
                 Cell::from(source.display_name.as_str()),
                 Cell::from(source.connection.type_name()),
                 Cell::from(format!("{}", source.priority)),
-                Cell::from(Span::styled(status, if is_selected { style } else { status_style })),
+                Cell::from(Span::styled(
+                    status,
+                    if is_selected { style } else { status_style },
+                )),
                 Cell::from(enabled_str),
             ])
             .style(style)
@@ -214,4 +236,52 @@ fn draw_add_source(f: &mut Frame, area: Rect, app: &App) {
         );
 
     f.render_stateful_widget(list, area, &mut list_state);
+}
+
+fn draw_diagnostic_panel(f: &mut Frame, area: Rect, app: &App) {
+    let state = &app.federation_state;
+    let source = match state.sources.get(state.selected_idx) {
+        Some(s) => s,
+        None => return,
+    };
+    let diag = match state.statuses.get(&source.source_id) {
+        Some(ConnectionStatus::Diagnostic(d)) => d,
+        _ => return,
+    };
+
+    use sotf_audio_player::federation_config::StepResult;
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!("  Connection diagnostic: {}:{}", diag.host, diag.port),
+        Style::default()
+            .fg(app.theme.fg_secondary)
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    for (label, result) in diag.steps() {
+        let (icon, color) = match result {
+            StepResult::Ok(_) => (" OK  ", app.theme.accent_success),
+            StepResult::Fail(_) => (" FAIL", app.theme.accent_error),
+            StepResult::Skipped(_) => (" SKIP", app.theme.fg_secondary),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {icon}"),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("  {label:<14}"),
+                Style::default().fg(app.theme.fg_secondary),
+            ),
+            Span::styled(result.message(), Style::default().fg(color)),
+        ]));
+    }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" Diagnostic ");
+    let para = Paragraph::new(lines).block(block);
+    f.render_widget(para, area);
 }

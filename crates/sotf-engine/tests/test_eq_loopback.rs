@@ -379,11 +379,7 @@ fn test_eq_sweep_loopback_verification() {
     );
 
     // Compute latency: how many samples before the start of expected in captured
-    let signal_start_in_captured = if best_offset >= ref_start {
-        best_offset - ref_start
-    } else {
-        0
-    };
+    let signal_start_in_captured = best_offset.saturating_sub(ref_start);
     println!(
         "Estimated latency: {} samples ({:.2} ms)",
         signal_start_in_captured,

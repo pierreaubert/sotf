@@ -508,6 +508,10 @@ impl Render for PlayerView {
                     .overflow_hidden()
                     .child(self.render_current_screen(current_screen, layout_mode, cx)),
             )
+            .when(
+                self.state.read(cx).app.federation_scan_progress.is_some(),
+                |div| div.child(self.render_federation_scan_progress(cx)),
+            )
             .child(self.render_footer(cx))
             .when(input_mode == crate::app::InputMode::Help, |div| {
                 div.child(self.render_help_modal(cx))

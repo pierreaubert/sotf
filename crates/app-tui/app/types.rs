@@ -1,5 +1,4 @@
 //! Core types for the TUI application state management
-pub use sotf_audio_player::QueueItem;
 use sotf_audio_player::headphone_eq_types::{HeadphoneEqBiquad, HeadphoneEqOptimizerConfig};
 use sotf_audio_player::recording_types::{
     ChannelRecording, PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType,
@@ -9,6 +8,7 @@ use sotf_audio_player::room_eq_types::{
     ChannelMeasurement, ChannelOptResult, OptimizationStatus, RoomEqOptimizerConfig, RoomEqStep,
 };
 use sotf_audio_player::spinorama_eq_types::{SpinoramaBiquad, SpinoramaOptimizerConfig};
+pub use sotf_audio_player::QueueItem;
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -375,6 +375,69 @@ impl Default for RoomEqTuiState {
     }
 }
 
+impl RoomEqTuiState {
+    /// Compute the average slope for L and R channels in dB/octave.
+    /// Computed on the 200Hz-20kHz range using linear regression.
+    /// Returns (slope, recommendation_min, recommendation_max) where recommendations are +/- range.
+    pub fn compute_lr_slope(&self) -> Option<(f64, f64, f64)> {
+        let lr_names = ["L", "R"];
+
+        let mut slopes = Vec::new();
+
+        for meas in &self.channel_measurements {
+            let name_upper = meas.channel_name.to_uppercase();
+            if !lr_names.iter().any(|&n| name_upper == n) {
+                continue;
+            }
+
+            let freqs = &meas.measurement.frequencies;
+            let spl = &meas.measurement.magnitude_db;
+
+            let mut log_freqs = Vec::new();
+            let mut dbs = Vec::new();
+
+            for (i, &f) in freqs.iter().enumerate() {
+                if (200.0..=20000.0).contains(&f)
+                    && let Some(&db) = spl.get(i)
+                {
+                    log_freqs.push(f64::from(f).log10());
+                    dbs.push(f64::from(db));
+                }
+            }
+
+            if log_freqs.len() < 2 {
+                continue;
+            }
+
+            let n = log_freqs.len() as f64;
+            let sum_x: f64 = log_freqs.iter().sum();
+            let sum_y: f64 = dbs.iter().sum();
+            let sum_xy: f64 = log_freqs.iter().zip(dbs.iter()).map(|(x, y)| x * y).sum();
+            let sum_xx: f64 = log_freqs.iter().map(|x| x * x).sum();
+
+            let denom = n * sum_xx - sum_x * sum_x;
+            if denom.abs() < 1e-10 {
+                continue;
+            }
+
+            let slope_log10 = (n * sum_xy - sum_x * sum_y) / denom;
+            let slope_db_per_octave = slope_log10 * std::f64::consts::LOG2_10;
+
+            slopes.push(slope_db_per_octave);
+        }
+
+        if slopes.is_empty() {
+            return None;
+        }
+
+        let avg_slope: f64 = slopes.iter().sum::<f64>() / slopes.len() as f64;
+        let recommendation_min = avg_slope * 0.8; // -20%
+        let recommendation_max = avg_slope * 1.1; // +10%
+
+        Some((avg_slope, recommendation_min, recommendation_max))
+    }
+}
+
 /// TUI state for the Recording wizard
 #[derive(Debug, Clone)]
 pub struct RecordingTuiState {
@@ -652,9 +715,7 @@ impl QueueEntry {
 // Federation & Server TUI state
 // ============================================================================
 
-use sotf_audio_player::federation_config::{
-    ConnectionStatus, FederationSourceEntry, ServerConfig,
-};
+use sotf_audio_player::federation_config::{ConnectionStatus, FederationSourceEntry, ServerConfig};
 use std::collections::HashMap;
 
 /// TUI state for the Federation Sources configuration screen.
@@ -786,6 +847,9 @@ pub const SOURCE_TYPE_NAMES: &[(&str, &str)] = &[
     ("mpd", "MPD"),
     ("dlna", "DLNA"),
     ("peer", "Peer (SotF)"),
+    ("tidal", "Tidal"),
+    ("spotify", "Spotify"),
+    ("icy_radio", "Radio"),
 ];
 
 /// Index of the selected source type when in AddSource mode

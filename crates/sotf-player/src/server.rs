@@ -394,7 +394,7 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
     fn browse_album_tracks(&self, album_id: &str) -> Vec<sotf_dlna::MediaTrack> {
         let library = self.state.library.lock();
         let album = library.albums.iter().find(|a| {
-            a.id.map_or(false, |id| id.to_string() == album_id) || a.title == album_id
+            a.id.is_some_and(|id| id.to_string() == album_id) || a.title == album_id
         });
 
         match album {

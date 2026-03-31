@@ -927,6 +927,24 @@ impl PlayerView {
                                     group_delay_after: compute_group_delay_from_curve(
                                         &channel_res.final_curve,
                                     ),
+                                    phase_response_before: compute_phase_response_from_curve(
+                                        &channel_res.initial_curve,
+                                    ),
+                                    phase_response_after: compute_phase_response_from_curve(
+                                        &channel_res.final_curve,
+                                    ),
+                                    impulse_response: room_result
+                                        .channels
+                                        .get(name)
+                                        .and_then(|c| c.post_ir.as_ref())
+                                        .map(|ir| {
+                                            ir.time_ms
+                                                .iter()
+                                                .zip(ir.amplitude.iter())
+                                                .filter(|pair| *pair.0 <= 100.0)
+                                                .map(|pair| (*pair.0, *pair.1))
+                                                .collect()
+                                        }),
                                 }
                             })
                         })
@@ -1065,6 +1083,7 @@ fn flatten_json(value: &serde_json::Value, prefix: String, pairs: &mut Vec<(Stri
 
 /// Compute group delay from a Curve's phase data.
 /// Returns None if no phase data is available.
+/// Group delay is always positive (physical delay cannot be negative).
 fn compute_group_delay_from_curve(curve: &autoeq::Curve) -> Option<Vec<(f64, f64)>> {
     let phase = curve.phase.as_ref()?;
     let unwrapped = autoeq::loss::phase_aware::unwrap_phase_degrees(phase);
@@ -1074,7 +1093,26 @@ fn compute_group_delay_from_curve(curve: &autoeq::Curve) -> Option<Vec<(f64, f64
             .freq
             .iter()
             .zip(gd.iter())
-            .map(|(&f, &d)| (f, d))
+            .map(|(&f, &d)| (f, d.abs()))
+            .collect(),
+    )
+}
+
+/// Compute phase response from a Curve's phase data (in degrees, -180 to 180).
+/// Returns None if no phase data is available.
+fn compute_phase_response_from_curve(curve: &autoeq::Curve) -> Option<Vec<(f64, f64)>> {
+    let phase = curve.phase.as_ref()?;
+    let unwrapped = autoeq::loss::phase_aware::unwrap_phase_degrees(phase);
+    let phase_deg: Vec<f64> = unwrapped
+        .iter()
+        .map(|&d| (d + 180.0).rem_euclid(360.0) - 180.0)
+        .collect();
+    Some(
+        curve
+            .freq
+            .iter()
+            .zip(phase_deg.iter())
+            .map(|(&f, &p)| (f, p))
             .collect(),
     )
 }

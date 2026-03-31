@@ -403,7 +403,7 @@ mod tests {
 
         // Segments should be non-empty
         for seg in &result.segments {
-            assert!(seg.len() > 0, "segment should have non-zero length");
+            assert!(!seg.is_empty(), "segment should have non-zero length");
         }
     }
 
@@ -424,10 +424,10 @@ mod tests {
         let reverb_start = (0.030 * sample_rate) as usize;
         let mut amp = 0.08f32;
         let mut rng: u32 = 12345;
-        for i in reverb_start..len {
+        for sample in rir.iter_mut().take(len).skip(reverb_start) {
             rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
             let noise = ((rng >> 16) as f32 / 32768.0) - 1.0;
-            rir[i] += noise * amp;
+            *sample += noise * amp;
             amp *= 0.9997;
         }
 
@@ -442,7 +442,7 @@ mod tests {
         // Mixing time should be in reasonable range
         let mt_ms = result.mixing_time_ms();
         assert!(
-            mt_ms >= 10.0 && mt_ms <= 80.0,
+            (10.0..=80.0).contains(&mt_ms),
             "auto mixing time {mt_ms:.1}ms outside expected range"
         );
     }

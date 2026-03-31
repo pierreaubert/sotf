@@ -330,6 +330,7 @@ pub fn run_multi_speaker_optimization(
             sub_config: None,
             channel_matching: None,
             ssir_wav_path: None,
+            phase_correction: None,
         },
         recording_config: None,
         cea2034_cache: None,
@@ -502,6 +503,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         sub_config: None,
         channel_matching: None,
         ssir_wav_path: None,
+        phase_correction: None,
     }
 }
 

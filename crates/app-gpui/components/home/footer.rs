@@ -909,25 +909,52 @@ impl PlayerView {
                     )
                     .child(
                         div()
-                            .id("refresh-devices")
-                            .cursor_pointer()
-                            .p_1()
-                            .rounded_sm()
-                            .hover(|s| s.bg(theme_header.surface_hover))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.load_audio_devices();
-                                    });
-                                    cx.notify();
-                                }),
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .id("scan-cast")
+                                    .cursor_pointer()
+                                    .px_2()
+                                    .py_1()
+                                    .rounded_sm()
+                                    .text_xs()
+                                    .text_color(theme_header.text_muted)
+                                    .hover(|s| s.bg(theme_header.surface_hover))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.start_cast_discovery();
+                                            });
+                                            cx.notify();
+                                        }),
+                                    )
+                                    .child("Cast"),
                             )
                             .child(
                                 div()
-                                    .text_2xl()
-                                    .text_color(theme_header.text_muted)
-                                    .child("⟳"),
+                                    .id("refresh-devices")
+                                    .cursor_pointer()
+                                    .p_1()
+                                    .rounded_sm()
+                                    .hover(|s| s.bg(theme_header.surface_hover))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.load_audio_devices();
+                                            });
+                                            cx.notify();
+                                        }),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_2xl()
+                                            .text_color(theme_header.text_muted)
+                                            .child("⟳"),
+                                    ),
                             ),
                     )
             })
@@ -996,6 +1023,108 @@ impl PlayerView {
                             .child(display_name),
                     )
             }))
+            // Cast Devices section
+            .child({
+                let state = self.state.read(cx);
+                let cast_devices = state.app.audio_device_state.cast_devices.clone();
+                let cast_running = state.app.audio_device_state.cast_discovery_running;
+                let selected_cast = state.app.audio_device_state.selected_cast_device;
+                let theme_cast = theme.clone();
+
+                let mut section = div()
+                    .flex()
+                    .flex_col()
+                    .border_t_1()
+                    .border_color(theme_cast.border)
+                    .mt_1()
+                    .pt_1()
+                    .child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme_cast.text_muted)
+                            .child(if cast_running {
+                                "Cast Devices (scanning...)"
+                            } else {
+                                "Cast Devices"
+                            }),
+                    );
+
+                if cast_devices.is_empty() && !cast_running {
+                    section = section.child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .text_xs()
+                            .text_color(theme_cast.text_muted)
+                            .child("No Cast devices found"),
+                    );
+                }
+
+                for (idx, device) in cast_devices.iter().enumerate() {
+                    let is_selected = selected_cast == Some(idx);
+                    let name = device.name.clone();
+                    let dtype = device.device_type.clone();
+                    let theme_item = theme_cast.clone();
+
+                    section = section.child(
+                        div()
+                            .id(SharedString::from(format!("cast-device-{}", idx)))
+                            .px_3()
+                            .py_1()
+                            .mx_1()
+                            .my(px(1.0))
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .text_sm()
+                            .when(is_selected, |d| {
+                                d.bg(theme_item.surface_hover)
+                                    .text_color(theme_item.text_primary)
+                                    .font_weight(FontWeight::MEDIUM)
+                            })
+                            .when(!is_selected, |d| {
+                                d.text_color(theme_item.text_secondary)
+                                    .hover(|style| {
+                                        style
+                                            .bg(theme_item.surface_hover)
+                                            .text_color(theme_item.text_primary)
+                                    })
+                            })
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        if state.app.audio_device_state.selected_cast_device == Some(idx) {
+                                            state.app.deselect_cast_device();
+                                        } else {
+                                            state.app.select_cast_device(idx);
+                                        }
+                                        state.app.ui_state.show_device_popup = false;
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .when(is_selected, |d| d.child("✓"))
+                                    .child(name)
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(theme_cast.text_muted)
+                                            .child(format!("({})", dtype)),
+                                    ),
+                            ),
+                    );
+                }
+
+                section
+            })
     }
 
     /// Render the device popup overlay (click outside to close)

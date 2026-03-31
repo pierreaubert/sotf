@@ -201,6 +201,19 @@ pub struct App {
     pub federation_state: super::types::FederationTuiState,
     // Server configuration state
     pub server_state: super::types::ServersTuiState,
+    /// Receiver for background federation scan results.
+    pub federation_scan_receiver: Option<std::sync::mpsc::Receiver<FederationScanResult>>,
+    /// Receiver for background federation connection test results.
+    pub federation_test_receiver: Option<std::sync::mpsc::Receiver<(String, sotf_audio_player::federation_config::ConnectionStatus)>>,
+}
+
+/// Result of a background federation source scan.
+#[derive(Debug)]
+pub struct FederationScanResult {
+    pub source_id: String,
+    pub albums: usize,
+    pub tracks: usize,
+    pub error: Option<String>,
 }
 
 impl App {
@@ -349,6 +362,8 @@ impl App {
             recording: super::types::RecordingTuiState::default(),
             federation_state: super::types::FederationTuiState::default(),
             server_state: super::types::ServersTuiState::default(),
+            federation_scan_receiver: None,
+            federation_test_receiver: None,
         };
 
         // Load playlists from database

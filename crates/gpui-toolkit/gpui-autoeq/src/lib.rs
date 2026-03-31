@@ -10,7 +10,10 @@
 
 pub mod config;
 pub mod constants;
+pub mod docs;
 mod form;
+pub mod i18n;
+mod layout_tree;
 mod render;
 pub mod theme;
 pub mod ui_state;
@@ -19,5 +22,6 @@ pub mod ui_state;
 pub use config::{AutoEqConfig, ParamLimits};
 pub use constants::*;
 pub use form::{AutoEqForm, AutoEqLayoutMode};
+pub use i18n::{AutoEqI18nExt, AutoEqI18nState, DocKey};
 pub use theme::AutoEqFormTheme;
 pub use ui_state::AutoEqFormUiState;

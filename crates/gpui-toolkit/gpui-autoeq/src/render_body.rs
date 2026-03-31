@@ -136,11 +136,24 @@
 
             goals_content = goals_content.child(target_curve_select);
 
-            form = form.child(Card::new().content(goals_content));
+            let goals_card = Card::new().content(goals_content);
+            if let Some(ref on_block_focus) = on_block_focus_rc {
+                let on_block_focus = on_block_focus.clone();
+                form = form.child(
+                    div()
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                            on_block_focus(docs::BLOCK_GOALS, _window, _cx);
+                        })
+                        .child(goals_card),
+                );
+            } else {
+                form = form.child(goals_card);
+            }
         }
 
         // Collect cards for 2-per-row grid layout (starting from EQ Design)
-        let mut grid_cards: Vec<gpui::AnyElement> = Vec::new();
+        // Each tuple is (block_id, card_element) for block focus handling
+        let mut grid_cards: Vec<(&'static str, gpui::AnyElement)> = Vec::new();
 
         // ========================================
         // EQ Design Parameters Section
@@ -208,7 +221,7 @@
             include!("render_block_eq_design.rs");
             eq_design_content = block_out;
 
-            grid_cards.push(Card::new().content(eq_design_content).into_any_element());
+            grid_cards.push((docs::BLOCK_EQ_DESIGN, Card::new().content(eq_design_content).into_any_element()));
         }
 
         // ========================================
@@ -438,8 +451,8 @@
                     .child(asymmetric_toggle),
             );
 
-            grid_cards.push(Card::new().content(target_loss_content).into_any_element());
-            grid_cards.push(opt_tuning_card.into_any_element());
+            grid_cards.push((docs::BLOCK_OPTIMIZER, Card::new().content(target_loss_content).into_any_element()));
+            grid_cards.push((docs::BLOCK_OPTIMIZER, opt_tuning_card.into_any_element()));
         }
 
         // ========================================
@@ -852,7 +865,7 @@
                 );
             }
 
-            grid_cards.push(Card::new().content(advanced_b_content).into_any_element());
+            grid_cards.push((docs::BLOCK_TARGET_TILT, Card::new().content(advanced_b_content).into_any_element()));
 
             // ========================================
             // Advanced System Optimization (Scenario A)
@@ -1066,7 +1079,7 @@
             }
             } // end hide_multi_seat
 
-            grid_cards.push(Card::new().content(advanced_a_content).into_any_element());
+            grid_cards.push((docs::BLOCK_PHASE_ALIGNMENT, Card::new().content(advanced_a_content).into_any_element()));
         }
 
         // ========================================
@@ -1338,24 +1351,56 @@
                 v2_content = v2_content.child(ref_select);
             }
 
-            grid_cards.push(Card::new().content(v2_content).into_any_element());
+            grid_cards.push((docs::BLOCK_OVERVIEW, Card::new().content(v2_content).into_any_element()));
         }
 
         // Lay out grid cards responsively: 1 column if narrow, 2 columns otherwise.
         if is_single_column_grid {
-            for card in grid_cards {
-                form = form.child(div().w_full().child(card));
+            for (block_id, card) in grid_cards {
+                let on_block_focus = on_block_focus_rc.clone();
+                form = form.child(
+                    div()
+                        .w_full()
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                            if let Some(ref cb) = on_block_focus {
+                                cb(block_id, _window, _cx);
+                            }
+                        })
+                        .child(card),
+                );
             }
         } else {
             let mut grid_iter = grid_cards.into_iter();
-            while let Some(first_card) = grid_iter.next() {
-                let second_card = grid_iter.next();
+            while let Some((first_block_id, first_card)) = grid_iter.next() {
+                let second_entry = grid_iter.next();
                 let mut row = HStack::new()
                     .spacing(StackSpacing::Lg)
                     .align(StackAlign::Start);
-                row = row.child(div().flex_1().child(first_card));
-                if let Some(second_card) = second_card {
-                    row = row.child(div().flex_1().child(second_card));
+
+                let on_block_focus = on_block_focus_rc.clone();
+                row = row.child(
+                    div()
+                        .flex_1()
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                            if let Some(ref cb) = on_block_focus {
+                                cb(first_block_id, _window, _cx);
+                            }
+                        })
+                        .child(first_card),
+                );
+
+                if let Some((second_block_id, second_card)) = second_entry {
+                    let on_block_focus = on_block_focus_rc.clone();
+                    row = row.child(
+                        div()
+                            .flex_1()
+                            .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                                if let Some(ref cb) = on_block_focus {
+                                    cb(second_block_id, _window, _cx);
+                                }
+                            })
+                            .child(second_card),
+                    );
                 } else {
                     row = row.child(div().flex_1());
                 }

@@ -153,7 +153,6 @@ pub async fn tls_accept(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cert_gen;
     use std::net::IpAddr;
 
     #[test]
@@ -165,6 +164,6 @@ mod tests {
         .expect("cert gen");
 
         let config = build_server_tls_config(cert, key);
-        assert!(config.is_ok());
+        config.unwrap();
     }
 }

@@ -86,8 +86,8 @@ pub struct StereoImagerPlugin {
     mix: f32,
 
     // Crossovers: each crossover handles 2 channels (one for mid signal, one for side signal)
-    crossover_low: Lr4Crossover,
-    crossover_high: Lr4Crossover,
+    crossover_low: Lr4Crossover<f32>,
+    crossover_high: Lr4Crossover<f32>,
 
     // Pre-allocated dry buffer for mix blending
     dry_buf: Vec<f32>,
@@ -121,8 +121,8 @@ impl StereoImagerPlugin {
             mix: params.mix,
 
             // 2 channels: channel 0 = mid, channel 1 = side
-            crossover_low: Lr4Crossover::new(params.low_mid_freq, sr, 2),
-            crossover_high: Lr4Crossover::new(params.mid_high_freq, sr, 2),
+            crossover_low: Lr4Crossover::new(params.low_mid_freq, sr as f32, 2),
+            crossover_high: Lr4Crossover::new(params.mid_high_freq, sr as f32, 2),
 
             dry_buf: Vec::new(),
 
@@ -294,8 +294,8 @@ impl InPlacePlugin for StereoImagerPlugin {
         self.sample_rate = sample_rate;
 
         // Reinitialize crossovers at the correct sample rate
-        self.crossover_low.reinit(self.low_mid_freq, sample_rate, 2);
-        self.crossover_high.reinit(self.mid_high_freq, sample_rate, 2);
+        self.crossover_low.reinit(self.low_mid_freq, sample_rate as f32, 2);
+        self.crossover_high.reinit(self.mid_high_freq, sample_rate as f32, 2);
 
         // Reset smoothers at the new sample rate
         self.width_smoother = Smoother::new(self.width, SMOOTHING_MS, sample_rate);

@@ -542,7 +542,7 @@ mod tests {
         for _ in 0..10000 {
             let val = random_f32(&mut state);
             assert!(
-                val >= -0.5 && val <= 0.5,
+                (-0.5..=0.5).contains(&val),
                 "random_f32 out of range: {}",
                 val
             );

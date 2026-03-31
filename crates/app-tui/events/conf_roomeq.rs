@@ -659,6 +659,9 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
                         target_curve: None,
                         group_delay_before: None,
                         group_delay_after: None,
+                        phase_response_before: None,
+                        phase_response_after: None,
+                        impulse_response: None,
                     })
                     .collect();
                 app.room_eq.opt_status = OptimizationStatus::Completed;
@@ -964,6 +967,9 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 None
             },
             ssir_wav_path: None,
+            phase_correction: None,
+            min_filter_improvement: 0.0,
+            elimination_threshold: 0.0,
         };
 
         let room_config = RoomConfig {
