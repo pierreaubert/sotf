@@ -53,9 +53,15 @@ impl TestScenario for AllPluginsScenario {
                 .expect("Plugin should be in the chain");
 
             // Verify Type
+            // FletcherMunson is merged into LoudnessCompensation (mode=2)
+            let expected_type = if plugin_type == PluginType::FletcherMunson {
+                PluginType::LoudnessCompensation
+            } else {
+                plugin_type.clone()
+            };
             assert_eq!(
                 page.get_plugin_type(plugin_index),
-                Some(plugin_type.clone()),
+                Some(expected_type),
                 "Plugin type mismatch"
             );
 

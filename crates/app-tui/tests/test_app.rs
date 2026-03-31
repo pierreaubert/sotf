@@ -550,8 +550,8 @@ mod tests {
             } => (*threshold_db, *release_ms, *lookahead_ms, *soft, *mix),
             _ => panic!("Expected Limiter plugin"),
         };
-        // Limiter params: 0=threshold, 1=release, 2=lookahead, 3=soft, 4=true_peak, 5=dual_release, 6=mix
-        for idx in [0, 1, 2, 3, 6] {
+        // Limiter params: 0=threshold, 1=release, 2=lookahead, 3=soft, 4=true_peak, 5=isp_mode, 6=dual_release, 7=mix
+        for idx in [0, 1, 2, 3, 7] {
             app.plugin_param_selection = idx;
             assert!(app.adjust_selected_param(-1.0));
         }

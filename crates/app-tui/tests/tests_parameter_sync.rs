@@ -51,8 +51,8 @@ fn test_upmixer_parameter_sync_deep() {
     let mut settings = PluginSettings::default_for(&PluginType::Upmixer);
     let descriptors = settings.get_descriptors();
 
-    // Upmixer is expected to have 43 parameters currently (0-42)
-    assert_eq!(descriptors.len(), 43);
+    // Upmixer is expected to have 44 parameters currently (0-43)
+    assert_eq!(descriptors.len(), 44);
 
     for i in 0..descriptors.len() {
         // Just verify it doesn't return false for known editable params
@@ -84,8 +84,8 @@ fn test_eq_filter_limit() {
     let descriptors = settings.get_descriptors();
     assert_eq!(descriptors[0].name, "Max Filters");
 
-    // Initial descriptors count: 2 (Max Filters + TDF2) + 5 * 4 (filters) = 22
-    assert_eq!(descriptors.len(), 22);
+    // Initial descriptors count: 3 (Max Filters + TDF2 + Topology) + 5 * 4 (filters) = 23
+    assert_eq!(descriptors.len(), 23);
 
     // Change Max Filters to 3
     settings.adjust_param(0, -2.0);
@@ -100,8 +100,8 @@ fn test_eq_filter_limit() {
     }
 
     let descriptors = settings.get_descriptors();
-    // New count: 2 (Max Filters + TDF2) + 3 * 4 (filters) = 14
-    assert_eq!(descriptors.len(), 14);
+    // New count: 3 (Max Filters + TDF2 + Topology) + 3 * 4 (filters) = 15
+    assert_eq!(descriptors.len(), 15);
 
     // Change Max Filters to 6 (add one)
     settings.adjust_param(0, 3.0);
@@ -116,11 +116,11 @@ fn test_eq_filter_limit() {
     }
 
     let descriptors = settings.get_descriptors();
-    // New count: 2 (Max Filters + TDF2) + 6 * 4 (filters) = 26
-    assert_eq!(descriptors.len(), 26);
+    // New count: 3 (Max Filters + TDF2 + Topology) + 6 * 4 (filters) = 27
+    assert_eq!(descriptors.len(), 27);
 
-    // Verify we can edit the new filter (index 21-24)
-    let res = settings.adjust_param(21, 10.0); // Frequency of 6th filter
+    // Verify we can edit the new filter (index 22-25)
+    let res = settings.adjust_param(22, 10.0); // Frequency of 6th filter
     assert!(res);
 }
 

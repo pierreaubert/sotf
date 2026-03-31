@@ -251,13 +251,19 @@ mod tests {
         send_keys(&mut app, &[KeyCode::Right]);
         assert_eq!(app.configure_sub_screen, ConfigureSubScreen::SpinoramaEq);
 
+        send_keys(&mut app, &[KeyCode::Right]);
+        assert_eq!(app.configure_sub_screen, ConfigureSubScreen::FederationSources);
+
+        send_keys(&mut app, &[KeyCode::Right]);
+        assert_eq!(app.configure_sub_screen, ConfigureSubScreen::Servers);
+
         // Wraps back to Directories
         send_keys(&mut app, &[KeyCode::Right]);
         assert_eq!(app.configure_sub_screen, ConfigureSubScreen::Directories);
 
         // And Left wraps backwards
         send_keys(&mut app, &[KeyCode::Left]);
-        assert_eq!(app.configure_sub_screen, ConfigureSubScreen::SpinoramaEq);
+        assert_eq!(app.configure_sub_screen, ConfigureSubScreen::Servers);
     }
 
     #[test]

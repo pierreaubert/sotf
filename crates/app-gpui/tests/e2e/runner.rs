@@ -157,6 +157,13 @@ impl<S: TestScenario> E2ERunner<S> {
         // is torn down (which causes a panic-in-destructor → SIGABRT).
         visual_cx.run_until_parked();
 
+        // Close the window to release GPUI entities.
+        // The new GPUI revision (ebb451ec) added leak detection in tests.
+        let _ = window.update(&mut visual_cx, |_, window, _| {
+            window.remove_window();
+        });
+        visual_cx.run_until_parked();
+
         Ok(())
     }
 }

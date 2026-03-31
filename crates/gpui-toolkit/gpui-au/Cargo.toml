@@ -23,7 +23,7 @@ raw-window-handle = "0.6"
 gpui = { workspace = true }
 
 # wgpu renderer (Metal backend on macOS)
-gpui_wgpu = { git = "https://github.com/zed-industries/zed.git", rev = "dd9efd9cbe73af15fae92d9d34137d253c16d12f" }
+gpui_wgpu = { workspace = true }
 wgpu = { workspace = true }
 
 # Objective-C runtime

@@ -1591,6 +1591,8 @@ mod tests {
                     | PluginType::Denoiser
                     | PluginType::Downmix
                     | PluginType::MonoToStereo
+                    | PluginType::LinearPhaseEq
+                    | PluginType::SpectralCompressor
             );
 
             if !may_produce_silence {

@@ -21,29 +21,29 @@ impl TestScenario for FletcherMunsonScenario {
     ) -> Result<(), Box<dyn Error>> {
         let mut driver = AppDriver::new(cx, window);
 
-        // 1. Add Fletcher-Munson plugin
+        // 1. Add Fletcher-Munson plugin (now merged into LoudnessCompensation with mode=2)
         driver.update_app(|app, _cx| {
             println!("Adding Fletcher-Munson plugin...");
             app.add_plugin(&PluginType::FletcherMunson);
             app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         });
 
-        // 2. Modify Reference Level (Index 1)
+        // 2. Modify Reference Level (Index 13 in LoudnessCompensation PARAMS)
         driver.update_app(|app, _cx| {
             println!("Modifying Reference Level...");
-            // Find Fletcher-Munson plugin index
+            // FletcherMunson is now LoudnessCompensation with mode=2
             let plugin_idx = app
                 .plugin_state
                 .chain
                 .plugins()
                 .iter()
-                .position(|p| matches!(p.plugin_type(), PluginType::FletcherMunson))
-                .expect("Fletcher-Munson plugin not found after addition");
+                .position(|p| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .expect("LoudnessCompensation plugin not found after addition");
 
-            println!("Fletcher-Munson found at index {}", plugin_idx);
+            println!("LoudnessCompensation (FM) found at index {}", plugin_idx);
 
-            // Set Reference Level to -20.0 dB
-            app.set_plugin_param(plugin_idx, 1, -20.0);
+            // Set Reference Level to 70.0 dB SPL (index 13 in LC PARAMS, range [60, 100])
+            app.set_plugin_param(plugin_idx, 13, 70.0);
         });
 
         // 3. Verify Reference Level Update
@@ -54,8 +54,8 @@ impl TestScenario for FletcherMunsonScenario {
                 .chain
                 .plugins()
                 .iter()
-                .position(|p| matches!(p.plugin_type(), PluginType::FletcherMunson))
-                .expect("Fletcher-Munson plugin not found for verification");
+                .position(|p| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .expect("LoudnessCompensation plugin not found for verification");
 
             let plugin = app
                 .plugin_state
@@ -63,51 +63,51 @@ impl TestScenario for FletcherMunsonScenario {
                 .get_plugin(plugin_idx)
                 .ok_or("Plugin not found")?;
 
-            if let PluginSettings::FletcherMunson {
+            if let PluginSettings::LoudnessCompensation {
                 reference_level_db, ..
             } = plugin.settings
             {
                 println!("Current Reference Level: {}", reference_level_db);
-                if (reference_level_db - -20.0).abs() > 0.001 {
+                if (reference_level_db - 70.0).abs() > 0.001 {
                     panic!(
-                        "Reference level mismatch: expected -20.0, got {}",
+                        "Reference level mismatch: expected 70.0, got {}",
                         reference_level_db
                     );
                 }
             } else {
                 panic!(
-                    "Expected FletcherMunson plugin, found {:?}",
+                    "Expected LoudnessCompensation plugin, found {:?}",
                     plugin.plugin_type()
                 );
             }
             Ok::<(), Box<dyn Error>>(())
         });
 
-        // 4. Modify Band 1 Frequency (Index 8)
+        // 4. Modify Low Frequency (Index 0 in LoudnessCompensation PARAMS)
         driver.update_app(|app, _cx| {
-            println!("Modifying Band 1 Frequency...");
+            println!("Modifying Low Frequency...");
             let plugin_idx = app
                 .plugin_state
                 .chain
                 .plugins()
                 .iter()
-                .position(|p| matches!(p.plugin_type(), PluginType::FletcherMunson))
-                .expect("Fletcher-Munson plugin not found");
+                .position(|p| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .expect("LoudnessCompensation plugin not found");
 
-            // Set Band 1 Freq to 80 Hz
-            app.set_plugin_param(plugin_idx, 8, 80.0);
+            // Set Low Freq to 80 Hz (index 0 in LC PARAMS)
+            app.set_plugin_param(plugin_idx, 0, 80.0);
         });
 
-        // 5. Verify Band 1 Frequency Update
+        // 5. Verify Low Frequency Update
         driver.read_app(|app| {
-            println!("Verifying Band 1 Frequency...");
+            println!("Verifying Low Frequency...");
             let plugin_idx = app
                 .plugin_state
                 .chain
                 .plugins()
                 .iter()
-                .position(|p| matches!(p.plugin_type(), PluginType::FletcherMunson))
-                .expect("Fletcher-Munson plugin not found");
+                .position(|p| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .expect("LoudnessCompensation plugin not found");
 
             let plugin = app
                 .plugin_state
@@ -115,16 +115,16 @@ impl TestScenario for FletcherMunsonScenario {
                 .get_plugin(plugin_idx)
                 .expect("Plugin not found");
 
-            if let PluginSettings::FletcherMunson { band1_freq, .. } = plugin.settings {
-                println!("Current Band 1 Frequency: {}", band1_freq);
-                if (band1_freq - 80.0).abs() > 0.001 {
+            if let PluginSettings::LoudnessCompensation { low_freq, .. } = plugin.settings {
+                println!("Current Low Frequency: {}", low_freq);
+                if (low_freq - 80.0).abs() > 0.001 {
                     panic!(
-                        "Band 1 frequency mismatch: expected 80.0, got {}",
-                        band1_freq
+                        "Low frequency mismatch: expected 80.0, got {}",
+                        low_freq
                     );
                 }
             } else {
-                panic!("Expected FletcherMunson plugin");
+                panic!("Expected LoudnessCompensation plugin");
             }
         });
 

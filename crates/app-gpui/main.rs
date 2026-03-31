@@ -241,10 +241,12 @@ fn main() {
                 Menu {
                     name: format!("SotF-v{}", env!("CARGO_PKG_VERSION")).into(),
                     items: app_menu_items,
+                    disabled: false,
                 },
                 Menu {
                     name: translations.menu_view.into(),
                     items: view_menu_items,
+                    disabled: false,
                 },
                 Menu {
                     name: translations.menu_help.into(),
@@ -255,6 +257,7 @@ fn main() {
                             ToggleHelp,
                         ),
                     ],
+                    disabled: false,
                 },
             ]);
 

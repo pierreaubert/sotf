@@ -44,9 +44,9 @@ impl Gpu2DContext {
 
 /// Create a new wgpu instance, device and queue
 async fn create_device() -> (wgpu::Instance, wgpu::Device, wgpu::Queue) {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
-        ..Default::default()
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
 
     let adapter = instance

@@ -322,6 +322,7 @@ pub fn run_multi_speaker_optimization(
             broadband_target_matching: None,
             multi_measurement: None,
             mixed_phase: None,
+            phase_correction: None,
             decomposed_correction: None,
             target_response: None,
             cea2034_correction: None,
@@ -330,7 +331,6 @@ pub fn run_multi_speaker_optimization(
             sub_config: None,
             channel_matching: None,
             ssir_wav_path: None,
-            phase_correction: None,
         },
         recording_config: None,
         cea2034_cache: None,
@@ -478,6 +478,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         seed: None,
         mixed_config: None,
         mixed_phase: None,
+        phase_correction: None,
         refine: true,
         local_algo: "cobyla".to_string(),
         psychoacoustic: true,
@@ -503,7 +504,6 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         sub_config: None,
         channel_matching: None,
         ssir_wav_path: None,
-        phase_correction: None,
     }
 }
 

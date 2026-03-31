@@ -321,6 +321,8 @@ impl RoomEqOptimizerConfig {
             self.target_tilt.reference_freq = tilt.reference_freq;
             self.target_tilt.bass_shelf_db = tilt.bass_shelf_db;
             self.target_tilt.bass_shelf_freq = tilt.bass_shelf_freq;
+        } else {
+            self.target_tilt.enabled = false;
         }
 
         self.excursion_protection.enabled = backend.excursion_protection.as_ref().is_some_and(|e| e.enabled);

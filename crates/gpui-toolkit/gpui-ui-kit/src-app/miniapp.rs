@@ -425,14 +425,17 @@ impl MiniApp {
         menus.push(Menu {
             name: config.app_name.clone(),
             items: vec![MenuItem::action(quit_label, Quit)],
+            disabled: false,
         });
 
         // View menu with Theme submenu if enabled
         if config.with_theme {
             menus.push(Menu {
                 name: "View".into(),
+                disabled: false,
                 items: vec![MenuItem::submenu(Menu {
                     name: "Theme".into(),
+                    disabled: false,
                     items: vec![
                         MenuItem::action("Dark", SetThemeDark),
                         MenuItem::action("Light", SetThemeLight),
@@ -459,6 +462,7 @@ impl MiniApp {
 
             menus.push(Menu {
                 name: menu_title.into(),
+                disabled: false,
                 items: vec![
                     MenuItem::action("English", SetLanguageEnglish),
                     MenuItem::action("Français", SetLanguageFrench),

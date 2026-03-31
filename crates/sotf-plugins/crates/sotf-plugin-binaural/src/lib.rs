@@ -1200,7 +1200,7 @@ impl Plugin for BinauralDecoderPlugin {
         if id.0 == "crossfade_ms" {
             return Some(ParameterValue::Float(self.crossfade_ms));
         }
-        if id.0 == "hrtf_file" {
+        if id.0 == "sofa_file" || id.0 == "hrtf_file" {
             let path_str = self
                 .hrtf_path
                 .as_ref()

@@ -433,8 +433,8 @@ mod tests {
     fn test_parameter_map_eq() {
         let plugin = plugins_bridge::create_plugin("EQ", 2, 48000, "{}").unwrap();
         let param_map = ParameterMap::from_plugin(&*plugin, "EQ");
-        // 2 global (max_filters, tdf2) + 20 bands × 4 params (frequency, q, gain_db, filter_type)
-        assert_eq!(param_map.count(), 2 + 20 * 4);
+        // 3 global (max_filters, tdf2, topology) + 20 bands × 4 params (frequency, q, gain_db, filter_type)
+        assert_eq!(param_map.count(), 3 + 20 * 4);
     }
 
     #[test]
