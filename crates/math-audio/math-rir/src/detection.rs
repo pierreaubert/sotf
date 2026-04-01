@@ -40,7 +40,10 @@ pub(crate) fn find_direct_sound_toa(rir: &[f32], config: &SsirConfig) -> Option<
     }
 
     // Step 3: Find the global maximum of log magnitude
-    let global_max = peaks.iter().map(|&i| log_mag[i]).fold(f64::NEG_INFINITY, f64::max);
+    let global_max = peaks
+        .iter()
+        .map(|&i| log_mag[i])
+        .fold(f64::NEG_INFINITY, f64::max);
 
     // Step 4: Direct sound = first peak within 11 dB of global max
     let threshold = global_max - 11.0;
@@ -193,10 +196,8 @@ fn angular_distance(a: &[f32; 3], b: &[f32; 3]) -> f64 {
         + (a[1] as f64) * (b[1] as f64)
         + (a[2] as f64) * (b[2] as f64);
 
-    let norm_a =
-        ((a[0] as f64).powi(2) + (a[1] as f64).powi(2) + (a[2] as f64).powi(2)).sqrt();
-    let norm_b =
-        ((b[0] as f64).powi(2) + (b[1] as f64).powi(2) + (b[2] as f64).powi(2)).sqrt();
+    let norm_a = ((a[0] as f64).powi(2) + (a[1] as f64).powi(2) + (a[2] as f64).powi(2)).sqrt();
+    let norm_b = ((b[0] as f64).powi(2) + (b[1] as f64).powi(2) + (b[2] as f64).powi(2)).sqrt();
 
     let denom = norm_a * norm_b;
     if denom < 1e-12 {
@@ -330,7 +331,11 @@ mod tests {
         };
 
         let reflections = detect_reflections(&rir, 48, None, &config);
-        assert!(reflections.len() >= 2, "expected at least 2 reflections, got {}", reflections.len());
+        assert!(
+            reflections.len() >= 2,
+            "expected at least 2 reflections, got {}",
+            reflections.len()
+        );
 
         // Reflections should be near samples 288 and 480
         let toas: Vec<usize> = reflections.iter().map(|r| r.toa_sample).collect();

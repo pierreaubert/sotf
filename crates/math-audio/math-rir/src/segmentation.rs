@@ -84,7 +84,9 @@ pub(crate) fn build_segments(
         } else {
             // Last segment: extend by final_segment_ms past the last onset,
             // but don't exceed mixing time + final segment allowance
-            (onset_sample + final_segment).min(mixing_time_samples + final_segment).min(rir.len())
+            (onset_sample + final_segment)
+                .min(mixing_time_samples + final_segment)
+                .min(rir.len())
         };
 
         segments.push(RirSegment {
@@ -156,7 +158,10 @@ mod tests {
 
         let onset = find_onset(&rir, 100, 24); // 0.5ms @ 48kHz
         assert!(onset <= 100, "onset should be at or before TOA");
-        assert!(onset >= 95, "onset should be within the ramp-up, got {onset}");
+        assert!(
+            onset >= 95,
+            "onset should be within the ramp-up, got {onset}"
+        );
     }
 
     #[test]
@@ -185,7 +190,14 @@ mod tests {
             ..SsirConfig::default()
         };
 
-        let segments = build_segments(&rir, 48, None, &reflections, config.mixing_time_samples(), &config);
+        let segments = build_segments(
+            &rir,
+            48,
+            None,
+            &reflections,
+            config.mixing_time_samples(),
+            &config,
+        );
 
         // Should have 3 segments: direct + 2 reflections
         assert_eq!(segments.len(), 3);
@@ -225,7 +237,14 @@ mod tests {
             ..SsirConfig::default()
         };
 
-        let segments = build_segments(&rir, 48, None, &reflections, config.mixing_time_samples(), &config);
+        let segments = build_segments(
+            &rir,
+            48,
+            None,
+            &reflections,
+            config.mixing_time_samples(),
+            &config,
+        );
 
         // The second reflection should be merged, leaving only 2 segments
         assert_eq!(segments.len(), 2);

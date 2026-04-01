@@ -262,7 +262,6 @@ impl Delaunay {
             (x1 + (ey * bl - dy * cl) * d, y1 + (dx * cl - ex * bl) * d)
         }
     }
-
 }
 
 fn is_collinear(triangles: &[usize], coords: &[f64]) -> bool {

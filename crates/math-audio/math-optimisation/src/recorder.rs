@@ -388,10 +388,7 @@ mod tests {
                 );
             }
             Err(e) => {
-                panic!(
-                    "Test failed to resolve records directory. Error: {}",
-                    e
-                );
+                panic!("Test failed to resolve records directory. Error: {}", e);
             }
         }
     }

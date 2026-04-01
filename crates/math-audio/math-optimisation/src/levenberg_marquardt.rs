@@ -310,7 +310,10 @@ where
         // --- Check for already-converged ---
         if f_val <= config.atol {
             success = true;
-            message = format!("converged: objective {:.2e} <= atol {:.2e}", f_val, config.atol);
+            message = format!(
+                "converged: objective {:.2e} <= atol {:.2e}",
+                f_val, config.atol
+            );
             break;
         }
 
@@ -324,9 +327,7 @@ where
         let jtwr = jtw_r(&jac, &w, &r); // gradient direction
 
         // Marquardt diagonal scaling
-        let diag: Array1<f64> = (0..n_params)
-            .map(|j| jtwj[[j, j]].max(1e-20))
-            .collect();
+        let diag: Array1<f64> = (0..n_params).map(|j| jtwj[[j, j]].max(1e-20)).collect();
 
         // H = J^T W J + λ·diag(D)
         let mut h = jtwj.clone();
@@ -377,7 +378,11 @@ where
         };
 
         let actual = f_val - f_trial;
-        let rho = if pred.abs() > 1e-30 { actual / pred } else { 0.0 };
+        let rho = if pred.abs() > 1e-30 {
+            actual / pred
+        } else {
+            0.0
+        };
 
         if rho > 0.0 && f_trial < f_val {
             // Accept step
@@ -616,7 +621,11 @@ mod tests {
 
         let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
         assert!(report.success, "should converge: {}", report.message);
-        assert!(report.fun < 1e-12, "objective should be ~0, got {}", report.fun);
+        assert!(
+            report.fun < 1e-12,
+            "objective should be ~0, got {}",
+            report.fun
+        );
         for &xi in report.x.iter() {
             assert!(xi.abs() < 1e-6, "x should be ~0, got {}", xi);
         }
@@ -635,8 +644,16 @@ mod tests {
 
         let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
         assert!(report.success, "should converge: {}", report.message);
-        assert!((report.x[0] - 1.0).abs() < 1e-4, "x0 should be ~1, got {}", report.x[0]);
-        assert!((report.x[1] - 1.0).abs() < 1e-4, "x1 should be ~1, got {}", report.x[1]);
+        assert!(
+            (report.x[0] - 1.0).abs() < 1e-4,
+            "x0 should be ~1, got {}",
+            report.x[0]
+        );
+        assert!(
+            (report.x[1] - 1.0).abs() < 1e-4,
+            "x1 should be ~1, got {}",
+            report.x[1]
+        );
     }
 
     #[test]
@@ -644,10 +661,7 @@ mod tests {
         // r = [x - 5]  =>  unconstrained min at x=5, but bound x <= 3
         let residual = |x: &Array1<f64>| array![x[0] - 5.0];
         let bounds = vec![(-10.0, 3.0)];
-        let config = LMConfigBuilder::new()
-            .x0(array![0.0])
-            .maxiter(50)
-            .build();
+        let config = LMConfigBuilder::new().x0(array![0.0]).maxiter(50).build();
 
         let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
         assert!(
@@ -668,10 +682,7 @@ mod tests {
             }
         };
         let bounds = vec![(-200.0, 200.0)];
-        let config = LMConfigBuilder::new()
-            .x0(array![0.0])
-            .maxiter(50)
-            .build();
+        let config = LMConfigBuilder::new().x0(array![0.0]).maxiter(50).build();
 
         // Should not panic
         let result = levenberg_marquardt(&residual, &bounds, config);
@@ -721,10 +732,7 @@ mod tests {
         let bounds = vec![(-10.0, 10.0)];
 
         // Unweighted
-        let config_unw = LMConfigBuilder::new()
-            .x0(array![0.0])
-            .maxiter(50)
-            .build();
+        let config_unw = LMConfigBuilder::new().x0(array![0.0]).maxiter(50).build();
         let report_unw = levenberg_marquardt(&residual, &bounds, config_unw).unwrap();
 
         // Weighted (10x weight on first residual)
@@ -781,7 +789,11 @@ mod tests {
             .build();
 
         let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
-        assert_eq!(report.nit, 5, "nit should be maxiter (5), got {}", report.nit);
+        assert_eq!(
+            report.nit, 5,
+            "nit should be maxiter (5), got {}",
+            report.nit
+        );
         assert!(
             report.nfev > report.nit,
             "nfev ({}) should be much larger than nit ({})",

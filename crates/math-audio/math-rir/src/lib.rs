@@ -89,7 +89,14 @@ pub fn analyze_rir(rir: &[f32], config: &SsirConfig) -> SsirResult {
     let reflections = detect_reflections(rir, direct_sound_toa, None, config);
 
     // Step 4: Build segments with onset refinement
-    let segments = build_segments(rir, direct_sound_toa, None, &reflections, mixing_time_samples, config);
+    let segments = build_segments(
+        rir,
+        direct_sound_toa,
+        None,
+        &reflections,
+        mixing_time_samples,
+        config,
+    );
 
     SsirResult {
         segments,
@@ -155,12 +162,18 @@ pub fn analyze_srir(channels: &[&[f32]], config: &SsirConfig) -> SsirResult {
     let doa_vectors = compute_bformat_doa(channels, len, config);
 
     // Step 4: Detect reflections with DOA validation
-    let reflections =
-        detect_reflections(omni, direct_sound_toa, Some(&doa_vectors), config);
+    let reflections = detect_reflections(omni, direct_sound_toa, Some(&doa_vectors), config);
 
     // Step 5: Build segments (pass direct sound DOA from the DOA vector at its TOA)
     let ds_doa = doa_vectors.get(direct_sound_toa).copied();
-    let segments = build_segments(omni, direct_sound_toa, ds_doa, &reflections, mixing_time_samples, config);
+    let segments = build_segments(
+        omni,
+        direct_sound_toa,
+        ds_doa,
+        &reflections,
+        mixing_time_samples,
+        config,
+    );
 
     SsirResult {
         segments,
@@ -188,11 +201,18 @@ fn compute_bformat_doa(channels: &[&[f32]], len: usize, config: &SsirConfig) -> 
     let needs_filtering = low_hz > 0.0 && high_hz < nyquist && len >= 4 && order >= 1;
 
     let (w, x, y, z): (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) = if needs_filtering {
-        let mut sections = filtfilt::peq_to_coefficients(
-            &math_audio_iir_fir::peq_butterworth_highpass(order as usize, low_hz, config.sample_rate),
-        );
+        let mut sections =
+            filtfilt::peq_to_coefficients(&math_audio_iir_fir::peq_butterworth_highpass(
+                order as usize,
+                low_hz,
+                config.sample_rate,
+            ));
         sections.extend(filtfilt::peq_to_coefficients(
-            &math_audio_iir_fir::peq_butterworth_lowpass(order as usize, high_hz, config.sample_rate),
+            &math_audio_iir_fir::peq_butterworth_lowpass(
+                order as usize,
+                high_hz,
+                config.sample_rate,
+            ),
         ));
         // Convert f32 channels to f64, filter, convert back
         let filter_channel = |ch: &[f32]| -> Vec<f32> {
@@ -266,11 +286,7 @@ mod tests {
 
     #[test]
     fn test_analyze_rir_basic() {
-        let rir = make_synthetic_rir(
-            48000.0,
-            &[6.0, 10.0, 15.0, 22.0],
-            &[0.5, 0.3, 0.25, 0.15],
-        );
+        let rir = make_synthetic_rir(48000.0, &[6.0, 10.0, 15.0, 22.0], &[0.5, 0.3, 0.25, 0.15]);
 
         let config = SsirConfig {
             sample_rate: 48000.0,
@@ -281,7 +297,11 @@ mod tests {
         let result = analyze_rir(&rir, &config);
 
         // Should detect direct sound + reflections
-        assert!(result.num_events() >= 3, "expected >= 3 events, got {}", result.num_events());
+        assert!(
+            result.num_events() >= 3,
+            "expected >= 3 events, got {}",
+            result.num_events()
+        );
         assert!(result.segments[0].is_direct_sound);
 
         // Segments should be consecutive
@@ -375,10 +395,13 @@ mod tests {
             ..SsirConfig::default()
         };
 
-        let result =
-            analyze_srir(&[&w, &x, &y, &z], &config);
+        let result = analyze_srir(&[&w, &x, &y, &z], &config);
 
-        assert!(result.num_events() >= 2, "expected >= 2 events, got {}", result.num_events());
+        assert!(
+            result.num_events() >= 2,
+            "expected >= 2 events, got {}",
+            result.num_events()
+        );
 
         // Check that DOA is present on segments
         for seg in &result.segments {
