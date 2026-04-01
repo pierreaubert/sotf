@@ -48,7 +48,11 @@ impl EnvelopeFollower {
     /// to prevent permanent envelope corruption.
     #[inline]
     pub fn process(&mut self, input_abs: f32) -> f32 {
-        let input_abs = if input_abs.is_finite() { input_abs } else { 0.0 };
+        let input_abs = if input_abs.is_finite() {
+            input_abs
+        } else {
+            0.0
+        };
         let coeff = if input_abs > self.envelope {
             self.attack_coeff
         } else {
@@ -123,10 +127,7 @@ mod tests {
             env.process(0.0);
         }
         let after_release = env.current();
-        assert!(
-            after_release < 0.4,
-            "Release too slow: {after_release}"
-        );
+        assert!(after_release < 0.4, "Release too slow: {after_release}");
     }
 
     #[test]

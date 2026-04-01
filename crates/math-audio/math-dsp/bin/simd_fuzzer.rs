@@ -12,10 +12,10 @@
 //   cargo run --bin simd-fuzzer --no-default-features -- --iterations 1000 --function blend
 
 use clap::Parser;
+use math_audio_dsp::simd;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rustfft::num_complex::Complex;
-use math_audio_dsp::simd;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ============================================================================

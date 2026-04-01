@@ -88,7 +88,12 @@ impl TonalTransientSeparator {
     /// * `magnitudes` - Input magnitude spectrum (length = num_bins)
     /// * `mask_tonal` - Output tonal mask (length = num_bins)
     /// * `mask_transient` - Output transient mask (length = num_bins)
-    pub fn process(&mut self, magnitudes: &[f32], mask_tonal: &mut [f32], mask_transient: &mut [f32]) {
+    pub fn process(
+        &mut self,
+        magnitudes: &[f32],
+        mask_tonal: &mut [f32],
+        mask_transient: &mut [f32],
+    ) {
         debug_assert_eq!(magnitudes.len(), self.num_bins);
         debug_assert_eq!(mask_tonal.len(), self.num_bins);
         debug_assert_eq!(mask_transient.len(), self.num_bins);
@@ -255,8 +260,7 @@ mod tests {
         sep.process(&burst, &mut mask_tonal, &mut mask_transient);
 
         // Most bins should have high transient mask (broadband = vertical in spectrogram)
-        let avg_transient: f32 =
-            mask_transient[10..118].iter().sum::<f32>() / 108.0;
+        let avg_transient: f32 = mask_transient[10..118].iter().sum::<f32>() / 108.0;
         assert!(
             avg_transient > 0.3,
             "Broadband burst should have elevated transient mask: {avg_transient}"
@@ -270,7 +274,9 @@ mod tests {
         let mut mask_tonal = vec![0.0; num_bins];
         let mut mask_transient = vec![0.0; num_bins];
 
-        let magnitudes: Vec<f32> = (0..num_bins).map(|i| (i as f32 * 0.1).sin().abs()).collect();
+        let magnitudes: Vec<f32> = (0..num_bins)
+            .map(|i| (i as f32 * 0.1).sin().abs())
+            .collect();
 
         for _ in 0..5 {
             sep.process(&magnitudes, &mut mask_tonal, &mut mask_transient);

@@ -1051,9 +1051,15 @@ mod tests {
         // On x86_64 or aarch64 it returns true; on other platforms false.
         let result = enable_ftz_daz();
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        assert!(result, "enable_ftz_daz should return true on supported platforms");
+        assert!(
+            result,
+            "enable_ftz_daz should return true on supported platforms"
+        );
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        assert!(!result, "enable_ftz_daz should return false on unsupported platforms");
+        assert!(
+            !result,
+            "enable_ftz_daz should return false on unsupported platforms"
+        );
     }
 
     #[test]
@@ -1066,7 +1072,9 @@ mod tests {
             assert!(
                 (got - exp).abs() < 1e-6,
                 "apply_gain_simd mismatch at index {}: got {}, expected {}",
-                i, got, exp
+                i,
+                got,
+                exp
             );
         }
     }
@@ -1076,7 +1084,11 @@ mod tests {
         let mut buffer = vec![1.0, -2.0, 3.5, 0.7];
         apply_gain_simd(&mut buffer, 0.0);
         for (i, &v) in buffer.iter().enumerate() {
-            assert_eq!(v, 0.0, "apply_gain_simd with zero gain: index {} not zero", i);
+            assert_eq!(
+                v, 0.0,
+                "apply_gain_simd with zero gain: index {} not zero",
+                i
+            );
         }
     }
 

@@ -133,11 +133,7 @@ mod tests {
         let _db = tp.process(-0.9);
         // The Catmull-Rom interpolation between 0.9 and -0.9 should show
         // peaks larger than 0.9 due to the overshoot
-        assert!(
-            tp.peak_linear() >= 0.9,
-            "peak: {}",
-            tp.peak_linear()
-        );
+        assert!(tp.peak_linear() >= 0.9, "peak: {}", tp.peak_linear());
     }
 
     #[test]

@@ -264,7 +264,11 @@ pub fn design_dual_windows(
 
     // Normalize synthesis window
     let avg_cola: f32 = cola_sum.iter().sum::<f32>() / cola_sum.len() as f32;
-    let norm_factor = if avg_cola > 1e-10 { 1.0 / avg_cola } else { 1.0 };
+    let norm_factor = if avg_cola > 1e-10 {
+        1.0 / avg_cola
+    } else {
+        1.0
+    };
 
     let mut w_s = vec![0.0f32; analysis_size];
     for i in 0..synthesis_size {
@@ -359,12 +363,8 @@ impl DualWindowStft {
     /// * `input` - Input samples
     /// * `output` - Output buffer (same length as input)
     /// * `process_fn` - Function to modify the spectrum (called at each hop boundary)
-    pub fn process_block<F>(
-        &mut self,
-        input: &[f32],
-        output: &mut [f32],
-        mut process_fn: F,
-    ) where
+    pub fn process_block<F>(&mut self, input: &[f32], output: &mut [f32], mut process_fn: F)
+    where
         F: FnMut(&mut [Complex<f32>]),
     {
         for (i, &sample) in input.iter().enumerate() {
@@ -643,9 +643,7 @@ mod tests {
         let mut stft = DualWindowStft::new(512, 128, 64);
 
         // Process some data
-        let signal: Vec<f32> = (0..2048)
-            .map(|i| (i as f32 * 0.1).sin())
-            .collect();
+        let signal: Vec<f32> = (0..2048).map(|i| (i as f32 * 0.1).sin()).collect();
         let mut output = vec![0.0; 2048];
         stft.process_block(&signal, &mut output, |_| {});
 

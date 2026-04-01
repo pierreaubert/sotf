@@ -133,7 +133,10 @@ pub fn instantaneous_frequency(signal: &[f32], sample_rate: f32) -> Instantaneou
     }
 
     // Instantaneous amplitude = |z(n)|
-    let amplitudes: Vec<f32> = analytic.iter().map(|z| (z.re * z.re + z.im * z.im).sqrt()).collect();
+    let amplitudes: Vec<f32> = analytic
+        .iter()
+        .map(|z| (z.re * z.re + z.im * z.im).sqrt())
+        .collect();
 
     InstantaneousFrequencyResult {
         frequencies,
@@ -197,8 +200,7 @@ pub fn subband_instantaneous_frequency(
     let mut total_weight = vec![0.0f32; n];
 
     for b in 0..bands {
-        let f_low = ((log_min + (log_max - log_min) * b as f32 / bands as f32).exp())
-            .max(20.0);
+        let f_low = ((log_min + (log_max - log_min) * b as f32 / bands as f32).exp()).max(20.0);
         let f_high = ((log_min + (log_max - log_min) * (b + 1) as f32 / bands as f32).exp())
             .min(nyquist * 0.95);
 
@@ -333,7 +335,10 @@ mod tests {
         );
 
         // Check stability (low variance) — some ripple is expected from FFT edge effects
-        let variance: f32 = mid_freqs.iter().map(|f| (f - avg_freq).powi(2)).sum::<f32>()
+        let variance: f32 = mid_freqs
+            .iter()
+            .map(|f| (f - avg_freq).powi(2))
+            .sum::<f32>()
             / mid_freqs.len() as f32;
         assert!(
             variance < 100.0,
@@ -354,8 +359,9 @@ mod tests {
                 let t = i as f32 / sample_rate;
                 let duration = num_samples as f32 / sample_rate;
                 let _inst_freq = f_start + (f_end - f_start) * t / duration;
-                let phase =
-                    2.0 * std::f32::consts::PI * (f_start * t + (f_end - f_start) * t * t / (2.0 * duration));
+                let phase = 2.0
+                    * std::f32::consts::PI
+                    * (f_start * t + (f_end - f_start) * t * t / (2.0 * duration));
                 phase.sin()
             })
             .collect();
@@ -384,8 +390,7 @@ mod tests {
         let signal: Vec<f32> = (0..num_samples)
             .map(|i| {
                 let t = i as f32 / sample_rate;
-                let envelope =
-                    1.0 + 0.5 * (2.0 * std::f32::consts::PI * mod_freq * t).sin();
+                let envelope = 1.0 + 0.5 * (2.0 * std::f32::consts::PI * mod_freq * t).sin();
                 envelope * (2.0 * std::f32::consts::PI * carrier_freq * t).sin()
             })
             .collect();

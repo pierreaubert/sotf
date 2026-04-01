@@ -143,13 +143,12 @@ impl RtpghiProcessor {
                 let expected_advance = omega_k * hop;
 
                 // Phase gradient correction from log-magnitude difference
-                let time_grad = if log_mag[k] > self.log_mag_tol
-                    && self.prev_log_mag[k] > self.log_mag_tol
-                {
-                    self.gamma * (log_mag[k] - self.prev_log_mag[k])
-                } else {
-                    0.0
-                };
+                let time_grad =
+                    if log_mag[k] > self.log_mag_tol && self.prev_log_mag[k] > self.log_mag_tol {
+                        self.gamma * (log_mag[k] - self.prev_log_mag[k])
+                    } else {
+                        0.0
+                    };
 
                 expected_advance + time_grad
             })
@@ -326,7 +325,11 @@ impl RtpghiProcessor {
         }
 
         // Frequency-direction phase gradient
-        let inv_gamma = if gamma.abs() > 1e-30 { 1.0 / gamma } else { 0.0 };
+        let inv_gamma = if gamma.abs() > 1e-30 {
+            1.0 / gamma
+        } else {
+            0.0
+        };
         d_phase_freq[0] = 0.0;
         if spectrum_size > 1 {
             d_phase_freq[spectrum_size - 1] = 0.0;
@@ -498,16 +501,10 @@ mod tests {
     use crate::stft::RealFftProcessor;
 
     /// Helper: compute STFT magnitudes of a signal
-    fn compute_stft_magnitudes(
-        signal: &[f32],
-        fft_size: usize,
-        hop_size: usize,
-    ) -> Vec<Vec<f32>> {
+    fn compute_stft_magnitudes(signal: &[f32], fft_size: usize, hop_size: usize) -> Vec<Vec<f32>> {
         let spectrum_size = fft_size / 2 + 1;
         let window: Vec<f32> = (0..fft_size)
-            .map(|i| {
-                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / fft_size as f32).cos())
-            })
+            .map(|i| 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / fft_size as f32).cos()))
             .collect();
 
         let mut frames = Vec::new();
@@ -568,7 +565,9 @@ mod tests {
 
         // Simple magnitude frames
         let spectrum_size = fft_size / 2 + 1;
-        let frame: Vec<f32> = (0..spectrum_size).map(|i| (i as f32).exp().recip()).collect();
+        let frame: Vec<f32> = (0..spectrum_size)
+            .map(|i| (i as f32).exp().recip())
+            .collect();
         let mags = vec![frame; 10];
 
         let stretched = stretch_with_rtpghi(&mags, 2.0, fft_size, hop_size);

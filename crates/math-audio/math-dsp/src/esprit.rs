@@ -204,7 +204,11 @@ pub fn esprit(
     }
 
     // Sort by amplitude (descending)
-    estimates.sort_by(|a, b| b.amplitude.partial_cmp(&a.amplitude).unwrap_or(std::cmp::Ordering::Equal));
+    estimates.sort_by(|a, b| {
+        b.amplitude
+            .partial_cmp(&a.amplitude)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     estimates
 }
@@ -253,7 +257,11 @@ fn estimate_phase(signal: &[f32], freq: f64, sample_rate: f64) -> f64 {
 /// Sorted vector of estimated frequencies in Hz
 pub fn estimate_frequencies(signal: &[f32], sample_rate: f32, max_sinusoids: usize) -> Vec<f64> {
     let estimates = esprit(signal, sample_rate, Some(max_sinusoids), None);
-    let mut freqs: Vec<f64> = estimates.iter().take(max_sinusoids).map(|e| e.frequency).collect();
+    let mut freqs: Vec<f64> = estimates
+        .iter()
+        .take(max_sinusoids)
+        .map(|e| e.frequency)
+        .collect();
     freqs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     freqs
 }
@@ -266,7 +274,13 @@ pub fn estimate_frequencies(signal: &[f32], sample_rate: f32, max_sinusoids: usi
 mod tests {
     use super::*;
 
-    fn gen_sinusoid(freq: f64, amplitude: f64, phase: f64, sample_rate: f64, num_samples: usize) -> Vec<f32> {
+    fn gen_sinusoid(
+        freq: f64,
+        amplitude: f64,
+        phase: f64,
+        sample_rate: f64,
+        num_samples: usize,
+    ) -> Vec<f32> {
         (0..num_samples)
             .map(|i| {
                 let t = i as f64 / sample_rate;
@@ -282,7 +296,10 @@ mod tests {
         let signal = gen_sinusoid(freq, 1.0, 0.0, sample_rate as f64, 1024);
 
         let estimates = esprit(&signal, sample_rate, Some(1), None);
-        assert!(!estimates.is_empty(), "ESPRIT should find at least one component");
+        assert!(
+            !estimates.is_empty(),
+            "ESPRIT should find at least one component"
+        );
 
         let est_freq = estimates[0].frequency;
         let error = (est_freq - freq).abs();
@@ -300,7 +317,11 @@ mod tests {
         let signal: Vec<f32> = signal1.iter().zip(&signal2).map(|(&a, &b)| a + b).collect();
 
         let freqs = estimate_frequencies(&signal, sample_rate, 4);
-        assert!(freqs.len() >= 2, "Should find at least 2 frequencies, found {}", freqs.len());
+        assert!(
+            freqs.len() >= 2,
+            "Should find at least 2 frequencies, found {}",
+            freqs.len()
+        );
 
         // Check that both frequencies are close to expected values
         let has_1000 = freqs.iter().any(|&f| (f - 1000.0).abs() < 5.0);
@@ -316,16 +337,20 @@ mod tests {
         let mut rng_state: u64 = 12345;
         let signal: Vec<f32> = (0..512)
             .map(|_| {
-                rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                rng_state = rng_state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 ((rng_state >> 33) as f32 / u32::MAX as f32) * 2.0 - 1.0
             })
             .collect();
 
         let p = estimate_model_order(
             &{
-                let hankel = DMatrix::from_fn(signal.len() - signal.len() / 3 + 1, signal.len() / 3, |i, j| {
-                    signal[i + j] as f64
-                });
+                let hankel = DMatrix::from_fn(
+                    signal.len() - signal.len() / 3 + 1,
+                    signal.len() / 3,
+                    |i, j| signal[i + j] as f64,
+                );
                 let svd = hankel.svd(false, false);
                 svd.singular_values.as_slice().to_vec()
             },
@@ -333,10 +358,7 @@ mod tests {
             ModelOrderCriterion::Mdl,
         );
 
-        assert!(
-            p <= 5,
-            "White noise model order should be small, got {p}"
-        );
+        assert!(p <= 5, "White noise model order should be small, got {p}");
     }
 
     #[test]

@@ -23,12 +23,12 @@ pub mod audio_features;
 pub mod ebur128;
 pub mod esprit;
 pub mod fast_math;
+pub mod fdn;
 pub mod instantaneous_frequency;
 pub mod replaygain;
 pub mod rtpghi;
-pub mod simd;
 pub mod signals;
-pub mod fdn;
+pub mod simd;
 pub mod stft;
 pub mod tonal_transient;
 pub mod waveform;
@@ -40,12 +40,12 @@ pub mod channel_linking;
 pub mod dc_blocker;
 pub mod delta_monitor;
 pub mod detector;
+pub mod dynamics_core;
 pub mod envelope;
 pub mod envelope_follower;
 pub mod lookahead;
 pub mod smoothing;
 pub mod true_peak;
-pub mod dynamics_core;
 
 // Re-export commonly used types
 pub use analysis::{

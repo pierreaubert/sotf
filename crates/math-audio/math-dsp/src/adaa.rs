@@ -204,8 +204,7 @@ fn dilog_neg(z: f64) -> f64 {
     } else {
         // For z > 1, use identity: Li_2(-z) = -Li_2(-1/z) - pi^2/6 - 0.5*ln(z)^2
         let ln_z = z.ln();
-        -dilog_neg(1.0 / z) - std::f64::consts::PI * std::f64::consts::PI / 6.0
-            - 0.5 * ln_z * ln_z
+        -dilog_neg(1.0 / z) - std::f64::consts::PI * std::f64::consts::PI / 6.0 - 0.5 * ln_z * ln_z
     }
 }
 

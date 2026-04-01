@@ -93,11 +93,12 @@ impl Fdn {
 
         // Feedback gain from RT60: g = 10^(-3 * delay / (RT60 * SR))
         // Use the average delay length for the global gain
-        let avg_delay = self.delay_lengths.iter().sum::<usize>() as f32
-            / self.num_lines as f32;
+        let avg_delay = self.delay_lengths.iter().sum::<usize>() as f32 / self.num_lines as f32;
         let rt60_samples = rt60 * sample_rate as f32;
         self.feedback_gain = if rt60_samples > 0.0 {
-            10.0_f32.powf(-3.0 * avg_delay / rt60_samples).clamp(0.0, 0.999)
+            10.0_f32
+                .powf(-3.0 * avg_delay / rt60_samples)
+                .clamp(0.0, 0.999)
         } else {
             0.0
         };
@@ -177,9 +178,9 @@ fn hadamard_flat(n: usize) -> Vec<f32> {
         for i in 0..size {
             for j in 0..size {
                 let val = h[i * n + j];
-                h[i * n + (j + size)] = val;           // top-right
-                h[(i + size) * n + j] = val;             // bottom-left
-                h[(i + size) * n + (j + size)] = -val;   // bottom-right (negated)
+                h[i * n + (j + size)] = val; // top-right
+                h[(i + size) * n + j] = val; // bottom-left
+                h[(i + size) * n + (j + size)] = -val; // bottom-right (negated)
             }
         }
         size *= 2;
@@ -208,7 +209,9 @@ fn prime_delays(n: usize, sample_rate: u32) -> Vec<usize> {
     // Pick N evenly-spaced primes
     if primes.len() >= n {
         let step = primes.len() / n;
-        (0..n).map(|i| primes[(i * step).min(primes.len() - 1)]).collect()
+        (0..n)
+            .map(|i| primes[(i * step).min(primes.len() - 1)])
+            .collect()
     } else {
         // Fallback: use primes near target delays
         let base = (min_samples + max_samples) / 2;
@@ -217,12 +220,20 @@ fn prime_delays(n: usize, sample_rate: u32) -> Vec<usize> {
 }
 
 fn is_prime(n: usize) -> bool {
-    if n < 2 { return false; }
-    if n < 4 { return true; }
-    if n.is_multiple_of(2) || n.is_multiple_of(3) { return false; }
+    if n < 2 {
+        return false;
+    }
+    if n < 4 {
+        return true;
+    }
+    if n.is_multiple_of(2) || n.is_multiple_of(3) {
+        return false;
+    }
     let mut i = 5;
     while i * i <= n {
-        if n.is_multiple_of(i) || n.is_multiple_of(i + 2) { return false; }
+        if n.is_multiple_of(i) || n.is_multiple_of(i + 2) {
+            return false;
+        }
         i += 6;
     }
     true
@@ -230,7 +241,9 @@ fn is_prime(n: usize) -> bool {
 
 fn next_prime(n: usize) -> usize {
     let mut p = n;
-    while !is_prime(p) { p += 1; }
+    while !is_prime(p) {
+        p += 1;
+    }
     p
 }
 
@@ -250,7 +263,10 @@ mod tests {
                     dot += h[i * n + k] * h[j * n + k];
                 }
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!((dot - expected).abs() < 1e-5, "H*H^T[{i}][{j}] = {dot}, expected {expected}");
+                assert!(
+                    (dot - expected).abs() < 1e-5,
+                    "H*H^T[{i}][{j}] = {dot}, expected {expected}"
+                );
             }
         }
     }
@@ -285,7 +301,10 @@ mod tests {
         // Process many frames with input
         for _ in 0..96000 {
             let (l, r) = fdn.process_stereo(0.01, 0.01);
-            assert!(l.is_finite() && r.is_finite(), "Non-finite output: {l}, {r}");
+            assert!(
+                l.is_finite() && r.is_finite(),
+                "Non-finite output: {l}, {r}"
+            );
             assert!(l.abs() < 5.0 && r.abs() < 5.0, "Output too large: {l}, {r}");
         }
     }
@@ -296,7 +315,10 @@ mod tests {
         fdn.process_stereo(1.0, 1.0);
         fdn.reset();
         let (l, r) = fdn.process_stereo(0.0, 0.0);
-        assert!(l.abs() < 1e-10 && r.abs() < 1e-10, "State not cleared: {l}, {r}");
+        assert!(
+            l.abs() < 1e-10 && r.abs() < 1e-10,
+            "State not cleared: {l}, {r}"
+        );
     }
 
     #[test]

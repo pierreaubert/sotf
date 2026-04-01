@@ -12,11 +12,11 @@
 // - No mutex locks
 // - No unsafe code
 
+use crate::auto_makeup::MeasuredMakeup;
 use crate::detector::{DetectionMode, LevelDetector};
 use crate::envelope::DualRelease;
 use crate::lookahead::LookaheadBuffer;
-use crate::auto_makeup::MeasuredMakeup;
-use math_audio_iir_fir::{peq_butterworth_highpass, Biquad, BiquadFilterType};
+use math_audio_iir_fir::{Biquad, BiquadFilterType, peq_butterworth_highpass};
 
 // ============================================================================
 // Constants
@@ -53,15 +53,10 @@ pub enum SidechainFilterMode {
     Off,
     /// High-pass filter at the given frequency.
     /// `order_index`: 0 = 2nd order, 1 = 4th order.
-    Hpf {
-        freq_hz: f32,
-        order_index: usize,
-    },
+    Hpf { freq_hz: f32, order_index: usize },
     /// Spectral tilt filter: positive = emphasize HF in detection, negative = emphasize LF.
     /// Implemented as a 1st-order high-shelf at 1 kHz with the given gain.
-    Tilt {
-        tilt_db: f32,
-    },
+    Tilt { tilt_db: f32 },
 }
 
 // ============================================================================
@@ -444,9 +439,7 @@ impl DynamicsCore {
         knee_db: f32,
     ) -> f32 {
         match self.mode {
-            DynamicsMode::Compress => {
-                calculate_compress_gr(input_db, threshold, ratio, knee_db)
-            }
+            DynamicsMode::Compress => calculate_compress_gr(input_db, threshold, ratio, knee_db),
             DynamicsMode::Expand => {
                 calculate_expand_atten(input_db, threshold, ratio, knee_db, self.range_db)
             }
@@ -617,8 +610,7 @@ impl DynamicsCore {
             };
             let peq = peq_butterworth_highpass(order, fc as f64, self.sample_rate as f64);
             let sections: Vec<Biquad> = peq.into_iter().map(|(_, bq)| bq).collect();
-            self.sidechain_hpf_biquads =
-                (0..self.channels).map(|_| sections.clone()).collect();
+            self.sidechain_hpf_biquads = (0..self.channels).map(|_| sections.clone()).collect();
         } else {
             self.sidechain_hpf_biquads.clear();
         }
@@ -765,10 +757,7 @@ mod tests {
         // 12 dB below threshold with 4:1 ratio, no knee
         // atten = 12 * (1 - 1/4) = 9 dB
         let atten = core.calculate_gain_reduction(-32.0, -20.0, 4.0, 0.0);
-        assert!(
-            (atten - 9.0).abs() < 0.01,
-            "expected ~9.0, got {atten}"
-        );
+        assert!((atten - 9.0).abs() < 0.01, "expected ~9.0, got {atten}");
 
         // Test range cap: 60 dB below threshold with 4:1
         // uncapped = 60 * 0.75 = 45, but range_db = 40

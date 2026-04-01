@@ -61,8 +61,7 @@ impl DualRelease {
         // Absolute threshold: if delta < 0.01 dB/sample, treat as sustained.
         // Typical compressor attack: 6 dB over 480 samples = 0.0125 dB/sample.
         let sustained = if delta < 0.01 { 1.0 } else { 0.0 };
-        self.sustain_tracker =
-            sustained + self.sustain_coeff * (self.sustain_tracker - sustained);
+        self.sustain_tracker = sustained + self.sustain_coeff * (self.sustain_tracker - sustained);
 
         // Blend between fast and slow based on sustain level
         let blend = self.sustain_tracker.clamp(0.0, 1.0);

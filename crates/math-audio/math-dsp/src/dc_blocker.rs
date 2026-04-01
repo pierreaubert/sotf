@@ -144,10 +144,7 @@ mod tests {
             }
         }
         let ratio = max_output / max_input;
-        assert!(
-            ratio > 0.99,
-            "1kHz attenuated too much: ratio = {ratio}"
-        );
+        assert!(ratio > 0.99, "1kHz attenuated too much: ratio = {ratio}");
     }
 
     #[test]

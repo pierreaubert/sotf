@@ -2598,10 +2598,7 @@ mod tests {
             recorded[i + delay] = s * attenuation;
         }
 
-        let dir = std::env::temp_dir().join(format!(
-            "sotf_test_normal_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("sotf_test_normal_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let wav_path = dir.join("test_normal.wav");
         write_test_wav(&wav_path, &recorded, sample_rate);
@@ -2657,15 +2654,12 @@ mod tests {
         let mut recorded = Vec::with_capacity(num_samples);
         // Use deterministic "noise" (alternating small values)
         for i in 0..num_samples {
-            let pseudo_noise = noise_amplitude
-                * (((i as f32 * 0.1).sin() + (i as f32 * 0.37).cos()) * 0.5);
+            let pseudo_noise =
+                noise_amplitude * (((i as f32 * 0.1).sin() + (i as f32 * 0.37).cos()) * 0.5);
             recorded.push(pseudo_noise);
         }
 
-        let dir = std::env::temp_dir().join(format!(
-            "sotf_test_silent_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("sotf_test_silent_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let wav_path = dir.join("test_silent.wav");
         write_test_wav(&wav_path, &recorded, sample_rate);
@@ -2718,10 +2712,7 @@ mod tests {
             rec_lfe[i + delay] = s * atten;
         }
 
-        let dir = std::env::temp_dir().join(format!(
-            "sotf_test_lfe_points_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("sotf_test_lfe_points_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
         let wav_full = dir.join("main.wav");

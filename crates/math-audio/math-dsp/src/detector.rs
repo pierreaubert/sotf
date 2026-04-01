@@ -137,10 +137,7 @@ mod tests {
 
     #[test]
     fn test_rms_detection() {
-        let mut det = LevelDetector::new(
-            DetectionMode::Rms { window_ms: 10.0 },
-            48000,
-        );
+        let mut det = LevelDetector::new(DetectionMode::Rms { window_ms: 10.0 }, 48000);
         // Feed constant 1.0 for window_len samples
         let window_len = (10.0f32 * 0.001 * 48000.0).round() as usize;
         for _ in 0..window_len {
@@ -160,10 +157,7 @@ mod tests {
 
     #[test]
     fn test_rms_reset() {
-        let mut det = LevelDetector::new(
-            DetectionMode::Rms { window_ms: 10.0 },
-            48000,
-        );
+        let mut det = LevelDetector::new(DetectionMode::Rms { window_ms: 10.0 }, 48000);
         for _ in 0..1000 {
             det.process(1.0);
         }
