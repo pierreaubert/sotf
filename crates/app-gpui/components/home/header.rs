@@ -105,14 +105,12 @@ impl PlayerView {
                 // their on_mouse_up before the overlay dismisses the dropdown.
                 // on_mouse_down would fire first, removing the dropdown before
                 // the menu item's on_mouse_up could execute.
-                el.on_click(
-                    cx.listener(|view, _: &ClickEvent, _window, cx| {
-                        view.state.update(cx, |state, _cx| {
-                            state.app.ui_state.active_menu = ActiveMenu::None;
-                        });
-                        cx.notify();
-                    }),
-                )
+                el.on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.ui_state.active_menu = ActiveMenu::None;
+                    });
+                    cx.notify();
+                }))
             })
             .when(active_menu == ActiveMenu::File, |el| {
                 el.child(self.render_file_dropdown(theme.clone(), cx))

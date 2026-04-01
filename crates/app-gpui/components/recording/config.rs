@@ -44,7 +44,7 @@ impl PlayerView {
             .recording_state
             .config_accordion_expanded
             .clone();
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         // Build accordion content for each section (convert to AnyElement to release borrows)
         let playback_content = self.render_playback_device_content(cx).into_any_element();
@@ -92,7 +92,7 @@ impl PlayerView {
                     .on_change({
                         let view = view.clone();
                         move |item_id, is_expanded, _window, cx| {
-                            view.update(cx, |this, cx| {
+                            let _ = view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
                                     let expanded =
                                         &mut state.app.measurement_state.recording_state.config_accordion_expanded;
@@ -162,7 +162,7 @@ impl PlayerView {
                 max_ch,
             )
         };
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         let device_label = VStack::new().spacing(StackSpacing::Xs).child(
             Text::new("Input Device")
@@ -201,7 +201,7 @@ impl PlayerView {
                     .on_change({
                         let view = view.clone();
                         move |value, _window, cx| {
-                            view.update(cx, |this, cx| {
+                            let _ = view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
                                     state
                                         .app
@@ -238,7 +238,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
         let num_channels = recording_state.recording_config.num_channels;
 
         // Collect per-channel paths and data
@@ -306,7 +306,7 @@ impl PlayerView {
                     .on_click({
                         let view = ch_view.clone();
                         move |_, cx| {
-                            view.update(cx, |this, cx| {
+                            let _ = view.update(cx, |this, cx| {
                                 this.browse_calibration_file_for_channel(ch, cx);
                             });
                         }
@@ -325,7 +325,7 @@ impl PlayerView {
                     .on_click({
                         let view = ch_view.clone();
                         move |_, cx| {
-                            view.update(cx, |this, cx| {
+                            let _ = view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
                                     let rs = &mut state.app.measurement_state.recording_state;
                                     if let Some(slot) = rs.mic_calibration_paths.get_mut(ch) {
@@ -378,7 +378,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         let base_dir = recording_state.recording_base_directory.clone();
         let recording_dir = recording_state.recording_directory.clone();
@@ -421,7 +421,7 @@ impl PlayerView {
                             .on_click({
                                 let view = view.clone();
                                 move |_, cx| {
-                                    view.update(cx, |this, cx| {
+                                    let _ = view.update(cx, |this, cx| {
                                         this.browse_recording_directory(cx);
                                     });
                                 }
@@ -437,7 +437,7 @@ impl PlayerView {
                                 .theme(theme.to_button_theme())
                                 .on_click({
                                     move |_, cx| {
-                                        view.update(cx, |this, cx| {
+                                        let _ = view.update(cx, |this, cx| {
                                             this.state.update(cx, |state, _| {
                                                 state
                                                     .app
@@ -481,7 +481,7 @@ impl PlayerView {
     pub(crate) fn browse_recording_directory(&mut self, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
-            let state_entity = self.state.clone();
+            let weak_state = self.state.downgrade();
 
             cx.spawn(async move |_, cx| {
                 // Open directory dialog
@@ -510,6 +510,9 @@ impl PlayerView {
 
                     log::info!("Created recording directory: {}", full_path);
 
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        return;
+                    };
                     state_entity.update(&mut cx.clone(), |state, _| {
                         state
                             .app
@@ -533,7 +536,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         let options: Vec<SelectOption> = state
             .app
@@ -564,7 +567,7 @@ impl PlayerView {
             .on_toggle({
                 let view = view.clone();
                 move |is_open, _window, cx| {
-                    view.update(cx, |this, cx| {
+                    let _ = view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
                             state
                                 .app
@@ -579,7 +582,7 @@ impl PlayerView {
             .on_change({
                 let view = view.clone();
                 move |value, _window, cx| {
-                    view.update(cx, |this, cx| {
+                    let _ = view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
                             state
                                 .app
@@ -666,7 +669,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         let available_rates = &recording_state.playback_config.available_sample_rates;
         let options: Vec<SelectOption> = available_rates
@@ -702,7 +705,7 @@ impl PlayerView {
                         .on_toggle({
                             let view = view.clone();
                             move |is_open, _window, cx| {
-                                view.update(cx, |this, cx| {
+                                let _ = view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         state
                                             .app
@@ -717,7 +720,7 @@ impl PlayerView {
                         .on_change({
                             let view = view.clone();
                             move |value, _window, cx| {
-                                view.update(cx, |this, cx| {
+                                let _ = view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         if let Ok(rate) = value.parse::<u32>() {
                                             state
@@ -748,7 +751,7 @@ impl PlayerView {
         let recording_state = &state.app.measurement_state.recording_state;
         let num_channels = recording_state.playback_config.num_channels;
         let sample_rate = recording_state.playback_config.sample_rate;
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         // Determine max output channels from the selected device
         let max_output_channels = state
@@ -795,7 +798,7 @@ impl PlayerView {
                         .on_toggle({
                             let view = view.clone();
                             move |is_open, _window, cx| {
-                                view.update(cx, |this, cx| {
+                                let _ = view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         state
                                             .app
@@ -810,7 +813,7 @@ impl PlayerView {
                         .on_change({
                             let view = view.clone();
                             move |value, _window, cx| {
-                                view.update(cx, |this, cx| {
+                                let _ = view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         // Find the matching configuration
                                         let new_config = SpeakerConfiguration::all()
@@ -917,7 +920,7 @@ impl PlayerView {
                 == SpeakerConfiguration::Custom;
             (state.app.ui_state.theme.clone(), mappings, is_custom)
         };
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         // Fixed widths for consistent layout
         const LABEL_WIDTH: f32 = 80.0;
@@ -1014,7 +1017,7 @@ impl PlayerView {
                                 .on_change({
                                     let view = view.clone();
                                     move |value, _window, cx| {
-                                        view.update(cx, |this, cx| {
+                                        let _ = view.update(cx, |this, cx| {
                                             this.state.update(cx, |state, _| {
                                                 if let Some(m) = state
                                                     .app
@@ -1063,7 +1066,7 @@ impl PlayerView {
             .recording_state
             .speaker_mode_dropdown_open
             == Some(speaker_idx);
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         let options = vec![
             SelectOption::new("single", "Single"),
@@ -1081,7 +1084,7 @@ impl PlayerView {
                 .on_toggle({
                     let view = view.clone();
                     move |open, _window, cx| {
-                        view.update(cx, |this, cx| {
+                        let _ = view.update(cx, |this, cx| {
                             this.state.update(cx, |state, _| {
                                 state
                                     .app
@@ -1097,7 +1100,7 @@ impl PlayerView {
                 .on_change({
                     let view = view.clone();
                     move |value, _window, cx| {
-                        view.update(cx, |this, cx| {
+                        let _ = view.update(cx, |this, cx| {
                             this.state.update(cx, |state, _| {
                                 if let Some(mapping) = state
                                     .app
@@ -1150,7 +1153,7 @@ impl PlayerView {
         interface_channels: &[usize],
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
         let theme = theme.clone();
 
         // Fixed widths matching the speaker row layout
@@ -1193,7 +1196,7 @@ impl PlayerView {
                                 .on_change({
                                     let view = view.clone();
                                     move |value, _window, cx| {
-                                        view.update(cx, |this, cx| {
+                                        let _ = view.update(cx, |this, cx| {
                                             this.state.update(cx, |state, _| {
                                                 if let Some(mapping) = state
                                                     .app
@@ -1230,7 +1233,7 @@ impl PlayerView {
                                 .disabled(!can_remove)
                                 .on_click({
                                     move |_, cx| {
-                                        view.update(cx, |this, cx| {
+                                        let _ = view.update(cx, |this, cx| {
                                             this.state.update(cx, |state, _| {
                                                 if let Some(mapping) = state
                                                     .app
@@ -1281,7 +1284,7 @@ impl PlayerView {
                         .theme(theme.to_button_theme())
                         .on_click({
                             move |_, cx| {
-                                view.update(cx, |this, cx| {
+                                let _ = view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         if let Some(mapping) = state
                                             .app
@@ -1320,7 +1323,7 @@ impl PlayerView {
         channel_idx: usize,
         current_name: &str,
     ) -> impl IntoElement {
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
         let current_name = current_name.to_string();
 
         div().size_full().child(
@@ -1331,7 +1334,7 @@ impl PlayerView {
                 .on_change({
                     let view = view.clone();
                     move |value, _window, cx| {
-                        view.update(cx, |this, cx| {
+                        let _ = view.update(cx, |this, cx| {
                             this.state.update(cx, |state, _| {
                                 if let Some(mapping) = state
                                     .app
@@ -1361,7 +1364,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
         let current_group = current_group.to_string();
 
         // Build options from CHANNEL_GROUPS
@@ -1390,7 +1393,7 @@ impl PlayerView {
                 .on_toggle({
                     let view = view.clone();
                     move |is_open, _window, cx| {
-                        view.update(cx, |this, cx| {
+                        let _ = view.update(cx, |this, cx| {
                             this.state.update(cx, |state, _| {
                                 state
                                     .app
@@ -1406,7 +1409,7 @@ impl PlayerView {
                 .on_change({
                     let view = view.clone();
                     move |value, _window, cx| {
-                        view.update(cx, |this, cx| {
+                        let _ = view.update(cx, |this, cx| {
                             this.state.update(cx, |state, _| {
                                 if let Some(mapping) = state
                                     .app
@@ -1436,7 +1439,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         let options: Vec<SelectOption> = state
             .app
@@ -1467,7 +1470,7 @@ impl PlayerView {
             .on_toggle({
                 let view = view.clone();
                 move |is_open, _window, cx| {
-                    view.update(cx, |this, cx| {
+                    let _ = view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
                             state
                                 .app
@@ -1482,7 +1485,7 @@ impl PlayerView {
             .on_change({
                 let view = view.clone();
                 move |value, _window, cx| {
-                    view.update(cx, |this, cx| {
+                    let _ = view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
                             state
                                 .app
@@ -1566,7 +1569,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         let available_rates = &recording_state.recording_config.available_sample_rates;
         let options: Vec<SelectOption> = available_rates
@@ -1602,7 +1605,7 @@ impl PlayerView {
                         .on_toggle({
                             let view = view.clone();
                             move |is_open, _window, cx| {
-                                view.update(cx, |this, cx| {
+                                let _ = view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         state
                                             .app
@@ -1617,7 +1620,7 @@ impl PlayerView {
                         .on_change({
                             let view = view.clone();
                             move |value, _window, cx| {
-                                view.update(cx, |this, cx| {
+                                let _ = view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         if let Ok(rate) = value.parse::<u32>() {
                                             state
@@ -1646,7 +1649,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
-        let view = cx.entity().clone();
+        let view = cx.weak_entity();
 
         VStack::new()
             .spacing(StackSpacing::Xs)
@@ -1691,7 +1694,7 @@ impl PlayerView {
                                         .on_change({
                                             let view = view.clone();
                                             move |value, _window, cx| {
-                                                view.update(cx, |this, cx| {
+                                                let _ = view.update(cx, |this, cx| {
                                                     this.state.update(cx, |state, _| {
                                                         if let Some(m) = state
                                                             .app
@@ -1813,7 +1816,7 @@ impl PlayerView {
     fn browse_calibration_file_for_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
-            let state_entity = self.state.clone();
+            let weak_state = self.state.downgrade();
 
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
@@ -1848,6 +1851,9 @@ impl PlayerView {
                         );
                     }
 
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        return;
+                    };
                     state_entity.update(&mut cx.clone(), |state, _| {
                         let rs = &mut state.app.measurement_state.recording_state;
 
@@ -1860,8 +1866,7 @@ impl PlayerView {
                         }
 
                         rs.mic_calibration_paths[channel_idx] = Some(path.clone());
-                        rs.mic_calibration_data_per_channel[channel_idx] =
-                            calibration_data.clone();
+                        rs.mic_calibration_data_per_channel[channel_idx] = calibration_data.clone();
 
                         // Sync legacy fields from channel 0
                         if channel_idx == 0 {

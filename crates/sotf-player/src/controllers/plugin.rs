@@ -435,7 +435,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
-                topology: 0.0,
+                    topology: 0.0,
                 };
                 Ok(PluginUpdateEffect::Structural)
             } else {
@@ -504,7 +504,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
-                topology: 0.0,
+                    topology: 0.0,
                 };
 
                 Ok(PluginUpdateEffect::Structural)
@@ -552,7 +552,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
-                topology: 0.0,
+                    topology: 0.0,
                 };
 
                 Ok(PluginUpdateEffect::Structural)
@@ -600,7 +600,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
-                topology: 0.0,
+                    topology: 0.0,
                 };
 
                 Ok(PluginUpdateEffect::Structural)
@@ -648,7 +648,7 @@ impl PluginController {
                     per_channel_mode,
                     max_filters: 10,
                     tdf2: false,
-                topology: 0.0,
+                    topology: 0.0,
                 };
 
                 Ok(PluginUpdateEffect::Structural)
@@ -1154,7 +1154,12 @@ fn adjust_plugin_param(
             }
             4 => {
                 use sotf_plugins::SpectralTiltCorrection as STC;
-                let modes = [STC::None, STC::ThreeDbPerOctave, STC::SixDbPerOctave, STC::Pink];
+                let modes = [
+                    STC::None,
+                    STC::ThreeDbPerOctave,
+                    STC::SixDbPerOctave,
+                    STC::Pink,
+                ];
                 let current = modes.iter().position(|m| m == tilt_correction).unwrap_or(0);
                 let next = if delta > 0.0 {
                     (current + 1) % modes.len()
@@ -1168,7 +1173,12 @@ fn adjust_plugin_param(
             }
             5 => {
                 use sotf_plugins::TiltReferenceFreq as TRF;
-                let modes = [TRF::Standard, TRF::OneKilohertz, TRF::TwoKilohertz, TRF::MinFreq];
+                let modes = [
+                    TRF::Standard,
+                    TRF::OneKilohertz,
+                    TRF::TwoKilohertz,
+                    TRF::MinFreq,
+                ];
                 let current = modes.iter().position(|m| m == tilt_reference).unwrap_or(0);
                 let next = if delta > 0.0 {
                     (current + 1) % modes.len()
@@ -1455,13 +1465,23 @@ fn set_plugin_param_value(
             }
             4 => {
                 use sotf_plugins::SpectralTiltCorrection as STC;
-                let modes = [STC::None, STC::ThreeDbPerOctave, STC::SixDbPerOctave, STC::Pink];
+                let modes = [
+                    STC::None,
+                    STC::ThreeDbPerOctave,
+                    STC::SixDbPerOctave,
+                    STC::Pink,
+                ];
                 *tilt_correction = modes[(value as usize).clamp(0, modes.len() - 1)];
                 true
             }
             5 => {
                 use sotf_plugins::TiltReferenceFreq as TRF;
-                let modes = [TRF::Standard, TRF::OneKilohertz, TRF::TwoKilohertz, TRF::MinFreq];
+                let modes = [
+                    TRF::Standard,
+                    TRF::OneKilohertz,
+                    TRF::TwoKilohertz,
+                    TRF::MinFreq,
+                ];
                 *tilt_reference = modes[(value as usize).clamp(0, modes.len() - 1)];
                 true
             }

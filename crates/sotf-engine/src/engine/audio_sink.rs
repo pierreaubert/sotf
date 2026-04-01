@@ -67,4 +67,3 @@ pub trait AudioSink: Send + 'static {
     /// Close the sink and release all resources.
     fn close(&mut self);
 }
-

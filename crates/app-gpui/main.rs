@@ -124,7 +124,10 @@ fn main() {
     // Install default presets (only copies files that don't already exist)
     let t0 = std::time::Instant::now();
     install_default_presets();
-    log::info!("[startup] install_default_presets: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
+    log::info!(
+        "[startup] install_default_presets: {:.1}ms",
+        t0.elapsed().as_secs_f64() * 1000.0
+    );
 
     // Install signal handlers for clean shutdown on Ctrl-C (SIGINT) and SIGTERM
     #[cfg(unix)]
@@ -155,9 +158,14 @@ fn main() {
     #[cfg(target_os = "linux")]
     let platform = gpui_linux::current_platform(false);
     #[cfg(target_os = "windows")]
-    let platform = std::rc::Rc::new(gpui_windows::WindowsPlatform::new(false).expect("failed to create Windows platform"));
+    let platform = std::rc::Rc::new(
+        gpui_windows::WindowsPlatform::new(false).expect("failed to create Windows platform"),
+    );
 
-    log::info!("[startup] pre-GPUI init: {:.1}ms", t_startup.elapsed().as_secs_f64() * 1000.0);
+    log::info!(
+        "[startup] pre-GPUI init: {:.1}ms",
+        t_startup.elapsed().as_secs_f64() * 1000.0
+    );
 
     gpui::Application::with_platform(platform)
         .with_assets(Assets)
@@ -252,10 +260,7 @@ fn main() {
                     name: translations.menu_help.into(),
                     items: vec![
                         MenuItem::action("Screen Guide", ToggleScreenGuide),
-                        MenuItem::action(
-                            translations.menu_keyboard_shortcuts,
-                            ToggleHelp,
-                        ),
+                        MenuItem::action(translations.menu_keyboard_shortcuts, ToggleHelp),
                     ],
                     disabled: false,
                 },
@@ -300,7 +305,10 @@ fn main() {
                     // Reuse the config already loaded in main() to avoid a second disk read.
                     let t0 = std::time::Instant::now();
                     let mut temp_app = App::new();
-                    log::info!("[startup] App::new: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
+                    log::info!(
+                        "[startup] App::new: {:.1}ms",
+                        t0.elapsed().as_secs_f64() * 1000.0
+                    );
 
                     let t0 = std::time::Instant::now();
                     let layout_state = if let Some(cfg) = config {
@@ -314,7 +322,10 @@ fn main() {
                     } else {
                         LayoutState::default()
                     };
-                    log::info!("[startup] load_config: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
+                    log::info!(
+                        "[startup] load_config: {:.1}ms",
+                        t0.elapsed().as_secs_f64() * 1000.0
+                    );
 
                     let player = Player::new();
                     // Apply loaded volume to player
@@ -333,7 +344,10 @@ fn main() {
                         // Load output devices
                         let t0 = std::time::Instant::now();
                         app.load_audio_devices();
-                        log::info!("[startup] load_audio_devices: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
+                        log::info!(
+                            "[startup] load_audio_devices: {:.1}ms",
+                            t0.elapsed().as_secs_f64() * 1000.0
+                        );
 
                         AppState {
                             app,
@@ -358,7 +372,9 @@ fn main() {
 /// Skips any file that already exists (never overwrites user presets).
 fn install_default_presets() {
     let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-        log::warn!("Could not determine plugin presets directory, skipping default preset installation");
+        log::warn!(
+            "Could not determine plugin presets directory, skipping default preset installation"
+        );
         return;
     };
 

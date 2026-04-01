@@ -257,17 +257,35 @@ mod tests {
         assert!(first_path.to_string_lossy().contains("track0.flac"));
 
         let second_path = app.next_track().unwrap();
-        assert!(second_path.as_path().unwrap().to_string_lossy().contains("track1.flac"));
+        assert!(
+            second_path
+                .as_path()
+                .unwrap()
+                .to_string_lossy()
+                .contains("track1.flac")
+        );
         assert_eq!(app.queue.len(), 2);
         assert_eq!(app.current_queue_index, Some(0));
 
         let third_path = app.next_track().unwrap();
-        assert!(third_path.as_path().unwrap().to_string_lossy().contains("album2/track0.flac"));
+        assert!(
+            third_path
+                .as_path()
+                .unwrap()
+                .to_string_lossy()
+                .contains("album2/track0.flac")
+        );
         assert_eq!(app.queue.len(), 1);
         assert_eq!(app.current_queue_index, Some(0));
 
         let fourth_path = app.next_track().unwrap();
-        assert!(fourth_path.as_path().unwrap().to_string_lossy().contains("album2/track1.flac"));
+        assert!(
+            fourth_path
+                .as_path()
+                .unwrap()
+                .to_string_lossy()
+                .contains("album2/track1.flac")
+        );
 
         let none = app.next_track();
         assert!(none.is_none());
@@ -1777,7 +1795,13 @@ mod tests {
         // Go back
         let path = app.previous_track();
         assert!(path.is_some());
-        assert!(path.unwrap().as_path().unwrap().to_string_lossy().contains("track1.flac"));
+        assert!(
+            path.unwrap()
+                .as_path()
+                .unwrap()
+                .to_string_lossy()
+                .contains("track1.flac")
+        );
     }
 
     #[test]

@@ -47,11 +47,9 @@ impl PlayerAdapter for MpdPlayerAdapter {
         };
 
         match source {
-            Some(source) => {
-                player
-                    .load_and_play_source(source, vec![], 2, None)
-                    .map_err(|e| e.to_string())
-            }
+            Some(source) => player
+                .load_and_play_source(source, vec![], 2, None)
+                .map_err(|e| e.to_string()),
             None => Err("No track to play".to_string()),
         }
     }
@@ -393,9 +391,10 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
 
     fn browse_album_tracks(&self, album_id: &str) -> Vec<sotf_dlna::MediaTrack> {
         let library = self.state.library.lock();
-        let album = library.albums.iter().find(|a| {
-            a.id.is_some_and(|id| id.to_string() == album_id) || a.title == album_id
-        });
+        let album = library
+            .albums
+            .iter()
+            .find(|a| a.id.is_some_and(|id| id.to_string() == album_id) || a.title == album_id);
 
         match album {
             Some(album) => album
@@ -408,7 +407,12 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
         }
     }
 
-    fn search_tracks(&self, query: &str, start: u32, count: u32) -> (Vec<sotf_dlna::MediaTrack>, u32) {
+    fn search_tracks(
+        &self,
+        query: &str,
+        start: u32,
+        count: u32,
+    ) -> (Vec<sotf_dlna::MediaTrack>, u32) {
         let library = self.state.library.lock();
         let query_lower = query.to_lowercase();
         let mut results = Vec::new();
@@ -439,7 +443,11 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
         let page: Vec<_> = results
             .into_iter()
             .skip(start as usize)
-            .take(if count == 0 { usize::MAX } else { count as usize })
+            .take(if count == 0 {
+                usize::MAX
+            } else {
+                count as usize
+            })
             .collect();
         (page, total)
     }
@@ -572,10 +580,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     let mut library = MusicLibrary::with_database()?;
     library.load_from_database()?;
     let album_count = library.albums.len();
-    log::info!(
-        "[server] Library loaded: {} albums",
-        album_count
-    );
+    log::info!("[server] Library loaded: {} albums", album_count);
     eprintln!("Library loaded: {} albums", album_count);
 
     let player = Player::new();
@@ -609,10 +614,9 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
         // Start MPD server
         if config.mpd.enabled {
             let mpd_config = mpd_settings_to_config(&config);
-            let adapter: Arc<dyn PlayerAdapter> =
-                Arc::new(MpdPlayerAdapter {
-                    state: Arc::clone(&state),
-                });
+            let adapter: Arc<dyn PlayerAdapter> = Arc::new(MpdPlayerAdapter {
+                state: Arc::clone(&state),
+            });
             let server = MpdServer::with_config(mpd_config, adapter);
             let cancel = shutdown_rx.clone();
 
@@ -631,12 +635,10 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 
         // Start DLNA server
         if config.dlna.enabled {
-            let device =
-                DlnaDevice::new_server(&config.dlna.friendly_name, config.dlna.port);
-            let adapter: Arc<dyn MediaServerAdapter> =
-                Arc::new(DlnaLibraryAdapter {
-                    state: Arc::clone(&state),
-                });
+            let device = DlnaDevice::new_server(&config.dlna.friendly_name, config.dlna.port);
+            let adapter: Arc<dyn MediaServerAdapter> = Arc::new(DlnaLibraryAdapter {
+                state: Arc::clone(&state),
+            });
             let server = DlnaMediaServer::new(device, adapter);
             let cancel = shutdown_rx.clone();
             let local_ip = get_local_ipv4();

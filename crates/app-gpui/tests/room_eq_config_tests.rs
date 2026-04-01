@@ -432,7 +432,10 @@ fn test_import_with_features_enabled_preserves_them() {
     let opt = &room_config.optimizer;
 
     // target_tilt was enabled in backend
-    let tilt = opt.target_tilt.as_ref().expect("target_tilt should be Some");
+    let tilt = opt
+        .target_tilt
+        .as_ref()
+        .expect("target_tilt should be Some");
     assert_eq!(tilt.slope_db_per_octave, -1.0);
     assert_eq!(tilt.bass_shelf_db, 2.0);
 
@@ -473,7 +476,7 @@ fn test_import_broadband_with_enabled_false() {
 // These tests verify the ordering for all standard surround configurations.
 // ============================================================================
 
-use sotf_audio_player_gpui::{ChannelOptResult, DspChainOutput, ChannelDspChain, DspPluginConfig};
+use sotf_audio_player_gpui::{ChannelDspChain, ChannelOptResult, DspChainOutput, DspPluginConfig};
 
 /// Simulate the channel-to-filter mapping logic from apply_room_eq_to_player.
 /// Given channel names in output order and a DSP output HashMap, returns
@@ -496,9 +499,7 @@ fn build_per_channel_order(
 
 /// Build mock optimization results and DSP output for a given speaker config.
 /// Each channel gets a unique EQ filter frequency to verify ordering.
-fn build_mock_results(
-    speaker_labels: &[&str],
-) -> (Vec<ChannelOptResult>, DspChainOutput) {
+fn build_mock_results(speaker_labels: &[&str]) -> (Vec<ChannelOptResult>, DspChainOutput) {
     let mut channel_results = Vec::new();
     let mut channels = std::collections::HashMap::new();
 
@@ -559,15 +560,15 @@ fn build_mock_results(
 
 /// Extract per-channel filter frequencies in the order they'd be applied
 /// to audio channels (reproducing the logic from apply_room_eq_to_player).
-fn extract_filter_freqs(
-    channel_result_names: &[String],
-    dsp_output: &DspChainOutput,
-) -> Vec<f64> {
+fn extract_filter_freqs(channel_result_names: &[String], dsp_output: &DspChainOutput) -> Vec<f64> {
     let mut freqs = Vec::new();
     for name in channel_result_names {
         if let Some(chain) = dsp_output.channels.get(name) {
             for plugin in &chain.plugins {
-                if plugin.plugin_type == "EQ" && let Some(filters) = plugin.parameters.get("filters").and_then(|f| f.as_array()) {
+                if plugin.plugin_type == "EQ"
+                    && let Some(filters) =
+                        plugin.parameters.get("filters").and_then(|f| f.as_array())
+                {
                     for f in filters {
                         if let Some(freq) = f.get("frequency").and_then(|v| v.as_f64()) {
                             freqs.push(freq);
@@ -588,7 +589,8 @@ fn assert_channel_ordering(config_name: &str, labels: &[&str]) {
     let (results, dsp_output) = build_mock_results(labels);
 
     // channel_result_names preserves the output channel order
-    let channel_result_names: Vec<String> = results.iter().map(|r| r.channel_name.clone()).collect();
+    let channel_result_names: Vec<String> =
+        results.iter().map(|r| r.channel_name.clone()).collect();
 
     // Extract filter frequencies in the order they'd be applied
     let freqs = extract_filter_freqs(&channel_result_names, &dsp_output);
@@ -662,7 +664,9 @@ fn test_channel_ordering_5_1_2() {
 fn test_channel_ordering_5_1_4() {
     assert_channel_ordering(
         "5.1.4",
-        &["FL", "FR", "C", "LFE", "SL", "SR", "TFL", "TFR", "TRL", "TRR"],
+        &[
+            "FL", "FR", "C", "LFE", "SL", "SR", "TFL", "TFR", "TRL", "TRR",
+        ],
     );
 }
 
@@ -678,7 +682,9 @@ fn test_channel_ordering_7_1_2() {
 fn test_channel_ordering_7_1_4() {
     assert_channel_ordering(
         "7.1.4",
-        &["FL", "FR", "C", "LFE", "SL", "SR", "RL", "RR", "TFL", "TFR", "TRL", "TRR"],
+        &[
+            "FL", "FR", "C", "LFE", "SL", "SR", "RL", "RR", "TFL", "TFR", "TRL", "TRR",
+        ],
     );
 }
 
@@ -732,10 +738,13 @@ fn test_hashmap_insertion_order_irrelevant() {
 
     // channel_result_names in correct output order
     let channel_result_names: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
-    let freqs = extract_filter_freqs(&channel_result_names, &DspChainOutput {
-        channels,
-        metadata: None,
-    });
+    let freqs = extract_filter_freqs(
+        &channel_result_names,
+        &DspChainOutput {
+            channels,
+            metadata: None,
+        },
+    );
 
     for (idx, &freq) in freqs.iter().enumerate() {
         let expected = (idx + 1) as f64 * 100.0;
@@ -759,8 +768,15 @@ fn test_import_preserves_seed_and_refine() {
     state.optimizer_config.import_from_backend(&backend);
     state.apply_smart_defaults();
 
-    assert_eq!(state.optimizer_config.seed, Some(42), "seed must survive smart defaults");
-    assert!(!state.optimizer_config.refine, "refine=false must survive smart defaults");
+    assert_eq!(
+        state.optimizer_config.seed,
+        Some(42),
+        "seed must survive smart defaults"
+    );
+    assert!(
+        !state.optimizer_config.refine,
+        "refine=false must survive smart defaults"
+    );
     assert_eq!(
         state.optimizer_config.local_algo, "neldermead",
         "local_algo must survive smart defaults"

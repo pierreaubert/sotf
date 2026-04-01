@@ -1,6 +1,6 @@
 //! Full-text search and WAL checkpoint operations.
-use rusqlite::{Result as SqlResult, params};
 use super::MusicDatabase;
+use rusqlite::{Result as SqlResult, params};
 
 impl MusicDatabase {
     /// Define all database migrations

@@ -70,7 +70,11 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("right", actions::SelectRight, Some("PluginRack")),
         // Plugin reordering
         KeyBinding::new("secondary-up", actions::MovePluginUp, Some("PluginRack")),
-        KeyBinding::new("secondary-down", actions::MovePluginDown, Some("PluginRack")),
+        KeyBinding::new(
+            "secondary-down",
+            actions::MovePluginDown,
+            Some("PluginRack"),
+        ),
         // Plugin enable/disable
         KeyBinding::new("enter", actions::TogglePlugin, Some("PluginRack")),
         // Plugin removal

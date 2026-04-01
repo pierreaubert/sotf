@@ -14,7 +14,7 @@ pub struct Migration {
 /// Define all database migrations
 pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
     let mut migrations = HashMap::new();
-        migrations.insert(
+    migrations.insert(
             1,
             Migration {
                 description: "Initial schema with albums, tracks, and scan_history tables",
@@ -83,33 +83,33 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         );
 
-        // Migration 2: Add channels column to tracks table
-        migrations.insert(
-            2,
-            Migration {
-                description: "Add channels column to tracks table for channel count filtering",
-                apply: |db| {
-                    // Check if column already exists (for databases created with channels)
-                    let has_channels = db
-                        .conn
-                        .prepare("SELECT channels FROM tracks LIMIT 1")
-                        .is_ok();
+    // Migration 2: Add channels column to tracks table
+    migrations.insert(
+        2,
+        Migration {
+            description: "Add channels column to tracks table for channel count filtering",
+            apply: |db| {
+                // Check if column already exists (for databases created with channels)
+                let has_channels = db
+                    .conn
+                    .prepare("SELECT channels FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_channels {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN channels INTEGER", [])?;
-                        log::info!("Added channels column to tracks table");
-                    } else {
-                        log::info!("Channels column already exists, skipping");
-                    }
+                if !has_channels {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN channels INTEGER", [])?;
+                    log::info!("Added channels column to tracks table");
+                } else {
+                    log::info!("Channels column already exists, skipping");
+                }
 
-                    Ok(())
-                },
+                Ok(())
             },
-        );
+        },
+    );
 
-        // Migration 3: Add FTS5 virtual table for search
-        migrations.insert(
+    // Migration 3: Add FTS5 virtual table for search
+    migrations.insert(
             3,
             Migration {
                 description: "Add FTS5 virtual table for full-text search",
@@ -218,84 +218,84 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         );
 
-        // Migration 4: Add ReplayGain columns to tracks table
-        migrations.insert(
-            4,
-            Migration {
-                description: "Add ReplayGain gain and peak columns to tracks table",
-                apply: |db| {
-                    // Check if columns already exist
-                    let has_replay_gain = db
-                        .conn
-                        .prepare("SELECT replay_gain FROM tracks LIMIT 1")
-                        .is_ok();
+    // Migration 4: Add ReplayGain columns to tracks table
+    migrations.insert(
+        4,
+        Migration {
+            description: "Add ReplayGain gain and peak columns to tracks table",
+            apply: |db| {
+                // Check if columns already exist
+                let has_replay_gain = db
+                    .conn
+                    .prepare("SELECT replay_gain FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_replay_gain {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN replay_gain REAL", [])?;
-                        log::info!("Added replay_gain column to tracks table");
-                    } else {
-                        log::info!("replay_gain column already exists, skipping");
-                    }
+                if !has_replay_gain {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN replay_gain REAL", [])?;
+                    log::info!("Added replay_gain column to tracks table");
+                } else {
+                    log::info!("replay_gain column already exists, skipping");
+                }
 
-                    let has_replay_peak = db
-                        .conn
-                        .prepare("SELECT replay_peak FROM tracks LIMIT 1")
-                        .is_ok();
+                let has_replay_peak = db
+                    .conn
+                    .prepare("SELECT replay_peak FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_replay_peak {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN replay_peak REAL", [])?;
-                        log::info!("Added replay_peak column to tracks table");
-                    } else {
-                        log::info!("replay_peak column already exists, skipping");
-                    }
+                if !has_replay_peak {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN replay_peak REAL", [])?;
+                    log::info!("Added replay_peak column to tracks table");
+                } else {
+                    log::info!("replay_peak column already exists, skipping");
+                }
 
-                    Ok(())
-                },
+                Ok(())
             },
-        );
+        },
+    );
 
-        // Migration 5: Add album ReplayGain columns to tracks table
-        migrations.insert(
-            5,
-            Migration {
-                description: "Add album ReplayGain columns to tracks table",
-                apply: |db| {
-                    // Check if columns already exist
-                    let has_album_gain = db
-                        .conn
-                        .prepare("SELECT album_gain FROM tracks LIMIT 1")
-                        .is_ok();
+    // Migration 5: Add album ReplayGain columns to tracks table
+    migrations.insert(
+        5,
+        Migration {
+            description: "Add album ReplayGain columns to tracks table",
+            apply: |db| {
+                // Check if columns already exist
+                let has_album_gain = db
+                    .conn
+                    .prepare("SELECT album_gain FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_album_gain {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN album_gain REAL", [])?;
-                        log::info!("Added album_gain column to tracks table");
-                    } else {
-                        log::info!("album_gain column already exists, skipping");
-                    }
+                if !has_album_gain {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN album_gain REAL", [])?;
+                    log::info!("Added album_gain column to tracks table");
+                } else {
+                    log::info!("album_gain column already exists, skipping");
+                }
 
-                    let has_album_peak = db
-                        .conn
-                        .prepare("SELECT album_peak FROM tracks LIMIT 1")
-                        .is_ok();
+                let has_album_peak = db
+                    .conn
+                    .prepare("SELECT album_peak FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_album_peak {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN album_peak REAL", [])?;
-                        log::info!("Added album_peak column to tracks table");
-                    } else {
-                        log::info!("album_peak column already exists, skipping");
-                    }
+                if !has_album_peak {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN album_peak REAL", [])?;
+                    log::info!("Added album_peak column to tracks table");
+                } else {
+                    log::info!("album_peak column already exists, skipping");
+                }
 
-                    Ok(())
-                },
+                Ok(())
             },
-        );
+        },
+    );
 
-        // Migration 6: Add play_history table for listening statistics
-        migrations.insert(
+    // Migration 6: Add play_history table for listening statistics
+    migrations.insert(
             6,
             Migration {
                 description: "Add play_history table for tracking listening statistics",
@@ -333,33 +333,33 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         );
 
-        // Migration 7: Add waveform column to tracks table
-        migrations.insert(
-            7,
-            Migration {
-                description: "Add waveform column to tracks table for amplitude visualization",
-                apply: |db| {
-                    // Check if column already exists
-                    let has_waveform = db
-                        .conn
-                        .prepare("SELECT waveform FROM tracks LIMIT 1")
-                        .is_ok();
+    // Migration 7: Add waveform column to tracks table
+    migrations.insert(
+        7,
+        Migration {
+            description: "Add waveform column to tracks table for amplitude visualization",
+            apply: |db| {
+                // Check if column already exists
+                let has_waveform = db
+                    .conn
+                    .prepare("SELECT waveform FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_waveform {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN waveform BLOB", [])?;
-                        log::info!("Added waveform column to tracks table");
-                    } else {
-                        log::info!("waveform column already exists, skipping");
-                    }
+                if !has_waveform {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN waveform BLOB", [])?;
+                    log::info!("Added waveform column to tracks table");
+                } else {
+                    log::info!("waveform column already exists, skipping");
+                }
 
-                    Ok(())
-                },
+                Ok(())
             },
-        );
+        },
+    );
 
-        // Migration 8: Add playlists and playlist_tracks tables
-        migrations.insert(
+    // Migration 8: Add playlists and playlist_tracks tables
+    migrations.insert(
             8,
             Migration {
                 description: "Add playlists and playlist_tracks tables for user playlists",
@@ -406,8 +406,8 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         );
 
-        // Migration 9: Add extended metadata columns to tracks table
-        migrations.insert(
+    // Migration 9: Add extended metadata columns to tracks table
+    migrations.insert(
             9,
             Migration {
                 description: "Add extended metadata columns to tracks table",
@@ -461,33 +461,31 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         );
 
-        // Migration 10: Add album art thumbnail column to albums table
-        migrations.insert(
-            10,
-            Migration {
-                description: "Add album_art_thumbnail BLOB column to albums table",
-                apply: |db| {
-                    // Check if column already exists
-                    let has_column = db
-                        .conn
-                        .prepare("SELECT album_art_thumbnail FROM albums LIMIT 1")
-                        .is_ok();
+    // Migration 10: Add album art thumbnail column to albums table
+    migrations.insert(
+        10,
+        Migration {
+            description: "Add album_art_thumbnail BLOB column to albums table",
+            apply: |db| {
+                // Check if column already exists
+                let has_column = db
+                    .conn
+                    .prepare("SELECT album_art_thumbnail FROM albums LIMIT 1")
+                    .is_ok();
 
-                    if !has_column {
-                        db.conn.execute(
-                            "ALTER TABLE albums ADD COLUMN album_art_thumbnail BLOB",
-                            [],
-                        )?;
-                        log::info!("Added album_art_thumbnail column to albums table");
-                    }
+                if !has_column {
+                    db.conn
+                        .execute("ALTER TABLE albums ADD COLUMN album_art_thumbnail BLOB", [])?;
+                    log::info!("Added album_art_thumbnail column to albums table");
+                }
 
-                    Ok(())
-                },
+                Ok(())
             },
-        );
+        },
+    );
 
-        // Migration 11: Normalize metadata tables (genres, composers, conductors, performers, ensembles)
-        migrations.insert(
+    // Migration 11: Normalize metadata tables (genres, composers, conductors, performers, ensembles)
+    migrations.insert(
             11,
             Migration {
                 description: "Add normalized lookup tables for genres, composers, conductors, performers, ensembles",
@@ -690,9 +688,9 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         );
 
-        // Migration 12: Remove artist from albums table, add artist to tracks table
-        // Albums are now uniquely identified by title only; artist is derived from tracks
-        migrations.insert(
+    // Migration 12: Remove artist from albums table, add artist to tracks table
+    // Albums are now uniquely identified by title only; artist is derived from tracks
+    migrations.insert(
             12,
             Migration {
                 description: "Remove artist from albums, add artist to tracks - albums identified by title only",
@@ -807,116 +805,116 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         );
 
-        // Migration 13: Add sample_rate and bit_depth columns to tracks table
-        migrations.insert(
-            13,
-            Migration {
-                description: "Add sample_rate and bit_depth columns to tracks table",
-                apply: |db| {
-                    // Add sample_rate column
-                    let has_sample_rate = db
-                        .conn
-                        .prepare("SELECT sample_rate FROM tracks LIMIT 1")
-                        .is_ok();
+    // Migration 13: Add sample_rate and bit_depth columns to tracks table
+    migrations.insert(
+        13,
+        Migration {
+            description: "Add sample_rate and bit_depth columns to tracks table",
+            apply: |db| {
+                // Add sample_rate column
+                let has_sample_rate = db
+                    .conn
+                    .prepare("SELECT sample_rate FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_sample_rate {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN sample_rate INTEGER", [])?;
-                        log::info!("Added sample_rate column to tracks table");
-                    }
+                if !has_sample_rate {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN sample_rate INTEGER", [])?;
+                    log::info!("Added sample_rate column to tracks table");
+                }
 
-                    // Add bit_depth column
-                    let has_bit_depth = db
-                        .conn
-                        .prepare("SELECT bit_depth FROM tracks LIMIT 1")
-                        .is_ok();
+                // Add bit_depth column
+                let has_bit_depth = db
+                    .conn
+                    .prepare("SELECT bit_depth FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_bit_depth {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN bit_depth INTEGER", [])?;
-                        log::info!("Added bit_depth column to tracks table");
-                    }
+                if !has_bit_depth {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN bit_depth INTEGER", [])?;
+                    log::info!("Added bit_depth column to tracks table");
+                }
 
-                    Ok(())
-                },
+                Ok(())
             },
-        );
+        },
+    );
 
-        // Migration 14: Add bliss audio analysis columns to tracks table
-        migrations.insert(
-            14,
-            Migration {
-                description: "Add bliss audio analysis columns for music similarity",
-                apply: |db| {
-                    // Add bliss_tempo column (BPM)
-                    let has_bliss_tempo = db
-                        .conn
-                        .prepare("SELECT bliss_tempo FROM tracks LIMIT 1")
-                        .is_ok();
+    // Migration 14: Add bliss audio analysis columns to tracks table
+    migrations.insert(
+        14,
+        Migration {
+            description: "Add bliss audio analysis columns for music similarity",
+            apply: |db| {
+                // Add bliss_tempo column (BPM)
+                let has_bliss_tempo = db
+                    .conn
+                    .prepare("SELECT bliss_tempo FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_bliss_tempo {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN bliss_tempo REAL", [])?;
-                        log::info!("Added bliss_tempo column to tracks table");
-                    }
+                if !has_bliss_tempo {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN bliss_tempo REAL", [])?;
+                    log::info!("Added bliss_tempo column to tracks table");
+                }
 
-                    // Add bliss_zcr column (zero-crossing rate)
-                    let has_bliss_zcr = db
-                        .conn
-                        .prepare("SELECT bliss_zcr FROM tracks LIMIT 1")
-                        .is_ok();
+                // Add bliss_zcr column (zero-crossing rate)
+                let has_bliss_zcr = db
+                    .conn
+                    .prepare("SELECT bliss_zcr FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_bliss_zcr {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN bliss_zcr REAL", [])?;
-                        log::info!("Added bliss_zcr column to tracks table");
-                    }
+                if !has_bliss_zcr {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN bliss_zcr REAL", [])?;
+                    log::info!("Added bliss_zcr column to tracks table");
+                }
 
-                    // Add bliss_loudness column (mean loudness)
-                    let has_bliss_loudness = db
-                        .conn
-                        .prepare("SELECT bliss_loudness FROM tracks LIMIT 1")
-                        .is_ok();
+                // Add bliss_loudness column (mean loudness)
+                let has_bliss_loudness = db
+                    .conn
+                    .prepare("SELECT bliss_loudness FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_bliss_loudness {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN bliss_loudness REAL", [])?;
-                        log::info!("Added bliss_loudness column to tracks table");
-                    }
+                if !has_bliss_loudness {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN bliss_loudness REAL", [])?;
+                    log::info!("Added bliss_loudness column to tracks table");
+                }
 
-                    // Add bliss_features column (BLOB storing full feature vector)
-                    let has_bliss_features = db
-                        .conn
-                        .prepare("SELECT bliss_features FROM tracks LIMIT 1")
-                        .is_ok();
+                // Add bliss_features column (BLOB storing full feature vector)
+                let has_bliss_features = db
+                    .conn
+                    .prepare("SELECT bliss_features FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_bliss_features {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN bliss_features BLOB", [])?;
-                        log::info!("Added bliss_features column to tracks table");
-                    }
+                if !has_bliss_features {
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN bliss_features BLOB", [])?;
+                    log::info!("Added bliss_features column to tracks table");
+                }
 
-                    // Add bliss_analyzed_at column (timestamp of analysis)
-                    let has_bliss_analyzed_at = db
-                        .conn
-                        .prepare("SELECT bliss_analyzed_at FROM tracks LIMIT 1")
-                        .is_ok();
+                // Add bliss_analyzed_at column (timestamp of analysis)
+                let has_bliss_analyzed_at = db
+                    .conn
+                    .prepare("SELECT bliss_analyzed_at FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_bliss_analyzed_at {
-                        db.conn.execute(
-                            "ALTER TABLE tracks ADD COLUMN bliss_analyzed_at INTEGER",
-                            [],
-                        )?;
-                        log::info!("Added bliss_analyzed_at column to tracks table");
-                    }
+                if !has_bliss_analyzed_at {
+                    db.conn.execute(
+                        "ALTER TABLE tracks ADD COLUMN bliss_analyzed_at INTEGER",
+                        [],
+                    )?;
+                    log::info!("Added bliss_analyzed_at column to tracks table");
+                }
 
-                    Ok(())
-                },
+                Ok(())
             },
-        );
+        },
+    );
 
-        // Migration 15: Add track path to FTS index for filename-based search
-        migrations.insert(
+    // Migration 15: Add track path to FTS index for filename-based search
+    migrations.insert(
             15,
             Migration {
                 description: "Add track path to FTS index for filename-based search",
@@ -1001,76 +999,76 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         );
 
-        // Migration 16: Add favorites support for tracks and albums
-        migrations.insert(
-            16,
-            Migration {
-                description: "Add is_favorite column to tracks and albums tables",
-                apply: |db| {
-                    // Add is_favorite to tracks
-                    let has_track_fav = db
-                        .conn
-                        .prepare("SELECT is_favorite FROM tracks LIMIT 1")
-                        .is_ok();
+    // Migration 16: Add favorites support for tracks and albums
+    migrations.insert(
+        16,
+        Migration {
+            description: "Add is_favorite column to tracks and albums tables",
+            apply: |db| {
+                // Add is_favorite to tracks
+                let has_track_fav = db
+                    .conn
+                    .prepare("SELECT is_favorite FROM tracks LIMIT 1")
+                    .is_ok();
 
-                    if !has_track_fav {
-                        db.conn.execute(
-                            "ALTER TABLE tracks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
-                            [],
-                        )?;
-                        log::info!("Added is_favorite column to tracks table");
-                    }
-
-                    // Add is_favorite to albums
-                    let has_album_fav = db
-                        .conn
-                        .prepare("SELECT is_favorite FROM albums LIMIT 1")
-                        .is_ok();
-
-                    if !has_album_fav {
-                        db.conn.execute(
-                            "ALTER TABLE albums ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
-                            [],
-                        )?;
-                        log::info!("Added is_favorite column to albums table");
-                    }
-
-                    // Create indexes for favorite queries
+                if !has_track_fav {
                     db.conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_tracks_favorite ON tracks(is_favorite)",
+                        "ALTER TABLE tracks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
                         [],
                     )?;
+                    log::info!("Added is_favorite column to tracks table");
+                }
+
+                // Add is_favorite to albums
+                let has_album_fav = db
+                    .conn
+                    .prepare("SELECT is_favorite FROM albums LIMIT 1")
+                    .is_ok();
+
+                if !has_album_fav {
                     db.conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_albums_favorite ON albums(is_favorite)",
+                        "ALTER TABLE albums ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
                         [],
                     )?;
+                    log::info!("Added is_favorite column to albums table");
+                }
 
-                    log::info!("Added favorites support to tracks and albums");
-                    Ok(())
-                },
+                // Create indexes for favorite queries
+                db.conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tracks_favorite ON tracks(is_favorite)",
+                    [],
+                )?;
+                db.conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_albums_favorite ON albums(is_favorite)",
+                    [],
+                )?;
+
+                log::info!("Added favorites support to tracks and albums");
+                Ok(())
             },
-        );
+        },
+    );
 
-        // Migration 17: Add scanner error columns for tracking failures
-        migrations.insert(
-            17,
-            Migration {
-                description: "Add error columns for replay_gain, waveform, and bliss scanners",
-                apply: |db| {
-                    db.conn
-                        .execute("ALTER TABLE tracks ADD COLUMN replay_gain_error TEXT", [])?;
-                    db.conn
-                        .execute("ALTER TABLE tracks ADD COLUMN waveform_error TEXT", [])?;
-                    db.conn
-                        .execute("ALTER TABLE tracks ADD COLUMN bliss_error TEXT", [])?;
-                    log::info!("Added scanner error columns to tracks table");
-                    Ok(())
-                },
+    // Migration 17: Add scanner error columns for tracking failures
+    migrations.insert(
+        17,
+        Migration {
+            description: "Add error columns for replay_gain, waveform, and bliss scanners",
+            apply: |db| {
+                db.conn
+                    .execute("ALTER TABLE tracks ADD COLUMN replay_gain_error TEXT", [])?;
+                db.conn
+                    .execute("ALTER TABLE tracks ADD COLUMN waveform_error TEXT", [])?;
+                db.conn
+                    .execute("ALTER TABLE tracks ADD COLUMN bliss_error TEXT", [])?;
+                log::info!("Added scanner error columns to tracks table");
+                Ok(())
             },
-        );
+        },
+    );
 
-        // Migration 18: Add composite index for faster load_library track queries
-        migrations.insert(
+    // Migration 18: Add composite index for faster load_library track queries
+    migrations.insert(
             18,
             Migration {
                 description: "Add composite index on tracks(album_id, disc_number, track_number) for faster library loading",
@@ -1085,8 +1083,8 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         );
 
-        // Migration 19: Library federation tables + stable UUIDs
-        migrations.insert(
+    // Migration 19: Library federation tables + stable UUIDs
+    migrations.insert(
             19,
             Migration {
                 description: "Add library federation tables (library_sources, track_sources, album_sources) and UUID columns",
@@ -1218,7 +1216,7 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                 },
             },
         );
-        migrations.insert(
+    migrations.insert(
             20,
             Migration {
                 description: "Add is_available column to library_sources for tracking source reachability",

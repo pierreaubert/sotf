@@ -48,7 +48,7 @@ fn set_priority_macos(level: RtPriority) -> Result<bool, String> {
     // but that requires specific period/computation/constraint values tied to
     // the audio callback timing, which the engine thread doesn't have.
     let qos_class = match level {
-        RtPriority::Playback => 0x21,  // QOS_CLASS_USER_INTERACTIVE
+        RtPriority::Playback => 0x21,   // QOS_CLASS_USER_INTERACTIVE
         RtPriority::Processing => 0x21, // QOS_CLASS_USER_INTERACTIVE
     };
 
@@ -79,7 +79,7 @@ fn set_priority_macos(level: RtPriority) -> Result<bool, String> {
 
 #[cfg(target_os = "linux")]
 fn set_priority_linux(level: RtPriority) -> Result<bool, String> {
-    use libc::{sched_param, sched_setscheduler, SCHED_FIFO, SCHED_RR};
+    use libc::{SCHED_FIFO, SCHED_RR, sched_param, sched_setscheduler};
 
     let (policy, priority) = match level {
         RtPriority::Playback => (SCHED_FIFO, 70),
@@ -95,7 +95,11 @@ fn set_priority_linux(level: RtPriority) -> Result<bool, String> {
         log::info!(
             "[RT Priority] Linux: set {:?} to policy={}, priority={}",
             level,
-            if policy == SCHED_FIFO { "SCHED_FIFO" } else { "SCHED_RR" },
+            if policy == SCHED_FIFO {
+                "SCHED_FIFO"
+            } else {
+                "SCHED_RR"
+            },
             priority
         );
         Ok(true)

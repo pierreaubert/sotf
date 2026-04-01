@@ -122,8 +122,9 @@ mod tests {
 
     #[test]
     fn test_parse_single_plugin() {
-        let plugins =
-            parse_path_config(r#"{"type":"Plugin","plugin_type":"gain","parameters":{"gain_db":-3.0}}"#);
+        let plugins = parse_path_config(
+            r#"{"type":"Plugin","plugin_type":"gain","parameters":{"gain_db":-3.0}}"#,
+        );
         assert_eq!(plugins.len(), 1);
         assert_eq!(plugins[0].plugin_type, "gain");
     }

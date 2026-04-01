@@ -543,8 +543,7 @@ impl App {
                             preset_filename,
                             self.plugin_chain.len()
                         );
-                        self.status_message =
-                            Some(format!("Loaded preset: {}", preset_filename));
+                        self.status_message = Some(format!("Loaded preset: {}", preset_filename));
                     } else {
                         log::warn!(
                             "Loaded preset: {} ({} plugins, {} skipped)",

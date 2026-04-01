@@ -65,7 +65,9 @@ impl ObjectRenderer {
         let mut panner = VbapPanner::new(target.speakers, target.total_channels);
         let position = ObjectPosition::default();
         // Pre-compute gains for the default position (az=0, el=0)
-        let cached_gains = panner.pan(position.azimuth_deg, position.elevation_deg).to_vec();
+        let cached_gains = panner
+            .pan(position.azimuth_deg, position.elevation_deg)
+            .to_vec();
 
         Self {
             panner,
@@ -267,7 +269,9 @@ mod tests {
 
         let substream_pcm = vec![vec![1.0_f32]];
         let mut output_half = vec![0.0_f32; 6];
-        renderer.render(&substream_pcm, &mut output_half, 1).unwrap();
+        renderer
+            .render(&substream_pcm, &mut output_half, 1)
+            .unwrap();
 
         renderer.set_position(ObjectPosition {
             azimuth_deg: 0.0,
@@ -275,7 +279,9 @@ mod tests {
             gain: 1.0,
         });
         let mut output_full = vec![0.0_f32; 6];
-        renderer.render(&substream_pcm, &mut output_full, 1).unwrap();
+        renderer
+            .render(&substream_pcm, &mut output_full, 1)
+            .unwrap();
 
         // Half-gain output should be exactly 0.5 × full-gain output
         for (h, f) in output_half.iter().zip(output_full.iter()) {
@@ -345,7 +351,9 @@ mod tests {
         let pcm = vec![1.0_f32; num_frames];
         let substream_pcm = vec![pcm];
         let mut output = vec![0.0_f32; 2 * num_frames];
-        renderer.render(&substream_pcm, &mut output, num_frames).unwrap();
+        renderer
+            .render(&substream_pcm, &mut output, num_frames)
+            .unwrap();
 
         // All frames should have the same channel distribution
         for frame in 0..num_frames {

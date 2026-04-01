@@ -368,7 +368,10 @@ impl PlayerView {
                 per_channel_filters.push(channel_eq_filters);
             } else {
                 // Channel has no DSP output (e.g., optimization skipped it)
-                log::info!("Channel '{}': no DSP output, using empty filters", channel_name);
+                log::info!(
+                    "Channel '{}': no DSP output, using empty filters",
+                    channel_name
+                );
                 per_channel_filters.push(Vec::new());
             }
         }
@@ -407,8 +410,9 @@ impl PlayerView {
                         filters: global_filters.clone(),
                         channel_filters: Some(per_channel_filters.clone()),
                         per_channel_mode: true,
-                        max_filters: 10, tdf2: false,
-                    topology: 0.0,
+                        max_filters: 10,
+                        tdf2: false,
+                        topology: 0.0,
                     };
                     log::info!(
                         "Updated existing EQ plugin at index {} with per-channel room EQ",
@@ -427,8 +431,9 @@ impl PlayerView {
                         filters: global_filters.clone(),
                         channel_filters: Some(per_channel_filters.clone()),
                         per_channel_mode: true,
-                        max_filters: 10, tdf2: false,
-                    topology: 0.0,
+                        max_filters: 10,
+                        tdf2: false,
+                        topology: 0.0,
                     };
                 }
                 log::info!(
@@ -461,12 +466,7 @@ impl PlayerView {
 
         let dsp_output = {
             let state = self.state.read(cx);
-            state
-                .app
-                .measurement_state
-                .room_eq_state
-                .dsp_output
-                .clone()
+            state.app.measurement_state.room_eq_state.dsp_output.clone()
         };
 
         let Some(dsp_output) = dsp_output else {

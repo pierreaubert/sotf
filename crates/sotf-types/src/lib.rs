@@ -11,6 +11,8 @@ mod state;
 
 pub use audio_source::{AudioSource, ServiceId};
 pub use config::EngineConfig;
-pub use plugin_config::{PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
+pub use plugin_config::{
+    PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
+};
 pub use sink::{SinkConfig, SinkOpenResult, SinkType};
 pub use state::{AudioEngineState, AudioFrame, PlaybackState};

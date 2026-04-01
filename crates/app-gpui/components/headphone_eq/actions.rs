@@ -283,8 +283,9 @@ impl PlayerView {
                     filters,
                     channel_filters: None,
                     per_channel_mode: false,
-                    max_filters: 10, tdf2: false,
-                topology: 0.0,
+                    max_filters: 10,
+                    tdf2: false,
+                    topology: 0.0,
                 };
 
                 // Add to chain (insert before Matrix for proper ordering)
@@ -419,10 +420,9 @@ impl PlayerView {
                 .detach();
             } else {
                 self.state.update(cx, |state, cx| {
-                    state.app.ui_state.toast_message =
-                        Some(crate::app::types::ToastMessage::warning(
-                            "No optimization result to save",
-                        ));
+                    state.app.ui_state.toast_message = Some(
+                        crate::app::types::ToastMessage::warning("No optimization result to save"),
+                    );
                     cx.notify();
                 });
             }

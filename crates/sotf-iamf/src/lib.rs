@@ -16,7 +16,7 @@ use std::io::{Read, Seek};
 
 use error::{IamfError, IamfResult};
 use mixer::MixState;
-use obu::parser::{parse_descriptors, parse_temporal_unit, IamfDescriptors};
+use obu::parser::{IamfDescriptors, parse_descriptors, parse_temporal_unit};
 use renderer::ElementRenderer;
 use types::*;
 
@@ -56,7 +56,6 @@ pub struct IamfDecoder {
     frame_position: u64,
 
     // -- Pre-allocated decode buffers (avoid per-call heap allocations) --
-
     /// Per-substream decoded PCM scratch slots (indexed by substream ID).
     /// `None` = not yet decoded this temporal unit.
     decoded_bufs: Vec<Option<Vec<f32>>>,
@@ -90,18 +89,16 @@ impl IamfDecoder {
         // Select first mix presentation by default
         let selected_mix = 0;
         let mix = &descriptors.mix_presentations[selected_mix];
-        let sub_mix = mix
-            .sub_mixes
-            .first()
-            .ok_or(IamfError::NoMixPresentations)?;
+        let sub_mix = mix.sub_mixes.first().ok_or(IamfError::NoMixPresentations)?;
 
         // Determine output layout
         let layout_id = sub_mix
             .output_layout
             .to_speaker_config_id()
             .unwrap_or("2.0");
-        let output_layout = get_speaker_config(layout_id)
-            .ok_or_else(|| IamfError::ParseError(format!("No SotF config for layout {layout_id}")))?;
+        let output_layout = get_speaker_config(layout_id).ok_or_else(|| {
+            IamfError::ParseError(format!("No SotF config for layout {layout_id}"))
+        })?;
 
         // Create renderers for each audio element in the sub-mix
         let mut renderers: Vec<Box<dyn ElementRenderer>> = Vec::new();
@@ -134,19 +131,11 @@ impl IamfDecoder {
                     ElementConfig::Channel(config) => {
                         let layer = config.layers.last().unwrap();
                         let coupled_count = layer.coupled_substream_count as usize;
-                        if local_idx < coupled_count {
-                            2
-                        } else {
-                            1
-                        }
+                        if local_idx < coupled_count { 2 } else { 1 }
                     }
                     ElementConfig::Scene(config) => {
                         let coupled = config.coupled_substream_count as usize;
-                        if local_idx < coupled {
-                            2
-                        } else {
-                            1
-                        }
+                        if local_idx < coupled { 2 } else { 1 }
                     }
                 };
 
@@ -231,10 +220,7 @@ impl IamfDecoder {
         self.selected_mix = index;
 
         let mix = &self.descriptors.mix_presentations[self.selected_mix];
-        let sub_mix = mix
-            .sub_mixes
-            .first()
-            .ok_or(IamfError::NoMixPresentations)?;
+        let sub_mix = mix.sub_mixes.first().ok_or(IamfError::NoMixPresentations)?;
 
         self.mix_state = MixState::from_sub_mix(sub_mix);
         Ok(())
@@ -258,10 +244,7 @@ impl IamfDecoder {
         self.renderers.clear();
         self.element_substream_ids.clear();
         let mix = &self.descriptors.mix_presentations[self.selected_mix];
-        let sub_mix = mix
-            .sub_mixes
-            .first()
-            .ok_or(IamfError::NoMixPresentations)?;
+        let sub_mix = mix.sub_mixes.first().ok_or(IamfError::NoMixPresentations)?;
 
         for emc in &sub_mix.element_mix_configs {
             let element = self
@@ -280,7 +263,8 @@ impl IamfDecoder {
 
             let r = renderer::create_renderer(element, codec_config, self.output_layout)?;
             self.renderers.push(r);
-            self.element_substream_ids.push(element.substream_ids.clone());
+            self.element_substream_ids
+                .push(element.substream_ids.clone());
         }
         Ok(())
     }
@@ -290,8 +274,10 @@ impl IamfDecoder {
         let out_ch = self.output_layout.total_channels;
         let out_buf_len = frames * out_ch;
 
-        self.decoded_bufs.resize_with(self.substream_decoders.len(), || None);
-        self.element_out_bufs.resize_with(self.renderers.len(), || vec![0.0; out_buf_len]);
+        self.decoded_bufs
+            .resize_with(self.substream_decoders.len(), || None);
+        self.element_out_bufs
+            .resize_with(self.renderers.len(), || vec![0.0; out_buf_len]);
         for buf in &mut self.element_out_bufs {
             buf.resize(out_buf_len, 0.0);
         }
@@ -341,18 +327,18 @@ impl IamfDecoder {
             // Collect this element's substream PCM by taking ownership (zero-copy)
             let elem_pcm: Vec<Vec<f32>> = self.element_substream_ids[elem_idx]
                 .iter()
-                .map(|&ss_id| {
-                    self.decoded_bufs[ss_id as usize]
-                        .take()
-                        .unwrap_or_default()
-                })
+                .map(|&ss_id| self.decoded_bufs[ss_id as usize].take().unwrap_or_default())
                 .collect();
 
             // Reuse pre-allocated output buffer
             let elem_out = &mut self.element_out_bufs[elem_idx];
             let out_len = frames_per_block * out_ch;
             elem_out[..out_len].fill(0.0);
-            self.renderers[elem_idx].render(&elem_pcm, &mut elem_out[..out_len], frames_per_block)?;
+            self.renderers[elem_idx].render(
+                &elem_pcm,
+                &mut elem_out[..out_len],
+                frames_per_block,
+            )?;
         }
 
         // Mix elements using pre-allocated element output buffers

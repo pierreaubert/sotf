@@ -75,11 +75,9 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                            .child(
-                                crate::components::dialogs::tutorial::render_hint_banner(
-                                    &hint, &theme,
-                                ),
-                            ),
+                            .child(crate::components::dialogs::tutorial::render_hint_banner(
+                                &hint, &theme,
+                            )),
                     )
                 },
             )

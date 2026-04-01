@@ -9,13 +9,13 @@
 
 pub mod actions;
 mod autocomplete;
+pub mod cast;
 pub mod config;
 pub mod constants;
 pub mod debug;
+pub mod federation;
 pub mod i18n;
 pub mod keybindings;
-pub mod cast;
-pub mod federation;
 pub mod library;
 pub mod manager;
 pub mod navigation;

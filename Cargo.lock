@@ -4048,7 +4048,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-au"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anyhow",
  "block",
@@ -4073,7 +4073,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-autoeq"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
  "gpui-builder",
@@ -4083,9 +4083,10 @@ dependencies = [
 
 [[package]]
 name = "gpui-builder"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
+ "gpui-design",
  "gpui-pretext",
  "gpui-ui-kit",
  "gpui_linux",
@@ -4104,6 +4105,8 @@ dependencies = [
  "fontdue",
  "glam",
  "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
+ "gpui-builder",
+ "gpui-design",
  "gpui-ui-kit",
  "gpui_macos",
  "image",
@@ -4118,6 +4121,15 @@ dependencies = [
  "tokio",
  "urlencoding",
  "wgpu 29.0.1",
+]
+
+[[package]]
+name = "gpui-design"
+version = "0.6.0"
+dependencies = [
+ "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4157,7 +4169,9 @@ version = "0.6.2"
 dependencies = [
  "autoeq",
  "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
+ "gpui-builder",
  "gpui-d3rs",
+ "gpui-design",
  "gpui-ui-kit",
  "reqwest 0.13.2",
  "thiserror 2.0.18",
@@ -4166,11 +4180,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-themes"
+version = "0.6.2"
+dependencies = [
+ "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
+ "gpui-design",
+ "gpui-ui-kit",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gpui-ui-kit"
 version = "0.6.15"
 dependencies = [
  "block",
  "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
+ "gpui-design",
  "gpui-ios",
  "gpui-ui-kit-macros",
  "gpui_linux",
@@ -7980,6 +8006,7 @@ name = "plugins-gpui"
 version = "0.5.3"
 dependencies = [
  "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
+ "gpui-design",
  "gpui-px",
  "gpui-ui-kit",
  "math-iir-fir",
@@ -10437,6 +10464,7 @@ dependencies = [
  "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
  "gpui-autoeq",
  "gpui-builder",
+ "gpui-design",
  "gpui-ios",
  "gpui-px",
  "gpui-ui-kit",
@@ -10500,6 +10528,7 @@ dependencies = [
  "chrono",
  "clap",
  "criterion",
+ "gpui-design",
  "insta",
  "log",
  "math-dsp",

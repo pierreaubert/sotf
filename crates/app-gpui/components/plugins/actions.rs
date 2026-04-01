@@ -218,10 +218,26 @@ macro_rules! ab_action {
 }
 
 // Add a plugin to an A/B path sub-rack. path: 0=A, 1=B.
-ab_action!(ABPathAddPlugin { plugin_idx: usize, path: u8, plugin_type: String });
+ab_action!(ABPathAddPlugin {
+    plugin_idx: usize,
+    path: u8,
+    plugin_type: String
+});
 // Remove a plugin from an A/B path sub-rack.
-ab_action!(ABPathRemovePlugin { plugin_idx: usize, path: u8, sub_idx: usize });
+ab_action!(ABPathRemovePlugin {
+    plugin_idx: usize,
+    path: u8,
+    sub_idx: usize
+});
 // Move a plugin within an A/B path sub-rack.
-ab_action!(ABPathMovePlugin { plugin_idx: usize, path: u8, from: usize, to: usize });
+ab_action!(ABPathMovePlugin {
+    plugin_idx: usize,
+    path: u8,
+    from: usize,
+    to: usize
+});
 // Toggle the "add plugin" dropdown for an A/B path.
-ab_action!(ABPathToggleAddMenu { plugin_idx: usize, path: u8 });
+ab_action!(ABPathToggleAddMenu {
+    plugin_idx: usize,
+    path: u8
+});

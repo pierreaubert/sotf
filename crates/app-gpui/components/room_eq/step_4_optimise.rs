@@ -778,8 +778,7 @@ impl PlayerView {
         let state_clone = self.state.clone();
 
         // Create async channel for progress updates from blocking thread
-        let (progress_tx, progress_rx) =
-            smol::channel::bounded::<(usize, f64, f32, String)>(100);
+        let (progress_tx, progress_rx) = smol::channel::bounded::<(usize, f64, f32, String)>(100);
 
         // Clone state for progress receiver task
         let state_for_progress = self.state.clone();
@@ -798,11 +797,8 @@ impl PlayerView {
 
                         // Add to progress history with channel name.
                         // Each channel's iterations restart from 0 on the X axis.
-                        let history = &mut state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .progress_history;
+                        let history =
+                            &mut state.app.measurement_state.room_eq_state.progress_history;
                         if history.len() < 10000 {
                             history.push((iteration, loss, speaker));
                         }
@@ -955,35 +951,46 @@ impl PlayerView {
 
                     // Build full DSP output from roomeq ChannelDspChain (preserves all
                     // plugin types: EQ, gain, delay, convolution, crossover, etc.)
-                    let dsp_channels: std::collections::HashMap<String, crate::app::types::ChannelDspChain> =
-                        room_result.channels.iter().map(|(name, chain)| {
+                    let dsp_channels: std::collections::HashMap<
+                        String,
+                        crate::app::types::ChannelDspChain,
+                    > = room_result
+                        .channels
+                        .iter()
+                        .map(|(name, chain)| {
                             (
                                 name.clone(),
                                 crate::app::types::ChannelDspChain {
                                     channel: chain.channel.clone(),
-                                    plugins: chain.plugins.iter().map(|p| {
-                                        crate::app::types::DspPluginConfig {
+                                    plugins: chain
+                                        .plugins
+                                        .iter()
+                                        .map(|p| crate::app::types::DspPluginConfig {
                                             plugin_type: p.plugin_type.clone(),
                                             parameters: p.parameters.clone(),
-                                        }
-                                    }).collect(),
+                                        })
+                                        .collect(),
                                     drivers: chain.drivers.as_ref().map(|drivers| {
-                                        drivers.iter().map(|d| {
-                                            crate::app::types::DriverDspChain {
+                                        drivers
+                                            .iter()
+                                            .map(|d| crate::app::types::DriverDspChain {
                                                 name: d.name.clone(),
                                                 index: d.index,
-                                                plugins: d.plugins.iter().map(|p| {
-                                                    crate::app::types::DspPluginConfig {
+                                                plugins: d
+                                                    .plugins
+                                                    .iter()
+                                                    .map(|p| crate::app::types::DspPluginConfig {
                                                         plugin_type: p.plugin_type.clone(),
                                                         parameters: p.parameters.clone(),
-                                                    }
-                                                }).collect(),
-                                            }
-                                        }).collect()
+                                                    })
+                                                    .collect(),
+                                            })
+                                            .collect()
                                     }),
                                 },
                             )
-                        }).collect();
+                        })
+                        .collect();
 
                     // Update final state
                     state_clone.update(&mut cx.clone(), |state, cx| {

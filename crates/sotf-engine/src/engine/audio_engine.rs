@@ -78,10 +78,7 @@ impl AudioEngine {
     /// When the current track finishes decoding, the decoder seamlessly transitions
     /// to the queued source without any gap in audio output. Only one source can be
     /// queued at a time; calling this again replaces the previous queued source.
-    pub fn queue_next(
-        &self,
-        source: impl Into<crate::decoder::AudioSource>,
-    ) -> Result<(), String> {
+    pub fn queue_next(&self, source: impl Into<crate::decoder::AudioSource>) -> Result<(), String> {
         self.manager
             .send_command(ManagerCommand::QueueNext(source.into()))?;
         self.expect_ok_response()

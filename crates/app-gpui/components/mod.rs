@@ -97,9 +97,9 @@ impl PlayerView {
             crate::app::SettingsTab::Federation => self
                 .render_federation_settings_content(cx)
                 .into_any_element(),
-            crate::app::SettingsTab::Servers => self
-                .render_servers_settings_content(cx)
-                .into_any_element(),
+            crate::app::SettingsTab::Servers => {
+                self.render_servers_settings_content(cx).into_any_element()
+            }
             crate::app::SettingsTab::ReleaseChannel => self
                 .render_release_channel_settings_content(cx)
                 .into_any_element(),

@@ -330,7 +330,10 @@ impl AudioUnitHandle {
             )
         };
         if status != ca::noErr {
-            log::warn!("[iOS AudioUnit] EnableIO failed: {} (continuing anyway)", status);
+            log::warn!(
+                "[iOS AudioUnit] EnableIO failed: {} (continuing anyway)",
+                status
+            );
         }
 
         // Set stream format: interleaved f32
@@ -374,7 +377,10 @@ impl AudioUnitHandle {
             )
         };
         if status != ca::noErr {
-            log::warn!("[iOS AudioUnit] MaxFramesPerSlice failed: {} (continuing)", status);
+            log::warn!(
+                "[iOS AudioUnit] MaxFramesPerSlice failed: {} (continuing)",
+                status
+            );
         }
 
         // Create render context (heap-allocated, stable address)
@@ -578,7 +584,8 @@ fn run_playback_ios(
                     if new_rate != sample_rate {
                         log::warn!(
                             "[Playback Thread iOS] Sample rate change {}→{} not supported at runtime on iOS",
-                            sample_rate, new_rate
+                            sample_rate,
+                            new_rate
                         );
                     }
                 }
@@ -586,7 +593,8 @@ fn run_playback_ios(
                     if new_ch != channels {
                         log::warn!(
                             "[Playback Thread iOS] Channel count change {}→{} not supported at runtime on iOS",
-                            channels, new_ch
+                            channels,
+                            new_ch
                         );
                     }
                 }

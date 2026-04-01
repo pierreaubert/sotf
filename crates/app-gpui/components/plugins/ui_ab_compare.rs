@@ -12,10 +12,8 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Divider, Text, TextSize, TextWeight,
-};
-use sotf_audio_player::controllers::ab_compare_path::{PluginInRack, ALLOWED_PLUGIN_TYPES};
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Divider, Text, TextSize, TextWeight};
+use sotf_audio_player::controllers::ab_compare_path::{ALLOWED_PLUGIN_TYPES, PluginInRack};
 
 /// Render the A/B Compare custom plugin view.
 pub fn render_ab_compare(

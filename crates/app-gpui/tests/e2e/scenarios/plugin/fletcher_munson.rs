@@ -118,10 +118,7 @@ impl TestScenario for FletcherMunsonScenario {
             if let PluginSettings::LoudnessCompensation { low_freq, .. } = plugin.settings {
                 println!("Current Low Frequency: {}", low_freq);
                 if (low_freq - 80.0).abs() > 0.001 {
-                    panic!(
-                        "Low frequency mismatch: expected 80.0, got {}",
-                        low_freq
-                    );
+                    panic!("Low frequency mismatch: expected 80.0, got {}", low_freq);
                 }
             } else {
                 panic!("Expected LoudnessCompensation plugin");

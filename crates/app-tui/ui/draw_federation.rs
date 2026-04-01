@@ -1,5 +1,5 @@
 use super::*;
-use crate::app::{FederationMode, ADD_SOURCE_TYPE_IDX, SOURCE_TYPE_NAMES};
+use crate::app::{ADD_SOURCE_TYPE_IDX, FederationMode, SOURCE_TYPE_NAMES};
 use sotf_audio_player::federation_config::ConnectionStatus;
 
 pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
@@ -16,9 +16,9 @@ pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
         .direction(Direction::Vertical)
         .constraints(if has_diagnostic {
             vec![
-                Constraint::Length(1),  // Help
-                Constraint::Min(5),     // Source list or edit form
-                Constraint::Length(8),  // Diagnostic panel
+                Constraint::Length(1), // Help
+                Constraint::Min(5),    // Source list or edit form
+                Constraint::Length(8), // Diagnostic panel
             ]
         } else {
             vec![

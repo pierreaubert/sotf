@@ -283,9 +283,7 @@ impl App {
     pub fn toggle_directory_expansion(&mut self) {
         let tree_items = self.get_directory_tree_items();
         if let Some((path, _level, _)) = tree_items.get(self.selected_directory_index) {
-            self.library_state
-                .library
-                .toggle_directory_expanded(path);
+            self.library_state.library.toggle_directory_expanded(path);
         }
     }
 }

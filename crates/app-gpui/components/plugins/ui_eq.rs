@@ -1399,8 +1399,8 @@ pub fn get_filter_type_index(filter_type: &BiquadFilterType) -> usize {
         BiquadFilterType::AllPass => 7,
         BiquadFilterType::HighpassVariableQ => 4, // Map to Highpass
         BiquadFilterType::LowshelfOrf => 1,       // Map to Lowshelf
-        BiquadFilterType::HighshelfOrf => 2,       // Map to Highshelf
-        BiquadFilterType::PeakMatched => 0,        // Map to Peak
+        BiquadFilterType::HighshelfOrf => 2,      // Map to Highshelf
+        BiquadFilterType::PeakMatched => 0,       // Map to Peak
     }
 }
 

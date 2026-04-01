@@ -38,16 +38,14 @@ impl MixState {
     }
 
     /// Apply a parameter block to update mix gains.
-    pub fn apply_parameter_block(
-        &mut self,
-        param_block: &ParameterBlock,
-        sub_mix: &SubMix,
-    ) {
+    pub fn apply_parameter_block(&mut self, param_block: &ParameterBlock, sub_mix: &SubMix) {
         // Check if this parameter_id matches any element mix gain
         for (i, emc) in sub_mix.element_mix_configs.iter().enumerate() {
             if emc.mix_gain.parameter_id == param_block.parameter_id
                 && let Some(subblock) = param_block.subblocks.first()
-                && let ParameterData::MixGain { start_point_value, .. } = &subblock.param_data
+                && let ParameterData::MixGain {
+                    start_point_value, ..
+                } = &subblock.param_data
             {
                 self.element_gains[i] = db_to_linear(*start_point_value);
             }
@@ -56,7 +54,9 @@ impl MixState {
         // Check output mix gain
         if sub_mix.output_mix_gain.parameter_id == param_block.parameter_id
             && let Some(subblock) = param_block.subblocks.first()
-            && let ParameterData::MixGain { start_point_value, .. } = &subblock.param_data
+            && let ParameterData::MixGain {
+                start_point_value, ..
+            } = &subblock.param_data
         {
             self.output_gain = db_to_linear(*start_point_value);
         }
@@ -78,11 +78,7 @@ impl MixState {
 
         // SIMD-accelerated element accumulation: output += elem * gain
         for (elem_idx, elem_out) in element_out_bufs.iter().enumerate() {
-            let gain = self
-                .element_gains
-                .get(elem_idx)
-                .copied()
-                .unwrap_or(1.0);
+            let gain = self.element_gains.get(elem_idx).copied().unwrap_or(1.0);
 
             let src_len = elem_out.len().min(out_len);
             scale_add_simd(&mut output[..src_len], &elem_out[..src_len], gain);

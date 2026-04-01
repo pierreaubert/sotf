@@ -161,10 +161,11 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
                             .iter()
                             .position(|p| p.id == Some(active_id));
                         if let Some(pl_idx) = pl_idx {
-                            match app
-                                .playlist_controller
-                                .add_album_to_playlist(db, pl_idx, &album_clone)
-                            {
+                            match app.playlist_controller.add_album_to_playlist(
+                                db,
+                                pl_idx,
+                                &album_clone,
+                            ) {
                                 Ok(()) => {
                                     app.status_message =
                                         Some(format!("Added '{}' to playlist", album_clone.title))

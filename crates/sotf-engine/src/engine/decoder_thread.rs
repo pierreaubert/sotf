@@ -5,7 +5,9 @@
 // Decodes audio files using Symphonia and resamples if needed.
 
 use super::{AudioFrame, DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
-use crate::decoder::{AudioDecoder, AudioSource, AudioSpec, DecodedAudio, create_decoder_from_source};
+use crate::decoder::{
+    AudioDecoder, AudioSource, AudioSpec, DecodedAudio, create_decoder_from_source,
+};
 use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::{Duration, Instant};
@@ -347,8 +349,7 @@ impl DecoderState {
                             let excess = new_staging_len - MAX_RESAMPLE_STAGING_SAMPLES;
                             // Round up to whole frame chunks to keep alignment
                             let drain_amount = if send_chunk_len_here > 0 {
-                                excess.div_ceil(send_chunk_len_here)
-                                    * send_chunk_len_here
+                                excess.div_ceil(send_chunk_len_here) * send_chunk_len_here
                             } else {
                                 excess
                             };
@@ -1041,12 +1042,17 @@ fn run_decoder_thread(
                                 state.start_silent_source();
                             }
                             DecoderCommand::QueueNext(path) => {
-                                log::debug!("[Decoder Thread] Queued next (from HAL interrupt): {:?}", path);
+                                log::debug!(
+                                    "[Decoder Thread] Queued next (from HAL interrupt): {:?}",
+                                    path
+                                );
                                 state.queued_next = Some(path);
                                 response_tx.send(DecoderResponse::Ok).ok();
                             }
                             DecoderCommand::CancelNext => {
-                                log::debug!("[Decoder Thread] Cancelled queued next (from HAL interrupt)");
+                                log::debug!(
+                                    "[Decoder Thread] Cancelled queued next (from HAL interrupt)"
+                                );
                                 state.queued_next = None;
                                 response_tx.send(DecoderResponse::Ok).ok();
                             }
@@ -1156,7 +1162,10 @@ fn run_decoder_thread(
                             }
                         }
                         DecoderCommand::QueueNext(path) => {
-                            log::debug!("[Decoder Thread] Queued next (from interrupt): {:?}", path);
+                            log::debug!(
+                                "[Decoder Thread] Queued next (from interrupt): {:?}",
+                                path
+                            );
                             state.queued_next = Some(path);
                             response_tx.send(DecoderResponse::Ok).ok();
                         }

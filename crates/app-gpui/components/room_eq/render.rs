@@ -385,16 +385,11 @@ fn render_response_comparison_graph(
         &frequencies,
         &original_values_raw,
     );
-    let original_values: Vec<f64> = original_values_raw
-        .iter()
-        .map(|&db| db - offset)
-        .collect();
-    let corrected_values: Vec<f64> = corrected_values_raw
-        .iter()
-        .map(|&db| db - offset)
-        .collect();
+    let original_values: Vec<f64> = original_values_raw.iter().map(|&db| db - offset).collect();
+    let corrected_values: Vec<f64> = corrected_values_raw.iter().map(|&db| db - offset).collect();
 
-    let original_smooth = dsp::smooth_response_f64(&frequencies, &original_values, smoothing_octaves);
+    let original_smooth =
+        dsp::smooth_response_f64(&frequencies, &original_values, smoothing_octaves);
     let corrected_smooth =
         dsp::smooth_response_f64(&frequencies, &corrected_values, smoothing_octaves);
 
@@ -446,7 +441,11 @@ fn render_response_comparison_graph(
 
     if frequencies.is_empty() {
         return div()
-            .child(Text::new("No data available").size(TextSize::Xs).color(theme.text_muted))
+            .child(
+                Text::new("No data available")
+                    .size(TextSize::Xs)
+                    .color(theme.text_muted),
+            )
             .into_any_element();
     }
 
@@ -462,7 +461,10 @@ fn render_response_comparison_graph(
         let mut count = 0.0;
 
         for (i, &f) in freqs.iter().enumerate() {
-            if f >= min_freq && f <= max_freq && let Some(&y) = values.get(i) {
+            if f >= min_freq
+                && f <= max_freq
+                && let Some(&y) = values.get(i)
+            {
                 let x = f.log10();
                 sum_x += x;
                 sum_y += y;
@@ -500,8 +502,16 @@ fn render_response_comparison_graph(
         .map(|s| s.y_domain())
         .unwrap_or((y_min, y_max));
 
-    let y_min_domain = if y_min_domain.is_finite() { y_min_domain } else { -15.0 };
-    let y_max_domain = if y_max_domain.is_finite() { y_max_domain } else { 5.0 };
+    let y_min_domain = if y_min_domain.is_finite() {
+        y_min_domain
+    } else {
+        -15.0
+    };
+    let y_max_domain = if y_max_domain.is_finite() {
+        y_max_domain
+    } else {
+        5.0
+    };
     let y_max_domain = if y_max_domain <= y_min_domain {
         y_min_domain + 1.0
     } else {
@@ -528,10 +538,14 @@ fn render_response_comparison_graph(
             .map(|&f| {
                 let mut lower = (20.0, 0.0);
                 let mut upper = (20000.0, 0.0);
-                if let Some(first) = target.first() && f < first.0 {
+                if let Some(first) = target.first()
+                    && f < first.0
+                {
                     return first.1;
                 }
-                if let Some(last) = target.last() && f > last.0 {
+                if let Some(last) = target.last()
+                    && f > last.0
+                {
                     return last.1;
                 }
                 for win in target.windows(2) {
@@ -547,11 +561,7 @@ fn render_response_comparison_graph(
                 }
                 let t = (f.ln() - lower.0.ln()) / denom;
                 let result = lower.1 + t * (upper.1 - lower.1);
-                if result.is_finite() {
-                    result
-                } else {
-                    0.0
-                }
+                if result.is_finite() { result } else { 0.0 }
             })
             .collect();
 
@@ -561,8 +571,7 @@ fn render_response_comparison_graph(
             0.0
         };
         let relative_target: Vec<f64> = target_values.iter().map(|v| v - mean_target).collect();
-        chart_builder =
-            chart_builder.add_series(&relative_target, Some("Target"), RED, 2.0, 0.8);
+        chart_builder = chart_builder.add_series(&relative_target, Some("Target"), RED, 2.0, 0.8);
     }
 
     if let Some((slope, intercept)) = orig_trend {
@@ -649,20 +658,33 @@ fn render_filter_plot(
         &frequencies,
         &original_values_raw,
     );
-    let _corrected_normalized: Vec<f64> = corrected_values_raw
-        .iter()
-        .map(|&db| db - offset)
-        .collect();
+    let _corrected_normalized: Vec<f64> =
+        corrected_values_raw.iter().map(|&db| db - offset).collect();
 
     if frequencies.is_empty() || eq_filters.is_empty() {
         return div()
-            .child(Text::new("No filter data available").size(TextSize::Xs).color(theme.text_muted))
+            .child(
+                Text::new("No filter data available")
+                    .size(TextSize::Xs)
+                    .color(theme.text_muted),
+            )
             .into_any_element();
     }
 
     let chart_theme = theme_to_chart_theme(theme);
 
-    let filter_colors = [BLUE, GREEN, PURPLE, CYAN, MAGENTA, 0x8c564bu32, 0xe377c2u32, 0x7f7f7fu32, 0xbcbd22u32, 0x1f77b4u32];
+    let filter_colors = [
+        BLUE,
+        GREEN,
+        PURPLE,
+        CYAN,
+        MAGENTA,
+        0x8c564bu32,
+        0xe377c2u32,
+        0x7f7f7fu32,
+        0xbcbd22u32,
+        0x1f77b4u32,
+    ];
 
     let mut chart_builder = line(&frequencies, &vec![0.0; frequencies.len()])
         .x_scale(ScaleType::Log)
@@ -691,8 +713,7 @@ fn render_filter_plot(
                         "highpass" | "hp" => BiquadFilterType::Highpass,
                         _ => BiquadFilterType::Peak,
                     };
-                    let biquad =
-                        Biquad::new(filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
+                    let biquad = Biquad::new(filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
                     biquad.log_result(freq)
                 })
                 .sum::<f64>()
@@ -732,7 +753,12 @@ fn render_filter_plot(
             .collect();
         let filter_response = sanitize(&filter_response);
         let color = filter_colors[i % filter_colors.len()];
-        let label = format!("F{} {} {:.0}Hz", i + 1, filter.filter_type, filter.frequency);
+        let label = format!(
+            "F{} {} {:.0}Hz",
+            i + 1,
+            filter.filter_type,
+            filter.frequency
+        );
         chart_builder = chart_builder.add_series(&filter_response, Some(&label), color, 1.5, 0.7);
     }
 
@@ -815,16 +841,11 @@ fn render_tonal_histogram(
         &frequencies,
         &original_values_raw,
     );
-    let original_values: Vec<f64> = original_values_raw
-        .iter()
-        .map(|&db| db - offset)
-        .collect();
-    let corrected_values: Vec<f64> = corrected_values_raw
-        .iter()
-        .map(|&db| db - offset)
-        .collect();
+    let original_values: Vec<f64> = original_values_raw.iter().map(|&db| db - offset).collect();
+    let corrected_values: Vec<f64> = corrected_values_raw.iter().map(|&db| db - offset).collect();
 
-    let original_smooth = dsp::smooth_response_f64(&frequencies, &original_values, smoothing_octaves);
+    let original_smooth =
+        dsp::smooth_response_f64(&frequencies, &original_values, smoothing_octaves);
     let corrected_smooth =
         dsp::smooth_response_f64(&frequencies, &corrected_values, smoothing_octaves);
 
@@ -846,7 +867,10 @@ fn render_tonal_histogram(
         let mut count = 0.0;
 
         for (i, &f) in freqs.iter().enumerate() {
-            if f >= min_freq && f <= max_freq && let Some(&y) = values.get(i) {
+            if f >= min_freq
+                && f <= max_freq
+                && let Some(&y) = values.get(i)
+            {
                 let x = f.log10();
                 sum_x += x;
                 sum_y += y;
@@ -992,7 +1016,9 @@ fn render_phase_graph(
     for (i, &f) in frequencies.iter().enumerate() {
         if in_range(f) {
             for vals in [&before_values, &after_values].into_iter().flatten() {
-                if let Some(&v) = vals.get(i) && v.is_finite() {
+                if let Some(&v) = vals.get(i)
+                    && v.is_finite()
+                {
                     y_min = y_min.min(v);
                     y_max = y_max.max(v);
                 }
@@ -1028,7 +1054,9 @@ fn render_phase_graph(
         .theme(chart_theme)
         .size(GRAPH_WIDTH, GRAPH_HEIGHT);
 
-    if before_values.is_some() && let Some(ref av) = after_values {
+    if before_values.is_some()
+        && let Some(ref av) = after_values
+    {
         chart_builder = chart_builder.add_series(av, Some("After"), ORANGE, 1.5, 0.9);
     }
 
@@ -1036,7 +1064,11 @@ fn render_phase_graph(
         Ok(c) => c,
         Err(_) => {
             return div()
-                .child(Text::new("Phase: chart error").size(TextSize::Xs).color(theme.text_muted))
+                .child(
+                    Text::new("Phase: chart error")
+                        .size(TextSize::Xs)
+                        .color(theme.text_muted),
+                )
                 .into_any_element();
         }
     };
@@ -1092,7 +1124,10 @@ fn render_impulse_response_graph(
 
     let chart = match line(&samples, &sanitize)
         .x_scale(ScaleType::Linear)
-        .x_range(samples.first().copied().unwrap_or(0.0), samples.last().copied().unwrap_or(1.0))
+        .x_range(
+            samples.first().copied().unwrap_or(0.0),
+            samples.last().copied().unwrap_or(1.0),
+        )
         .y_range(y_min, y_max)
         .y_label("Amplitude")
         .label("IR")
@@ -1107,7 +1142,11 @@ fn render_impulse_response_graph(
         Ok(c) => c,
         Err(_) => {
             return div()
-                .child(Text::new("IR: chart error").size(TextSize::Xs).color(theme.text_muted))
+                .child(
+                    Text::new("IR: chart error")
+                        .size(TextSize::Xs)
+                        .color(theme.text_muted),
+                )
                 .into_any_element();
         }
     };
@@ -1235,8 +1274,7 @@ fn render_group_delay_graph(
     // Filter to 20Hz-20kHz and compute y range
     let in_range = |f: f64| (20.0..=20000.0).contains(&f);
 
-    let before_values: Option<Vec<f64>> =
-        gd_before.map(|b| b.iter().map(|(_, d)| *d).collect());
+    let before_values: Option<Vec<f64>> = gd_before.map(|b| b.iter().map(|(_, d)| *d).collect());
 
     let after_values: Option<Vec<f64>> = gd_after.map(|after| {
         // Interpolate after to match the reference frequency grid
@@ -1313,8 +1351,7 @@ fn render_group_delay_graph(
     if before_values.is_some()
         && let Some(ref av) = after_values
     {
-        chart_builder =
-            chart_builder.add_series(av, Some("After"), ORANGE, 1.5, 0.9);
+        chart_builder = chart_builder.add_series(av, Some("After"), ORANGE, 1.5, 0.9);
     }
 
     let chart = match chart_builder.build() {

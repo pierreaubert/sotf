@@ -48,7 +48,9 @@ impl SceneRenderer {
         let dm = sotf_plugin_ambisonics::decode_matrix::DecodeMatrix::build(
             order, target, true, // always use max-rE for IAMF
         )
-        .map_err(|e| IamfError::ParseError(format!("Failed to build Ambisonics decode matrix: {e}")))?;
+        .map_err(|e| {
+            IamfError::ParseError(format!("Failed to build Ambisonics decode matrix: {e}"))
+        })?;
 
         Ok(Self {
             ambi_channels,
@@ -65,11 +67,7 @@ impl SceneRenderer {
 
     /// Reassemble substream PCM into ACN-ordered Ambisonics channels,
     /// writing into `self.ambi_buf`.
-    fn reassemble_ambisonics(
-        &mut self,
-        substream_pcm: &[Vec<f32>],
-        num_frames: usize,
-    ) {
+    fn reassemble_ambisonics(&mut self, substream_pcm: &[Vec<f32>], num_frames: usize) {
         let needed = num_frames * self.ambi_channels;
         self.ambi_buf.resize(needed, 0.0);
         self.ambi_buf[..needed].fill(0.0);
@@ -90,7 +88,8 @@ impl SceneRenderer {
                                     if acn < self.ambi_channels {
                                         let src = frame * 2 + ch;
                                         if src < pcm.len() {
-                                            self.ambi_buf[frame * self.ambi_channels + acn] = pcm[src];
+                                            self.ambi_buf[frame * self.ambi_channels + acn] =
+                                                pcm[src];
                                         }
                                     }
                                 }
@@ -110,7 +109,8 @@ impl SceneRenderer {
                             if acn < self.ambi_channels {
                                 for frame in 0..num_frames {
                                     if frame < pcm.len() {
-                                        self.ambi_buf[frame * self.ambi_channels + acn] = pcm[frame];
+                                        self.ambi_buf[frame * self.ambi_channels + acn] =
+                                            pcm[frame];
                                     }
                                 }
                             }
@@ -189,8 +189,7 @@ impl ElementRenderer for SceneRenderer {
                 let row_start = spk * ambi_ch;
                 let mut sum = 0.0_f32;
                 for acn in 0..ambi_ch {
-                    sum = matrix[row_start + acn]
-                        .mul_add(self.ambi_buf[in_offset + acn], sum);
+                    sum = matrix[row_start + acn].mul_add(self.ambi_buf[in_offset + acn], sum);
                 }
                 output[out_offset + spk] = sum;
             }

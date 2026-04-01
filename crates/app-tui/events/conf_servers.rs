@@ -82,8 +82,7 @@ pub(super) fn handle_server_keys(app: &mut App, key: KeyEvent) -> Option<PlayerC
                     }
                     4 => {
                         // password
-                        state.edit_buffer =
-                            state.config.mpd.password.clone().unwrap_or_default();
+                        state.edit_buffer = state.config.mpd.password.clone().unwrap_or_default();
                         state.editing_value = true;
                     }
                     _ => {}
@@ -121,11 +120,7 @@ fn apply_edit(state: &mut crate::app::ServersTuiState) {
                 }
             }
             4 => {
-                state.config.mpd.password = if value.is_empty() {
-                    None
-                } else {
-                    Some(value)
-                };
+                state.config.mpd.password = if value.is_empty() { None } else { Some(value) };
             }
             _ => {}
         },

@@ -55,7 +55,8 @@ impl PlayerView {
         let port = mpd.port.to_string();
         let tls_enabled = mpd.tls_enabled;
         let has_password = mpd.password.is_some();
-        let cert_auth = mpd.auth_mode == sotf_audio_player::federation_config::MpdAuthMode::Certificate;
+        let cert_auth =
+            mpd.auth_mode == sotf_audio_player::federation_config::MpdAuthMode::Certificate;
 
         let state_for_bind = self.state.clone();
         let state_for_port = self.state.clone();
@@ -345,12 +346,14 @@ impl PlayerView {
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
                         .build()
-                        .on_click(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                state.app.toggle_dlna_server();
-                            });
-                            cx.notify();
-                        })),
+                        .on_click(cx.listener(
+                            move |view, _: &ClickEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.toggle_dlna_server();
+                                });
+                                cx.notify();
+                            },
+                        )),
                     ),
             )
             .child(Divider::new().color(theme.border))

@@ -41,11 +41,15 @@ fn find_device(
             let name = desc.name().to_string();
             if name.contains(name_part) {
                 let configs: Vec<cpal::SupportedStreamConfigRange> = if input {
-                    device.supported_input_configs().ok()
+                    device
+                        .supported_input_configs()
+                        .ok()
                         .map(|c| c.collect())
                         .unwrap_or_default()
                 } else {
-                    device.supported_output_configs().ok()
+                    device
+                        .supported_output_configs()
+                        .ok()
                         .map(|c| c.collect())
                         .unwrap_or_default()
                 };
@@ -140,7 +144,11 @@ fn probe_loopback_available(
     let buf = capture_clone.lock().unwrap();
     let ch0: Vec<f32> = buf.iter().step_by(in_channels).cloned().collect();
     let peak = ch0.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-    println!("Loopback probe: captured {} samples, peak amplitude = {:.6}", ch0.len(), peak);
+    println!(
+        "Loopback probe: captured {} samples, peak amplitude = {:.6}",
+        ch0.len(),
+        peak
+    );
 
     // If peak > -60dBFS (0.001), we consider the loopback functional
     peak > 0.001
@@ -331,7 +339,8 @@ fn test_eq_sweep_loopback_verification() {
     let cap_peak = captured_ch0.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
     println!(
         "Captured: {} samples, peak={:.6}",
-        captured_ch0.len(), cap_peak
+        captured_ch0.len(),
+        cap_peak
     );
 
     let search_window = (sample_rate * 2.0) as usize; // 2 seconds
@@ -400,7 +409,10 @@ fn test_eq_sweep_loopback_verification() {
         dot_ee += exp * exp;
     }
     let gain_ratio = if dot_ee > 0.0 { dot_re / dot_ee } else { 1.0 };
-    println!("Estimated gain ratio (captured/expected): {:.6}", gain_ratio);
+    println!(
+        "Estimated gain ratio (captured/expected): {:.6}",
+        gain_ratio
+    );
 
     // 12. Compare aligned signals using measured gain
     let comparison_len = align_len;

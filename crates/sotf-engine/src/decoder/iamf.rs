@@ -28,9 +28,8 @@ impl IamfAudioDecoder {
         })?;
         let reader = BufReader::new(file);
 
-        let decoder = sotf_iamf::IamfDecoder::open(reader).map_err(|e| {
-            AudioDecoderError::InvalidFile(format!("IAMF open failed: {e}"))
-        })?;
+        let decoder = sotf_iamf::IamfDecoder::open(reader)
+            .map_err(|e| AudioDecoderError::InvalidFile(format!("IAMF open failed: {e}")))?;
 
         let iamf_spec = decoder.spec();
 

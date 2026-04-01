@@ -69,9 +69,7 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
                 InputMode::ConfigureFederationSources => {
                     super::conf_federation::handle_federation_keys(app, key)
                 }
-                InputMode::ConfigureServers => {
-                    super::conf_servers::handle_server_keys(app, key)
-                }
+                InputMode::ConfigureServers => super::conf_servers::handle_server_keys(app, key),
                 _ => None,
             };
         }
@@ -94,9 +92,7 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
                 InputMode::ConfigureFederationSources => {
                     super::conf_federation::handle_federation_keys(app, key)
                 }
-                InputMode::ConfigureServers => {
-                    super::conf_servers::handle_server_keys(app, key)
-                }
+                InputMode::ConfigureServers => super::conf_servers::handle_server_keys(app, key),
                 _ => None,
             };
         }
@@ -118,7 +114,9 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
             super::conf_headphoneeq::handle_headphone_eq_keys(app, key)
         }
         InputMode::ConfigureSpinoramaEq => super::conf_spinoramaeq::handle_spinorama_keys(app, key),
-        InputMode::ConfigureFederationSources => super::conf_federation::handle_federation_keys(app, key),
+        InputMode::ConfigureFederationSources => {
+            super::conf_federation::handle_federation_keys(app, key)
+        }
         InputMode::ConfigureServers => super::conf_servers::handle_server_keys(app, key),
         _ => None,
     }

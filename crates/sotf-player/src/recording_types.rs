@@ -359,20 +359,20 @@ impl RecordingSignalType {
 /// Speaker configuration presets
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpeakerConfiguration {
-    Stereo,     // 2.0
-    Stereo21,   // 2.1
-    Surround50, // 5.0
-    Surround51, // 5.1
-    Surround71, // 7.1
-    Surround91, // 9.1
-    Immersive512,   // 5.1.2
-    Immersive514,   // 5.1.4
-    Immersive712,   // 7.1.2
-    Immersive714,   // 7.1.4
-    Immersive912,   // 9.1.2
-    Immersive914,   // 9.1.4
-    Immersive916,   // 9.1.6
-    Custom,     // User-defined
+    Stereo,       // 2.0
+    Stereo21,     // 2.1
+    Surround50,   // 5.0
+    Surround51,   // 5.1
+    Surround71,   // 7.1
+    Surround91,   // 9.1
+    Immersive512, // 5.1.2
+    Immersive514, // 5.1.4
+    Immersive712, // 7.1.2
+    Immersive714, // 7.1.4
+    Immersive912, // 9.1.2
+    Immersive914, // 9.1.4
+    Immersive916, // 9.1.6
+    Custom,       // User-defined
 }
 
 impl SpeakerConfiguration {
@@ -445,7 +445,9 @@ impl SpeakerConfiguration {
             SpeakerConfiguration::Surround91 => {
                 vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR"]
             }
-            SpeakerConfiguration::Immersive512 => vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR"],
+            SpeakerConfiguration::Immersive512 => {
+                vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR"]
+            }
             SpeakerConfiguration::Immersive514 => {
                 vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR", "TBL", "TBR"]
             }

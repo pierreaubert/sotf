@@ -147,9 +147,7 @@ fn get_ios_music_directory() -> Option<PathBuf> {
     if c_str.is_null() {
         return None;
     }
-    let path_str = unsafe { std::ffi::CStr::from_ptr(c_str) }
-        .to_str()
-        .ok()?;
+    let path_str = unsafe { std::ffi::CStr::from_ptr(c_str) }.to_str().ok()?;
     Some(PathBuf::from(path_str))
 }
 

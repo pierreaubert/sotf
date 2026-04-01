@@ -1,11 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde_json::json;
-use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
 use serial_test::serial;
+use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
 
 fn find_device(
     name_part: &str,
@@ -54,7 +53,6 @@ fn find_device(
 #[test]
 #[serial]
 fn test_channel_mute_loopback_verification() {
-
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -229,7 +227,6 @@ fn test_channel_mute_loopback_verification() {
 #[test]
 #[serial]
 fn test_channel_solo_loopback_verification() {
-
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;

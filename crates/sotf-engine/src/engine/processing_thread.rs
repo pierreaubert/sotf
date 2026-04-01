@@ -9,14 +9,14 @@ use super::{
     ThreadEvent,
 };
 use sotf_plugins::{
-    AecPlugin, AecPluginParams, BeamformerPlugin, BeamformerPluginParams, CompressorPluginParams, ConvolutionPlugin,
-    ConvolutionPluginParams, CrossoverPlugin, CrossoverPluginParams, DelayPlugin, DelayPluginParams,
-    DeEsserPlugin, DeEsserPluginParams, DenoiserPlugin, DenoiserPluginParams,
-    DynamicEqPlugin, DynamicEqPluginParams,
-    EqPluginParams, ExpanderPluginParams, GainPluginParams,
-    GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams,
-    LoudnessMonitorPlugin, MultibandCompressorPluginParams, MultibandExpanderPluginParams, Plugin,
-    PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig, StereoImagerPluginParams, UpmixerPluginParams,
+    AecPlugin, AecPluginParams, BeamformerPlugin, BeamformerPluginParams, CompressorPluginParams,
+    ConvolutionPlugin, ConvolutionPluginParams, CrossoverPlugin, CrossoverPluginParams,
+    DeEsserPlugin, DeEsserPluginParams, DelayPlugin, DelayPluginParams, DenoiserPlugin,
+    DenoiserPluginParams, DynamicEqPlugin, DynamicEqPluginParams, EqPluginParams,
+    ExpanderPluginParams, GainPluginParams, GatePluginParams, Host, LimiterPluginParams,
+    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MultibandCompressorPluginParams,
+    MultibandExpanderPluginParams, Plugin, PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig,
+    StereoImagerPluginParams, UpmixerPluginParams,
 };
 
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
@@ -131,7 +131,6 @@ impl Drop for ProcessingThread {
         self.shutdown();
     }
 }
-
 
 /// Processing state
 struct ProcessingState {
@@ -772,8 +771,7 @@ pub fn build_plugin_graph_host(
             sample_rate,
         ) {
             Ok(plugin) => {
-                let host_id =
-                    host.add_node(format!("node_{}", node_config.id), plugin)?;
+                let host_id = host.add_node(format!("node_{}", node_config.id), plugin)?;
                 id_map.insert(node_config.id, host_id);
             }
             Err(e) => {
@@ -1026,9 +1024,7 @@ fn create_plugin_legacy(
         }
 
         #[cfg(not(feature = "iamf"))]
-        "ambisonics_decoder" => {
-            Err("Ambisonics decoder requires the 'iamf' feature".to_string())
-        }
+        "ambisonics_decoder" => Err("Ambisonics decoder requires the 'iamf' feature".to_string()),
 
         "loudness_compensation" => {
             let params: LoudnessCompensationPluginParams =
@@ -1355,9 +1351,7 @@ fn create_plugin_legacy(
 
         "stereo_imager" => {
             let params: StereoImagerPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| {
-                    format!("Failed to parse stereo imager plugin parameters: {}", e)
-                })?;
+                .map_err(|e| format!("Failed to parse stereo imager plugin parameters: {}", e))?;
 
             let plugin = sotf_plugins::StereoImagerPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
@@ -1366,12 +1360,9 @@ fn create_plugin_legacy(
         "transient_shaper" => {
             use sotf_plugins::{TransientShaperPlugin, TransientShaperPluginParams};
 
-            let params: TransientShaperPluginParams =
-                serde_json::from_value(parameters.clone()).map_err(|e| {
-                    format!(
-                        "Failed to parse transient shaper plugin parameters: {}",
-                        e
-                    )
+            let params: TransientShaperPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| {
+                    format!("Failed to parse transient shaper plugin parameters: {}", e)
                 })?;
 
             let plugin = TransientShaperPlugin::from_params(channels, params);
@@ -1381,13 +1372,8 @@ fn create_plugin_legacy(
         "saturation" => {
             use sotf_plugins::{SaturationPlugin, SaturationPluginParams};
 
-            let params: SaturationPluginParams =
-                serde_json::from_value(parameters.clone()).map_err(|e| {
-                    format!(
-                        "Failed to parse saturation plugin parameters: {}",
-                        e
-                    )
-                })?;
+            let params: SaturationPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse saturation plugin parameters: {}", e))?;
 
             let plugin = SaturationPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
@@ -1396,13 +1382,8 @@ fn create_plugin_legacy(
         "linear_phase_eq" => {
             use sotf_plugins::{LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 
-            let params: LinearPhaseEqPluginParams =
-                serde_json::from_value(parameters.clone()).map_err(|e| {
-                    format!(
-                        "Failed to parse linear-phase EQ plugin parameters: {}",
-                        e
-                    )
-                })?;
+            let params: LinearPhaseEqPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse linear-phase EQ plugin parameters: {}", e))?;
 
             let plugin = LinearPhaseEqPlugin::from_params(channels, sample_rate, params)
                 .map_err(|e| format!("Failed to create linear-phase EQ plugin: {}", e))?;
@@ -1412,8 +1393,8 @@ fn create_plugin_legacy(
         "spectral_compressor" => {
             use sotf_plugins::{SpectralCompressorPlugin, SpectralCompressorPluginParams};
 
-            let params: SpectralCompressorPluginParams =
-                serde_json::from_value(parameters.clone()).map_err(|e| {
+            let params: SpectralCompressorPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| {
                     format!(
                         "Failed to parse spectral compressor plugin parameters: {}",
                         e
@@ -1631,13 +1612,14 @@ mod tests {
 
             // Chain starts with 1 channel (mono WAV file)
             let (host, _warnings) =
-                build_plugin_host(std::slice::from_ref(&config), sample_rate, 1)
-                    .unwrap_or_else(|e| {
+                build_plugin_host(std::slice::from_ref(&config), sample_rate, 1).unwrap_or_else(
+                    |e| {
                         panic!(
                             "build_plugin_host failed for 1→{} matrix targeting ch{}: {}",
                             hw_channels, target_ch, e
                         )
-                    });
+                    },
+                );
 
             // Verify the chain expanded to the correct output channel count
             assert_eq!(
@@ -1665,9 +1647,8 @@ mod tests {
         });
 
         let config = PluginConfig::new("matrix", matrix_params);
-        let (host, _warnings) =
-            build_plugin_host(std::slice::from_ref(&config), sample_rate, 4)
-                .expect("build_plugin_host failed for 2×2 matrix on 4ch chain");
+        let (host, _warnings) = build_plugin_host(std::slice::from_ref(&config), sample_rate, 4)
+            .expect("build_plugin_host failed for 2×2 matrix on 4ch chain");
 
         // Should have been resized to 4×4
         assert_eq!(
@@ -1809,14 +1790,20 @@ mod tests {
             for param in &params {
                 // Pick a test value within the parameter's range
                 let test_value = match (&param.default_value, &param.min_value, &param.max_value) {
-                    (ParameterValue::Float(_), Some(ParameterValue::Float(min)), Some(ParameterValue::Float(max))) => {
+                    (
+                        ParameterValue::Float(_),
+                        Some(ParameterValue::Float(min)),
+                        Some(ParameterValue::Float(max)),
+                    ) => {
                         // Use midpoint of range
                         ParameterValue::Float((min + max) / 2.0)
                     }
                     (ParameterValue::Bool(b), _, _) => ParameterValue::Bool(!b),
-                    (ParameterValue::Int(_), Some(ParameterValue::Int(min)), Some(ParameterValue::Int(max))) => {
-                        ParameterValue::Int((min + max) / 2)
-                    }
+                    (
+                        ParameterValue::Int(_),
+                        Some(ParameterValue::Int(min)),
+                        Some(ParameterValue::Int(max)),
+                    ) => ParameterValue::Int((min + max) / 2),
                     _ => continue, // Skip string/complex params
                 };
 

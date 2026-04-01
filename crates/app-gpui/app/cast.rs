@@ -1,7 +1,7 @@
 //! Cast device discovery and management.
 
-use crate::app::state::audio_device::CastDeviceInfo;
 use crate::app::App;
+use crate::app::state::audio_device::CastDeviceInfo;
 
 impl App {
     /// Start scanning for Cast devices (Chromecast + AirPlay) on the local network.
@@ -29,7 +29,9 @@ impl App {
                                 name: d.name.clone(),
                                 device_type: match d.device_type {
                                     sotf_cast::CastDeviceType::AirPlay => "AirPlay".to_string(),
-                                    sotf_cast::CastDeviceType::Chromecast => "Chromecast".to_string(),
+                                    sotf_cast::CastDeviceType::Chromecast => {
+                                        "Chromecast".to_string()
+                                    }
                                 },
                                 address: d.address.to_string(),
                                 port: d.port,

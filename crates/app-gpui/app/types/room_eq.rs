@@ -11,11 +11,9 @@ use autoeq::roomeq::{
     HighFreqFilterConfig, HighpassType, LowFreqFilterConfig, MeasurementSource,
     MixedPhaseSerdeConfig as BackendMixedPhaseConfig, MultiMeasurementConfig,
     MultiMeasurementStrategy, MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
-    OptimizerConfig as BackendOptimizerConfig,
-    PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
-    PreRingingSerdeConfig as BackendPreRingingConfig,
-    ProcessingMode as BackendProcessingMode, RoomConfig,
-    SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig, SpeakerGroup,
+    OptimizerConfig as BackendOptimizerConfig, PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
+    PreRingingSerdeConfig as BackendPreRingingConfig, ProcessingMode as BackendProcessingMode,
+    RoomConfig, SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig, SpeakerGroup,
     TargetTiltConfig as BackendTargetTiltConfig, TiltType,
 };
 use std::collections::HashMap;
@@ -56,14 +54,14 @@ impl InteractiveChartStateWrapper {
 
 // Domain types shared via sotf-player crate — single source of truth for all apps.
 pub use sotf_audio_player::room_eq_types::{
-    BroadbandTargetMatchingConfig, ChannelDspChain, ChannelMeasurement, ChannelOptResult,
-    CustomTargetCurve, DspChainMetadata, DspChainOutput, DspPluginConfig, DriverDspChain,
-    EqFilterConfig, ExcursionProtectionConfig, GroupDelayOptConfig, MixedModeUiConfig,
-    MixedPhaseUiConfig, MultiMeasurementUiConfig, MultiSeatConfig, MultiSpeakerMode,
-    PhaseAlignmentConfig, PreRingingConfig, RecordingConfiguration, RoomEqDataSource,
-    RoomEqFirConfig, RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqSpeakerConfig,
-    RoomEqStep, SchroederSplitConfig, SpeakerConfigType, SubOptimizerUiConfig,
-    ChannelMatchingUiConfig, TargetCurveControlPoint, TargetTiltConfig, VoGConfig,
+    BroadbandTargetMatchingConfig, ChannelDspChain, ChannelMatchingUiConfig, ChannelMeasurement,
+    ChannelOptResult, CustomTargetCurve, DriverDspChain, DspChainMetadata, DspChainOutput,
+    DspPluginConfig, EqFilterConfig, ExcursionProtectionConfig, GroupDelayOptConfig,
+    MixedModeUiConfig, MixedPhaseUiConfig, MultiMeasurementUiConfig, MultiSeatConfig,
+    MultiSpeakerMode, PhaseAlignmentConfig, PreRingingConfig, RecordingConfiguration,
+    RoomEqDataSource, RoomEqFirConfig, RoomEqMeasurementsFile, RoomEqOptimizationMode,
+    RoomEqSpeakerConfig, RoomEqStep, SchroederSplitConfig, SpeakerConfigType, SubOptimizerUiConfig,
+    TargetCurveControlPoint, TargetTiltConfig, VoGConfig,
 };
 pub type CrossoverType = sotf_audio_player::room_eq_types::RoomEqCrossoverType;
 pub use sotf_audio_player::room_eq_types::AutoEqField;
@@ -325,7 +323,10 @@ impl RoomEqOptimizerConfig {
             self.target_tilt.enabled = false;
         }
 
-        self.excursion_protection.enabled = backend.excursion_protection.as_ref().is_some_and(|e| e.enabled);
+        self.excursion_protection.enabled = backend
+            .excursion_protection
+            .as_ref()
+            .is_some_and(|e| e.enabled);
         if let Some(ref ep) = backend.excursion_protection {
             self.excursion_protection.auto_detect_f3 = ep.auto_detect_f3;
             self.excursion_protection.manual_f3_hz = ep.manual_f3_hz.unwrap_or(40.0);
@@ -347,7 +348,10 @@ impl RoomEqOptimizerConfig {
             self.schroeder_split.high_freq_shelving_only = ss.high_freq_config.shelving_only;
         }
 
-        self.broadband_target_matching.enabled = backend.broadband_target_matching.as_ref().is_some_and(|b| b.enabled);
+        self.broadband_target_matching.enabled = backend
+            .broadband_target_matching
+            .as_ref()
+            .is_some_and(|b| b.enabled);
 
         self.allow_delay = backend.allow_delay.unwrap_or(false);
 
@@ -386,8 +390,12 @@ impl RoomEqOptimizerConfig {
                 autoeq::roomeq::MultiMeasurementStrategy::Average => "average".to_string(),
                 autoeq::roomeq::MultiMeasurementStrategy::WeightedSum => "weighted_sum".to_string(),
                 autoeq::roomeq::MultiMeasurementStrategy::Minimax => "minimax".to_string(),
-                autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized => "variance_penalized".to_string(),
-                autoeq::roomeq::MultiMeasurementStrategy::SpatialRobustness => "spatial_robustness".to_string(),
+                autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized => {
+                    "variance_penalized".to_string()
+                }
+                autoeq::roomeq::MultiMeasurementStrategy::SpatialRobustness => {
+                    "spatial_robustness".to_string()
+                }
             };
             self.multi_measurement.variance_lambda = mm.variance_lambda;
             self.multi_measurement.weights = mm.weights.clone().unwrap_or_default();
@@ -406,7 +414,8 @@ impl RoomEqOptimizerConfig {
         }
 
         // Channel matching correction
-        self.channel_matching.enabled = backend.channel_matching.as_ref().is_some_and(|c| c.enabled);
+        self.channel_matching.enabled =
+            backend.channel_matching.as_ref().is_some_and(|c| c.enabled);
         if let Some(ref cm) = backend.channel_matching {
             self.channel_matching.threshold_db = cm.threshold_db;
             self.channel_matching.max_filters = cm.max_filters;
@@ -769,8 +778,10 @@ impl RoomEqState {
         use std::collections::BTreeMap;
 
         // Group completed recordings by speaker index (channel_index)
-        let mut grouped: BTreeMap<usize, Vec<&sotf_audio_player::recording_types::ChannelRecording>> =
-            BTreeMap::new();
+        let mut grouped: BTreeMap<
+            usize,
+            Vec<&sotf_audio_player::recording_types::ChannelRecording>,
+        > = BTreeMap::new();
         for r in &recording_state.channel_recordings {
             if r.result.is_some() {
                 grouped.entry(r.channel_index).or_default().push(r);

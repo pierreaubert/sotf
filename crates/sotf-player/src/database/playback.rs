@@ -1,7 +1,7 @@
 //! Play statistics, play counts, and favorites.
+use super::{MusicDatabase, current_timestamp};
 use rusqlite::{Result as SqlResult, params};
 use std::path::{Path, PathBuf};
-use super::{MusicDatabase, current_timestamp};
 
 impl MusicDatabase {
     /// Get top tracks by play count

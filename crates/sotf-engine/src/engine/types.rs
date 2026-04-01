@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 // Re-export shared types from sotf-types
 pub use sotf_types::{
-    AudioEngineState, AudioFrame, PlaybackState,
-    PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
+    AudioEngineState, AudioFrame, PlaybackState, PluginConfig, PluginGraphConfig,
+    PluginGraphEdgeConfig, PluginGraphNodeConfig,
 };
 
 // ============================================================================
@@ -249,4 +249,3 @@ pub enum ThreadEvent {
     /// Plugin chain total latency changed (in samples at the processing sample rate)
     PluginLatencyUpdate(usize),
 }
-

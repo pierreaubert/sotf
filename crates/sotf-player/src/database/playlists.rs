@@ -1,8 +1,8 @@
 //! Playlist CRUD operations.
-use rusqlite::{Result as SqlResult, params};
-use std::path::{Path, PathBuf};
 use super::{MusicDatabase, current_timestamp};
 use crate::library::{Playlist, PlaylistEntry};
+use rusqlite::{Result as SqlResult, params};
+use std::path::{Path, PathBuf};
 
 impl MusicDatabase {
     /// Create a new playlist

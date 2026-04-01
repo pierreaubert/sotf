@@ -54,11 +54,7 @@ fn draw_mpd_section(f: &mut Frame, area: Rect, app: &App) {
             },
             true, // is toggle
         ),
-        (
-            "Bind Address",
-            state.config.mpd.bind_address.clone(),
-            false,
-        ),
+        ("Bind Address", state.config.mpd.bind_address.clone(), false),
         ("Port", state.config.mpd.port.to_string(), false),
         (
             "TLS",
@@ -81,7 +77,14 @@ fn draw_mpd_section(f: &mut Frame, area: Rect, app: &App) {
         ),
     ];
 
-    let mut lines = render_field_lines(&fields, app, is_active, state.selected_field, state.editing_value, &state.edit_buffer);
+    let mut lines = render_field_lines(
+        &fields,
+        app,
+        is_active,
+        state.selected_field,
+        state.editing_value,
+        &state.edit_buffer,
+    );
 
     // TLS fingerprint
     if let Some(ref fp) = state.tls_fingerprint {
@@ -136,7 +139,14 @@ fn draw_dlna_section(f: &mut Frame, area: Rect, app: &App) {
         ("Port", state.config.dlna.port.to_string(), false),
     ];
 
-    let lines = render_field_lines(&fields, app, is_active, state.selected_field, state.editing_value, &state.edit_buffer);
+    let lines = render_field_lines(
+        &fields,
+        app,
+        is_active,
+        state.selected_field,
+        state.editing_value,
+        &state.edit_buffer,
+    );
 
     let mut note_lines = lines;
     note_lines.push(Line::from(""));
@@ -203,10 +213,7 @@ fn render_field_lines<'a>(
                 "  "
             };
 
-            Line::from(Span::styled(
-                format!("{arrow}{label:<18} {display}"),
-                style,
-            ))
+            Line::from(Span::styled(format!("{arrow}{label:<18} {display}"), style))
         })
         .collect()
 }

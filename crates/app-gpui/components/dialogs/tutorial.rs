@@ -135,9 +135,7 @@ impl HintId {
             HintId::RoomEqFirstVisit => {
                 "Start by loading measurement data, then configure and run the optimizer."
             }
-            HintId::EmptyQueue => {
-                "Click an album in the library to add it to your playback queue."
-            }
+            HintId::EmptyQueue => "Click an album in the library to add it to your playback queue.",
         }
     }
 }
@@ -149,10 +147,7 @@ pub struct ContextualHint {
 }
 
 /// Render a contextual hint banner (dismissible callout).
-pub fn render_hint_banner(
-    hint: &ContextualHint,
-    theme: &crate::theme::Theme,
-) -> impl IntoElement {
+pub fn render_hint_banner(hint: &ContextualHint, theme: &crate::theme::Theme) -> impl IntoElement {
     let title = hint.hint_id.title();
     let message = hint.hint_id.message();
 
@@ -205,7 +200,11 @@ impl PlayerView {
     pub(crate) fn render_tutorial_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let screen_idx = state.app.ui_state.tutorial_screen.min(TUTORIAL_SCREEN_COUNT - 1);
+        let screen_idx = state
+            .app
+            .ui_state
+            .tutorial_screen
+            .min(TUTORIAL_SCREEN_COUNT - 1);
         let dont_show = state.app.ui_state.tutorial_dont_show;
         let screen = &TUTORIAL_SCREENS[screen_idx];
         let is_first = screen_idx == 0;
@@ -237,11 +236,7 @@ impl PlayerView {
                             .overflow_hidden()
                             .border_1()
                             .border_color(theme.border)
-                            .child(
-                                img(screen.image)
-                                    .w_full()
-                                    .object_fit(ObjectFit::ScaleDown),
-                            ),
+                            .child(img(screen.image).w_full().object_fit(ObjectFit::ScaleDown)),
                     )
                     // Text content
                     .children(screen.content.iter().map(|&line| {
@@ -311,14 +306,12 @@ impl PlayerView {
                                                     let state = self.state.clone();
                                                     move |_window, cx| {
                                                         state.update(cx, |state, _| {
-                                                            state
-                                                                .app
-                                                                .ui_state
-                                                                .tutorial_screen = state
-                                                                .app
-                                                                .ui_state
-                                                                .tutorial_screen
-                                                                .saturating_sub(1);
+                                                            state.app.ui_state.tutorial_screen =
+                                                                state
+                                                                    .app
+                                                                    .ui_state
+                                                                    .tutorial_screen
+                                                                    .saturating_sub(1);
                                                         });
                                                     }
                                                 }),
@@ -334,10 +327,8 @@ impl PlayerView {
                                                     let state = self.state.clone();
                                                     move |_window, cx| {
                                                         state.update(cx, |state, _| {
-                                                            let s = state
-                                                                .app
-                                                                .ui_state
-                                                                .tutorial_screen;
+                                                            let s =
+                                                                state.app.ui_state.tutorial_screen;
                                                             if s < TUTORIAL_SCREEN_COUNT - 1 {
                                                                 state
                                                                     .app

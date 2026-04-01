@@ -51,12 +51,15 @@ pub async fn fetch_source_albums(
                 httpd_port: *httpd_port,
             };
             let provider = MpdProvider::new(SourceId(source_id_str.clone()), config);
-            provider.fetch_all_albums().await.map_err(|e| FederationScanResult {
-                source_id: source_id_str,
-                albums: 0,
-                tracks: 0,
-                error: Some(format!("failed to fetch albums: {e}")),
-            })
+            provider
+                .fetch_all_albums()
+                .await
+                .map_err(|e| FederationScanResult {
+                    source_id: source_id_str,
+                    albums: 0,
+                    tracks: 0,
+                    error: Some(format!("failed to fetch albums: {e}")),
+                })
         }
         SourceConnectionConfig::Dlna {
             location_url,
@@ -73,18 +76,24 @@ pub async fn fetch_source_albums(
                 friendly_name: friendly_name.clone().unwrap_or_default(),
             };
             let provider = DlnaProvider::new(SourceId(source_id_str.clone()), config);
-            provider.fetch_all_albums().await.map_err(|e| FederationScanResult {
-                source_id: source_id_str,
-                albums: 0,
-                tracks: 0,
-                error: Some(format!("failed to fetch albums: {e}")),
-            })
+            provider
+                .fetch_all_albums()
+                .await
+                .map_err(|e| FederationScanResult {
+                    source_id: source_id_str,
+                    albums: 0,
+                    tracks: 0,
+                    error: Some(format!("failed to fetch albums: {e}")),
+                })
         }
         other => Err(FederationScanResult {
             source_id: source_id_str,
             albums: 0,
             tracks: 0,
-            error: Some(format!("{} provider not yet implemented", other.type_name())),
+            error: Some(format!(
+                "{} provider not yet implemented",
+                other.type_name()
+            )),
         }),
     }
 }
@@ -243,77 +252,71 @@ async fn diagnose_mpd(host: &str, port: u16, password: Option<&str>) -> Connecti
         Err(diag) => return diag,
     };
 
-    let tcp_connect =
-        match tokio::time::timeout(timeout, tokio::net::TcpStream::connect(format!("{host}:{port}")))
-            .await
-        {
-            Ok(Ok(stream)) => {
-                let tcp_result = StepResult::Ok(format!("port {port} open"));
-                let tls_handshake = StepResult::Skipped("MPD uses plain TCP".to_string());
+    let tcp_connect = match tokio::time::timeout(
+        timeout,
+        tokio::net::TcpStream::connect(format!("{host}:{port}")),
+    )
+    .await
+    {
+        Ok(Ok(stream)) => {
+            let tcp_result = StepResult::Ok(format!("port {port} open"));
+            let tls_handshake = StepResult::Skipped("MPD uses plain TCP".to_string());
 
-                use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-                let mut reader = BufReader::new(stream);
-                let mut greeting = String::new();
-                let protocol_hello =
-                    match tokio::time::timeout(timeout, reader.read_line(&mut greeting)).await {
-                        Ok(Ok(_)) if greeting.starts_with("OK MPD") => {
-                            let version =
-                                greeting.trim().trim_start_matches("OK MPD ").to_string();
-                            if let Some(pw) = password {
-                                let escaped = pw.replace('\\', "\\\\").replace('"', "\\\"");
-                                let cmd = format!("password \"{escaped}\"\n");
-                                let inner = reader.into_inner();
-                                let mut writer = tokio::io::BufWriter::new(inner);
-                                if writer.write_all(cmd.as_bytes()).await.is_err()
-                                    || writer.flush().await.is_err()
-                                {
-                                    StepResult::Fail(format!(
-                                        "MPD {version} — auth send failed"
-                                    ))
-                                } else {
-                                    let mut r2 =
-                                        tokio::io::BufReader::new(writer.into_inner());
-                                    let mut resp = String::new();
-                                    match tokio::time::timeout(timeout, r2.read_line(&mut resp))
-                                        .await
-                                    {
-                                        Ok(Ok(_)) if resp.starts_with("OK") => {
-                                            StepResult::Ok(format!(
-                                                "MPD {version} — authenticated"
-                                            ))
-                                        }
-                                        Ok(Ok(_)) => StepResult::Fail(format!(
-                                            "MPD {version} — auth rejected: {}",
-                                            resp.trim()
-                                        )),
-                                        _ => StepResult::Fail(format!(
-                                            "MPD {version} — auth response failed"
-                                        )),
-                                    }
-                                }
+            use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+            let mut reader = BufReader::new(stream);
+            let mut greeting = String::new();
+            let protocol_hello =
+                match tokio::time::timeout(timeout, reader.read_line(&mut greeting)).await {
+                    Ok(Ok(_)) if greeting.starts_with("OK MPD") => {
+                        let version = greeting.trim().trim_start_matches("OK MPD ").to_string();
+                        if let Some(pw) = password {
+                            let escaped = pw.replace('\\', "\\\\").replace('"', "\\\"");
+                            let cmd = format!("password \"{escaped}\"\n");
+                            let inner = reader.into_inner();
+                            let mut writer = tokio::io::BufWriter::new(inner);
+                            if writer.write_all(cmd.as_bytes()).await.is_err()
+                                || writer.flush().await.is_err()
+                            {
+                                StepResult::Fail(format!("MPD {version} — auth send failed"))
                             } else {
-                                StepResult::Ok(format!("MPD {version}"))
+                                let mut r2 = tokio::io::BufReader::new(writer.into_inner());
+                                let mut resp = String::new();
+                                match tokio::time::timeout(timeout, r2.read_line(&mut resp)).await {
+                                    Ok(Ok(_)) if resp.starts_with("OK") => {
+                                        StepResult::Ok(format!("MPD {version} — authenticated"))
+                                    }
+                                    Ok(Ok(_)) => StepResult::Fail(format!(
+                                        "MPD {version} — auth rejected: {}",
+                                        resp.trim()
+                                    )),
+                                    _ => StepResult::Fail(format!(
+                                        "MPD {version} — auth response failed"
+                                    )),
+                                }
                             }
+                        } else {
+                            StepResult::Ok(format!("MPD {version}"))
                         }
-                        Ok(Ok(_)) => {
-                            StepResult::Fail(format!("unexpected greeting: {}", greeting.trim()))
-                        }
-                        Ok(Err(e)) => StepResult::Fail(format!("read error: {e}")),
-                        Err(_) => StepResult::Fail("greeting timed out".to_string()),
-                    };
-
-                return ConnectionDiagnostic {
-                    host: host.to_string(),
-                    port,
-                    dns_resolve,
-                    tcp_connect: tcp_result,
-                    tls_handshake,
-                    protocol_hello,
+                    }
+                    Ok(Ok(_)) => {
+                        StepResult::Fail(format!("unexpected greeting: {}", greeting.trim()))
+                    }
+                    Ok(Err(e)) => StepResult::Fail(format!("read error: {e}")),
+                    Err(_) => StepResult::Fail("greeting timed out".to_string()),
                 };
-            }
-            Ok(Err(e)) => StepResult::Fail(format!("{e}")),
-            Err(_) => StepResult::Fail("connection timed out".to_string()),
-        };
+
+            return ConnectionDiagnostic {
+                host: host.to_string(),
+                port,
+                dns_resolve,
+                tcp_connect: tcp_result,
+                tls_handshake,
+                protocol_hello,
+            };
+        }
+        Ok(Err(e)) => StepResult::Fail(format!("{e}")),
+        Err(_) => StepResult::Fail("connection timed out".to_string()),
+    };
 
     ConnectionDiagnostic {
         host: host.to_string(),
@@ -334,14 +337,16 @@ async fn diagnose_tcp_simple(host: &str, port: u16) -> ConnectionDiagnostic {
         Err(diag) => return diag,
     };
 
-    let tcp_connect =
-        match tokio::time::timeout(timeout, tokio::net::TcpStream::connect(format!("{host}:{port}")))
-            .await
-        {
-            Ok(Ok(_)) => StepResult::Ok(format!("port {port} open")),
-            Ok(Err(e)) => StepResult::Fail(format!("{e}")),
-            Err(_) => StepResult::Fail("connection timed out".to_string()),
-        };
+    let tcp_connect = match tokio::time::timeout(
+        timeout,
+        tokio::net::TcpStream::connect(format!("{host}:{port}")),
+    )
+    .await
+    {
+        Ok(Ok(_)) => StepResult::Ok(format!("port {port} open")),
+        Ok(Err(e)) => StepResult::Fail(format!("{e}")),
+        Err(_) => StepResult::Fail("connection timed out".to_string()),
+    };
 
     let protocol_hello = if tcp_connect.is_ok() {
         StepResult::Ok("TCP reachable".to_string())

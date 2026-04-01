@@ -72,7 +72,9 @@ impl AudioDriver for HalDriver {
                 self.config_buffer = Some(buffer);
             }
             Err(_) => {
-                log::warn!("[HalDriver] Shared memory not available yet (normal if no audio playing)");
+                log::warn!(
+                    "[HalDriver] Shared memory not available yet (normal if no audio playing)"
+                );
             }
         }
 
@@ -81,7 +83,9 @@ impl AudioDriver for HalDriver {
         if self.reader.is_some() {
             log::info!("[HalDriver] HAL input reader initialized");
         } else {
-            log::warn!("[HalDriver] HAL input reader not available (shared memory may not exist yet)");
+            log::warn!(
+                "[HalDriver] HAL input reader not available (shared memory may not exist yet)"
+            );
         }
 
         Ok(())

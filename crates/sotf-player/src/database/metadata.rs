@@ -1,7 +1,7 @@
 //! Metadata queries: genres, composers, conductors, performers, ensembles, library sources.
+use super::MusicDatabase;
 use rusqlite::{Result as SqlResult, params};
 use std::path::{Path, PathBuf};
-use super::MusicDatabase;
 
 impl MusicDatabase {
     // ==================== Normalized Metadata Methods ====================

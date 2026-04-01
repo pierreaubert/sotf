@@ -646,15 +646,10 @@ impl MusicLibrary {
                 let last_scanned =
                     Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(last_scan));
 
-                let (tracks, albums) =
-                    compute_aggregate_stats_for_path(&canonical_path, stats_map);
+                let (tracks, albums) = compute_aggregate_stats_for_path(&canonical_path, stats_map);
 
-                let dir_info = build_directory_shallow(
-                    canonical_path,
-                    tracks,
-                    albums,
-                    last_scanned,
-                );
+                let dir_info =
+                    build_directory_shallow(canonical_path, tracks, albums, last_scanned);
 
                 self.directories.push(dir_info);
             }
@@ -726,8 +721,7 @@ impl MusicLibrary {
                     }
                     return true;
                 }
-                if dir.expanded
-                    && toggle_recursive(&mut dir.subdirectories, target_path, stats_map)
+                if dir.expanded && toggle_recursive(&mut dir.subdirectories, target_path, stats_map)
                 {
                     return true;
                 }
@@ -1077,8 +1071,7 @@ impl MusicLibrary {
 
         // Update directory stats using aggregate computation (no tree walk needed)
         for dir_info in &mut self.directories {
-            let (tracks, albums) =
-                compute_aggregate_stats_for_path(&dir_info.path, &dir_stats);
+            let (tracks, albums) = compute_aggregate_stats_for_path(&dir_info.path, &dir_stats);
             dir_info.file_count = tracks;
             dir_info.album_count = albums;
             dir_info.last_scanned = Some(scan_time);
@@ -1749,10 +1742,7 @@ pub fn load_children_from_disk(
     if let Ok(entries) = std::fs::read_dir(&dir_info.path) {
         for entry in entries.filter_map(|e| e.ok()) {
             // Use file_type() from DirEntry — avoids extra stat syscall on most platforms
-            let is_dir = entry
-                .file_type()
-                .map(|ft| ft.is_dir())
-                .unwrap_or(false);
+            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
             if is_dir {
                 let child_path = entry.path();
                 let (tracks, albums) = compute_aggregate_stats_for_path(&child_path, stats_map);
@@ -1815,12 +1805,7 @@ fn compute_directory_stats(albums: &[Album]) -> HashMap<PathBuf, (usize, usize)>
                 // Use cached canonicalize result
                 let canonical = canonical_cache
                     .entry(parent_buf.clone())
-                    .or_insert_with(|| {
-                        parent_buf
-                            .canonicalize()
-                            .ok()
-                            .filter(|c| *c != parent_buf)
-                    });
+                    .or_insert_with(|| parent_buf.canonicalize().ok().filter(|c| *c != parent_buf));
                 if let Some(canonical) = canonical.clone() {
                     *dir_track_counts.entry(canonical.clone()).or_insert(0) += 1;
                     dir_album_sets

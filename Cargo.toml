@@ -72,7 +72,9 @@ members = [
     "crates/gpui-toolkit/gpui-ios",
     "crates/gpui-toolkit/gpui-au",
     "crates/gpui-toolkit/gpui-builder",
+    "crates/gpui-toolkit/gpui-design",
     "crates/gpui-toolkit/gpui-pretext",
+    "crates/gpui-toolkit/gpui-themes",
     # iOS/tvOS app shells — compile on macOS (cargo check) but only link for iOS/tvOS targets
     "crates/gpui-toolkit/gpui-ui-kit/ios",
     "crates/app-ios",
@@ -183,6 +185,7 @@ gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-
 gpui-ios = { version = "0.6", path = "crates/gpui-toolkit/gpui-ios" }
 gpui-au = { version = "0.6", path = "crates/gpui-toolkit/gpui-au" }
 gpui-builder = { version = "0.6", path = "crates/gpui-toolkit/gpui-builder" }
+gpui-design = { version = "0.6", path = "crates/gpui-toolkit/gpui-design" }
 gpui-pretext = { version = "0.6", path = "crates/gpui-toolkit/gpui-pretext" }
 
 # SotF

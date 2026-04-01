@@ -71,8 +71,7 @@ impl PlaylistController {
             .playlists
             .iter()
             .map(|p| {
-                p.id
-                    .and_then(|id| db.get_playlist_track_count(id).ok())
+                p.id.and_then(|id| db.get_playlist_track_count(id).ok())
                     .unwrap_or(0)
             })
             .collect();
@@ -203,7 +202,11 @@ impl PlaylistController {
     // =========================================================================
 
     /// Add tracks to the active playlist.
-    pub fn add_tracks(&mut self, db: &MusicDatabase, track_paths: &[PathBuf]) -> Result<(), String> {
+    pub fn add_tracks(
+        &mut self,
+        db: &MusicDatabase,
+        track_paths: &[PathBuf],
+    ) -> Result<(), String> {
         let id = self
             .active_playlist_id()
             .ok_or_else(|| "No active playlist".to_string())?;
@@ -358,11 +361,7 @@ impl PlaylistController {
 
     /// Import a playlist from an M3U/M3U8 file.
     /// Creates a new playlist in the database and populates it with the resolved tracks.
-    pub fn import_playlist(
-        &mut self,
-        db: &MusicDatabase,
-        input_path: &Path,
-    ) -> Result<(), String> {
+    pub fn import_playlist(&mut self, db: &MusicDatabase, input_path: &Path) -> Result<(), String> {
         let imported = crate::playlist_io::import_m3u8(input_path)?;
         let id = self.create_playlist(db, &imported.name, None)?;
 
@@ -404,8 +403,7 @@ impl PlaylistController {
     pub fn select_next_track(&mut self) {
         if let Some(ref active) = self.active_playlist {
             if !active.entries.is_empty() {
-                self.selected_track_index =
-                    (self.selected_track_index + 1) % active.entries.len();
+                self.selected_track_index = (self.selected_track_index + 1) % active.entries.len();
             }
         }
     }

@@ -324,21 +324,33 @@ fn test_engine_value_string_roundtrip_all_plugins() {
                     assert!(
                         matches!(parsed, ParameterValue::Float(_)),
                         "{} param {} ({}): '{}' parsed as {:?}, expected Float",
-                        name, i, key, value_str, parsed
+                        name,
+                        i,
+                        key,
+                        value_str,
+                        parsed
                     );
                 }
                 ParamType::Int { .. } | ParamType::Choice { .. } => {
                     assert!(
                         matches!(parsed, ParameterValue::Int(_)),
                         "{} param {} ({}): '{}' parsed as {:?}, expected Int",
-                        name, i, key, value_str, parsed
+                        name,
+                        i,
+                        key,
+                        value_str,
+                        parsed
                     );
                 }
                 ParamType::Bool { .. } => {
                     assert!(
                         matches!(parsed, ParameterValue::Bool(_)),
                         "{} param {} ({}): '{}' parsed as {:?}, expected Bool",
-                        name, i, key, value_str, parsed
+                        name,
+                        i,
+                        key,
+                        value_str,
+                        parsed
                     );
                 }
                 ParamType::FilePath => {}
@@ -353,7 +365,12 @@ fn test_engine_value_string_roundtrip_all_plugins() {
                     assert!(
                         matches!(test_parsed, ParameterValue::Float(_)),
                         "{} param {} ({}): value {} -> '{}' parsed as {:?}, expected Float",
-                        name, i, key, test_val, test_str, test_parsed
+                        name,
+                        i,
+                        key,
+                        test_val,
+                        test_str,
+                        test_parsed
                     );
                 }
             }

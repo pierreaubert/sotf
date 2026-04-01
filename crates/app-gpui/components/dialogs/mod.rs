@@ -491,7 +491,11 @@ impl PlayerView {
                 crate::app::ToastType::Info => ToastVariant::Info,
                 crate::app::ToastType::Warning => ToastVariant::Warning,
             };
-            (t.message.clone(), variant, t.action.as_ref().map(|a| a.label.clone()))
+            (
+                t.message.clone(),
+                variant,
+                t.action.as_ref().map(|a| a.label.clone()),
+            )
         });
 
         if let Some((message, variant, action_label)) = toast_data {
@@ -523,13 +527,11 @@ impl PlayerView {
                         .items_start()
                         .gap_2()
                         .child(
-                            div()
-                                .flex_1()
-                                .child(
-                                    Text::new(message.clone())
-                                        .size(TextSize::Sm)
-                                        .color(text_color),
-                                ),
+                            div().flex_1().child(
+                                Text::new(message.clone())
+                                    .size(TextSize::Sm)
+                                    .color(text_color),
+                            ),
                         )
                         .when_some(action_label, |d, label| {
                             d.child(
@@ -579,9 +581,7 @@ impl PlayerView {
                                 .w(px(24.0))
                                 .h(px(24.0))
                                 .rounded_md()
-                                .hover(move |s| {
-                                    s.bg(Theme::with_opacity(text_color, 0.15))
-                                })
+                                .hover(move |s| s.bg(Theme::with_opacity(text_color, 0.15)))
                                 .on_mouse_up(
                                     MouseButton::Left,
                                     cx.listener(|view, _: &MouseUpEvent, _window, cx| {
@@ -659,7 +659,10 @@ impl PlayerView {
                                             Self::play_track(state, path);
                                         }
                                     }
-                                    (crate::app::ContextMenuType::QueueItem, "remove-from-queue") => {
+                                    (
+                                        crate::app::ContextMenuType::QueueItem,
+                                        "remove-from-queue",
+                                    ) => {
                                         state.app.remove_from_queue(item_idx);
                                     }
                                     (crate::app::ContextMenuType::QueueItem, "play-from-here") => {
@@ -835,9 +838,11 @@ impl PlayerView {
                     }),
             )
             .footer(
-                Text::new("Enter: Save | Click/↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel")
-                    .size(TextSize::Xs)
-                    .muted(true),
+                Text::new(
+                    "Enter: Save | Click/↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel",
+                )
+                .size(TextSize::Xs)
+                .muted(true),
             )
     }
 

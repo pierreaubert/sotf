@@ -1,4 +1,5 @@
 //! Core types for the TUI application state management
+pub use sotf_audio_player::QueueItem;
 use sotf_audio_player::headphone_eq_types::{HeadphoneEqBiquad, HeadphoneEqOptimizerConfig};
 use sotf_audio_player::recording_types::{
     ChannelRecording, PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType,
@@ -8,7 +9,6 @@ use sotf_audio_player::room_eq_types::{
     ChannelMeasurement, ChannelOptResult, OptimizationStatus, RoomEqOptimizerConfig, RoomEqStep,
 };
 use sotf_audio_player::spinorama_eq_types::{SpinoramaBiquad, SpinoramaOptimizerConfig};
-pub use sotf_audio_player::QueueItem;
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

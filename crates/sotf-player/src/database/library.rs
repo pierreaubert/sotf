@@ -3,7 +3,10 @@
 use rusqlite::{Result as SqlResult, TransactionBehavior, params};
 use std::path::{Path, PathBuf};
 
-use super::{MusicDatabase, current_timestamp, get_file_mtime, split_metadata_value, split_and_normalize_genres};
+use super::{
+    MusicDatabase, current_timestamp, get_file_mtime, split_and_normalize_genres,
+    split_metadata_value,
+};
 use crate::library::{Album, Track};
 
 impl MusicDatabase {
@@ -79,8 +82,15 @@ impl MusicDatabase {
 
         albums.reserve(album_data.len());
 
-        for (album_id, title, year, album_art_path, album_art_thumbnail, album_is_favorite, album_uuid) in
-            album_data
+        for (
+            album_id,
+            title,
+            year,
+            album_art_path,
+            album_art_thumbnail,
+            album_is_favorite,
+            album_uuid,
+        ) in album_data
         {
             let tracks = tracks_stmt
                 .query_map(params![album_id], |row| {
@@ -112,7 +122,8 @@ impl MusicDatabase {
                         edition: None,
                         is_favorite: is_fav,
                         play_count,
-                        source: row.get::<_, Option<String>>(23)?
+                        source: row
+                            .get::<_, Option<String>>(23)?
                             .and_then(|json| serde_json::from_str(&json).ok()),
                         uuid: row.get::<_, Option<String>>(22)?,
                     })

@@ -181,7 +181,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let t0 = std::time::Instant::now();
     let mut app = App::new(theme, read_only);
-    log::info!("[startup] App::new: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
+    log::info!(
+        "[startup] App::new: {:.1}ms",
+        t0.elapsed().as_secs_f64() * 1000.0
+    );
 
     // Apply scanner thread count from CLI
     if let Some(threads) = args.scanner_threads {
@@ -261,7 +264,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Err(e) = app.load_config() {
         log::warn!("Could not load saved configuration: {}", e);
     }
-    log::info!("[startup] load_config: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
+    log::info!(
+        "[startup] load_config: {:.1}ms",
+        t0.elapsed().as_secs_f64() * 1000.0
+    );
 
     // Load available audio devices (single enumeration for both output + recording)
     app.load_all_audio_devices();
@@ -309,8 +315,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None
         }
     };
-    log::info!("[startup] media_controls: {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
-    log::info!("[startup] TUI total startup: {:.1}ms", t_startup.elapsed().as_secs_f64() * 1000.0);
+    log::info!(
+        "[startup] media_controls: {:.1}ms",
+        t0.elapsed().as_secs_f64() * 1000.0
+    );
+    log::info!(
+        "[startup] TUI total startup: {:.1}ms",
+        t_startup.elapsed().as_secs_f64() * 1000.0
+    );
 
     // Main loop
     let result = run_app(&mut terminal, &mut app, &mut player, &mut media_controls);
@@ -465,8 +477,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             app.start_track_tracking(path);
                         }
                         update_media_controls(app, player, media_controls);
-                    } else if (state.track_ended
-                        || (app.is_playing && !state.is_playing))
+                    } else if (state.track_ended || (app.is_playing && !state.is_playing))
                         && app.current_queue_index.is_some()
                     {
                         log::info!("[TUI] Track ended, attempting auto-advance...");
@@ -525,11 +536,8 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
                         if near_end && let Some(next_track) = app.peek_next_track() {
                             let next_ch = next_track.channels.unwrap_or(2) as usize;
-                            let current_ch = app
-                                .current_track()
-                                .and_then(|t| t.channels)
-                                .unwrap_or(2)
-                                as usize;
+                            let current_ch =
+                                app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
 
                             // Only gapless when channel count matches (engine constraint)
                             if next_ch == current_ch {

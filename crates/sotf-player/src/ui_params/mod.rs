@@ -882,10 +882,12 @@ impl TuiEditablePlugin for PluginSettings {
                 // HAL Matrix: input/output channel counts (1..32)
                 match index {
                     0 => {
-                        *input_channels = ((*input_channels as i64) + delta as i64).clamp(1, 32) as usize
+                        *input_channels =
+                            ((*input_channels as i64) + delta as i64).clamp(1, 32) as usize
                     }
                     1 => {
-                        *output_channels = ((*output_channels as i64) + delta as i64).clamp(1, 32) as usize
+                        *output_channels =
+                            ((*output_channels as i64) + delta as i64).clamp(1, 32) as usize
                     }
                     _ => return false,
                 }

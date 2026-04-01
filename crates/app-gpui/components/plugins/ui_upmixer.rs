@@ -852,11 +852,7 @@ fn render_config_hr_direct(
                 .child(
                     Toggle::new(("hr-direct-toggle", plugin_idx))
                         .checked(state.enable_hr_direct)
-                        .label(if state.enable_hr_direct {
-                            "On"
-                        } else {
-                            "Off"
-                        })
+                        .label(if state.enable_hr_direct { "On" } else { "Off" })
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
                         .on_change({

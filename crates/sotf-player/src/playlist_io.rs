@@ -41,13 +41,19 @@ pub struct ImportedEntry {
 ///
 /// Writes Extended M3U format with UTF-8 encoding. Track metadata (artist, title,
 /// duration) is looked up from the library when available.
-pub fn export_m3u8(playlist: &Playlist, library: &MusicLibrary, output_path: &Path) -> Result<(), String> {
+pub fn export_m3u8(
+    playlist: &Playlist,
+    library: &MusicLibrary,
+    output_path: &Path,
+) -> Result<(), String> {
     let mut content = String::new();
     writeln!(content, "#EXTM3U").unwrap();
 
     for entry in &playlist.entries {
         // Look up track metadata from library
-        let track = library.albums.iter()
+        let track = library
+            .albums
+            .iter()
             .flat_map(|a| &a.tracks)
             .find(|t| t.path == entry.track_path);
 
@@ -61,8 +67,7 @@ pub fn export_m3u8(playlist: &Playlist, library: &MusicLibrary, output_path: &Pa
         writeln!(content, "{}", entry.track_path.display()).unwrap();
     }
 
-    fs::write(output_path, content)
-        .map_err(|e| format!("Failed to write M3U8 file: {}", e))
+    fs::write(output_path, content).map_err(|e| format!("Failed to write M3U8 file: {}", e))
 }
 
 /// Import a playlist from an M3U/M3U8 file.
@@ -71,8 +76,7 @@ pub fn export_m3u8(playlist: &Playlist, library: &MusicLibrary, output_path: &Pa
 /// `#EXTINF` metadata lines and plain file paths. Relative paths are resolved
 /// against the directory containing the M3U file.
 pub fn import_m3u8(input_path: &Path) -> Result<ImportedPlaylist, String> {
-    let file = fs::File::open(input_path)
-        .map_err(|e| format!("Failed to open M3U file: {}", e))?;
+    let file = fs::File::open(input_path).map_err(|e| format!("Failed to open M3U file: {}", e))?;
     let reader = BufReader::new(file);
 
     let name = input_path
@@ -104,7 +108,11 @@ pub fn import_m3u8(input_path: &Path) -> Result<ImportedPlaylist, String> {
         // Parse EXTINF lines
         if let Some(rest) = line.strip_prefix("#EXTINF:") {
             if let Some((duration_str, title_str)) = rest.split_once(',') {
-                pending_duration = duration_str.trim().parse::<f64>().ok().map(|d| d.max(0.0) as u64);
+                pending_duration = duration_str
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .map(|d| d.max(0.0) as u64);
                 pending_title = Some(title_str.trim().to_string());
             }
             continue;
@@ -216,10 +224,19 @@ mod tests {
         let imported = import_m3u8(&m3u_path).unwrap();
         assert_eq!(imported.name, "my_playlist");
         assert_eq!(imported.entries.len(), 2);
-        assert_eq!(imported.entries[0].path, PathBuf::from("/music/artist/track1.flac"));
+        assert_eq!(
+            imported.entries[0].path,
+            PathBuf::from("/music/artist/track1.flac")
+        );
         assert_eq!(imported.entries[0].duration_secs, Some(231));
-        assert_eq!(imported.entries[0].title.as_deref(), Some("Test Artist - First Track"));
-        assert_eq!(imported.entries[1].path, PathBuf::from("/music/artist/track2.flac"));
+        assert_eq!(
+            imported.entries[0].title.as_deref(),
+            Some("Test Artist - First Track")
+        );
+        assert_eq!(
+            imported.entries[1].path,
+            PathBuf::from("/music/artist/track2.flac")
+        );
     }
 
     #[test]
@@ -247,8 +264,14 @@ mod tests {
         fs::write(&m3u_path, content).unwrap();
 
         let imported = import_m3u8(&m3u_path).unwrap();
-        assert_eq!(imported.entries[0].path, dir.path().join("music/track1.flac"));
-        assert_eq!(imported.entries[1].path, dir.path().join("music/track2.flac"));
+        assert_eq!(
+            imported.entries[0].path,
+            dir.path().join("music/track1.flac")
+        );
+        assert_eq!(
+            imported.entries[1].path,
+            dir.path().join("music/track2.flac")
+        );
     }
 
     #[test]

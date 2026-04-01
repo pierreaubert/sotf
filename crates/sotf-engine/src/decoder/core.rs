@@ -174,7 +174,9 @@ pub fn probe_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<(AudioFormat, A
 ///
 /// This is the main entry point for the decoder thread to create decoders
 /// from any supported source type.
-pub fn create_decoder_from_source(source: &AudioSource) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
+pub fn create_decoder_from_source(
+    source: &AudioSource,
+) -> AudioDecoderResult<Box<dyn AudioDecoder>> {
     match source {
         AudioSource::File(path) => create_decoder(path),
         #[cfg(feature = "streaming")]
@@ -195,11 +197,7 @@ pub fn create_decoder_from_source(source: &AudioSource) -> AudioDecoderResult<Bo
                 hint.with_extension(&detected);
             }
 
-            let decoder = SymphoniaDecoder::from_media_source(
-                Box::new(mpd_source),
-                hint,
-                url,
-            )?;
+            let decoder = SymphoniaDecoder::from_media_source(Box::new(mpd_source), hint, url)?;
             Ok(Box::new(decoder))
         }
         #[cfg(feature = "streaming")]
@@ -221,11 +219,7 @@ pub fn create_decoder_from_source(source: &AudioSource) -> AudioDecoderResult<Bo
                 hint.with_extension(&detected);
             }
 
-            let decoder = SymphoniaDecoder::from_media_source(
-                Box::new(http_source),
-                hint,
-                url,
-            )?;
+            let decoder = SymphoniaDecoder::from_media_source(Box::new(http_source), hint, url)?;
             Ok(Box::new(decoder))
         }
         #[cfg(not(feature = "streaming"))]

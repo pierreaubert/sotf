@@ -316,9 +316,13 @@ impl ManagerThread {
         let thread_handle = std::thread::Builder::new()
             .name("manager".to_string())
             .spawn(move || {
-                if let Err(e) =
-                    run_manager_thread(config, command_rx, response_tx, state_clone.clone(), cache_clone)
-                {
+                if let Err(e) = run_manager_thread(
+                    config,
+                    command_rx,
+                    response_tx,
+                    state_clone.clone(),
+                    cache_clone,
+                ) {
                     log::error!("[Manager Thread] Initialization failed: {}", e);
                     // Store the error in the shared state so callers can see it
                     // via get_engine_state() even after the thread exits
@@ -715,7 +719,10 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             // audio in the ring buffer gets played to hardware first.
         }
         ThreadEvent::DecoderGaplessTransition(source) => {
-            log::info!("[Manager Thread] Gapless transition to: {}", source.display_name());
+            log::info!(
+                "[Manager Thread] Gapless transition to: {}",
+                source.display_name()
+            );
             let mut new_state = (**state.load()).clone();
             new_state.current_file = source.as_path().map(|p| p.to_path_buf());
             new_state.current_source = Some(source);
@@ -778,12 +785,11 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
                 // is ahead of actual playback by the total pipeline latency.
                 // When processing is bypassed, audio passes through without
                 // plugin processing, so effective latency is 0.
-                let latency_sec =
-                    if new_state.sample_rate > 0 && !new_state.processing_bypassed {
-                        new_state.plugin_latency_samples as f64 / new_state.sample_rate as f64
-                    } else {
-                        0.0
-                    };
+                let latency_sec = if new_state.sample_rate > 0 && !new_state.processing_bypassed {
+                    new_state.plugin_latency_samples as f64 / new_state.sample_rate as f64
+                } else {
+                    0.0
+                };
                 new_state.position = (position - latency_sec).max(0.0);
                 state.store(Arc::new(new_state));
             }
@@ -795,8 +801,8 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             // Adjust displayed position to compensate for the latency delta,
             // preventing a visible position jump when plugins change mid-stream.
             if new_state.sample_rate > 0 && old_latency != latency_samples {
-                let delta_sec = (latency_samples as f64 - old_latency as f64)
-                    / new_state.sample_rate as f64;
+                let delta_sec =
+                    (latency_samples as f64 - old_latency as f64) / new_state.sample_rate as f64;
                 new_state.position = (new_state.position - delta_sec).max(0.0);
             }
             state.store(Arc::new(new_state));
@@ -1206,10 +1212,7 @@ fn apply_plugin_graph_update(
         .map_err(|_| ConfigError::ChannelDisconnected)?;
 
     // Wait for ACK from processing thread
-    match wait_for_processing_ack(
-        processing,
-        std::time::Duration::from_millis(5000),
-    ) {
+    match wait_for_processing_ack(processing, std::time::Duration::from_millis(5000)) {
         Ok(()) => {
             // Update state with new channel count
             let mut new_state = (**state.load()).clone();
@@ -1423,7 +1426,11 @@ fn handle_command(
             }
         }
         ManagerCommand::PlayAt(source, position) => {
-            log::debug!("[Manager Thread] PlayAt: {} at {:.2}s", source.display_name(), position);
+            log::debug!(
+                "[Manager Thread] PlayAt: {} at {:.2}s",
+                source.display_name(),
+                position
+            );
 
             // Send to decoder
             if let Err(e) = decoder.send_command(DecoderCommand::PlayAt(source.clone(), position)) {
@@ -2115,10 +2122,7 @@ mod tests {
 
         let s = state.load();
         // Warning should record the error message...
-        assert_eq!(
-            s.last_error.as_deref(),
-            Some("channel rebuild fallback")
-        );
+        assert_eq!(s.last_error.as_deref(), Some("channel rebuild fallback"));
         // ...but NOT change playback state to Stopped
         assert_eq!(s.playback_state, PlaybackState::Playing);
     }

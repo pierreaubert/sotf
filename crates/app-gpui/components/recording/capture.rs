@@ -1075,7 +1075,11 @@ impl PlayerView {
 
         // Ensure the recording directory exists before writing WAV/CSV files
         if let Err(e) = std::fs::create_dir_all(&recording_dir) {
-            log::error!("Failed to create recording directory {:?}: {}", recording_dir, e);
+            log::error!(
+                "Failed to create recording directory {:?}: {}",
+                recording_dir,
+                e
+            );
             self.state.update(cx, |state, _| {
                 state.app.measurement_state.recording_state.status_message =
                     format!("Cannot create recording directory: {}", e);
@@ -1240,8 +1244,8 @@ impl PlayerView {
         let mic_calibrations: Vec<Option<String>> =
             params.mics.iter().map(|m| m.calibration.clone()).collect();
 
-        let state_entity = self.state.clone();
-        let view_entity = cx.entity().clone();
+        let weak_state = self.state.downgrade();
+        let weak_view = cx.weak_entity();
         let reference_signal = signal.clone();
         let temp_wav_path = temp_wav.path().to_path_buf();
         let mics = params.mics.clone();
@@ -1323,6 +1327,7 @@ impl PlayerView {
                 Err("Recording not available on iOS".to_string());
 
             // Update state with results
+            let Some(state_entity) = weak_state.upgrade() else { return; };
             let (should_auto_continue, next_channel_idx) =
                 state_entity.update(&mut cx.clone(), |state, _| {
                     let should_continue = match results {
@@ -1500,12 +1505,12 @@ impl PlayerView {
             if should_auto_continue {
                 if let Some(next_idx) = next_channel_idx {
                     log::info!("Auto-recording: starting next speaker at idx {}", next_idx);
-                    view_entity.update(cx, |view, cx| {
+                    let _ = weak_view.update(cx, |view, cx| {
                         view.start_recording_channel(next_idx, cx);
                     });
                 } else {
                     log::info!("Auto-recording complete - all channels recorded, saving JSON");
-                    view_entity.update(cx, |view, cx| {
+                    let _ = weak_view.update(cx, |view, cx| {
                         view.state.update(cx, |state, _| {
                             state
                                 .app
@@ -1769,7 +1774,7 @@ impl PlayerView {
         {
             use crate::app::types::RoomEqMeasurementsFile;
 
-            let state_entity = self.state.clone();
+            let weak_state = self.state.downgrade();
 
             cx.spawn(async move |_, cx| {
                 // Open file dialog
@@ -1783,15 +1788,17 @@ impl PlayerView {
                     let file_dir = file_path.parent().map(|p| p.to_path_buf());
 
                     // Get file size
-                    let file_size =
-                        std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+                    let file_size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        return;
+                    };
 
                     // Read file content
                     match std::fs::read_to_string(&file_path) {
                         Ok(json) => {
                             // Check if this is a legacy format (large file with inline data)
-                            let needs_migration =
-                                Self::check_needs_migration(&json, file_size);
+                            let needs_migration = Self::check_needs_migration(&json, file_size);
 
                             if needs_migration {
                                 // Show migration modal instead of loading directly
@@ -1801,10 +1808,9 @@ impl PlayerView {
                                 );
 
                                 // Count channels for display
-                                let channel_count =
-                                    RoomEqMeasurementsFile::from_json_str(&json)
-                                        .map(|m| m.channels.len())
-                                        .unwrap_or(0);
+                                let channel_count = RoomEqMeasurementsFile::from_json_str(&json)
+                                    .map(|m| m.channels.len())
+                                    .unwrap_or(0);
 
                                 state_entity.update(&mut cx.clone(), |state, _| {
                                     let rec_state =

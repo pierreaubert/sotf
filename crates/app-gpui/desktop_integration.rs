@@ -31,8 +31,8 @@ fn try_install(icon_png: Option<&[u8]>) -> Result<(), String> {
     let desktop_path = apps_dir.join(DESKTOP_FILENAME);
     let icon_path = icons_dir.join(ICON_FILENAME);
 
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("cannot determine binary path: {}", e))?;
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("cannot determine binary path: {}", e))?;
     let exe_str = exe_path.display().to_string();
 
     // Check if already installed with the current binary path

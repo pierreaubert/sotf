@@ -252,7 +252,10 @@ mod tests {
         assert_eq!(app.configure_sub_screen, ConfigureSubScreen::SpinoramaEq);
 
         send_keys(&mut app, &[KeyCode::Right]);
-        assert_eq!(app.configure_sub_screen, ConfigureSubScreen::FederationSources);
+        assert_eq!(
+            app.configure_sub_screen,
+            ConfigureSubScreen::FederationSources
+        );
 
         send_keys(&mut app, &[KeyCode::Right]);
         assert_eq!(app.configure_sub_screen, ConfigureSubScreen::Servers);
@@ -779,7 +782,12 @@ mod tests {
     fn sequence_tab_through_all_screens() {
         let mut app = app_on_library();
 
-        let expected = [Screen::Queue, Screen::Playlists, Screen::Plugins, Screen::Devices];
+        let expected = [
+            Screen::Queue,
+            Screen::Playlists,
+            Screen::Plugins,
+            Screen::Devices,
+        ];
 
         for &expected_screen in &expected {
             send_keys(&mut app, &[KeyCode::Tab]);
@@ -884,7 +892,9 @@ mod tests {
         let mut app = make_app();
         app.input_mode = InputMode::ChannelConflict;
         app.channel_conflict_selection = 0;
-        app.channel_conflict_path = Some(sotf_audio::decoder::AudioSource::File(std::path::PathBuf::from("/fake/track.flac")));
+        app.channel_conflict_path = Some(sotf_audio::decoder::AudioSource::File(
+            std::path::PathBuf::from("/fake/track.flac"),
+        ));
         app.channel_conflict_track_channels = 6;
         app.channel_conflicts = vec![ChannelConflict {
             index: 0,

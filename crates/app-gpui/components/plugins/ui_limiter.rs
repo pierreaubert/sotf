@@ -88,8 +88,8 @@ pub fn render_limiter_plugin(
         true, // is_limiter
         TRANSFER_CURVE_SIZE,
         input_level,
-        0,    // threshold param idx
-        0,    // ratio param idx (unused for limiter)
+        0, // threshold param idx
+        0, // ratio param idx (unused for limiter)
         pk(LM, "threshold").min_f64(),
         pk(LM, "threshold").max_f64(),
         1.0,  // ratio min (unused)

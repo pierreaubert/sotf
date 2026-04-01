@@ -43,8 +43,15 @@ impl MusicDatabase {
 
         let mut sources = Vec::new();
         for row in rows {
-            let (source_id, display_name, priority, is_enabled, config_json, source_type, is_available) =
-                row.map_err(|e| format!("row: {e}"))?;
+            let (
+                source_id,
+                display_name,
+                priority,
+                is_enabled,
+                config_json,
+                source_type,
+                is_available,
+            ) = row.map_err(|e| format!("row: {e}"))?;
 
             let connection = if let Some(json) = &config_json {
                 serde_json::from_str(json)

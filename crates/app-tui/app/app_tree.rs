@@ -1,7 +1,6 @@
 use super::app_impl::App;
 use super::types::{LibraryViewMode, QueueEntry, QueueItem, TreeItem};
 
-
 impl App {
     /// Get the flattened tree items for rendering (returns artist names or album indices)
     /// Respects search query and channel filter

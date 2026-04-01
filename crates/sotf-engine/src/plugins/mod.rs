@@ -6,12 +6,12 @@ pub mod matrix;
 pub mod utility;
 
 // Re-export main items from submodules
+pub use chain::PluginChain;
 pub use eq::EQFilter;
 pub use matrix::{
     apply_matrix_preset, available_matrix_presets, detect_matrix_preset, resize_matrix,
     upmixer_output_channels,
 };
-pub use chain::PluginChain;
 pub use utility::{
     db_to_linear, get_channel_label, get_channel_label_from_config, linear_to_db_string,
     plugins_to_path_config_json, preset_file_to_path_config_json,
@@ -238,7 +238,9 @@ impl PluginType {
             Self::Saturation => "Harmonic saturation / exciter with multiple modes",
             Self::DynamicEq => "Frequency-selective dynamics (hybrid EQ + compressor)",
             Self::LinearPhaseEq => "Parametric EQ with linear-phase FIR convolution",
-            Self::SpectralCompressor => "Per-bin FFT dynamics processor for surgical spectral compression",
+            Self::SpectralCompressor => {
+                "Per-bin FFT dynamics processor for surgical spectral compression"
+            }
         }
     }
 
@@ -340,40 +342,40 @@ impl PluginType {
 
 // Import param_specs for plugin defaults and serde_param_default! macro
 use sotf_plugins::param_specs::ab_compare as ab_compare_specs;
-use sotf_plugins::param_specs::band_merge as band_merge_specs;
-use sotf_plugins::param_specs::band_split as band_split_specs;
-use sotf_plugins::param_specs::binaural as binaural_specs;
-use sotf_plugins::param_specs::channel_mute_solo as cms_specs;
 use sotf_plugins::param_specs::aec as aec_specs;
 use sotf_plugins::param_specs::ambisonics as ambisonics_specs;
+use sotf_plugins::param_specs::band_merge as band_merge_specs;
+use sotf_plugins::param_specs::band_split as band_split_specs;
 use sotf_plugins::param_specs::beamformer as beamformer_specs;
+use sotf_plugins::param_specs::binaural as binaural_specs;
+use sotf_plugins::param_specs::channel_mute_solo as cms_specs;
 use sotf_plugins::param_specs::compressor as compressor_specs;
 use sotf_plugins::param_specs::convolution as convolution_specs;
 use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
 use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::delay as delay_specs;
-use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
+use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
 use sotf_plugins::param_specs::find_by_key as pk;
 // fletcher_munson specs removed — merged into loudness_compensation
 use sotf_plugins::param_specs::gain as gain_specs;
 use sotf_plugins::param_specs::gate as gate_specs;
 use sotf_plugins::param_specs::limiter as limiter_specs;
+use sotf_plugins::param_specs::linear_phase_eq as linear_phase_eq_specs;
 use sotf_plugins::param_specs::loudness_compensation as lc_specs;
 use sotf_plugins::param_specs::matrix as matrix_specs;
 use sotf_plugins::param_specs::mono_to_stereo as mono_to_stereo_specs;
 use sotf_plugins::param_specs::multiband_compressor as mb_compressor_specs;
 use sotf_plugins::param_specs::multiband_expander as mb_expander_specs;
 use sotf_plugins::param_specs::pnd as pnd_specs;
-use sotf_plugins::param_specs::spectrum as spectrum_specs;
-use sotf_plugins::param_specs::upmixer as upmixer_specs;
 use sotf_plugins::param_specs::saturation as saturation_specs;
 use sotf_plugins::param_specs::spectral_compressor as spectral_compressor_specs;
+use sotf_plugins::param_specs::spectrum as spectrum_specs;
 use sotf_plugins::param_specs::stereo_imager as stereo_imager_specs;
 use sotf_plugins::param_specs::transient_shaper as transient_shaper_specs;
-use sotf_plugins::param_specs::linear_phase_eq as linear_phase_eq_specs;
+use sotf_plugins::param_specs::upmixer as upmixer_specs;
 use sotf_plugins::param_specs::xtc as xtc_specs;
 
 sotf_plugins::serde_param_default! {
@@ -463,27 +465,69 @@ sotf_plugins::serde_param_default! {
 
 // Hardcoded defaults for backward-compat FletcherMunson deserialization.
 // These match the old sotf-plugin-fletcher-munson defaults.
-fn default_fm_reference_level_db() -> f64 { -14.0 }
-fn default_fm_enabled() -> bool { true }
-fn default_fm_smoothing_ms() -> f64 { 30.0 }
-fn default_fm_auto_gain_max_db() -> f64 { 12.0 }
-fn default_fm_auto_gain_smoothing_ms() -> f64 { 100.0 }
-fn default_fm_band1_freq() -> f64 { 60.0 }
-fn default_fm_band1_q() -> f64 { 0.5 }
-fn default_fm_band1_max_gain() -> f64 { 15.0 }
-fn default_fm_band1_slope() -> f64 { 0.6 }
-fn default_fm_band2_freq() -> f64 { 250.0 }
-fn default_fm_band2_q() -> f64 { 0.707 }
-fn default_fm_band2_max_gain() -> f64 { 8.0 }
-fn default_fm_band2_slope() -> f64 { 0.4 }
-fn default_fm_band3_freq() -> f64 { 3500.0 }
-fn default_fm_band3_q() -> f64 { 1.0 }
-fn default_fm_band3_max_gain() -> f64 { 4.0 }
-fn default_fm_band3_slope() -> f64 { 0.2 }
-fn default_fm_band4_freq() -> f64 { 12000.0 }
-fn default_fm_band4_q() -> f64 { 0.707 }
-fn default_fm_band4_max_gain() -> f64 { 6.0 }
-fn default_fm_band4_slope() -> f64 { 0.3 }
+fn default_fm_reference_level_db() -> f64 {
+    -14.0
+}
+fn default_fm_enabled() -> bool {
+    true
+}
+fn default_fm_smoothing_ms() -> f64 {
+    30.0
+}
+fn default_fm_auto_gain_max_db() -> f64 {
+    12.0
+}
+fn default_fm_auto_gain_smoothing_ms() -> f64 {
+    100.0
+}
+fn default_fm_band1_freq() -> f64 {
+    60.0
+}
+fn default_fm_band1_q() -> f64 {
+    0.5
+}
+fn default_fm_band1_max_gain() -> f64 {
+    15.0
+}
+fn default_fm_band1_slope() -> f64 {
+    0.6
+}
+fn default_fm_band2_freq() -> f64 {
+    250.0
+}
+fn default_fm_band2_q() -> f64 {
+    0.707
+}
+fn default_fm_band2_max_gain() -> f64 {
+    8.0
+}
+fn default_fm_band2_slope() -> f64 {
+    0.4
+}
+fn default_fm_band3_freq() -> f64 {
+    3500.0
+}
+fn default_fm_band3_q() -> f64 {
+    1.0
+}
+fn default_fm_band3_max_gain() -> f64 {
+    4.0
+}
+fn default_fm_band3_slope() -> f64 {
+    0.2
+}
+fn default_fm_band4_freq() -> f64 {
+    12000.0
+}
+fn default_fm_band4_q() -> f64 {
+    0.707
+}
+fn default_fm_band4_max_gain() -> f64 {
+    6.0
+}
+fn default_fm_band4_slope() -> f64 {
+    0.3
+}
 
 sotf_plugins::serde_param_default! {
     limiter_specs::PARAMS;
@@ -3569,4 +3613,3 @@ impl Plugin {
 }
 
 // ============================================================================
-

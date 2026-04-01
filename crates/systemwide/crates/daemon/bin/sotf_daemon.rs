@@ -325,12 +325,20 @@ impl AudioDaemon {
 
                 // Store with ASIO prefix preserved so playback thread selects the right host
                 let stored_name = if is_asio {
-                    format!("{}{}", sotf_audio::devices::ASIO_DEVICE_PREFIX, resolved_name)
+                    format!(
+                        "{}{}",
+                        sotf_audio::devices::ASIO_DEVICE_PREFIX,
+                        resolved_name
+                    )
                 } else {
                     resolved_name.clone()
                 };
                 *self.selected_device.lock() = Some(stored_name);
-                log::info!("Output device set to: {} (matched from '{}')", resolved_name, device);
+                log::info!(
+                    "Output device set to: {} (matched from '{}')",
+                    resolved_name,
+                    device
+                );
 
                 let manager = self.manager.lock();
                 let state = manager.get_state();
@@ -754,7 +762,8 @@ impl AudioDaemon {
         });
 
         match result {
-            driver_common::ConfigResult::Accepted | driver_common::ConfigResult::Negotiated { .. } => {
+            driver_common::ConfigResult::Accepted
+            | driver_common::ConfigResult::Negotiated { .. } => {
                 log::info!("Sample rate set to {}Hz via driver", rate);
                 Response::ok(serde_json::json!({ "sample_rate": rate }))
             }
@@ -779,7 +788,8 @@ impl AudioDaemon {
         });
 
         match result {
-            driver_common::ConfigResult::Accepted | driver_common::ConfigResult::Negotiated { .. } => {
+            driver_common::ConfigResult::Accepted
+            | driver_common::ConfigResult::Negotiated { .. } => {
                 log::info!("Buffer frames set to {} via driver", frames);
                 Response::ok(serde_json::json!({ "buffer_frames": frames }))
             }
@@ -826,9 +836,7 @@ impl AudioDaemon {
                     }
 
                     let response = match serde_json::from_str::<Command>(trimmed) {
-                        Ok(cmd) => {
-                            self.runtime.block_on(self.handle_command(cmd))
-                        }
+                        Ok(cmd) => self.runtime.block_on(self.handle_command(cmd)),
                         Err(e) => Response::err(format!("Invalid command: {}", e)),
                     };
 
@@ -1029,15 +1037,24 @@ fn handle_driver_config_change(
     if requested_rate == 0 {
         log::warn!("Invalid config request: sample_rate=0, ignoring");
         driver_manager.lock().acknowledge_config_change(
-            DriverConfig { sample_rate: 48000, buffer_frames: requested_frames },
+            DriverConfig {
+                sample_rate: 48000,
+                buffer_frames: requested_frames,
+            },
             driver_common::ConfigResult::Error("Invalid sample rate".to_string()),
         );
         return;
     }
     if requested_frames == 0 || requested_frames > 65536 {
-        log::warn!("Invalid config request: buffer_frames={}, out of range", requested_frames);
+        log::warn!(
+            "Invalid config request: buffer_frames={}, out of range",
+            requested_frames
+        );
         driver_manager.lock().acknowledge_config_change(
-            DriverConfig { sample_rate: requested_rate, buffer_frames: 512 },
+            DriverConfig {
+                sample_rate: requested_rate,
+                buffer_frames: 512,
+            },
             driver_common::ConfigResult::Error("Invalid buffer frames".to_string()),
         );
         return;
@@ -1071,7 +1088,11 @@ fn handle_driver_config_change(
             driver_manager.lock().set_engine_ready(true);
 
             let result = if negotiated {
-                log::info!("Config negotiated: requested {}Hz, using {}Hz", requested_rate, actual_rate);
+                log::info!(
+                    "Config negotiated: requested {}Hz, using {}Hz",
+                    requested_rate,
+                    actual_rate
+                );
                 driver_common::ConfigResult::Negotiated {
                     actual_rate,
                     actual_frames: requested_frames,
@@ -1081,15 +1102,25 @@ fn handle_driver_config_change(
             };
 
             driver_manager.lock().acknowledge_config_change(
-                DriverConfig { sample_rate: actual_rate, buffer_frames: requested_frames },
+                DriverConfig {
+                    sample_rate: actual_rate,
+                    buffer_frames: requested_frames,
+                },
                 result,
             );
-            log::info!("Config accepted: {}Hz, {} frames, engine_ready=true", actual_rate, requested_frames);
+            log::info!(
+                "Config accepted: {}Hz, {} frames, engine_ready=true",
+                actual_rate,
+                requested_frames
+            );
         }
         Err(e) => {
             log::error!("Pipeline reconfiguration failed: {}", e);
             driver_manager.lock().acknowledge_config_change(
-                DriverConfig { sample_rate: actual_rate, buffer_frames: requested_frames },
+                DriverConfig {
+                    sample_rate: actual_rate,
+                    buffer_frames: requested_frames,
+                },
                 driver_common::ConfigResult::Error(e),
             );
         }
@@ -1359,11 +1390,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("   Driver:             {}", status.driver_name);
                 println!(
                     "   Platform supported: {}",
-                    if status.platform_supported { "Yes" } else { "No" }
+                    if status.platform_supported {
+                        "Yes"
+                    } else {
+                        "No"
+                    }
                 );
                 println!(
                     "   Driver installed:   {}",
-                    if status.driver_installed { "Yes" } else { "No (optional)" }
+                    if status.driver_installed {
+                        "Yes"
+                    } else {
+                        "No (optional)"
+                    }
                 );
                 println!(
                     "   Capture active:     {}",

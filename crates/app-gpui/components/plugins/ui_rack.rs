@@ -135,7 +135,9 @@ fn plugin_description(plugin_type: &PluginType) -> &'static str {
         PluginType::Saturation => "Harmonic saturation / exciter with multiple modes",
         PluginType::DynamicEq => "Frequency-selective dynamics (hybrid EQ + compressor)",
         PluginType::LinearPhaseEq => "Parametric EQ with linear-phase FIR convolution",
-        PluginType::SpectralCompressor => "Per-bin FFT dynamics processor for surgical spectral compression",
+        PluginType::SpectralCompressor => {
+            "Per-bin FFT dynamics processor for surgical spectral compression"
+        }
     }
 }
 
@@ -247,31 +249,34 @@ impl PlayerView {
                 }),
             )
             // Contextual hint banner (dismissible, only show Studio-relevant hints)
-            .when_some(current_hint.filter(|h| {
-                matches!(
-                    h.hint_id,
-                    crate::components::dialogs::tutorial::HintId::StudioFirstVisit
-                        | crate::components::dialogs::tutorial::HintId::FirstPluginAdded
-                )
-            }), |d, hint| {
-                d.child(
-                    div()
-                        .id("hint-banner")
-                        .cursor_pointer()
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.dismiss_hint();
-                                });
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            crate::components::dialogs::tutorial::render_hint_banner(&hint, &theme),
-                        ),
-                )
-            })
+            .when_some(
+                current_hint.filter(|h| {
+                    matches!(
+                        h.hint_id,
+                        crate::components::dialogs::tutorial::HintId::StudioFirstVisit
+                            | crate::components::dialogs::tutorial::HintId::FirstPluginAdded
+                    )
+                }),
+                |d, hint| {
+                    d.child(
+                        div()
+                            .id("hint-banner")
+                            .cursor_pointer()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.dismiss_hint();
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            .child(crate::components::dialogs::tutorial::render_hint_banner(
+                                &hint, &theme,
+                            )),
+                    )
+                },
+            )
             // Plugin Rack Strip (top) - only show if not collapsed
             .when(!self.state.read(cx).app.rack_detail_collapsed, |d| {
                 d.child(self.render_plugin_rack(cx))
@@ -305,7 +310,15 @@ impl PlayerView {
 
     /// Render the horizontal plugin rack strip
     fn render_plugin_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (plugins_data, selected_idx, theme, preset_open, preset_list, last_loaded_preset, has_pending_update) = {
+        let (
+            plugins_data,
+            selected_idx,
+            theme,
+            preset_open,
+            preset_list,
+            last_loaded_preset,
+            has_pending_update,
+        ) = {
             let state = self.state.read(cx);
             let chain = &state.app.plugin_state.chain;
             let plugins: Vec<_> = chain

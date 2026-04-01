@@ -212,7 +212,8 @@ pub struct App {
 
     // Federation & Server configuration
     pub federation_sources: Vec<sotf_audio_player::federation_config::FederationSourceEntry>,
-    pub federation_source_statuses: HashMap<String, sotf_audio_player::federation_config::ConnectionStatus>,
+    pub federation_source_statuses:
+        HashMap<String, sotf_audio_player::federation_config::ConnectionStatus>,
     pub server_config: sotf_audio_player::federation_config::ServerConfig,
     /// Receiver for background federation scan messages (progress + final result).
     pub federation_scan_receiver: Option<std::sync::mpsc::Receiver<FederationScanMessage>>,
@@ -221,7 +222,8 @@ pub struct App {
     /// Current federation scan progress (for rendering the progress bar).
     pub federation_scan_progress: Option<FederationScanProgress>,
     /// Receiver for Cast device discovery results.
-    pub cast_discovery_receiver: Option<std::sync::mpsc::Receiver<Vec<crate::app::state::audio_device::CastDeviceInfo>>>,
+    pub cast_discovery_receiver:
+        Option<std::sync::mpsc::Receiver<Vec<crate::app::state::audio_device::CastDeviceInfo>>>,
 }
 
 /// Progress state shown in the UI during a federation scan.
@@ -239,7 +241,10 @@ pub enum FederationScanMessage {
     /// Fetched album list from provider — now starting merge.
     FetchedAlbums { total: usize },
     /// Progress update after merging an album.
-    Progress { albums_merged: usize, tracks_merged: usize },
+    Progress {
+        albums_merged: usize,
+        tracks_merged: usize,
+    },
     /// Scan completed (or failed).
     Done(sotf_audio_player::federation_scan::FederationScanResult),
 }
@@ -960,7 +965,6 @@ impl App {
         &mut self,
         config: crate::config::Config,
     ) -> Result<LayoutState, Box<dyn std::error::Error>> {
-
         // Restore directories
         self.library_state.library.directories = config.directories;
 

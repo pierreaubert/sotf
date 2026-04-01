@@ -182,15 +182,27 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                 // Sanitize name for filename (replace non-alphanumeric with _)
                 let safe_name: String = playlist_name
                     .chars()
-                    .map(|c| if c.is_alphanumeric() || c == '-' || c == ' ' { c } else { '_' })
+                    .map(|c| {
+                        if c.is_alphanumeric() || c == '-' || c == ' ' {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
                     .collect();
                 path.join(format!("{}.m3u8", safe_name.trim()))
             } else {
                 path.clone()
             };
-            match app.playlist_controller.export_playlist(&app.library, &export_path) {
+            match app
+                .playlist_controller
+                .export_playlist(&app.library, &export_path)
+            {
                 Ok(()) => {
-                    let name = export_path.file_name().unwrap_or_default().to_string_lossy();
+                    let name = export_path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy();
                     app.status_message = Some(format!("Exported to '{}'", name));
                 }
                 Err(e) => app.status_message = Some(format!("Export error: {}", e)),

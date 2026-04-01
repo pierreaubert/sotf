@@ -1400,7 +1400,10 @@ mod tests {
 
     #[test]
     fn test_strip_asio_prefix() {
-        assert_eq!(strip_asio_prefix("ASIO:Focusrite USB ASIO"), "Focusrite USB ASIO");
+        assert_eq!(
+            strip_asio_prefix("ASIO:Focusrite USB ASIO"),
+            "Focusrite USB ASIO"
+        );
         assert_eq!(strip_asio_prefix("ASIO:"), "");
         assert_eq!(strip_asio_prefix("Focusrite"), "Focusrite");
         assert_eq!(strip_asio_prefix(""), "");

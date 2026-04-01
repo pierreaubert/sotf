@@ -8,9 +8,11 @@ pub mod source;
 pub mod stream;
 
 // Re-export the main API
-pub use core::{AudioDecoder, AudioSpec, DecodedAudio, create_decoder, create_decoder_from_source, probe_file};
-pub use pcm_reader::PcmDecoder;
+pub use core::{
+    AudioDecoder, AudioSpec, DecodedAudio, create_decoder, create_decoder_from_source, probe_file,
+};
 pub use error::{AudioDecoderError, AudioDecoderResult};
 pub use formats::AudioFormat;
+pub use pcm_reader::PcmDecoder;
 pub use source::{AudioSource, ServiceId};
 pub use stream::{AudioStream, StreamConfig, StreamEvent, StreamPosition, StreamState};

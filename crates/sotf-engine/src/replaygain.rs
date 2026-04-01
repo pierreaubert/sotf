@@ -42,9 +42,10 @@ pub fn analyze_file_limited<P: AsRef<Path>>(
             .map_err(AudioDecoderError::DecodingFailed)?;
         total_samples += decoded.samples.len();
         if let Some(limit) = max_samples
-            && total_samples >= limit {
-                break;
-            }
+            && total_samples >= limit
+        {
+            break;
+        }
     }
 
     analyzer

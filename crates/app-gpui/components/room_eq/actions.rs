@@ -66,12 +66,7 @@ impl PlayerView {
                     .room_eq_state
                     .channel_measurements
                     .iter()
-                    .map(|m| {
-                        (
-                            m.channel_name.clone(),
-                            1 + m.multi_mic_measurements.len(),
-                        )
-                    })
+                    .map(|m| (m.channel_name.clone(), 1 + m.multi_mic_measurements.len()))
                     .collect();
                 // Auto-enable multi-measurement optimization
                 if !state
@@ -160,8 +155,8 @@ impl PlayerView {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             use crate::app::types::{
-                ChannelMeasurement, RoomEqDataSource, RoomEqMeasurementsFile,
-                RoomEqSpeakerConfig, SpeakerConfigType,
+                ChannelMeasurement, RoomEqDataSource, RoomEqMeasurementsFile, RoomEqSpeakerConfig,
+                SpeakerConfigType,
             };
 
             let state_entity = self.state.clone();

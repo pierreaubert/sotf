@@ -1,9 +1,11 @@
 use super::PlayerCommand;
 use crate::app::{
-    App, FederationEditState, FederationMode, InputMode, ADD_SOURCE_TYPE_IDX, SOURCE_TYPE_NAMES,
+    ADD_SOURCE_TYPE_IDX, App, FederationEditState, FederationMode, InputMode, SOURCE_TYPE_NAMES,
 };
 use crossterm::event::{KeyCode, KeyEvent};
-use sotf_audio_player::federation_config::{ConnectionStatus, FederationSourceEntry, SourceConnectionConfig};
+use sotf_audio_player::federation_config::{
+    ConnectionStatus, FederationSourceEntry, SourceConnectionConfig,
+};
 
 pub(super) fn handle_federation_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match app.federation_state.mode {
@@ -211,7 +213,9 @@ fn test_federation_source(app: &mut App) {
     }
 
     let source_id = source.source_id.clone();
-    state.statuses.insert(source_id.clone(), ConnectionStatus::Testing);
+    state
+        .statuses
+        .insert(source_id.clone(), ConnectionStatus::Testing);
 
     let (tx, rx) = std::sync::mpsc::channel();
     app.federation_test_receiver = Some(rx);
@@ -253,9 +257,7 @@ fn scan_federation_source(app: &mut App) {
         .expect("spawn federation scan thread");
 }
 
-async fn do_federation_scan(
-    source: &FederationSourceEntry,
-) -> crate::app::FederationScanResult {
+async fn do_federation_scan(source: &FederationSourceEntry) -> crate::app::FederationScanResult {
     use sotf_audio_player::federation_scan;
 
     let source_id = source.source_id.clone();
@@ -263,12 +265,14 @@ async fn do_federation_scan(
 
     let albums = match federation_scan::fetch_source_albums(source).await {
         Ok(albums) => albums,
-        Err(result) => return crate::app::FederationScanResult {
-            source_id: result.source_id,
-            albums: result.albums,
-            tracks: result.tracks,
-            error: result.error,
-        },
+        Err(result) => {
+            return crate::app::FederationScanResult {
+                source_id: result.source_id,
+                albums: result.albums,
+                tracks: result.tracks,
+                error: result.error,
+            };
+        }
     };
 
     let result = federation_scan::merge_albums_to_db(&source_id, &albums, &cancel, None);
@@ -301,23 +305,32 @@ pub fn poll_federation_scan(app: &mut App) -> bool {
         if let Some(ref err) = result.error {
             app.status_message = Some(format!("Federation scan failed: {err}"));
             // Mark source as unavailable
-            if let Some(source) = app.federation_state.sources.iter_mut().find(|s| s.source_id == result.source_id) {
+            if let Some(source) = app
+                .federation_state
+                .sources
+                .iter_mut()
+                .find(|s| s.source_id == result.source_id)
+            {
                 source.is_available = Some(false);
             }
             if let Some(db) = app.library.get_database() {
                 let _ = db.set_source_availability(&result.source_id, false);
             }
-            app.federation_state.statuses.insert(
-                result.source_id,
-                ConnectionStatus::Error(err.clone()),
-            );
+            app.federation_state
+                .statuses
+                .insert(result.source_id, ConnectionStatus::Error(err.clone()));
         } else {
             app.status_message = Some(format!(
                 "Scan complete: {} albums, {} tracks merged.",
                 result.albums, result.tracks
             ));
             // Mark source as available
-            if let Some(source) = app.federation_state.sources.iter_mut().find(|s| s.source_id == result.source_id) {
+            if let Some(source) = app
+                .federation_state
+                .sources
+                .iter_mut()
+                .find(|s| s.source_id == result.source_id)
+            {
                 source.is_available = Some(true);
             }
             if let Some(db) = app.library.get_database() {
@@ -363,7 +376,12 @@ pub fn poll_federation_test(app: &mut App) -> bool {
                 _ => false,
             };
 
-            if let Some(src) = app.federation_state.sources.iter_mut().find(|s| s.source_id == sid) {
+            if let Some(src) = app
+                .federation_state
+                .sources
+                .iter_mut()
+                .find(|s| s.source_id == sid)
+            {
                 src.is_available = Some(available);
             }
             if let Some(db) = app.library.get_database() {
@@ -380,4 +398,3 @@ pub fn poll_federation_test(app: &mut App) -> bool {
         }
     }
 }
-

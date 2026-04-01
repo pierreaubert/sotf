@@ -55,7 +55,11 @@ impl ChannelRenderer {
         // Build channel map: identity for now (assumes matching order)
         // Real implementation would map IAMF channel order to SotF speaker indices
         let mut channel_map = vec![usize::MAX; layer_channels];
-        for (i, slot) in channel_map.iter_mut().enumerate().take(layer_channels.min(target_channels)) {
+        for (i, slot) in channel_map
+            .iter_mut()
+            .enumerate()
+            .take(layer_channels.min(target_channels))
+        {
             *slot = i;
         }
 

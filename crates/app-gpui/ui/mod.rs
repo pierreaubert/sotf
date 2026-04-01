@@ -280,9 +280,7 @@ impl PlayerView {
                                 Some(crate::app::ToastMessage::info(
                                     "Engine restarted, resuming playback",
                                 ));
-                        } else if let Some(_transition_source) =
-                            playback_state.gapless_transition
-                        {
+                        } else if let Some(_transition_source) = playback_state.gapless_transition {
                             // Gapless transition — engine already playing the new file,
                             // just advance the queue UI to match.
                             state.app.stop_track_tracking();
@@ -309,15 +307,12 @@ impl PlayerView {
                         {
                             let position = playback_state.position_secs;
                             let duration = state.app.playback.duration_secs;
-                            let near_end = duration > 0.0
-                                && position > 0.0
-                                && (duration - position) < 10.0;
+                            let near_end =
+                                duration > 0.0 && position > 0.0 && (duration - position) < 10.0;
 
-                            if near_end
-                                && let Some(next_track) = state.app.queue.peek_next_track()
+                            if near_end && let Some(next_track) = state.app.queue.peek_next_track()
                             {
-                                let next_ch =
-                                    next_track.channels.unwrap_or(2) as usize;
+                                let next_ch = next_track.channels.unwrap_or(2) as usize;
                                 let current_ch = state
                                     .app
                                     .playback
@@ -330,10 +325,7 @@ impl PlayerView {
 
                                 // Only gapless when channel count matches (engine constraint)
                                 if next_ch == current_ch {
-                                    let _ = state
-                                        .player
-                                        .lock()
-                                        .queue_next(next_track.path.clone());
+                                    let _ = state.player.lock().queue_next(next_track.path.clone());
                                 }
                             }
                         }
@@ -809,7 +801,10 @@ impl PlayerView {
     }
 
     /// Auto-advance variant: auto-suspends incompatible plugins without showing a dialog.
-    pub(crate) fn play_track_auto_advance(state: &mut AppState, source: sotf_audio::decoder::AudioSource) {
+    pub(crate) fn play_track_auto_advance(
+        state: &mut AppState,
+        source: sotf_audio::decoder::AudioSource,
+    ) {
         let track_channels = state
             .app
             .playback
@@ -1058,7 +1053,7 @@ impl PlayerView {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let plugin_idx = action.plugin_idx;
-            let state_entity = self.state.clone();
+            let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
                     .add_filter("SOFA Files", &["sofa"])
@@ -1067,6 +1062,9 @@ impl PlayerView {
                     .await;
 
                 if let Some(file) = file {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        return;
+                    };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
                         state.app.set_plugin_param_string(plugin_idx, 0, path);
@@ -1087,7 +1085,7 @@ impl PlayerView {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let plugin_idx = action.plugin_idx;
-            let state_entity = self.state.clone();
+            let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
                     .add_filter("Audio Files", &["wav", "flac", "aif", "aiff"])
@@ -1096,6 +1094,9 @@ impl PlayerView {
                     .await;
 
                 if let Some(file) = file {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        return;
+                    };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
                         state.app.set_plugin_param_string(plugin_idx, 0, path);
@@ -1117,7 +1118,7 @@ impl PlayerView {
         {
             let plugin_idx = action.plugin_idx;
             let path_id = action.path_id.clone();
-            let state_entity = self.state.clone();
+            let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
                     .add_filter("JSON Config Files", &["json"])
@@ -1125,36 +1126,39 @@ impl PlayerView {
                     .pick_file()
                     .await;
 
-            if let Some(file) = file {
-                let file_path = file.path().to_string_lossy().to_string();
-                // Read the JSON content from file (blocking I/O is fine here —
-                // config files are tiny and we're already in a spawned task)
-                match std::fs::read_to_string(&file_path) {
-                    Ok(content) => {
-                        // Validate it's valid JSON
-                        if serde_json::from_str::<serde_json::Value>(&content).is_ok() {
-                            let param_idx = if path_id == "a" { 9 } else { 10 };
-                            state_entity.update(&mut cx.clone(), |state, cx| {
-                                state
-                                    .app
-                                    .set_plugin_param_string(plugin_idx, param_idx, content);
-                                // Store the source file path for display
-                                if path_id == "a" {
-                                    state.app.plugin_state.ab_compare_file_a = Some(file_path);
-                                } else {
-                                    state.app.plugin_state.ab_compare_file_b = Some(file_path);
-                                }
-                                cx.notify();
-                            });
-                        } else {
-                            log::warn!("AB Compare: file is not valid JSON: {file_path}");
+                if let Some(file) = file {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        return;
+                    };
+                    let file_path = file.path().to_string_lossy().to_string();
+                    // Read the JSON content from file (blocking I/O is fine here —
+                    // config files are tiny and we're already in a spawned task)
+                    match std::fs::read_to_string(&file_path) {
+                        Ok(content) => {
+                            // Validate it's valid JSON
+                            if serde_json::from_str::<serde_json::Value>(&content).is_ok() {
+                                let param_idx = if path_id == "a" { 9 } else { 10 };
+                                state_entity.update(&mut cx.clone(), |state, cx| {
+                                    state
+                                        .app
+                                        .set_plugin_param_string(plugin_idx, param_idx, content);
+                                    // Store the source file path for display
+                                    if path_id == "a" {
+                                        state.app.plugin_state.ab_compare_file_a = Some(file_path);
+                                    } else {
+                                        state.app.plugin_state.ab_compare_file_b = Some(file_path);
+                                    }
+                                    cx.notify();
+                                });
+                            } else {
+                                log::warn!("AB Compare: file is not valid JSON: {file_path}");
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("AB Compare: failed to read config file: {e}");
                         }
                     }
-                    Err(e) => {
-                        log::error!("AB Compare: failed to read config file: {e}");
-                    }
                 }
-            }
             })
             .detach();
         }
@@ -1166,7 +1170,9 @@ impl PlayerView {
         _: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) {
-        use sotf_audio_player::controllers::ab_compare_path::{add_path_plugin, encode_path_config};
+        use sotf_audio_player::controllers::ab_compare_path::{
+            add_path_plugin, encode_path_config,
+        };
         let plugin_idx = action.plugin_idx;
         let param_idx: usize = if action.path == 0 { 9 } else { 10 };
 
@@ -1178,7 +1184,9 @@ impl PlayerView {
             };
             add_path_plugin(plugins, &action.plugin_type);
             let json = encode_path_config(plugins);
-            state.app.set_plugin_param_string(plugin_idx, param_idx, json);
+            state
+                .app
+                .set_plugin_param_string(plugin_idx, param_idx, json);
             state.app.plugin_state.ab_add_menu_target = None;
         });
         cx.notify();
@@ -1190,7 +1198,9 @@ impl PlayerView {
         _: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) {
-        use sotf_audio_player::controllers::ab_compare_path::{encode_path_config, remove_path_plugin};
+        use sotf_audio_player::controllers::ab_compare_path::{
+            encode_path_config, remove_path_plugin,
+        };
         let plugin_idx = action.plugin_idx;
         let param_idx: usize = if action.path == 0 { 9 } else { 10 };
 
@@ -1202,7 +1212,9 @@ impl PlayerView {
             };
             remove_path_plugin(plugins, action.sub_idx);
             let json = encode_path_config(plugins);
-            state.app.set_plugin_param_string(plugin_idx, param_idx, json);
+            state
+                .app
+                .set_plugin_param_string(plugin_idx, param_idx, json);
         });
         cx.notify();
     }
@@ -1213,7 +1225,9 @@ impl PlayerView {
         _: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) {
-        use sotf_audio_player::controllers::ab_compare_path::{encode_path_config, move_path_plugin};
+        use sotf_audio_player::controllers::ab_compare_path::{
+            encode_path_config, move_path_plugin,
+        };
         let plugin_idx = action.plugin_idx;
         let param_idx: usize = if action.path == 0 { 9 } else { 10 };
 
@@ -1225,7 +1239,9 @@ impl PlayerView {
             };
             move_path_plugin(plugins, action.from, action.to);
             let json = encode_path_config(plugins);
-            state.app.set_plugin_param_string(plugin_idx, param_idx, json);
+            state
+                .app
+                .set_plugin_param_string(plugin_idx, param_idx, json);
         });
         cx.notify();
     }

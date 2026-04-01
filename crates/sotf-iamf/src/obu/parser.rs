@@ -218,8 +218,9 @@ pub fn parse_codec_config(data: &[u8]) -> IamfResult<CodecConfig> {
     let codec_config_id = read_leb128_u32(data, &mut pos)?;
 
     let codec_id_bytes: [u8; 4] = read_bytes(data, &mut pos, 4)?.try_into().unwrap();
-    let codec_id = CodecId::from_bytes(codec_id_bytes)
-        .ok_or_else(|| IamfError::UnsupportedCodec(String::from_utf8_lossy(&codec_id_bytes).to_string()))?;
+    let codec_id = CodecId::from_bytes(codec_id_bytes).ok_or_else(|| {
+        IamfError::UnsupportedCodec(String::from_utf8_lossy(&codec_id_bytes).to_string())
+    })?;
 
     let num_samples_per_frame = read_leb128_u32(data, &mut pos)?;
     let audio_roll_distance = read_i16_be(data, &mut pos)?;
@@ -244,8 +245,8 @@ pub fn parse_codec_config(data: &[u8]) -> IamfResult<CodecConfig> {
                 let sr = (u32::from(data[pos + 10]) << 12)
                     | (u32::from(data[pos + 11]) << 4)
                     | (u32::from(data[pos + 12]) >> 4);
-                let bps = (u16::from(data[pos + 12] & 0x01) << 4)
-                    | (u16::from(data[pos + 13]) >> 4);
+                let bps =
+                    (u16::from(data[pos + 12] & 0x01) << 4) | (u16::from(data[pos + 13]) >> 4);
                 pos = data.len(); // consume rest
                 (sr, bps + 1)
             } else {
@@ -354,7 +355,10 @@ pub fn parse_audio_element(data: &[u8]) -> IamfResult<AudioElement> {
     })
 }
 
-fn parse_scalable_channel_config(data: &[u8], pos: &mut usize) -> IamfResult<ScalableChannelConfig> {
+fn parse_scalable_channel_config(
+    data: &[u8],
+    pos: &mut usize,
+) -> IamfResult<ScalableChannelConfig> {
     let num_layers_byte = read_u8(data, pos)?;
     let num_layers = (num_layers_byte >> 5) & 0x07;
 
@@ -395,7 +399,11 @@ fn parse_ambisonics_config(data: &[u8], pos: &mut usize) -> IamfResult<Ambisonic
     let ambisonics_mode = match mode_byte {
         0 => AmbisonicsMode::Mono,
         1 => AmbisonicsMode::Projection,
-        _ => return Err(IamfError::ParseError(format!("Unknown ambisonics mode: {mode_byte}"))),
+        _ => {
+            return Err(IamfError::ParseError(format!(
+                "Unknown ambisonics mode: {mode_byte}"
+            )));
+        }
     };
 
     let output_channel_count = read_u8(data, pos)?;
@@ -506,8 +514,7 @@ pub fn parse_mix_presentation(data: &[u8]) -> IamfResult<MixPresentation> {
             // Loudspeaker layout
             let sound_system_byte = read_u8(data, &mut pos)?;
             let sound_system = (sound_system_byte >> 4) & 0x0F;
-            IamfChannelLayout::from_layout_index(sound_system)
-                .unwrap_or(IamfChannelLayout::Stereo)
+            IamfChannelLayout::from_layout_index(sound_system).unwrap_or(IamfChannelLayout::Stereo)
         } else {
             // Binaural or reserved
             IamfChannelLayout::Binaural
@@ -624,15 +631,18 @@ pub fn parse_parameter_block(data: &[u8]) -> IamfResult<ParameterBlock> {
             read_leb128_u32(data, &mut pos)?
         } else {
             // Last subblock covers remaining duration
-            let used: u32 = subblocks.iter().map(|sb: &ParameterSubblock| sb.subblock_duration).sum();
+            let used: u32 = subblocks
+                .iter()
+                .map(|sb: &ParameterSubblock| sb.subblock_duration)
+                .sum();
             duration.saturating_sub(used)
         };
 
         // For now, parse as mix gain (most common)
         // The parameter type is determined by context (which element owns this parameter_id)
         let animation_byte = read_u8(data, &mut pos)?;
-        let animation_type = AnimationType::from_u8(animation_byte & 0x07)
-            .unwrap_or(AnimationType::Step);
+        let animation_type =
+            AnimationType::from_u8(animation_byte & 0x07).unwrap_or(AnimationType::Step);
 
         let start_raw = read_i16_be(data, &mut pos)?;
         let start_point_value = start_raw as f32 / 256.0;
@@ -842,7 +852,13 @@ pub fn parse_temporal_unit(data: &[u8]) -> IamfResult<(TemporalUnit, usize)> {
         return Err(IamfError::EndOfStream);
     }
 
-    Ok((TemporalUnit { parameter_blocks, audio_frames }, pos))
+    Ok((
+        TemporalUnit {
+            parameter_blocks,
+            audio_frames,
+        },
+        pos,
+    ))
 }
 
 #[cfg(test)]

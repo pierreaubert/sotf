@@ -3035,7 +3035,7 @@ fn build_rack_mode_plugins(
                         per_channel_mode: false,
                         max_filters: 20,
                         tdf2: false,
-                    topology: 0.0,
+                        topology: 0.0,
                     };
                 }
                 log::info!("Rack: Added EQ plugin with {} filters", filters.len());
@@ -3099,8 +3099,8 @@ fn build_rack_mode_plugins(
                         per_band_lookahead_ms: 0.0,
                         ms_mode: false,
                         bands: vec![],
-                    sidechain_tilt_db: 0.0,
-                    link_amount: 1.0,
+                        sidechain_tilt_db: 0.0,
+                        link_amount: 1.0,
                     };
                 }
                 log::info!("Rack: Added MultibandCompressor plugin");
@@ -3311,7 +3311,8 @@ fn build_rack_mode_plugins(
                         auto_gain_smoothing_ms: 100.0,
                         mode: 2, // Auto
                         playback_level_db: 70.0,
-                        reference_level_db: 83.0 + plugins.fletcher_munson.reference_level_db as f64,
+                        reference_level_db: 83.0
+                            + plugins.fletcher_munson.reference_level_db as f64,
                         playback_volume_db: 0.0,
                     };
                 }

@@ -15,16 +15,15 @@
 
 use hound::{WavSpec, WavWriter};
 use serde_json::json;
+use serial_test::serial;
 use sotf_audio::engine::{AudioEngine, PlaybackState, PluginConfig};
 use sotf_audio::signal_recorder::record_and_analyze;
 use sotf_audio::signals::{gen_log_sweep, gen_pink_noise, gen_tone};
 use std::env;
 use std::path::PathBuf;
-use serial_test::serial;
 use std::time::Duration;
 
 mod common;
-
 
 // ============================================================================
 // Test Configuration

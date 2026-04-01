@@ -1,9 +1,11 @@
 //! Federation sources and server configuration business logic.
 
+use crate::app::App;
 use crate::app::state::app::{FederationScanMessage, FederationScanProgress, FederationScanResult};
 use crate::app::types::ToastMessage;
-use crate::app::App;
-use sotf_audio_player::federation_config::{ConnectionStatus, FederationSourceEntry, SourceConnectionConfig};
+use sotf_audio_player::federation_config::{
+    ConnectionStatus, FederationSourceEntry, SourceConnectionConfig,
+};
 
 impl App {
     /// Add a new federation source of the given type and persist to database.
@@ -161,7 +163,10 @@ impl App {
 
     /// Test connection to a federation source by index.
     /// Sets status to Testing synchronously and returns the source entry if valid.
-    pub fn start_federation_source_test(&mut self, index: usize) -> Option<(String, FederationSourceEntry)> {
+    pub fn start_federation_source_test(
+        &mut self,
+        index: usize,
+    ) -> Option<(String, FederationSourceEntry)> {
         if index >= self.federation_sources.len() {
             return None;
         }
@@ -185,7 +190,11 @@ impl App {
         };
 
         // Update in-memory source
-        if let Some(source) = self.federation_sources.iter_mut().find(|s| s.source_id == source_id) {
+        if let Some(source) = self
+            .federation_sources
+            .iter_mut()
+            .find(|s| s.source_id == source_id)
+        {
             source.is_available = Some(available);
         }
 
@@ -219,7 +228,8 @@ impl App {
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.federation_scan_receiver = Some(rx);
-        self.federation_scan_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.federation_scan_cancel
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         self.federation_scan_progress = Some(FederationScanProgress {
             source_name: display_name,
             albums_total: 0,
@@ -240,7 +250,8 @@ impl App {
 
     /// Cancel the running federation scan.
     pub fn cancel_federation_scan(&mut self) {
-        self.federation_scan_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.federation_scan_cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Poll for federation scan progress and completion. Call from the UI update loop.
@@ -258,7 +269,10 @@ impl App {
                         p.albums_total = total;
                     }
                 }
-                Ok(FederationScanMessage::Progress { albums_merged, tracks_merged }) => {
+                Ok(FederationScanMessage::Progress {
+                    albums_merged,
+                    tracks_merged,
+                }) => {
                     if let Some(p) = &mut self.federation_scan_progress {
                         p.albums_merged = albums_merged;
                         p.tracks_merged = tracks_merged;
@@ -282,10 +296,12 @@ impl App {
 
     fn handle_scan_result(&mut self, result: FederationScanResult) {
         if let Some(ref err) = result.error {
-            self.ui_state.toast_message = Some(ToastMessage::error(format!(
-                "Scan failed: {err}",
-            )));
-            if let Some(source) = self.federation_sources.iter_mut().find(|s| s.source_id == result.source_id) {
+            self.ui_state.toast_message = Some(ToastMessage::error(format!("Scan failed: {err}",)));
+            if let Some(source) = self
+                .federation_sources
+                .iter_mut()
+                .find(|s| s.source_id == result.source_id)
+            {
                 source.is_available = Some(false);
             }
             if let Some(db) = self.library_state.library.get_database() {
@@ -296,7 +312,11 @@ impl App {
                 "Scan complete: {} albums, {} tracks merged.",
                 result.albums, result.tracks
             )));
-            if let Some(source) = self.federation_sources.iter_mut().find(|s| s.source_id == result.source_id) {
+            if let Some(source) = self
+                .federation_sources
+                .iter_mut()
+                .find(|s| s.source_id == result.source_id)
+            {
                 source.is_available = Some(true);
             }
             if let Some(db) = self.library_state.library.get_database() {
@@ -348,7 +368,9 @@ async fn scan_federation_source_async(
         }
     };
 
-    let _ = tx.send(FederationScanMessage::FetchedAlbums { total: albums.len() });
+    let _ = tx.send(FederationScanMessage::FetchedAlbums {
+        total: albums.len(),
+    });
 
     // Phase 2: merge into local DB with progress reporting
     let tx_progress = tx.clone();
@@ -359,12 +381,8 @@ async fn scan_federation_source_async(
         });
     });
 
-    let result = federation_scan::merge_albums_to_db(
-        &source_id,
-        &albums,
-        cancel,
-        Some(&progress_cb),
-    );
+    let result =
+        federation_scan::merge_albums_to_db(&source_id, &albums, cancel, Some(&progress_cb));
 
     let _ = tx.send(FederationScanMessage::Done(result));
 }

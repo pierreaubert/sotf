@@ -331,8 +331,14 @@ mod tests {
 
     #[test]
     fn test_channel_layout_to_speaker_config() {
-        assert_eq!(IamfChannelLayout::Layout5_1.to_speaker_config_id(), Some("5.1"));
-        assert_eq!(IamfChannelLayout::Layout7_1_4.to_speaker_config_id(), Some("7.1.4"));
+        assert_eq!(
+            IamfChannelLayout::Layout5_1.to_speaker_config_id(),
+            Some("5.1")
+        );
+        assert_eq!(
+            IamfChannelLayout::Layout7_1_4.to_speaker_config_id(),
+            Some("7.1.4")
+        );
         assert_eq!(IamfChannelLayout::Layout3_1_2.to_speaker_config_id(), None);
     }
 

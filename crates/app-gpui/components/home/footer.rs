@@ -487,7 +487,9 @@ impl PlayerView {
                                             );
                                         },
                                     ))
-                                    .tooltip(move |_window, cx| footer_tooltip("Previous Track", &tt, cx))
+                                    .tooltip(move |_window, cx| {
+                                        footer_tooltip("Previous Track", &tt, cx)
+                                    })
                                     .child(
                                         IconButton::with_child(
                                             "transport-prev",
@@ -506,7 +508,9 @@ impl PlayerView {
                                 let tt = theme_clone.clone();
                                 div()
                                     .id("transport-seek-back-wrapper")
-                                    .tooltip(move |_window, cx| footer_tooltip("Seek Back 30s", &tt, cx))
+                                    .tooltip(move |_window, cx| {
+                                        footer_tooltip("Seek Back 30s", &tt, cx)
+                                    })
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
@@ -576,7 +580,9 @@ impl PlayerView {
                                 let tt = theme_clone.clone();
                                 div()
                                     .id("transport-seek-fwd-wrapper")
-                                    .tooltip(move |_window, cx| footer_tooltip("Seek Forward 30s", &tt, cx))
+                                    .tooltip(move |_window, cx| {
+                                        footer_tooltip("Seek Forward 30s", &tt, cx)
+                                    })
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
@@ -612,7 +618,9 @@ impl PlayerView {
                                 let tt = theme_clone.clone();
                                 div()
                                     .id("transport-next-wrapper")
-                                    .tooltip(move |_window, cx| footer_tooltip("Next Track", &tt, cx))
+                                    .tooltip(move |_window, cx| {
+                                        footer_tooltip("Next Track", &tt, cx)
+                                    })
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, window, cx| {
                                             view.next_track(
@@ -1085,18 +1093,19 @@ impl PlayerView {
                                     .font_weight(FontWeight::MEDIUM)
                             })
                             .when(!is_selected, |d| {
-                                d.text_color(theme_item.text_secondary)
-                                    .hover(|style| {
-                                        style
-                                            .bg(theme_item.surface_hover)
-                                            .text_color(theme_item.text_primary)
-                                    })
+                                d.text_color(theme_item.text_secondary).hover(|style| {
+                                    style
+                                        .bg(theme_item.surface_hover)
+                                        .text_color(theme_item.text_primary)
+                                })
                             })
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
-                                        if state.app.audio_device_state.selected_cast_device == Some(idx) {
+                                        if state.app.audio_device_state.selected_cast_device
+                                            == Some(idx)
+                                        {
                                             state.app.deselect_cast_device();
                                         } else {
                                             state.app.select_cast_device(idx);
@@ -1219,9 +1228,7 @@ impl PlayerView {
                         state.app.ui_state.input_mode = crate::app::InputMode::Tutorial;
                         state.app.ui_state.tutorial_screen = 0;
                     }
-                    "settings" => {
-                        state.app.ui_state.current_screen = crate::app::Screen::Settings
-                    }
+                    "settings" => state.app.ui_state.current_screen = crate::app::Screen::Settings,
                     _ => {}
                 }
             });

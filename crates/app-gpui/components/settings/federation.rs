@@ -149,7 +149,11 @@ impl PlayerView {
             Some(ConnectionStatus::Error(_)) => theme.error,
             Some(ConnectionStatus::Testing) => theme.warning,
             Some(ConnectionStatus::Diagnostic(d)) => {
-                if d.is_success() { theme.success } else { theme.error }
+                if d.is_success() {
+                    theme.success
+                } else {
+                    theme.error
+                }
             }
             _ => theme.text_muted,
         };
@@ -541,12 +545,7 @@ impl PlayerView {
                             ),
                     )
                     // Status text
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_secondary)
-                            .child(text),
-                    ),
+                    .child(div().text_xs().text_color(theme.text_secondary).child(text)),
             )
             // Cancel button
             .child(

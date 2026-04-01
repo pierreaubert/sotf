@@ -42,7 +42,7 @@ pub struct App {
 
     // Channel conflict dialog state
     pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>, // Source pending playback
-    pub channel_conflict_selection: usize,      // Currently highlighted option (0-2)
+    pub channel_conflict_selection: usize, // Currently highlighted option (0-2)
     pub channel_conflict_track_channels: usize, // File's channel count
     pub channel_conflicts: Vec<ChannelConflict>, // All incompatible plugins
 
@@ -204,7 +204,12 @@ pub struct App {
     /// Receiver for background federation scan results.
     pub federation_scan_receiver: Option<std::sync::mpsc::Receiver<FederationScanResult>>,
     /// Receiver for background federation connection test results.
-    pub federation_test_receiver: Option<std::sync::mpsc::Receiver<(String, sotf_audio_player::federation_config::ConnectionStatus)>>,
+    pub federation_test_receiver: Option<
+        std::sync::mpsc::Receiver<(
+            String,
+            sotf_audio_player::federation_config::ConnectionStatus,
+        )>,
+    >,
 }
 
 /// Result of a background federation source scan.
@@ -522,7 +527,7 @@ impl App {
                     per_channel_mode: false,
                     max_filters: filter_count.clamp(1, 20),
                     tdf2: false,
-                topology: 0.0,
+                    topology: 0.0,
                 };
                 Ok(())
             } else {
@@ -633,7 +638,7 @@ impl App {
                 per_channel_mode: false,
                 max_filters: n.clamp(1, 20),
                 tdf2: false,
-            topology: 0.0,
+                topology: 0.0,
             };
             plugin.enabled = true;
         }

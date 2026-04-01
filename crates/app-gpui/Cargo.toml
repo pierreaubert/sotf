@@ -23,6 +23,7 @@ spotify = ["dep:sotf-services", "sotf-services/spotify"]
 gpui = { workspace = true }
 gpui-autoeq = { workspace = true }
 gpui-builder = { workspace = true }
+gpui-design = { workspace = true, features = ["gpui"] }
 gpui-ui-kit = { workspace = true }
 gpui-px = { workspace = true, features = ["gpui"] }
 

@@ -7,9 +7,9 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
+use crate::decoder::AudioSource;
 use crate::devices::verify_working_sample_rate;
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
-use crate::decoder::AudioSource;
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
 
 /// Cache for verified working sample rates per device.
@@ -279,7 +279,11 @@ impl AudioEngineManager {
     pub fn load_source(&mut self, source: AudioSource) -> AudioDecoderResult<AudioFileInfo> {
         match &source {
             AudioSource::File(path) => self.load_file(path),
-            AudioSource::Url { url, format_hint: _, seekable: _ } => {
+            AudioSource::Url {
+                url,
+                format_hint: _,
+                seekable: _,
+            } => {
                 self.set_state(StreamingState::Loading);
                 self.stop()?;
 
@@ -341,11 +345,9 @@ impl AudioEngineManager {
                 self.set_state(StreamingState::Ready);
                 Ok(audio_info)
             }
-            AudioSource::Driver => {
-                Err(AudioDecoderError::ConfigError(
-                    "Driver source should use start_driver_playback()".to_string(),
-                ))
-            }
+            AudioSource::Driver => Err(AudioDecoderError::ConfigError(
+                "Driver source should use start_driver_playback()".to_string(),
+            )),
         }
     }
 
@@ -449,7 +451,8 @@ impl AudioEngineManager {
         self.set_state(StreamingState::Playing);
 
         // Track current source for gapless transition detection
-        *self.last_seen_source.lock().unwrap() = Some(crate::decoder::AudioSource::File(audio_info.path.clone()));
+        *self.last_seen_source.lock().unwrap() =
+            Some(crate::decoder::AudioSource::File(audio_info.path.clone()));
 
         log::debug!("[AudioEngineManager] Playback started");
 
@@ -645,7 +648,10 @@ impl AudioEngineManager {
     /// differ, the decoder handles resampling automatically.
     pub fn queue_next(&self, source: impl Into<crate::decoder::AudioSource>) -> Result<(), String> {
         let source = source.into();
-        log::debug!("[AudioEngineManager] Queueing next: {}", source.display_name());
+        log::debug!(
+            "[AudioEngineManager] Queueing next: {}",
+            source.display_name()
+        );
 
         if let Some(engine) = &*self.engine.load() {
             engine.queue_next(source)?;
@@ -867,10 +873,11 @@ impl AudioEngineManager {
         {
             let mut last_source = self.last_seen_source.lock().unwrap();
             if let Some(ref current) = engine_state.current_source
-                && last_source.as_ref() != Some(current) {
-                    *last_source = Some(current.clone());
-                    return Some(StreamingEvent::GaplessTransition(current.clone()));
-                }
+                && last_source.as_ref() != Some(current)
+            {
+                *last_source = Some(current.clone());
+                return Some(StreamingEvent::GaplessTransition(current.clone()));
+            }
         }
 
         if engine_state.playback_state == PlaybackState::Stopped {

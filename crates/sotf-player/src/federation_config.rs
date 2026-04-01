@@ -413,7 +413,9 @@ pub struct FederationSourceEntry {
 pub enum ConnectionStatus {
     Untested,
     Testing,
-    Connected { version: Option<String> },
+    Connected {
+        version: Option<String>,
+    },
     Error(String),
     /// Detailed diagnostic results from a structured connection test.
     Diagnostic(ConnectionDiagnostic),
@@ -428,7 +430,11 @@ impl ConnectionStatus {
             Self::Connected { .. } => "connected",
             Self::Error(_) => "error",
             Self::Diagnostic(d) => {
-                if d.is_success() { "connected" } else { "error" }
+                if d.is_success() {
+                    "connected"
+                } else {
+                    "error"
+                }
             }
         }
     }
@@ -484,9 +490,14 @@ impl ConnectionDiagnostic {
     /// Returns true if all attempted (non-skipped) steps passed.
     #[must_use]
     pub fn is_success(&self) -> bool {
-        [&self.dns_resolve, &self.tcp_connect, &self.tls_handshake, &self.protocol_hello]
-            .iter()
-            .all(|s| matches!(s, StepResult::Ok(_) | StepResult::Skipped(_)))
+        [
+            &self.dns_resolve,
+            &self.tcp_connect,
+            &self.tls_handshake,
+            &self.protocol_hello,
+        ]
+        .iter()
+        .all(|s| matches!(s, StepResult::Ok(_) | StepResult::Skipped(_)))
     }
 
     /// Collect all steps with their labels for UI display.
@@ -757,7 +768,10 @@ mod tests {
         assert_eq!(config.field_names()[1], "Station Name");
 
         config.set_field_value(0, "http://radio.example.com:8000/stream");
-        assert_eq!(config.field_value(0), "http://radio.example.com:8000/stream");
+        assert_eq!(
+            config.field_value(0),
+            "http://radio.example.com:8000/stream"
+        );
 
         config.set_field_value(1, "My Radio");
         assert_eq!(config.field_value(1), "My Radio");

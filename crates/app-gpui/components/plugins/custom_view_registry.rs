@@ -127,9 +127,7 @@ fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> Any
         ..
     } = ctx.settings
     {
-        let selected_band_idx = ctx
-            .selected_band_idx
-            .min(filters.len().saturating_sub(1));
+        let selected_band_idx = ctx.selected_band_idx.min(filters.len().saturating_sub(1));
         super::render_eq_plugin(
             ctx.entity.clone(),
             ctx.plugin_idx,
@@ -372,9 +370,7 @@ fn render_mb_expander(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerVie
                 b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
                 b.range_db.map(|v| v as f64).unwrap_or(*range_db),
                 b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
-                b.hysteresis_db
-                    .map(|v| v as f64)
-                    .unwrap_or(*hysteresis_db),
+                b.hysteresis_db.map(|v| v as f64).unwrap_or(*hysteresis_db),
                 b.hold_ms.map(|v| v as f64).unwrap_or(*hold_ms),
                 b.auto_makeup,
                 b.active,
@@ -433,9 +429,6 @@ fn render_mb_expander(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerVie
     }
 }
 
-fn render_ab_compare(
-    ctx: &CustomViewRenderContext,
-    cx: &mut Context<PlayerView>,
-) -> AnyElement {
+fn render_ab_compare(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
     super::ui_ab_compare::render_ab_compare(ctx, cx)
 }

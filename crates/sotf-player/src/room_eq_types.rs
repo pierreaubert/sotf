@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::recording_types::RecordingResult;
 use crate::ReleaseChannel;
+use crate::recording_types::RecordingResult;
 
 /// (frequencies, magnitude_db, phase_deg, wav_path, csv_path)
 type MeasurementData = (Vec<f32>, Vec<f32>, Vec<f32>, Option<String>, Option<String>);

@@ -79,9 +79,7 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Export active playlist — ensure a playlist is open first
             use crate::app::{FilePickerMode, FilePickerOrigin};
             let has_active = app.playlist_controller.active_playlist().is_some();
-            if !has_active
-                && let Some(db) = app.library.get_database()
-            {
+            if !has_active && let Some(db) = app.library.get_database() {
                 let idx = app.playlist_controller.selected_playlist_index;
                 let _ = app.playlist_controller.open_playlist(db, idx);
             }

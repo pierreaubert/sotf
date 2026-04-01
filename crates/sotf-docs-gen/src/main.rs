@@ -350,10 +350,7 @@ fn format_default(param: &ParamSpec) -> String {
         ParamType::Choice {
             default_index,
             labels,
-        } => labels
-            .get(*default_index)
-            .unwrap_or(&"?")
-            .to_string(),
+        } => labels.get(*default_index).unwrap_or(&"?").to_string(),
         ParamType::FilePath => "-".to_string(),
     }
 }
@@ -546,7 +543,8 @@ fn write_if_changed(path: &Path, content: &str) {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).expect("create_dir_all");
     }
-    std::fs::write(path, content).unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
+    std::fs::write(path, content)
+        .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
     println!("  wrote {}", path.display());
 }
 
@@ -564,10 +562,7 @@ fn main() {
 
     // Plugin index page
     let index_md = generate_plugin_index(&registry);
-    write_if_changed(
-        &docs_dir.join("reference/plugins/index.md"),
-        &index_md,
-    );
+    write_if_changed(&docs_dir.join("reference/plugins/index.md"), &index_md);
 
     // Individual plugin pages
     for entry in &registry {
@@ -579,8 +574,5 @@ fn main() {
         );
     }
 
-    println!(
-        "Done. Generated {} plugin reference pages.",
-        registry.len()
-    );
+    println!("Done. Generated {} plugin reference pages.", registry.len());
 }

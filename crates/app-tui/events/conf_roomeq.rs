@@ -741,8 +741,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
             BroadbandTargetMatchingConfig as BackendBroadbandTargetMatchingConfig, CallbackAction,
             ExcursionProtectionConfig as BackendExcursionProtectionConfig,
             FirConfig as BackendFirConfig, GroupDelayOptimizationConfig, HighFreqFilterConfig,
-            HighpassType, LowFreqFilterConfig,
-            MixedPhaseSerdeConfig as BackendMixedPhaseConfig,
+            HighpassType, LowFreqFilterConfig, MixedPhaseSerdeConfig as BackendMixedPhaseConfig,
             MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy, OptimizerConfig,
             PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
             PreRingingSerdeConfig as BackendPreRingingConfig, ProcessingMode, RoomConfig,
@@ -787,190 +786,191 @@ fn spawn_room_eq_optimization(app: &mut App) {
         };
 
         // Build OptimizerConfig directly (matching GPUI's to_room_config pattern)
-        let optimizer = OptimizerConfig {
-            loss_type: config.loss_type.clone(),
-            algorithm: config.algorithm.clone(),
-            num_filters: config.num_filters,
-            min_q: config.min_q,
-            max_q: config.max_q,
-            min_db: config.min_db,
-            max_db: config.max_db,
-            min_freq: config.min_freq,
-            max_freq: config.max_freq,
-            max_iter: config.max_iter,
-            population: config.population,
-            peq_model: config.peq_model.clone(),
-            mode: config.mode.to_code().to_string(),
-            processing_mode,
-            fir: Some(BackendFirConfig {
-                taps: config.fir.taps,
-                phase: config.fir.phase.clone(),
-                correct_excess_phase: config.fir.correct_excess_phase,
-                phase_smoothing: config.fir.phase_smoothing,
-                pre_ringing: config.fir.pre_ringing.as_ref().map(|pr| {
-                    BackendPreRingingConfig {
-                        threshold_db: pr.threshold_db,
-                        max_time_s: pr.max_time_s,
-                    }
+        let optimizer =
+            OptimizerConfig {
+                loss_type: config.loss_type.clone(),
+                algorithm: config.algorithm.clone(),
+                num_filters: config.num_filters,
+                min_q: config.min_q,
+                max_q: config.max_q,
+                min_db: config.min_db,
+                max_db: config.max_db,
+                min_freq: config.min_freq,
+                max_freq: config.max_freq,
+                max_iter: config.max_iter,
+                population: config.population,
+                peq_model: config.peq_model.clone(),
+                mode: config.mode.to_code().to_string(),
+                processing_mode,
+                fir: Some(BackendFirConfig {
+                    taps: config.fir.taps,
+                    phase: config.fir.phase.clone(),
+                    correct_excess_phase: config.fir.correct_excess_phase,
+                    phase_smoothing: config.fir.phase_smoothing,
+                    pre_ringing: config.fir.pre_ringing.as_ref().map(|pr| {
+                        BackendPreRingingConfig {
+                            threshold_db: pr.threshold_db,
+                            max_time_s: pr.max_time_s,
+                        }
+                    }),
                 }),
-            }),
-            mixed_phase: if config.mode == RoomEqOptimizationMode::MixedPhase {
-                Some(BackendMixedPhaseConfig {
-                    max_fir_length_ms: config.mixed_phase.max_fir_length_ms,
-                    pre_ringing_threshold_db: config.mixed_phase.pre_ringing_threshold_db,
-                    min_spatial_depth: config.mixed_phase.min_spatial_depth,
-                    phase_smoothing_octaves: config.mixed_phase.phase_smoothing_octaves,
-                })
-            } else {
-                None
-            },
-            seed: config.seed,
-            mixed_config: if config.mode == RoomEqOptimizationMode::Mixed {
-                Some(autoeq::roomeq::MixedModeConfig {
-                    crossover_freq: config.mixed_config.crossover_freq,
-                    crossover_type: config.mixed_config.crossover_type.clone(),
-                    fir_band: config.mixed_config.fir_band.clone(),
-                })
-            } else {
-                None
-            },
-            refine: config.refine,
-            local_algo: config.local_algo.clone(),
-            psychoacoustic: config.psychoacoustic,
-            asymmetric_loss: config.asymmetric_loss,
-            tolerance: config.tolerance,
-            atolerance: config.atolerance,
-            allow_delay: Some(config.allow_delay),
-            target_tilt: if config.target_tilt.enabled {
-                let tilt_type = match config.target_tilt.tilt_type.as_str() {
-                    "harman" => TiltType::Harman,
-                    "custom" => TiltType::Custom,
-                    _ => TiltType::Flat,
-                };
-                Some(BackendTargetTiltConfig {
-                    tilt_type,
-                    slope_db_per_octave: config.target_tilt.slope,
-                    reference_freq: config.target_tilt.reference_freq,
-                    bass_shelf_db: config.target_tilt.bass_shelf_db,
-                    bass_shelf_freq: config.target_tilt.bass_shelf_freq,
-                })
-            } else {
-                None
-            },
-            excursion_protection: if config.excursion_protection.enabled {
-                let filter_type = if config.excursion_protection.filter_type == "bw" {
-                    HighpassType::Butterworth
+                mixed_phase: if config.mode == RoomEqOptimizationMode::MixedPhase {
+                    Some(BackendMixedPhaseConfig {
+                        max_fir_length_ms: config.mixed_phase.max_fir_length_ms,
+                        pre_ringing_threshold_db: config.mixed_phase.pre_ringing_threshold_db,
+                        min_spatial_depth: config.mixed_phase.min_spatial_depth,
+                        phase_smoothing_octaves: config.mixed_phase.phase_smoothing_octaves,
+                    })
                 } else {
-                    HighpassType::LinkwitzRiley
-                };
-                Some(BackendExcursionProtectionConfig {
-                    enabled: true,
-                    auto_detect_f3: config.excursion_protection.auto_detect_f3,
-                    manual_f3_hz: Some(config.excursion_protection.manual_f3_hz),
-                    filter_order: config.excursion_protection.filter_order,
-                    filter_type,
-                    margin_octaves: config.excursion_protection.margin_octaves,
-                })
-            } else {
-                None
-            },
-            schroeder_split: if config.schroeder_split.enabled {
-                Some(BackendSchroederSplitConfig {
-                    enabled: true,
-                    schroeder_freq: config.schroeder_split.schroeder_freq,
-                    room_dimensions: None,
-                    low_freq_config: LowFreqFilterConfig {
-                        max_q: config.schroeder_split.low_freq_max_q,
-                        min_q: 0.5,
-                        allow_boost: config.schroeder_split.low_freq_allow_boost,
-                        max_db: config.schroeder_split.low_freq_max_db,
-                    },
-                    high_freq_config: HighFreqFilterConfig {
-                        max_q: config.schroeder_split.high_freq_max_q,
-                        shelving_only: config.schroeder_split.high_freq_shelving_only,
-                    },
-                })
-            } else {
-                None
-            },
-            phase_alignment: if config.phase_alignment.enabled {
-                Some(BackendPhaseAlignmentConfig {
-                    enabled: true,
-                    min_freq: config.phase_alignment.min_freq,
-                    max_freq: config.phase_alignment.max_freq,
-                    optimize_polarity: config.phase_alignment.optimize_polarity,
-                    max_delay_ms: config.phase_alignment.max_delay_ms,
-                })
-            } else {
-                None
-            },
-            multi_seat: if config.multi_seat.enabled {
-                let strategy = match config.multi_seat.strategy.as_str() {
-                    "primary" => MultiSeatStrategy::PrimaryWithConstraints,
-                    "average" => MultiSeatStrategy::Average,
-                    _ => MultiSeatStrategy::MinimizeVariance,
-                };
-                Some(BackendMultiSeatConfig {
-                    enabled: true,
-                    strategy,
-                    primary_seat: config.multi_seat.primary_seat,
-                    max_deviation_db: config.multi_seat.max_deviation_db,
-                })
-            } else {
-                None
-            },
-            gd_opt: if config.gd_opt.enabled {
-                Some(GroupDelayOptimizationConfig {
-                    enabled: true,
-                    target_ms: config.gd_opt.target_ms,
-                })
-            } else {
-                None
-            },
-            vog: if config.vog.enabled {
-                Some(VoiceOfGodConfig {
-                    enabled: true,
-                    reference_channel: config.vog.reference_channel.clone(),
-                })
-            } else {
-                None
-            },
-            broadband_target_matching: if config.broadband_target_matching.enabled {
-                Some(BackendBroadbandTargetMatchingConfig { enabled: true })
-            } else {
-                None
-            },
-            multi_measurement: None,
-            smooth_n: config.smooth_n,
-            decomposed_correction: None,
-            strategy: "lshade".to_string(),
-            target_response: None,
-            cea2034_correction: None,
-            sub_config: if config.sub_config.enabled {
-                Some(autoeq::roomeq::SubOptimizerConfig {
-                    num_filters: config.sub_config.num_filters,
-                    max_db: config.sub_config.max_db,
-                    min_db: config.sub_config.min_db,
-                    min_q: config.sub_config.min_q,
-                    max_q: config.sub_config.max_q,
-                })
-            } else {
-                None
-            },
-            channel_matching: if config.channel_matching.enabled {
-                Some(autoeq::roomeq::ChannelMatchingConfig {
-                    enabled: true,
-                    threshold_db: config.channel_matching.threshold_db,
-                    max_filters: config.channel_matching.max_filters,
-                })
-            } else {
-                None
-            },
-            ssir_wav_path: None,
-            phase_correction: None,
-            min_filter_improvement: 0.0,
-            elimination_threshold: 0.0,
-        };
+                    None
+                },
+                seed: config.seed,
+                mixed_config: if config.mode == RoomEqOptimizationMode::Mixed {
+                    Some(autoeq::roomeq::MixedModeConfig {
+                        crossover_freq: config.mixed_config.crossover_freq,
+                        crossover_type: config.mixed_config.crossover_type.clone(),
+                        fir_band: config.mixed_config.fir_band.clone(),
+                    })
+                } else {
+                    None
+                },
+                refine: config.refine,
+                local_algo: config.local_algo.clone(),
+                psychoacoustic: config.psychoacoustic,
+                asymmetric_loss: config.asymmetric_loss,
+                tolerance: config.tolerance,
+                atolerance: config.atolerance,
+                allow_delay: Some(config.allow_delay),
+                target_tilt: if config.target_tilt.enabled {
+                    let tilt_type = match config.target_tilt.tilt_type.as_str() {
+                        "harman" => TiltType::Harman,
+                        "custom" => TiltType::Custom,
+                        _ => TiltType::Flat,
+                    };
+                    Some(BackendTargetTiltConfig {
+                        tilt_type,
+                        slope_db_per_octave: config.target_tilt.slope,
+                        reference_freq: config.target_tilt.reference_freq,
+                        bass_shelf_db: config.target_tilt.bass_shelf_db,
+                        bass_shelf_freq: config.target_tilt.bass_shelf_freq,
+                    })
+                } else {
+                    None
+                },
+                excursion_protection: if config.excursion_protection.enabled {
+                    let filter_type = if config.excursion_protection.filter_type == "bw" {
+                        HighpassType::Butterworth
+                    } else {
+                        HighpassType::LinkwitzRiley
+                    };
+                    Some(BackendExcursionProtectionConfig {
+                        enabled: true,
+                        auto_detect_f3: config.excursion_protection.auto_detect_f3,
+                        manual_f3_hz: Some(config.excursion_protection.manual_f3_hz),
+                        filter_order: config.excursion_protection.filter_order,
+                        filter_type,
+                        margin_octaves: config.excursion_protection.margin_octaves,
+                    })
+                } else {
+                    None
+                },
+                schroeder_split: if config.schroeder_split.enabled {
+                    Some(BackendSchroederSplitConfig {
+                        enabled: true,
+                        schroeder_freq: config.schroeder_split.schroeder_freq,
+                        room_dimensions: None,
+                        low_freq_config: LowFreqFilterConfig {
+                            max_q: config.schroeder_split.low_freq_max_q,
+                            min_q: 0.5,
+                            allow_boost: config.schroeder_split.low_freq_allow_boost,
+                            max_db: config.schroeder_split.low_freq_max_db,
+                        },
+                        high_freq_config: HighFreqFilterConfig {
+                            max_q: config.schroeder_split.high_freq_max_q,
+                            shelving_only: config.schroeder_split.high_freq_shelving_only,
+                        },
+                    })
+                } else {
+                    None
+                },
+                phase_alignment: if config.phase_alignment.enabled {
+                    Some(BackendPhaseAlignmentConfig {
+                        enabled: true,
+                        min_freq: config.phase_alignment.min_freq,
+                        max_freq: config.phase_alignment.max_freq,
+                        optimize_polarity: config.phase_alignment.optimize_polarity,
+                        max_delay_ms: config.phase_alignment.max_delay_ms,
+                    })
+                } else {
+                    None
+                },
+                multi_seat: if config.multi_seat.enabled {
+                    let strategy = match config.multi_seat.strategy.as_str() {
+                        "primary" => MultiSeatStrategy::PrimaryWithConstraints,
+                        "average" => MultiSeatStrategy::Average,
+                        _ => MultiSeatStrategy::MinimizeVariance,
+                    };
+                    Some(BackendMultiSeatConfig {
+                        enabled: true,
+                        strategy,
+                        primary_seat: config.multi_seat.primary_seat,
+                        max_deviation_db: config.multi_seat.max_deviation_db,
+                    })
+                } else {
+                    None
+                },
+                gd_opt: if config.gd_opt.enabled {
+                    Some(GroupDelayOptimizationConfig {
+                        enabled: true,
+                        target_ms: config.gd_opt.target_ms,
+                    })
+                } else {
+                    None
+                },
+                vog: if config.vog.enabled {
+                    Some(VoiceOfGodConfig {
+                        enabled: true,
+                        reference_channel: config.vog.reference_channel.clone(),
+                    })
+                } else {
+                    None
+                },
+                broadband_target_matching: if config.broadband_target_matching.enabled {
+                    Some(BackendBroadbandTargetMatchingConfig { enabled: true })
+                } else {
+                    None
+                },
+                multi_measurement: None,
+                smooth_n: config.smooth_n,
+                decomposed_correction: None,
+                strategy: "lshade".to_string(),
+                target_response: None,
+                cea2034_correction: None,
+                sub_config: if config.sub_config.enabled {
+                    Some(autoeq::roomeq::SubOptimizerConfig {
+                        num_filters: config.sub_config.num_filters,
+                        max_db: config.sub_config.max_db,
+                        min_db: config.sub_config.min_db,
+                        min_q: config.sub_config.min_q,
+                        max_q: config.sub_config.max_q,
+                    })
+                } else {
+                    None
+                },
+                channel_matching: if config.channel_matching.enabled {
+                    Some(autoeq::roomeq::ChannelMatchingConfig {
+                        enabled: true,
+                        threshold_db: config.channel_matching.threshold_db,
+                        max_filters: config.channel_matching.max_filters,
+                    })
+                } else {
+                    None
+                },
+                ssir_wav_path: None,
+                phase_correction: None,
+                min_filter_improvement: 0.0,
+                elimination_threshold: 0.0,
+            };
 
         let room_config = RoomConfig {
             version: autoeq::roomeq::default_config_version(),
@@ -1030,18 +1030,14 @@ pub(crate) fn export_room_eq_results(app: &mut App) {
         })
         .collect();
 
-    let content = match sotf_audio_player::autoeq::format_peq_export(
-        format_id,
-        "Room EQ",
-        &biquads,
-        48000,
-    ) {
-        Ok(c) => c,
-        Err(e) => {
-            app.room_eq.export_error = Some(format!("Format error: {}", e));
-            return;
-        }
-    };
+    let content =
+        match sotf_audio_player::autoeq::format_peq_export(format_id, "Room EQ", &biquads, 48000) {
+            Ok(c) => c,
+            Err(e) => {
+                app.room_eq.export_error = Some(format!("Format error: {}", e));
+                return;
+            }
+        };
 
     match std::fs::write(&app.room_eq.export_path, content) {
         Ok(()) => {

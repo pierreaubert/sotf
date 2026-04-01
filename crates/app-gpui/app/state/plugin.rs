@@ -56,7 +56,7 @@ pub struct PluginState {
     pub plugin_preset_input: String,     // Save preset name input
 
     /// Pending confirmation for destructive actions
-    pub confirm_remove_plugin: Option<usize>,          // Some(plugin_idx) awaiting confirmation
+    pub confirm_remove_plugin: Option<usize>, // Some(plugin_idx) awaiting confirmation
     pub confirm_delete_preset: Option<(usize, String)>, // Some((plugin_idx, preset_name)) awaiting confirmation
 
     // Chain-level state

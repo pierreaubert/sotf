@@ -1138,16 +1138,13 @@ impl PlayerView {
             .p_3()
             .bg(theme.background)
             .child(
-                div()
-                    .w_full()
-                    .mb_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_align(TextAlign::Center)
-                            .child("Level Meters"),
-                    ),
+                div().w_full().mb_2().child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_align(TextAlign::Center)
+                        .child("Level Meters"),
+                ),
             )
             .child({
                 // Use a for loop to avoid FnMut closure escape issues with cx

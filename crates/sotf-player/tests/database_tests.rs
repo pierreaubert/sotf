@@ -1025,4 +1025,3 @@ fn test_migration_19_in_history() {
         versions
     );
 }
-

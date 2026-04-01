@@ -39,9 +39,10 @@ fn plugin_type_from_raw(raw: &serde_json::Value) -> String {
             return s.to_string();
         }
         if let Some(obj) = settings.as_object()
-            && let Some(key) = obj.keys().next() {
-                return key.clone();
-            }
+            && let Some(key) = obj.keys().next()
+        {
+            return key.clone();
+        }
     }
     "unknown".to_string()
 }
@@ -584,7 +585,10 @@ impl PluginChain {
             }
             match &plugin.settings {
                 PluginSettings::Upmixer { speaker_config, .. }
-                | PluginSettings::AmbisonicsDecoder { target_layout: speaker_config, .. } => {
+                | PluginSettings::AmbisonicsDecoder {
+                    target_layout: speaker_config,
+                    ..
+                } => {
                     config = Some(speaker_config.clone());
                 }
                 PluginSettings::BinauralDecoder { .. }
@@ -947,15 +951,19 @@ impl PluginChain {
         // Strip spurious LoudnessMonitor at the edges — the default rack
         // already includes input (first) and output (last) monitors, so
         // presets saved with those included would double them up.
-        while self.plugins.first().is_some_and(|p| {
-            matches!(p.plugin_type(), PluginType::LoudnessMonitor) && !p.permanent
-        }) {
+        while self
+            .plugins
+            .first()
+            .is_some_and(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor) && !p.permanent)
+        {
             log::info!("Removing spurious leading LoudnessMonitor from loaded preset");
             self.plugins.remove(0);
         }
-        while self.plugins.last().is_some_and(|p| {
-            matches!(p.plugin_type(), PluginType::LoudnessMonitor) && !p.permanent
-        }) {
+        while self
+            .plugins
+            .last()
+            .is_some_and(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor) && !p.permanent)
+        {
             log::info!("Removing spurious trailing LoudnessMonitor from loaded preset");
             self.plugins.pop();
         }
@@ -993,7 +1001,9 @@ impl PluginChain {
                 // on the fields handles the conversion during loading; this migration
                 // just bumps the version so the preset is re-saved with strings.
                 1 => {
-                    log::info!("Applying plugin preset migration: v1 -> v2 (choice params as strings)");
+                    log::info!(
+                        "Applying plugin preset migration: v1 -> v2 (choice params as strings)"
+                    );
                     preset.version = 2;
                 }
 
@@ -1052,7 +1062,11 @@ impl PluginChain {
                         });
                     }
                 }
-                PluginSettings::Gain { channels, gain_db, smoothing_ms } => {
+                PluginSettings::Gain {
+                    channels,
+                    gain_db,
+                    smoothing_ms,
+                } => {
                     if *channels != current_channels {
                         updated_settings = Some(PluginSettings::Gain {
                             channels: current_channels,
@@ -1208,7 +1222,9 @@ impl PluginChain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugins::matrix::{apply_matrix_preset, available_matrix_presets, detect_matrix_preset};
+    use crate::plugins::matrix::{
+        apply_matrix_preset, available_matrix_presets, detect_matrix_preset,
+    };
 
     #[test]
     fn test_plugin_chain() {

@@ -61,7 +61,11 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                         .title(format!(
                             "Albums ({}){}  'a' add, 't' tree, 'f' fav, 'F' filter",
                             albums.len(),
-                            if app.show_favorites_only { " [\u{2665} Favorites]" } else { "" },
+                            if app.show_favorites_only {
+                                " [\u{2665} Favorites]"
+                            } else {
+                                ""
+                            },
                         )),
                 )
                 .highlight_style(

@@ -306,12 +306,20 @@ pub fn format_peq_export(
         "rme-room" => Ok(math_audio_iir_fir::peq_format_rme_room(&peq, &peq)),
         #[cfg(target_os = "macos")]
         "aupreset" => Ok(math_audio_iir_fir::peq_format_aupreset(&peq, comment)),
-        "camilladsp" => Ok(math_audio_iir_fir::peq_format_camilladsp(comment, &peq, sample_rate)),
+        "camilladsp" => Ok(math_audio_iir_fir::peq_format_camilladsp(
+            comment,
+            &peq,
+            sample_rate,
+        )),
         #[cfg(target_os = "linux")]
         "pipewire" => Ok(math_audio_iir_fir::peq_format_pipewire(comment, &peq)),
         #[cfg(target_os = "linux")]
         "easyeffects" => Ok(math_audio_iir_fir::peq_format_easyeffects(comment, &peq)),
-        "wavelet" => Ok(math_audio_iir_fir::peq_format_wavelet(comment, &peq, sample_rate as f64)),
+        "wavelet" => Ok(math_audio_iir_fir::peq_format_wavelet(
+            comment,
+            &peq,
+            sample_rate as f64,
+        )),
         "roon" => Ok(math_audio_iir_fir::peq_format_roon(comment, &peq)),
         _ => Err(format!("Unknown export format: {format}")),
     }

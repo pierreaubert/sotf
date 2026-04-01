@@ -266,12 +266,7 @@ pub fn render_section_title(title: &str, theme: &Theme) -> impl IntoElement {
                 .flex_shrink_0()
                 .child(title.to_string()),
         )
-        .child(
-            div()
-                .flex_1()
-                .h(px(1.0))
-                .bg(theme.border),
-        )
+        .child(div().flex_1().h(px(1.0)).bg(theme.border))
 }
 
 /// Trait extension for applying parameter section styling to any Div
@@ -919,10 +914,7 @@ impl Element for TransferCurveElement {
                 ox + px(db_to_x(-60.0) + line_w),
                 oy + px(db_to_y(-60.0)),
             ));
-            builder.line_to(point(
-                ox + px(db_to_x(0.0) + line_w),
-                oy + px(db_to_y(0.0)),
-            ));
+            builder.line_to(point(ox + px(db_to_x(0.0) + line_w), oy + px(db_to_y(0.0))));
             builder.line_to(point(ox + px(db_to_x(0.0)), oy + px(db_to_y(0.0))));
             if let Ok(path) = builder.build() {
                 window.paint_path(path, unity_color);
@@ -955,10 +947,7 @@ impl Element for TransferCurveElement {
             };
             let mut builder = PathBuilder::fill();
             // Start at bottom-left
-            builder.move_to(point(
-                ox + px(curve_points[0].0),
-                oy + px(h - pad),
-            ));
+            builder.move_to(point(ox + px(curve_points[0].0), oy + px(h - pad)));
             // Up to curve start
             builder.line_to(point(
                 ox + px(curve_points[0].0),
@@ -988,17 +977,11 @@ impl Element for TransferCurveElement {
                 oy + px(curve_points[0].1 - stroke_width / 2.0),
             ));
             for &(cx_pt, cy_pt) in &curve_points[1..] {
-                builder.line_to(point(
-                    ox + px(cx_pt),
-                    oy + px(cy_pt - stroke_width / 2.0),
-                ));
+                builder.line_to(point(ox + px(cx_pt), oy + px(cy_pt - stroke_width / 2.0)));
             }
             // Backward pass (bottom edge of the band)
             for &(cx_pt, cy_pt) in curve_points.iter().rev() {
-                builder.line_to(point(
-                    ox + px(cx_pt),
-                    oy + px(cy_pt + stroke_width / 2.0),
-                ));
+                builder.line_to(point(ox + px(cx_pt), oy + px(cy_pt + stroke_width / 2.0)));
             }
 
             if let Ok(path) = builder.build() {
@@ -1058,10 +1041,7 @@ impl Element for TransferCurveElement {
             };
             window.paint_quad(PaintQuad {
                 bounds: Bounds {
-                    origin: point(
-                        ox + px(dot_x - dot_r - 2.0),
-                        oy + px(dot_y - dot_r - 2.0),
-                    ),
+                    origin: point(ox + px(dot_x - dot_r - 2.0), oy + px(dot_y - dot_r - 2.0)),
                     size: size(px((dot_r + 2.0) * 2.0), px((dot_r + 2.0) * 2.0)),
                 },
                 corner_radii: Corners::all(px(dot_r + 2.0)),
@@ -1220,24 +1200,20 @@ pub fn render_interactive_transfer_curve(
                         let dx = current_x - start_x;
 
                         // Vertical drag → threshold (drag up = higher threshold)
-                        let new_threshold = (start_threshold - dy as f64 * 0.3)
-                            .clamp(threshold_min, threshold_max);
+                        let new_threshold =
+                            (start_threshold - dy as f64 * 0.3).clamp(threshold_min, threshold_max);
 
-                        state.app.set_plugin_param(
-                            plugin_idx,
-                            threshold_param_idx,
-                            new_threshold,
-                        );
+                        state
+                            .app
+                            .set_plugin_param(plugin_idx, threshold_param_idx, new_threshold);
 
                         // Horizontal drag → ratio (drag right = higher ratio)
                         if !is_limiter {
-                            let new_ratio = (start_ratio + dx as f64 * 0.05)
-                                .clamp(ratio_min, ratio_max);
-                            state.app.set_plugin_param(
-                                plugin_idx,
-                                ratio_param_idx,
-                                new_ratio,
-                            );
+                            let new_ratio =
+                                (start_ratio + dx as f64 * 0.05).clamp(ratio_min, ratio_max);
+                            state
+                                .app
+                                .set_plugin_param(plugin_idx, ratio_param_idx, new_ratio);
                         }
                     });
                 })
@@ -1262,11 +1238,9 @@ pub fn render_interactive_transfer_curve(
                         };
                         let new_threshold =
                             (threshold_db + delta as f64).clamp(threshold_min, threshold_max);
-                        state.app.set_plugin_param(
-                            plugin_idx,
-                            threshold_param_idx,
-                            new_threshold,
-                        );
+                        state
+                            .app
+                            .set_plugin_param(plugin_idx, threshold_param_idx, new_threshold);
                     });
                 })
                 .child(TransferCurveElement {

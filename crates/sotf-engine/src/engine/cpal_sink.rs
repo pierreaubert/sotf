@@ -5,8 +5,8 @@
 // Implements AudioSink for local audio hardware using cpal.
 // Extracted from playback_thread.rs to allow alternative output sinks.
 
-use super::audio_sink::{AudioSink, SinkConfig, SinkOpenResult};
 use super::ThreadEvent;
+use super::audio_sink::{AudioSink, SinkConfig, SinkOpenResult};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -225,7 +225,8 @@ impl AudioSink for CpalSink {
         self.allow_virtual_output = config.allow_virtual_output;
         self.event_tx = Some(event_tx.clone());
 
-        let (device, name) = Self::select_device(config.device.as_deref(), config.allow_virtual_output)?;
+        let (device, name) =
+            Self::select_device(config.device.as_deref(), config.allow_virtual_output)?;
         self.device_name = name;
 
         let mut stream_config = StreamConfig {
@@ -245,12 +246,20 @@ impl AudioSink for CpalSink {
         }
 
         let channels = hw_channels as usize;
-        let buffer_capacity = playback_buffer_capacity(config.sample_rate, channels, config.buffer_ms);
+        let buffer_capacity =
+            playback_buffer_capacity(config.sample_rate, channels, config.buffer_ms);
 
-        let (producer, state, stream) =
-            Self::build_stream(&device, &stream_config, buffer_capacity, output_format, event_tx.clone())?;
+        let (producer, state, stream) = Self::build_stream(
+            &device,
+            &stream_config,
+            buffer_capacity,
+            output_format,
+            event_tx.clone(),
+        )?;
 
-        event_tx.send(ThreadEvent::PlaybackChannelsChanged(channels)).ok();
+        event_tx
+            .send(ThreadEvent::PlaybackChannelsChanged(channels))
+            .ok();
 
         log::info!(
             "[CpalSink] Opened - {}Hz, {}ch, format: {:?}, device: '{}'",
@@ -337,9 +346,10 @@ impl AudioSink for CpalSink {
 
         // Pause old stream
         if let Some(ref stream) = self.stream
-            && let Err(e) = stream.pause() {
-                log::warn!("[CpalSink] Failed to pause old stream: {}", e);
-            }
+            && let Err(e) = stream.pause()
+        {
+            log::warn!("[CpalSink] Failed to pause old stream: {}", e);
+        }
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         let mut stream_config = StreamConfig {
@@ -359,12 +369,20 @@ impl AudioSink for CpalSink {
         }
 
         let channels = hw_channels as usize;
-        let buffer_capacity = playback_buffer_capacity(config.sample_rate, channels, config.buffer_ms);
+        let buffer_capacity =
+            playback_buffer_capacity(config.sample_rate, channels, config.buffer_ms);
 
-        let (producer, state, stream) =
-            Self::build_stream(device, &stream_config, buffer_capacity, output_format, event_tx.clone())?;
+        let (producer, state, stream) = Self::build_stream(
+            device,
+            &stream_config,
+            buffer_capacity,
+            output_format,
+            event_tx.clone(),
+        )?;
 
-        event_tx.send(ThreadEvent::PlaybackChannelsChanged(channels)).ok();
+        event_tx
+            .send(ThreadEvent::PlaybackChannelsChanged(channels))
+            .ok();
 
         log::info!(
             "[CpalSink] Reconfigured - {}Hz, {}ch, format: {:?}",

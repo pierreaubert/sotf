@@ -102,9 +102,7 @@ pub fn update_media_controls(
         None => (None, None),
     };
 
-    let duration = track
-        .and_then(|t| t.duration_secs)
-        .map(Duration::from_secs);
+    let duration = track.and_then(|t| t.duration_secs).map(Duration::from_secs);
 
     let cover_url_owned = queue_item
         .and_then(|item| item.album.album_art_path.as_ref())

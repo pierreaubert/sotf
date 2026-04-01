@@ -287,7 +287,7 @@ impl PlayerView {
             spawn_spinorama_curves_thread(speaker, version);
 
             // Poll for results
-            let state_for_poll = self.state.clone();
+            let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 loop {
                     cx.background_executor()
@@ -300,6 +300,9 @@ impl PlayerView {
                     };
 
                     if let Some(result) = spinorama_result {
+                        let Some(state_for_poll) = weak_state.upgrade() else {
+                            break;
+                        };
                         state_for_poll.update(cx, |state, cx| {
                             state
                                 .app
@@ -568,7 +571,7 @@ impl PlayerView {
         });
 
         // Poll for results from GPUI's async context
-        let state_entity = self.state.clone();
+        let weak_state = self.state.downgrade();
         cx.spawn(async move |_, cx| {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
@@ -577,6 +580,9 @@ impl PlayerView {
                 let result = lock!(SPEAKERS_RESULT).take();
 
                 if let Some(result) = result {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        break;
+                    };
                     match result {
                         Ok(speakers) => {
                             log::info!("Fetched {} speakers from spinorama.org", speakers.len());
@@ -693,7 +699,7 @@ impl PlayerView {
         });
 
         // Poll for results
-        let state_entity = self.state.clone();
+        let weak_state = self.state.downgrade();
         let speaker_for_poll = speaker_name.clone();
         cx.spawn(async move |view, cx| {
             loop {
@@ -703,6 +709,9 @@ impl PlayerView {
 
                 let result = lock!(VERSIONS_RESULT).take();
                 if let Some(result) = result {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        break;
+                    };
                     match result {
                         Ok(versions) => {
                             log::info!(
@@ -821,7 +830,7 @@ impl PlayerView {
         });
 
         // Poll for results
-        let state_entity = self.state.clone();
+        let weak_state = self.state.downgrade();
         let speaker_for_poll = speaker.to_string();
         let version_for_poll = version.to_string();
         cx.spawn(async move |_, cx| {
@@ -832,6 +841,9 @@ impl PlayerView {
 
                 let result = lock!(MEASUREMENTS_RESULT).take();
                 if let Some(result) = result {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        break;
+                    };
                     match result {
                         Ok(measurements) => {
                             log::info!(
@@ -1330,10 +1342,14 @@ impl PlayerView {
         });
 
         // Start a polling timer to check for results and progress
-        let state_for_poll = self.state.clone();
+        let weak_state = self.state.downgrade();
         cx.spawn(async move |_, cx| {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
+
+                let Some(state_for_poll) = weak_state.upgrade() else {
+                    break;
+                };
 
                 // Check for progress updates and transfer to state
                 let new_progress: Vec<(usize, f64, Option<f64>, f32)> = {
@@ -1502,8 +1518,9 @@ impl PlayerView {
                         filters: eq_filters.clone(),
                         channel_filters: None,
                         per_channel_mode: false,
-                        max_filters: 10, tdf2: false,
-                    topology: 0.0,
+                        max_filters: 10,
+                        tdf2: false,
+                        topology: 0.0,
                     };
                     log::info!("Updated existing EQ plugin at index {}", eq_idx);
                 }
@@ -1519,8 +1536,9 @@ impl PlayerView {
                         filters: eq_filters.clone(),
                         channel_filters: None,
                         per_channel_mode: false,
-                        max_filters: 10, tdf2: false,
-                    topology: 0.0,
+                        max_filters: 10,
+                        tdf2: false,
+                        topology: 0.0,
                     };
                 }
                 log::info!("Inserted new EQ plugin at index {}", insert_idx);
@@ -1582,7 +1600,7 @@ impl PlayerView {
 
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
-            let state_entity = self.state.clone();
+            let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 // Open save file dialog
                 let file = rfd::AsyncFileDialog::new()
@@ -1593,6 +1611,9 @@ impl PlayerView {
                     .await;
 
                 if let Some(file) = file {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        return;
+                    };
                     // Export using the appropriate format function
                     let comment = format!(
                         "Spinorama EQ for {} ({})",
@@ -1648,12 +1669,11 @@ impl PlayerView {
                         Err(e) => {
                             log::error!("Failed to save Spinorama EQ: {}", e);
                             state_entity.update(cx, |state, cx| {
-                                state.app.ui_state.toast_message = Some(
-                                    crate::app::ToastMessage::error(format!(
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::error(format!(
                                         "Failed to save: {}",
                                         e
-                                    )),
-                                );
+                                    )));
                                 cx.notify();
                             });
                         }

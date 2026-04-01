@@ -561,11 +561,7 @@ impl AudioDecoder for SymphoniaDecoder {
                     // Advance position by the packet's declared duration so
                     // timestamps stay roughly in sync after skipping.
                     self.position += packet.dur();
-                    self.check_error_limit(
-                        &mut consecutive_errors,
-                        msg,
-                        "corrupted packet",
-                    )?;
+                    self.check_error_limit(&mut consecutive_errors, msg, "corrupted packet")?;
                     continue;
                 }
                 Err(SymphoniaError::ResetRequired) => {

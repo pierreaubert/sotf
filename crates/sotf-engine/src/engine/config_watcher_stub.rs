@@ -26,7 +26,9 @@ impl ConfigWatcher {
         _watch_signals: bool,
     ) -> Result<Self, String> {
         let (_event_tx, event_rx) = channel();
-        log::debug!("[Config Watcher iOS] No-op watcher created (file watching not available on iOS)");
+        log::debug!(
+            "[Config Watcher iOS] No-op watcher created (file watching not available on iOS)"
+        );
         Ok(Self { event_rx })
     }
 

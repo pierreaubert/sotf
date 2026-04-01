@@ -126,11 +126,6 @@ impl<S: TestScenario> E2ERunner<S> {
         let window = cx.add_window(|_, cx| {
             let app_state = cx.new(|cx| {
                 let app = App::new();
-
-                // Ensure we don't try to load real audio devices in CI/Test env if possible,
-                // or assume they exist. For E2E we might want to mock them or Use BlackHole.
-                // For now, we follow main.rs logic but skipping config load to ensure deterministic state.
-
                 let player = Player::new();
                 let layout = cx.new(|_| LayoutState::default());
 
@@ -158,7 +153,7 @@ impl<S: TestScenario> E2ERunner<S> {
         visual_cx.run_until_parked();
 
         // Close the window to release GPUI entities.
-        // The new GPUI revision (ebb451ec) added leak detection in tests.
+        // The GPUI revision (ebb451ec) added leak detection in tests.
         let _ = window.update(&mut visual_cx, |_, window, _| {
             window.remove_window();
         });

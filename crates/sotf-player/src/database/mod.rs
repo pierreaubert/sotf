@@ -227,7 +227,6 @@ impl MusicDatabase {
     // are in library.rs
 }
 
-
 /// Create a timestamped backup of an existing database file and prune old backups
 /// Backup files are named music-YYYYMMDD-HHMMSS.sqlite in the same directory
 ///
