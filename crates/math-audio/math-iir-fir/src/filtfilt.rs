@@ -202,12 +202,7 @@ mod tests {
     }
 
     /// Helper: design bandpass as cascaded highpass + lowpass
-    fn bandpass(
-        order: usize,
-        low_hz: f64,
-        high_hz: f64,
-        srate: f64,
-    ) -> Vec<BiquadCoefficients> {
+    fn bandpass(order: usize, low_hz: f64, high_hz: f64, srate: f64) -> Vec<BiquadCoefficients> {
         let mut sections = highpass(order, low_hz, srate);
         sections.extend(lowpass(order, high_hz, srate));
         sections
@@ -231,7 +226,10 @@ mod tests {
 
     #[test]
     fn test_peq_to_coefficients_folds_gain() {
-        let peq: crate::Peq<f64> = vec![(2.0, crate::Biquad::new(crate::BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 3.0))];
+        let peq: crate::Peq<f64> = vec![(
+            2.0,
+            crate::Biquad::new(crate::BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 3.0),
+        )];
         let coeffs = peq_to_coefficients(&peq);
         let raw = peq[0].1.coefficients();
         assert!((coeffs[0].b0 - raw.b0 * 2.0_f64).abs() < 1e-12);

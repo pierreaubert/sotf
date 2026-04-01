@@ -149,13 +149,7 @@ impl<T: FilterFloat> Fir<T> {
     /// - `n_taps` is zero
     /// - `srate` is not positive
     /// - `cutoff` is not positive or >= Nyquist frequency (srate/2)
-    pub fn lowpass(
-        n_taps: usize,
-        cutoff: T,
-        srate: T,
-        window: WindowType,
-        kaiser_beta: T,
-    ) -> Self {
+    pub fn lowpass(n_taps: usize, cutoff: T, srate: T, window: WindowType, kaiser_beta: T) -> Self {
         debug_assert!(n_taps > 0, "Number of taps must be positive");
         debug_assert!(srate > T::zero(), "Sample rate must be positive");
         debug_assert!(
@@ -558,8 +552,7 @@ pub fn generate_window<T: FilterFloat>(
         WindowType::Hann => {
             for (i, w) in window.iter_mut().enumerate() {
                 *w = lit::<T>(0.5)
-                    * (T::one()
-                        - (two_pi * lit::<T>(i as f64) / lit::<T>((n - 1) as f64)).cos());
+                    * (T::one() - (two_pi * lit::<T>(i as f64) / lit::<T>((n - 1) as f64)).cos());
             }
         }
         WindowType::Blackman => {
@@ -765,7 +758,10 @@ pub fn fir_bank_preamp_gain<T: FilterFloat>(fir_bank: &FirBank<T>) -> T {
     let response = fir_bank_spl(&freqs, fir_bank);
 
     // Find maximum gain
-    let max_gain = response.iter().copied().fold(T::neg_infinity(), |a, b| a.max(b));
+    let max_gain = response
+        .iter()
+        .copied()
+        .fold(T::neg_infinity(), |a, b| a.max(b));
 
     // Return negative of max gain (to reduce overall level)
     -max_gain

@@ -5,7 +5,7 @@ use num_complex::Complex;
 use std::fmt;
 
 use crate::error::IirError;
-use crate::traits::{lit, FilterFloat};
+use crate::traits::{FilterFloat, lit};
 use crate::{DEFAULT_Q_HIGH_LOW_PASS, DEFAULT_Q_HIGH_LOW_SHELF};
 
 /// Parametric EQ filter chain: a vector of (gain, Biquad) pairs.
@@ -848,11 +848,23 @@ mod tests {
         let cutoff = 1000.0;
         let lp = Biquad::new(BiquadFilterType::Lowpass, cutoff, 48000.0, 0.0, 0.0);
         let dc_response = lp.log_result(10.0);
-        assert!(approx_eq(dc_response, 0.0, 0.5), "Lowpass DC response should be ~0 dB, got {}", dc_response);
+        assert!(
+            approx_eq(dc_response, 0.0, 0.5),
+            "Lowpass DC response should be ~0 dB, got {}",
+            dc_response
+        );
         let cutoff_response = lp.log_result(cutoff);
-        assert!(approx_eq(cutoff_response, -3.0, 0.5), "Lowpass at cutoff should be ~-3 dB, got {}", cutoff_response);
+        assert!(
+            approx_eq(cutoff_response, -3.0, 0.5),
+            "Lowpass at cutoff should be ~-3 dB, got {}",
+            cutoff_response
+        );
         let high_response = lp.log_result(10000.0);
-        assert!(high_response < -20.0, "Lowpass at 10x cutoff should be < -20 dB, got {}", high_response);
+        assert!(
+            high_response < -20.0,
+            "Lowpass at 10x cutoff should be < -20 dB, got {}",
+            high_response
+        );
     }
 
     #[test]
@@ -860,11 +872,23 @@ mod tests {
         let cutoff = 1000.0;
         let hp = Biquad::new(BiquadFilterType::Highpass, cutoff, 48000.0, 0.0, 0.0);
         let low_response = hp.log_result(100.0);
-        assert!(low_response < -20.0, "Highpass at 0.1x cutoff should be < -20 dB, got {}", low_response);
+        assert!(
+            low_response < -20.0,
+            "Highpass at 0.1x cutoff should be < -20 dB, got {}",
+            low_response
+        );
         let cutoff_response = hp.log_result(cutoff);
-        assert!(approx_eq(cutoff_response, -3.0, 0.5), "Highpass at cutoff should be ~-3 dB, got {}", cutoff_response);
+        assert!(
+            approx_eq(cutoff_response, -3.0, 0.5),
+            "Highpass at cutoff should be ~-3 dB, got {}",
+            cutoff_response
+        );
         let high_response = hp.log_result(10000.0);
-        assert!(approx_eq(high_response, 0.0, 0.5), "Highpass high freq response should be ~0 dB, got {}", high_response);
+        assert!(
+            approx_eq(high_response, 0.0, 0.5),
+            "Highpass high freq response should be ~0 dB, got {}",
+            high_response
+        );
     }
 
     #[test]
@@ -873,9 +897,15 @@ mod tests {
         let bp = Biquad::new(BiquadFilterType::Bandpass, center, 48000.0, 1.0, 0.0);
         let center_response = bp.log_result(center);
         let low_response = bp.log_result(100.0);
-        assert!(low_response < center_response - 10.0, "Bandpass below center should be attenuated");
+        assert!(
+            low_response < center_response - 10.0,
+            "Bandpass below center should be attenuated"
+        );
         let high_response = bp.log_result(10000.0);
-        assert!(high_response < center_response - 10.0, "Bandpass above center should be attenuated");
+        assert!(
+            high_response < center_response - 10.0,
+            "Bandpass above center should be attenuated"
+        );
     }
 
     #[test]
@@ -883,11 +913,23 @@ mod tests {
         let center = 1000.0;
         let notch = Biquad::new(BiquadFilterType::Notch, center, 48000.0, 0.0, 0.0);
         let center_response = notch.log_result(center);
-        assert!(center_response < -30.0, "Notch at center should be < -30 dB, got {}", center_response);
+        assert!(
+            center_response < -30.0,
+            "Notch at center should be < -30 dB, got {}",
+            center_response
+        );
         let low_response = notch.log_result(100.0);
-        assert!(approx_eq(low_response, 0.0, 1.0), "Notch away from center should be ~0 dB, got {}", low_response);
+        assert!(
+            approx_eq(low_response, 0.0, 1.0),
+            "Notch away from center should be ~0 dB, got {}",
+            low_response
+        );
         let high_response = notch.log_result(10000.0);
-        assert!(approx_eq(high_response, 0.0, 1.0), "Notch away from center should be ~0 dB, got {}", high_response);
+        assert!(
+            approx_eq(high_response, 0.0, 1.0),
+            "Notch away from center should be ~0 dB, got {}",
+            high_response
+        );
     }
 
     #[test]
@@ -896,9 +938,18 @@ mod tests {
         let gain_db = 6.0;
         let peak = Biquad::new(BiquadFilterType::Peak, center, 48000.0, 2.0, gain_db);
         let center_response = peak.log_result(center);
-        assert!(approx_eq(center_response, gain_db, 0.5), "Peak at center should be ~{} dB, got {}", gain_db, center_response);
+        assert!(
+            approx_eq(center_response, gain_db, 0.5),
+            "Peak at center should be ~{} dB, got {}",
+            gain_db,
+            center_response
+        );
         let low_response = peak.log_result(100.0);
-        assert!(low_response.abs() < 1.0, "Peak away from center should be ~0 dB, got {}", low_response);
+        assert!(
+            low_response.abs() < 1.0,
+            "Peak away from center should be ~0 dB, got {}",
+            low_response
+        );
     }
 
     #[test]
@@ -907,7 +958,12 @@ mod tests {
         let gain_db = -6.0;
         let peak = Biquad::new(BiquadFilterType::Peak, center, 48000.0, 2.0, gain_db);
         let center_response = peak.log_result(center);
-        assert!(approx_eq(center_response, gain_db, 0.5), "Peak cut at center should be ~{} dB, got {}", gain_db, center_response);
+        assert!(
+            approx_eq(center_response, gain_db, 0.5),
+            "Peak cut at center should be ~{} dB, got {}",
+            gain_db,
+            center_response
+        );
     }
 
     #[test]
@@ -916,9 +972,18 @@ mod tests {
         let gain_db = 6.0;
         let ls = Biquad::new(BiquadFilterType::Lowshelf, freq, 48000.0, 0.7, gain_db);
         let low_response = ls.log_result(20.0);
-        assert!(approx_eq(low_response, gain_db, 1.0), "Lowshelf below freq should be ~{} dB, got {}", gain_db, low_response);
+        assert!(
+            approx_eq(low_response, gain_db, 1.0),
+            "Lowshelf below freq should be ~{} dB, got {}",
+            gain_db,
+            low_response
+        );
         let high_response = ls.log_result(5000.0);
-        assert!(approx_eq(high_response, 0.0, 1.0), "Lowshelf above freq should be ~0 dB, got {}", high_response);
+        assert!(
+            approx_eq(high_response, 0.0, 1.0),
+            "Lowshelf above freq should be ~0 dB, got {}",
+            high_response
+        );
     }
 
     #[test]
@@ -927,9 +992,18 @@ mod tests {
         let gain_db = 6.0;
         let hs = Biquad::new(BiquadFilterType::Highshelf, freq, 48000.0, 0.7, gain_db);
         let low_response = hs.log_result(100.0);
-        assert!(approx_eq(low_response, 0.0, 1.0), "Highshelf below freq should be ~0 dB, got {}", low_response);
+        assert!(
+            approx_eq(low_response, 0.0, 1.0),
+            "Highshelf below freq should be ~0 dB, got {}",
+            low_response
+        );
         let high_response = hs.log_result(20000.0);
-        assert!(approx_eq(high_response, gain_db, 1.0), "Highshelf above freq should be ~{} dB, got {}", gain_db, high_response);
+        assert!(
+            approx_eq(high_response, gain_db, 1.0),
+            "Highshelf above freq should be ~{} dB, got {}",
+            gain_db,
+            high_response
+        );
     }
 
     #[test]
@@ -939,11 +1013,20 @@ mod tests {
         let test_freqs = [20.0, 100.0, 1000.0, 5000.0, 20000.0];
         for &f in &test_freqs {
             let resp = ap.log_result(f);
-            assert!(approx_eq(resp, 0.0, 1e-9), "All-Pass magnitude at {}Hz should be 0 dB, got {}", f, resp);
+            assert!(
+                approx_eq(resp, 0.0, 1e-9),
+                "All-Pass magnitude at {}Hz should be 0 dB, got {}",
+                f,
+                resp
+            );
         }
         let resp = ap.complex_response(center);
         let phase = resp.arg();
-        assert!(approx_eq(phase.abs(), std::f64::consts::PI, 1e-9), "All-Pass phase at center freq should be PI, got {}", phase);
+        assert!(
+            approx_eq(phase.abs(), std::f64::consts::PI, 1e-9),
+            "All-Pass phase at center freq should be PI, got {}",
+            phase
+        );
     }
 
     // ========================================================================
@@ -956,11 +1039,24 @@ mod tests {
         let gain_db = 6.0;
         let ls = Biquad::new(BiquadFilterType::LowshelfOrf, freq, 48000.0, 0.7, gain_db);
         let low_response = ls.log_result(20.0);
-        assert!(approx_eq(low_response, gain_db, 1.5), "LowshelfOrf below freq should be ~{} dB, got {}", gain_db, low_response);
+        assert!(
+            approx_eq(low_response, gain_db, 1.5),
+            "LowshelfOrf below freq should be ~{} dB, got {}",
+            gain_db,
+            low_response
+        );
         let high_response = ls.log_result(20000.0);
-        assert!(approx_eq(high_response, 0.0, 1.5), "LowshelfOrf above freq should be ~0 dB, got {}", high_response);
+        assert!(
+            approx_eq(high_response, 0.0, 1.5),
+            "LowshelfOrf above freq should be ~0 dB, got {}",
+            high_response
+        );
         let nyquist_response = ls.log_result(23999.0);
-        assert!(approx_eq(nyquist_response, 0.0, 0.5), "LowshelfOrf at Nyquist should be ~0 dB (prescribed), got {}", nyquist_response);
+        assert!(
+            approx_eq(nyquist_response, 0.0, 0.5),
+            "LowshelfOrf at Nyquist should be ~0 dB (prescribed), got {}",
+            nyquist_response
+        );
     }
 
     #[test]
@@ -969,11 +1065,24 @@ mod tests {
         let gain_db = 6.0;
         let hs = Biquad::new(BiquadFilterType::HighshelfOrf, freq, 48000.0, 0.7, gain_db);
         let low_response = hs.log_result(100.0);
-        assert!(approx_eq(low_response, 0.0, 1.5), "HighshelfOrf below freq should be ~0 dB, got {}", low_response);
+        assert!(
+            approx_eq(low_response, 0.0, 1.5),
+            "HighshelfOrf below freq should be ~0 dB, got {}",
+            low_response
+        );
         let high_response = hs.log_result(20000.0);
-        assert!(approx_eq(high_response, gain_db, 1.5), "HighshelfOrf above freq should be ~{} dB, got {}", gain_db, high_response);
+        assert!(
+            approx_eq(high_response, gain_db, 1.5),
+            "HighshelfOrf above freq should be ~{} dB, got {}",
+            gain_db,
+            high_response
+        );
         let dc_response = hs.log_result(10.0);
-        assert!(approx_eq(dc_response, 0.0, 0.5), "HighshelfOrf at DC should be ~0 dB (prescribed), got {}", dc_response);
+        assert!(
+            approx_eq(dc_response, 0.0, 0.5),
+            "HighshelfOrf at DC should be ~0 dB (prescribed), got {}",
+            dc_response
+        );
     }
 
     #[test]
@@ -982,9 +1091,18 @@ mod tests {
         let gain_db = -6.0;
         let ls = Biquad::new(BiquadFilterType::LowshelfOrf, freq, 48000.0, 0.7, gain_db);
         let low_response = ls.log_result(20.0);
-        assert!(approx_eq(low_response, gain_db, 1.5), "LowshelfOrf cut below freq should be ~{} dB, got {}", gain_db, low_response);
+        assert!(
+            approx_eq(low_response, gain_db, 1.5),
+            "LowshelfOrf cut below freq should be ~{} dB, got {}",
+            gain_db,
+            low_response
+        );
         let high_response = ls.log_result(20000.0);
-        assert!(approx_eq(high_response, 0.0, 1.5), "LowshelfOrf cut above freq should be ~0 dB, got {}", high_response);
+        assert!(
+            approx_eq(high_response, 0.0, 1.5),
+            "LowshelfOrf cut above freq should be ~0 dB, got {}",
+            high_response
+        );
     }
 
     #[test]
@@ -993,9 +1111,18 @@ mod tests {
         let gain_db = -6.0;
         let hs = Biquad::new(BiquadFilterType::HighshelfOrf, freq, 48000.0, 0.7, gain_db);
         let low_response = hs.log_result(100.0);
-        assert!(approx_eq(low_response, 0.0, 1.5), "HighshelfOrf cut below freq should be ~0 dB, got {}", low_response);
+        assert!(
+            approx_eq(low_response, 0.0, 1.5),
+            "HighshelfOrf cut below freq should be ~0 dB, got {}",
+            low_response
+        );
         let high_response = hs.log_result(20000.0);
-        assert!(approx_eq(high_response, gain_db, 1.5), "HighshelfOrf cut above freq should be ~{} dB, got {}", gain_db, high_response);
+        assert!(
+            approx_eq(high_response, gain_db, 1.5),
+            "HighshelfOrf cut above freq should be ~{} dB, got {}",
+            gain_db,
+            high_response
+        );
     }
 
     // ========================================================================
@@ -1008,13 +1135,30 @@ mod tests {
         let gain_db = 6.0;
         let peak = Biquad::new(BiquadFilterType::PeakMatched, center, 48000.0, 2.0, gain_db);
         let center_response = peak.log_result(center);
-        assert!(approx_eq(center_response, gain_db, 0.5), "PeakMatched at center should be ~{} dB, got {}", gain_db, center_response);
+        assert!(
+            approx_eq(center_response, gain_db, 0.5),
+            "PeakMatched at center should be ~{} dB, got {}",
+            gain_db,
+            center_response
+        );
         let low_response = peak.log_result(100.0);
-        assert!(low_response.abs() < 1.5, "PeakMatched away from center should be ~0 dB, got {}", low_response);
+        assert!(
+            low_response.abs() < 1.5,
+            "PeakMatched away from center should be ~0 dB, got {}",
+            low_response
+        );
         let dc_response = peak.log_result(10.0);
-        assert!(approx_eq(dc_response, 0.0, 0.5), "PeakMatched at DC should be ~0 dB, got {}", dc_response);
+        assert!(
+            approx_eq(dc_response, 0.0, 0.5),
+            "PeakMatched at DC should be ~0 dB, got {}",
+            dc_response
+        );
         let nyquist_response = peak.log_result(23999.0);
-        assert!(approx_eq(nyquist_response, 0.0, 0.5), "PeakMatched at Nyquist should be ~0 dB, got {}", nyquist_response);
+        assert!(
+            approx_eq(nyquist_response, 0.0, 0.5),
+            "PeakMatched at Nyquist should be ~0 dB, got {}",
+            nyquist_response
+        );
     }
 
     #[test]
@@ -1023,7 +1167,12 @@ mod tests {
         let gain_db = -6.0;
         let peak = Biquad::new(BiquadFilterType::PeakMatched, center, 48000.0, 2.0, gain_db);
         let center_response = peak.log_result(center);
-        assert!(approx_eq(center_response, gain_db, 0.5), "PeakMatched cut at center should be ~{} dB, got {}", gain_db, center_response);
+        assert!(
+            approx_eq(center_response, gain_db, 0.5),
+            "PeakMatched cut at center should be ~{} dB, got {}",
+            gain_db,
+            center_response
+        );
     }
 
     #[test]
@@ -1032,7 +1181,12 @@ mod tests {
         let gain_db = 6.0;
         let matched = Biquad::new(BiquadFilterType::PeakMatched, center, 48000.0, 2.0, gain_db);
         let center_response = matched.log_result(center);
-        assert!(approx_eq(center_response, gain_db, 1.0), "PeakMatched at high freq center should be ~{} dB, got {}", gain_db, center_response);
+        assert!(
+            approx_eq(center_response, gain_db, 1.0),
+            "PeakMatched at high freq center should be ~{} dB, got {}",
+            gain_db,
+            center_response
+        );
     }
 
     // ========================================================================
@@ -1042,13 +1196,21 @@ mod tests {
     #[test]
     fn test_notch_explicit_q_respected() {
         let notch = Biquad::new(BiquadFilterType::Notch, 1000.0, 48000.0, 5.0, 0.0);
-        assert!(approx_eq(notch.q, 5.0, 1e-9), "Notch should use explicit Q=5.0, got {}", notch.q);
+        assert!(
+            approx_eq(notch.q, 5.0, 1e-9),
+            "Notch should use explicit Q=5.0, got {}",
+            notch.q
+        );
     }
 
     #[test]
     fn test_notch_default_q_when_zero() {
         let notch = Biquad::new(BiquadFilterType::Notch, 1000.0, 48000.0, 0.0, 0.0);
-        assert!(approx_eq(notch.q, 30.0, 1e-9), "Notch with Q=0 should default to 30.0, got {}", notch.q);
+        assert!(
+            approx_eq(notch.q, 30.0, 1e-9),
+            "Notch with Q=0 should default to 30.0, got {}",
+            notch.q
+        );
     }
 
     #[test]
@@ -1056,18 +1218,31 @@ mod tests {
         let mut notch = Biquad::new(BiquadFilterType::Notch, 1000.0, 48000.0, 0.0, 0.0);
         assert!(approx_eq(notch.q, 30.0, 1e-9));
         notch.update_params(BiquadFilterType::Notch, 1000.0, 48000.0, 5.0, 0.0);
-        assert!(approx_eq(notch.q, 5.0, 1e-9), "update_params should use explicit Q=5.0, got {}", notch.q);
+        assert!(
+            approx_eq(notch.q, 5.0, 1e-9),
+            "update_params should use explicit Q=5.0, got {}",
+            notch.q
+        );
         notch.update_params(BiquadFilterType::Notch, 1000.0, 48000.0, 0.0, 0.0);
-        assert!(approx_eq(notch.q, 30.0, 1e-9), "update_params with Q=0 should default to 30.0, got {}", notch.q);
+        assert!(
+            approx_eq(notch.q, 30.0, 1e-9),
+            "update_params with Q=0 should default to 30.0, got {}",
+            notch.q
+        );
     }
 
     #[test]
     fn test_notch_with_explicit_q_wider_notch() {
         let narrow = Biquad::new(BiquadFilterType::Notch, 1000.0, 48000.0, 0.0, 0.0); // Q=30
-        let wide = Biquad::new(BiquadFilterType::Notch, 1000.0, 48000.0, 2.0, 0.0);   // Q=2
+        let wide = Biquad::new(BiquadFilterType::Notch, 1000.0, 48000.0, 2.0, 0.0); // Q=2
         let narrow_off = narrow.log_result(900.0);
         let wide_off = wide.log_result(900.0);
-        assert!(wide_off < narrow_off, "Wider notch (Q=2) should attenuate more at 900Hz: wide={}, narrow={}", wide_off, narrow_off);
+        assert!(
+            wide_off < narrow_off,
+            "Wider notch (Q=2) should attenuate more at 900Hz: wide={}, narrow={}",
+            wide_off,
+            narrow_off
+        );
     }
 
     // ========================================================================
@@ -1091,7 +1266,10 @@ mod tests {
         let result = Biquad::try_new(BiquadFilterType::Peak, 1000.0, 0.0, 2.0, 3.0);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, crate::error::IirError::InvalidSampleRate { .. }));
+        assert!(matches!(
+            err,
+            crate::error::IirError::InvalidSampleRate { .. }
+        ));
     }
 
     #[test]
@@ -1105,7 +1283,10 @@ mod tests {
         let result = Biquad::try_new(BiquadFilterType::Peak, 0.0, 48000.0, 2.0, 3.0);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, crate::error::IirError::InvalidFrequency { .. }));
+        assert!(matches!(
+            err,
+            crate::error::IirError::InvalidFrequency { .. }
+        ));
     }
 
     #[test]
@@ -1113,7 +1294,10 @@ mod tests {
         let result = Biquad::try_new(BiquadFilterType::Peak, 30000.0, 48000.0, 2.0, 3.0);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, crate::error::IirError::InvalidFrequency { .. }));
+        assert!(matches!(
+            err,
+            crate::error::IirError::InvalidFrequency { .. }
+        ));
     }
 
     #[test]
@@ -1157,7 +1341,11 @@ mod tests {
         for _ in 0..1000 {
             output = lp.process(1.0);
         }
-        assert!(approx_eq(output, 1.0, 0.01), "Lowpass should pass DC, got {}", output);
+        assert!(
+            approx_eq(output, 1.0, 0.01),
+            "Lowpass should pass DC, got {}",
+            output
+        );
     }
 
     #[test]
@@ -1167,7 +1355,11 @@ mod tests {
         for _ in 0..1000 {
             output = hp.process(1.0);
         }
-        assert!(output.abs() < 0.01, "Highpass should block DC, got {}", output);
+        assert!(
+            output.abs() < 0.01,
+            "Highpass should block DC, got {}",
+            output
+        );
     }
 
     #[test]
@@ -1177,7 +1369,10 @@ mod tests {
         let second: f64 = peak.process(0.0);
         let third: f64 = peak.process(0.0);
         assert!(first.abs() > 0.0, "Impulse response should be non-zero");
-        assert!(second.abs() > 0.0 || third.abs() > 0.0, "Peak filter should ring after impulse");
+        assert!(
+            second.abs() > 0.0 || third.abs() > 0.0,
+            "Peak filter should ring after impulse"
+        );
     }
 
     #[test]
@@ -1223,7 +1418,10 @@ mod tests {
     fn test_filter_type_long_names() {
         assert_eq!(BiquadFilterType::Lowpass.long_name(), "Lowpass");
         assert_eq!(BiquadFilterType::Highpass.long_name(), "Highpass");
-        assert_eq!(BiquadFilterType::HighpassVariableQ.long_name(), "HighpassVariableQ");
+        assert_eq!(
+            BiquadFilterType::HighpassVariableQ.long_name(),
+            "HighpassVariableQ"
+        );
         assert_eq!(BiquadFilterType::Bandpass.long_name(), "Bandpass");
         assert_eq!(BiquadFilterType::Peak.long_name(), "Peak");
         assert_eq!(BiquadFilterType::Notch.long_name(), "Notch");
@@ -1244,7 +1442,14 @@ mod tests {
             let x = (i as f64 * 0.1).sin();
             let y_df1 = df1.process(x);
             let y_tdf2 = tdf2.process(x);
-            assert!(approx_eq(y_df1, y_tdf2, 1e-10), "sample {}: df1={} tdf2={} diff={}", i, y_df1, y_tdf2, (y_df1 - y_tdf2).abs());
+            assert!(
+                approx_eq(y_df1, y_tdf2, 1e-10),
+                "sample {}: df1={} tdf2={} diff={}",
+                i,
+                y_df1,
+                y_tdf2,
+                (y_df1 - y_tdf2).abs()
+            );
         }
     }
 
@@ -1257,7 +1462,14 @@ mod tests {
             let x = (i as f64 * 0.3).sin();
             let y_df1 = df1.process(x);
             let y_tdf2 = tdf2.process(x);
-            assert!(approx_eq(y_df1, y_tdf2, 1e-10), "sample {}: df1={} tdf2={} diff={}", i, y_df1, y_tdf2, (y_df1 - y_tdf2).abs());
+            assert!(
+                approx_eq(y_df1, y_tdf2, 1e-10),
+                "sample {}: df1={} tdf2={} diff={}",
+                i,
+                y_df1,
+                y_tdf2,
+                (y_df1 - y_tdf2).abs()
+            );
         }
     }
 
@@ -1272,7 +1484,13 @@ mod tests {
         let mut block_buf = input.clone();
         block.process_block(&mut block_buf);
         for i in 0..256 {
-            assert!(approx_eq(single_out[i], block_buf[i], 1e-12), "sample {}: single={} block={}", i, single_out[i], block_buf[i]);
+            assert!(
+                approx_eq(single_out[i], block_buf[i], 1e-12),
+                "sample {}: single={} block={}",
+                i,
+                single_out[i],
+                block_buf[i]
+            );
         }
     }
 
@@ -1301,7 +1519,13 @@ mod tests {
             let x = (i as f64 * 0.1).sin();
             let y1 = f1.process(x);
             let y2 = f2.process_with_coefficients(x, &coeffs);
-            assert!(approx_eq(y1, y2, 1e-12), "sample {}: normal={} with_coeffs={}", i, y1, y2);
+            assert!(
+                approx_eq(y1, y2, 1e-12),
+                "sample {}: normal={} with_coeffs={}",
+                i,
+                y1,
+                y2
+            );
         }
     }
 

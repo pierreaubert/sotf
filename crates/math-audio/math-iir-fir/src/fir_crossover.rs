@@ -46,10 +46,20 @@ impl<T: FilterFloat> FirCrossover<T> {
     /// * `channels` - Number of audio channels
     /// * `n_taps` - Number of FIR taps (must be odd; even values are incremented)
     pub fn new(freq: T, sample_rate: T, channels: usize, n_taps: usize) -> Self {
-        let n_taps = if n_taps.is_multiple_of(2) { n_taps + 1 } else { n_taps };
+        let n_taps = if n_taps.is_multiple_of(2) {
+            n_taps + 1
+        } else {
+            n_taps
+        };
 
         // Design lowpass FIR using Kaiser window (beta=8 for good sidelobe rejection)
-        let fir = Fir::<T>::lowpass(n_taps, freq, sample_rate, WindowType::Kaiser, T::from_f64(8.0).unwrap());
+        let fir = Fir::<T>::lowpass(
+            n_taps,
+            freq,
+            sample_rate,
+            WindowType::Kaiser,
+            T::from_f64(8.0).unwrap(),
+        );
 
         let coefficients: Vec<T> = fir.coeffs().to_vec();
 
@@ -197,8 +207,13 @@ impl<T: FilterFloat> MultibandFirCrossover<T> {
 
         // Cascade: split remainder at each subsequent frequency (zero-allocation)
         for (i, xover) in self.crossovers.iter_mut().enumerate().skip(1) {
-            self.scratch_high2[..self.channels].copy_from_slice(&self.scratch_high[..self.channels]);
-            xover.process_frame(&self.scratch_high2, &mut self.scratch_low, &mut self.scratch_high);
+            self.scratch_high2[..self.channels]
+                .copy_from_slice(&self.scratch_high[..self.channels]);
+            xover.process_frame(
+                &self.scratch_high2,
+                &mut self.scratch_low,
+                &mut self.scratch_high,
+            );
             bands[i].copy_from_slice(&self.scratch_low);
         }
 

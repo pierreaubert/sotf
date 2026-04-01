@@ -43,10 +43,12 @@ impl<T: FilterFloat> Lr4Crossover<T> {
             ]
         };
 
-        let lowpass: Vec<[Biquad<T>; 2]> =
-            (0..channels).map(|_| make_pair(BiquadFilterType::Lowpass)).collect();
-        let highpass: Vec<[Biquad<T>; 2]> =
-            (0..channels).map(|_| make_pair(BiquadFilterType::Highpass)).collect();
+        let lowpass: Vec<[Biquad<T>; 2]> = (0..channels)
+            .map(|_| make_pair(BiquadFilterType::Lowpass))
+            .collect();
+        let highpass: Vec<[Biquad<T>; 2]> = (0..channels)
+            .map(|_| make_pair(BiquadFilterType::Highpass))
+            .collect();
 
         Self {
             lowpass,
@@ -119,10 +121,20 @@ impl<T: FilterFloat> Lr4Crossover<T> {
         let butterworth_q: T = T::FRAC_1_SQRT_2();
         for ch in 0..self.channels {
             for stage in 0..2 {
-                self.lowpass[ch][stage] =
-                    Biquad::new(BiquadFilterType::Lowpass, self.freq, self.sample_rate, butterworth_q, T::zero());
-                self.highpass[ch][stage] =
-                    Biquad::new(BiquadFilterType::Highpass, self.freq, self.sample_rate, butterworth_q, T::zero());
+                self.lowpass[ch][stage] = Biquad::new(
+                    BiquadFilterType::Lowpass,
+                    self.freq,
+                    self.sample_rate,
+                    butterworth_q,
+                    T::zero(),
+                );
+                self.highpass[ch][stage] = Biquad::new(
+                    BiquadFilterType::Highpass,
+                    self.freq,
+                    self.sample_rate,
+                    butterworth_q,
+                    T::zero(),
+                );
             }
         }
     }

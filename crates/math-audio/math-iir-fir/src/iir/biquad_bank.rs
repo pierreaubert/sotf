@@ -236,10 +236,11 @@ impl<T: FilterFloat> BiquadBank<T> {
             let x0 = samples[ch];
             let x1_in = samples[ch + 1];
 
-            let y0 = b0 * x0 + b1 * self.x1[ch] + b2 * self.x2[ch]
-                - a1 * self.y1[ch] - a2 * self.y2[ch];
+            let y0 =
+                b0 * x0 + b1 * self.x1[ch] + b2 * self.x2[ch] - a1 * self.y1[ch] - a2 * self.y2[ch];
             let y1 = b0 * x1_in + b1 * self.x1[ch + 1] + b2 * self.x2[ch + 1]
-                - a1 * self.y1[ch + 1] - a2 * self.y2[ch + 1];
+                - a1 * self.y1[ch + 1]
+                - a2 * self.y2[ch + 1];
 
             self.x2[ch] = self.x1[ch];
             self.x1[ch] = x0;
@@ -258,8 +259,8 @@ impl<T: FilterFloat> BiquadBank<T> {
         // Handle odd last channel (scalar)
         if ch < nc {
             let x = samples[ch];
-            let y = b0 * x + b1 * self.x1[ch] + b2 * self.x2[ch]
-                - a1 * self.y1[ch] - a2 * self.y2[ch];
+            let y =
+                b0 * x + b1 * self.x1[ch] + b2 * self.x2[ch] - a1 * self.y1[ch] - a2 * self.y2[ch];
             self.x2[ch] = self.x1[ch];
             self.x1[ch] = x;
             self.y2[ch] = self.y1[ch];
@@ -326,11 +327,13 @@ mod biquad_bank_tests {
         let mut bank = BiquadBank::new(&template, num_channels);
 
         // Create individual biquads (one per channel)
-        let mut individuals: Vec<Biquad> = (0..num_channels).map(|_| {
-            let mut b = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
-            b.use_tdf2 = true;
-            b
-        }).collect();
+        let mut individuals: Vec<Biquad> = (0..num_channels)
+            .map(|_| {
+                let mut b = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+                b.use_tdf2 = true;
+                b
+            })
+            .collect();
 
         // Generate different test signals per channel
         let mut bank_frame = vec![0.0_f64; num_channels];
@@ -356,7 +359,10 @@ mod biquad_bank_tests {
                 assert!(
                     (bank_frame[ch] - individual_out[ch]).abs() < TOL,
                     "TDF-II mismatch at frame={}, ch={}: bank={}, individual={}",
-                    frame_idx, ch, bank_frame[ch], individual_out[ch]
+                    frame_idx,
+                    ch,
+                    bank_frame[ch],
+                    individual_out[ch]
                 );
             }
         }
@@ -395,7 +401,10 @@ mod biquad_bank_tests {
                 assert!(
                     (bank_frame[ch] - individual_out[ch]).abs() < TOL,
                     "DF-I mismatch at frame={}, ch={}: bank={}, individual={}",
-                    frame_idx, ch, bank_frame[ch], individual_out[ch]
+                    frame_idx,
+                    ch,
+                    bank_frame[ch],
+                    individual_out[ch]
                 );
             }
         }
@@ -430,7 +439,9 @@ mod biquad_bank_tests {
             assert!(
                 (frame[active_ch] - expected).abs() < TOL,
                 "Active channel mismatch at frame {}: bank={}, expected={}",
-                frame_idx, frame[active_ch], expected
+                frame_idx,
+                frame[active_ch],
+                expected
             );
 
             // All other channels should remain zero (silence in → silence out)
@@ -439,7 +450,9 @@ mod biquad_bank_tests {
                     assert!(
                         frame[ch].abs() < TOL,
                         "Non-active channel {} has non-zero output {} at frame {}",
-                        ch, frame[ch], frame_idx
+                        ch,
+                        frame[ch],
+                        frame_idx
                     );
                 }
             }
@@ -598,7 +611,9 @@ mod biquad_bank_tests {
             assert!(
                 (buffer_frame[i] - buffer_block[i]).abs() < TOL,
                 "Block/frame mismatch at index {}: frame={}, block={}",
-                i, buffer_frame[i], buffer_block[i]
+                i,
+                buffer_frame[i],
+                buffer_block[i]
             );
         }
     }
@@ -623,7 +638,9 @@ mod biquad_bank_tests {
             assert!(
                 (frame[0] - expected).abs() < TOL,
                 "Single-channel mismatch at frame {}: bank={}, expected={}",
-                frame_idx, frame[0], expected
+                frame_idx,
+                frame[0],
+                expected
             );
         }
     }

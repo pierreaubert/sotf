@@ -1081,7 +1081,10 @@ mod tests {
         suppress_pre_ringing(&mut ir, &config, 48000.0);
 
         // All taps before main should be zeroed
-        assert_eq!(ir[40], 0.0, "all pre-ringing should be suppressed with max_time=0");
+        assert_eq!(
+            ir[40], 0.0,
+            "all pre-ringing should be suppressed with max_time=0"
+        );
         assert_eq!(ir[50], 1.0, "main tap should be preserved");
     }
 
@@ -1096,7 +1099,8 @@ mod tests {
 
         assert_eq!(analysis.main_tap_index, 50);
         assert!(
-            analysis.peak_pre_ringing_db.is_finite() || analysis.peak_pre_ringing_db == f64::NEG_INFINITY,
+            analysis.peak_pre_ringing_db.is_finite()
+                || analysis.peak_pre_ringing_db == f64::NEG_INFINITY,
             "peak_pre_ringing_db should be finite or -inf, got {}",
             analysis.peak_pre_ringing_db
         );
@@ -1202,6 +1206,9 @@ mod tests {
 
         // Verify pre-ringing is bounded
         let analysis = analyze_pre_ringing(&coeffs, 48000.0);
-        assert!(analysis.peak_pre_ringing_db.is_finite() || analysis.peak_pre_ringing_db == f64::NEG_INFINITY);
+        assert!(
+            analysis.peak_pre_ringing_db.is_finite()
+                || analysis.peak_pre_ringing_db == f64::NEG_INFINITY
+        );
     }
 }

@@ -10,7 +10,7 @@
 //!
 //! Reference: Zavalishin, V. (2012). "The Art of VA Filter Design", Chapter 3.
 
-use crate::traits::{lit, FilterFloat};
+use crate::traits::{FilterFloat, lit};
 use num_complex::Complex;
 
 /// SVF filter type.
@@ -81,13 +81,7 @@ impl<T: FilterFloat> SvfFilter<T> {
     /// * `sample_rate` - Sample rate in Hz
     /// * `q` - Q factor (resonance). Higher = narrower bandwidth.
     /// * `gain_db` - Gain in dB (only used for Peak, Lowshelf, Highshelf)
-    pub fn new(
-        filter_type: SvfFilterType,
-        freq: T,
-        sample_rate: T,
-        q: T,
-        gain_db: T,
-    ) -> Self {
+    pub fn new(filter_type: SvfFilterType, freq: T, sample_rate: T, q: T, gain_db: T) -> Self {
         let zero = T::zero();
         let mut filter = Self {
             filter_type,
@@ -265,8 +259,9 @@ impl<T: FilterFloat> SvfFilter<T> {
         //             HP = s^2/(s^2 + k*s + 1)
         // After bilinear: use g = tan(pi*fc/fs)
         let s_norm = s / Complex::<T>::new(g, T::zero());
-        let denom =
-            s_norm * s_norm + Complex::<T>::new(k, T::zero()) * s_norm + Complex::<T>::new(T::one(), T::zero());
+        let denom = s_norm * s_norm
+            + Complex::<T>::new(k, T::zero()) * s_norm
+            + Complex::<T>::new(T::one(), T::zero());
 
         let lp = Complex::<T>::new(T::one(), T::zero()) / denom;
         let bp = s_norm / denom;
@@ -339,10 +334,7 @@ mod tests {
             f.process(1.0);
         }
         let out = f.process(1.0);
-        assert!(
-            (out - 1.0).abs() < 0.01,
-            "LP should pass DC: got {out}"
-        );
+        assert!((out - 1.0).abs() < 0.01, "LP should pass DC: got {out}");
     }
 
     #[test]
@@ -352,10 +344,7 @@ mod tests {
             f.process(1.0);
         }
         let out = f.process(1.0);
-        assert!(
-            out.abs() < 0.01,
-            "HP should block DC: got {out}"
-        );
+        assert!(out.abs() < 0.01, "HP should block DC: got {out}");
     }
 
     #[test]
@@ -447,10 +436,7 @@ mod tests {
             }
         }
         // 6 dB boost ≈ 2x
-        assert!(
-            max_out > 1.5,
-            "Lowshelf should boost lows: got {max_out}"
-        );
+        assert!(max_out > 1.5, "Lowshelf should boost lows: got {max_out}");
     }
 
     #[test]
@@ -467,10 +453,7 @@ mod tests {
                 max_out = max_out.max(y.abs());
             }
         }
-        assert!(
-            max_out > 1.5,
-            "Highshelf should boost highs: got {max_out}"
-        );
+        assert!(max_out > 1.5, "Highshelf should boost highs: got {max_out}");
     }
 
     #[test]

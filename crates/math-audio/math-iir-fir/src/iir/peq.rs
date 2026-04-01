@@ -7,8 +7,8 @@ use byteorder::{BigEndian, WriteBytesExt};
 use ndarray::Array1;
 use std::f64::consts::PI;
 
-use crate::{DEFAULT_Q_HIGH_LOW_PASS, q2bw};
 use super::biquad::{Biquad, BiquadFilterType, Peq};
+use crate::{DEFAULT_Q_HIGH_LOW_PASS, q2bw};
 
 /// Represents a single filter in a parametric equalizer.
 #[derive(Debug, Clone, Default)]
@@ -1256,7 +1256,9 @@ pub fn peq_format_pipewire(comment: &str, peq: &Peq) -> String {
             let label = pw_label(iir.filter_type);
             let name = format!("{ch}_eq_{i}");
             match iir.filter_type {
-                BiquadFilterType::Lowpass | BiquadFilterType::Highpass | BiquadFilterType::HighpassVariableQ => {
+                BiquadFilterType::Lowpass
+                | BiquadFilterType::Highpass
+                | BiquadFilterType::HighpassVariableQ => {
                     writeln!(out, "          {{ type = builtin  name = \"{name}\"  label = {label}  control = {{ \"Freq\" = {:.1}  \"Q\" = {:.4} }} }}", iir.freq, iir.q).unwrap();
                 }
                 _ => {
@@ -1275,7 +1277,12 @@ pub fn peq_format_pipewire(comment: &str, peq: &Peq) -> String {
     writeln!(out, "        links = [").unwrap();
     for nodes in &all_node_names {
         for pair in nodes.windows(2) {
-            writeln!(out, "          {{ output = \"{}:Out\"  input = \"{}:In\" }}", pair[0], pair[1]).unwrap();
+            writeln!(
+                out,
+                "          {{ output = \"{}:Out\"  input = \"{}:In\" }}",
+                pair[0], pair[1]
+            )
+            .unwrap();
         }
     }
     writeln!(out, "        ]").unwrap();
@@ -1297,8 +1304,16 @@ pub fn peq_format_pipewire(comment: &str, peq: &Peq) -> String {
     writeln!(out, "        ]").unwrap();
 
     writeln!(out, "      }}").unwrap();
-    writeln!(out, "      capture.props = {{ media.class = Audio/Sink  node.name = \"sotf_eq\" }}").unwrap();
-    writeln!(out, "      playback.props = {{ node.name = \"sotf_eq_out\" }}").unwrap();
+    writeln!(
+        out,
+        "      capture.props = {{ media.class = Audio/Sink  node.name = \"sotf_eq\" }}"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "      playback.props = {{ node.name = \"sotf_eq_out\" }}"
+    )
+    .unwrap();
     writeln!(out, "      audio.channels = 2").unwrap();
     writeln!(out, "      audio.position = [ \"FL\", \"FR\" ]").unwrap();
     writeln!(out, "    }}").unwrap();
@@ -1391,7 +1406,9 @@ pub fn peq_format_camilladsp(comment: &str, peq: &Peq, sample_rate: u32) -> Stri
 pub fn peq_format_wavelet(comment: &str, peq: &Peq, sample_rate: f64) -> String {
     use std::fmt::Write;
 
-    const BANDS: [f64; 9] = [32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0];
+    const BANDS: [f64; 9] = [
+        32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0,
+    ];
 
     let preamp = peq_preamp_gain(peq);
     let mut out = String::new();

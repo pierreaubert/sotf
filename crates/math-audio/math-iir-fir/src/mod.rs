@@ -47,28 +47,27 @@ pub use traits::FilterFloat;
 /// Forward-reverse (zero-phase) filtering for offline signal processing.
 pub mod filtfilt;
 mod fir;
+/// Linear-phase FIR crossover (windowed sinc).
+pub mod fir_crossover;
 mod fir_design;
 mod iir;
+/// Linkwitz-Riley 4th-order IIR crossover.
+pub mod lr4_crossover;
 mod phase_smooth;
 /// Zero-Delay Feedback State Variable Filter (Zavalishin TPT topology).
 pub mod svf;
-/// Linkwitz-Riley 4th-order IIR crossover.
-pub mod lr4_crossover;
-/// Linear-phase FIR crossover (windowed sinc).
-pub mod fir_crossover;
 
 // Re-export error types
 pub use error::{IirError, Result};
 
 // Re-export IIR types and functions
 pub use iir::{
-    Biquad, BiquadBank, BiquadCoefficients, BiquadFilterType, FilterRow, Peq, compute_peq_response, peq_allpass,
-    peq_butterworth_highpass, peq_butterworth_lowpass, peq_butterworth_q, peq_equal,
+    Biquad, BiquadBank, BiquadCoefficients, BiquadFilterType, FilterRow, Peq, compute_peq_response,
+    peq_allpass, peq_butterworth_highpass, peq_butterworth_lowpass, peq_butterworth_q, peq_equal,
     peq_format_apo, peq_format_aupreset, peq_format_camilladsp, peq_format_easyeffects,
     peq_format_pipewire, peq_format_rme_channel, peq_format_rme_room, peq_format_roon,
-    peq_format_wavelet,
-    peq_linkwitzriley_highpass, peq_linkwitzriley_lowpass, peq_linkwitzriley_q, peq_loudness_gain,
-    peq_preamp_gain, peq_preamp_gain_max, peq_print, peq_spl,
+    peq_format_wavelet, peq_linkwitzriley_highpass, peq_linkwitzriley_lowpass, peq_linkwitzriley_q,
+    peq_loudness_gain, peq_preamp_gain, peq_preamp_gain_max, peq_print, peq_spl,
 };
 
 // Re-export FIR types and functions
@@ -80,8 +79,7 @@ pub use fir::{
 // Re-export FIR design types and functions (frequency response matching)
 pub use fir_design::{
     FirDesignConfig, FirPhase, PreRingingAnalysis, PreRingingConfig, analyze_pre_ringing,
-    generate_fir_from_response, generate_kirkeby_correction, save_fir_to_wav,
-    suppress_pre_ringing,
+    generate_fir_from_response, generate_kirkeby_correction, save_fir_to_wav, suppress_pre_ringing,
 };
 
 // Re-export phase smoothing functions
@@ -91,8 +89,8 @@ pub use phase_smooth::{interpolate_phase_complex, smooth_phase_via_group_delay, 
 pub use svf::{SvfFilter, SvfFilterType};
 
 // Re-export crossover types
-pub use lr4_crossover::{CROSSOVER_PRESETS, Lr4Crossover, MultibandLr4Crossover};
 pub use fir_crossover::{FirCrossover, MultibandFirCrossover};
+pub use lr4_crossover::{CROSSOVER_PRESETS, Lr4Crossover, MultibandLr4Crossover};
 
 // ============================================================================
 // Common Helper Functions and Constants
@@ -115,7 +113,6 @@ pub fn q2bw(q: f64) -> f64 {
 pub const DEFAULT_Q_HIGH_LOW_PASS: f64 = 1.0 / std::f64::consts::SQRT_2;
 /// Default Q factor for high/low shelf filters
 pub const DEFAULT_Q_HIGH_LOW_SHELF: f64 = 1.0668676536332304; // Value of bw2q(0.9)
-
 
 /// Lower bound of human hearing (Hz).
 pub const AUDIBLE_MIN_FREQ: f64 = 20.0;
