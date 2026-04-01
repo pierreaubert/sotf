@@ -95,6 +95,9 @@ impl<P: Projection> GeoPath<P> {
 
     /// Render a point as a circle.
     fn render_point(&self, lon: f64, lat: f64) -> String {
+        if !self.projection.is_visible(lon, lat) {
+            return String::new();
+        }
         let (x, y) = self.projection.project(lon, lat);
         let r = self.config.point_radius;
         let d = self.config.digits;
@@ -133,13 +136,22 @@ impl<P: Projection> GeoPath<P> {
         let d = self.config.digits;
         let mut path = String::new();
         let mut prev_lon: Option<f64> = None;
+        let mut need_move = true;
 
-        for (i, &(lon, lat)) in coords.iter().enumerate() {
+        for &(lon, lat) in coords.iter() {
+            // Pre-clip: skip points outside the projection's clip angle
+            if !self.projection.is_visible(lon, lat) {
+                prev_lon = None;
+                need_move = true;
+                continue;
+            }
+
             let (x, y) = self.projection.project(lon, lat);
 
             // Check if coordinates are valid
             if !x.is_finite() || !y.is_finite() {
                 prev_lon = None;
+                need_move = true;
                 continue;
             }
 
@@ -150,8 +162,9 @@ impl<P: Projection> GeoPath<P> {
                 false
             };
 
-            if i == 0 || crosses_antimeridian {
+            if need_move || crosses_antimeridian {
                 path.push_str(&format!("M{:.d$},{:.d$}", x, y, d = d));
+                need_move = false;
             } else {
                 path.push_str(&format!("L{:.d$},{:.d$}", x, y, d = d));
             }
@@ -188,7 +201,17 @@ impl<P: Projection> GeoPath<P> {
             let mut prev_lon: Option<f64> = None;
             let mut ring_started = false;
 
-            for (i, &(lon, lat)) in ring.iter().enumerate() {
+            for &(lon, lat) in ring.iter() {
+                // Pre-clip: skip points outside the projection's clip angle
+                if !self.projection.is_visible(lon, lat) {
+                    prev_lon = None;
+                    if ring_started {
+                        path.push('Z');
+                        ring_started = false;
+                    }
+                    continue;
+                }
+
                 let (x, y) = self.projection.project(lon, lat);
 
                 // Check if coordinates are valid
@@ -208,7 +231,7 @@ impl<P: Projection> GeoPath<P> {
                     false
                 };
 
-                if i == 0 || crosses_antimeridian {
+                if !ring_started || crosses_antimeridian {
                     // Close previous segment if we're breaking due to antimeridian
                     if ring_started && crosses_antimeridian {
                         path.push('Z');

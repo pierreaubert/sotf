@@ -54,6 +54,19 @@ pub trait Projection: Clone {
 
     /// Set the rotation angles.
     fn set_rotate(&mut self, lambda: f64, phi: f64, gamma: f64);
+
+    /// Check whether a point is visible (not clipped) for this projection.
+    ///
+    /// Returns `true` for projections without a clip angle. For azimuthal
+    /// projections (orthographic, stereographic), returns `false` when the
+    /// point's angular distance from the projection center exceeds `clip_angle`.
+    ///
+    /// This mirrors D3's pre-clip stream stage: `project()` always returns
+    /// valid coordinates; visibility is checked separately so that callers
+    /// like `GeoPath` can decide how to handle clipped segments.
+    fn is_visible(&self, _lon: f64, _lat: f64) -> bool {
+        true
+    }
 }
 
 /// Base configuration shared by all projections.
@@ -167,6 +180,22 @@ fn invert_rotation(config: &ProjectionConfig, lambda: f64, phi: f64) -> (f64, f6
         phi + radians(config.center.1),
     );
     (degrees(rl), degrees(rp))
+}
+
+/// Check visibility against clip_angle after applying rotation.
+///
+/// Returns `true` when the point's angular distance from the projection
+/// center is within `clip_angle`, or when no clip_angle is set.
+fn clip_angle_visible(config: &ProjectionConfig, lon: f64, lat: f64) -> bool {
+    match config.clip_angle {
+        None => true,
+        Some(clip_deg) => {
+            let (lambda, phi) = apply_rotation(config, lon, lat);
+            let cos_clip = clip_deg.to_radians().cos();
+            let cos_dist = phi.cos() * lambda.cos();
+            cos_dist >= cos_clip
+        }
+    }
 }
 
 // ============================================================================
@@ -471,16 +500,6 @@ impl Orthographic {
 impl Projection for Orthographic {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
         let (lambda, phi) = apply_rotation(&self.config, lon, lat);
-
-        // Clip back hemisphere: reject points where angular distance > clip_angle
-        if let Some(clip_deg) = self.config.clip_angle {
-            let cos_clip = clip_deg.to_radians().cos();
-            let cos_dist = phi.cos() * lambda.cos();
-            if cos_dist < cos_clip {
-                return (f64::NAN, f64::NAN);
-            }
-        }
-
         let (x, y) = Self::project_raw(lambda, phi);
         (
             self.config.translate.0 + self.config.scale * x,
@@ -524,6 +543,10 @@ impl Projection for Orthographic {
 
     fn set_rotate(&mut self, lambda: f64, phi: f64, gamma: f64) {
         self.config.rotate = (lambda, phi, gamma);
+    }
+
+    fn is_visible(&self, lon: f64, lat: f64) -> bool {
+        clip_angle_visible(&self.config, lon, lat)
     }
 }
 
@@ -606,18 +629,6 @@ impl Stereographic {
 impl Projection for Stereographic {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
         let (lambda, phi) = apply_rotation(&self.config, lon, lat);
-
-        // Clip points beyond the clip angle (angular distance from center).
-        // cos(angular_distance) = cos(phi) * cos(lambda); reject when
-        // angular_distance > clip_angle.
-        if let Some(clip_deg) = self.config.clip_angle {
-            let cos_clip = clip_deg.to_radians().cos();
-            let cos_dist = phi.cos() * lambda.cos();
-            if cos_dist < cos_clip {
-                return (f64::NAN, f64::NAN);
-            }
-        }
-
         let (x, y) = Self::project_raw(lambda, phi);
 
         // Guard against division-by-zero at the exact antipode
@@ -668,6 +679,10 @@ impl Projection for Stereographic {
 
     fn set_rotate(&mut self, lambda: f64, phi: f64, gamma: f64) {
         self.config.rotate = (lambda, phi, gamma);
+    }
+
+    fn is_visible(&self, lon: f64, lat: f64) -> bool {
+        clip_angle_visible(&self.config, lon, lat)
     }
 }
 
