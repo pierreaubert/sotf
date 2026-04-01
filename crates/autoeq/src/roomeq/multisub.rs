@@ -6,9 +6,9 @@
 //!   biquad filters per subwoofer. The all-pass filters add phase rotation without
 //!   changing magnitude, improving destructive interference cancellation.
 
+use crate::Curve;
 use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use crate::workflow::DriverOptimizationResult;
-use crate::Curve;
 use log::{info, warn};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use ndarray::Array1;

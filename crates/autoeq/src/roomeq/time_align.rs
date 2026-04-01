@@ -279,9 +279,21 @@ mod tests {
 
         let delays = calculate_alignment_delays(&arrivals);
 
-        assert!((delays["A"] - 5.0).abs() < 0.001, "A should get 5ms delay, got {}", delays["A"]);
-        assert!((delays["B"] - 3.0).abs() < 0.001, "B should get 3ms delay, got {}", delays["B"]);
-        assert!((delays["C"] - 0.0).abs() < 0.001, "C should get 0ms delay, got {}", delays["C"]);
+        assert!(
+            (delays["A"] - 5.0).abs() < 0.001,
+            "A should get 5ms delay, got {}",
+            delays["A"]
+        );
+        assert!(
+            (delays["B"] - 3.0).abs() < 0.001,
+            "B should get 3ms delay, got {}",
+            delays["B"]
+        );
+        assert!(
+            (delays["C"] - 0.0).abs() < 0.001,
+            "C should get 0ms delay, got {}",
+            delays["C"]
+        );
     }
 
     #[test]
@@ -301,12 +313,17 @@ mod tests {
         };
 
         let estimated = estimate_arrival_from_phase(&curve, 200.0, 4000.0);
-        assert!(estimated.is_some(), "Should recover arrival time from linear phase");
+        assert!(
+            estimated.is_some(),
+            "Should recover arrival time from linear phase"
+        );
         let estimated = estimated.unwrap();
         assert!(
             (estimated - tau_ms).abs() < 0.1,
             "Expected ~{} ms, got {} ms (error {:.3} ms)",
-            tau_ms, estimated, (estimated - tau_ms).abs()
+            tau_ms,
+            estimated,
+            (estimated - tau_ms).abs()
         );
     }
 }

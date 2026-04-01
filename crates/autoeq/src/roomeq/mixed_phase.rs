@@ -169,7 +169,11 @@ pub fn generate_excess_phase_fir_with_depth(
 ) -> Vec<f64> {
     let n_taps = (config.max_fir_length_ms / 1000.0 * sample_rate).round() as usize;
     // Ensure odd number of taps for symmetric linear-phase center
-    let n_taps = if n_taps.is_multiple_of(2) { n_taps + 1 } else { n_taps };
+    let n_taps = if n_taps.is_multiple_of(2) {
+        n_taps + 1
+    } else {
+        n_taps
+    };
     let n_taps = n_taps.max(31); // minimum useful length
 
     // The correction phase is the negation of the residual excess phase,
@@ -302,11 +306,8 @@ fn generate_phase_only_fir(
     }
 
     // Apply window
-    let window = math_audio_iir_fir::generate_window(
-        n_taps,
-        math_audio_iir_fir::WindowType::Hann,
-        0.0,
-    );
+    let window =
+        math_audio_iir_fir::generate_window(n_taps, math_audio_iir_fir::WindowType::Hann, 0.0);
     for (x, w) in final_ir.iter_mut().zip(window.iter()) {
         *x *= w;
     }
@@ -446,7 +447,9 @@ mod tests {
     fn test_decompose_phase_flat_measurement() {
         // Flat magnitude + zero phase → min phase ≈ 0, excess ≈ 0
         let n = 64;
-        let freq: Vec<f64> = (0..n).map(|i| 20.0 * (20000.0 / 20.0_f64).powf(i as f64 / (n - 1) as f64)).collect();
+        let freq: Vec<f64> = (0..n)
+            .map(|i| 20.0 * (20000.0 / 20.0_f64).powf(i as f64 / (n - 1) as f64))
+            .collect();
         let spl = vec![80.0; n];
         let phase = vec![0.0; n];
 
@@ -459,7 +462,11 @@ mod tests {
 
         // For flat response, everything should be near zero
         assert!(min_phase.len() == n);
-        assert!(delay_ms.abs() < 5.0, "delay should be small for flat response, got {:.2} ms", delay_ms);
+        assert!(
+            delay_ms.abs() < 5.0,
+            "delay should be small for flat response, got {:.2} ms",
+            delay_ms
+        );
         let max_residual = residual.iter().map(|r| r.abs()).fold(0.0_f64, f64::max);
         assert!(max_residual < 180.0, "residual should be bounded");
     }
@@ -476,7 +483,10 @@ mod tests {
 
         assert!(!fir.is_empty(), "FIR should not be empty");
         assert!(fir.len() >= 31, "FIR should have minimum length");
-        assert!(fir.iter().any(|&x| x.abs() > 1e-10), "FIR should have non-zero taps");
+        assert!(
+            fir.iter().any(|&x| x.abs() > 1e-10),
+            "FIR should have non-zero taps"
+        );
     }
 
     #[test]
@@ -562,7 +572,9 @@ mod tests {
         // Center tap should dominate (due to windowing it won't be exactly 1.0)
         let center = 255 / 2;
         let center_energy = fir[center].abs();
-        let off_center_max = fir.iter().enumerate()
+        let off_center_max = fir
+            .iter()
+            .enumerate()
             .filter(|&(i, _)| i != center)
             .map(|(_, v)| v.abs())
             .fold(0.0_f64, f64::max);
@@ -594,11 +606,7 @@ mod tests {
 
         // All taps should be real-valued (finite, no NaN)
         for (i, &v) in fir.iter().enumerate() {
-            assert!(
-                v.is_finite(),
-                "tap {} should be finite, got {}",
-                i, v
-            );
+            assert!(v.is_finite(), "tap {} should be finite, got {}", i, v);
         }
     }
 
@@ -606,7 +614,9 @@ mod tests {
     fn test_decompose_phase_with_delay() {
         // Known delay → decompose should recover it
         let n = 128;
-        let freq: Vec<f64> = (0..n).map(|i| 20.0 * (20000.0 / 20.0_f64).powf(i as f64 / (n - 1) as f64)).collect();
+        let freq: Vec<f64> = (0..n)
+            .map(|i| 20.0 * (20000.0 / 20.0_f64).powf(i as f64 / (n - 1) as f64))
+            .collect();
         let spl = vec![80.0; n];
         let delay_ms = 2.0;
         let delay_s = delay_ms / 1000.0;
@@ -628,7 +638,8 @@ mod tests {
         assert!(
             estimated_delay > 0.0 && estimated_delay < delay_ms * 3.0,
             "should recover positive delay roughly near {:.1} ms, got {:.2} ms",
-            delay_ms, estimated_delay
+            delay_ms,
+            estimated_delay
         );
     }
 
@@ -675,19 +686,14 @@ mod tests {
             Some(&low_depth),
         );
 
-        let fir_unmasked = generate_excess_phase_fir_with_depth(
-            &freq,
-            &residual_phase,
-            &config,
-            48000.0,
-            None,
-        );
+        let fir_unmasked =
+            generate_excess_phase_fir_with_depth(&freq, &residual_phase, &config, 48000.0, None);
 
         // The masked version (zero correction) should be more center-concentrated
         // (near-identity) than the unmasked version (phase correction applied).
         let center = fir_masked.len() / 2;
-        let masked_center_ratio = fir_masked[center].abs()
-            / fir_masked.iter().map(|x| x.abs()).sum::<f64>().max(1e-12);
+        let masked_center_ratio =
+            fir_masked[center].abs() / fir_masked.iter().map(|x| x.abs()).sum::<f64>().max(1e-12);
         let unmasked_center_ratio = fir_unmasked[center].abs()
             / fir_unmasked.iter().map(|x| x.abs()).sum::<f64>().max(1e-12);
 

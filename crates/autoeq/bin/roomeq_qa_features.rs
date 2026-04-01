@@ -150,11 +150,8 @@ static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn run_optimization(config: &RoomConfig) -> Result<RoomOptimizationResult> {
     let id = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let temp_dir = std::env::temp_dir().join(format!(
-        "roomeq_qa_features_{}_{}",
-        std::process::id(),
-        id
-    ));
+    let temp_dir =
+        std::env::temp_dir().join(format!("roomeq_qa_features_{}_{}", std::process::id(), id));
     std::fs::create_dir_all(&temp_dir)?;
     let callback =
         Box::new(|_: &autoeq::roomeq::RoomOptimizationProgress| CallbackAction::Continue);
@@ -270,7 +267,11 @@ fn validate_pass(pass_name: &str, results: &[StepResult]) -> Vec<String> {
             if step.post_score > prev.post_score * STEP_REGRESSION_TOLERANCE {
                 errors.push(format!(
                     "  {} step '{}': post_score {:.4} > prev {:.4} * {:.2} — excessive regression",
-                    pass_name, step.name, step.post_score, prev.post_score, STEP_REGRESSION_TOLERANCE
+                    pass_name,
+                    step.name,
+                    step.post_score,
+                    prev.post_score,
+                    STEP_REGRESSION_TOLERANCE
                 ));
             }
         }
@@ -421,16 +422,10 @@ fn main() -> Result<()> {
     // Summary
     let total = pass_count + fail_count;
     if all_errors.is_empty() {
-        println!(
-            "=== Summary: {}/{} recordings PASS ===",
-            pass_count, total
-        );
+        println!("=== Summary: {}/{} recordings PASS ===", pass_count, total);
         Ok(())
     } else {
-        println!(
-            "=== Summary: {}/{} recordings FAIL ===",
-            fail_count, total
-        );
+        println!("=== Summary: {}/{} recordings FAIL ===", fail_count, total);
         for e in &all_errors {
             eprintln!("{}", e);
         }

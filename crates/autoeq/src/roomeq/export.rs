@@ -118,7 +118,11 @@ fn extract_delay_ms(plugins: &[PluginConfigWrapper]) -> Option<f64> {
         .filter(|p| p.plugin_type == "delay")
         .filter_map(|p| p.parameters.get("delay_ms").and_then(|v| v.as_f64()))
         .sum();
-    if total.abs() > 0.001 { Some(total) } else { None }
+    if total.abs() > 0.001 {
+        Some(total)
+    } else {
+        None
+    }
 }
 
 /// Extract convolution IR file paths
@@ -403,8 +407,7 @@ fn write_camilladsp_filters_for_plugins(
                 delay_idx += 1;
             }
             "eq" => {
-                if let Some(filters) = plugin.parameters.get("filters").and_then(|v| v.as_array())
-                {
+                if let Some(filters) = plugin.parameters.get("filters").and_then(|v| v.as_array()) {
                     for f in filters {
                         let ft = f
                             .get("filter_type")
@@ -481,8 +484,7 @@ fn collect_camilladsp_filter_names(
                 delay_idx += 1;
             }
             "eq" => {
-                if let Some(filters) = plugin.parameters.get("filters").and_then(|v| v.as_array())
-                {
+                if let Some(filters) = plugin.parameters.get("filters").and_then(|v| v.as_array()) {
                     for _ in filters {
                         names.push(format!("{prefix}_peq_{eq_idx}"));
                         eq_idx += 1;
@@ -540,12 +542,7 @@ fn export_equalizer_apo(output: &DspChainOutput) -> anyhow::Result<String> {
             let ft = apo_filter_type(&f.filter_type);
             match f.filter_type.as_str() {
                 "lowpass" | "highpass" | "highpassvariableq" => {
-                    writeln!(
-                        out,
-                        "Filter {:2}: ON {ft} Fc {:.0} Hz",
-                        i + 1,
-                        f.freq
-                    )?;
+                    writeln!(out, "Filter {:2}: ON {ft} Fc {:.0} Hz", i + 1, f.freq)?;
                 }
                 _ => {
                     writeln!(
@@ -587,10 +584,8 @@ fn export_easyeffects(output: &DspChainOutput) -> anyhow::Result<String> {
     let mut has_unsupported = false;
 
     for (ch_name, chain) in &channels {
-        let plugins: Vec<PluginConfigWrapper> = collect_all_plugins(chain)
-            .into_iter()
-            .cloned()
-            .collect();
+        let plugins: Vec<PluginConfigWrapper> =
+            collect_all_plugins(chain).into_iter().cloned().collect();
         let filters = extract_eq_filters(&plugins);
         let gain = extract_gain_db(&plugins);
 
@@ -654,7 +649,9 @@ fn export_easyeffects(output: &DspChainOutput) -> anyhow::Result<String> {
 // ============================================================================
 
 /// Fixed graphic EQ band center frequencies for Wavelet
-const WAVELET_BANDS: [f64; 9] = [32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0];
+const WAVELET_BANDS: [f64; 9] = [
+    32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0,
+];
 
 fn export_wavelet(output: &DspChainOutput, sample_rate: f64) -> anyhow::Result<String> {
     let channels = sorted_channels(output);
@@ -666,10 +663,8 @@ fn export_wavelet(output: &DspChainOutput, sample_rate: f64) -> anyhow::Result<S
     let mut n_channels = 0;
 
     for (ch_name, chain) in &channels {
-        let plugins: Vec<PluginConfigWrapper> = collect_all_plugins(chain)
-            .into_iter()
-            .cloned()
-            .collect();
+        let plugins: Vec<PluginConfigWrapper> =
+            collect_all_plugins(chain).into_iter().cloned().collect();
         let filters = extract_eq_filters(&plugins);
         let gain = extract_gain_db(&plugins);
 
@@ -781,10 +776,8 @@ fn export_pipewire(output: &DspChainOutput, sample_rate: f64) -> anyhow::Result<
         let mut node_names = Vec::new();
 
         // Collect all plugins
-        let all_plugins: Vec<PluginConfigWrapper> = collect_all_plugins(chain)
-            .into_iter()
-            .cloned()
-            .collect();
+        let all_plugins: Vec<PluginConfigWrapper> =
+            collect_all_plugins(chain).into_iter().cloned().collect();
 
         // Gain node
         let gain = extract_gain_db(&all_plugins);
@@ -854,16 +847,10 @@ fn export_pipewire(output: &DspChainOutput, sample_rate: f64) -> anyhow::Result<
     writeln!(out, "        inputs  = [")?;
     for (ch_idx, nodes) in all_node_names.iter().enumerate() {
         if let Some(first) = nodes.first() {
-            writeln!(
-                out,
-                "          {{ node = \"{first}\"  port = \"In\" }}"
-            )?;
+            writeln!(out, "          {{ node = \"{first}\"  port = \"In\" }}")?;
         } else {
             // No processing nodes — passthrough
-            writeln!(
-                out,
-                "          {{ }}"
-            )?;
+            writeln!(out, "          {{ }}")?;
         }
         let _ = ch_idx; // suppress warning
     }
@@ -872,10 +859,7 @@ fn export_pipewire(output: &DspChainOutput, sample_rate: f64) -> anyhow::Result<
     writeln!(out, "        outputs = [")?;
     for nodes in &all_node_names {
         if let Some(last) = nodes.last() {
-            writeln!(
-                out,
-                "          {{ node = \"{last}\"  port = \"Out\" }}"
-            )?;
+            writeln!(out, "          {{ node = \"{last}\"  port = \"Out\" }}")?;
         } else {
             writeln!(out, "          {{ }}")?;
         }
@@ -1219,7 +1203,10 @@ mod tests {
 
         assert!(result.contains("GraphicEQ:"));
         // Should have 9 frequency/gain pairs
-        let line = result.lines().find(|l| l.starts_with("GraphicEQ:")).unwrap();
+        let line = result
+            .lines()
+            .find(|l| l.starts_with("GraphicEQ:"))
+            .unwrap();
         let parts: Vec<&str> = line.trim_start_matches("GraphicEQ:").split(';').collect();
         assert_eq!(parts.len(), 9);
     }
@@ -1314,9 +1301,18 @@ mod tests {
         };
         let result = export_camilladsp(&output, 48000.0).unwrap();
         // Must be second-order Highpass/Lowpass, NOT HighpassFO/LowpassFO
-        assert!(result.contains("type: Highpass"), "Expected second-order Highpass, got:\n{result}");
-        assert!(result.contains("type: Lowpass"), "Expected second-order Lowpass, got:\n{result}");
-        assert!(!result.contains("FO"), "Should not contain first-order filter types");
+        assert!(
+            result.contains("type: Highpass"),
+            "Expected second-order Highpass, got:\n{result}"
+        );
+        assert!(
+            result.contains("type: Lowpass"),
+            "Expected second-order Lowpass, got:\n{result}"
+        );
+        assert!(
+            !result.contains("FO"),
+            "Should not contain first-order filter types"
+        );
     }
 
     #[test]

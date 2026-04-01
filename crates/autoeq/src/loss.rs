@@ -16,10 +16,10 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::Curve;
 use crate::cea2034 as score;
 use crate::error::{AutoeqError, Result};
 use crate::read;
-use crate::Curve;
 use clap::ValueEnum;
 use ndarray::{Array1, Zip};
 use num_complex::Complex64;
@@ -1111,8 +1111,8 @@ pub fn headphone_loss_with_target(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::array;
     use ndarray::Array1;
+    use ndarray::array;
     use std::collections::HashMap;
 
     #[test]
@@ -1436,7 +1436,7 @@ mod tests {
         let freqs = array![1000.0, 2000.0, 4000.0, 8000.0];
         let err = array![1.0, 1.0, 1.0, 1.0];
         let v = weighted_mse(&freqs, &err, 100.0, 10000.0); // Full range
-                                                            // RMS below = 1, RMS above = 1 -> total = 1 + 1/3 = 1.333...
+        // RMS below = 1, RMS above = 1 -> total = 1 + 1/3 = 1.333...
         assert!((v - (1.0 + 1.0 / 3.0)).abs() < 1e-12, "got {}", v);
     }
 

@@ -15,7 +15,7 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use log::{info, warn};
 use schemars::schema_for;
@@ -23,9 +23,9 @@ use std::path::PathBuf;
 
 // Use the library types
 use autoeq::roomeq::{
-    export_dsp_chain, load_config, optimize_room, save_dsp_chain, validate_room_config,
     CallbackAction, DspChainOutput, ExportFormat, RoomConfig, RoomOptimizationCallback,
-    RoomOptimizationProgress,
+    RoomOptimizationProgress, export_dsp_chain, load_config, optimize_room, save_dsp_chain,
+    validate_room_config,
 };
 
 /// Room EQ - Optimize multi-channel speaker systems
@@ -302,8 +302,8 @@ fn run_dry_run(config_path: PathBuf, override_config_path: Option<PathBuf>) -> R
 fn collect_measurement_paths(
     speaker_config: &autoeq::roomeq::SpeakerConfig,
 ) -> Vec<std::path::PathBuf> {
-    use autoeq::roomeq::SpeakerConfig;
     use autoeq::MeasurementSource;
+    use autoeq::roomeq::SpeakerConfig;
 
     fn extract_paths_from_source(source: &MeasurementSource) -> Vec<std::path::PathBuf> {
         let mut paths = Vec::new();

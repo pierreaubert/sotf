@@ -105,7 +105,9 @@ pub fn build_complete_target_curve(freqs: &Array1<f64>, config: &TargetResponseC
         TargetShape::Custom => config.slope_db_per_octave,
         TargetShape::File => {
             // File loading is handled by the caller; if we get here, fall back to flat
-            log::warn!("build_complete_target_curve called with File shape but no curve provided; falling back to flat");
+            log::warn!(
+                "build_complete_target_curve called with File shape but no curve provided; falling back to flat"
+            );
             0.0
         }
     };
@@ -130,7 +132,8 @@ pub fn build_complete_target_curve(freqs: &Array1<f64>, config: &TargetResponseC
 
         // Treble shelf preference (smooth 2nd-order transition)
         // Uses 4th-order for steeper onset: ~90% at 2x shelf_freq, ~50% at shelf_freq
-        let treble_adj = if pref.treble_shelf_db.abs() > 0.001 && f > pref.treble_shelf_freq * 0.25 {
+        let treble_adj = if pref.treble_shelf_db.abs() > 0.001 && f > pref.treble_shelf_freq * 0.25
+        {
             let ratio = f / pref.treble_shelf_freq;
             let transition = 1.0 / (1.0 + (1.0 / ratio).powi(4));
             pref.treble_shelf_db * transition
@@ -287,7 +290,11 @@ mod tests {
         let config = TargetResponseConfig::default(); // flat, no preference
         let curve = build_complete_target_curve(&freqs, &config);
         for &spl in curve.spl.iter() {
-            assert!((spl).abs() < 1e-10, "Flat target should be all zeros, got {}", spl);
+            assert!(
+                (spl).abs() < 1e-10,
+                "Flat target should be all zeros, got {}",
+                spl
+            );
         }
     }
 
@@ -301,11 +308,17 @@ mod tests {
         let curve = build_complete_target_curve(&freqs, &config);
 
         // At 1 kHz reference → 0 dB
-        let idx_1k = freqs.iter().position(|&f| (f - 1000.0).abs() < 1.0).unwrap();
+        let idx_1k = freqs
+            .iter()
+            .position(|&f| (f - 1000.0).abs() < 1.0)
+            .unwrap();
         assert!((curve.spl[idx_1k]).abs() < 1e-10);
 
         // At 2 kHz → -0.8 dB
-        let idx_2k = freqs.iter().position(|&f| (f - 2000.0).abs() < 1.0).unwrap();
+        let idx_2k = freqs
+            .iter()
+            .position(|&f| (f - 2000.0).abs() < 1.0)
+            .unwrap();
         assert!((curve.spl[idx_2k] - (-0.8)).abs() < 1e-10);
     }
 
@@ -324,7 +337,10 @@ mod tests {
         let curve = build_complete_target_curve(&freqs, &config);
 
         // Well above treble shelf → close to -2 dB
-        let idx_20k = freqs.iter().position(|&f| (f - 20000.0).abs() < 1.0).unwrap();
+        let idx_20k = freqs
+            .iter()
+            .position(|&f| (f - 20000.0).abs() < 1.0)
+            .unwrap();
         assert!(
             curve.spl[idx_20k] < -1.5,
             "At 20kHz should have treble cut, got {:.2}",
@@ -332,7 +348,10 @@ mod tests {
         );
 
         // Well below treble shelf → near 0 dB
-        let idx_1k = freqs.iter().position(|&f| (f - 1000.0).abs() < 1.0).unwrap();
+        let idx_1k = freqs
+            .iter()
+            .position(|&f| (f - 1000.0).abs() < 1.0)
+            .unwrap();
         assert!(
             curve.spl[idx_1k].abs() < 0.1,
             "At 1kHz should be near 0, got {:.2}",
@@ -355,10 +374,21 @@ mod tests {
         let curve = build_complete_target_curve(&freqs, &config);
 
         // At 20 Hz: Harman tilt (+4.5 dB) + bass boost (~3 dB) > 5 dB
-        assert!(curve.spl[0] > 5.0, "20Hz should have tilt + bass boost, got {:.2}", curve.spl[0]);
+        assert!(
+            curve.spl[0] > 5.0,
+            "20Hz should have tilt + bass boost, got {:.2}",
+            curve.spl[0]
+        );
 
         // At 10 kHz: Harman tilt only (~-2.6 dB), no bass effect
-        let idx_10k = freqs.iter().position(|&f| (f - 10000.0).abs() < 1.0).unwrap();
-        assert!(curve.spl[idx_10k] < -2.0, "10kHz should be tilted down, got {:.2}", curve.spl[idx_10k]);
+        let idx_10k = freqs
+            .iter()
+            .position(|&f| (f - 10000.0).abs() < 1.0)
+            .unwrap();
+        assert!(
+            curve.spl[idx_10k] < -2.0,
+            "10kHz should be tilted down, got {:.2}",
+            curve.spl[idx_10k]
+        );
     }
 }

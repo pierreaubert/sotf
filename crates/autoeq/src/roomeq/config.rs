@@ -148,8 +148,7 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
     let valid_prefixes = ["nlopt:", "mh:", "autoeq:"];
     let valid_bare = ["cobyla", "de"];
     let algo = opt.algorithm.as_str();
-    let is_known = valid_prefixes.iter().any(|p| algo.starts_with(p))
-        || valid_bare.contains(&algo);
+    let is_known = valid_prefixes.iter().any(|p| algo.starts_with(p)) || valid_bare.contains(&algo);
     if !is_known {
         result.add_warning(format!(
             "Unknown algorithm '{}', may not be supported",
@@ -717,7 +716,10 @@ mod tests {
             result.errors
         );
         assert!(
-            result.warnings.iter().any(|w| w.contains("Unknown algorithm")),
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("Unknown algorithm")),
             "Unknown algorithm should produce a warning, but warnings: {:?}",
             result.warnings
         );

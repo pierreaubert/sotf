@@ -1,10 +1,10 @@
 // NLOPT-specific optimization code
 
 use super::constraints::{
-    constraint_ceiling, constraint_crossover_monotonicity, constraint_min_gain,
     CeilingConstraintData, CrossoverMonotonicityConstraintData, MinGainConstraintData,
+    constraint_ceiling, constraint_crossover_monotonicity, constraint_min_gain,
 };
-use super::optim::{compute_fitness_penalties, ObjectiveData, PenaltyMode};
+use super::optim::{ObjectiveData, PenaltyMode, compute_fitness_penalties};
 use crate::LossType;
 use nlopt::{Algorithm, Nlopt, Target};
 

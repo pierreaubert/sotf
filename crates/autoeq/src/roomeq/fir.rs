@@ -107,12 +107,14 @@ pub fn generate_fir_correction(
         };
 
         // Convert pre-ringing config if present
-        let pre_ringing = fir_config.pre_ringing.as_ref().map(|pr| {
-            math_audio_iir_fir::PreRingingConfig {
-                threshold_db: pr.threshold_db,
-                max_time_s: pr.max_time_s,
-            }
-        });
+        let pre_ringing =
+            fir_config
+                .pre_ringing
+                .as_ref()
+                .map(|pr| math_audio_iir_fir::PreRingingConfig {
+                    threshold_db: pr.threshold_db,
+                    max_time_s: pr.max_time_s,
+                });
 
         let fir_design_config = math_audio_iir_fir::FirDesignConfig {
             n_taps,

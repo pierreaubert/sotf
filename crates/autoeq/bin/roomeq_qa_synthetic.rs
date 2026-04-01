@@ -16,17 +16,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use autoeq::iir::{Biquad, BiquadFilterType};
+use autoeq::roomeq::synthetic::{
+    generate_cardioid_scenario, generate_channel_curve, generate_dba_scenario, generate_flat_curve,
+    generate_harman_tilt_curve, generate_multisub_scenario, generate_scenario,
+    generate_speaker_rolloff_curve, generate_subwoofer_rolloff_curve,
+};
 use autoeq::roomeq::{
     BroadbandTargetMatchingConfig, CallbackAction, DecomposedCorrectionSerdeConfig,
-    ExcursionProtectionConfig, MultiMeasurementConfig, MultiMeasurementStrategy,
-    MultiSubGroup, ProcessingMode, RoomConfig, SchroederSplitConfig,
-    SpatialRobustnessSerdeConfig, optimize_room,
-};
-use autoeq::roomeq::synthetic::{
-    generate_cardioid_scenario, generate_channel_curve, generate_dba_scenario,
-    generate_flat_curve, generate_harman_tilt_curve, generate_multisub_scenario,
-    generate_speaker_rolloff_curve, generate_subwoofer_rolloff_curve,
-    generate_scenario,
+    ExcursionProtectionConfig, MultiMeasurementConfig, MultiMeasurementStrategy, MultiSubGroup,
+    ProcessingMode, RoomConfig, SchroederSplitConfig, SpatialRobustnessSerdeConfig, optimize_room,
 };
 use autoeq::roomeq::{
     CardioidConfig, DBAConfig, SubwooferStrategy, SubwooferSystemConfig, SystemConfig, SystemModel,
@@ -59,11 +57,7 @@ struct DifficultyLevel {
 
 const EASY: DifficultyLevel = DifficultyLevel {
     name: "easy",
-    modes: &[
-        (80.0, 2.0, -3.0),
-        (150.0, 2.0, 3.0),
-        (250.0, 2.0, -2.0),
-    ],
+    modes: &[(80.0, 2.0, -3.0), (150.0, 2.0, 3.0), (250.0, 2.0, -2.0)],
     noise_rms: 0.5,
     recovery_factor: 3.0,
 };
@@ -128,10 +122,7 @@ const MS_MEDIUM: MultiSubDifficulty = MultiSubDifficulty {
     name: "medium",
     n_subs: 2,
     shared_modes: &[(50.0, 4.0, -6.0), (90.0, 4.0, 5.0)],
-    per_sub_modes: &[
-        &[(70.0, 3.0, -3.0)],
-        &[(120.0, 3.0, 3.0)],
-    ],
+    per_sub_modes: &[&[(70.0, 3.0, -3.0)], &[(120.0, 3.0, 3.0)]],
     delays_ms: &[0.0, 3.5],
     noise_rms: 0.5,
 };
@@ -159,15 +150,30 @@ struct MultiSubTopology {
 }
 
 const MS_TOPOLOGIES: &[MultiSubTopology] = &[
-    MultiSubTopology { name: "standard", allpass: false },
-    MultiSubTopology { name: "allpass", allpass: true },
+    MultiSubTopology {
+        name: "standard",
+        allpass: false,
+    },
+    MultiSubTopology {
+        name: "allpass",
+        allpass: true,
+    },
 ];
 
 /// Options applicable to multi-sub tests (subset of full options)
 const MS_OPTIONS: &[OptionDef] = &[
-    OptionDef { name: "psychoacoustic", apply: option_psychoacoustic },
-    OptionDef { name: "asymmetric_loss", apply: option_asymmetric },
-    OptionDef { name: "decomposed_correction", apply: option_decomposed_correction },
+    OptionDef {
+        name: "psychoacoustic",
+        apply: option_psychoacoustic,
+    },
+    OptionDef {
+        name: "asymmetric_loss",
+        apply: option_asymmetric,
+    },
+    OptionDef {
+        name: "decomposed_correction",
+        apply: option_decomposed_correction,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -192,18 +198,64 @@ impl ChannelLayout {
     }
 }
 
-const LAYOUT_2_0: ChannelLayout = ChannelLayout { name: "2.0", mains: &["L", "R"], has_lfe: false, heights: &[] };
-const LAYOUT_2_1: ChannelLayout = ChannelLayout { name: "2.1", mains: &["L", "R"], has_lfe: true, heights: &[] };
-const LAYOUT_5_0: ChannelLayout = ChannelLayout { name: "5.0", mains: &["L", "R", "C", "SL", "SR"], has_lfe: false, heights: &[] };
-const LAYOUT_5_1: ChannelLayout = ChannelLayout { name: "5.1", mains: &["L", "R", "C", "SL", "SR"], has_lfe: true, heights: &[] };
-const LAYOUT_7_1: ChannelLayout = ChannelLayout { name: "7.1", mains: &["L", "R", "C", "SL", "SR", "SBL", "SBR"], has_lfe: true, heights: &[] };
-const LAYOUT_5_1_2: ChannelLayout = ChannelLayout { name: "5.1.2", mains: &["L", "R", "C", "SL", "SR"], has_lfe: true, heights: &["HL", "HR"] };
-const LAYOUT_7_1_4: ChannelLayout = ChannelLayout { name: "7.1.4", mains: &["L", "R", "C", "SL", "SR", "SBL", "SBR"], has_lfe: true, heights: &["TFL", "TFR", "TRL", "TRR"] };
-const LAYOUT_9_1_6: ChannelLayout = ChannelLayout { name: "9.1.6", mains: &["L", "R", "C", "SL", "SR", "SBL", "SBR", "WL", "WR"], has_lfe: true, heights: &["TFL", "TFR", "TML", "TMR", "TRL", "TRR"] };
+const LAYOUT_2_0: ChannelLayout = ChannelLayout {
+    name: "2.0",
+    mains: &["L", "R"],
+    has_lfe: false,
+    heights: &[],
+};
+const LAYOUT_2_1: ChannelLayout = ChannelLayout {
+    name: "2.1",
+    mains: &["L", "R"],
+    has_lfe: true,
+    heights: &[],
+};
+const LAYOUT_5_0: ChannelLayout = ChannelLayout {
+    name: "5.0",
+    mains: &["L", "R", "C", "SL", "SR"],
+    has_lfe: false,
+    heights: &[],
+};
+const LAYOUT_5_1: ChannelLayout = ChannelLayout {
+    name: "5.1",
+    mains: &["L", "R", "C", "SL", "SR"],
+    has_lfe: true,
+    heights: &[],
+};
+const LAYOUT_7_1: ChannelLayout = ChannelLayout {
+    name: "7.1",
+    mains: &["L", "R", "C", "SL", "SR", "SBL", "SBR"],
+    has_lfe: true,
+    heights: &[],
+};
+const LAYOUT_5_1_2: ChannelLayout = ChannelLayout {
+    name: "5.1.2",
+    mains: &["L", "R", "C", "SL", "SR"],
+    has_lfe: true,
+    heights: &["HL", "HR"],
+};
+const LAYOUT_7_1_4: ChannelLayout = ChannelLayout {
+    name: "7.1.4",
+    mains: &["L", "R", "C", "SL", "SR", "SBL", "SBR"],
+    has_lfe: true,
+    heights: &["TFL", "TFR", "TRL", "TRR"],
+};
+const LAYOUT_9_1_6: ChannelLayout = ChannelLayout {
+    name: "9.1.6",
+    mains: &["L", "R", "C", "SL", "SR", "SBL", "SBR", "WL", "WR"],
+    has_lfe: true,
+    heights: &["TFL", "TFR", "TML", "TMR", "TRL", "TRR"],
+};
 
 const ALL_LAYOUTS: &[ChannelLayout] = &[
-    LAYOUT_2_0, LAYOUT_2_1, LAYOUT_5_0, LAYOUT_5_1,
-    LAYOUT_7_1, LAYOUT_5_1_2, LAYOUT_7_1_4, LAYOUT_9_1_6,
+    LAYOUT_2_0,
+    LAYOUT_2_1,
+    LAYOUT_5_0,
+    LAYOUT_5_1,
+    LAYOUT_7_1,
+    LAYOUT_5_1_2,
+    LAYOUT_7_1_4,
+    LAYOUT_9_1_6,
 ];
 
 /// LFE sub-topology for multi-channel tests
@@ -214,7 +266,9 @@ struct SubTopology {
 
 const SUB_SINGLE: SubTopology = SubTopology { name: "single_sub" };
 const SUB_MSO: SubTopology = SubTopology { name: "mso_2sub" };
-const SUB_MSO_AP: SubTopology = SubTopology { name: "mso_2sub_allpass" };
+const SUB_MSO_AP: SubTopology = SubTopology {
+    name: "mso_2sub_allpass",
+};
 const SUB_CARDIOID: SubTopology = SubTopology { name: "cardioid" };
 const SUB_DBA: SubTopology = SubTopology { name: "dba" };
 
@@ -246,9 +300,8 @@ fn option_asymmetric(config: &mut RoomConfig) {
     config.optimizer.asymmetric_loss = true;
 }
 fn option_broadband(config: &mut RoomConfig) {
-    config.optimizer.broadband_target_matching = Some(BroadbandTargetMatchingConfig {
-        enabled: true,
-    });
+    config.optimizer.broadband_target_matching =
+        Some(BroadbandTargetMatchingConfig { enabled: true });
 }
 fn option_excursion(config: &mut RoomConfig) {
     config.optimizer.excursion_protection = Some(ExcursionProtectionConfig {
@@ -313,36 +366,53 @@ fn option_decomposed_correction(config: &mut RoomConfig) {
 // synthetic scenarios now use generate_speaker_rolloff_curve / generate_subwoofer_rolloff_curve
 // which provide a realistic -12 dB/oct rolloff around 80 Hz.
 const OPTIONS: &[OptionDef] = &[
-    OptionDef { name: "psychoacoustic", apply: option_psychoacoustic },
-    OptionDef { name: "asymmetric_loss", apply: option_asymmetric },
-    OptionDef { name: "broadband", apply: option_broadband },
-    OptionDef { name: "excursion", apply: option_excursion },
-    OptionDef { name: "schroeder", apply: option_schroeder },
-    OptionDef { name: "spatial_robustness", apply: option_spatial_robustness },
-    OptionDef { name: "pre_ringing", apply: option_pre_ringing },
-    OptionDef { name: "decomposed_correction", apply: option_decomposed_correction },
+    OptionDef {
+        name: "psychoacoustic",
+        apply: option_psychoacoustic,
+    },
+    OptionDef {
+        name: "asymmetric_loss",
+        apply: option_asymmetric,
+    },
+    OptionDef {
+        name: "broadband",
+        apply: option_broadband,
+    },
+    OptionDef {
+        name: "excursion",
+        apply: option_excursion,
+    },
+    OptionDef {
+        name: "schroeder",
+        apply: option_schroeder,
+    },
+    OptionDef {
+        name: "spatial_robustness",
+        apply: option_spatial_robustness,
+    },
+    OptionDef {
+        name: "pre_ringing",
+        apply: option_pre_ringing,
+    },
+    OptionDef {
+        name: "decomposed_correction",
+        apply: option_decomposed_correction,
+    },
 ];
 
 // ---------------------------------------------------------------------------
 // Config builder
 // ---------------------------------------------------------------------------
 
-fn build_config(
-    degraded: &Curve,
-    mode: ProcessingMode,
-) -> RoomConfig {
+fn build_config(degraded: &Curve, mode: ProcessingMode) -> RoomConfig {
     let mut speakers = HashMap::new();
     speakers.insert(
         "Left".to_string(),
-        autoeq::roomeq::SpeakerConfig::Single(
-            MeasurementSource::InMemory(degraded.clone()),
-        ),
+        autoeq::roomeq::SpeakerConfig::Single(MeasurementSource::InMemory(degraded.clone())),
     );
     speakers.insert(
         "Right".to_string(),
-        autoeq::roomeq::SpeakerConfig::Single(
-            MeasurementSource::InMemory(degraded.clone()),
-        ),
+        autoeq::roomeq::SpeakerConfig::Single(MeasurementSource::InMemory(degraded.clone())),
     );
 
     let mut config = RoomConfig {
@@ -396,7 +466,8 @@ fn build_config(
 
 fn run_optimization(config: &RoomConfig) -> Result<autoeq::roomeq::RoomOptimizationResult> {
     let id = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let temp_dir = std::env::temp_dir().join(format!("roomeq_qa_syn_{}_{}", std::process::id(), id));
+    let temp_dir =
+        std::env::temp_dir().join(format!("roomeq_qa_syn_{}_{}", std::process::id(), id));
     std::fs::create_dir_all(&temp_dir)?;
     let callback =
         Box::new(|_: &autoeq::roomeq::RoomOptimizationProgress| CallbackAction::Continue);
@@ -478,7 +549,10 @@ fn run_single_test(
             post_score: post,
             reason: format!(
                 "Severe regression: pre={:.3}, post={:.3} ({:.1}% worse, limit {:.0}%)",
-                pre, post, (post / pre - 1.0) * 100.0, (regression_tolerance - 1.0) * 100.0,
+                pre,
+                post,
+                (post / pre - 1.0) * 100.0,
+                (regression_tolerance - 1.0) * 100.0,
             ),
         };
     }
@@ -529,10 +603,7 @@ fn generate_option_combos() -> Vec<Vec<&'static str>> {
 // Multi-sub config and test runner
 // ---------------------------------------------------------------------------
 
-fn build_multisub_config(
-    sub_curves: &[Curve],
-    allpass: bool,
-) -> RoomConfig {
+fn build_multisub_config(sub_curves: &[Curve], allpass: bool) -> RoomConfig {
     let mut speakers = HashMap::new();
     let subwoofers: Vec<MeasurementSource> = sub_curves
         .iter()
@@ -594,10 +665,7 @@ fn run_multisub_test(
     };
     let test_name = format!(
         "multisub/{}/{}sub_{}/{}",
-        difficulty.name,
-        difficulty.n_subs,
-        topology.name,
-        options_str,
+        difficulty.name, difficulty.n_subs, topology.name, options_str,
     );
 
     let mut config = build_multisub_config(sub_curves, topology.allpass);
@@ -633,7 +701,9 @@ fn run_multisub_test(
             post_score: post,
             reason: format!(
                 "Severe regression: pre={:.3}, post={:.3} ({:.1}% worse)",
-                pre, post, (post / pre - 1.0) * 100.0,
+                pre,
+                post,
+                (post / pre - 1.0) * 100.0,
             ),
         };
     }
@@ -688,9 +758,10 @@ fn build_multichannel_config(
             SEED.wrapping_add(i as u64 * 100),
             sample_rate,
         );
-        speakers.insert(key.clone(), autoeq::roomeq::SpeakerConfig::Single(
-            MeasurementSource::InMemory(curve),
-        ));
+        speakers.insert(
+            key.clone(),
+            autoeq::roomeq::SpeakerConfig::Single(MeasurementSource::InMemory(curve)),
+        );
         sys_speakers.insert(role.to_string(), key);
     }
 
@@ -706,16 +777,19 @@ fn build_multichannel_config(
             SEED.wrapping_add((layout.mains.len() + i) as u64 * 100),
             sample_rate,
         );
-        speakers.insert(key.clone(), autoeq::roomeq::SpeakerConfig::Single(
-            MeasurementSource::InMemory(curve),
-        ));
+        speakers.insert(
+            key.clone(),
+            autoeq::roomeq::SpeakerConfig::Single(MeasurementSource::InMemory(curve)),
+        );
         sys_speakers.insert(role.to_string(), key);
     }
 
     // LFE / sub topology
     let mut sub_config = if layout.has_lfe {
         let sub_topo = sub_topo.expect("layout has LFE but no sub topology");
-        let bass_modes: Vec<Biquad> = difficulty.modes.iter()
+        let bass_modes: Vec<Biquad> = difficulty
+            .modes
+            .iter()
             .filter(|(f, _, _)| *f < 200.0)
             .map(|&(freq, q, gain)| Biquad::new(BiquadFilterType::Peak, freq, sample_rate, q, gain))
             .collect();
@@ -730,9 +804,10 @@ fn build_multichannel_config(
                     SEED.wrapping_add(9000),
                     sample_rate,
                 );
-                speakers.insert("lfe".to_string(), autoeq::roomeq::SpeakerConfig::Single(
-                    MeasurementSource::InMemory(sub_curve),
-                ));
+                speakers.insert(
+                    "lfe".to_string(),
+                    autoeq::roomeq::SpeakerConfig::Single(MeasurementSource::InMemory(sub_curve)),
+                );
                 sys_speakers.insert("LFE".to_string(), "lfe".to_string());
                 Some(SubwooferSystemConfig {
                     config: SubwooferStrategy::Single,
@@ -742,21 +817,30 @@ fn build_multichannel_config(
             }
             "mso_2sub" | "mso_2sub_allpass" => {
                 let ms = generate_multisub_scenario(
-                    "lfe", 2, &bass_modes, &[], &[0.0, 2.0],
-                    difficulty.noise_rms * 0.3, SEED.wrapping_add(9000), sample_rate,
+                    "lfe",
+                    2,
+                    &bass_modes,
+                    &[],
+                    &[0.0, 2.0],
+                    difficulty.noise_rms * 0.3,
+                    SEED.wrapping_add(9000),
+                    sample_rate,
                 );
                 let allpass = sub_topo.name == "mso_2sub_allpass";
-                let subwoofers: Vec<MeasurementSource> = ms.sub_curves.into_iter()
+                let subwoofers: Vec<MeasurementSource> = ms
+                    .sub_curves
+                    .into_iter()
                     .map(MeasurementSource::InMemory)
                     .collect();
-                speakers.insert("lfe".to_string(), autoeq::roomeq::SpeakerConfig::MultiSub(
-                    MultiSubGroup {
+                speakers.insert(
+                    "lfe".to_string(),
+                    autoeq::roomeq::SpeakerConfig::MultiSub(MultiSubGroup {
                         name: "subs".to_string(),
                         speaker_name: None,
                         subwoofers,
                         allpass_optimization: allpass,
-                    },
-                ));
+                    }),
+                );
                 sys_speakers.insert("LFE".to_string(), "lfe".to_string());
                 Some(SubwooferSystemConfig {
                     config: SubwooferStrategy::Mso,
@@ -766,18 +850,23 @@ fn build_multichannel_config(
             }
             "cardioid" => {
                 let card = generate_cardioid_scenario(
-                    "lfe", &bass_modes, 1.0, difficulty.noise_rms * 0.3,
-                    SEED.wrapping_add(9000), sample_rate,
+                    "lfe",
+                    &bass_modes,
+                    1.0,
+                    difficulty.noise_rms * 0.3,
+                    SEED.wrapping_add(9000),
+                    sample_rate,
                 );
-                speakers.insert("lfe".to_string(), autoeq::roomeq::SpeakerConfig::Cardioid(
-                    Box::new(CardioidConfig {
+                speakers.insert(
+                    "lfe".to_string(),
+                    autoeq::roomeq::SpeakerConfig::Cardioid(Box::new(CardioidConfig {
                         name: "cardioid_sub".to_string(),
                         speaker_name: None,
                         front: MeasurementSource::InMemory(card.front_curve),
                         rear: MeasurementSource::InMemory(card.rear_curve),
                         separation_meters: card.separation_meters,
-                    }),
-                ));
+                    })),
+                );
                 sys_speakers.insert("LFE".to_string(), "lfe".to_string());
                 Some(SubwooferSystemConfig {
                     config: SubwooferStrategy::Single, // cardioid routes via SpeakerConfig dispatch
@@ -787,21 +876,34 @@ fn build_multichannel_config(
             }
             "dba" => {
                 let dba = generate_dba_scenario(
-                    "lfe", 1, 1, &bass_modes, 8.0,
-                    difficulty.noise_rms * 0.3, SEED.wrapping_add(9000), sample_rate,
+                    "lfe",
+                    1,
+                    1,
+                    &bass_modes,
+                    8.0,
+                    difficulty.noise_rms * 0.3,
+                    SEED.wrapping_add(9000),
+                    sample_rate,
                 );
-                let front: Vec<MeasurementSource> = dba.front_curves.into_iter()
-                    .map(MeasurementSource::InMemory).collect();
-                let rear: Vec<MeasurementSource> = dba.rear_curves.into_iter()
-                    .map(MeasurementSource::InMemory).collect();
-                speakers.insert("lfe".to_string(), autoeq::roomeq::SpeakerConfig::Dba(
-                    DBAConfig {
+                let front: Vec<MeasurementSource> = dba
+                    .front_curves
+                    .into_iter()
+                    .map(MeasurementSource::InMemory)
+                    .collect();
+                let rear: Vec<MeasurementSource> = dba
+                    .rear_curves
+                    .into_iter()
+                    .map(MeasurementSource::InMemory)
+                    .collect();
+                speakers.insert(
+                    "lfe".to_string(),
+                    autoeq::roomeq::SpeakerConfig::Dba(DBAConfig {
                         name: "dba_sub".to_string(),
                         speaker_name: None,
                         front,
                         rear,
-                    },
-                ));
+                    }),
+                );
                 sys_speakers.insert("LFE".to_string(), "lfe".to_string());
                 Some(SubwooferSystemConfig {
                     config: SubwooferStrategy::Dba,
@@ -820,12 +922,15 @@ fn build_multichannel_config(
     if let Some(ref mut sc) = sub_config {
         sc.crossover = Some("lfe_xover".to_string());
         let mut xovers = HashMap::new();
-        xovers.insert("lfe_xover".to_string(), autoeq::roomeq::CrossoverConfig {
-            crossover_type: "LR24".to_string(),
-            frequency: Some(80.0),
-            frequencies: None,
-            frequency_range: None,
-        });
+        xovers.insert(
+            "lfe_xover".to_string(),
+            autoeq::roomeq::CrossoverConfig {
+                crossover_type: "LR24".to_string(),
+                frequency: Some(80.0),
+                frequencies: None,
+                frequency_range: None,
+            },
+        );
         crossovers_map = Some(xovers);
     }
 
@@ -866,7 +971,10 @@ fn run_multichannel_test(
     sample_rate: f64,
 ) -> TestResult {
     let sub_str = sub_topo.map(|s| s.name).unwrap_or("no_lfe");
-    let test_name = format!("multichannel/{}/{}/{}", layout.name, sub_str, difficulty.name);
+    let test_name = format!(
+        "multichannel/{}/{}/{}",
+        layout.name, sub_str, difficulty.name
+    );
 
     let config = build_multichannel_config(layout, sub_topo, difficulty, base_curve, sample_rate);
 
@@ -894,7 +1002,9 @@ fn run_multichannel_test(
             post_score: post,
             reason: format!(
                 "Severe regression: pre={:.3}, post={:.3} ({:.1}% worse)",
-                pre, post, (post / pre - 1.0) * 100.0,
+                pre,
+                post,
+                (post / pre - 1.0) * 100.0,
             ),
         };
     }
@@ -906,7 +1016,9 @@ fn run_multichannel_test(
         post_score: post,
         reason: format!(
             "OK: {:.3} -> {:.3} ({:.1}% reduction)",
-            pre, post, (1.0 - post / pre) * 100.0
+            pre,
+            post,
+            (1.0 - post / pre) * 100.0
         ),
     }
 }
@@ -916,23 +1028,29 @@ fn run_multichannel_test(
 // ---------------------------------------------------------------------------
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("warn"),
-    )
-    .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     let args: Vec<String> = std::env::args().collect();
     let list_only = args.iter().any(|a| a == "--list");
-    let difficulty_filter = args.windows(2).find(|w| w[0] == "--difficulty").map(|w| w[1].clone());
+    let difficulty_filter = args
+        .windows(2)
+        .find(|w| w[0] == "--difficulty")
+        .map(|w| w[1].clone());
 
     let difficulties: Vec<&DifficultyLevel> = if let Some(ref filter) = difficulty_filter {
-        ALL_DIFFICULTIES.iter().filter(|d| d.name == filter.as_str()).collect()
+        ALL_DIFFICULTIES
+            .iter()
+            .filter(|d| d.name == filter.as_str())
+            .collect()
     } else {
         ALL_DIFFICULTIES.iter().collect()
     };
 
     let ms_difficulties: Vec<&MultiSubDifficulty> = if let Some(ref filter) = difficulty_filter {
-        ALL_MS_DIFFICULTIES.iter().filter(|d| d.name == filter.as_str()).collect()
+        ALL_MS_DIFFICULTIES
+            .iter()
+            .filter(|d| d.name == filter.as_str())
+            .collect()
     } else {
         ALL_MS_DIFFICULTIES.iter().collect()
     };
@@ -957,24 +1075,35 @@ fn main() -> Result<()> {
     // Count total tests
     let single_total = difficulties.len() * modes.len() * targets.len() * option_combos.len();
     let ms_total = ms_difficulties.len() * MS_TOPOLOGIES.len() * ms_option_combos.len();
-    let mc_total: usize = ALL_LAYOUTS.iter().map(|layout| {
-        let n_topos = sub_topos_for_layout(layout).len();
-        if n_topos == 0 {
-            difficulties.len() // no LFE → 1 test per difficulty
-        } else {
-            n_topos * difficulties.len()
-        }
-    }).sum();
+    let mc_total: usize = ALL_LAYOUTS
+        .iter()
+        .map(|layout| {
+            let n_topos = sub_topos_for_layout(layout).len();
+            if n_topos == 0 {
+                difficulties.len() // no LFE → 1 test per difficulty
+            } else {
+                n_topos * difficulties.len()
+            }
+        })
+        .sum();
     let total = single_total + ms_total + mc_total;
 
     if list_only {
         println!("Synthetic QA Test Matrix:");
         println!();
         println!("  Single-speaker:");
-        println!("    Difficulties: {}", difficulties.iter().map(|d| d.name).collect::<Vec<_>>().join(", "));
+        println!(
+            "    Difficulties: {}",
+            difficulties
+                .iter()
+                .map(|d| d.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         println!("    Modes: IIR, FIR, Mixed, MixedPhase");
         println!("    Targets: flat, harman");
-        println!("    Option combos: {} (baseline + {} singles + {} pairs + 1 all)",
+        println!(
+            "    Option combos: {} (baseline + {} singles + {} pairs + 1 all)",
             option_combos.len(),
             OPTIONS.len(),
             OPTIONS.len() * (OPTIONS.len() - 1) / 2,
@@ -982,26 +1111,64 @@ fn main() -> Result<()> {
         println!("    Subtotal: {}", single_total);
         println!();
         println!("  Multi-sub:");
-        println!("    Difficulties: {}", ms_difficulties.iter().map(|d| d.name).collect::<Vec<_>>().join(", "));
-        println!("    Topologies: {}", MS_TOPOLOGIES.iter().map(|t| t.name).collect::<Vec<_>>().join(", "));
-        println!("    Option combos: {} (baseline + {} singles)",
+        println!(
+            "    Difficulties: {}",
+            ms_difficulties
+                .iter()
+                .map(|d| d.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        println!(
+            "    Topologies: {}",
+            MS_TOPOLOGIES
+                .iter()
+                .map(|t| t.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        println!(
+            "    Option combos: {} (baseline + {} singles)",
             ms_option_combos.len(),
             MS_OPTIONS.len(),
         );
         println!("    Subtotal: {}", ms_total);
         println!();
         println!("  Multi-channel:");
-        println!("    Layouts: {}", ALL_LAYOUTS.iter().map(|l| l.name).collect::<Vec<_>>().join(", "));
-        println!("    Sub topologies (with LFE): {}", ALL_SUB_TOPOS.iter().map(|t| t.name).collect::<Vec<_>>().join(", "));
-        println!("    Difficulties: {}", difficulties.iter().map(|d| d.name).collect::<Vec<_>>().join(", "));
+        println!(
+            "    Layouts: {}",
+            ALL_LAYOUTS
+                .iter()
+                .map(|l| l.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        println!(
+            "    Sub topologies (with LFE): {}",
+            ALL_SUB_TOPOS
+                .iter()
+                .map(|t| t.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        println!(
+            "    Difficulties: {}",
+            difficulties
+                .iter()
+                .map(|d| d.name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         println!("    Subtotal: {}", mc_total);
         println!();
         println!("  Total tests: {}", total);
         return Ok(());
     }
 
-    println!("RoomEQ Synthetic QA -- {} tests ({} single + {} multi-sub + {} multi-channel)",
-        total, single_total, ms_total, mc_total);
+    println!(
+        "RoomEQ Synthetic QA -- {} tests ({} single + {} multi-sub + {} multi-channel)",
+        total, single_total, ms_total, mc_total
+    );
     println!("============================================================");
 
     let start = Instant::now();
@@ -1062,14 +1229,21 @@ fn main() -> Result<()> {
     // Multi-sub tests
     // ====================================================================
     for ms_diff in &ms_difficulties {
-        let shared_biquads: Vec<Biquad> = ms_diff.shared_modes.iter()
+        let shared_biquads: Vec<Biquad> = ms_diff
+            .shared_modes
+            .iter()
             .map(|&(f, q, g)| Biquad::new(BiquadFilterType::Peak, f, SAMPLE_RATE, q, g))
             .collect();
 
-        let per_sub_biquads: Vec<Vec<Biquad>> = ms_diff.per_sub_modes.iter()
-            .map(|modes| modes.iter()
-                .map(|&(f, q, g)| Biquad::new(BiquadFilterType::Peak, f, SAMPLE_RATE, q, g))
-                .collect())
+        let per_sub_biquads: Vec<Vec<Biquad>> = ms_diff
+            .per_sub_modes
+            .iter()
+            .map(|modes| {
+                modes
+                    .iter()
+                    .map(|&(f, q, g)| Biquad::new(BiquadFilterType::Peak, f, SAMPLE_RATE, q, g))
+                    .collect()
+            })
             .collect();
 
         let scenario = generate_multisub_scenario(
@@ -1085,12 +1259,7 @@ fn main() -> Result<()> {
 
         for topo in MS_TOPOLOGIES {
             for combo in &ms_option_combos {
-                let result = run_multisub_test(
-                    &scenario.sub_curves,
-                    topo,
-                    combo,
-                    ms_diff,
-                );
+                let result = run_multisub_test(&scenario.sub_curves, topo, combo, ms_diff);
 
                 if result.passed {
                     passed += 1;
@@ -1115,9 +1284,8 @@ fn main() -> Result<()> {
         if topos.is_empty() {
             // No LFE — test mains only
             for difficulty in &difficulties {
-                let result = run_multichannel_test(
-                    layout, None, difficulty, &base_fullrange, SAMPLE_RATE,
-                );
+                let result =
+                    run_multichannel_test(layout, None, difficulty, &base_fullrange, SAMPLE_RATE);
                 if result.passed {
                     passed += 1;
                 } else {
@@ -1131,7 +1299,11 @@ fn main() -> Result<()> {
             for sub_topo in topos {
                 for difficulty in &difficulties {
                     let result = run_multichannel_test(
-                        layout, Some(sub_topo), difficulty, &base_fullrange, SAMPLE_RATE,
+                        layout,
+                        Some(sub_topo),
+                        difficulty,
+                        &base_fullrange,
+                        SAMPLE_RATE,
                     );
                     if result.passed {
                         passed += 1;

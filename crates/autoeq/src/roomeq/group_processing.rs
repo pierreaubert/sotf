@@ -19,7 +19,9 @@ use super::eq;
 use super::fir;
 use super::multisub;
 use super::output;
-use super::types::{ChannelDspChain, MixedModeConfig, MultiSubGroup, OptimizerConfig, RoomConfig, SpeakerGroup};
+use super::types::{
+    ChannelDspChain, MixedModeConfig, MultiSubGroup, OptimizerConfig, RoomConfig, SpeakerGroup,
+};
 
 // Type aliases from optimize module
 pub(super) type MixedModeResult = (

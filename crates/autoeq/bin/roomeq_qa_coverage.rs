@@ -592,9 +592,7 @@ fn validate_result(
             let mut gd_sum = 0.0;
             let mut gd_count = 0usize;
             for j in 0..ch_result.final_curve.freq.len() {
-                if ch_result.final_curve.freq[j] >= 20.0
-                    && ch_result.final_curve.freq[j] <= 500.0
-                {
+                if ch_result.final_curve.freq[j] >= 20.0 && ch_result.final_curve.freq[j] <= 500.0 {
                     gd_sum += gd[j];
                     gd_count += 1;
                 }

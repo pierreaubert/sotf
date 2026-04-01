@@ -646,7 +646,11 @@ mod tests {
         assert!(filters.len() <= 2, "Should produce at most 2 AP filters");
 
         for f in &filters {
-            assert!(f.freq >= 20.0 && f.freq <= 500.0, "Filter freq {} out of range", f.freq);
+            assert!(
+                f.freq >= 20.0 && f.freq <= 500.0,
+                "Filter freq {} out of range",
+                f.freq
+            );
             assert!(f.q >= 0.3 && f.q <= 4.0, "Filter Q {} out of range", f.q);
         }
     }
@@ -733,9 +737,16 @@ mod tests {
         let sub_gd = calculate_group_delay(&freqs, sub_complex.as_slice().unwrap());
         let spk_gd = calculate_group_delay(&freqs, spk_complex.as_slice().unwrap());
 
-        let err1 = evaluate_ap_filters(&filters1, &freqs, &spk_gd, &sub_gd, &range_indices, 48000.0);
-        let err3 = evaluate_ap_filters(&filters3, &freqs, &spk_gd, &sub_gd, &range_indices, 48000.0);
-        assert!(err3 <= err1 * 1.01, "3 filters error ({}) should be <= 1 filter error ({})", err3, err1);
+        let err1 =
+            evaluate_ap_filters(&filters1, &freqs, &spk_gd, &sub_gd, &range_indices, 48000.0);
+        let err3 =
+            evaluate_ap_filters(&filters3, &freqs, &spk_gd, &sub_gd, &range_indices, 48000.0);
+        assert!(
+            err3 <= err1 * 1.01,
+            "3 filters error ({}) should be <= 1 filter error ({})",
+            err3,
+            err1
+        );
     }
 
     #[test]
@@ -753,7 +764,9 @@ mod tests {
         assert!(
             rel_error < 0.05,
             "GD at resonance should be ~{:.4}ms (Q/(pi*f0)), got {:.4}ms (error {:.1}%)",
-            theoretical_ms, gd_at_resonance, rel_error * 100.0
+            theoretical_ms,
+            gd_at_resonance,
+            rel_error * 100.0
         );
     }
 
@@ -775,7 +788,9 @@ mod tests {
             assert!(
                 (interpolated.spl[i] - curve.spl[i]).abs() < 0.01,
                 "SPL mismatch at index {}: {} vs {}",
-                i, interpolated.spl[i], curve.spl[i]
+                i,
+                interpolated.spl[i],
+                curve.spl[i]
             );
         }
     }
@@ -795,8 +810,18 @@ mod tests {
         let range_indices: Vec<usize> = (0..freqs.len()).collect();
         let empty_filters: Vec<Biquad> = vec![];
 
-        let error = evaluate_ap_filters(&empty_filters, &freqs, &spk_gd, &sub_gd, &range_indices, 48000.0);
-        assert!(error > 0.0, "Empty filters should give non-zero error for mismatched curves");
+        let error = evaluate_ap_filters(
+            &empty_filters,
+            &freqs,
+            &spk_gd,
+            &sub_gd,
+            &range_indices,
+            48000.0,
+        );
+        assert!(
+            error > 0.0,
+            "Empty filters should give non-zero error for mismatched curves"
+        );
         assert!(error < f64::INFINITY, "Error should be finite");
     }
 

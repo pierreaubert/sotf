@@ -3,9 +3,7 @@
 //! These tests load pre-computed BEM simulation data and verify that
 //! the roomeq optimizer can improve the simulated frequency responses.
 
-use autoeq::roomeq::{
-    FirConfig, MixedPhaseSerdeConfig, ProcessingMode, RoomConfig, optimize_room,
-};
+use autoeq::roomeq::{FirConfig, MixedPhaseSerdeConfig, ProcessingMode, RoomConfig, optimize_room};
 use std::path::{Path, PathBuf};
 
 /// Get workspace root (two levels up from CARGO_MANIFEST_DIR = crates/autoeq)
@@ -67,7 +65,9 @@ fn run_roomeq_on_generated(scenario_name: &str) {
     // guard in the 2.1 workflow discards Post-EQ that would degrade the response.
     let sub_names = ["LFE", "lfe", "sub"];
     for (channel_name, channel_result) in &result.channel_results {
-        let is_sub = sub_names.iter().any(|s| channel_name.eq_ignore_ascii_case(s))
+        let is_sub = sub_names
+            .iter()
+            .any(|s| channel_name.eq_ignore_ascii_case(s))
             || channel_name.to_lowercase().starts_with("sub");
         if !is_sub {
             assert!(
@@ -288,13 +288,12 @@ fn run_roomeq_with_mode(
         config.optimizer.max_freq = config.optimizer.max_freq.min(1500.0);
     }
 
-    optimize_room(&config, 48000.0, None, Some(output_dir))
-        .unwrap_or_else(|e| {
-            panic!(
-                "Optimization failed for {scenario_name} mode={}: {e}",
-                mode_config.name
-            )
-        })
+    optimize_room(&config, 48000.0, None, Some(output_dir)).unwrap_or_else(|e| {
+        panic!(
+            "Optimization failed for {scenario_name} mode={}: {e}",
+            mode_config.name
+        )
+    })
 }
 
 /// Compute RMS and max dB difference between two curves in a frequency range
@@ -373,10 +372,7 @@ fn run_multimode_comparison(scenario_name: &str) {
         // Per-channel detail
         for (ch_name, ch_result) in &result.channel_results {
             let ch_improv = 1.0 - ch_result.post_score / ch_result.pre_score;
-            let fir_len = ch_result
-                .fir_coeffs
-                .as_ref()
-                .map_or(0, |c| c.len());
+            let fir_len = ch_result.fir_coeffs.as_ref().map_or(0, |c| c.len());
             println!(
                 "    {:8} pre={:.4}  post={:.4}  improv={:.1}%  biquads={}  fir_taps={}",
                 ch_name,
@@ -524,7 +520,11 @@ fn run_multimode_comparison(scenario_name: &str) {
         if let Some(icd) = &result.metadata.inter_channel_deviation {
             println!(
                 "    {:12} midrange_rms={:.2}dB  peak={:.1}dB @{:.0}Hz  passband_rms={:.2}dB",
-                mode_name, icd.midrange_rms_db, icd.midrange_peak_db, icd.midrange_peak_freq, icd.passband_rms_db,
+                mode_name,
+                icd.midrange_rms_db,
+                icd.midrange_peak_db,
+                icd.midrange_peak_freq,
+                icd.passband_rms_db,
             );
         } else {
             println!("    {:12} (no ICD data)", mode_name);
@@ -683,9 +683,10 @@ fn test_mixedphase_with_phase_data() {
     );
 
     // Verify convolution plugin in DSP chain
-    let has_convolution = result.channels.values().any(|ch| {
-        ch.plugins.iter().any(|p| p.plugin_type == "convolution")
-    });
+    let has_convolution = result
+        .channels
+        .values()
+        .any(|ch| ch.plugins.iter().any(|p| p.plugin_type == "convolution"));
     assert!(
         has_convolution,
         "MixedPhase DSP chain should include a convolution plugin for excess phase FIR"

@@ -17,19 +17,18 @@ use super::group_delay;
 use super::output;
 use super::phase_alignment;
 use super::types::{
-    ChannelDspChain, DspChainOutput, MeasurementSource,
-    OptimizationMetadata, OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig,
-    SystemModel, TargetCurveConfig,
+    ChannelDspChain, DspChainOutput, MeasurementSource, OptimizationMetadata, OptimizerConfig,
+    ProcessingMode, RoomConfig, SpeakerConfig, SystemModel, TargetCurveConfig,
 };
 
 // Private module imports for extracted functions
-use super::speaker_eq::process_single_speaker;
-pub(super) use super::speaker_eq::optimize_eq_with_optional_schroeder; // Re-export for workflows
+pub(super) use super::speaker_eq::optimize_eq_with_optional_schroeder;
+use super::speaker_eq::process_single_speaker; // Re-export for workflows
 
-use super::group_processing::{
-    process_speaker_group, process_multisub_group, process_dba, process_cardioid,
-};
 use super::crossover_utils::check_group_consistency;
+use super::group_processing::{
+    process_cardioid, process_dba, process_multisub_group, process_speaker_group,
+};
 
 // ============================================================================
 // Type Aliases
@@ -94,8 +93,7 @@ pub(super) fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f6
     }
 
     let threshold = median_spl - 10.0;
-    let f_low_1 =
-        find_db_point(&freqs_f32, &spl_1oct, threshold, true).unwrap_or(freqs_f32[0]);
+    let f_low_1 = find_db_point(&freqs_f32, &spl_1oct, threshold, true).unwrap_or(freqs_f32[0]);
     let f_high_1 = find_db_point(&freqs_f32, &spl_1oct, threshold, false)
         .unwrap_or(freqs_f32[freqs_f32.len() - 1]);
 
@@ -107,8 +105,7 @@ pub(super) fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f6
         double_smooth.spl.iter().map(|&s| s as f32).collect()
     };
 
-    let f_low_2 =
-        find_db_point(&freqs_f32, &spl_2oct, threshold, true).unwrap_or(freqs_f32[0]);
+    let f_low_2 = find_db_point(&freqs_f32, &spl_2oct, threshold, true).unwrap_or(freqs_f32[0]);
     let f_high_2 = find_db_point(&freqs_f32, &spl_2oct, threshold, false)
         .unwrap_or(freqs_f32[freqs_f32.len() - 1]);
 
@@ -204,8 +201,7 @@ fn post_generate_mixed_phase_fir(
             if let Some(out_dir) = output_dir {
                 let filename = format!("{}_excess_phase_fir.wav", name);
                 let wav_path = out_dir.join(&filename);
-                if let Err(e) =
-                    crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
+                if let Err(e) = crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
                 {
                     warn!("Failed to save excess phase FIR for {}: {}", name, e);
                 } else {
@@ -572,9 +568,7 @@ pub fn optimize_room(
                     .is_some_and(|b| b.enabled));
 
         if use_generic_for_stereo {
-            info!(
-                "Stereo 2.0 with excursion/tilt/broadband features, using generic path"
-            );
+            info!("Stereo 2.0 with excursion/tilt/broadband features, using generic path");
         }
 
         if !has_group && !use_generic_for_stereo {
@@ -668,7 +662,10 @@ pub fn optimize_room(
                 );
                 // Workflows only do IIR. If FIR/Hybrid mode is requested, post-generate
                 // full FIR coefficients for each channel.
-                if matches!(config.optimizer.processing_mode, ProcessingMode::PhaseLinear | ProcessingMode::Hybrid) {
+                if matches!(
+                    config.optimizer.processing_mode,
+                    ProcessingMode::PhaseLinear | ProcessingMode::Hybrid
+                ) {
                     let out_dir = output_dir.unwrap_or(Path::new("."));
                     for (name, ch) in result.channel_results.iter_mut() {
                         if ch.fir_coeffs.is_some() {
@@ -719,7 +716,12 @@ pub fn optimize_room(
                             && let Some(chain) = result.channels.get_mut(name)
                         {
                             apply_phase_correction(
-                                name, ch, chain, pc_config, sample_rate, Some(out_dir),
+                                name,
+                                ch,
+                                chain,
+                                pc_config,
+                                sample_rate,
+                                Some(out_dir),
                             );
                         }
                     }
@@ -815,10 +817,15 @@ pub fn optimize_room(
     };
     let n_params = config.optimizer.num_filters * params_per_filter;
     let n_free = n_params.max(1); // all params are free in standard EQ
-    let desired_pop = config.optimizer.population.max(1).min(config.optimizer.max_iter.max(1));
+    let desired_pop = config
+        .optimizer
+        .population
+        .max(1)
+        .min(config.optimizer.max_iter.max(1));
     let pop_multiplier = desired_pop.div_ceil(n_free).max(4);
     let population_size = pop_multiplier * n_free;
-    let max_iterations = (config.optimizer.max_iter.saturating_sub(population_size) / population_size).max(5000);
+    let max_iterations =
+        (config.optimizer.max_iter.saturating_sub(population_size) / population_size).max(5000);
     info!(
         "DE budget: {} params, population_size={}, max_generations={} (from max_iter={}, floor=5000)",
         n_params, population_size, max_iterations, config.optimizer.max_iter
@@ -860,11 +867,7 @@ pub fn optimize_room(
             let mi = max_iterations;
             Some(Box::new(move |iter: usize, loss: f64| {
                 let base_progress = si as f64 / ts as f64;
-                let speaker_progress = if mi > 0 {
-                    iter as f64 / mi as f64
-                } else {
-                    0.0
-                };
+                let speaker_progress = if mi > 0 { iter as f64 / mi as f64 } else { 0.0 };
                 let overall = (base_progress + speaker_progress / ts as f64).min(1.0);
 
                 if let Ok(mut guard) = cb.lock()
@@ -987,8 +990,10 @@ pub fn optimize_room(
         // Post-generate FIR coefficients for channels that need them but don't have them
         // (e.g., speaker groups that only support IIR internally)
         let fir_coeffs = if fir_coeffs.is_none()
-            && !matches!(config.optimizer.processing_mode, ProcessingMode::LowLatency | ProcessingMode::MixedPhase)
-        {
+            && !matches!(
+                config.optimizer.processing_mode,
+                ProcessingMode::LowLatency | ProcessingMode::MixedPhase
+            ) {
             post_generate_fir(
                 &channel_name,
                 &initial_curve,
@@ -1187,11 +1192,12 @@ pub fn optimize_room(
                 for (channel_name, vog_result) in &vog_results {
                     let plugins = super::voice_of_god::create_vog_plugins(vog_result, sample_rate);
                     if !plugins.is_empty()
-                        && let Some(chain) = channel_chains.get_mut(channel_name) {
-                            for plugin in plugins {
-                                chain.plugins.push(plugin);
-                            }
+                        && let Some(chain) = channel_chains.get_mut(channel_name)
+                    {
+                        for plugin in plugins {
+                            chain.plugins.push(plugin);
                         }
+                    }
                 }
             }
             Err(e) => {
@@ -1394,9 +1400,7 @@ pub fn optimize_room(
             if let Some(ch) = channel_results.get_mut(name.as_str())
                 && let Some(chain) = channel_chains.get_mut(name.as_str())
             {
-                apply_phase_correction(
-                    name, ch, chain, pc_config, sample_rate, output_dir,
-                );
+                apply_phase_correction(name, ch, chain, pc_config, sample_rate, output_dir);
             }
         }
     }
@@ -1561,10 +1565,8 @@ fn compute_and_correct_icd(
                             &display_curve.freq,
                             sample_rate,
                         );
-                        let corrected = crate::response::apply_complex_response(
-                            &display_curve,
-                            &display_resp,
-                        );
+                        let corrected =
+                            crate::response::apply_complex_response(&display_curve, &display_resp);
                         chain.final_curve = Some((&corrected).into());
                     }
                 }
@@ -1577,11 +1579,14 @@ fn compute_and_correct_icd(
             .iter()
             .map(|(name, ch)| (name.clone(), ch.final_curve.clone()))
             .collect();
-        let icd_after = super::spectral_align::compute_inter_channel_deviation(&corrected_curves, f3);
+        let icd_after =
+            super::spectral_align::compute_inter_channel_deviation(&corrected_curves, f3);
         info!(
             "ICD after correction: midrange_rms={:.2}dB (was {:.2}dB), peak={:.1}dB @{:.0}Hz",
-            icd_after.midrange_rms_db, icd.midrange_rms_db,
-            icd_after.midrange_peak_db, icd_after.midrange_peak_freq,
+            icd_after.midrange_rms_db,
+            icd.midrange_rms_db,
+            icd_after.midrange_peak_db,
+            icd_after.midrange_peak_freq,
         );
         result.metadata.inter_channel_deviation = Some(icd_after);
     } else {
@@ -1723,16 +1728,14 @@ fn process_speaker_internal(
     let output_dir = output_dir.unwrap_or(Path::new("."));
 
     match speaker_config {
-        SpeakerConfig::Single(source) => {
-            process_single_speaker(
-                channel_name,
-                source,
-                room_config,
-                sample_rate,
-                output_dir,
-                callback,
-            )
-        }
+        SpeakerConfig::Single(source) => process_single_speaker(
+            channel_name,
+            source,
+            room_config,
+            sample_rate,
+            output_dir,
+            callback,
+        ),
         SpeakerConfig::Group(group) => {
             process_speaker_group(channel_name, group, room_config, sample_rate, output_dir)
         }
@@ -1771,4 +1774,3 @@ pub(super) fn extract_wav_path(source: &MeasurementSource) -> Option<String> {
         MeasurementSource::InMemory(_) | MeasurementSource::InMemoryMultiple(_) => None,
     }
 }
-

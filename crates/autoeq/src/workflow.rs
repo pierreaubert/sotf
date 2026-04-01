@@ -1988,7 +1988,9 @@ mod tests {
             assert!(
                 (gain_lower - expected).abs() < 1e-9,
                 "max_db={}: gain_lower should be {}, got {}",
-                max_db, expected, gain_lower
+                max_db,
+                expected,
+                gain_lower
             );
         }
     }

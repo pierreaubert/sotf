@@ -52,9 +52,9 @@ pub use optimize::{
 };
 
 // Extracted optimization submodules
-mod speaker_eq;      // Single-speaker EQ optimization
+mod crossover_utils;
 mod group_processing; // Multi-speaker groups, multisub, DBA, cardioid, mixed-mode
-mod crossover_utils;  // Crossover and group consistency utilities
+mod speaker_eq; // Single-speaker EQ optimization // Crossover and group consistency utilities
 
 // Individual optimization modules
 mod crossover;
@@ -75,11 +75,10 @@ pub use output::{
     add_delay_plugin, build_channel_dsp_chain, build_channel_dsp_chain_with_curves,
     build_dba_dsp_chain, build_dba_dsp_chain_with_curves, build_multidriver_dsp_chain,
     build_multidriver_dsp_chain_with_curves, build_multisub_dsp_chain,
-    build_multisub_dsp_chain_with_curves, build_multisub_dsp_chain_with_allpass,
-    create_convolution_plugin, create_crossover_plugin,
-    create_delay_plugin, create_dsp_chain_output, create_eq_plugin, create_labeled_eq_plugin,
-    create_gain_plugin,
-    create_gain_plugin_with_invert, save_dsp_chain,
+    build_multisub_dsp_chain_with_allpass, build_multisub_dsp_chain_with_curves,
+    create_convolution_plugin, create_crossover_plugin, create_delay_plugin,
+    create_dsp_chain_output, create_eq_plugin, create_gain_plugin, create_gain_plugin_with_invert,
+    create_labeled_eq_plugin, save_dsp_chain,
 };
 
 // Progress reporting

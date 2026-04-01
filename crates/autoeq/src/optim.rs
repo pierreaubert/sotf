@@ -537,7 +537,11 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
             if data.smooth {
-                let curve = Curve { freq: data.freqs.clone(), spl: error, phase: None };
+                let curve = Curve {
+                    freq: data.freqs.clone(),
+                    spl: error,
+                    phase: None,
+                };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
                 flat_loss(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
             } else {
@@ -548,7 +552,11 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
             if data.smooth {
-                let curve = Curve { freq: data.freqs.clone(), spl: error, phase: None };
+                let curve = Curve {
+                    freq: data.freqs.clone(),
+                    spl: error,
+                    phase: None,
+                };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
                 flat_loss_asymmetric(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
             } else {
@@ -662,7 +670,11 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
             if data.smooth {
-                let curve = Curve { freq: data.freqs.clone(), spl: error, phase: None };
+                let curve = Curve {
+                    freq: data.freqs.clone(),
+                    spl: error,
+                    phase: None,
+                };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
                 flat_loss(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
             } else {
@@ -673,7 +685,11 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
             if data.smooth {
-                let curve = Curve { freq: data.freqs.clone(), spl: error, phase: None };
+                let curve = Curve {
+                    freq: data.freqs.clone(),
+                    spl: error,
+                    phase: None,
+                };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
                 flat_loss_asymmetric(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
             } else {
@@ -873,8 +889,7 @@ pub fn optimize_filters_with_algo_override(
 /// Simple progress callback: (iteration, best_loss) -> continue/stop
 ///
 /// Used to thread per-iteration optimizer progress through the room EQ call chain.
-pub type OptimProgressCallback =
-    Box<dyn FnMut(usize, f64) -> crate::de::CallbackAction + Send>;
+pub type OptimProgressCallback = Box<dyn FnMut(usize, f64) -> crate::de::CallbackAction + Send>;
 
 /// Optimize filter parameters with a progress callback for per-iteration updates.
 ///

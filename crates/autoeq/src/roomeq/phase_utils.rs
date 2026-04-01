@@ -425,7 +425,10 @@ mod tests {
         let phase = reconstruct_minimum_phase(&freq, &spl);
 
         // All values should be finite
-        assert!(phase.iter().all(|p| p.is_finite()), "all phase values should be finite");
+        assert!(
+            phase.iter().all(|p| p.is_finite()),
+            "all phase values should be finite"
+        );
         // Mean should be near zero (edge effects may push individual values higher)
         let mean = phase.iter().sum::<f64>() / phase.len() as f64;
         assert!(
@@ -448,7 +451,10 @@ mod tests {
 
         let phase = reconstruct_minimum_phase(&freq, &spl);
 
-        assert!(phase.iter().all(|p| p.is_finite()), "all phase values should be finite");
+        assert!(
+            phase.iter().all(|p| p.is_finite()),
+            "all phase values should be finite"
+        );
         let range = phase.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
             - phase.iter().cloned().fold(f64::INFINITY, f64::min);
         assert!(

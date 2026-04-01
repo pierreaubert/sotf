@@ -39,8 +39,7 @@ pub fn fetch_cea2034_blocking(
     version: &str,
 ) -> std::result::Result<Cea2034Data, Box<dyn std::error::Error>> {
     let fetch = async {
-        let plot_data =
-            read::fetch_measurement_plot_data(speaker_name, version, "CEA2034").await?;
+        let plot_data = read::fetch_measurement_plot_data(speaker_name, version, "CEA2034").await?;
         let curves = read::extract_cea2034_curves_original(&plot_data, "CEA2034")?;
         read::build_cea2034_data(curves)
     };
@@ -214,8 +213,11 @@ fn compute_flat_lw_correction(
 
     info!(
         "  Flat LW correction: {} filters, {:.0}-{:.0} Hz, max_db={:.1}, min_db={:.1}",
-        config.num_filters, schroeder_freq, room_curve.freq[room_curve.freq.len() - 1],
-        config.max_db, config.min_db
+        config.num_filters,
+        schroeder_freq,
+        room_curve.freq[room_curve.freq.len() - 1],
+        config.max_db,
+        config.min_db
     );
 
     // Build optimizer config for speaker correction
@@ -251,10 +253,7 @@ fn compute_flat_lw_correction(
         loss
     );
     for f in &filters {
-        debug!(
-            "    {:.0} Hz, Q={:.2}, {:.1} dB",
-            f.freq, f.q, f.db_gain
-        );
+        debug!("    {:.0} Hz, Q={:.2}, {:.1} dB", f.freq, f.q, f.db_gain);
     }
 
     // Apply correction to the room measurement curve
@@ -293,7 +292,9 @@ fn compute_score_correction(
 
     info!(
         "  Speaker-score correction: {} filters, {:.0}-{:.0} Hz",
-        config.num_filters, schroeder_freq, room_curve.freq[room_curve.freq.len() - 1]
+        config.num_filters,
+        schroeder_freq,
+        room_curve.freq[room_curve.freq.len() - 1]
     );
 
     // For score mode, we use more filters and broader Q range
@@ -312,15 +313,12 @@ fn compute_score_correction(
         ..OptimizerConfig::default()
     };
 
-    let (filters, loss) = eq::optimize_channel_eq(
-        &lw_interpolated,
-        &optimizer_config,
-        None,
-        sample_rate,
-    )
-    .map_err(|e| AutoeqError::OptimizationFailed {
-        message: format!("CEA2034 score correction failed: {}", e),
-    })?;
+    let (filters, loss) =
+        eq::optimize_channel_eq(&lw_interpolated, &optimizer_config, None, sample_rate).map_err(
+            |e| AutoeqError::OptimizationFailed {
+                message: format!("CEA2034 score correction failed: {}", e),
+            },
+        )?;
 
     info!(
         "  CEA2034 score correction: {} filters, final loss={:.4}",
@@ -328,10 +326,7 @@ fn compute_score_correction(
         loss
     );
     for f in &filters {
-        debug!(
-            "    {:.0} Hz, Q={:.2}, {:.1} dB",
-            f.freq, f.q, f.db_gain
-        );
+        debug!("    {:.0} Hz, Q={:.2}, {:.1} dB", f.freq, f.q, f.db_gain);
     }
 
     // Apply correction to the room measurement curve

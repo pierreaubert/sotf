@@ -14,7 +14,7 @@
 use crate::Curve;
 use log::info;
 use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
-use math_audio_optimisation::{levenberg_marquardt, LMConfigBuilder};
+use math_audio_optimisation::{LMConfigBuilder, levenberg_marquardt};
 use ndarray::Array1;
 use std::collections::HashMap;
 
@@ -333,7 +333,11 @@ pub fn correct_inter_channel_deviation(
     let mut reference = vec![0.0; n];
     for (name, curve) in final_curves {
         let mean = passband_means[name];
-        for (i, ref_val) in reference.iter_mut().enumerate().take(n.min(curve.spl.len())) {
+        for (i, ref_val) in reference
+            .iter_mut()
+            .enumerate()
+            .take(n.min(curve.spl.len()))
+        {
             *ref_val += (curve.spl[i] - mean) / final_curves.len() as f64;
         }
     }
@@ -407,7 +411,10 @@ pub fn correct_inter_channel_deviation(
         let plugin = if filters.is_empty() {
             None
         } else {
-            Some(output::create_labeled_eq_plugin(&filters, "channel_matching"))
+            Some(output::create_labeled_eq_plugin(
+                &filters,
+                "channel_matching",
+            ))
         };
 
         results.push(ChannelMatchingResult {
@@ -436,7 +443,11 @@ fn smooth_for_peak_finding(diff: &[f64], freq: &Array1<f64>, n: usize) -> Vec<f6
                 count += 1;
             }
         }
-        smoothed[i] = if count > 0 { sum / count as f64 } else { diff.get(i).copied().unwrap_or(0.0) };
+        smoothed[i] = if count > 0 {
+            sum / count as f64
+        } else {
+            diff.get(i).copied().unwrap_or(0.0)
+        };
     }
     smoothed
 }
@@ -766,7 +777,7 @@ fn fit_shelf_gain_iterative(
     let bounds = [
         (-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0), // ls_gain
         (-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0), // hs_gain
-        (-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB),                // flat_gain
+        (-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB),               // flat_gain
     ];
 
     let config = LMConfigBuilder::new()
@@ -1303,14 +1314,8 @@ mod tests {
         // become nearly collinear. The old Gauss-Newton solver diverged here
         // with flat_gain exploding to ±60+ dB. LM damping prevents this.
         let mut curves = HashMap::new();
-        curves.insert(
-            "L".to_string(),
-            make_narrow_curve(|_| -30.0, 100.0, 400.0),
-        );
-        curves.insert(
-            "R".to_string(),
-            make_narrow_curve(|_| -32.0, 100.0, 400.0),
-        );
+        curves.insert("L".to_string(), make_narrow_curve(|_| -30.0, 100.0, 400.0));
+        curves.insert("R".to_string(), make_narrow_curve(|_| -32.0, 100.0, 400.0));
 
         let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 100.0, 400.0);
 
@@ -1533,8 +1538,7 @@ mod tests {
         });
         let target = make_curve(|_| 5.0);
 
-        let result =
-            compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
+        let result = compute_target_alignment(&measurement, &target, 20.0, 20000.0, SAMPLE_RATE);
 
         if let Some(r) = result {
             // Shelf gains must be within the clamped limits

@@ -12,7 +12,9 @@ use crate::error::{AutoeqError, Result};
 use log::info;
 use std::collections::HashMap;
 
-use super::spectral_align::{SpectralAlignmentResult, compute_target_alignment, create_alignment_plugins};
+use super::spectral_align::{
+    SpectralAlignmentResult, compute_target_alignment, create_alignment_plugins,
+};
 use super::types::PluginConfigWrapper;
 
 /// Result of VoG analysis for a single channel.
@@ -41,17 +43,15 @@ pub fn compute_voice_of_god(
     min_freq: f64,
     max_freq: f64,
 ) -> Result<HashMap<String, VoGResult>> {
-    let reference_curve = corrected_curves
-        .get(reference_channel)
-        .ok_or_else(|| {
-            AutoeqError::InvalidConfiguration {
-                message: format!(
-                    "VoG reference channel '{}' not found. Available: {:?}",
-                    reference_channel,
-                    corrected_curves.keys().collect::<Vec<_>>()
-                ),
-            }
-        })?;
+    let reference_curve = corrected_curves.get(reference_channel).ok_or_else(|| {
+        AutoeqError::InvalidConfiguration {
+            message: format!(
+                "VoG reference channel '{}' not found. Available: {:?}",
+                reference_channel,
+                corrected_curves.keys().collect::<Vec<_>>()
+            ),
+        }
+    })?;
 
     let mut results = HashMap::new();
 
@@ -69,13 +69,8 @@ pub fn compute_voice_of_god(
         }
 
         // Align this channel's curve to the reference channel's curve
-        let alignment = compute_target_alignment(
-            curve,
-            reference_curve,
-            min_freq,
-            max_freq,
-            sample_rate,
-        );
+        let alignment =
+            compute_target_alignment(curve, reference_curve, min_freq, max_freq, sample_rate);
 
         results.insert(
             name.clone(),
@@ -109,10 +104,7 @@ pub fn compute_voice_of_god(
 ///
 /// Returns a list of plugins (EQ with shelves, gain) to apply to the channel.
 /// Returns an empty list for the reference channel or channels with negligible corrections.
-pub fn create_vog_plugins(
-    result: &VoGResult,
-    sample_rate: f64,
-) -> Vec<PluginConfigWrapper> {
+pub fn create_vog_plugins(result: &VoGResult, sample_rate: f64) -> Vec<PluginConfigWrapper> {
     let mut plugins = Vec::new();
 
     if let Some(alignment) = &result.alignment {
@@ -163,8 +155,14 @@ mod tests {
         assert_eq!(results.len(), 3);
         assert!(results["C"].is_reference);
         // L and R should have no alignment (identical to reference)
-        assert!(results["L"].alignment.is_none(), "L should need no correction");
-        assert!(results["R"].alignment.is_none(), "R should need no correction");
+        assert!(
+            results["L"].alignment.is_none(),
+            "L should need no correction"
+        );
+        assert!(
+            results["R"].alignment.is_none(),
+            "R should need no correction"
+        );
     }
 
     #[test]
@@ -180,7 +178,10 @@ mod tests {
         let results = compute_voice_of_god(&curves, "C", SR, 20.0, 20000.0).unwrap();
 
         assert!(results["C"].is_reference);
-        let l_result = results["L"].alignment.as_ref().expect("L should have corrections");
+        let l_result = results["L"]
+            .alignment
+            .as_ref()
+            .expect("L should have corrections");
         // L has more bass than reference → needs negative lowshelf to cut bass
         assert!(
             l_result.lowshelf_gain_db < -0.3,
@@ -195,7 +196,10 @@ mod tests {
         curves.insert("L".to_string(), make_curve(|_| 0.0));
 
         let result = compute_voice_of_god(&curves, "NONEXISTENT", SR, 20.0, 20000.0);
-        assert!(result.is_err(), "Should error when reference channel not found");
+        assert!(
+            result.is_err(),
+            "Should error when reference channel not found"
+        );
     }
 
     #[test]
@@ -231,7 +235,10 @@ mod tests {
         assert!(results["L"].is_reference);
 
         // C has excess treble → needs negative highshelf
-        let c_align = results["C"].alignment.as_ref().expect("C should have corrections");
+        let c_align = results["C"]
+            .alignment
+            .as_ref()
+            .expect("C should have corrections");
         assert!(
             c_align.highshelf_gain_db < -0.3,
             "C should need HS cut for excess treble, got {:.2}",
@@ -239,7 +246,10 @@ mod tests {
         );
 
         // R has excess bass → needs negative lowshelf
-        let r_align = results["R"].alignment.as_ref().expect("R should have corrections");
+        let r_align = results["R"]
+            .alignment
+            .as_ref()
+            .expect("R should have corrections");
         assert!(
             r_align.lowshelf_gain_db < -0.3,
             "R should need LS cut for excess bass, got {:.2}",

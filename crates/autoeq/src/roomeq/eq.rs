@@ -2,10 +2,10 @@
 //!
 //! Provides per-channel PEQ optimization using autoeq's workflow.
 
+use crate::Curve;
 use crate::cli::{Args, PeqModel};
 use crate::loss::LossType;
 use crate::workflow::setup_objective_data;
-use crate::Curve;
 use clap::{Parser, ValueEnum};
 use log::debug;
 use math_audio_iir_fir::Biquad;

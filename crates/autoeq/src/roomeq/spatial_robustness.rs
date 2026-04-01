@@ -103,8 +103,11 @@ pub fn spatial_std_dev(curves: &[Curve]) -> Array1<f64> {
     let mut std_dev = Array1::zeros(len);
     for bin in 0..len {
         let mean: f64 = curves.iter().map(|c| c.spl[bin]).sum::<f64>() / n;
-        let variance: f64 =
-            curves.iter().map(|c| (c.spl[bin] - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        let variance: f64 = curves
+            .iter()
+            .map(|c| (c.spl[bin] - mean).powi(2))
+            .sum::<f64>()
+            / (n - 1.0);
         std_dev[bin] = variance.sqrt();
     }
 
@@ -161,8 +164,7 @@ pub fn analyze_spatial_robustness(
 ) -> SpatialRobustnessResult {
     let averaged_curve = rms_average(curves);
     let spatial_variance = spatial_std_dev(curves);
-    let correction_depth =
-        correction_depth_mask(&averaged_curve.freq, &spatial_variance, config);
+    let correction_depth = correction_depth_mask(&averaged_curve.freq, &spatial_variance, config);
 
     SpatialRobustnessResult {
         averaged_curve,
@@ -175,11 +177,7 @@ pub fn analyze_spatial_robustness(
 ///
 /// Window width is specified in octaves. Each output sample is the average
 /// of all input samples within +/- half_width octaves.
-fn smooth_log_frequency(
-    data: &Array1<f64>,
-    freq: &Array1<f64>,
-    width_octaves: f64,
-) -> Array1<f64> {
+fn smooth_log_frequency(data: &Array1<f64>, freq: &Array1<f64>, width_octaves: f64) -> Array1<f64> {
     let len = data.len();
     let half_width = width_octaves / 2.0;
     let mut smoothed = Array1::zeros(len);
@@ -386,7 +384,11 @@ mod tests {
         assert!(
             result.correction_depth.iter().all(|&d| d > 0.8),
             "single curve should have high correction depth, got min={:.3}",
-            result.correction_depth.iter().cloned().fold(f64::INFINITY, f64::min)
+            result
+                .correction_depth
+                .iter()
+                .cloned()
+                .fold(f64::INFINITY, f64::min)
         );
     }
 
@@ -471,7 +473,11 @@ mod tests {
         let depth = correction_depth_mask(&freq, &variance, &config);
         for &d in depth.iter() {
             assert!(d.is_finite(), "depth should be finite");
-            assert!((0.0..=1.0).contains(&d), "depth should be in [0, 1], got {}", d);
+            assert!(
+                (0.0..=1.0).contains(&d),
+                "depth should be in [0, 1], got {}",
+                d
+            );
         }
     }
 }

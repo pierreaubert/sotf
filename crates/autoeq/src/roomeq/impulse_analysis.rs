@@ -280,11 +280,7 @@ fn build_correction_weights(
         // Schroeder-based weight: smooth transition from mode_correction_weight
         // (below Schroeder) to steady_state_weight (above Schroeder)
         let schroeder_blend = if config.transition_width_oct <= 0.0 {
-            if f <= config.schroeder_freq {
-                0.0
-            } else {
-                1.0
-            }
+            if f <= config.schroeder_freq { 0.0 } else { 1.0 }
         } else {
             let x = (f_log - schroeder_log) / half_transition;
             // Sigmoid: 0 below Schroeder, 1 above
@@ -392,11 +388,7 @@ pub fn build_ssir_correction_weights(
 
         // Smooth transition from modal to diffuse region
         let blend = if config.transition_width_oct <= 0.0 {
-            if f <= ssir_boundary_freq {
-                0.0
-            } else {
-                1.0
-            }
+            if f <= ssir_boundary_freq { 0.0 } else { 1.0 }
         } else {
             let x = (f_log - boundary_log) / half_transition;
             1.0 / (1.0 + (-x).exp())
@@ -581,7 +573,12 @@ mod tests {
 
         assert_eq!(result.schroeder_freq, 200.0);
         assert!(!result.correction_weights.iter().any(|w| w.is_nan()));
-        assert!(result.correction_weights.iter().all(|&w| (0.0..=1.0).contains(&w)));
+        assert!(
+            result
+                .correction_weights
+                .iter()
+                .all(|&w| (0.0..=1.0).contains(&w))
+        );
     }
 
     #[test]
@@ -607,11 +604,7 @@ mod tests {
             .unwrap();
 
         let q = estimate_peak_q(&freq, &spl, peak_idx);
-        assert!(
-            q > 5.0,
-            "narrow peak should have high Q, got {:.1}",
-            q
-        );
+        assert!(q > 5.0, "narrow peak should have high Q, got {:.1}", q);
     }
 
     #[test]
@@ -621,7 +614,11 @@ mod tests {
         let spl = Array1::from_vec(vec![90.0, 88.0, 85.0, 83.0, 80.0]); // peak at idx 0
         let q = estimate_peak_q(&freq, &spl, 0);
         // Should return a reasonable Q (not NaN or negative)
-        assert!(q.is_finite() && q > 0.0, "Q at edge should be positive finite, got {}", q);
+        assert!(
+            q.is_finite() && q > 0.0,
+            "Q at edge should be positive finite, got {}",
+            q
+        );
     }
 
     #[test]
@@ -651,7 +648,11 @@ mod tests {
         let weights = build_correction_weights(&freq, &[], &config);
 
         // At 50 Hz (well below): close to early_reflection_weight
-        assert!(weights[0] < 0.4, "50 Hz weight should be near 0.2, got {}", weights[0]);
+        assert!(
+            weights[0] < 0.4,
+            "50 Hz weight should be near 0.2, got {}",
+            weights[0]
+        );
         // At 200 Hz (at Schroeder): should be midpoint ~0.4
         let midpoint = (0.2 + 0.6) / 2.0;
         assert!(
@@ -661,7 +662,11 @@ mod tests {
             weights[1]
         );
         // At 800 Hz (well above): close to steady_state_weight
-        assert!(weights[2] > 0.4, "800 Hz weight should be near 0.6, got {}", weights[2]);
+        assert!(
+            weights[2] > 0.4,
+            "800 Hz weight should be near 0.6, got {}",
+            weights[2]
+        );
     }
 
     #[test]
@@ -716,9 +721,12 @@ mod tests {
         }
 
         // Find peak
-        let peak_idx = spl.iter().enumerate()
+        let peak_idx = spl
+            .iter()
+            .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-            .map(|(i, _)| i).unwrap();
+            .map(|(i, _)| i)
+            .unwrap();
 
         let q = estimate_peak_q(&freq, &spl, peak_idx);
         // Should not be 2x the true Q (which was 5.0)
@@ -738,6 +746,10 @@ mod tests {
         // Peak at idx 3 (90 dB), threshold = 87 dB
         // Left: spl[2]=83, spl[1]=83 — both below threshold, denom = 83-83 = 0
         let q = estimate_peak_q(&freq, &spl, 3);
-        assert!(q.is_finite() && q > 0.0, "Q should be finite positive, got {:.1}", q);
+        assert!(
+            q.is_finite() && q > 0.0,
+            "Q should be finite positive, got {:.1}",
+            q
+        );
     }
 }

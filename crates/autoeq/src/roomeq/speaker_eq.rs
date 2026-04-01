@@ -25,8 +25,8 @@ use super::types::{
 };
 
 // Import from optimize and group_processing modules
-use super::optimize::{detect_passband_and_mean, extract_wav_path};
 use super::group_processing::process_mixed_mode_crossover;
+use super::optimize::{detect_passband_and_mean, extract_wav_path};
 
 // Type aliases from optimize module
 pub(super) type MixedModeResult = (
@@ -214,7 +214,11 @@ pub(super) fn process_single_speaker(
                 },
                 effective_target.preference.bass_shelf_db,
                 effective_target.preference.treble_shelf_db,
-                if cea2034_active { " (preferences extracted to Pass 3)" } else { "" },
+                if cea2034_active {
+                    " (preferences extracted to Pass 3)"
+                } else {
+                    ""
+                },
             );
             Some(target_tilt::build_complete_target_curve(
                 &curve.freq,
@@ -305,80 +309,81 @@ pub(super) fn process_single_speaker(
     // ========================================================================
     // Pass 1: CEA2034 Speaker Correction (above Schroeder frequency)
     // ========================================================================
-    let (curve, cea2034_filters, cea2034_plugins) =
-        if let Some(cea_config) = &room_config.optimizer.cea2034_correction {
-            if cea_config.enabled {
-                // Resolve speaker name: config override > MeasurementSource
-                let speaker_name = cea_config
-                    .speaker_name
-                    .as_deref()
-                    .or_else(|| source.speaker_name());
+    let (curve, cea2034_filters, cea2034_plugins) = if let Some(cea_config) =
+        &room_config.optimizer.cea2034_correction
+    {
+        if cea_config.enabled {
+            // Resolve speaker name: config override > MeasurementSource
+            let speaker_name = cea_config
+                .speaker_name
+                .as_deref()
+                .or_else(|| source.speaker_name());
 
-                if let Some(name) = speaker_name {
-                    // Look up pre-fetched CEA2034 data
-                    let cea_data = room_config
-                        .cea2034_cache
-                        .as_ref()
-                        .and_then(|cache| cache.get(name));
+            if let Some(name) = speaker_name {
+                // Look up pre-fetched CEA2034 data
+                let cea_data = room_config
+                    .cea2034_cache
+                    .as_ref()
+                    .and_then(|cache| cache.get(name));
 
-                    if let Some(data) = cea_data {
-                        // Determine Schroeder frequency
-                        let schroeder_freq = cea_config.min_freq.unwrap_or_else(|| {
-                            room_config
-                                .optimizer
-                                .schroeder_split
-                                .as_ref()
-                                .filter(|s| s.enabled)
-                                .map(|s| s.schroeder_freq)
-                                .unwrap_or(300.0)
-                        });
+                if let Some(data) = cea_data {
+                    // Determine Schroeder frequency
+                    let schroeder_freq = cea_config.min_freq.unwrap_or_else(|| {
+                        room_config
+                            .optimizer
+                            .schroeder_split
+                            .as_ref()
+                            .filter(|s| s.enabled)
+                            .map(|s| s.schroeder_freq)
+                            .unwrap_or(300.0)
+                    });
 
-                        match super::cea2034_correction::compute_speaker_correction(
-                            data,
-                            cea_config,
-                            &curve,
-                            schroeder_freq,
-                            arrival_time_ms,
-                            sample_rate,
-                        ) {
-                            Ok((filters, corrected_curve)) => {
-                                info!(
-                                    "  Pass 1 CEA2034 correction: {} filters above {:.0} Hz for '{}'",
-                                    filters.len(),
-                                    schroeder_freq,
-                                    name
-                                );
-                                let plugin = output::create_labeled_eq_plugin(
-                                    &filters,
-                                    "cea2034_speaker_correction",
-                                );
-                                (corrected_curve, filters, vec![plugin])
-                            }
-                            Err(e) => {
-                                warn!(
-                                    "  CEA2034 correction failed for '{}': {}. Skipping Pass 1.",
-                                    name, e
-                                );
-                                (curve, vec![], vec![])
-                            }
+                    match super::cea2034_correction::compute_speaker_correction(
+                        data,
+                        cea_config,
+                        &curve,
+                        schroeder_freq,
+                        arrival_time_ms,
+                        sample_rate,
+                    ) {
+                        Ok((filters, corrected_curve)) => {
+                            info!(
+                                "  Pass 1 CEA2034 correction: {} filters above {:.0} Hz for '{}'",
+                                filters.len(),
+                                schroeder_freq,
+                                name
+                            );
+                            let plugin = output::create_labeled_eq_plugin(
+                                &filters,
+                                "cea2034_speaker_correction",
+                            );
+                            (corrected_curve, filters, vec![plugin])
                         }
-                    } else {
-                        warn!(
-                            "  No CEA2034 data in cache for speaker '{}'. Skipping Pass 1.",
-                            name
-                        );
-                        (curve, vec![], vec![])
+                        Err(e) => {
+                            warn!(
+                                "  CEA2034 correction failed for '{}': {}. Skipping Pass 1.",
+                                name, e
+                            );
+                            (curve, vec![], vec![])
+                        }
                     }
                 } else {
-                    debug!("  No speaker_name configured. Skipping CEA2034 correction.");
+                    warn!(
+                        "  No CEA2034 data in cache for speaker '{}'. Skipping Pass 1.",
+                        name
+                    );
                     (curve, vec![], vec![])
                 }
             } else {
+                debug!("  No speaker_name configured. Skipping CEA2034 correction.");
                 (curve, vec![], vec![])
             }
         } else {
             (curve, vec![], vec![])
-        };
+        }
+    } else {
+        (curve, vec![], vec![])
+    };
 
     // Compute pre-score (within EQ range)
     let mut min_freq = room_config.optimizer.min_freq;
@@ -469,145 +474,139 @@ pub(super) fn process_single_speaker(
 
     let (curve_for_optim, broadband_plugins, broadband_biquads, bb_mean_shift) =
         if broadband_enabled {
-                info!("  Broadband pre-correction enabled...");
+            info!("  Broadband pre-correction enabled...");
 
-                // Detect F3 to avoid shelf-correcting below the speaker's rolloff.
-                let detected_f3 = match excursion::detect_f3(&curve, None) {
-                    Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 => {
-                        info!(
-                            "  Broadband: detected speaker F3={:.1}Hz",
-                            f3_result.f3_hz
-                        );
-                        Some(f3_result.f3_hz)
-                    }
-                    _ => None,
-                };
-                let bb_min_freq = detected_f3.unwrap_or(min_freq);
-
-                // Construct target at the measurement's mean level, INCLUDING the
-                // target shape (tilt + preference). This ensures broadband and
-                // optimizer pull toward the same goal — no double-tilt.
-                let target = if let Some(ref tilt_curve) = target_tilt_curve {
-                    Curve {
-                        freq: curve.freq.clone(),
-                        spl: &tilt_curve.spl + mean_spl,
-                        phase: None,
-                    }
-                } else {
-                    Curve {
-                        freq: curve.freq.clone(),
-                        spl: Array1::from_elem(curve.freq.len(), mean_spl),
-                        phase: None,
-                    }
-                };
-
-                // 2. Compute alignment within the speaker's passband (F3 to 20kHz).
-                // The target is flat at mean_spl, so the alignment fits gentle
-                // shelves + gain to correct the measurement's broadband shape.
-                if let Some(mut result) = spectral_align::compute_target_alignment(
-                    &curve,
-                    &target,
-                    bb_min_freq,
-                    20000.0,
-                    sample_rate,
-                ) {
-                    // Suppress the low-shelf when a rolloff is detected below the
-                    // shelf frequency: the shelf response extends to DC and would
-                    // partially boost the rolloff region, creating a worse shape
-                    // than leaving it uncorrected.
-                    if let Some(f3) = detected_f3
-                        && f3 < spectral_align::LOWSHELF_FREQ {
-                            info!(
-                                "  Broadband: suppressing low-shelf (F3={:.1}Hz < shelf={:.1}Hz)",
-                                f3, spectral_align::LOWSHELF_FREQ
-                            );
-                            result.lowshelf_gain_db = 0.0;
-                        }
-                    info!(
-                        "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
-                        result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
-                    );
-
-                    // 3. Create plugins
-                    let (eq_plugin, gain_plugin) =
-                        spectral_align::create_alignment_plugins(&result, sample_rate);
-
-                    let mut plugins = Vec::new();
-                    if let Some(g) = gain_plugin {
-                        plugins.push(g);
-                    }
-                    if let Some(eq) = eq_plugin {
-                        plugins.push(eq);
-                    }
-
-                    // Simulate the broadband correction on the curve
-                    use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
-                    let mut filters = Vec::new();
-                    if result.lowshelf_gain_db.abs() > 1e-3 {
-                        filters.push(Biquad::new(
-                            BiquadFilterType::Lowshelf,
-                            spectral_align::LOWSHELF_FREQ,
-                            sample_rate,
-                            DEFAULT_Q_HIGH_LOW_SHELF,
-                            result.lowshelf_gain_db,
-                        ));
-                    }
-                    if result.highshelf_gain_db.abs() > 1e-3 {
-                        filters.push(Biquad::new(
-                            BiquadFilterType::Highshelf,
-                            spectral_align::HIGHSHELF_FREQ,
-                            sample_rate,
-                            DEFAULT_Q_HIGH_LOW_SHELF,
-                            result.highshelf_gain_db,
-                        ));
-                    }
-
-                    // 1. Gain
-                    let mut temp_curve = curve.clone();
-                    temp_curve.spl += result.flat_gain_db;
-
-                    // 2. Filters
-                    let corrected_curve = if !filters.is_empty() {
-                        let resp = response::compute_peq_complex_response(
-                            &filters,
-                            &curve.freq,
-                            sample_rate,
-                        );
-                        response::apply_complex_response(&temp_curve, &resp)
-                    } else {
-                        temp_curve
-                    };
-
-                    // 3. Validate: reject broadband correction if it makes things worse.
-                    // Measure deviation from the tilted target — broadband should move
-                    // us CLOSER to the target, not further away.  When combined with
-                    // excursion HPF + room modes, the shelf fitting can produce bad
-                    // results that then compound with the optimizer's tilt subtraction.
-                    let target_spl = &target.spl;  // mean_spl + tilt (or just mean_spl if flat)
-                    let pre_bb_dev = &curve.spl - target_spl;
-                    let pre_bb_score = crate::loss::flat_loss(
-                        &curve.freq, &pre_bb_dev, min_freq, max_freq,
-                    );
-                    let post_bb_dev = &corrected_curve.spl - target_spl;
-                    let post_bb_score = crate::loss::flat_loss(
-                        &corrected_curve.freq, &post_bb_dev, min_freq, max_freq,
-                    );
-
-                    if post_bb_score > pre_bb_score * 1.5 {
-                        warn!(
-                            "  Broadband correction rejected: deviation from target {:.4} -> {:.4} \
-                             (worse by {:.0}%). Shelf fit likely confused by room modes or HPF rolloff.",
-                            pre_bb_score,
-                            post_bb_score,
-                            (post_bb_score / pre_bb_score - 1.0) * 100.0,
-                        );
-                        (curve.clone(), Vec::new(), Vec::new(), 0.0)
-                    } else {
-                        (corrected_curve, plugins, filters, result.flat_gain_db)
-                    }
-                } else {
-                    (curve.clone(), Vec::new(), Vec::new(), 0.0)
+            // Detect F3 to avoid shelf-correcting below the speaker's rolloff.
+            let detected_f3 = match excursion::detect_f3(&curve, None) {
+                Ok(f3_result) if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 => {
+                    info!("  Broadband: detected speaker F3={:.1}Hz", f3_result.f3_hz);
+                    Some(f3_result.f3_hz)
                 }
+                _ => None,
+            };
+            let bb_min_freq = detected_f3.unwrap_or(min_freq);
+
+            // Construct target at the measurement's mean level, INCLUDING the
+            // target shape (tilt + preference). This ensures broadband and
+            // optimizer pull toward the same goal — no double-tilt.
+            let target = if let Some(ref tilt_curve) = target_tilt_curve {
+                Curve {
+                    freq: curve.freq.clone(),
+                    spl: &tilt_curve.spl + mean_spl,
+                    phase: None,
+                }
+            } else {
+                Curve {
+                    freq: curve.freq.clone(),
+                    spl: Array1::from_elem(curve.freq.len(), mean_spl),
+                    phase: None,
+                }
+            };
+
+            // 2. Compute alignment within the speaker's passband (F3 to 20kHz).
+            // The target is flat at mean_spl, so the alignment fits gentle
+            // shelves + gain to correct the measurement's broadband shape.
+            if let Some(mut result) = spectral_align::compute_target_alignment(
+                &curve,
+                &target,
+                bb_min_freq,
+                20000.0,
+                sample_rate,
+            ) {
+                // Suppress the low-shelf when a rolloff is detected below the
+                // shelf frequency: the shelf response extends to DC and would
+                // partially boost the rolloff region, creating a worse shape
+                // than leaving it uncorrected.
+                if let Some(f3) = detected_f3
+                    && f3 < spectral_align::LOWSHELF_FREQ
+                {
+                    info!(
+                        "  Broadband: suppressing low-shelf (F3={:.1}Hz < shelf={:.1}Hz)",
+                        f3,
+                        spectral_align::LOWSHELF_FREQ
+                    );
+                    result.lowshelf_gain_db = 0.0;
+                }
+                info!(
+                    "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
+                    result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
+                );
+
+                // 3. Create plugins
+                let (eq_plugin, gain_plugin) =
+                    spectral_align::create_alignment_plugins(&result, sample_rate);
+
+                let mut plugins = Vec::new();
+                if let Some(g) = gain_plugin {
+                    plugins.push(g);
+                }
+                if let Some(eq) = eq_plugin {
+                    plugins.push(eq);
+                }
+
+                // Simulate the broadband correction on the curve
+                use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
+                let mut filters = Vec::new();
+                if result.lowshelf_gain_db.abs() > 1e-3 {
+                    filters.push(Biquad::new(
+                        BiquadFilterType::Lowshelf,
+                        spectral_align::LOWSHELF_FREQ,
+                        sample_rate,
+                        DEFAULT_Q_HIGH_LOW_SHELF,
+                        result.lowshelf_gain_db,
+                    ));
+                }
+                if result.highshelf_gain_db.abs() > 1e-3 {
+                    filters.push(Biquad::new(
+                        BiquadFilterType::Highshelf,
+                        spectral_align::HIGHSHELF_FREQ,
+                        sample_rate,
+                        DEFAULT_Q_HIGH_LOW_SHELF,
+                        result.highshelf_gain_db,
+                    ));
+                }
+
+                // 1. Gain
+                let mut temp_curve = curve.clone();
+                temp_curve.spl += result.flat_gain_db;
+
+                // 2. Filters
+                let corrected_curve = if !filters.is_empty() {
+                    let resp =
+                        response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
+                    response::apply_complex_response(&temp_curve, &resp)
+                } else {
+                    temp_curve
+                };
+
+                // 3. Validate: reject broadband correction if it makes things worse.
+                // Measure deviation from the tilted target — broadband should move
+                // us CLOSER to the target, not further away.  When combined with
+                // excursion HPF + room modes, the shelf fitting can produce bad
+                // results that then compound with the optimizer's tilt subtraction.
+                let target_spl = &target.spl; // mean_spl + tilt (or just mean_spl if flat)
+                let pre_bb_dev = &curve.spl - target_spl;
+                let pre_bb_score =
+                    crate::loss::flat_loss(&curve.freq, &pre_bb_dev, min_freq, max_freq);
+                let post_bb_dev = &corrected_curve.spl - target_spl;
+                let post_bb_score =
+                    crate::loss::flat_loss(&corrected_curve.freq, &post_bb_dev, min_freq, max_freq);
+
+                if post_bb_score > pre_bb_score * 1.5 {
+                    warn!(
+                        "  Broadband correction rejected: deviation from target {:.4} -> {:.4} \
+                             (worse by {:.0}%). Shelf fit likely confused by room modes or HPF rolloff.",
+                        pre_bb_score,
+                        post_bb_score,
+                        (post_bb_score / pre_bb_score - 1.0) * 100.0,
+                    );
+                    (curve.clone(), Vec::new(), Vec::new(), 0.0)
+                } else {
+                    (corrected_curve, plugins, filters, result.flat_gain_db)
+                }
+            } else {
+                (curve.clone(), Vec::new(), Vec::new(), 0.0)
+            }
         } else {
             (curve.clone(), Vec::new(), Vec::new(), 0.0)
         };
@@ -645,9 +644,7 @@ pub(super) fn process_single_speaker(
         opt.ssir_wav_path = wav_path_for_ssir;
 
         // Apply subwoofer-specific optimizer overrides
-        if is_sub_channel
-            && let Some(sub_cfg) = &room_config.optimizer.sub_config
-        {
+        if is_sub_channel && let Some(sub_cfg) = &room_config.optimizer.sub_config {
             info!(
                 "  Applying sub_config overrides: num_filters={}, max_db={:+.1}, min_db={:+.1}, max_q={:.1}",
                 sub_cfg.num_filters, sub_cfg.max_db, sub_cfg.min_db, sub_cfg.max_q,
@@ -1030,11 +1027,15 @@ pub(super) fn process_single_speaker(
             let spatial_depth = if matches!(source, MeasurementSource::Multiple(_)) {
                 match load::load_source_individual(source) {
                     Ok(curves) if curves.len() > 1 => {
-                        let sr_config = super::spatial_robustness::SpatialRobustnessConfig::default();
-                        let analysis = super::spatial_robustness::analyze_spatial_robustness(&curves, &sr_config);
+                        let sr_config =
+                            super::spatial_robustness::SpatialRobustnessConfig::default();
+                        let analysis = super::spatial_robustness::analyze_spatial_robustness(
+                            &curves, &sr_config,
+                        );
                         info!(
                             "  Spatial depth for mixed-phase: mean={:.2}",
-                            analysis.correction_depth.iter().sum::<f64>() / analysis.correction_depth.len() as f64,
+                            analysis.correction_depth.iter().sum::<f64>()
+                                / analysis.correction_depth.len() as f64,
                         );
                         Some(analysis.correction_depth)
                     }
@@ -1108,13 +1109,19 @@ pub(super) fn process_single_speaker(
             };
 
             // Compute final response (IIR + optional FIR)
-            let eq_resp =
-                crate::response::compute_peq_complex_response(&eq_filters, &curve.freq, sample_rate);
+            let eq_resp = crate::response::compute_peq_complex_response(
+                &eq_filters,
+                &curve.freq,
+                sample_rate,
+            );
             let after_eq = crate::response::apply_complex_response(&curve_for_optim, &eq_resp);
 
             let final_curve = if let Some((ref coeffs, _)) = fir_coeffs {
-                let fir_resp =
-                    crate::response::compute_fir_complex_response(coeffs, &after_eq.freq, sample_rate);
+                let fir_resp = crate::response::compute_fir_complex_response(
+                    coeffs,
+                    &after_eq.freq,
+                    sample_rate,
+                );
                 crate::response::apply_complex_response(&after_eq, &fir_resp)
             } else {
                 after_eq
@@ -1458,9 +1465,9 @@ pub(super) fn optimize_eq_with_optional_schroeder(
             schroeder_config.high_freq_config.max_q
         );
 
-        let (low_filters, high_filters) = optimize_with_schroeder_split(
-            curve, optimizer, schroeder_config, sample_rate,
-        ).map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+        let (low_filters, high_filters) =
+            optimize_with_schroeder_split(curve, optimizer, schroeder_config, sample_rate)
+                .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
 
         let mut combined = low_filters;
         combined.extend(high_filters);
@@ -1587,11 +1594,8 @@ pub(super) fn optimize_with_schroeder_split(
     // significantly with low maxeval). Enforce the configured Q constraints on the
     // returned filters to guarantee the Schroeder split invariant.
     let low_eq_filters = clamp_filter_q(low_eq_filters, low_config.min_q, low_config.max_q);
-    let high_eq_filters = clamp_filter_q(
-        high_eq_filters,
-        optimizer.min_q.max(0.3),
-        high_config.max_q,
-    );
+    let high_eq_filters =
+        clamp_filter_q(high_eq_filters, optimizer.min_q.max(0.3), high_config.max_q);
 
     Ok((low_eq_filters, high_eq_filters))
 }
@@ -1688,4 +1692,3 @@ pub(super) fn determine_optimization_bands(
 
     bands
 }
-

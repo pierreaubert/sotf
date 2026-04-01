@@ -23,16 +23,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use autoeq::Curve;
 use autoeq::loss::phase_aware::{compute_group_delay, unwrap_phase_degrees};
-use autoeq::loss::{
-    calculate_standard_deviation_in_range, regression_slope_per_octave_in_range,
-};
+use autoeq::loss::{calculate_standard_deviation_in_range, regression_slope_per_octave_in_range};
 use autoeq::roomeq::{
-    CallbackAction, DecomposedCorrectionSerdeConfig,
-    ExcursionProtectionConfig, GroupDelayOptimizationConfig, MixedPhaseSerdeConfig,
-    MultiMeasurementConfig, MultiMeasurementStrategy, PhaseAlignmentConfig,
-    PreRingingSerdeConfig, ProcessingMode, RoomConfig, RoomOptimizationResult,
-    SchroederSplitConfig, SpatialRobustnessSerdeConfig, TargetTiltConfig, TiltType,
-    VoiceOfGodConfig, load_config, merge_json_objects, optimize_room,
+    CallbackAction, DecomposedCorrectionSerdeConfig, ExcursionProtectionConfig,
+    GroupDelayOptimizationConfig, MixedPhaseSerdeConfig, MultiMeasurementConfig,
+    MultiMeasurementStrategy, PhaseAlignmentConfig, PreRingingSerdeConfig, ProcessingMode,
+    RoomConfig, RoomOptimizationResult, SchroederSplitConfig, SpatialRobustnessSerdeConfig,
+    TargetTiltConfig, TiltType, VoiceOfGodConfig, load_config, merge_json_objects, optimize_room,
 };
 use autoeq::{MeasurementMultiple, MeasurementRef, MeasurementSource};
 
@@ -250,11 +247,7 @@ fn mean_spl_in_range(curve: &Curve, fmin: f64, fmax: f64) -> f64 {
             count += 1;
         }
     }
-    if count > 0 {
-        sum / count as f64
-    } else {
-        0.0
-    }
+    if count > 0 { sum / count as f64 } else { 0.0 }
 }
 
 /// Split error (final - initial) into peaks (positive) and dips (negative),
@@ -362,11 +355,8 @@ const MIXED_MUTATIONS: &[Mutation] = &[
 ];
 
 // MixedPhase mutations: IIR knobs (FIR is auto-generated for excess phase)
-const MIXED_PHASE_MUTATIONS: &[Mutation] = &[
-    Mutation::Baseline,
-    Mutation::MoreFilters,
-    Mutation::WiderQ,
-];
+const MIXED_PHASE_MUTATIONS: &[Mutation] =
+    &[Mutation::Baseline, Mutation::MoreFilters, Mutation::WiderQ];
 
 // ---------------------------------------------------------------------------
 // Test result tracking
@@ -386,9 +376,15 @@ struct TestResult {
 
 #[derive(Clone, Debug)]
 enum OptionOverride {
-    TargetTilt { slope_db_per_octave: f64 },
+    TargetTilt {
+        slope_db_per_octave: f64,
+    },
     ExcursionProtection,
-    SchroederSplit { schroeder_freq: f64, low_max_q: f64, high_max_q: f64 },
+    SchroederSplit {
+        schroeder_freq: f64,
+        low_max_q: f64,
+        high_max_q: f64,
+    },
     AsymmetricLoss,
     Psychoacoustic,
     BroadbandTargetMatching,
@@ -396,7 +392,9 @@ enum OptionOverride {
     MultiMeasurementMinimax,
     MultiMeasurementVariancePenalized,
     GroupDelayOpt,
-    VoiceOfGod { reference_channel: String },
+    VoiceOfGod {
+        reference_channel: String,
+    },
     SpatialRobustness,
     PreRinging,
     MixedPhaseMode,
@@ -406,7 +404,9 @@ enum OptionOverride {
 impl std::fmt::Display for OptionOverride {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OptionOverride::TargetTilt { slope_db_per_octave } => {
+            OptionOverride::TargetTilt {
+                slope_db_per_octave,
+            } => {
                 write!(f, "target_tilt(slope={})", slope_db_per_octave)
             }
             OptionOverride::ExcursionProtection => write!(f, "excursion_protection"),
@@ -436,8 +436,13 @@ impl std::fmt::Display for OptionOverride {
 /// Apply option override to config. Also disables the option for baseline configs.
 fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
     match option {
-        OptionOverride::TargetTilt { slope_db_per_octave } => {
-            let existing = config.optimizer.target_response.get_or_insert_with(Default::default);
+        OptionOverride::TargetTilt {
+            slope_db_per_octave,
+        } => {
+            let existing = config
+                .optimizer
+                .target_response
+                .get_or_insert_with(Default::default);
             existing.shape = autoeq::roomeq::TargetShape::Custom;
             existing.slope_db_per_octave = *slope_db_per_octave;
         }
@@ -451,7 +456,11 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
                 margin_octaves: 0.25,
             });
         }
-        OptionOverride::SchroederSplit { schroeder_freq, low_max_q, high_max_q } => {
+        OptionOverride::SchroederSplit {
+            schroeder_freq,
+            low_max_q,
+            high_max_q,
+        } => {
             config.optimizer.schroeder_split = Some(SchroederSplitConfig {
                 enabled: true,
                 schroeder_freq: *schroeder_freq,
@@ -473,7 +482,10 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
             config.optimizer.psychoacoustic = true;
         }
         OptionOverride::BroadbandTargetMatching => {
-            let existing = config.optimizer.target_response.get_or_insert_with(Default::default);
+            let existing = config
+                .optimizer
+                .target_response
+                .get_or_insert_with(Default::default);
             existing.broadband_precorrection = true;
         }
         OptionOverride::PhaseAlignment => {
@@ -589,7 +601,8 @@ fn disable_option(config: &mut RoomConfig, option: &OptionOverride) {
             config.optimizer.phase_alignment = None;
             config.optimizer.allow_delay = Some(false);
         }
-        OptionOverride::MultiMeasurementMinimax | OptionOverride::MultiMeasurementVariancePenalized => {
+        OptionOverride::MultiMeasurementMinimax
+        | OptionOverride::MultiMeasurementVariancePenalized => {
             config.optimizer.multi_measurement = Some(MultiMeasurementConfig {
                 strategy: MultiMeasurementStrategy::Average,
                 ..Default::default()
@@ -768,7 +781,9 @@ fn all_test_cases() -> Vec<TestCase> {
             name: "OE target_tilt",
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
-            options: vec![OptionOverride::TargetTilt { slope_db_per_octave: -0.8 }],
+            options: vec![OptionOverride::TargetTilt {
+                slope_db_per_octave: -0.8,
+            }],
         },
         TestCase::OptionEffect {
             name: "OE excursion_protection",
@@ -878,7 +893,6 @@ fn all_test_cases() -> Vec<TestCase> {
                 OptionOverride::Psychoacoustic,
             ],
         },
-
         // --- E.2: Frequency partitioning (both constrain low freq behaviour) ---
         TestCase::OptionEffect {
             name: "COMBO schroeder+excursion",
@@ -906,14 +920,15 @@ fn all_test_cases() -> Vec<TestCase> {
                 OptionOverride::AsymmetricLoss,
             ],
         },
-
         // --- E.3: Target shaping (tilt defines the target, broadband pre-corrects) ---
         TestCase::OptionEffect {
             name: "COMBO tilt+psycho",
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
             options: vec![
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::Psychoacoustic,
             ],
         },
@@ -922,7 +937,9 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
             options: vec![
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::ExcursionProtection,
             ],
         },
@@ -931,11 +948,12 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "medium_surround_5_1",
             optim_subdir: "medium_surround_5_1",
             options: vec![
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::BroadbandTargetMatching,
             ],
         },
-
         // --- E.4: Sub integration combos (phase + other options on 5.1) ---
         TestCase::OptionEffect {
             name: "COMBO phase+psycho 5.1",
@@ -962,10 +980,11 @@ fn all_test_cases() -> Vec<TestCase> {
             options: vec![
                 OptionOverride::PhaseAlignment,
                 OptionOverride::BroadbandTargetMatching,
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
             ],
         },
-
         // --- E.5: Multi-measurement combos ---
         TestCase::OptionEffect {
             name: "COMBO minimax+psycho+asymmetric",
@@ -983,7 +1002,9 @@ fn all_test_cases() -> Vec<TestCase> {
             optim_subdir: "medium_multi_seat",
             options: vec![
                 OptionOverride::MultiMeasurementVariancePenalized,
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::Psychoacoustic,
             ],
         },
@@ -1001,14 +1022,15 @@ fn all_test_cases() -> Vec<TestCase> {
                 OptionOverride::ExcursionProtection,
             ],
         },
-
         // --- E.6: Triple+ combos on stereo (interaction stress tests) ---
         TestCase::OptionEffect {
             name: "COMBO tilt+schroeder+asymmetric+psycho",
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
             options: vec![
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::SchroederSplit {
                     schroeder_freq: 300.0,
                     low_max_q: 10.0,
@@ -1023,7 +1045,9 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
             options: vec![
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::ExcursionProtection,
                 OptionOverride::SchroederSplit {
                     schroeder_freq: 300.0,
@@ -1043,14 +1067,15 @@ fn all_test_cases() -> Vec<TestCase> {
                 OptionOverride::Psychoacoustic,
             ],
         },
-
         // --- E.7: Kitchen sink (all compatible options per scenario) ---
         TestCase::OptionEffect {
             name: "COMBO all stereo options",
             fem_subdir: "small_stereo_2_0",
             optim_subdir: "small_stereo_2_0",
             options: vec![
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::ExcursionProtection,
                 OptionOverride::SchroederSplit {
                     schroeder_freq: 300.0,
@@ -1067,7 +1092,9 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "medium_surround_5_1",
             optim_subdir: "medium_surround_5_1",
             options: vec![
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::ExcursionProtection,
                 OptionOverride::PhaseAlignment,
                 OptionOverride::AsymmetricLoss,
@@ -1080,7 +1107,9 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "medium_multi_seat",
             optim_subdir: "medium_multi_seat",
             options: vec![
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::ExcursionProtection,
                 OptionOverride::SchroederSplit {
                     schroeder_freq: 300.0,
@@ -1097,7 +1126,9 @@ fn all_test_cases() -> Vec<TestCase> {
             fem_subdir: "medium_multi_seat",
             optim_subdir: "medium_multi_seat",
             options: vec![
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
                 OptionOverride::ExcursionProtection,
                 OptionOverride::SchroederSplit {
                     schroeder_freq: 300.0,
@@ -1109,7 +1140,6 @@ fn all_test_cases() -> Vec<TestCase> {
                 OptionOverride::MultiMeasurementVariancePenalized,
             ],
         },
-
         // --- E.8: Sub topology combos (2.1 scenario) ---
         TestCase::OptionEffect {
             name: "COMBO phase+excursion+tilt 2.1",
@@ -1118,7 +1148,9 @@ fn all_test_cases() -> Vec<TestCase> {
             options: vec![
                 OptionOverride::PhaseAlignment,
                 OptionOverride::ExcursionProtection,
-                OptionOverride::TargetTilt { slope_db_per_octave: -0.8 },
+                OptionOverride::TargetTilt {
+                    slope_db_per_octave: -0.8,
+                },
             ],
         },
         TestCase::OptionEffect {
@@ -1359,12 +1391,8 @@ fn run_cross_mode_convergence_tests(
     // CM-1: Frequency response convergence
     // Compare final curves across modes for each channel
     {
-        let channel_names: Vec<String> = mode_results[0]
-            .1
-            .channel_results
-            .keys()
-            .cloned()
-            .collect();
+        let channel_names: Vec<String> =
+            mode_results[0].1.channel_results.keys().cloned().collect();
 
         let mut cm1_max_diff = 0.0_f64;
 
@@ -1416,12 +1444,8 @@ fn run_cross_mode_convergence_tests(
 
     // CM-2: Group delay flatness (FIR/Mixed should have <= IIR GD std dev)
     {
-        let channel_names: Vec<String> = mode_results[0]
-            .1
-            .channel_results
-            .keys()
-            .cloned()
-            .collect();
+        let channel_names: Vec<String> =
+            mode_results[0].1.channel_results.keys().cloned().collect();
 
         let mut iir_gd_max = 0.0_f64;
         let mut fir_gd_max = 0.0_f64;
@@ -1456,10 +1480,7 @@ fn run_cross_mode_convergence_tests(
             writeln!(
                 out,
                 "  CM-2 GD flatness: IIR={:.2}ms FIR={:.2}ms Mixed={:.2}ms  {}",
-                iir_gd_max,
-                fir_gd_max,
-                mixed_gd_max,
-                status
+                iir_gd_max, fir_gd_max, mixed_gd_max, status
             )
             .unwrap();
 
@@ -1470,9 +1491,7 @@ fn run_cross_mode_convergence_tests(
                 pass: cm2_pass,
                 reason: format!(
                     "IIR={:.2}ms FIR={:.2}ms Mixed={:.2}ms",
-                    iir_gd_max,
-                    fir_gd_max,
-                    mixed_gd_max
+                    iir_gd_max, fir_gd_max, mixed_gd_max
                 ),
             });
         } else {
@@ -1583,8 +1602,7 @@ fn run_option_effect_test(
     };
 
     // Load and run baseline (all options disabled)
-    let (mut baseline_config, _) =
-        load_config(&base_config_path, override_path.as_deref())?;
+    let (mut baseline_config, _) = load_config(&base_config_path, override_path.as_deref())?;
     apply_qa_overrides(&mut baseline_config);
     for option in options {
         disable_option(&mut baseline_config, option);
@@ -1596,8 +1614,8 @@ fn run_option_effect_test(
         enable_multi_measurement_paths(&mut baseline_config, fem_dir, fem_subdir);
     }
 
-    let baseline_result = run_optimization(&baseline_config)
-        .with_context(|| format!("{} baseline", name))?;
+    let baseline_result =
+        run_optimization(&baseline_config).with_context(|| format!("{} baseline", name))?;
 
     writeln!(
         out,
@@ -1607,8 +1625,7 @@ fn run_option_effect_test(
     .unwrap();
 
     // Load and run with all options enabled
-    let (mut option_config, _) =
-        load_config(&base_config_path, override_path.as_deref())?;
+    let (mut option_config, _) = load_config(&base_config_path, override_path.as_deref())?;
     apply_qa_overrides(&mut option_config);
     for option in options {
         apply_option_override(&mut option_config, option);
@@ -1620,8 +1637,8 @@ fn run_option_effect_test(
         enable_multi_measurement_paths(&mut option_config, fem_dir, fem_subdir);
     }
 
-    let option_result = run_optimization(&option_config)
-        .with_context(|| format!("{} with-options", name))?;
+    let option_result =
+        run_optimization(&option_config).with_context(|| format!("{} with-options", name))?;
 
     writeln!(
         out,
@@ -1666,8 +1683,8 @@ fn run_option_effect_test(
     } else {
         0.0
     };
-    let converged = option_result.combined_post_score
-        < option_result.combined_pre_score + convergence_margin;
+    let converged =
+        option_result.combined_post_score < option_result.combined_pre_score + convergence_margin;
     if !converged {
         all_pass = false;
         let reason = format!(
@@ -1721,7 +1738,9 @@ fn validate_option_effect(
         .iter()
         .any(|o| matches!(o, OptionOverride::BroadbandTargetMatching));
     match option {
-        OptionOverride::TargetTilt { slope_db_per_octave } => validate_target_tilt(
+        OptionOverride::TargetTilt {
+            slope_db_per_octave,
+        } => validate_target_tilt(
             *slope_db_per_octave,
             baseline_result,
             option_result,
@@ -1732,21 +1751,22 @@ fn validate_option_effect(
         OptionOverride::ExcursionProtection => {
             validate_excursion_protection(baseline_result, option_result, num_options)
         }
-        OptionOverride::SchroederSplit { schroeder_freq, low_max_q, high_max_q } => {
-            validate_schroeder_split(*schroeder_freq, *low_max_q, *high_max_q, option_result)
-        }
-        OptionOverride::AsymmetricLoss => {
-            validate_asymmetric_loss(baseline_result, option_result)
-        }
+        OptionOverride::SchroederSplit {
+            schroeder_freq,
+            low_max_q,
+            high_max_q,
+        } => validate_schroeder_split(*schroeder_freq, *low_max_q, *high_max_q, option_result),
+        OptionOverride::AsymmetricLoss => validate_asymmetric_loss(baseline_result, option_result),
         OptionOverride::Psychoacoustic => {
             validate_psychoacoustic(baseline_result, option_result, num_options)
         }
-        OptionOverride::BroadbandTargetMatching => {
-            validate_broadband_target_matching(baseline_result, option_result, option_config, num_options)
-        }
-        OptionOverride::PhaseAlignment => {
-            validate_phase_alignment(baseline_result, option_result)
-        }
+        OptionOverride::BroadbandTargetMatching => validate_broadband_target_matching(
+            baseline_result,
+            option_result,
+            option_config,
+            num_options,
+        ),
+        OptionOverride::PhaseAlignment => validate_phase_alignment(baseline_result, option_result),
         OptionOverride::MultiMeasurementMinimax => {
             validate_multi_measurement_minimax(baseline_result, option_result, num_options)
         }
@@ -1777,21 +1797,30 @@ fn validate_option_effect(
                 <= OPTION_SCORE_TOLERANCE * baseline_result.combined_post_score;
 
             if !score_ok {
-                (false, format!(
-                    "GD-Opt score {:.3} > {:.1}x baseline {:.3}",
-                    option_result.combined_post_score,
-                    OPTION_SCORE_TOLERANCE,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    false,
+                    format!(
+                        "GD-Opt score {:.3} > {:.1}x baseline {:.3}",
+                        option_result.combined_post_score,
+                        OPTION_SCORE_TOLERANCE,
+                        baseline_result.combined_post_score,
+                    ),
+                )
             } else if !has_allpass {
                 // Not having allpass filters is acceptable (e.g., no sub-main pairings)
-                (true, "GD-Opt active but no AllPass filters generated (no sub-main pairing)".to_string())
+                (
+                    true,
+                    "GD-Opt active but no AllPass filters generated (no sub-main pairing)"
+                        .to_string(),
+                )
             } else {
-                (true, format!(
-                    "GD-Opt OK: AllPass filters present, score {:.3} vs baseline {:.3}",
-                    option_result.combined_post_score,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    true,
+                    format!(
+                        "GD-Opt OK: AllPass filters present, score {:.3} vs baseline {:.3}",
+                        option_result.combined_post_score, baseline_result.combined_post_score,
+                    ),
+                )
             }
         }
         OptionOverride::VoiceOfGod { .. } => {
@@ -1800,18 +1829,23 @@ fn validate_option_effect(
                 <= OPTION_SCORE_TOLERANCE * baseline_result.combined_post_score;
 
             if !score_ok {
-                (false, format!(
-                    "VoG score {:.3} > {:.1}x baseline {:.3}",
-                    option_result.combined_post_score,
-                    OPTION_SCORE_TOLERANCE,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    false,
+                    format!(
+                        "VoG score {:.3} > {:.1}x baseline {:.3}",
+                        option_result.combined_post_score,
+                        OPTION_SCORE_TOLERANCE,
+                        baseline_result.combined_post_score,
+                    ),
+                )
             } else {
-                (true, format!(
-                    "VoG OK: score {:.3} vs baseline {:.3}",
-                    option_result.combined_post_score,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    true,
+                    format!(
+                        "VoG OK: score {:.3} vs baseline {:.3}",
+                        option_result.combined_post_score, baseline_result.combined_post_score,
+                    ),
+                )
             }
         }
         OptionOverride::SpatialRobustness => {
@@ -1822,18 +1856,23 @@ fn validate_option_effect(
                 <= tolerance * baseline_result.combined_post_score;
 
             if !score_ok {
-                (false, format!(
-                    "SpatialRobustness score {:.3} > {:.1}x baseline {:.3}",
-                    option_result.combined_post_score,
-                    tolerance,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    false,
+                    format!(
+                        "SpatialRobustness score {:.3} > {:.1}x baseline {:.3}",
+                        option_result.combined_post_score,
+                        tolerance,
+                        baseline_result.combined_post_score,
+                    ),
+                )
             } else {
-                (true, format!(
-                    "SpatialRobustness OK: score {:.3} vs baseline {:.3}",
-                    option_result.combined_post_score,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    true,
+                    format!(
+                        "SpatialRobustness OK: score {:.3} vs baseline {:.3}",
+                        option_result.combined_post_score, baseline_result.combined_post_score,
+                    ),
+                )
             }
         }
         OptionOverride::PreRinging => {
@@ -1844,18 +1883,23 @@ fn validate_option_effect(
                 <= tolerance * baseline_result.combined_post_score;
 
             if !score_ok {
-                (false, format!(
-                    "PreRinging score {:.3} > {:.1}x baseline {:.3}",
-                    option_result.combined_post_score,
-                    tolerance,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    false,
+                    format!(
+                        "PreRinging score {:.3} > {:.1}x baseline {:.3}",
+                        option_result.combined_post_score,
+                        tolerance,
+                        baseline_result.combined_post_score,
+                    ),
+                )
             } else {
-                (true, format!(
-                    "PreRinging OK: score {:.3} vs baseline {:.3}",
-                    option_result.combined_post_score,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    true,
+                    format!(
+                        "PreRinging OK: score {:.3} vs baseline {:.3}",
+                        option_result.combined_post_score, baseline_result.combined_post_score,
+                    ),
+                )
             }
         }
         OptionOverride::MixedPhaseMode => {
@@ -1865,37 +1909,48 @@ fn validate_option_effect(
                 <= tolerance * baseline_result.combined_post_score;
 
             if !score_ok {
-                (false, format!(
-                    "MixedPhase score {:.3} > {:.1}x baseline {:.3}",
-                    option_result.combined_post_score,
-                    tolerance,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    false,
+                    format!(
+                        "MixedPhase score {:.3} > {:.1}x baseline {:.3}",
+                        option_result.combined_post_score,
+                        tolerance,
+                        baseline_result.combined_post_score,
+                    ),
+                )
             } else {
-                (true, format!(
-                    "MixedPhase OK: score {:.3} vs baseline {:.3}",
-                    option_result.combined_post_score,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    true,
+                    format!(
+                        "MixedPhase OK: score {:.3} vs baseline {:.3}",
+                        option_result.combined_post_score, baseline_result.combined_post_score,
+                    ),
+                )
             }
         }
         OptionOverride::DecomposedCorrection => {
             // DecomposedCorrection applies frequency-dependent weighting.
             // It should not make things significantly worse than baseline.
-            let ratio = option_result.combined_post_score / baseline_result.combined_post_score.max(1e-6);
+            let ratio =
+                option_result.combined_post_score / baseline_result.combined_post_score.max(1e-6);
             if ratio > 2.0 {
-                (false, format!(
-                    "DecomposedCorrection degraded score too much: {:.3} vs baseline {:.3} (ratio {:.2})",
-                    option_result.combined_post_score,
-                    baseline_result.combined_post_score,
-                    ratio,
-                ))
+                (
+                    false,
+                    format!(
+                        "DecomposedCorrection degraded score too much: {:.3} vs baseline {:.3} (ratio {:.2})",
+                        option_result.combined_post_score,
+                        baseline_result.combined_post_score,
+                        ratio,
+                    ),
+                )
             } else {
-                (true, format!(
-                    "DecomposedCorrection OK: score {:.3} vs baseline {:.3}",
-                    option_result.combined_post_score,
-                    baseline_result.combined_post_score,
-                ))
+                (
+                    true,
+                    format!(
+                        "DecomposedCorrection OK: score {:.3} vs baseline {:.3}",
+                        option_result.combined_post_score, baseline_result.combined_post_score,
+                    ),
+                )
             }
         }
     }
@@ -1946,8 +2001,7 @@ fn validate_target_tilt(
     // With-option slope should be closer to requested (or within tolerance).
     // Widen tolerance for combos: other options (excursion HPF, schroeder split,
     // psychoacoustic) can distort the slope in the 100-500 Hz measurement band.
-    let mut combo_tolerance =
-        TILT_SLOPE_TOLERANCE * (1.0 + (num_options.saturating_sub(1) as f64));
+    let mut combo_tolerance = TILT_SLOPE_TOLERANCE * (1.0 + (num_options.saturating_sub(1) as f64));
     // Schroeder split at 300 Hz bisects the 100-500 Hz slope measurement range,
     // creating two independently-optimized zones with different tilt behavior.
     // This fundamentally limits slope accuracy across the crossover.
@@ -2120,8 +2174,12 @@ fn validate_asymmetric_loss(
             let fmin = 20.0;
             let fmax = 500.0;
 
-            let (b_peak, b_dip) =
-                peak_dip_rms(&baseline_ch.initial_curve, &baseline_ch.final_curve, fmin, fmax);
+            let (b_peak, b_dip) = peak_dip_rms(
+                &baseline_ch.initial_curve,
+                &baseline_ch.final_curve,
+                fmin,
+                fmax,
+            );
             let (o_peak, o_dip) =
                 peak_dip_rms(&option_ch.initial_curve, &option_ch.final_curve, fmin, fmax);
 
@@ -2207,16 +2265,14 @@ fn validate_broadband_target_matching(
     // where other options (tilt, excursion, schroeder, psychoacoustic) modify the
     // response significantly before broadband matching acts.
     let score_tolerance = OPTION_SCORE_TOLERANCE + (num_options.saturating_sub(1) as f64) * 0.3;
-    let score_ok = option_result.combined_post_score
-        <= score_tolerance * baseline_result.combined_post_score;
+    let score_ok =
+        option_result.combined_post_score <= score_tolerance * baseline_result.combined_post_score;
     if !score_ok {
         pass = false;
     }
     details.push(format!(
         "score: baseline={:.4} broadband={:.4} (limit={:.1}x)",
-        baseline_result.combined_post_score,
-        option_result.combined_post_score,
-        score_tolerance,
+        baseline_result.combined_post_score, option_result.combined_post_score, score_tolerance,
     ));
 
     // Check 3: per-channel regression — no channel should get catastrophically worse.
@@ -2285,7 +2341,11 @@ fn validate_phase_alignment(
         <= OPTION_SCORE_TOLERANCE * baseline_result.combined_post_score;
 
     let pass = score_ok; // delay presence is informational, not required
-    let delay_str = if has_delay { "delay_present" } else { "no_delay" };
+    let delay_str = if has_delay {
+        "delay_present"
+    } else {
+        "no_delay"
+    };
 
     (
         pass,
@@ -2442,7 +2502,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    println!("=== RoomEQ QA: Convergence, Monotonicity & Invariants (DE/LSHADE, seed={}, parallel) ===", SEED);
+    println!(
+        "=== RoomEQ QA: Convergence, Monotonicity & Invariants (DE/LSHADE, seed={}, parallel) ===",
+        SEED
+    );
 
     let project_root = find_project_root()?;
     let fem_dir = project_root.join(FEM_DIR);

@@ -108,7 +108,12 @@ pub fn create_log_frequency_grid(n_points: usize, f_min: f64, f_max: f64) -> Arr
 /// * Interpolated SPL values at target frequencies
 pub fn interpolate(freqs: &Array1<f64>, curve: &Curve) -> Curve {
     debug_assert!(
-        curve.freq.as_slice().unwrap().windows(2).all(|w| w[0] <= w[1]),
+        curve
+            .freq
+            .as_slice()
+            .unwrap()
+            .windows(2)
+            .all(|w| w[0] <= w[1]),
         "interpolate() requires sorted frequencies"
     );
     let mut result_spl = Array1::zeros(freqs.len());
@@ -181,7 +186,11 @@ mod tests {
         let result = interpolate_log_space(&freq_out, &curve);
         // No NaN or Inf in output
         for &v in result.spl.iter() {
-            assert!(v.is_finite(), "interpolate_log_space produced non-finite value: {}", v);
+            assert!(
+                v.is_finite(),
+                "interpolate_log_space produced non-finite value: {}",
+                v
+            );
         }
     }
 }

@@ -12,7 +12,11 @@ use ndarray::Array1;
 /// # Panics
 /// Panics if `n_points < 2` (need at least two points for a frequency range).
 pub fn generate_flat_curve(min_freq: f64, max_freq: f64, n_points: usize) -> Curve {
-    assert!(n_points >= 2, "generate_flat_curve requires n_points >= 2, got {}", n_points);
+    assert!(
+        n_points >= 2,
+        "generate_flat_curve requires n_points >= 2, got {}",
+        n_points
+    );
     let log_min = min_freq.log10();
     let log_max = max_freq.log10();
     let freq: Vec<f64> = (0..n_points)
@@ -31,7 +35,11 @@ pub fn generate_flat_curve(min_freq: f64, max_freq: f64, n_points: usize) -> Cur
 /// # Panics
 /// Panics if `n_points < 2` (need at least two points for a frequency range).
 pub fn generate_harman_tilt_curve(min_freq: f64, max_freq: f64, n_points: usize) -> Curve {
-    assert!(n_points >= 2, "generate_harman_tilt_curve requires n_points >= 2, got {}", n_points);
+    assert!(
+        n_points >= 2,
+        "generate_harman_tilt_curve requires n_points >= 2, got {}",
+        n_points
+    );
     let tilt_db_per_octave = -0.8;
     let reference_freq = 200.0;
 
@@ -476,7 +484,11 @@ pub fn generate_dba_scenario(
             base
         };
         let noisy = if noise_rms > 0.0 {
-            add_noise(&after_eq, noise_rms, seed.wrapping_add(500 + i as u64 * 100))
+            add_noise(
+                &after_eq,
+                noise_rms,
+                seed.wrapping_add(500 + i as u64 * 100),
+            )
         } else {
             after_eq
         };
@@ -587,7 +599,11 @@ mod tests {
 
         // All SPL should be 0
         for &s in curve.spl.iter() {
-            assert!((s - 0.0).abs() < 1e-10, "Flat curve SPL should be 0, got {}", s);
+            assert!(
+                (s - 0.0).abs() < 1e-10,
+                "Flat curve SPL should be 0, got {}",
+                s
+            );
         }
 
         // Freq range check
@@ -600,7 +616,10 @@ mod tests {
         let curve = generate_harman_tilt_curve(20.0, 20000.0, 200);
 
         // At 200 Hz (reference), SPL should be 0
-        let idx_200 = curve.freq.iter().enumerate()
+        let idx_200 = curve
+            .freq
+            .iter()
+            .enumerate()
             .min_by_key(|&(_, &f)| ((f - 200.0).abs() * 1000.0) as i64)
             .map(|(i, _)| i)
             .unwrap();
@@ -635,7 +654,11 @@ mod tests {
 
         // Noise should be non-zero
         let max_deviation = noisy1.spl.iter().map(|&s| s.abs()).fold(0.0_f64, f64::max);
-        assert!(max_deviation > 0.1, "Noise should be non-trivial, max deviation: {}", max_deviation);
+        assert!(
+            max_deviation > 0.1,
+            "Noise should be non-trivial, max deviation: {}",
+            max_deviation
+        );
     }
 
     #[test]
@@ -646,7 +669,10 @@ mod tests {
         let result = apply_known_eq(&curve, &[filter], 48000.0);
 
         // At 1000 Hz, the peak filter should add ~6 dB
-        let idx_1k = result.freq.iter().enumerate()
+        let idx_1k = result
+            .freq
+            .iter()
+            .enumerate()
             .min_by_key(|&(_, &f)| ((f - 1000.0).abs() * 1000.0) as i64)
             .map(|(i, _)| i)
             .unwrap();
@@ -679,12 +705,20 @@ mod tests {
         assert_eq!(scenario.known_modes.len(), 2);
 
         // Degraded curve should differ from perfect
-        let diff: f64 = scenario.degraded_curve.spl.iter()
+        let diff: f64 = scenario
+            .degraded_curve
+            .spl
+            .iter()
             .zip(scenario.perfect_curve.spl.iter())
             .map(|(&d, &p)| (d - p).powi(2))
-            .sum::<f64>() / scenario.degraded_curve.spl.len() as f64;
+            .sum::<f64>()
+            / scenario.degraded_curve.spl.len() as f64;
         let rms_diff = diff.sqrt();
-        assert!(rms_diff > 1.0, "Degraded curve should differ from perfect, RMS diff: {:.2}", rms_diff);
+        assert!(
+            rms_diff > 1.0,
+            "Degraded curve should differ from perfect, RMS diff: {:.2}",
+            rms_diff
+        );
     }
 
     #[test]
@@ -706,7 +740,8 @@ mod tests {
         let rms_target = 2.0;
         let noisy = add_noise(&curve, rms_target, 12345);
 
-        let actual_rms = (noisy.spl.iter().map(|&s| s * s).sum::<f64>() / noisy.spl.len() as f64).sqrt();
+        let actual_rms =
+            (noisy.spl.iter().map(|&s| s * s).sum::<f64>() / noisy.spl.len() as f64).sqrt();
         assert!(
             (actual_rms - rms_target).abs() < 0.3,
             "Noise RMS should be ~{}, got {:.3}",
@@ -723,9 +758,13 @@ mod tests {
 
         let phase = curve.phase.unwrap();
         // Phase at 100 Hz with 2 ms delay: -360 * 100 * 0.002 = -72 degrees
-        let idx_100 = curve.freq.iter().enumerate()
+        let idx_100 = curve
+            .freq
+            .iter()
+            .enumerate()
             .min_by_key(|&(_, &f)| ((f - 100.0).abs() * 1000.0) as i64)
-            .map(|(i, _)| i).unwrap();
+            .map(|(i, _)| i)
+            .unwrap();
         assert!(
             (phase[idx_100] - (-72.0)).abs() < 5.0,
             "Phase at 100 Hz with 2ms delay should be ~-72°, got {:.1}°",
@@ -738,15 +777,19 @@ mod tests {
 
     #[test]
     fn test_generate_multisub_scenario_basic() {
-        let shared = vec![
-            Biquad::new(BiquadFilterType::Peak, 60.0, 48000.0, 4.0, -6.0),
-        ];
+        let shared = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            60.0,
+            48000.0,
+            4.0,
+            -6.0,
+        )];
         let scenario = generate_multisub_scenario(
             "test_2sub",
             2,
             &shared,
-            &[],            // no per-sub modes
-            &[0.0, 2.0],   // sub delays
+            &[],         // no per-sub modes
+            &[0.0, 2.0], // sub delays
             0.5,
             42,
             48000.0,
@@ -765,20 +808,36 @@ mod tests {
         // Sub 0 (0ms delay) and sub 1 (2ms delay) should have different phase
         let p0 = scenario.sub_curves[0].phase.as_ref().unwrap();
         let p1 = scenario.sub_curves[1].phase.as_ref().unwrap();
-        let phase_diff: f64 = p0.iter().zip(p1.iter())
+        let phase_diff: f64 = p0
+            .iter()
+            .zip(p1.iter())
             .map(|(&a, &b)| (a - b).abs())
-            .sum::<f64>() / p0.len() as f64;
-        assert!(phase_diff > 1.0, "Different delays should produce different phase");
+            .sum::<f64>()
+            / p0.len() as f64;
+        assert!(
+            phase_diff > 1.0,
+            "Different delays should produce different phase"
+        );
     }
 
     #[test]
     fn test_generate_multisub_scenario_with_per_sub_modes() {
-        let shared = vec![
-            Biquad::new(BiquadFilterType::Peak, 80.0, 48000.0, 3.0, 5.0),
-        ];
+        let shared = vec![Biquad::new(BiquadFilterType::Peak, 80.0, 48000.0, 3.0, 5.0)];
         let per_sub = vec![
-            vec![Biquad::new(BiquadFilterType::Peak, 50.0, 48000.0, 4.0, -4.0)],
-            vec![Biquad::new(BiquadFilterType::Peak, 120.0, 48000.0, 4.0, -3.0)],
+            vec![Biquad::new(
+                BiquadFilterType::Peak,
+                50.0,
+                48000.0,
+                4.0,
+                -4.0,
+            )],
+            vec![Biquad::new(
+                BiquadFilterType::Peak,
+                120.0,
+                48000.0,
+                4.0,
+                -3.0,
+            )],
         ];
         let scenario = generate_multisub_scenario(
             "test_per_sub",
@@ -796,18 +855,29 @@ mod tests {
         assert_eq!(scenario.per_sub_modes[1].len(), 1);
 
         // Subs should have different SPL profiles due to different unique modes
-        let spl_diff: f64 = scenario.sub_curves[0].spl.iter()
+        let spl_diff: f64 = scenario.sub_curves[0]
+            .spl
+            .iter()
             .zip(scenario.sub_curves[1].spl.iter())
             .map(|(&a, &b)| (a - b).abs())
-            .sum::<f64>() / scenario.sub_curves[0].spl.len() as f64;
-        assert!(spl_diff > 0.5, "Per-sub modes should cause SPL differences, got {:.2}", spl_diff);
+            .sum::<f64>()
+            / scenario.sub_curves[0].spl.len() as f64;
+        assert!(
+            spl_diff > 0.5,
+            "Per-sub modes should cause SPL differences, got {:.2}",
+            spl_diff
+        );
     }
 
     #[test]
     fn test_generate_multisub_scenario_deterministic() {
-        let shared = vec![
-            Biquad::new(BiquadFilterType::Peak, 60.0, 48000.0, 4.0, -6.0),
-        ];
+        let shared = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            60.0,
+            48000.0,
+            4.0,
+            -6.0,
+        )];
         let s1 = generate_multisub_scenario("a", 2, &shared, &[], &[0.0, 2.0], 0.5, 42, 48000.0);
         let s2 = generate_multisub_scenario("a", 2, &shared, &[], &[0.0, 2.0], 0.5, 42, 48000.0);
 
@@ -824,7 +894,13 @@ mod tests {
 
     #[test]
     fn test_generate_cardioid_scenario() {
-        let modes = vec![Biquad::new(BiquadFilterType::Peak, 60.0, 48000.0, 3.0, -5.0)];
+        let modes = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            60.0,
+            48000.0,
+            3.0,
+            -5.0,
+        )];
         let scenario = generate_cardioid_scenario("card", &modes, 1.0, 0.3, 42, 48000.0);
 
         assert!(scenario.front_curve.phase.is_some());
@@ -834,10 +910,16 @@ mod tests {
         // Rear should have different phase due to delay from separation
         let fp = scenario.front_curve.phase.as_ref().unwrap();
         let rp = scenario.rear_curve.phase.as_ref().unwrap();
-        let phase_diff: f64 = fp.iter().zip(rp.iter())
+        let phase_diff: f64 = fp
+            .iter()
+            .zip(rp.iter())
             .map(|(&a, &b)| (a - b).abs())
-            .sum::<f64>() / fp.len() as f64;
-        assert!(phase_diff > 1.0, "front/rear should have different phase from delay");
+            .sum::<f64>()
+            / fp.len() as f64;
+        assert!(
+            phase_diff > 1.0,
+            "front/rear should have different phase from delay"
+        );
     }
 
     #[test]
@@ -857,30 +939,58 @@ mod tests {
         }
 
         // Rear should have significantly more phase (larger delay)
-        let front_max_phase = scenario.front_curves[0].phase.as_ref().unwrap()
-            .iter().map(|p| p.abs()).fold(0.0_f64, f64::max);
-        let rear_max_phase = scenario.rear_curves[0].phase.as_ref().unwrap()
-            .iter().map(|p| p.abs()).fold(0.0_f64, f64::max);
+        let front_max_phase = scenario.front_curves[0]
+            .phase
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|p| p.abs())
+            .fold(0.0_f64, f64::max);
+        let rear_max_phase = scenario.rear_curves[0]
+            .phase
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|p| p.abs())
+            .fold(0.0_f64, f64::max);
         assert!(
             rear_max_phase > front_max_phase,
             "rear ({:.1}) should have more phase than front ({:.1})",
-            rear_max_phase, front_max_phase,
+            rear_max_phase,
+            front_max_phase,
         );
     }
 
     #[test]
     fn test_generate_channel_curve() {
         let base = generate_flat_curve(20.0, 20000.0, 200);
-        let modes = vec![Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0)];
+        let modes = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            2.0,
+            6.0,
+        )];
         let result = generate_channel_curve(&base, &modes, 1.0, 0.5, 42, 48000.0);
 
         assert_eq!(result.freq.len(), 200);
-        assert!(result.phase.is_some(), "channel curve should have phase from delay");
+        assert!(
+            result.phase.is_some(),
+            "channel curve should have phase from delay"
+        );
 
         // Should have the room mode applied
-        let idx_1k = result.freq.iter().enumerate()
+        let idx_1k = result
+            .freq
+            .iter()
+            .enumerate()
             .min_by_key(|&(_, &f)| ((f - 1000.0).abs() * 1000.0) as i64)
-            .map(|(i, _)| i).unwrap();
-        assert!(result.spl[idx_1k] > 3.0, "should have mode boost at 1kHz, got {:.1}", result.spl[idx_1k]);
+            .map(|(i, _)| i)
+            .unwrap();
+        assert!(
+            result.spl[idx_1k] > 3.0,
+            "should have mode boost at 1kHz, got {:.1}",
+            result.spl[idx_1k]
+        );
     }
 }

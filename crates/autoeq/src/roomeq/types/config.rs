@@ -981,9 +981,7 @@ pub struct BroadbandTargetMatchingConfig {
 
 impl Default for BroadbandTargetMatchingConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-        }
+        Self { enabled: true }
     }
 }
 
@@ -1489,7 +1487,11 @@ impl OptimizerConfig {
                     "Both target_response and target_tilt are set; target_tilt is ignored. Use target_response exclusively."
                 );
             }
-            if self.broadband_target_matching.as_ref().is_some_and(|b| b.enabled) {
+            if self
+                .broadband_target_matching
+                .as_ref()
+                .is_some_and(|b| b.enabled)
+            {
                 log::warn!(
                     "Both target_response and broadband_target_matching are set; broadband_target_matching is ignored. Set target_response.broadband_precorrection instead."
                 );
@@ -1527,10 +1529,7 @@ impl OptimizerConfig {
             curve_path: None,
             preference: UserPreference {
                 bass_shelf_db: tilt.as_ref().map(|t| t.bass_shelf_db).unwrap_or(0.0),
-                bass_shelf_freq: tilt
-                    .as_ref()
-                    .map(|t| t.bass_shelf_freq)
-                    .unwrap_or(200.0),
+                bass_shelf_freq: tilt.as_ref().map(|t| t.bass_shelf_freq).unwrap_or(200.0),
                 treble_shelf_db: 0.0,
                 treble_shelf_freq: 8000.0,
             },
