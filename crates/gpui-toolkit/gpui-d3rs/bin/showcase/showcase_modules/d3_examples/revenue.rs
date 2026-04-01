@@ -5,6 +5,7 @@
 //! and rendered with `d3rs::shape::area::Area` + `d3rs_path_to_gpui_simple`.
 
 use crate::ShowcaseApp;
+use d3rs::legend::{LegendConfig, LegendItem, render_legend};
 use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::area::Area;
 use d3rs::shape::curve::Curve;
@@ -12,12 +13,13 @@ use d3rs::shape::stack::{Stack, StackOffset, StackOrder};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeExt;
 
 const MUSIC_CSV: &str = include_str!("../../data/music.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    let width = 800.0;
-    let height = 450.0;
+pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+    let width = app.content_width as f64;
+    let height = (width * 0.56).min(app.content_height as f64 * 0.6);
     let margin_left = 70.0;
     let margin_right = 20.0;
     let margin_top = 20.0;
@@ -133,17 +135,20 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .collect();
     cat_first_year.sort_by_key(|&(_, _, yr)| yr);
 
-    let legend_items: Vec<Div> = cat_first_year
-        .iter()
-        .map(|&(ci, name, _)| {
-            div()
-                .flex()
-                .items_center()
-                .gap_1()
-                .child(div().size_3().bg(colors[ci]))
-                .child(div().text_xs().child(name.to_string()))
-        })
-        .collect();
+    let legend_config = LegendConfig::new()
+        .font_size(11.0)
+        .symbol_size(10.0)
+        .item_spacing(4.0)
+        .padding(6.0)
+        .items(
+            cat_first_year
+                .iter()
+                .map(|&(ci, name, _)| {
+                    let c = colors[ci];
+                    LegendItem::color(name, d3rs::color::D3Color { r: c.r, g: c.g, b: c.b, a: c.a })
+                })
+                .collect(),
+        );
 
     // X-axis ticks (every 5 years)
     let x_ticks: Vec<i32> = (1975..=2015).step_by(5).collect();
@@ -160,6 +165,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .filter(|v| *v <= max_y * 1.05)
         .collect();
 
+    let theme = cx.theme();
+    let chart_w = width as f32;
+
     div()
         .flex()
         .flex_col()
@@ -175,7 +183,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(0x666666))
+                .text_color(theme.text_secondary)
                 .mb_2()
                 .child(format!(
                     "RIAA data — {} formats, {} years",
@@ -184,12 +192,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 )),
         )
         .child(
-            div()
-                .flex()
-                .gap_3()
-                .mb_3()
-                .flex_wrap()
-                .children(legend_items),
+            render_legend(&legend_config, chart_w, theme.text_primary, Some(theme.muted))
+                .mb_2(),
         )
         .child(
             div()

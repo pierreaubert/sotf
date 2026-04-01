@@ -48,12 +48,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let contours = generator.contours(&values, &thresholds);
 
     // Scales for the Gaussian surface plot
+    let gaussian_width = app.content_width * 0.5;
+    let gaussian_height = (gaussian_width * 0.75).min(app.content_height * 0.4);
     let x_scale_gaussian = LinearScale::new()
         .domain(0.0, grid_size as f64)
-        .range(0.0, 400.0);
+        .range(0.0, gaussian_width as f64);
     let y_scale_gaussian = LinearScale::new()
         .domain(0.0, grid_size as f64)
-        .range(0.0, 300.0);
+        .range(0.0, gaussian_height as f64);
 
     // Config based on render mode
     let render_mode = app.contour_render_mode;
@@ -104,12 +106,13 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let density_contours = density_generator.contours(&density_grid, &density_thresholds);
 
     // Scales for the density plot
+    let density_size = (app.content_width * 0.4).min(app.content_height * 0.5);
     let x_scale_density = LinearScale::new()
         .domain(0.0, density_grid_size as f64)
-        .range(0.0, 300.0);
+        .range(0.0, density_size as f64);
     let y_scale_density = LinearScale::new()
         .domain(0.0, density_grid_size as f64)
-        .range(0.0, 300.0);
+        .range(0.0, density_size as f64);
 
     // Config with heat color scale
     let density_config = ContourConfig::new()
@@ -182,8 +185,8 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         )
                         .child(
                             div()
-                                .w(px(400.0))
-                                .h(px(300.0))
+                                .w(px(gaussian_width))
+                                .h(px(gaussian_height))
                                 .bg(rgb(0xf5f5f5))
                                 .border_1()
                                 .border_color(rgb(0xcccccc))
@@ -196,7 +199,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                             &y_scale_gaussian,
                                             &gaussian_config,
                                         )
-                                        .height(px(300.0)),
+                                        .height(px(gaussian_height)),
                                     )
                                 })
                                 .when(render_mode == ContourRenderMode::Heatmap, |this| {
@@ -209,7 +212,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                             &y_scale_gaussian,
                                             &heatmap_config,
                                         )
-                                        .height(px(300.0)),
+                                        .height(px(gaussian_height)),
                                     )
                                 }),
                         )
@@ -243,8 +246,8 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         )
                         .child(
                             div()
-                                .w(px(300.0))
-                                .h(px(300.0))
+                                .w(px(density_size))
+                                .h(px(density_size))
                                 .bg(rgb(0x1a1a1a))
                                 .border_1()
                                 .border_color(rgb(0x333333))
@@ -256,14 +259,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         &y_scale_density,
                                         &density_config,
                                     )
-                                    .height(px(300.0)),
+                                    .height(px(density_size)),
                                 )
                                 // Overlay the original points
                                 .children(points.iter().map(|(x, y)| {
                                     div()
                                         .absolute()
-                                        .left(px((*x * 300.0 - 2.0) as f32))
-                                        .top(px(((1.0 - *y) * 300.0 - 2.0) as f32))
+                                        .left(px((*x * density_size as f64 - 2.0) as f32))
+                                        .top(px(((1.0 - *y) * density_size as f64 - 2.0) as f32))
                                         .w(px(4.0))
                                         .h(px(4.0))
                                         .rounded_full()

@@ -5,7 +5,9 @@ use d3rs::gpu3d::{
 };
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_design::DesignExt;
 use gpui_ui_kit::Slider;
+use gpui_ui_kit::theme::ThemeExt;
 
 use super::SpinoramaApp;
 use crate::types::Colormap;
@@ -120,11 +122,14 @@ impl SpinoramaApp {
     /// Uses both horizontal and vertical directivity data to interpolate
     /// SPL values across the entire sphere.
     pub fn render_sphere_plot(&mut self, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
+        let s = self.font_scale();
         let Some(ref directivity) = self.directivity_data else {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size * s))
+                    .text_color(theme.text_secondary)
                     .child("No directivity data available for this speaker."),
             );
         };
@@ -132,9 +137,12 @@ impl SpinoramaApp {
         // Check we have both horizontal and vertical data
         if directivity.horizontal.is_empty() || directivity.vertical.is_empty() {
             return div().flex().items_center().justify_center().h_full().child(
-                div().text_base().text_color(rgb(0x666666)).child(
-                    "Both horizontal and vertical directivity data required for sphere plot.",
-                ),
+                div()
+                    .text_size(px(ds.typography.base_size * s))
+                    .text_color(theme.text_secondary)
+                    .child(
+                        "Both horizontal and vertical directivity data required for sphere plot.",
+                    ),
             );
         }
 
@@ -149,8 +157,8 @@ impl SpinoramaApp {
         if freq_count == 0 {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size * s))
+                    .text_color(theme.text_secondary)
                     .child("No frequency data available."),
             );
         }
@@ -222,12 +230,12 @@ impl SpinoramaApp {
         let config = Surface3DConfig::new()
             .colormap(colormap)
             .wireframe(self.surface_wireframe)
-            .background_color(1.0, 1.0, 1.0)
+            .background_color(theme.surface.r, theme.surface.g, theme.surface.b)
             .opacity(self.surface_opacity)
             .isolines(self.surface_isolines)
             .plot_type(SurfacePlotType::Spherical)
             .camera_position(
-                3.5,
+                5.0,
                 self.surface_rotation_azimuth,
                 self.surface_rotation_elevation,
             );
@@ -248,19 +256,19 @@ impl SpinoramaApp {
         let colormap_selector = div()
             .flex()
             .flex_row()
-            .gap_2()
+            .gap(px(ds.spacing.control_gap))
             .children(colormaps.iter().map(|&(cm, label)| {
                 div()
                     .id(ElementId::Name(format!("cmap-{}", label).into()))
-                    .px_3()
-                    .py_1()
-                    .rounded(px(4.0))
+                    .px(px(ds.spacing.control_padding_x))
+                    .py(px(ds.spacing.control_padding_y * 0.5))
+                    .rounded(px(ds.corners.sm))
                     .cursor_pointer()
                     .when(self.contour_colormap == cm, |el| {
-                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                        el.bg(theme.accent).text_color(theme.text_on_accent)
                     })
                     .when(self.contour_colormap != cm, |el| {
-                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                        el.bg(theme.muted).text_color(theme.text_secondary)
                     })
                     .child(label)
                     .on_click(cx.listener(move |this, _, _window, cx| {
@@ -271,15 +279,15 @@ impl SpinoramaApp {
 
         let wireframe_toggle = div()
             .id("surface-wireframe-toggle")
-            .px_3()
-            .py_1()
-            .rounded(px(4.0))
+            .px(px(ds.spacing.control_padding_x))
+            .py(px(ds.spacing.control_padding_y * 0.5))
+            .rounded(px(ds.corners.sm))
             .cursor_pointer()
             .when(self.surface_wireframe, |el| {
-                el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                el.bg(theme.accent).text_color(theme.text_on_accent)
             })
             .when(!self.surface_wireframe, |el| {
-                el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                el.bg(theme.muted).text_color(theme.text_secondary)
             })
             .child("Wireframe")
             .on_click(cx.listener(|this, _, _window, cx| {
@@ -289,20 +297,20 @@ impl SpinoramaApp {
 
         let isolines_toggle = div()
             .id("surface-isolines-toggle")
-            .px_3()
-            .py_1()
-            .rounded(px(4.0))
+            .px(px(ds.spacing.control_padding_x))
+            .py(px(ds.spacing.control_padding_y * 0.5))
+            .rounded(px(ds.corners.sm))
             .cursor_pointer()
-            .text_sm()
+            .text_size(px(ds.typography.small_size * s))
             .bg(if self.surface_isolines {
-                rgb(0x3b82f6)
+                theme.accent
             } else {
-                rgb(0xe5e7eb)
+                theme.muted
             })
             .text_color(if self.surface_isolines {
-                rgb(0xffffff)
+                theme.text_on_accent
             } else {
-                rgb(0x666666)
+                theme.text_secondary
             })
             .child("Isolines")
             .on_click(cx.listener(|this, _, _window, cx| {
@@ -378,12 +386,12 @@ impl SpinoramaApp {
             .absolute()
             .top(px(20.0))
             .right(px(20.0))
-            .bg(gpui::hsla(0.0, 0.0, 0.0, 0.7))
-            .text_color(rgb(0xffffff))
-            .px_4()
-            .py_2()
-            .rounded_md()
-            .text_lg()
+            .bg(theme.overlay_bg)
+            .text_color(theme.text_on_accent)
+            .px(px(ds.spacing.card_padding))
+            .py(px(ds.spacing.control_padding_y))
+            .rounded(px(ds.corners.md))
+            .text_size(px(ds.typography.large_size * s))
             .font_weight(FontWeight::BOLD)
             .child(freq_display_text.clone());
 
@@ -393,12 +401,12 @@ impl SpinoramaApp {
             h_min, h_max, v_min, v_max, freq_count
         );
 
-        // Interactive View
+        // Interactive View — fills remaining space
         let surface_view = div()
             .id("sphere-3d-view")
-            .w(px(800.0))
-            .h(px(800.0))
-            .bg(rgb(0x1a1a1a))
+            .flex_1()
+            .w_full()
+            .bg(theme.surface)
             .relative()
             .child(surface_element)
             .child(freq_overlay)
@@ -460,14 +468,15 @@ impl SpinoramaApp {
             }));
 
         div()
+            .size_full()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.control_gap))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size * s))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0x333333))
+                    .text_color(theme.text_primary)
                     .child(format!(
                         "Sphere Plot - {}",
                         self.selected_speaker.as_deref().unwrap_or("Unknown")
@@ -478,9 +487,14 @@ impl SpinoramaApp {
                     .flex()
                     .flex_row()
                     .flex_wrap()
-                    .gap_4()
+                    .gap(px(ds.spacing.section_gap))
                     .items_center()
-                    .child(div().text_sm().text_color(rgb(0x666666)).child("Colormap:"))
+                    .child(
+                        div()
+                            .text_size(px(ds.typography.small_size * s))
+                            .text_color(theme.text_secondary)
+                            .child("Colormap:"),
+                    )
                     .child(colormap_selector)
                     .child(wireframe_toggle)
                     .child(isolines_toggle)
@@ -490,25 +504,30 @@ impl SpinoramaApp {
                 div()
                     .flex()
                     .flex_row()
-                    .gap_4()
+                    .gap(px(ds.spacing.section_gap))
                     .items_center()
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
+                            .text_size(px(ds.typography.small_size * s))
+                            .text_color(theme.text_secondary)
                             .child("Frequency:"),
                     )
                     .child(freq_slider)
                     .child(
                         div()
                             .min_w(px(80.0))
-                            .text_base()
+                            .text_size(px(ds.typography.base_size * s))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(0x333333))
+                            .text_color(theme.text_primary)
                             .child(freq_display_text),
                     ),
             )
-            .child(div().text_xs().text_color(rgb(0x888888)).child(range_info))
-            .child(div().flex().justify_center().child(surface_view))
+            .child(
+                div()
+                    .text_size(px(ds.typography.small_size * 0.85 * s))
+                    .text_color(theme.text_muted)
+                    .child(range_info),
+            )
+            .child(surface_view)
     }
 }

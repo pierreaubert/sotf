@@ -13,13 +13,13 @@ use gpui::*;
 
 const TITANIC_CSV: &str = include_str!("../../data/titanic.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let (names, links) = d3rs::examples::parallel_sets::load_csv(TITANIC_CSV);
     let result = d3rs::examples::parallel_sets::compute(&names, &links);
 
     let scheme = ColorScheme::tableau10();
-    let width = 928.0_f64;
-    let height = 600.0_f64;
+    let width = app.content_width as f64;
+    let height = (width * 0.86).min(app.content_height as f64 * 0.8);
 
     let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
     let mut all_colors: Vec<Hsla> = Vec::new();

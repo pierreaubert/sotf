@@ -29,6 +29,7 @@
 use crate::i18n::{I18nState, Language};
 use crate::theme::{ThemeState, ThemeVariant};
 use gpui::*;
+use gpui_design::{DesignSystem, DesignSystemState};
 use std::rc::Rc;
 
 fn current_platform() -> Rc<dyn gpui::Platform> {
@@ -159,6 +160,10 @@ actions!(
         SetThemeMidnight,
         SetThemeForest,
         SetThemeBlackAndWhite,
+        SetDesignNeutral,
+        SetDesignAppleHig,
+        SetDesignMaterial3,
+        SetDesignFluent,
         SetLanguageEnglish,
         SetLanguageFrench,
         SetLanguageGerman,
@@ -227,6 +232,9 @@ impl MiniApp {
                 cx.set_global(ThemeState::with_variant(config_clone.initial_theme));
             }
 
+            // Always set design system global (platform-appropriate defaults)
+            cx.set_global(DesignSystemState::new());
+
             // Initialize i18n state if enabled
             if config_clone.with_i18n {
                 let mut i18n = I18nState::new();
@@ -283,6 +291,24 @@ impl MiniApp {
                     cx.refresh_windows();
                 });
             }
+
+            // Register design system actions
+            cx.on_action::<SetDesignNeutral>(|_action, cx| {
+                cx.set_global(DesignSystemState::with_system(DesignSystem::neutral()));
+                cx.refresh_windows();
+            });
+            cx.on_action::<SetDesignAppleHig>(|_action, cx| {
+                cx.set_global(DesignSystemState::with_system(DesignSystem::apple_hig()));
+                cx.refresh_windows();
+            });
+            cx.on_action::<SetDesignMaterial3>(|_action, cx| {
+                cx.set_global(DesignSystemState::with_system(DesignSystem::material3()));
+                cx.refresh_windows();
+            });
+            cx.on_action::<SetDesignFluent>(|_action, cx| {
+                cx.set_global(DesignSystemState::with_system(DesignSystem::fluent()));
+                cx.refresh_windows();
+            });
 
             // Register language actions if enabled
             if config_clone.with_i18n {
@@ -428,12 +454,12 @@ impl MiniApp {
             disabled: false,
         });
 
-        // View menu with Theme submenu if enabled
-        if config.with_theme {
-            menus.push(Menu {
-                name: "View".into(),
-                disabled: false,
-                items: vec![MenuItem::submenu(Menu {
+        // View menu with Theme and Design submenus
+        {
+            let mut view_items = Vec::new();
+
+            if config.with_theme {
+                view_items.push(MenuItem::submenu(Menu {
                     name: "Theme".into(),
                     disabled: false,
                     items: vec![
@@ -445,7 +471,24 @@ impl MiniApp {
                         MenuItem::separator(),
                         MenuItem::action("Toggle Theme  Cmd+T", ToggleTheme),
                     ],
-                })],
+                }));
+            }
+
+            view_items.push(MenuItem::submenu(Menu {
+                name: "Design System".into(),
+                disabled: false,
+                items: vec![
+                    MenuItem::action("Neutral", SetDesignNeutral),
+                    MenuItem::action("Apple HIG", SetDesignAppleHig),
+                    MenuItem::action("Material 3", SetDesignMaterial3),
+                    MenuItem::action("Fluent", SetDesignFluent),
+                ],
+            }));
+
+            menus.push(Menu {
+                name: "View".into(),
+                disabled: false,
+                items: view_items,
             });
         }
 

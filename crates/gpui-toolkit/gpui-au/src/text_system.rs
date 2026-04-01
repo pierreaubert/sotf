@@ -9,7 +9,7 @@ use core_foundation::{
     string::CFString,
 };
 use core_graphics::{
-    base::{kCGImageAlphaPremultipliedLast, CGFloat, CGGlyph},
+    base::{CGFloat, CGGlyph, kCGImageAlphaPremultipliedLast},
     color_space::CGColorSpace,
     context::{CGContext, CGTextDrawingMode},
     geometry::CGPoint,
@@ -32,10 +32,10 @@ use font_kit::{
     sources::mem::MemSource,
 };
 use gpui::{
-    point, px, size, Bounds, DevicePixels, Font, FontFallbacks, FontFeatures, FontId, FontMetrics,
-    FontRun, FontStyle, FontWeight, GlyphId, LineLayout, Pixels, PlatformTextSystem,
-    RenderGlyphParams, Result, ShapedGlyph, ShapedRun, SharedString, Size, TextRenderingMode,
-    SUBPIXEL_VARIANTS_X,
+    Bounds, DevicePixels, Font, FontFallbacks, FontFeatures, FontId, FontMetrics, FontRun,
+    FontStyle, FontWeight, GlyphId, LineLayout, Pixels, PlatformTextSystem, RenderGlyphParams,
+    Result, SUBPIXEL_VARIANTS_X, ShapedGlyph, ShapedRun, SharedString, Size, TextRenderingMode,
+    point, px, size,
 };
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use pathfinder_geometry::{
@@ -126,8 +126,7 @@ impl PlatformTextSystem for AuTextSystem {
                 } else {
                     let font_ids =
                         lock.load_family(&font.family, &font.features, font.fallbacks.as_ref())?;
-                    lock.font_ids_by_font_key
-                        .insert(font_key, font_ids.clone());
+                    lock.font_ids_by_font_key.insert(font_key, font_ids.clone());
                     font_ids
                 };
             let candidate_properties: SmallVec<[font_kit::properties::Properties; 4]> = candidates
@@ -572,17 +571,17 @@ fn apply_features_and_fallbacks(
     fallbacks: Option<&FontFallbacks>,
 ) -> anyhow::Result<()> {
     use core_foundation::{
-        array::{kCFTypeArrayCallBacks, CFArrayAppendValue, CFArrayCreateMutable, CFArrayRef},
-        base::{kCFAllocatorDefault, CFRelease},
+        array::{CFArrayAppendValue, CFArrayCreateMutable, CFArrayRef, kCFTypeArrayCallBacks},
+        base::{CFRelease, kCFAllocatorDefault},
         dictionary::{
-            kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks, CFDictionaryCreate,
+            CFDictionaryCreate, kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks,
         },
         string::CFStringRef,
     };
     use core_text::font_descriptor::{
-        kCTFontCascadeListAttribute, kCTFontFeatureSettingsAttribute, CTFontDescriptor,
-        CTFontDescriptorCreateWithAttributes, CTFontDescriptorCreateWithNameAndSize,
-        CTFontDescriptorRef,
+        CTFontDescriptor, CTFontDescriptorCreateWithAttributes,
+        CTFontDescriptorCreateWithNameAndSize, CTFontDescriptorRef, kCTFontCascadeListAttribute,
+        kCTFontFeatureSettingsAttribute,
     };
 
     #[link(name = "CoreText", kind = "framework")]
@@ -627,33 +626,33 @@ fn apply_features_and_fallbacks(
 
         if let Some(fallbacks) = fallbacks.filter(|f| !f.fallback_list().is_empty()) {
             let fallback_array =
-                    CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
-                for user_fallback in fallbacks.fallback_list() {
-                    let name = CFString::from(user_fallback.as_str());
-                    let fallback_desc =
-                        CTFontDescriptorCreateWithNameAndSize(name.as_concrete_TypeRef(), 0.0);
-                    CFArrayAppendValue(fallback_array, fallback_desc as _);
-                    CFRelease(fallback_desc as _);
+                CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
+            for user_fallback in fallbacks.fallback_list() {
+                let name = CFString::from(user_fallback.as_str());
+                let fallback_desc =
+                    CTFontDescriptorCreateWithNameAndSize(name.as_concrete_TypeRef(), 0.0);
+                CFArrayAppendValue(fallback_array, fallback_desc as _);
+                CFRelease(fallback_desc as _);
+            }
+            let preferred_languages: core_foundation::array::CFArray<CFString> = {
+                unsafe extern "C" {
+                    fn CFLocaleCopyPreferredLanguages() -> *const std::ffi::c_void;
                 }
-                let preferred_languages: core_foundation::array::CFArray<CFString> = {
-                    unsafe extern "C" {
-                        fn CFLocaleCopyPreferredLanguages() -> *const std::ffi::c_void;
-                    }
-                    core_foundation::array::CFArray::wrap_under_create_rule(
-                        CFLocaleCopyPreferredLanguages() as _,
-                    )
-                };
-                let default_fallbacks = CTFontCopyDefaultCascadeListForLanguages(
-                    font.native_font().as_concrete_TypeRef(),
-                    preferred_languages.as_concrete_TypeRef(),
-                );
-                let default_fallbacks: core_foundation::array::CFArray<CTFontDescriptor> =
-                    core_foundation::array::CFArray::wrap_under_create_rule(default_fallbacks);
-                for desc in default_fallbacks.iter() {
-                    if desc.font_path().is_some() {
-                        CFArrayAppendValue(fallback_array, desc.as_concrete_TypeRef() as _);
-                    }
+                core_foundation::array::CFArray::wrap_under_create_rule(
+                    CFLocaleCopyPreferredLanguages() as _,
+                )
+            };
+            let default_fallbacks = CTFontCopyDefaultCascadeListForLanguages(
+                font.native_font().as_concrete_TypeRef(),
+                preferred_languages.as_concrete_TypeRef(),
+            );
+            let default_fallbacks: core_foundation::array::CFArray<CTFontDescriptor> =
+                core_foundation::array::CFArray::wrap_under_create_rule(default_fallbacks);
+            for desc in default_fallbacks.iter() {
+                if desc.font_path().is_some() {
+                    CFArrayAppendValue(fallback_array, desc.as_concrete_TypeRef() as _);
                 }
+            }
             keys.push(kCTFontCascadeListAttribute);
             values.push(fallback_array as *const _);
         }
@@ -688,7 +687,7 @@ mod lenient_font_attributes {
         string::{CFString, CFStringRef},
     };
     use core_text::font_descriptor::{
-        kCTFontFamilyNameAttribute, CTFontDescriptor, CTFontDescriptorCopyAttribute,
+        CTFontDescriptor, CTFontDescriptorCopyAttribute, kCTFontFamilyNameAttribute,
     };
 
     pub fn family_name(descriptor: &CTFontDescriptor) -> Option<String> {

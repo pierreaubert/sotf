@@ -41,10 +41,12 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .text_color(rgb(0x666666))
                 .child("Nodes repel each other and are attracted to the center."),
         )
-        .child(
+        .child({
+            let width = app.content_width;
+            let height = (width * 0.75).min(app.content_height * 0.8);
             div()
-                .w(px(800.0))
-                .h(px(600.0))
+                .w(px(width))
+                .h(px(height))
                 .bg(rgb(0xf0f0f0))
                 .border_1()
                 .border_color(rgb(0xcccccc))
@@ -56,6 +58,6 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         }
                     })
                     .background_color([0.94, 0.94, 0.94, 1.0]),
-                ),
-        )
+                )
+        })
 }

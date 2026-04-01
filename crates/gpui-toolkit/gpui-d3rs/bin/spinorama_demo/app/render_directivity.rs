@@ -1,5 +1,7 @@
 impl SpinoramaApp {
-    fn render_directivity_plot(&mut self, plane: &str, _cx: &mut Context<Self>) -> Div {
+    fn render_directivity_plot(&mut self, plane: &str, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
         // Create a viridis-like color palette for directivity
         let viridis_colors = vec![
             D3Color::from_hex(0x440154), // Dark purple
@@ -10,11 +12,12 @@ impl SpinoramaApp {
             D3Color::from_hex(0xfde725), // Yellow
         ];
 
+        let s = self.font_scale();
         let Some(ref directivity) = self.directivity_data else {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size * s))
+                    .text_color(theme.text_secondary)
                     .child("No directivity data available for this speaker."),
             );
         };
@@ -28,14 +31,14 @@ impl SpinoramaApp {
         if curves.is_empty() {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size * s))
+                    .text_color(theme.text_secondary)
                     .child(format!("No {} directivity data available.", plane)),
             );
         }
 
-        let chart_width = 800.0;
-        let chart_height = 400.0;
+        let chart_width = self.content_width;
+        let chart_height = (chart_width * 0.5).min(self.content_height * 0.6);
 
         // Generate colors for different angles and build PlotCurve list
         let num_curves = curves.len();
@@ -73,6 +76,7 @@ impl SpinoramaApp {
             self.freq_spl_brush
                 .current_selection()
                 .map(|sel| BrushOverlay { selection: sel }),
+            &theme,
         );
 
         // Wrap with interactive handlers
@@ -81,18 +85,18 @@ impl SpinoramaApp {
             ChartId::FreqSpl,
             chart_width,
             chart_height,
-            _cx,
+            cx,
         );
 
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size * s))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0x333333))
+                    .text_color(theme.text_primary)
                     .child(format!(
                         "{} SPL - {}",
                         if plane == "horizontal" {
@@ -108,22 +112,22 @@ impl SpinoramaApp {
             .when(self.freq_spl_zoom.is_zoomed(), |el| {
                 el.child(
                     div()
-                        .text_sm()
-                        .text_color(rgb(0x666666))
+                        .text_size(px(ds.typography.small_size * s))
+                        .text_color(theme.text_secondary)
                         .child("Zoomed (double-click to reset)"),
                 )
             })
             // Angle legend
             .child({
-                let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
+                let font_config = VectorFontConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary));
 
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .p_4()
-                    .bg(rgb(0xf5f5f5))
-                    .rounded_md()
+                    .gap(px(ds.spacing.control_gap))
+                    .p(px(ds.spacing.card_padding))
+                    .bg(theme.muted)
+                    .rounded(px(ds.corners.md))
                     .child(render_vector_text(
                         &format!("{:.0}°", angle_min),
                         &font_config,
@@ -146,4 +150,3 @@ impl SpinoramaApp {
             })
     }
 }
-

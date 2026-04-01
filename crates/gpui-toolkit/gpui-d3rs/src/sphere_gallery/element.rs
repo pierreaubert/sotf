@@ -182,8 +182,11 @@ impl SphereGalleryElement {
 
         let mut renderer_ref = self.renderer.borrow_mut();
         if let Some(renderer) = renderer_ref.as_mut() {
-            let image_refs: Vec<&[u8]> =
-                self.items.iter().map(|item| item.pixels.as_slice()).collect();
+            let image_refs: Vec<&[u8]> = self
+                .items
+                .iter()
+                .map(|item| item.pixels.as_slice())
+                .collect();
             renderer.upload_images(&image_refs);
             *self.images_uploaded.borrow_mut() = true;
         }
@@ -273,9 +276,7 @@ impl Element for SphereGalleryElement {
                     state.item_count,
                     state.selected,
                     state.hovered,
-                )
-                    && let Some(rgba_image) =
-                        RgbaImage::from_raw(width_u32, height_u32, pixels)
+                ) && let Some(rgba_image) = RgbaImage::from_raw(width_u32, height_u32, pixels)
                 {
                     let frame = Frame::new(rgba_image);
                     let render_image = RenderImage::new(vec![frame]);
@@ -356,13 +357,10 @@ impl SphereGalleryView {
 
 impl Render for SphereGalleryView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let element = SphereGalleryElement::new(
-            self.items.clone(),
-            self.config.clone(),
-            self.state.clone(),
-        )
-        .with_renderer(self.renderer.clone())
-        .with_upload_flag(self.images_uploaded.clone());
+        let element =
+            SphereGalleryElement::new(self.items.clone(), self.config.clone(), self.state.clone())
+                .with_renderer(self.renderer.clone())
+                .with_upload_flag(self.images_uploaded.clone());
 
         div()
             .id("sphere-gallery")

@@ -13,13 +13,19 @@ use gpui_builder::{
 };
 
 static RACK_TIERS: &[DisplayTier<'_>] = &[
-    DisplayTier { name: "Full", min_size: 200.0 },
-    DisplayTier { name: "Mini", min_size: 100.0 },
+    DisplayTier {
+        name: "Full",
+        min_size: 200.0,
+    },
+    DisplayTier {
+        name: "Mini",
+        min_size: 100.0,
+    },
 ];
 
 fn app_tree() -> (
-    [LayoutNode<'static>; 3],  // content children
-    [LayoutNode<'static>; 3],  // root children need content ref
+    [LayoutNode<'static>; 3], // content children
+    [LayoutNode<'static>; 3], // root children need content ref
 ) {
     let content_children = [
         LayoutNode::Slot(SlotNode {
@@ -81,7 +87,11 @@ fn app_tree() -> (
 
 fn print_solved(solved: &gpui_builder::SolvedNode, indent: usize) {
     let pad = " ".repeat(indent);
-    let status = if solved.visible { "visible" } else { "collapsed" };
+    let status = if solved.visible {
+        "visible"
+    } else {
+        "collapsed"
+    };
     let tier = solved.active_tier.as_deref().unwrap_or("-");
     let axis = match solved.resolved_axis {
         Some(Axis::Horizontal) => " [H]",

@@ -2,7 +2,9 @@ use d3rs::prelude::*;
 use d3rs::surface::{ColorScaleType, SurfaceConfig, SurfaceData, render_surface};
 use gpui::*;
 
-pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+    let width = app.content_width;
+    let height = (width * 0.56).min(app.content_height * 0.6);
     // Logarithmic frequency response surface (20 Hz to 20 kHz)
     let freq_response = SurfaceData::from_z_function_logx(
         (20.0, 20000.0), // X: Frequency (logarithmic)
@@ -115,8 +117,8 @@ pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 )
                 .child(
                     div()
-                        .w(px(800.0))
-                        .h(px(450.0))
+                        .w(px(width))
+                        .h(px(height))
                         .bg(rgb(0xf5f5f5))
                         .border_1()
                         .border_color(rgb(0xcccccc))
@@ -132,8 +134,8 @@ pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                                     .wireframe_opacity(0.3)
                                     .wireframe_color(D3Color::rgb(0, 0, 0))
                                     .scale(1.2),
-                                800.0,
-                                450.0,
+                                width,
+                                height,
                             ),
                         ),
                 )
@@ -182,8 +184,8 @@ pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 )
                 .child(
                     div()
-                        .w(px(800.0))
-                        .h(px(450.0))
+                        .w(px(width))
+                        .h(px(height))
                         .bg(rgb(0xf5f5f5))
                         .border_1()
                         .border_color(rgb(0xcccccc))
@@ -199,8 +201,8 @@ pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                                     .wireframe_opacity(0.2)
                                     .wireframe_color(D3Color::rgb(100, 100, 100))
                                     .scale(1.3),
-                                800.0,
-                                450.0,
+                                width,
+                                height,
                             ),
                         ),
                 )
@@ -249,8 +251,8 @@ pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 )
                 .child(
                     div()
-                        .w(px(800.0))
-                        .h(px(450.0))
+                        .w(px(width))
+                        .h(px(height))
                         .bg(rgb(0xf5f5f5))
                         .border_1()
                         .border_color(rgb(0xcccccc))
@@ -267,8 +269,8 @@ pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                                     .ambient(0.5)
                                     .diffuse(0.5)
                                     .scale(1.4),
-                                800.0,
-                                450.0,
+                                width,
+                                height,
                             ),
                         ),
                 )

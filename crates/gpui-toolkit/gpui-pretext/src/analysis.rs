@@ -215,8 +215,9 @@ fn is_decimal_digit(ch: char) -> bool {
 }
 
 fn contains_arabic_script(text: &str) -> bool {
-    text.chars()
-        .any(|ch| (0x0600..=0x06FF).contains(&(ch as u32)) || (0x0750..=0x077F).contains(&(ch as u32)))
+    text.chars().any(|ch| {
+        (0x0600..=0x06FF).contains(&(ch as u32)) || (0x0750..=0x077F).contains(&(ch as u32))
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -634,7 +635,8 @@ fn merge_url_like_runs(seg: MergedSegmentation) -> MergedSegmentation {
     let orig_kinds = kinds.clone();
 
     for i in 0..len {
-        if kinds[i] != SegmentBreakKind::Text || !is_url_like_run_start_raw(&orig_texts, &orig_kinds, i, len)
+        if kinds[i] != SegmentBreakKind::Text
+            || !is_url_like_run_start_raw(&orig_texts, &orig_kinds, i, len)
         {
             continue;
         }
@@ -739,7 +741,10 @@ fn segment_contains_decimal_digit(text: &str) -> bool {
 }
 
 fn is_numeric_run_segment(text: &str) -> bool {
-    !text.is_empty() && text.chars().all(|ch| is_decimal_digit(ch) || is_numeric_joiner(ch))
+    !text.is_empty()
+        && text
+            .chars()
+            .all(|ch| is_decimal_digit(ch) || is_numeric_joiner(ch))
 }
 
 fn merge_numeric_runs(seg: MergedSegmentation) -> MergedSegmentation {
@@ -1010,7 +1015,9 @@ fn merge_glue_connected_text_runs(seg: MergedSegmentation) -> MergedSegmentation
 // CJK forward-sticky carry
 // ---------------------------------------------------------------------------
 
-fn carry_trailing_forward_sticky_across_cjk_boundary(seg: MergedSegmentation) -> MergedSegmentation {
+fn carry_trailing_forward_sticky_across_cjk_boundary(
+    seg: MergedSegmentation,
+) -> MergedSegmentation {
     let mut texts = seg.texts;
     let is_word_like = seg.is_word_like;
     let kinds = seg.kinds;
@@ -1261,7 +1268,10 @@ fn build_merged_segmentation(
 // Analysis chunks
 // ---------------------------------------------------------------------------
 
-fn compile_analysis_chunks(seg: &MergedSegmentation, ws_profile: &WhiteSpaceProfile) -> Vec<AnalysisChunk> {
+fn compile_analysis_chunks(
+    seg: &MergedSegmentation,
+    ws_profile: &WhiteSpaceProfile,
+) -> Vec<AnalysisChunk> {
     if seg.is_empty() {
         return Vec::new();
     }
@@ -1344,7 +1354,10 @@ mod tests {
 
     #[test]
     fn test_normalize_normal() {
-        assert_eq!(normalize_whitespace_normal("  hello   world  "), "hello world");
+        assert_eq!(
+            normalize_whitespace_normal("  hello   world  "),
+            "hello world"
+        );
         assert_eq!(normalize_whitespace_normal("a\tb\nc"), "a b c");
         assert_eq!(normalize_whitespace_normal("hello"), "hello");
     }

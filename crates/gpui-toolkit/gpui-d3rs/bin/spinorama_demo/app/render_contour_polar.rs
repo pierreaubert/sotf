@@ -1,16 +1,19 @@
 impl SpinoramaApp {
     /// Render polar contour plot - contour in polar coordinates (r=frequency, θ=angle)
     fn render_polar_contour_plot(&mut self, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
+        let s = self.font_scale();
         let Some(ref contour_data) = self.contour_data else {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size * s))
+                    .text_color(theme.text_secondary)
                     .child("No contour data available for this speaker."),
             );
         };
 
-        let chart_size = 600.0_f32;
+        let chart_size = self.content_width.min(self.content_height * 0.7).min(700.0);
         let center_x = chart_size / 2.0;
         let center_y = chart_size / 2.0;
         let outer_radius = (chart_size / 2.0) - 80.0;
@@ -144,7 +147,9 @@ impl SpinoramaApp {
                     outer_radius,
                 )
             },
-            move |bounds, (wedge_data, radii, angles, cx_f, cy_f, outer_r), window, _cx| {
+            move |bounds, (wedge_data, radii, angles, cx_f, cy_f, outer_r), window, cx| {
+                let theme = cx.theme();
+                let grid_color = Hsla::from(theme.border);
                 let origin_x: f32 = bounds.origin.x.into();
                 let origin_y: f32 = bounds.origin.y.into();
 
@@ -188,7 +193,7 @@ impl SpinoramaApp {
                         }
                     }
                     if let Ok(path) = builder.build() {
-                        window.paint_path(path, hsla(0.0, 0.0, 1.0, 0.4));
+                        window.paint_path(path, grid_color);
                     }
                 }
 
@@ -202,7 +207,7 @@ impl SpinoramaApp {
                     builder.move_to(point(px(x1), px(y1)));
                     builder.line_to(point(px(x2), px(y2)));
                     if let Ok(path) = builder.build() {
-                        window.paint_path(path, hsla(0.0, 0.0, 1.0, 0.25));
+                        window.paint_path(path, grid_color);
                     }
                 }
             },
@@ -211,7 +216,7 @@ impl SpinoramaApp {
         .h(px(chart_size));
 
         // Frequency labels using render_vector_text
-        let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.2, 1.0));
+        let font_config = VectorFontConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary));
         let freq_labels = div().absolute().inset_0().children(
             grid_frequencies
                 .iter()
@@ -231,7 +236,7 @@ impl SpinoramaApp {
         );
 
         // Angle labels
-        let angle_font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
+        let angle_font_config = VectorFontConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary));
         let angle_labels = div().absolute().inset_0().children((0..12).map(|i| {
             let angle_deg = i as f64 * 30.0;
             let angle_rad = (angle_deg - 90.0).to_radians();
@@ -271,7 +276,7 @@ impl SpinoramaApp {
             }));
 
         // Colorbar labels
-        let colorbar_label_font = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
+        let colorbar_label_font = VectorFontConfig::horizontal((10.0 * s).round(), Hsla::from(theme.text_primary));
         let colorbar_labels = div()
             .flex()
             .flex_col()
@@ -299,22 +304,22 @@ impl SpinoramaApp {
             div()
                 .flex()
                 .flex_row()
-                .gap_2()
+                .gap(px(ds.spacing.control_gap))
                 .children(colormaps.iter().enumerate().map(|(i, &(cmap, label))| {
                     div()
                         .id(ElementId::NamedInteger(
                             "polar-contour-colormap".into(),
                             i as u64,
                         ))
-                        .px_3()
-                        .py_1()
-                        .rounded(px(4.0))
+                        .px(px(ds.spacing.control_padding_x))
+                        .py(px(ds.spacing.control_padding_y * 0.5))
+                        .rounded(px(ds.corners.sm))
                         .cursor_pointer()
                         .when(self.contour_colormap == cmap, |el| {
-                            el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                            el.bg(theme.accent).text_color(theme.text_on_accent)
                         })
                         .when(self.contour_colormap != cmap, |el| {
-                            el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                            el.bg(theme.muted).text_color(theme.text_secondary)
                         })
                         .child(label)
                         .on_click(cx.listener(move |this, _, _window, cx| {
@@ -326,12 +331,12 @@ impl SpinoramaApp {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size * s))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0x333333))
+                    .text_color(theme.text_primary)
                     .child(format!(
                         "Polar Contour - {}",
                         self.selected_speaker.as_deref().unwrap_or("Unknown")
@@ -341,9 +346,9 @@ impl SpinoramaApp {
                 div()
                     .flex()
                     .flex_row()
-                    .gap_4()
+                    .gap(px(ds.spacing.section_gap))
                     .items_center()
-                    .child(div().text_sm().text_color(rgb(0x666666)).child("Colormap:"))
+                    .child(div().text_size(px(ds.typography.small_size * s)).text_color(theme.text_secondary).child("Colormap:"))
                     .child(colormap_selector),
             )
             .child(
@@ -351,7 +356,7 @@ impl SpinoramaApp {
                     .flex()
                     .flex_row()
                     .justify_center()
-                    .gap_8()
+                    .gap(px(ds.spacing.section_gap * 2.0))
                     .child(
                         div()
                             .relative()
@@ -366,13 +371,13 @@ impl SpinoramaApp {
                             .flex()
                             .flex_col()
                             .items_center()
-                            .gap_2()
-                            .child(div().text_sm().text_color(rgb(0x666666)).child("SPL (dB)"))
+                            .gap(px(ds.spacing.control_gap))
+                            .child(div().text_size(px(ds.typography.small_size * s)).text_color(theme.text_secondary).child("SPL (dB)"))
                             .child(
                                 div()
                                     .flex()
                                     .flex_row()
-                                    .gap_2()
+                                    .gap(px(ds.spacing.control_gap))
                                     .child(colorbar)
                                     .child(colorbar_labels),
                             ),
@@ -383,23 +388,23 @@ impl SpinoramaApp {
                     .flex()
                     .flex_row()
                     .justify_center()
-                    .gap_4()
+                    .gap(px(ds.spacing.section_gap))
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
+                            .text_size(px(ds.typography.small_size * s))
+                            .text_color(theme.text_secondary)
                             .child("Radial: Frequency (log scale)"),
                     )
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
+                            .text_size(px(ds.typography.small_size * s))
+                            .text_color(theme.text_secondary)
                             .child("Angular: Angle (degrees)"),
                     )
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
+                            .text_size(px(ds.typography.small_size * s))
+                            .text_color(theme.text_secondary)
                             .child("Color: SPL (dB)"),
                     ),
             )

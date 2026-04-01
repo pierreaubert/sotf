@@ -265,10 +265,7 @@ pub fn plugin_adaptations(
     };
 
     // Find the main slot's width
-    let main_width = solved
-        .find("main")
-        .map(|n| n.width)
-        .unwrap_or(solved.width);
+    let main_width = solved.find("main").map(|n| n.width).unwrap_or(solved.width);
 
     let group_direction = if main_width < thresholds.group_stack_threshold {
         GroupDirection::Column
@@ -460,10 +457,7 @@ mod tests {
         for width in [200.0, 450.0, 500.0, 600.0, 800.0, 1200.0] {
             let solved = solve(&root, width, 400.0, &LayoutPreferences::default());
             let total: f32 = solved.children.iter().map(|c| c.width).sum();
-            assert!(
-                total <= width + 0.01,
-                "width={width}: total={total}"
-            );
+            assert!(total <= width + 0.01, "width={width}: total={total}");
         }
     }
 }

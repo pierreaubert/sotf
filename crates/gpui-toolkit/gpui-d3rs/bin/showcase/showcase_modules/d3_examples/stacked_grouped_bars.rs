@@ -246,8 +246,8 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let data = generate_sample_data(n_series, m_samples);
 
     // Plot dimensions
-    let plot_width = 700.0_f64;
-    let plot_height = 350.0_f64;
+    let plot_width = app.content_width as f64;
+    let plot_height = (plot_width * 0.5).min(app.content_height as f64 * 0.5);
     let bar_padding = 2.0;
 
     // Compute both layouts

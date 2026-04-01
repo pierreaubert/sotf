@@ -1,6 +1,6 @@
 [package]
 name = "gpui-builder"
-version = "0.6.0"
+version = "0.6.1"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
@@ -10,6 +10,7 @@ repository.workspace = true
 description = "Generic constraint-based layout solver for GPUI applications"
 
 [dependencies]
+gpui-design = { workspace = true, optional = true }
 gpui-pretext = { workspace = true }
 # GPUI deps are optional, enabled by the `gpui` feature for the showcase binary.
 gpui = { workspace = true, optional = true }
@@ -26,7 +27,7 @@ gpui_windows = { workspace = true, optional = true }
 
 [features]
 default = []
-showcase = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui_macos", "dep:gpui_linux", "dep:gpui_windows"]
+showcase = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-design", "gpui-design/gpui", "dep:gpui_macos", "dep:gpui_linux", "dep:gpui_windows"]
 
 [[bin]]
 name = "layout-showcase"

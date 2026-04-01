@@ -246,8 +246,7 @@ static ASSET_SOURCE: OnceLock<AssetSourceCell> = OnceLock::new();
 /// Register an asset source (SVG icons, fonts, images) before calling `run_app()`.
 /// Without this, `svg()` elements will fail to load their paths.
 pub fn set_asset_source(source: impl gpui::AssetSource + 'static) {
-    let cell =
-        ASSET_SOURCE.get_or_init(|| AssetSourceCell(std::cell::UnsafeCell::new(None)));
+    let cell = ASSET_SOURCE.get_or_init(|| AssetSourceCell(std::cell::UnsafeCell::new(None)));
     unsafe {
         *cell.0.get() = Some(Box::new(source));
     }

@@ -9,11 +9,11 @@
 
 use super::AuDisplay;
 use gpui::{
-    point, px, size, AnyWindowHandle, AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile,
-    Bounds, Capslock, DevicePixels, DispatchEventResult, GpuSpecs, Modifiers, Pixels,
-    PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
-    PromptButton, PromptLevel, RequestFrameOptions, Scene, Size, TileId, WindowAppearance,
-    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowParams,
+    AnyWindowHandle, AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile, Bounds, Capslock,
+    DevicePixels, DispatchEventResult, GpuSpecs, Modifiers, Pixels, PlatformAtlas, PlatformDisplay,
+    PlatformInput, PlatformInputHandler, PlatformWindow, Point, PromptButton, PromptLevel,
+    RequestFrameOptions, Scene, Size, TileId, WindowAppearance, WindowBackgroundAppearance,
+    WindowBounds, WindowControlArea, WindowParams, point, px, size,
 };
 use gpui_wgpu::{GpuContext, WgpuRenderer, WgpuSurfaceConfig};
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
@@ -97,8 +97,7 @@ impl HasWindowHandle for AuRawWindow {
         &self,
     ) -> std::result::Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError>
     {
-        let view = NonNull::new(self.ns_view)
-            .ok_or(raw_window_handle::HandleError::Unavailable)?;
+        let view = NonNull::new(self.ns_view).ok_or(raw_window_handle::HandleError::Unavailable)?;
         let handle = AppKitWindowHandle::new(view);
         Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
@@ -397,8 +396,7 @@ impl PlatformWindow for AuWindow {
             if name.is_null() {
                 return WindowAppearance::Light;
             }
-            let dark_aqua: *mut Object =
-                msg_send![class!(NSString), stringWithUTF8String: c"NSAppearanceNameDarkAqua".as_ptr()];
+            let dark_aqua: *mut Object = msg_send![class!(NSString), stringWithUTF8String: c"NSAppearanceNameDarkAqua".as_ptr()];
             let is_dark: bool = msg_send![name, isEqualToString: dark_aqua];
             if is_dark {
                 WindowAppearance::Dark
@@ -497,10 +495,7 @@ impl PlatformWindow for AuWindow {
         *self.should_close_callback.borrow_mut() = Some(callback);
     }
 
-    fn on_hit_test_window_control(
-        &self,
-        callback: Box<dyn FnMut() -> Option<WindowControlArea>>,
-    ) {
+    fn on_hit_test_window_control(&self, callback: Box<dyn FnMut() -> Option<WindowControlArea>>) {
         *self.hit_test_callback.borrow_mut() = Some(callback);
     }
 

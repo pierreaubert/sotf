@@ -191,7 +191,7 @@ impl Default for Surface3DConfig {
             diffuse: 0.7,
             light_direction: Vec3::new(1.0, 1.0, 1.0),
             msaa_samples: 4,
-            camera_distance: 3.5,
+            camera_distance: 5.0,
             camera_azimuth: 45.0,
             camera_elevation: 30.0,
             show_axes: true,

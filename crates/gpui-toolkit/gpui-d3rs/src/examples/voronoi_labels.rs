@@ -64,7 +64,6 @@ pub fn compute(coords: &[(f64, f64)]) -> VoronoiLabelsResult {
     let mut label_count = 0;
 
     for (i, &(x, y)) in coords.iter().enumerate() {
-
         let (show_label, anchor, area) = if let Some(cell) = voronoi.cell_polygon(i) {
             // Compute area (shoelace formula)
             let n = cell.len();

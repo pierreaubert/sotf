@@ -4,6 +4,7 @@
 
 use gpui::prelude::*;
 use gpui::*;
+use gpui_design::DesignExt;
 use gpui_themes::{ComponentShowcase, EditorTheme};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, HStack, MiniApp, MiniAppConfig, StackSpacing, Text,
@@ -81,11 +82,12 @@ impl ThemeShowcase {
     fn render_theme_selector(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let current = self.current_theme;
         let theme = current.to_theme();
+        let ds = cx.design();
 
         div()
             .w_full()
-            .px_6()
-            .py_4()
+            .px(px(ds.spacing.card_padding * 1.5))
+            .py(px(ds.spacing.card_padding))
             .bg(theme.background_secondary.to_rgba())
             .border_b_1()
             .border_color(theme.border.to_rgba())

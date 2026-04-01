@@ -13,8 +13,7 @@ pub(crate) fn nslog(msg: &str) {
         unsafe extern "C" {
             fn NSLog(format: *mut Object, ...);
         }
-        let fmt: *mut Object =
-            msg_send![class!(NSString), stringWithUTF8String: c"%@".as_ptr()];
+        let fmt: *mut Object = msg_send![class!(NSString), stringWithUTF8String: c"%@".as_ptr()];
         NSLog(fmt, ns_string);
     }
 }

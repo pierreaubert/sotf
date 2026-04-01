@@ -6,15 +6,14 @@
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::analysis::{
-    analyze_text, ends_with_closing_quote, is_cjk, is_kinsoku_end, is_kinsoku_start,
-    is_left_sticky_punctuation, AnalysisChunk, AnalysisProfile, SegmentBreakKind, TextAnalysis,
-    WhiteSpaceMode,
+    AnalysisChunk, AnalysisProfile, SegmentBreakKind, TextAnalysis, WhiteSpaceMode, analyze_text,
+    ends_with_closing_quote, is_cjk, is_kinsoku_end, is_kinsoku_start, is_left_sticky_punctuation,
 };
 use crate::bidi::compute_segment_levels;
 use crate::line_break::{
-    count_prepared_lines, count_prepared_lines_optimal, layout_next_line_range,
-    walk_prepared_lines, walk_prepared_lines_optimal, InternalLayoutLine, KnuthPlassParams,
-    LineBreakCursor, LineBreakStrategy, PreparedLineBreakData, PreparedLineChunk,
+    InternalLayoutLine, KnuthPlassParams, LineBreakCursor, LineBreakStrategy,
+    PreparedLineBreakData, PreparedLineChunk, count_prepared_lines, count_prepared_lines_optimal,
+    layout_next_line_range, walk_prepared_lines, walk_prepared_lines_optimal,
 };
 use crate::measurement::{EngineProfile, MeasureCache, TextMeasure};
 
@@ -143,10 +142,7 @@ fn map_analysis_chunks_to_prepared_chunks(
     prepared_start_by_analysis: &[usize],
     prepared_end_by_analysis: &[usize],
 ) -> Vec<PreparedLineChunk> {
-    let fallback = prepared_end_by_analysis
-        .last()
-        .copied()
-        .unwrap_or(0);
+    let fallback = prepared_end_by_analysis.last().copied().unwrap_or(0);
 
     chunks
         .iter()
@@ -615,8 +611,11 @@ pub fn layout_with_lines(
     let segments = &prepared.segments;
     let kinds = &prepared.core.kinds;
 
-    let line_count =
-        walk_prepared_lines(&data, max_width, profile, Some(&mut |line: &InternalLayoutLine| {
+    let line_count = walk_prepared_lines(
+        &data,
+        max_width,
+        profile,
+        Some(&mut |line: &InternalLayoutLine| {
             lines.push(LayoutLine {
                 text: build_line_text(
                     segments,
@@ -636,7 +635,8 @@ pub fn layout_with_lines(
                     grapheme_index: line.end_grapheme_index,
                 },
             });
-        }));
+        }),
+    );
 
     LayoutLinesResult {
         line_count,
@@ -857,11 +857,7 @@ pub fn profile_prepare(
     let analysis_segments = analysis.len();
     let (core, _) = measure_analysis(&analysis, measure, profile, false);
 
-    let breakable_segments = core
-        .breakable_widths
-        .iter()
-        .filter(|w| w.is_some())
-        .count();
+    let breakable_segments = core.breakable_widths.iter().filter(|w| w.is_some()).count();
 
     PrepareProfile {
         analysis_segments,

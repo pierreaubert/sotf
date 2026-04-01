@@ -1,7 +1,7 @@
 //! iOS event handling - converting UIKit events to GPUI's event types.
 
 use core_graphics::geometry::CGPoint;
-use gpui::{px, Pixels, Point, TouchPhase};
+use gpui::{Pixels, Point, TouchPhase, px};
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

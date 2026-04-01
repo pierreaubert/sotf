@@ -14,7 +14,9 @@
 //! 4. Determine display tiers for each slot
 //! 5. Recurse into container children
 
-use gpui_pretext::{layout, layout_with_lines, prepare, prepare_with_segments, EngineProfile, PrepareOptions};
+use gpui_pretext::{
+    EngineProfile, PrepareOptions, layout, layout_with_lines, prepare, prepare_with_segments,
+};
 
 use crate::solved::SolvedNode;
 use crate::types::{Axis, ContainerNode, LayoutNode, LayoutPreferences, Sizing, SlotNode};
@@ -112,9 +114,22 @@ fn solve_container(
         .map(|child| {
             let user_collapsed = child.collapsible() && prefs.is_collapsed(child.id());
             let computed_text_size = if !user_collapsed {
-                if let Sizing::Text { text, measure, line_height, min } = child.sizing() {
+                if let Sizing::Text {
+                    text,
+                    measure,
+                    line_height,
+                    min,
+                } = child.sizing()
+                {
                     Some(compute_text_size(
-                        text, measure, line_height, min, axis, cross_size, &profile, &options,
+                        text,
+                        measure,
+                        line_height,
+                        min,
+                        axis,
+                        cross_size,
+                        &profile,
+                        &options,
                     ))
                 } else {
                     None
@@ -399,9 +414,7 @@ fn distribute_remaining(
         }
         match child.node.sizing() {
             Sizing::Fractional { initial, .. } => {
-                let ratio = prefs
-                    .ratio_for(child.node.id(), axis)
-                    .unwrap_or(initial);
+                let ratio = prefs.ratio_for(child.node.id(), axis).unwrap_or(initial);
                 fractional_demand += ratio;
             }
             Sizing::Flex { weight, .. } => {
@@ -425,9 +438,7 @@ fn distribute_remaining(
             continue;
         }
         if let Sizing::Fractional { initial, min, max } = child.node.sizing() {
-            let ratio = prefs
-                .ratio_for(child.node.id(), axis)
-                .unwrap_or(initial);
+            let ratio = prefs.ratio_for(child.node.id(), axis).unwrap_or(initial);
             let target = (ratio * ratio_scale * distributable).clamp(min, max);
             child.allocated_size = target;
             used_by_fractional += target;
@@ -670,10 +681,7 @@ mod tests {
 
         let config = solved.find("config").unwrap();
         assert!(!config.visible, "Config should collapse (lowest priority)");
-        assert_eq!(
-            config.collapse_label.as_deref(),
-            Some("Config")
-        );
+        assert_eq!(config.collapse_label.as_deref(), Some("Config"));
 
         let output = solved.find("output").unwrap();
         assert!(output.visible);
@@ -725,8 +733,14 @@ mod tests {
         let solved = solve(&root, 250.0, 600.0, &LayoutPreferences::default());
         let tabs = solved.collapsed_tabs();
         assert_eq!(tabs.len(), 2);
-        assert!(tabs.iter().any(|(id, label)| *id == "config" && *label == "Config"));
-        assert!(tabs.iter().any(|(id, label)| *id == "output" && *label == "Output"));
+        assert!(
+            tabs.iter()
+                .any(|(id, label)| *id == "config" && *label == "Config")
+        );
+        assert!(
+            tabs.iter()
+                .any(|(id, label)| *id == "output" && *label == "Output")
+        );
     }
 
     // ===== Auto-axis tests =====
@@ -793,11 +807,17 @@ mod tests {
 
         // Wide → Full tier
         let solved = solve(&root, 300.0, 600.0, &LayoutPreferences::default());
-        assert_eq!(solved.find("rack").unwrap().active_tier.as_deref(), Some("Full"));
+        assert_eq!(
+            solved.find("rack").unwrap().active_tier.as_deref(),
+            Some("Full")
+        );
 
         // Medium → Mini tier
         let solved = solve(&root, 150.0, 600.0, &LayoutPreferences::default());
-        assert_eq!(solved.find("rack").unwrap().active_tier.as_deref(), Some("Mini"));
+        assert_eq!(
+            solved.find("rack").unwrap().active_tier.as_deref(),
+            Some("Mini")
+        );
 
         // Tiny → no tier
         let solved = solve(&root, 50.0, 600.0, &LayoutPreferences::default());

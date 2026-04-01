@@ -7,10 +7,10 @@
 /// - Punctuation (.,!?:;()[]{}"'): 0.4× font_size
 /// - Regular characters: 0.6× font_size
 use gpui_pretext::{
-    layout, layout_next_line, layout_optimal, layout_with_lines, layout_with_lines_optimal,
-    layout_with_strategy, prepare, prepare_with_segments, walk_line_ranges,
-    walk_line_ranges_optimal, EngineProfile, KnuthPlassParams, LayoutCursor, LineBreakStrategy,
-    PrepareOptions, TextMeasure, WhiteSpaceMode,
+    EngineProfile, KnuthPlassParams, LayoutCursor, LineBreakStrategy, PrepareOptions, TextMeasure,
+    WhiteSpaceMode, layout, layout_next_line, layout_optimal, layout_with_lines,
+    layout_with_lines_optimal, layout_with_strategy, prepare, prepare_with_segments,
+    walk_line_ranges, walk_line_ranges_optimal,
 };
 
 // ---------------------------------------------------------------------------
@@ -309,7 +309,12 @@ fn test_layout_count_matches_walk() {
     let prepared = prepare_with_segments("the quick brown fox jumps over", &m, &p, &o);
 
     for width in [50.0, 100.0, 150.0, 200.0, 300.0] {
-        let fast = layout(&prepare("the quick brown fox jumps over", &m, &p, &o), width, 20.0, &p);
+        let fast = layout(
+            &prepare("the quick brown fox jumps over", &m, &p, &o),
+            width,
+            20.0,
+            &p,
+        );
         let rich = layout_with_lines(&prepared, width, 20.0, &p);
         assert_eq!(
             fast.line_count, rich.line_count,
@@ -384,12 +389,7 @@ fn test_pre_wrap_wrapping_plus_hard_breaks() {
     let o = pre_wrap_options();
     // Line 1 wraps due to width, line 2 is a hard break
     let text = "hello world\nfoo";
-    let result = layout_with_lines(
-        &prepare_with_segments(text, &m, &p, &o),
-        60.0,
-        20.0,
-        &p,
-    );
+    let result = layout_with_lines(&prepare_with_segments(text, &m, &p, &o), 60.0, 20.0, &p);
     // "hello " wraps, then "world\n" is a hard break, then "foo"
     assert!(result.line_count >= 3);
 }
@@ -563,8 +563,14 @@ fn test_strategy_dispatch_greedy() {
     let prepared = prepare("hello world", &m, &p, &o);
 
     let greedy = layout(&prepared, 80.0, 20.0, &p);
-    let via_strategy =
-        layout_with_strategy(&prepared, 80.0, 20.0, &p, LineBreakStrategy::Greedy, &kp_params());
+    let via_strategy = layout_with_strategy(
+        &prepared,
+        80.0,
+        20.0,
+        &p,
+        LineBreakStrategy::Greedy,
+        &kp_params(),
+    );
 
     assert_eq!(greedy.line_count, via_strategy.line_count);
     assert_eq!(greedy.height, via_strategy.height);

@@ -13,9 +13,18 @@ use gpui_builder::{
 };
 
 static CHART_TIERS: &[DisplayTier<'_>] = &[
-    DisplayTier { name: "full", min_size: 300.0 },
-    DisplayTier { name: "compact", min_size: 150.0 },
-    DisplayTier { name: "sparkline", min_size: 50.0 },
+    DisplayTier {
+        name: "full",
+        min_size: 300.0,
+    },
+    DisplayTier {
+        name: "compact",
+        min_size: 150.0,
+    },
+    DisplayTier {
+        name: "sparkline",
+        min_size: 50.0,
+    },
 ];
 
 fn main() {
@@ -37,7 +46,10 @@ fn main() {
     let main_area_children = [
         LayoutNode::Slot(SlotNode {
             id: "chart",
-            sizing: Sizing::Flex { min: 100.0, weight: 2.0 },
+            sizing: Sizing::Flex {
+                min: 100.0,
+                weight: 2.0,
+            },
             priority: 1.0,
             collapsible: false,
             display_tiers: CHART_TIERS,
@@ -45,7 +57,10 @@ fn main() {
         }),
         LayoutNode::Slot(SlotNode {
             id: "table",
-            sizing: Sizing::Flex { min: 80.0, weight: 1.0 },
+            sizing: Sizing::Flex {
+                min: 80.0,
+                weight: 1.0,
+            },
             priority: 0.8,
             collapsible: true,
             display_tiers: &[],

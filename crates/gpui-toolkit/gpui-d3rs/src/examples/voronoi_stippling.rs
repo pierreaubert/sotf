@@ -44,7 +44,14 @@ impl StipplingState {
             }
         }
 
-        Self { points, n, width, height, iteration: 0, seed }
+        Self {
+            points,
+            n,
+            width,
+            height,
+            iteration: 0,
+            seed,
+        }
     }
 
     /// Run one Lloyd relaxation step. Call this repeatedly to animate.
@@ -65,14 +72,20 @@ impl StipplingState {
 
         // Scan pixels — use stride to skip pixels for speed
         // Larger stride = faster but less accurate centroid
-        let stride = if width * height > 500_000 { 4 }
-            else if width * height > 100_000 { 3 }
-            else { 1 };
+        let stride = if width * height > 500_000 {
+            4
+        } else if width * height > 100_000 {
+            3
+        } else {
+            1
+        };
         let mut last_found = 0usize;
         for y in (0..height).step_by(stride) {
             for x in (0..width).step_by(stride) {
                 let weight = density[y * width + x];
-                if weight < 0.001 { continue; }
+                if weight < 0.001 {
+                    continue;
+                }
                 let px = x as f64 + 0.5;
                 let py = y as f64 + 0.5;
                 if let Some(i) = delaunay.find(px, py, Some(last_found)) {
@@ -90,7 +103,8 @@ impl StipplingState {
         let k = self.iteration as f64;
         let jitter = (k + 1.0).powf(-0.8) * 10.0;
         let mut next_rand = || -> f64 {
-            self.seed = self.seed
+            self.seed = self
+                .seed
                 .wrapping_mul(6364136223846793005)
                 .wrapping_add(1442695040888963407);
             (self.seed >> 33) as f64 / (1u64 << 31) as f64
@@ -133,8 +147,11 @@ impl StipplingState {
                     let angle = std::f64::consts::TAU * v as f64 / n_sides as f64;
                     let x = px + dot_r * angle.cos();
                     let y = py + dot_r * angle.sin();
-                    if v == 0 { builder = builder.move_to(x, y); }
-                    else { builder = builder.line_to(x, y); }
+                    if v == 0 {
+                        builder = builder.move_to(x, y);
+                    } else {
+                        builder = builder.line_to(x, y);
+                    }
                 }
                 builder = builder.close_path();
                 builder.build()
@@ -145,7 +162,11 @@ impl StipplingState {
 
 /// Convenience: run all iterations at once (for tests / non-interactive use).
 pub fn compute(
-    density: &[f64], width: usize, height: usize, n: usize, iterations: usize,
+    density: &[f64],
+    width: usize,
+    height: usize,
+    n: usize,
+    iterations: usize,
 ) -> StipplingResult {
     let mut state = StipplingState::new(density, width, height, n);
     for _ in 0..iterations {

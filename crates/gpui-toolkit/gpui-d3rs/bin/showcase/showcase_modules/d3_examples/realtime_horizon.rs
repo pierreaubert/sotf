@@ -14,7 +14,7 @@ use gpui::prelude::*;
 use gpui::*;
 
 pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    let width = 928.0;
+    let width = app.content_width as f64;
     let height = 80.0;
     let bands = 4;
 

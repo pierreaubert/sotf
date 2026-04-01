@@ -10,8 +10,11 @@ The `gpui-toolkit` workspace contains several related crates for building GPUI a
 |-------|---------|---------------|
 | `gpui-au` | macOS Audio Unit platform backend — embeds GPUI inside AUv3 ViewControllers via Metal/wgpu | [lib.rs](gpui-au/src/lib.rs) |
 | `gpui-autoeq` | Reusable GPUI form component for EQ optimization parameters | [AGENTS.md](gpui-autoeq/AGENTS.md) |
+| `gpui-builder` | Generic constraint-based layout solver — priority collapse, auto-axis, display tiers, dividers | [README](gpui-builder/README.md) |
 | `gpui-d3rs` | Low-level D3.js-inspired visualization primitives | [README](gpui-d3rs/README.md) |
+| `gpui-design` | Platform-adaptive design system (Apple HIG, Material 3, Fluent, Neutral) — spacing, corners, typography, animation | [README](gpui-design/README.md) |
 | `gpui-ios` | iOS platform backend (Metal rendering, touch, text) | [README](gpui-ios/README.md), [AGENTS.md](gpui-ios/AGENTS.md) |
+| `gpui-pretext` | High-performance text measurement and multiline layout (Rust port of chenglou/pretext) | [README](gpui-pretext/README.md) |
 | `gpui-px` | High-level Plotly Express-style charting API | [README](gpui-px/README.md) |
 | `gpui-themes` | Theme editor and management infrastructure | [AGENTS.md](gpui-themes/AGENTS.md) |
 | `gpui-ui-kit` | Reusable UI components (buttons, forms, layout) | [lib.rs](gpui-ui-kit/src/lib.rs) |

@@ -4,13 +4,21 @@
 //! Navigate through sections using the sidebar to see examples of each chart type.
 
 use gpui::*;
+use gpui_builder::{
+    Axis, ContainerNode, LayoutNode, Sizing, SlotNode, SolvedNode, solve, types::LayoutPreferences,
+};
+use gpui_design::{DesignExt, DesignSystem};
 use gpui_px::interaction::{InteractiveChart, InteractiveChartConfig, InteractiveChartState};
 use gpui_px::*;
+use gpui_ui_kit::theme::{Theme, ThemeExt};
 use gpui_ui_kit::{MiniApp, MiniAppConfig};
 
 fn main() {
     MiniApp::run(
-        MiniAppConfig::new("gpui-px Showcase").size(1200.0, 800.0),
+        MiniAppConfig::new("gpui-px Showcase")
+            .size(1200.0, 800.0)
+            .with_theme(true)
+            .scrollable(false),
         |cx| cx.new(ShowcaseApp::new),
     );
 }
@@ -164,49 +172,88 @@ impl ShowcaseApp {
         }
     }
 
-    fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn solve_layout(&self, w: f32, h: f32) -> SolvedNode {
+        let content_children: &[LayoutNode<'_>] = &[
+            LayoutNode::Slot(SlotNode {
+                id: "sidebar",
+                sizing: Sizing::fractional(0.18, 120.0),
+                priority: 1.0,
+                collapsible: false,
+                display_tiers: &[],
+                collapse_label: None,
+            }),
+            LayoutNode::Slot(SlotNode {
+                id: "content",
+                sizing: Sizing::flex(200.0),
+                priority: 1.0,
+                collapsible: false,
+                display_tiers: &[],
+                collapse_label: None,
+            }),
+        ];
+
+        let root = LayoutNode::Container(ContainerNode {
+            id: "root",
+            axis: Axis::Horizontal,
+            auto_axis: Some(1.0),
+            sizing: Sizing::flex(0.0),
+            children: content_children,
+            divider_size: 0.0,
+        });
+
+        let prefs = LayoutPreferences {
+            ratios: &[],
+            collapsed: &[],
+        };
+
+        solve(&root, w, h, &prefs)
+    }
+
+    fn render_sidebar(&mut self, sidebar_width: f32, cx: &mut Context<Self>) -> impl IntoElement {
         let current = self.current_section;
+        let theme = cx.theme();
+        let ds = cx.design();
 
         div()
-            .w(px(200.0))
+            .w(px(sidebar_width))
             .h_full()
-            .bg(rgb(0x1e1e1e))
+            .bg(theme.surface)
             .border_r_1()
-            .border_color(rgb(0x3c3c3c))
+            .border_color(theme.border)
             .flex()
             .flex_col()
-            .p_4()
-            .gap_2()
+            .p(px(ds.spacing.card_padding))
+            .gap(px(ds.spacing.control_gap))
             .child(
                 div()
-                    .text_lg()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0xffffff))
-                    .mb_4()
+                    .text_color(theme.text_primary)
+                    .mb(px(ds.spacing.section_gap))
                     .child("gpui-px"),
             )
             .children(ChartSection::all().iter().map(|&section| {
                 let is_selected = section == current;
                 let bg = if is_selected {
-                    rgb(0x007acc)
+                    theme.accent
                 } else {
-                    rgb(0x1e1e1e)
+                    theme.surface
                 };
                 let hover_bg = if is_selected {
-                    rgb(0x007acc)
+                    theme.accent
                 } else {
-                    rgb(0x2d2d2d)
+                    theme.surface_hover
                 };
 
                 div()
                     .id(ElementId::Name(section.label().into()))
-                    .px_3()
-                    .py_2()
-                    .rounded_md()
+                    .px(px(ds.spacing.control_padding_x))
+                    .py(px(ds.spacing.control_padding_y))
+                    .rounded(px(ds.corners.md))
                     .cursor_pointer()
                     .bg(bg)
-                    .hover(|s| s.bg(hover_bg))
-                    .text_color(rgb(0xffffff))
+                    .hover(move |s| s.bg(hover_bg))
+                    .text_color(theme.text_primary)
                     .child(section.label())
                     .on_click(cx.listener(move |this, _, _window, _cx| {
                         this.current_section = section;
@@ -215,18 +262,21 @@ impl ShowcaseApp {
     }
 
     fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let ds = cx.design();
+
         let content: Div = match self.current_section {
-            ChartSection::Overview => self.render_overview(),
-            ChartSection::Scatter => self.render_scatter_demo(),
-            ChartSection::Line => self.render_line_demo(),
-            ChartSection::Bar => self.render_bar_demo(),
-            ChartSection::BoxPlot => self.render_boxplot_demo(),
-            ChartSection::LogScales => self.render_logscales_demo(),
-            ChartSection::Heatmap => self.render_heatmap_demo(cx),
-            ChartSection::Contour => self.render_contour_demo(cx),
-            ChartSection::Isoline => self.render_isoline_demo(),
-            ChartSection::Treemap => self.render_treemap_demo(),
-            ChartSection::Gallery => self.render_gallery(),
+            ChartSection::Overview => self.render_overview(&theme, &ds),
+            ChartSection::Scatter => self.render_scatter_demo(&theme, &ds),
+            ChartSection::Line => self.render_line_demo(&theme, &ds),
+            ChartSection::Bar => self.render_bar_demo(&theme, &ds),
+            ChartSection::BoxPlot => self.render_boxplot_demo(&theme, &ds),
+            ChartSection::LogScales => self.render_logscales_demo(&theme, &ds),
+            ChartSection::Heatmap => self.render_heatmap_demo(&theme, &ds, cx),
+            ChartSection::Contour => self.render_contour_demo(&theme, &ds, cx),
+            ChartSection::Isoline => self.render_isoline_demo(&theme, &ds),
+            ChartSection::Treemap => self.render_treemap_demo(&theme, &ds),
+            ChartSection::Gallery => self.render_gallery(&theme, &ds),
         };
 
         div()
@@ -234,8 +284,8 @@ impl ShowcaseApp {
             .flex_1()
             .h_full()
             .overflow_y_scroll()
-            .bg(rgb(0xffffff))
-            .p_8()
+            .bg(theme.background)
+            .p(px(ds.spacing.section_gap * 2.0))
             .child(content)
     }
 
@@ -243,99 +293,109 @@ impl ShowcaseApp {
     // Overview Section
     // ========================================================================
 
-    fn render_overview(&self) -> Div {
+    fn render_overview(&self, theme: &Theme, ds: &DesignSystem) -> Div {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Welcome to gpui-px"),
             )
             .child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("gpui-px is a high-level Plotly Express-style charting API built on top of d3rs. Create beautiful charts in just a few lines of code."),
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Chart Types"),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_2()
-                    .ml_4()
-                    .child(self.feature_item("Scatter", "Individual data points with x,y coordinates"))
-                    .child(self.feature_item("Line", "Time series and trends with connected points"))
-                    .child(self.feature_item("Bar", "Categorical data comparisons"))
-                    .child(self.feature_item("Heatmap", "2D scalar fields with color scales"))
-                    .child(self.feature_item("Contour", "Filled bands between thresholds"))
-                    .child(self.feature_item("Isoline", "Unfilled contour lines at specific levels"))
-                    .child(self.feature_item("Treemap", "Hierarchical data as nested rectangles")),
+                    .gap(px(ds.spacing.control_gap))
+                    .ml(px(ds.spacing.card_padding))
+                    .child(self.feature_item("Scatter", "Individual data points with x,y coordinates", theme, ds))
+                    .child(self.feature_item("Line", "Time series and trends with connected points", theme, ds))
+                    .child(self.feature_item("Bar", "Categorical data comparisons", theme, ds))
+                    .child(self.feature_item("Heatmap", "2D scalar fields with color scales", theme, ds))
+                    .child(self.feature_item("Contour", "Filled bands between thresholds", theme, ds))
+                    .child(self.feature_item("Isoline", "Unfilled contour lines at specific levels", theme, ds))
+                    .child(self.feature_item("Treemap", "Hierarchical data as nested rectangles", theme, ds)),
             )
             .child(
                 div()
-                    .mt_6()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap * 1.5))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Quick Example"),
             )
             .child(self.code_block(
                 "// Create a scatter plot in 3 lines\nlet chart = scatter(&x, &y)\n    .title(\"My Chart\")\n    .build()?;",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_6()
-                    .p_4()
-                    .bg(rgb(0xf5f5f5))
-                    .rounded_md()
+                    .mt(px(ds.spacing.section_gap * 1.5))
+                    .p(px(ds.spacing.card_padding))
+                    .bg(theme.surface)
+                    .rounded(px(ds.corners.md))
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(px(ds.typography.small_size))
                             .font_weight(FontWeight::MEDIUM)
+                            .text_color(theme.text_secondary)
                             .child("Use the sidebar to explore each chart type"),
                     ),
             )
     }
 
-    fn feature_item(&self, title: &str, desc: &str) -> Div {
+    fn feature_item(&self, title: &str, desc: &str, theme: &Theme, ds: &DesignSystem) -> Div {
         div()
             .flex()
-            .gap_2()
+            .gap(px(ds.spacing.control_gap))
             .child(
                 div()
-                    .text_color(rgb(0x007acc))
+                    .text_color(theme.accent)
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(format!("{title}:")),
             )
-            .child(div().text_color(rgb(0x666666)).child(desc.to_string()))
+            .child(div().text_color(theme.text_secondary).child(desc.to_string()))
     }
 
-    fn code_block(&self, code: &str) -> Div {
-        div().p_4().bg(rgb(0x2d2d2d)).rounded_md().child(
-            div()
-                .text_sm()
-                .font_family("Monaco")
-                .text_color(rgb(0x9cdcfe))
-                .whitespace_nowrap()
-                .child(code.to_string()),
-        )
+    fn code_block(&self, code: &str, theme: &Theme, ds: &DesignSystem) -> Div {
+        div()
+            .p(px(ds.spacing.card_padding))
+            .bg(theme.surface)
+            .rounded(px(ds.corners.md))
+            .child(
+                div()
+                    .text_size(px(ds.typography.small_size))
+                    .font_family("Monaco")
+                    .text_color(theme.text_primary)
+                    .whitespace_nowrap()
+                    .child(code.to_string()),
+            )
     }
 
     // ========================================================================
     // Scatter Section
     // ========================================================================
 
-    fn render_scatter_demo(&self) -> Div {
+    fn render_scatter_demo(&self, theme: &Theme, ds: &DesignSystem) -> Div {
         // Get zoom state
         let is_zoomed = self.scatter_chart_state.is_zoomed();
 
@@ -363,54 +423,59 @@ impl ShowcaseApp {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Scatter Plot"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("Displays individual data points with x,y coordinates. Ideal for exploring correlations, identifying clusters, and spotting outliers."),
             )
             .child(interactive_chart)
             .child(
                 div()
-                    .text_xs()
-                    .text_color(rgb(0x888888))
+                    .text_size(px(ds.typography.small_size * 0.85))
+                    .text_color(theme.text_muted)
                     .child("Drag to pan • Scroll to zoom • Double-click to reset"),
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Code"),
             )
             .child(self.code_block(
                 "scatter(&x, &y)\n    .title(\"My Scatter\")\n    .color(0x1f77b4)\n    .point_radius(5.0)\n    .size(600.0, 400.0)\n    .build()?",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Features"),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .ml_4()
-                    .child(div().text_sm().child("• Automatic axis scaling with padding"))
-                    .child(div().text_sm().child("• Custom colors via 0xRRGGBB hex values"))
-                    .child(div().text_sm().child("• Adjustable point radius and opacity"))
-                    .child(div().text_sm().child("• Title rendering at top of chart")),
+                    .gap(px(ds.spacing.grid_unit))
+                    .ml(px(ds.spacing.card_padding))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Automatic axis scaling with padding"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Custom colors via 0xRRGGBB hex values"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Adjustable point radius and opacity"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Title rendering at top of chart")),
             )
     }
 
@@ -418,7 +483,7 @@ impl ShowcaseApp {
     // Line Section
     // ========================================================================
 
-    fn render_line_demo(&self) -> Div {
+    fn render_line_demo(&self, theme: &Theme, ds: &DesignSystem) -> Div {
         // Get zoom state
         let is_zoomed = self.line_chart_state.is_zoomed();
 
@@ -446,54 +511,59 @@ impl ShowcaseApp {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Line Chart"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("Connects data points with lines to show trends over continuous domains. Perfect for time series, measurements, and sequential data."),
             )
             .child(interactive_chart)
             .child(
                 div()
-                    .text_xs()
-                    .text_color(rgb(0x888888))
+                    .text_size(px(ds.typography.small_size * 0.85))
+                    .text_color(theme.text_muted)
                     .child("Drag to pan • Scroll to zoom • Double-click to reset"),
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Code"),
             )
             .child(self.code_block(
                 "line(&x, &y)\n    .title(\"Sine Wave\")\n    .color(0xff7f0e)\n    .stroke_width(2.0)\n    .size(600.0, 400.0)\n    .build()?",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Features"),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .ml_4()
-                    .child(div().text_sm().child("• Smooth curve interpolation options"))
-                    .child(div().text_sm().child("• Configurable stroke width"))
-                    .child(div().text_sm().child("• Optional data point markers"))
-                    .child(div().text_sm().child("• Automatic domain calculation")),
+                    .gap(px(ds.spacing.grid_unit))
+                    .ml(px(ds.spacing.card_padding))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Smooth curve interpolation options"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Configurable stroke width"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Optional data point markers"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Automatic domain calculation")),
             )
     }
 
@@ -501,21 +571,22 @@ impl ShowcaseApp {
     // Bar Section
     // ========================================================================
 
-    fn render_bar_demo(&self) -> Div {
+    fn render_bar_demo(&self, theme: &Theme, ds: &DesignSystem) -> Div {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Bar Chart"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("Compares values across discrete categories. Great for showing rankings, counts, and distributions."),
             )
@@ -529,31 +600,35 @@ impl ShowcaseApp {
             })
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Code"),
             )
             .child(self.code_block(
                 "bar(&categories, &values)\n    .title(\"Weekly Activity\")\n    .color(0x2ca02c)\n    .size(600.0, 400.0)\n    .build()?",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Features"),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .ml_4()
-                    .child(div().text_sm().child("• Category labels on x-axis"))
-                    .child(div().text_sm().child("• Automatic bar width calculation"))
-                    .child(div().text_sm().child("• Custom colors and opacity"))
-                    .child(div().text_sm().child("• Support for negative values")),
+                    .gap(px(ds.spacing.grid_unit))
+                    .ml(px(ds.spacing.card_padding))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Category labels on x-axis"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Automatic bar width calculation"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Custom colors and opacity"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Support for negative values")),
             )
     }
 
@@ -561,21 +636,22 @@ impl ShowcaseApp {
     // Box Plot Section
     // ========================================================================
 
-    fn render_boxplot_demo(&self) -> Div {
+    fn render_boxplot_demo(&self, theme: &Theme, ds: &DesignSystem) -> Div {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Box Plot"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("Displays distribution of data based on quartiles. Shows median, interquartile range (IQR), whiskers extending to 1.5×IQR, and outliers as individual points."),
             )
@@ -593,32 +669,36 @@ impl ShowcaseApp {
             })
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Code"),
             )
             .child(self.code_block(
                 "boxplot(&x, &y)\n    .title(\"Distribution\")\n    .box_color(0xdddddd)\n    .median_color(0x000000)\n    .size(600.0, 400.0)\n    .build()?",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Features"),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .ml_4()
-                    .child(div().text_sm().child("• Automatic quartile calculation (Q1, Q2, Q3)"))
-                    .child(div().text_sm().child("• Whiskers extend to 1.5×IQR from box"))
-                    .child(div().text_sm().child("• Outliers displayed as individual points"))
-                    .child(div().text_sm().child("• Customizable colors for box, median, whiskers, outliers"))
-                    .child(div().text_sm().child("• Support for log scale axes")),
+                    .gap(px(ds.spacing.grid_unit))
+                    .ml(px(ds.spacing.card_padding))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Automatic quartile calculation (Q1, Q2, Q3)"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Whiskers extend to 1.5×IQR from box"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Outliers displayed as individual points"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Customizable colors for box, median, whiskers, outliers"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Support for log scale axes")),
             )
     }
 
@@ -626,7 +706,7 @@ impl ShowcaseApp {
     // Log Scales Section
     // ========================================================================
 
-    fn render_logscales_demo(&self) -> Div {
+    fn render_logscales_demo(&self, theme: &Theme, ds: &DesignSystem) -> Div {
         // Generate logarithmic data - power law relationship y = x^0.8
         // More data points spanning 4 decades (10 to 100,000)
         let log_x: Vec<f64> = (0..50)
@@ -657,31 +737,33 @@ impl ShowcaseApp {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Logarithmic Scales"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("Logarithmic scales are essential for visualizing data spanning multiple orders of magnitude, such as frequency responses (20 Hz to 20 kHz), power measurements, and exponential growth."),
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Scatter Plot - Log-Log Scale"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .child("Power-law relationship y = x^0.8 - appears as a straight line on log-log axes"),
             )
             .child({
@@ -697,18 +779,21 @@ impl ShowcaseApp {
             })
             .child(self.code_block(
                 "scatter(&x, &y)\n    .x_scale(ScaleType::Log)\n    .y_scale(ScaleType::Log)\n    .build()?",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_6()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap * 1.5))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Line Chart - Logarithmic X-Axis"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .child("Frequency response plot with logarithmic frequency axis - standard for audio engineering"),
             )
             .child({
@@ -723,18 +808,21 @@ impl ShowcaseApp {
             })
             .child(self.code_block(
                 "line(&freq, &db)\n    .x_scale(ScaleType::Log)\n    .build()?",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_6()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap * 1.5))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Bar Chart - Logarithmic Y-Axis"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .child("Bar chart with log scale for values spanning multiple magnitudes"),
             )
             .child({
@@ -748,65 +836,68 @@ impl ShowcaseApp {
             })
             .child(self.code_block(
                 "bar(&categories, &values)\n    .y_scale(ScaleType::Log)\n    .build()?",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_6()
-                    .p_4()
-                    .bg(rgb(0xfef3c7))
+                    .mt(px(ds.spacing.section_gap * 1.5))
+                    .p(px(ds.spacing.card_padding))
+                    .bg(theme.warning)
                     .border_1()
-                    .border_color(rgb(0xfbbf24))
-                    .rounded_md()
+                    .border_color(theme.warning)
+                    .rounded(px(ds.corners.md))
                     .child(
                         div()
                             .flex()
                             .flex_col()
-                            .gap_2()
+                            .gap(px(ds.spacing.control_gap))
                             .child(
                                 div()
-                                    .text_sm()
+                                    .text_size(px(ds.typography.small_size))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(rgb(0x92400e))
+                                    .text_color(theme.text_on_accent)
                                     .child("Important Notes:"),
                             )
                             .child(
                                 div()
-                                    .text_sm()
-                                    .text_color(rgb(0x78350f))
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_on_accent)
                                     .child("• Logarithmic scales require all values to be positive"),
                             )
                             .child(
                                 div()
-                                    .text_sm()
-                                    .text_color(rgb(0x78350f))
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_on_accent)
                                     .child("• Zero and negative values will cause validation errors"),
                             )
                             .child(
                                 div()
-                                    .text_sm()
-                                    .text_color(rgb(0x78350f))
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_on_accent)
                                     .child("• Each decade (10x) gets equal spacing on the axis"),
                             ),
                     ),
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Supported Chart Types"),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .ml_4()
-                    .child(div().text_sm().child("• Scatter: Both X and Y axes can be logarithmic"))
-                    .child(div().text_sm().child("• Line: Both X and Y axes can be logarithmic"))
-                    .child(div().text_sm().child("• Bar: Only Y-axis (values) can be logarithmic"))
-                    .child(div().text_sm().child("• Heatmap: Both axes support logarithmic scaling"))
-                    .child(div().text_sm().child("• Contour/Isoline: Both axes support logarithmic scaling")),
+                    .gap(px(ds.spacing.grid_unit))
+                    .ml(px(ds.spacing.card_padding))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Scatter: Both X and Y axes can be logarithmic"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Line: Both X and Y axes can be logarithmic"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Bar: Only Y-axis (values) can be logarithmic"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Heatmap: Both axes support logarithmic scaling"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Contour/Isoline: Both axes support logarithmic scaling")),
             )
     }
 
@@ -814,23 +905,34 @@ impl ShowcaseApp {
     // Heatmap Section
     // ========================================================================
 
-    fn render_heatmap_demo(&mut self, cx: &mut Context<Self>) -> Div {
+    fn render_heatmap_demo(&mut self, theme: &Theme, ds: &DesignSystem, cx: &mut Context<Self>) -> Div {
         let entity = cx.entity().clone();
+
+        let accent = theme.accent;
+        let muted = theme.muted;
+        let text_on_accent = theme.text_on_accent;
+        let text_primary = theme.text_primary;
+        let control_padding_x = ds.spacing.control_padding_x;
+        let control_padding_y = ds.spacing.control_padding_y * 0.5;
+        let corners_md = ds.corners.md;
+        let small_size_xs = ds.typography.small_size * 0.85;
+        let current_heatmap_scale = self.heatmap_color_scale.clone();
 
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Heatmap"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("Visualizes 2D scalar fields using color. Perfect for spectrograms, correlation matrices, and geographic data."),
             )
@@ -847,22 +949,23 @@ impl ShowcaseApp {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_3()
-                    .p_4()
-                    .bg(rgb(0xf8f8f8))
-                    .rounded_lg()
+                    .gap(px(ds.spacing.control_gap + ds.spacing.grid_unit))
+                    .p(px(ds.spacing.card_padding))
+                    .bg(theme.surface)
+                    .rounded(px(ds.corners.lg))
                     .border_1()
-                    .border_color(rgb(0xe0e0e0))
+                    .border_color(theme.border)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(px(ds.typography.small_size))
                             .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
                             .child("Color Scale"),
                     )
                     .child(
                         div()
                             .flex()
-                            .gap_2()
+                            .gap(px(ds.spacing.control_gap))
                             .children(
                                 [
                                     ("Viridis", ColorScaleType::Viridis),
@@ -875,25 +978,25 @@ impl ShowcaseApp {
                                 .into_iter()
                                 .map(|(label, scale_type)| {
                                     let entity = entity.clone();
-                                    let is_selected = is_color_scale_type(&self.heatmap_color_scale, scale_type);
+                                    let is_selected = is_color_scale_type(&current_heatmap_scale, scale_type);
 
                                     div()
                                         .id(ElementId::Name(format!("hm-{}", label).into()))
-                                        .px_3()
-                                        .py_1()
-                                        .rounded_md()
+                                        .px(px(control_padding_x))
+                                        .py(px(control_padding_y))
+                                        .rounded(px(corners_md))
                                         .cursor_pointer()
                                         .bg(if is_selected {
-                                            rgb(0x007acc)
+                                            accent
                                         } else {
-                                            rgb(0xe0e0e0)
+                                            muted
                                         })
                                         .text_color(if is_selected {
-                                            rgb(0xffffff)
+                                            text_on_accent
                                         } else {
-                                            rgb(0x333333)
+                                            text_primary
                                         })
-                                        .text_xs()
+                                        .text_size(px(small_size_xs))
                                         .child(label)
                                         .on_click(move |_, _window, cx| {
                                             entity.update(cx, |this, _| {
@@ -906,13 +1009,16 @@ impl ShowcaseApp {
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Code"),
             )
             .child(self.code_block(
                 "heatmap(&z, width, height)\n    .title(\"My Heatmap\")\n    .color_scale(ColorScale::Viridis)\n    .size(500.0, 500.0)\n    .build()?",
+                theme,
+                ds,
             ))
     }
 
@@ -920,23 +1026,34 @@ impl ShowcaseApp {
     // Contour Section
     // ========================================================================
 
-    fn render_contour_demo(&mut self, cx: &mut Context<Self>) -> Div {
+    fn render_contour_demo(&mut self, theme: &Theme, ds: &DesignSystem, cx: &mut Context<Self>) -> Div {
         let entity = cx.entity().clone();
+
+        let accent = theme.accent;
+        let muted = theme.muted;
+        let text_on_accent = theme.text_on_accent;
+        let text_primary = theme.text_primary;
+        let control_padding_x = ds.spacing.control_padding_x;
+        let control_padding_y = ds.spacing.control_padding_y * 0.5;
+        let corners_md = ds.corners.md;
+        let small_size_xs = ds.typography.small_size * 0.85;
+        let current_contour_scale = self.contour_color_scale.clone();
 
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Contour Chart"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("Shows filled bands between threshold values. Great for topographic visualizations and density estimation."),
             )
@@ -953,22 +1070,23 @@ impl ShowcaseApp {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_3()
-                    .p_4()
-                    .bg(rgb(0xf8f8f8))
-                    .rounded_lg()
+                    .gap(px(ds.spacing.control_gap + ds.spacing.grid_unit))
+                    .p(px(ds.spacing.card_padding))
+                    .bg(theme.surface)
+                    .rounded(px(ds.corners.lg))
                     .border_1()
-                    .border_color(rgb(0xe0e0e0))
+                    .border_color(theme.border)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(px(ds.typography.small_size))
                             .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
                             .child("Color Scale"),
                     )
                     .child(
                         div()
                             .flex()
-                            .gap_2()
+                            .gap(px(ds.spacing.control_gap))
                             .children(
                                 [
                                     ("Viridis", ColorScaleType::Viridis),
@@ -979,25 +1097,25 @@ impl ShowcaseApp {
                                 .into_iter()
                                 .map(|(label, scale_type)| {
                                     let entity = entity.clone();
-                                    let is_selected = is_color_scale_type(&self.contour_color_scale, scale_type);
+                                    let is_selected = is_color_scale_type(&current_contour_scale, scale_type);
 
                                     div()
                                         .id(ElementId::Name(format!("ct-{}", label).into()))
-                                        .px_3()
-                                        .py_1()
-                                        .rounded_md()
+                                        .px(px(control_padding_x))
+                                        .py(px(control_padding_y))
+                                        .rounded(px(corners_md))
                                         .cursor_pointer()
                                         .bg(if is_selected {
-                                            rgb(0x007acc)
+                                            accent
                                         } else {
-                                            rgb(0xe0e0e0)
+                                            muted
                                         })
                                         .text_color(if is_selected {
-                                            rgb(0xffffff)
+                                            text_on_accent
                                         } else {
-                                            rgb(0x333333)
+                                            text_primary
                                         })
-                                        .text_xs()
+                                        .text_size(px(small_size_xs))
                                         .child(label)
                                         .on_click(move |_, _window, cx| {
                                             entity.update(cx, |this, _| {
@@ -1010,13 +1128,16 @@ impl ShowcaseApp {
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Code"),
             )
             .child(self.code_block(
                 "contour(&z, width, height)\n    .title(\"My Contours\")\n    .thresholds(vec![0.0, 0.25, 0.5, 0.75, 1.0])\n    .color_scale(ColorScale::Viridis)\n    .build()?",
+                theme,
+                ds,
             ))
     }
 
@@ -1024,21 +1145,22 @@ impl ShowcaseApp {
     // Isoline Section
     // ========================================================================
 
-    fn render_isoline_demo(&self) -> Div {
+    fn render_isoline_demo(&self, theme: &Theme, ds: &DesignSystem) -> Div {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Isoline Chart"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("Draws unfilled contour lines at specific levels. Useful for elevation maps, pressure fields, and level curves."),
             )
@@ -1053,31 +1175,35 @@ impl ShowcaseApp {
             })
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Code"),
             )
             .child(self.code_block(
                 "isoline(&z, width, height)\n    .title(\"My Isolines\")\n    .levels(vec![0.2, 0.4, 0.6, 0.8])\n    .color(0x333333)\n    .stroke_width(1.5)\n    .build()?",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Features"),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .ml_4()
-                    .child(div().text_sm().child("• Unfilled contour lines (vs filled Contour)"))
-                    .child(div().text_sm().child("• Custom stroke color and width"))
-                    .child(div().text_sm().child("• Auto-generated or custom levels"))
-                    .child(div().text_sm().child("• Line opacity control")),
+                    .gap(px(ds.spacing.grid_unit))
+                    .ml(px(ds.spacing.card_padding))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Unfilled contour lines (vs filled Contour)"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Custom stroke color and width"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Auto-generated or custom levels"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Line opacity control")),
             )
     }
 
@@ -1085,7 +1211,7 @@ impl ShowcaseApp {
     // Treemap Section
     // ========================================================================
 
-    fn render_treemap_demo(&self) -> Div {
+    fn render_treemap_demo(&self, theme: &Theme, ds: &DesignSystem) -> Div {
         use d3rs::color::ColorScheme;
         use gpui_px::{TilingMethod, TreemapNode, treemap};
 
@@ -1184,25 +1310,27 @@ impl ShowcaseApp {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Treemap Chart"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(600.0))
                     .child("Displays hierarchical data as nested rectangles. The size of each rectangle represents a quantitative value. Great for visualizing file systems, organizational structures, and part-to-whole relationships."),
             )
             .child(
                 div()
-                    .mt_2()
-                    .text_base()
+                    .mt(px(ds.spacing.control_gap))
+                    .text_size(px(ds.typography.base_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Interactive: Hover over rectangles to highlight, click to log to console"),
             )
             .child({
@@ -1219,25 +1347,29 @@ impl ShowcaseApp {
             })
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Code"),
             )
             .child(self.code_block(
                 "let root = TreemapNode::with_children(\"root\", vec![\n    TreemapNode::new(\"file1.rs\", 45.0),\n    TreemapNode::with_children(\"dir\", vec![\n        TreemapNode::new(\"file2.rs\", 32.0),\n    ]),\n]);\n\ntreemap(&root)\n    .title(\"File System\")\n    .tiling_method(TilingMethod::Squarify)\n    .padding(2.0)\n    .build()?",
+                theme,
+                ds,
             ))
             .child(
                 div()
-                    .mt_6()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap * 1.5))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("More Examples"),
             )
             .child(
                 div()
                     .flex()
-                    .gap_4()
+                    .gap(px(ds.spacing.section_gap))
                     .child({
                         treemap(&sales_data)
                             .title("Global Sales (Millions)")
@@ -1260,52 +1392,57 @@ impl ShowcaseApp {
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Features"),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .ml_4()
-                    .child(div().text_sm().child("• Multiple tiling algorithms (Squarify, Binary, Slice, Dice, SliceDice)"))
-                    .child(div().text_sm().child("• Hierarchical data with unlimited nesting"))
-                    .child(div().text_sm().child("• Custom color schemes (Tableau10, Category10, Pastel1, etc.)"))
-                    .child(div().text_sm().child("• Interactive hover highlighting and click handlers"))
-                    .child(div().text_sm().child("• Configurable padding between rectangles"))
-                    .child(div().text_sm().child("• Automatic labels for larger rectangles")),
+                    .gap(px(ds.spacing.grid_unit))
+                    .ml(px(ds.spacing.card_padding))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Multiple tiling algorithms (Squarify, Binary, Slice, Dice, SliceDice)"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Hierarchical data with unlimited nesting"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Custom color schemes (Tableau10, Category10, Pastel1, etc.)"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Interactive hover highlighting and click handlers"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Configurable padding between rectangles"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Automatic labels for larger rectangles")),
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Tiling Methods"),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .ml_4()
-                    .child(div().text_sm().child("• Squarify: Creates more square-like rectangles (best aspect ratios)"))
-                    .child(div().text_sm().child("• Binary: Splits alternating horizontal/vertical"))
-                    .child(div().text_sm().child("• Slice: Horizontal strips only"))
-                    .child(div().text_sm().child("• Dice: Vertical strips only"))
-                    .child(div().text_sm().child("• SliceDice: Alternates between Slice and Dice per level")),
+                    .gap(px(ds.spacing.grid_unit))
+                    .ml(px(ds.spacing.card_padding))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Squarify: Creates more square-like rectangles (best aspect ratios)"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Binary: Splits alternating horizontal/vertical"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Slice: Horizontal strips only"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Dice: Vertical strips only"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• SliceDice: Alternates between Slice and Dice per level")),
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_lg()
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
                     .child("Customization"),
             )
             .child(self.code_block(
                 "treemap(&data)\n    .title(\"My Treemap\")\n    .tiling_method(TilingMethod::Binary)\n    .color_scheme(ColorScheme::category10())\n    .padding(3.0)\n    .on_click(|name, value| {\n        println!(\"Clicked: {} ({})\", name, value);\n    })\n    .hover(true)  // Enable hover highlighting\n    .build()?",
+                theme,
+                ds,
             ))
     }
 
@@ -1313,31 +1450,32 @@ impl ShowcaseApp {
     // Gallery Section
     // ========================================================================
 
-    fn render_gallery(&self) -> Div {
+    fn render_gallery(&self, theme: &Theme, ds: &DesignSystem) -> Div {
         let small_w = 350.0;
         let small_h = 250.0;
 
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(px(ds.spacing.section_gap * 1.5))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
                     .child("Chart Gallery"),
             )
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
                     .child("All gpui-px chart types at a glance"),
             )
             // Row 1: Scatter, Line, Bar
             .child(
                 div()
                     .flex()
-                    .gap_4()
+                    .gap(px(ds.spacing.section_gap))
                     .child({
                         scatter(&self.scatter_x, &self.scatter_y)
                             .title("Scatter")
@@ -1368,7 +1506,7 @@ impl ShowcaseApp {
             .child(
                 div()
                     .flex()
-                    .gap_4()
+                    .gap(px(ds.spacing.section_gap))
                     .child({
                         boxplot(&self.boxplot_x, &self.boxplot_y)
                             .title("Box Plot")
@@ -1396,7 +1534,7 @@ impl ShowcaseApp {
                     }),
             )
             // Row 3: Isoline
-            .child(div().flex().gap_4().child({
+            .child(div().flex().gap(px(ds.spacing.section_gap)).child({
                 isoline(&self.contour_z, self.contour_size, self.contour_size)
                     .title("Isoline")
                     .color(0x333333)
@@ -1408,11 +1546,18 @@ impl ShowcaseApp {
 }
 
 impl Render for ShowcaseApp {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let bounds = window.bounds();
+        let w: f32 = bounds.size.width.into();
+        let h: f32 = bounds.size.height.into();
+        let solved = self.solve_layout(w, h);
+        let sidebar_width = solved.find("sidebar").unwrap().width;
+
         div()
-            .flex()
             .size_full()
-            .child(self.render_sidebar(cx))
+            .flex()
+            .flex_row()
+            .child(self.render_sidebar(sidebar_width, cx))
             .child(self.render_content(cx))
     }
 }

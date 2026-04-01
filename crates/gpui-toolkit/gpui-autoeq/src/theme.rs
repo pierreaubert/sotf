@@ -1,10 +1,10 @@
 //! AutoEQ form theme definition.
 
 use gpui::*;
+use gpui_ui_kit::ComponentTheme;
 use gpui_ui_kit::number_input::NumberInputTheme;
 use gpui_ui_kit::select::SelectTheme;
 use gpui_ui_kit::theme::Theme;
-use gpui_ui_kit::ComponentTheme;
 
 /// Theme for the AutoEQ form
 #[derive(Debug, Clone, ComponentTheme)]

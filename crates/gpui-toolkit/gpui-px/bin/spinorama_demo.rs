@@ -15,16 +15,20 @@ use autoeq::read::{
 use autoeq::{Curve, DirectivityData};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_design::DesignExt;
 use gpui_px::interaction::{InteractiveChart, InteractiveChartConfig, InteractiveChartState};
 use gpui_px::{
     ColorScale, Colormap, LegendPosition, ScaleType, Surface3DState, heatmap, line, surface3d,
 };
+use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::{MiniApp, MiniAppConfig, SelectOption, Spinner, SpinnerSize};
 use tokio::runtime::Runtime;
 
 fn main() {
     MiniApp::run(
-        MiniAppConfig::new("Spinorama Viewer (gpui-px)").size(1200.0, 800.0),
+        MiniAppConfig::new("Spinorama Viewer (gpui-px)")
+            .size(1200.0, 800.0)
+            .with_theme(true),
         |cx| cx.new(SpinoramaApp::new),
     );
 }
@@ -354,6 +358,9 @@ impl SpinoramaApp {
     }
 
     fn render_header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let ds = cx.design();
+
         let speaker_options: Vec<SelectOption> = self
             .speakers
             .iter()
@@ -385,32 +392,32 @@ impl SpinoramaApp {
         div()
             .w_full()
             .min_h(px(60.0))
-            .bg(rgb(0x1e1e1e))
+            .bg(theme.surface)
             .border_b_1()
-            .border_color(rgb(0x3c3c3c))
+            .border_color(theme.border)
             .flex()
             .items_center()
-            .px_4()
-            .py_2()
-            .gap_4()
+            .px(px(ds.spacing.card_padding))
+            .py(px(ds.spacing.control_padding_y))
+            .gap(px(ds.spacing.section_gap))
             // Speaker select
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .child(div().text_sm().text_color(rgb(0xcccccc)).child("Speaker:"))
+                    .gap(px(ds.spacing.control_gap))
+                    .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child("Speaker:"))
                     .child(if is_loading_speakers {
                         div()
                             .id("speaker-loading")
                             .flex()
                             .items_center()
-                            .gap_2()
+                            .gap(px(ds.spacing.control_gap))
                             .child(Spinner::new().size(SpinnerSize::Sm))
                             .child(
                                 div()
-                                    .text_sm()
-                                    .text_color(rgb(0x888888))
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_muted)
                                     .child("Loading..."),
                             )
                     } else {
@@ -428,19 +435,19 @@ impl SpinoramaApp {
                     div()
                         .flex()
                         .items_center()
-                        .gap_2()
-                        .child(div().text_sm().text_color(rgb(0xcccccc)).child("Version:"))
+                        .gap(px(ds.spacing.control_gap))
+                        .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child("Version:"))
                         .child(if is_loading_versions {
                             div()
                                 .id("version-loading")
                                 .flex()
                                 .items_center()
-                                .gap_2()
+                                .gap(px(ds.spacing.control_gap))
                                 .child(Spinner::new().size(SpinnerSize::Sm))
                                 .child(
                                     div()
-                                        .text_sm()
-                                        .text_color(rgb(0x888888))
+                                        .text_size(px(ds.typography.small_size))
+                                        .text_color(theme.text_muted)
                                         .child("Loading..."),
                                 )
                         } else {
@@ -458,8 +465,8 @@ impl SpinoramaApp {
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .child(div().text_sm().text_color(rgb(0xcccccc)).child("Plot:"))
+                    .gap(px(ds.spacing.control_gap))
+                    .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child("Plot:"))
                     .child(self.render_section_dropdown(
                         section_options,
                         current_section,
@@ -476,8 +483,8 @@ impl SpinoramaApp {
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
-                            .child(div().text_sm().text_color(rgb(0xcccccc)).child("Colormap:"))
+                            .gap(px(ds.spacing.control_gap))
+                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child("Colormap:"))
                             .child(self.render_colormap_dropdown(cx)),
                     )
                 },
@@ -488,13 +495,13 @@ impl SpinoramaApp {
                     div()
                         .flex()
                         .items_center()
-                        .gap_2()
+                        .gap(px(ds.spacing.control_gap))
                         .ml_auto()
                         .child(Spinner::new().size(SpinnerSize::Sm))
                         .child(
                             div()
-                                .text_sm()
-                                .text_color(rgb(0x888888))
+                                .text_size(px(ds.typography.small_size))
+                                .text_color(theme.text_muted)
                                 .child("Loading data..."),
                         ),
                 )
@@ -508,6 +515,8 @@ impl SpinoramaApp {
         is_open: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let theme = cx.theme();
+        let ds = cx.design();
         let entity = cx.entity().clone();
         let entity_for_toggle = cx.entity().clone();
 
@@ -520,22 +529,22 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_3()
-                    .py_2()
+                    .px(px(ds.spacing.control_padding_x))
+                    .py(px(ds.spacing.control_padding_y))
                     .min_w(px(200.0))
-                    .bg(rgb(0x2a2a2a))
+                    .bg(theme.surface)
                     .border_1()
-                    .border_color(rgb(0x3a3a3a))
-                    .rounded_md()
+                    .border_color(theme.border)
+                    .rounded(px(ds.corners.md))
                     .cursor_pointer()
-                    .text_sm()
-                    .hover(|s| s.border_color(rgb(0x007acc)))
+                    .text_size(px(ds.typography.small_size))
+                    .hover(|s| s.border_color(theme.accent))
                     .child(
                         div()
                             .text_color(if current.is_some() {
-                                rgb(0xffffff)
+                                theme.text_primary
                             } else {
-                                rgb(0x666666)
+                                theme.text_secondary
                             })
                             .child(
                                 current
@@ -543,7 +552,7 @@ impl SpinoramaApp {
                                     .unwrap_or_else(|| "Select speaker...".into()),
                             ),
                     )
-                    .child(div().text_xs().text_color(rgb(0x666666)).child("v"))
+                    .child(div().text_size(px(ds.typography.small_size * 0.85)).text_color(theme.text_secondary).child("v"))
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                         entity_for_toggle.update(cx, |this, cx| {
                             this.speaker_dropdown_open = !this.speaker_dropdown_open;
@@ -561,16 +570,16 @@ impl SpinoramaApp {
                             .absolute()
                             .top_full()
                             .left_0()
-                            .mt_1()
+                            .mt(px(ds.spacing.grid_unit))
                             .w(px(300.0))
                             .max_h(px(400.0))
                             .overflow_y_scroll()
-                            .bg(rgb(0x2a2a2a))
+                            .bg(theme.surface)
                             .border_1()
-                            .border_color(rgb(0x3a3a3a))
-                            .rounded_md()
+                            .border_color(theme.border)
+                            .rounded(px(ds.corners.md))
                             .shadow_lg()
-                            .py_1()
+                            .py(px(ds.spacing.control_padding_y * 0.5))
                             .children(options.into_iter().enumerate().map(|(i, opt)| {
                                 let is_selected = current.as_ref() == Some(&opt.value.to_string());
                                 let value = opt.value.to_string();
@@ -578,15 +587,15 @@ impl SpinoramaApp {
 
                                 div()
                                     .id(ElementId::NamedInteger("speaker-opt".into(), i as u64))
-                                    .px_3()
+                                    .px(px(ds.spacing.control_padding_x))
                                     .py(px(6.0))
                                     .cursor_pointer()
-                                    .text_sm()
+                                    .text_size(px(ds.typography.small_size))
                                     .when(is_selected, |el: Stateful<Div>| {
-                                        el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
+                                        el.bg(theme.accent).text_color(theme.text_on_accent)
                                     })
                                     .when(!is_selected, |el: Stateful<Div>| {
-                                        el.text_color(rgb(0xcccccc)).hover(|s| s.bg(rgb(0x3a3a3a)))
+                                        el.text_color(theme.text_secondary).hover(|s| s.bg(theme.surface_hover))
                                     })
                                     .child(opt.label)
                                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
@@ -615,6 +624,8 @@ impl SpinoramaApp {
         is_open: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let theme = cx.theme();
+        let ds = cx.design();
         let entity = cx.entity().clone();
         let entity_for_toggle = cx.entity().clone();
 
@@ -627,22 +638,22 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_3()
-                    .py_2()
+                    .px(px(ds.spacing.control_padding_x))
+                    .py(px(ds.spacing.control_padding_y))
                     .min_w(px(120.0))
-                    .bg(rgb(0x2a2a2a))
+                    .bg(theme.surface)
                     .border_1()
-                    .border_color(rgb(0x3a3a3a))
-                    .rounded_md()
+                    .border_color(theme.border)
+                    .rounded(px(ds.corners.md))
                     .cursor_pointer()
-                    .text_sm()
-                    .hover(|s| s.border_color(rgb(0x007acc)))
+                    .text_size(px(ds.typography.small_size))
+                    .hover(|s| s.border_color(theme.accent))
                     .child(
                         div()
                             .text_color(if current.is_some() {
-                                rgb(0xffffff)
+                                theme.text_primary
                             } else {
-                                rgb(0x666666)
+                                theme.text_secondary
                             })
                             .child(
                                 current
@@ -650,7 +661,7 @@ impl SpinoramaApp {
                                     .unwrap_or_else(|| "Select version...".into()),
                             ),
                     )
-                    .child(div().text_xs().text_color(rgb(0x666666)).child("v"))
+                    .child(div().text_size(px(ds.typography.small_size * 0.85)).text_color(theme.text_secondary).child("v"))
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                         entity_for_toggle.update(cx, |this, cx| {
                             this.version_dropdown_open = !this.version_dropdown_open;
@@ -668,16 +679,16 @@ impl SpinoramaApp {
                             .absolute()
                             .top_full()
                             .left_0()
-                            .mt_1()
+                            .mt(px(ds.spacing.grid_unit))
                             .w(px(150.0))
                             .max_h(px(300.0))
                             .overflow_y_scroll()
-                            .bg(rgb(0x2a2a2a))
+                            .bg(theme.surface)
                             .border_1()
-                            .border_color(rgb(0x3a3a3a))
-                            .rounded_md()
+                            .border_color(theme.border)
+                            .rounded(px(ds.corners.md))
                             .shadow_lg()
-                            .py_1()
+                            .py(px(ds.spacing.control_padding_y * 0.5))
                             .children(options.into_iter().enumerate().map(|(i, opt)| {
                                 let is_selected = current.as_ref() == Some(&opt.value.to_string());
                                 let value = opt.value.to_string();
@@ -685,15 +696,15 @@ impl SpinoramaApp {
 
                                 div()
                                     .id(ElementId::NamedInteger("version-opt".into(), i as u64))
-                                    .px_3()
+                                    .px(px(ds.spacing.control_padding_x))
                                     .py(px(6.0))
                                     .cursor_pointer()
-                                    .text_sm()
+                                    .text_size(px(ds.typography.small_size))
                                     .when(is_selected, |el: Stateful<Div>| {
-                                        el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
+                                        el.bg(theme.accent).text_color(theme.text_on_accent)
                                     })
                                     .when(!is_selected, |el: Stateful<Div>| {
-                                        el.text_color(rgb(0xcccccc)).hover(|s| s.bg(rgb(0x3a3a3a)))
+                                        el.text_color(theme.text_secondary).hover(|s| s.bg(theme.surface_hover))
                                     })
                                     .child(opt.label)
                                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
@@ -718,6 +729,8 @@ impl SpinoramaApp {
         is_open: bool,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let theme = cx.theme();
+        let ds = cx.design();
         let entity = cx.entity().clone();
         let entity_for_toggle = cx.entity().clone();
 
@@ -730,18 +743,18 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_3()
-                    .py_2()
+                    .px(px(ds.spacing.control_padding_x))
+                    .py(px(ds.spacing.control_padding_y))
                     .min_w(px(180.0))
-                    .bg(rgb(0x2a2a2a))
+                    .bg(theme.surface)
                     .border_1()
-                    .border_color(rgb(0x3a3a3a))
-                    .rounded_md()
+                    .border_color(theme.border)
+                    .rounded(px(ds.corners.md))
                     .cursor_pointer()
-                    .text_sm()
-                    .hover(|s| s.border_color(rgb(0x007acc)))
-                    .child(div().text_color(rgb(0xffffff)).child(current))
-                    .child(div().text_xs().text_color(rgb(0x666666)).child("v"))
+                    .text_size(px(ds.typography.small_size))
+                    .hover(|s| s.border_color(theme.accent))
+                    .child(div().text_color(theme.text_primary).child(current))
+                    .child(div().text_size(px(ds.typography.small_size * 0.85)).text_color(theme.text_secondary).child("v"))
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                         entity_for_toggle.update(cx, |this, cx| {
                             this.section_dropdown_open = !this.section_dropdown_open;
@@ -759,14 +772,14 @@ impl SpinoramaApp {
                             .absolute()
                             .top_full()
                             .left_0()
-                            .mt_1()
+                            .mt(px(ds.spacing.grid_unit))
                             .w(px(200.0))
-                            .bg(rgb(0x2a2a2a))
+                            .bg(theme.surface)
                             .border_1()
-                            .border_color(rgb(0x3a3a3a))
-                            .rounded_md()
+                            .border_color(theme.border)
+                            .rounded(px(ds.corners.md))
                             .shadow_lg()
-                            .py_1()
+                            .py(px(ds.spacing.control_padding_y * 0.5))
                             .children(options.into_iter().enumerate().map(|(i, opt)| {
                                 let is_selected = current == opt.value.as_ref();
                                 let label_str = opt.label.to_string();
@@ -774,15 +787,15 @@ impl SpinoramaApp {
 
                                 div()
                                     .id(ElementId::NamedInteger("section-opt".into(), i as u64))
-                                    .px_3()
+                                    .px(px(ds.spacing.control_padding_x))
                                     .py(px(6.0))
                                     .cursor_pointer()
-                                    .text_sm()
+                                    .text_size(px(ds.typography.small_size))
                                     .when(is_selected, |el: Stateful<Div>| {
-                                        el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
+                                        el.bg(theme.accent).text_color(theme.text_on_accent)
                                     })
                                     .when(!is_selected, |el: Stateful<Div>| {
-                                        el.text_color(rgb(0xcccccc)).hover(|s| s.bg(rgb(0x3a3a3a)))
+                                        el.text_color(theme.text_secondary).hover(|s| s.bg(theme.surface_hover))
                                     })
                                     .child(opt.label)
                                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
@@ -804,6 +817,8 @@ impl SpinoramaApp {
     }
 
     fn render_colormap_dropdown(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let theme = cx.theme();
+        let ds = cx.design();
         let entity = cx.entity().clone();
         let entity_for_toggle = cx.entity().clone();
         let is_open = self.colormap_dropdown_open;
@@ -831,18 +846,18 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_3()
-                    .py_2()
+                    .px(px(ds.spacing.control_padding_x))
+                    .py(px(ds.spacing.control_padding_y))
                     .min_w(px(120.0))
-                    .bg(rgb(0x2a2a2a))
+                    .bg(theme.surface)
                     .border_1()
-                    .border_color(rgb(0x3a3a3a))
-                    .rounded_md()
+                    .border_color(theme.border)
+                    .rounded(px(ds.corners.md))
                     .cursor_pointer()
-                    .text_sm()
-                    .hover(|s| s.border_color(rgb(0x007acc)))
-                    .child(div().text_color(rgb(0xffffff)).child(current_label))
-                    .child(div().text_xs().text_color(rgb(0x666666)).child("v"))
+                    .text_size(px(ds.typography.small_size))
+                    .hover(|s| s.border_color(theme.accent))
+                    .child(div().text_color(theme.text_primary).child(current_label))
+                    .child(div().text_size(px(ds.typography.small_size * 0.85)).text_color(theme.text_secondary).child("v"))
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                         entity_for_toggle.update(cx, |this, cx| {
                             this.colormap_dropdown_open = !this.colormap_dropdown_open;
@@ -861,14 +876,14 @@ impl SpinoramaApp {
                             .absolute()
                             .top_full()
                             .left_0()
-                            .mt_1()
+                            .mt(px(ds.spacing.grid_unit))
                             .w(px(140.0))
-                            .bg(rgb(0x2a2a2a))
+                            .bg(theme.surface)
                             .border_1()
-                            .border_color(rgb(0x3a3a3a))
-                            .rounded_md()
+                            .border_color(theme.border)
+                            .rounded(px(ds.corners.md))
                             .shadow_lg()
-                            .py_1()
+                            .py(px(ds.spacing.control_padding_y * 0.5))
                             .children(colormaps.into_iter().enumerate().map(
                                 |(i, (cmap, label))| {
                                     let is_selected = self.selected_colormap == cmap;
@@ -879,16 +894,16 @@ impl SpinoramaApp {
                                             "colormap-opt".into(),
                                             i as u64,
                                         ))
-                                        .px_3()
+                                        .px(px(ds.spacing.control_padding_x))
                                         .py(px(6.0))
                                         .cursor_pointer()
-                                        .text_sm()
+                                        .text_size(px(ds.typography.small_size))
                                         .when(is_selected, |el: Stateful<Div>| {
-                                            el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
+                                            el.bg(theme.accent).text_color(theme.text_on_accent)
                                         })
                                         .when(!is_selected, |el: Stateful<Div>| {
-                                            el.text_color(rgb(0xcccccc))
-                                                .hover(|s| s.bg(rgb(0x3a3a3a)))
+                                            el.text_color(theme.text_secondary)
+                                                .hover(|s| s.bg(theme.surface_hover))
                                         })
                                         .child(label)
                                         .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
@@ -907,10 +922,13 @@ impl SpinoramaApp {
     }
 
     fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let ds = cx.design();
+
         let content: Div = match self.data_load_state {
-            LoadState::Idle => self.render_welcome(),
-            LoadState::Loading => self.render_loading(),
-            LoadState::Error(ref e) => self.render_error(e),
+            LoadState::Idle => self.render_welcome(cx),
+            LoadState::Loading => self.render_loading(cx),
+            LoadState::Error(ref e) => self.render_error(e, cx),
             LoadState::Loaded => match self.current_section {
                 PlotSection::CEA2034 => self.render_cea2034_plot(cx),
                 PlotSection::HorizontalSPL => self.render_directivity_plot("horizontal", cx),
@@ -925,8 +943,8 @@ impl SpinoramaApp {
             .flex_1()
             .h_full()
             .overflow_y_scroll()
-            .bg(rgb(0xffffff))
-            .p_8()
+            .bg(theme.background)
+            .p(px(ds.spacing.section_gap * 2.0))
             .child(content)
             // Close dropdowns when clicking on content area
             .on_click(cx.listener(|this, _, _window, _cx| {
@@ -937,81 +955,92 @@ impl SpinoramaApp {
             }))
     }
 
-    fn render_welcome(&self) -> Div {
+    fn render_welcome(&self, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
+
         div()
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
             .h_full()
-            .gap_4()
+            .gap(px(ds.spacing.section_gap))
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0x333333))
+                    .text_color(theme.text_primary)
                     .child("Spinorama Viewer (gpui-px)"),
             )
             .child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(400.0))
                     .text_center()
                     .child("Select a speaker from the dropdown above to view its frequency response measurements from spinorama.org."),
             )
             .child(
                 div()
-                    .mt_4()
-                    .text_sm()
-                    .text_color(rgb(0x999999))
+                    .mt(px(ds.spacing.section_gap))
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_muted)
                     .child("Using high-level gpui-px charting API"),
             )
     }
 
-    fn render_loading(&self) -> Div {
+    fn render_loading(&self, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
+
         div()
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
             .h_full()
-            .gap_4()
+            .gap(px(ds.spacing.section_gap))
             .child(Spinner::new().size(SpinnerSize::Xl))
             .child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .child("Loading speaker data..."),
             )
     }
 
-    fn render_error(&self, error: &str) -> Div {
+    fn render_error(&self, error: &str, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
+
         div()
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
             .h_full()
-            .gap_4()
+            .gap(px(ds.spacing.section_gap))
             .child(
                 div()
-                    .text_xl()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0xd32f2f))
+                    .text_color(theme.error)
                     .child("Error Loading Data"),
             )
             .child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .max_w(px(400.0))
                     .text_center()
                     .child(error.to_string()),
             )
     }
 
-    fn render_cea2034_plot(&self, _cx: &mut Context<Self>) -> Div {
+    fn render_cea2034_plot(&self, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
         let colors = cea2034_colors();
 
         // SPL curves (primary axis)
@@ -1033,8 +1062,8 @@ impl SpinoramaApp {
         let Some(&first_name) = first_curve_name else {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .child("No CEA2034 data available for this speaker"),
             );
         };
@@ -1145,28 +1174,31 @@ impl SpinoramaApp {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_6()
+                    .gap(px(ds.spacing.section_gap * 1.5))
                     .child(interactive_chart)
                     .child(
-                        div().mt_4().p_4().bg(rgb(0xf5f5f5)).rounded_md().child(
+                        div().mt(px(ds.spacing.section_gap)).p(px(ds.spacing.card_padding)).bg(theme.muted).rounded(px(ds.corners.md)).child(
                             div()
-                                .text_sm()
-                                .text_color(rgb(0x666666))
+                                .text_size(px(ds.typography.small_size))
+                                .text_color(theme.text_secondary)
                                 .child("Drag to pan • Scroll to zoom • Double-click to reset • Click legend to toggle"),
                         ),
                     )
             }
             Err(e) => div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0xd32f2f))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.error)
                     .child(format!("Chart error: {}", e)),
             ),
         }
     }
 
-    fn render_directivity_plot(&self, plane: &str, _cx: &mut Context<Self>) -> Div {
-        // Viridis color palette for different angles
+    fn render_directivity_plot(&self, plane: &str, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
+
+        // Viridis color palette for different angles (domain-specific data visualization colors)
         let viridis_colors: [(f32, f32, f32); 6] = [
             (0.267, 0.004, 0.329), // Dark purple
             (0.255, 0.267, 0.529), // Purple-blue
@@ -1179,8 +1211,8 @@ impl SpinoramaApp {
         let Some(ref directivity) = self.directivity_data else {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .child("No directivity data available for this speaker."),
             );
         };
@@ -1194,8 +1226,8 @@ impl SpinoramaApp {
         if curves.is_empty() {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .child(format!("No {} directivity data available.", plane)),
             );
         }
@@ -1217,8 +1249,8 @@ impl SpinoramaApp {
         if freq.is_empty() {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .child("No frequency data in valid range."),
             );
         }
@@ -1309,24 +1341,24 @@ impl SpinoramaApp {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_6()
+                    .gap(px(ds.spacing.section_gap * 1.5))
                     .child(interactive_chart)
                     // Angle color legend
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
-                            .p_4()
-                            .bg(rgb(0xf5f5f5))
-                            .rounded_md()
+                            .gap(px(ds.spacing.control_gap))
+                            .p(px(ds.spacing.card_padding))
+                            .bg(theme.muted)
+                            .rounded(px(ds.corners.md))
                             .child(
                                 div()
-                                    .text_sm()
-                                    .text_color(rgb(0x666666))
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_secondary)
                                     .child(format!("{:.0}°", angle_min)),
                             )
-                            // Gradient strip
+                            // Gradient strip (domain-specific data visualization colors)
                             .children((0..6).map(|i| {
                                 let (r, g, b) = viridis_colors[i];
                                 let color = ((r * 255.0) as u32) << 16
@@ -1336,16 +1368,16 @@ impl SpinoramaApp {
                             }))
                             .child(
                                 div()
-                                    .text_sm()
-                                    .text_color(rgb(0x666666))
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_secondary)
                                     .child(format!("{:.0}°", angle_max)),
                             ),
                     )
                     .child(
                         div()
-                            .mt_2()
-                            .text_sm()
-                            .text_color(rgb(0x888888))
+                            .mt(px(ds.spacing.control_gap))
+                            .text_size(px(ds.typography.small_size))
+                            .text_color(theme.text_muted)
                             .child(format!(
                                 "{} curves from {:.0}° to {:.0}° • Drag to pan • Scroll to zoom • Double-click to reset",
                                 num_curves, angle_min, angle_max
@@ -1354,19 +1386,22 @@ impl SpinoramaApp {
             }
             Err(e) => div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0xd32f2f))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.error)
                     .child(format!("Chart error: {}", e)),
             ),
         }
     }
 
-    fn render_contour_plot(&self, _cx: &mut Context<Self>) -> Div {
+    fn render_contour_plot(&self, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
+
         let Some(ref directivity) = self.directivity_data else {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .child("No directivity data available for contour plot."),
             );
         };
@@ -1376,8 +1411,8 @@ impl SpinoramaApp {
         if curves.is_empty() {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .child("No horizontal directivity data available for contour plot."),
             );
         }
@@ -1453,51 +1488,54 @@ impl SpinoramaApp {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_6()
+                    .gap(px(ds.spacing.section_gap * 1.5))
                     .child(interactive_chart)
                     .child(
                         div()
                             .flex()
                             .flex_wrap()
-                            .gap_4()
-                            .p_4()
-                            .bg(rgb(0xf5f5f5))
-                            .rounded_md()
-                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                            .gap(px(ds.spacing.section_gap))
+                            .p(px(ds.spacing.card_padding))
+                            .bg(theme.muted)
+                            .rounded(px(ds.corners.md))
+                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
                                 "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
                                 freq_min, freq_max
                             )))
-                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
                                 "Y: Angle ({:.0}° to {:.0}°)",
                                 angle_min, angle_max
                             )))
-                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
                                 "SPL range: {:.1} dB to {:.1} dB",
                                 spl_min, spl_max
                             )))
                             .child(
                                 div()
-                                    .text_sm()
-                                    .text_color(rgb(0x888888))
+                                    .text_size(px(ds.typography.small_size))
+                                    .text_color(theme.text_muted)
                                     .child("Drag to pan • Scroll to zoom • Double-click to reset"),
                             ),
                     )
             }
             Err(e) => div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0xd32f2f))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.error)
                     .child(format!("Chart error: {}", e)),
             ),
         }
     }
 
     fn render_surface3d_plot(&mut self, cx: &mut Context<Self>) -> Div {
+        let theme = cx.theme();
+        let ds = cx.design();
+
         let Some(ref directivity) = self.directivity_data else {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .child("No directivity data available for 3D surface plot."),
             );
         };
@@ -1507,8 +1545,8 @@ impl SpinoramaApp {
         if curves.is_empty() {
             return div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.text_secondary)
                     .child("No horizontal directivity data available for 3D surface plot."),
             );
         }
@@ -1583,7 +1621,7 @@ impl SpinoramaApp {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_6()
+                    .gap(px(ds.spacing.section_gap * 1.5))
                     .child(
                         // Wrap the 3D surface in a container with mouse event handlers
                         div()
@@ -1649,24 +1687,24 @@ impl SpinoramaApp {
                         div()
                             .flex()
                             .flex_wrap()
-                            .gap_4()
-                            .p_4()
-                            .bg(rgb(0xf5f5f5))
-                            .rounded_md()
-                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                            .gap(px(ds.spacing.section_gap))
+                            .p(px(ds.spacing.card_padding))
+                            .bg(theme.muted)
+                            .rounded(px(ds.corners.md))
+                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
                                 "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
                                 freq_min, freq_max
                             )))
-                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
                                 "Y: Angle ({:.0}° to {:.0}°)",
                                 angle_min, angle_max
                             )))
-                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                            .child(div().text_size(px(ds.typography.small_size)).text_color(theme.text_secondary).child(format!(
                                 "Z: SPL range ({:.1} dB to {:.1} dB)",
                                 spl_min, spl_max
                             )))
                             .child(
-                                div().text_sm().text_color(rgb(0x888888)).child(
+                                div().text_size(px(ds.typography.small_size)).text_color(theme.text_muted).child(
                                     "Drag to rotate • Scroll to zoom • Double-click to reset",
                                 ),
                             ),
@@ -1674,8 +1712,8 @@ impl SpinoramaApp {
             }
             Err(e) => div().flex().items_center().justify_center().h_full().child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0xd32f2f))
+                    .text_size(px(ds.typography.base_size))
+                    .text_color(theme.error)
                     .child(format!("Chart error: {}", e)),
             ),
         }
@@ -1733,12 +1771,14 @@ fn interpolate_spl_at_freq(freqs: &[f64], spls: &[f64], target_freq: f64) -> f64
 
 impl Render for SpinoramaApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+
         div()
             .id("main-container")
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(0xffffff))
+            .bg(theme.background)
             .child(self.render_header(cx))
             .child(self.render_content(cx))
     }

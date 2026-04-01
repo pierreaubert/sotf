@@ -15,7 +15,7 @@ name = "d3rs"
 
 [features]
 default = ["gpui", "gpu-2d", "gpu-3d"]
-gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:smol", "dep:gpui_macos"]
+gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-builder", "dep:gpui-design", "gpui-design/gpui", "dep:smol", "dep:gpui_macos"]
 spinorama = ["dep:autoeq", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
 gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "gpui"]
 gpu-2d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "dep:fontdue", "gpui"]
@@ -24,6 +24,8 @@ gpu-2d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "
 gpui = { workspace = true, optional = true }
 smol = { workspace = true, optional = true }
 gpui-ui-kit = { workspace = true, optional = true }
+gpui-builder = { workspace = true, optional = true }
+gpui-design = { workspace = true, optional = true }
 regex = { workspace = true }
 delaunator = { workspace = true }
 math-delaunay = { workspace = true }

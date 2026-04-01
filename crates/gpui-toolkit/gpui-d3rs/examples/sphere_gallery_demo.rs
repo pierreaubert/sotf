@@ -16,9 +16,7 @@
 //!
 //! Run with: `cargo run --features gpu-3d --example sphere_gallery_demo`
 
-use d3rs::sphere_gallery::{
-    Projection, SphereGalleryConfig, SphereGalleryItem, SphereGalleryView,
-};
+use d3rs::sphere_gallery::{Projection, SphereGalleryConfig, SphereGalleryItem, SphereGalleryView};
 use gpui::*;
 use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize};
 
@@ -81,9 +79,7 @@ fn projection_key(proj: Projection) -> SharedString {
 
 /// Map a ButtonSet key back to a projection index
 fn key_to_projection_index(key: &str) -> Option<usize> {
-    Projection::ALL
-        .iter()
-        .position(|p| p.name() == key)
+    Projection::ALL.iter().position(|p| p.name() == key)
 }
 
 struct DemoView {
@@ -161,8 +157,7 @@ impl Render for DemoView {
             // P key cycles projections (wraps around)
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
                 if event.keystroke.key == "p" {
-                    view.projection_index =
-                        (view.projection_index + 1) % Projection::ALL.len();
+                    view.projection_index = (view.projection_index + 1) % Projection::ALL.len();
                     view.rebuild_gallery(cx);
                 }
             }))
@@ -237,7 +232,9 @@ impl Render for DemoView {
                             .text_right()
                             .text_xs()
                             .text_color(rgb(0x555555))
-                            .child("[P] cycle projection  |  Drag=rotate  Scroll=zoom  Arrows=select"),
+                            .child(
+                                "[P] cycle projection  |  Drag=rotate  Scroll=zoom  Arrows=select",
+                            ),
                     ),
             )
             .child(

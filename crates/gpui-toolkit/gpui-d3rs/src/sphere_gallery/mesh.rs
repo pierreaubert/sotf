@@ -166,9 +166,7 @@ fn project_r_to_phi(r: f32, max_angle: f32, projection: Projection) -> f32 {
         Projection::Equirectangular => r * max_angle,
 
         // Stereographic: phi = 2 * atan(r * tan(max_angle / 2))
-        Projection::Stereographic => {
-            2.0 * (r * (max_angle / 2.0).tan()).atan()
-        }
+        Projection::Stereographic => 2.0 * (r * (max_angle / 2.0).tan()).atan(),
 
         // Lambert equal-area: phi = 2 * asin(r * sin(max_angle / 2))
         Projection::LambertEqualArea => {
@@ -258,11 +256,7 @@ fn surface_normal(u: f32, v: f32, config: &SphereMeshConfig) -> Vec3 {
 }
 
 /// Generate the sphere gallery mesh for a grid of `cols × rows` cells.
-pub fn generate_sphere_mesh(
-    cols: u32,
-    rows: u32,
-    config: &SphereMeshConfig,
-) -> SphereGalleryMesh {
+pub fn generate_sphere_mesh(cols: u32, rows: u32, config: &SphereMeshConfig) -> SphereGalleryMesh {
     let subs = config.subdivisions;
     let verts_per_cell_edge = subs + 1;
 
@@ -326,12 +320,7 @@ pub fn cell_center(index: u32, cols: u32, rows: u32) -> (f32, f32) {
 }
 
 /// Get the 3D world position for the center of a cell.
-pub fn cell_center_3d(
-    index: u32,
-    cols: u32,
-    rows: u32,
-    config: &SphereMeshConfig,
-) -> Vec3 {
+pub fn cell_center_3d(index: u32, cols: u32, rows: u32, config: &SphereMeshConfig) -> Vec3 {
     let (u, v) = cell_center(index, cols, rows);
     grid_to_surface(u, v, config)
 }

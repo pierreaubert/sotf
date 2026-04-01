@@ -581,9 +581,9 @@ impl RenderOnce for Potentiometer {
 
         // Calculate angle for indicator with dead zone at bottom
         let start_rad: f32 = self.design_tokens.knob_arc_start_deg.to_radians();
-        let end_rad: f32 =
-            (self.design_tokens.knob_arc_start_deg + self.design_tokens.knob_arc_sweep_deg)
-                .to_radians();
+        let end_rad: f32 = (self.design_tokens.knob_arc_start_deg
+            + self.design_tokens.knob_arc_sweep_deg)
+            .to_radians();
         let angle_rad = start_rad + (end_rad - start_rad) * normalized;
 
         let knob_size = self.size.knob_size();

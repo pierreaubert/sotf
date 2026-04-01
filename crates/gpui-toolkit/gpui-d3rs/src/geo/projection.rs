@@ -471,6 +471,16 @@ impl Orthographic {
 impl Projection for Orthographic {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
         let (lambda, phi) = apply_rotation(&self.config, lon, lat);
+
+        // Clip back hemisphere: reject points where angular distance > clip_angle
+        if let Some(clip_deg) = self.config.clip_angle {
+            let cos_clip = clip_deg.to_radians().cos();
+            let cos_dist = phi.cos() * lambda.cos();
+            if cos_dist < cos_clip {
+                return (f64::NAN, f64::NAN);
+            }
+        }
+
         let (x, y) = Self::project_raw(lambda, phi);
         (
             self.config.translate.0 + self.config.scale * x,
@@ -597,10 +607,17 @@ impl Projection for Stereographic {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
         let (lambda, phi) = apply_rotation(&self.config, lon, lat);
 
-        // Note: D3 clips stereographic in the stream pipeline, not in project().
-        // We skip clipping here so GeoPath can generate complete paths.
-        // Points very close to the antipode (k → 0) produce extreme coordinates
-        // but they get clipped naturally by canvas bounds.
+        // Clip points beyond the clip angle (angular distance from center).
+        // cos(angular_distance) = cos(phi) * cos(lambda); reject when
+        // angular_distance > clip_angle.
+        if let Some(clip_deg) = self.config.clip_angle {
+            let cos_clip = clip_deg.to_radians().cos();
+            let cos_dist = phi.cos() * lambda.cos();
+            if cos_dist < cos_clip {
+                return (f64::NAN, f64::NAN);
+            }
+        }
+
         let (x, y) = Self::project_raw(lambda, phi);
 
         // Guard against division-by-zero at the exact antipode

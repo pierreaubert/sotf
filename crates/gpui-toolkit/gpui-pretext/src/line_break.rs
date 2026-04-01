@@ -93,7 +93,12 @@ fn get_breakable_advance(
         return grapheme_widths[grapheme_index];
     }
     let pw = grapheme_prefix_widths.unwrap();
-    pw[grapheme_index] - if grapheme_index > 0 { pw[grapheme_index - 1] } else { 0.0 }
+    pw[grapheme_index]
+        - if grapheme_index > 0 {
+            pw[grapheme_index - 1]
+        } else {
+            0.0
+        }
 }
 
 fn fit_soft_hyphen_break(
@@ -128,7 +133,10 @@ fn fit_soft_hyphen_break(
     (fit_count, fitted_width)
 }
 
-fn find_chunk_index_for_start(prepared: &PreparedLineBreakData, segment_index: usize) -> Option<usize> {
+fn find_chunk_index_for_start(
+    prepared: &PreparedLineBreakData,
+    segment_index: usize,
+) -> Option<usize> {
     prepared
         .chunks
         .iter()
@@ -155,8 +163,7 @@ pub fn normalize_line_start(
     let chunk_idx = find_chunk_index_for_start(prepared, seg_idx)?;
     let chunk = &prepared.chunks[chunk_idx];
 
-    if chunk.start_segment_index == chunk.end_segment_index
-        && seg_idx == chunk.start_segment_index
+    if chunk.start_segment_index == chunk.end_segment_index && seg_idx == chunk.start_segment_index
     {
         return Some(LineBreakCursor {
             segment_index: seg_idx,
@@ -195,7 +202,11 @@ pub fn normalize_line_start(
 // countPreparedLines
 // ---------------------------------------------------------------------------
 
-pub fn count_prepared_lines(prepared: &PreparedLineBreakData, max_width: f64, profile: &EngineProfile) -> usize {
+pub fn count_prepared_lines(
+    prepared: &PreparedLineBreakData,
+    max_width: f64,
+    profile: &EngineProfile,
+) -> usize {
     if prepared.simple_line_walk_fast_path {
         count_prepared_lines_simple(prepared, max_width, profile)
     } else {
@@ -222,35 +233,36 @@ fn count_prepared_lines_simple(
     let mut line_w = 0.0f64;
     let mut has_content = false;
 
-    let place_on_fresh_line = |seg_idx: usize, line_count: &mut usize, line_w: &mut f64, has_content: &mut bool| {
-        let w = widths[seg_idx];
-        if w > max_width && breakable_widths[seg_idx].is_some() {
-            let g_widths = breakable_widths[seg_idx].as_ref().unwrap();
-            let g_prefix = breakable_prefix_widths[seg_idx].as_deref();
-            *line_w = 0.0;
-            for g in 0..g_widths.len() {
-                let gw = get_breakable_advance(
-                    g_widths,
-                    g_prefix,
-                    g,
-                    profile.prefer_prefix_widths_for_breakable_runs,
-                );
-                if *line_w > 0.0 && *line_w + gw > max_width + eps {
-                    *line_count += 1;
-                    *line_w = gw;
-                } else {
-                    if *line_w == 0.0 {
+    let place_on_fresh_line =
+        |seg_idx: usize, line_count: &mut usize, line_w: &mut f64, has_content: &mut bool| {
+            let w = widths[seg_idx];
+            if w > max_width && breakable_widths[seg_idx].is_some() {
+                let g_widths = breakable_widths[seg_idx].as_ref().unwrap();
+                let g_prefix = breakable_prefix_widths[seg_idx].as_deref();
+                *line_w = 0.0;
+                for g in 0..g_widths.len() {
+                    let gw = get_breakable_advance(
+                        g_widths,
+                        g_prefix,
+                        g,
+                        profile.prefer_prefix_widths_for_breakable_runs,
+                    );
+                    if *line_w > 0.0 && *line_w + gw > max_width + eps {
                         *line_count += 1;
+                        *line_w = gw;
+                    } else {
+                        if *line_w == 0.0 {
+                            *line_count += 1;
+                        }
+                        *line_w += gw;
                     }
-                    *line_w += gw;
                 }
+            } else {
+                *line_w = w;
+                *line_count += 1;
             }
-        } else {
-            *line_w = w;
-            *line_count += 1;
-        }
-        *has_content = true;
-    };
+            *has_content = true;
+        };
 
     for i in 0..widths.len() {
         let w = widths[i];
@@ -706,82 +718,82 @@ pub fn walk_prepared_lines(
                 if pending_break_kind == Some(SegmentBreakKind::SoftHyphen)
                     && profile.prefer_early_soft_hyphen_break
                     && pending_break_fit_w <= max_width + eps
-                    && let Some(pb_seg) = pending_break_seg {
-                        emit_line!(pb_seg, 0, pending_break_paint_w);
-                        continue;
-                    }
+                    && let Some(pb_seg) = pending_break_seg
+                {
+                    emit_line!(pb_seg, 0, pending_break_paint_w);
+                    continue;
+                }
 
                 // Soft-hyphen breakable continuation
                 if pending_break_kind == Some(SegmentBreakKind::SoftHyphen)
-                    && let Some(ref gw) = breakable_widths[i] {
-                        let fit_widths = if profile.prefer_prefix_widths_for_breakable_runs {
-                            breakable_prefix_widths[i].as_deref().unwrap_or(gw)
-                        } else {
-                            gw
-                        };
-                        let uses_prefix = fit_widths.as_ptr() != gw.as_ptr();
-                        let (fit_count, fitted_width) = fit_soft_hyphen_break(
-                            fit_widths,
-                            line_w,
-                            max_width,
-                            eps,
-                            discretionary_hyphen_width,
-                            uses_prefix,
-                        );
-                        if fit_count > 0 {
-                            line_w = fitted_width;
-                            line_end_seg = i;
-                            line_end_graph = fit_count;
-                            clear_pending!();
-                            if fit_count == gw.len() {
-                                line_end_seg = i + 1;
-                                line_end_graph = 0;
-                                i += 1;
-                                continue;
-                            }
-                            emit_line!(i, fit_count, fitted_width + discretionary_hyphen_width);
-                            // continue from fit_count
-                            let remaining_gw = breakable_widths[i].as_ref().unwrap();
-                            let remaining_prefix = breakable_prefix_widths[i].as_deref();
-                            for g in fit_count..remaining_gw.len() {
-                                let gw_val = get_breakable_advance(
-                                    remaining_gw,
-                                    remaining_prefix,
-                                    g,
-                                    profile.prefer_prefix_widths_for_breakable_runs,
-                                );
-                                if !has_content {
-                                    has_content = true;
-                                    line_start_seg = i;
-                                    line_start_graph = g;
-                                    line_end_seg = i;
-                                    line_end_graph = g + 1;
-                                    line_w = gw_val;
-                                } else if line_w + gw_val > max_width + eps {
-                                    emit_line!();
-                                    has_content = true;
-                                    line_start_seg = i;
-                                    line_start_graph = g;
-                                    line_end_seg = i;
-                                    line_end_graph = g + 1;
-                                    line_w = gw_val;
-                                } else {
-                                    line_w += gw_val;
-                                    line_end_seg = i;
-                                    line_end_graph = g + 1;
-                                }
-                            }
-                            if has_content
-                                && line_end_seg == i
-                                && line_end_graph == remaining_gw.len()
-                            {
-                                line_end_seg = i + 1;
-                                line_end_graph = 0;
-                            }
+                    && let Some(ref gw) = breakable_widths[i]
+                {
+                    let fit_widths = if profile.prefer_prefix_widths_for_breakable_runs {
+                        breakable_prefix_widths[i].as_deref().unwrap_or(gw)
+                    } else {
+                        gw
+                    };
+                    let uses_prefix = fit_widths.as_ptr() != gw.as_ptr();
+                    let (fit_count, fitted_width) = fit_soft_hyphen_break(
+                        fit_widths,
+                        line_w,
+                        max_width,
+                        eps,
+                        discretionary_hyphen_width,
+                        uses_prefix,
+                    );
+                    if fit_count > 0 {
+                        line_w = fitted_width;
+                        line_end_seg = i;
+                        line_end_graph = fit_count;
+                        clear_pending!();
+                        if fit_count == gw.len() {
+                            line_end_seg = i + 1;
+                            line_end_graph = 0;
                             i += 1;
                             continue;
                         }
+                        emit_line!(i, fit_count, fitted_width + discretionary_hyphen_width);
+                        // continue from fit_count
+                        let remaining_gw = breakable_widths[i].as_ref().unwrap();
+                        let remaining_prefix = breakable_prefix_widths[i].as_deref();
+                        for g in fit_count..remaining_gw.len() {
+                            let gw_val = get_breakable_advance(
+                                remaining_gw,
+                                remaining_prefix,
+                                g,
+                                profile.prefer_prefix_widths_for_breakable_runs,
+                            );
+                            if !has_content {
+                                has_content = true;
+                                line_start_seg = i;
+                                line_start_graph = g;
+                                line_end_seg = i;
+                                line_end_graph = g + 1;
+                                line_w = gw_val;
+                            } else if line_w + gw_val > max_width + eps {
+                                emit_line!();
+                                has_content = true;
+                                line_start_seg = i;
+                                line_start_graph = g;
+                                line_end_seg = i;
+                                line_end_graph = g + 1;
+                                line_w = gw_val;
+                            } else {
+                                line_w += gw_val;
+                                line_end_seg = i;
+                                line_end_graph = g + 1;
+                            }
+                        }
+                        if has_content && line_end_seg == i && line_end_graph == remaining_gw.len()
+                        {
+                            line_end_seg = i + 1;
+                            line_end_graph = 0;
+                        }
+                        i += 1;
+                        continue;
                     }
+                }
 
                 if can_break_after(kind) && current_fit_w <= max_width + eps {
                     line_w += w;
@@ -793,10 +805,11 @@ pub fn walk_prepared_lines(
                 }
 
                 if let Some(pb_seg) = pending_break_seg
-                    && pending_break_fit_w <= max_width + eps {
-                        emit_line!(pb_seg, 0, pending_break_paint_w);
-                        continue;
-                    }
+                    && pending_break_fit_w <= max_width + eps
+                {
+                    emit_line!(pb_seg, 0, pending_break_paint_w);
+                    continue;
+                }
 
                 if w > max_width && breakable_widths[i].is_some() {
                     emit_line!();
@@ -866,12 +879,11 @@ pub fn walk_prepared_lines(
         }
 
         if has_content {
-            let final_paint_w =
-                if pending_break_seg == Some(chunk.consumed_end_segment_index) {
-                    pending_break_paint_w
-                } else {
-                    line_w
-                };
+            let final_paint_w = if pending_break_seg == Some(chunk.consumed_end_segment_index) {
+                pending_break_paint_w
+            } else {
+                line_w
+            };
             emit_line!(chunk.consumed_end_segment_index, 0, final_paint_w);
         }
     }
@@ -929,7 +941,11 @@ pub fn layout_next_line_range(
     let mut pending_break_paint_w = 0.0f64;
     let mut pending_break_kind: Option<SegmentBreakKind> = None;
 
-    let finish_line = |end_seg: usize, end_graph: usize, w: f64, has_content: bool| -> Option<InternalLayoutLine> {
+    let finish_line = |end_seg: usize,
+                       end_graph: usize,
+                       w: f64,
+                       has_content: bool|
+     -> Option<InternalLayoutLine> {
         if !has_content {
             return None;
         }
@@ -972,8 +988,12 @@ pub fn layout_next_line_range(
                 if let Some(ref gw) = breakable_widths[i] {
                     let gp = breakable_prefix_widths[i].as_deref();
                     for g in start_grapheme..gw.len() {
-                        let gw_val =
-                            get_breakable_advance(gw, gp, g, profile.prefer_prefix_widths_for_breakable_runs);
+                        let gw_val = get_breakable_advance(
+                            gw,
+                            gp,
+                            g,
+                            profile.prefer_prefix_widths_for_breakable_runs,
+                        );
                         if !has_content {
                             has_content = true;
                             line_end_seg = i;
@@ -996,8 +1016,12 @@ pub fn layout_next_line_range(
                 let gw = breakable_widths[i].as_ref().unwrap();
                 let gp = breakable_prefix_widths[i].as_deref();
                 for g in 0..gw.len() {
-                    let gw_val =
-                        get_breakable_advance(gw, gp, g, profile.prefer_prefix_widths_for_breakable_runs);
+                    let gw_val = get_breakable_advance(
+                        gw,
+                        gp,
+                        g,
+                        profile.prefer_prefix_widths_for_breakable_runs,
+                    );
                     if !has_content {
                         has_content = true;
                         line_end_seg = i;
@@ -1058,9 +1082,10 @@ pub fn layout_next_line_range(
             if pending_break_kind == Some(SegmentBreakKind::SoftHyphen)
                 && profile.prefer_early_soft_hyphen_break
                 && pending_break_fit_w <= max_width + eps
-                && let Some(pb_seg) = pending_break_seg {
-                    return finish_line(pb_seg, 0, pending_break_paint_w, has_content);
-                }
+                && let Some(pb_seg) = pending_break_seg
+            {
+                return finish_line(pb_seg, 0, pending_break_paint_w, has_content);
+            }
 
             // Soft-hyphen breakable
             if pending_break_kind == Some(SegmentBreakKind::SoftHyphen) {
@@ -1099,9 +1124,10 @@ pub fn layout_next_line_range(
                     }
                 }
                 if pending_break_fit_w <= max_width + eps
-                    && let Some(pb_seg) = pending_break_seg {
-                        return finish_line(pb_seg, 0, pending_break_paint_w, has_content);
-                    }
+                    && let Some(pb_seg) = pending_break_seg
+                {
+                    return finish_line(pb_seg, 0, pending_break_paint_w, has_content);
+                }
             }
 
             if can_break_after(kind) && current_fit_w <= max_width + eps {
@@ -1112,9 +1138,10 @@ pub fn layout_next_line_range(
             }
 
             if let Some(pb_seg) = pending_break_seg
-                && pending_break_fit_w <= max_width + eps {
-                    return finish_line(pb_seg, 0, pending_break_paint_w, has_content);
-                }
+                && pending_break_fit_w <= max_width + eps
+            {
+                return finish_line(pb_seg, 0, pending_break_paint_w, has_content);
+            }
 
             if w > max_width && breakable_widths[i].is_some() {
                 let current_line = finish_line(line_end_seg, line_end_graph, line_w, has_content);
@@ -1150,7 +1177,12 @@ pub fn layout_next_line_range(
     }
 
     if pending_break_seg == Some(chunk.consumed_end_segment_index) && line_end_graph == 0 {
-        return finish_line(chunk.consumed_end_segment_index, 0, pending_break_paint_w, has_content);
+        return finish_line(
+            chunk.consumed_end_segment_index,
+            0,
+            pending_break_paint_w,
+            has_content,
+        );
     }
 
     finish_line(chunk.consumed_end_segment_index, 0, line_w, has_content)
@@ -1181,7 +1213,11 @@ fn layout_next_line_range_simple(
     let mut pending_break_seg: Option<usize> = None;
     let mut pending_break_paint_w = 0.0f64;
 
-    let finish_line = |end_seg: usize, end_graph: usize, w: f64, has_content: bool| -> Option<InternalLayoutLine> {
+    let finish_line = |end_seg: usize,
+                       end_graph: usize,
+                       w: f64,
+                       has_content: bool|
+     -> Option<InternalLayoutLine> {
         if !has_content {
             return None;
         }
@@ -1208,8 +1244,12 @@ fn layout_next_line_range_simple(
                 if let Some(ref gw) = breakable_widths[i] {
                     let gp = breakable_prefix_widths[i].as_deref();
                     for g in start_grapheme..gw.len() {
-                        let gw_val =
-                            get_breakable_advance(gw, gp, g, profile.prefer_prefix_widths_for_breakable_runs);
+                        let gw_val = get_breakable_advance(
+                            gw,
+                            gp,
+                            g,
+                            profile.prefer_prefix_widths_for_breakable_runs,
+                        );
                         if !has_content {
                             has_content = true;
                             line_end_seg = i;
@@ -1232,8 +1272,12 @@ fn layout_next_line_range_simple(
                 let gw = breakable_widths[i].as_ref().unwrap();
                 let gp = breakable_prefix_widths[i].as_deref();
                 for g in 0..gw.len() {
-                    let gw_val =
-                        get_breakable_advance(gw, gp, g, profile.prefer_prefix_widths_for_breakable_runs);
+                    let gw_val = get_breakable_advance(
+                        gw,
+                        gp,
+                        g,
+                        profile.prefer_prefix_widths_for_breakable_runs,
+                    );
                     if !has_content {
                         has_content = true;
                         line_end_seg = i;
@@ -1348,9 +1392,9 @@ impl Default for KnuthPlassParams {
 /// Fitness class per Knuth-Plass §3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FitnessClass {
-    Tight = 0,  // r < -0.5
-    Normal = 1, // -0.5 <= r < 0.5
-    Loose = 2,  // 0.5 <= r < 1.0
+    Tight = 0,     // r < -0.5
+    Normal = 1,    // -0.5 <= r < 0.5
+    Loose = 2,     // 0.5 <= r < 1.0
     VeryLoose = 3, // r >= 1.0
 }
 
@@ -1742,13 +1786,8 @@ fn knuth_plass_chunk(
         for (ai, &node_idx) in active.iter().enumerate() {
             let node = &nodes[node_idx];
 
-            let ratio = compute_adjustment_ratio(
-                items,
-                node.break_index,
-                b,
-                max_width,
-                item.break_width,
-            );
+            let ratio =
+                compute_adjustment_ratio(items, node.break_index, b, max_width, item.break_width);
 
             // If the line is too long even with maximum shrink, deactivate.
             if ratio < -1.0 {
@@ -2062,8 +2101,8 @@ pub fn walk_prepared_lines_optimal(
 
             let items = build_kp_items(&sub_prepared, profile, params);
 
-            let result = knuth_plass_chunk(&items, max_width, params, params.tolerance)
-                .or_else(|| {
+            let result =
+                knuth_plass_chunk(&items, max_width, params, params.tolerance).or_else(|| {
                     if params.looseness_recovery {
                         // Retry with progressively larger tolerance.
                         for extra in [2.0, 4.0, 8.0, 16.0] {
@@ -2095,12 +2134,8 @@ pub fn walk_prepared_lines_optimal(
                         *last = (chunk.consumed_end_segment_index, 0);
                     }
 
-                    total_lines += breakpoints_to_lines(
-                        prepared,
-                        profile,
-                        &final_breaks,
-                        &mut on_line,
-                    );
+                    total_lines +=
+                        breakpoints_to_lines(prepared, profile, &final_breaks, &mut on_line);
                 }
                 None => {
                     // Fall back to greedy for the entire paragraph.
@@ -2115,23 +2150,17 @@ pub fn walk_prepared_lines_optimal(
     // Single chunk: run KP directly.
     let items = build_kp_items(prepared, profile, params);
 
-    let result = knuth_plass_chunk(&items, max_width, params, params.tolerance)
-        .or_else(|| {
-            if params.looseness_recovery {
-                for extra in [2.0, 4.0, 8.0, 16.0] {
-                    let result = knuth_plass_chunk(
-                        &items,
-                        max_width,
-                        params,
-                        params.tolerance + extra,
-                    );
-                    if result.is_some() {
-                        return result;
-                    }
+    let result = knuth_plass_chunk(&items, max_width, params, params.tolerance).or_else(|| {
+        if params.looseness_recovery {
+            for extra in [2.0, 4.0, 8.0, 16.0] {
+                let result = knuth_plass_chunk(&items, max_width, params, params.tolerance + extra);
+                if result.is_some() {
+                    return result;
                 }
             }
-            None
-        });
+        }
+        None
+    });
 
     match result {
         Some(breaks) => breakpoints_to_lines(prepared, profile, &breaks, &mut on_line),
@@ -2182,7 +2211,11 @@ mod tests {
     fn test_single_line() {
         let prepared = simple_prepared(
             vec![50.0, 10.0, 40.0],
-            vec![SegmentBreakKind::Text, SegmentBreakKind::Space, SegmentBreakKind::Text],
+            vec![
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+            ],
         );
         let profile = EngineProfile::default();
         let count = count_prepared_lines(&prepared, 200.0, &profile);
@@ -2193,7 +2226,11 @@ mod tests {
     fn test_two_lines() {
         let prepared = simple_prepared(
             vec![50.0, 10.0, 50.0],
-            vec![SegmentBreakKind::Text, SegmentBreakKind::Space, SegmentBreakKind::Text],
+            vec![
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+            ],
         );
         let profile = EngineProfile::default();
         let count = count_prepared_lines(&prepared, 70.0, &profile);
@@ -2204,13 +2241,22 @@ mod tests {
     fn test_walk_lines() {
         let prepared = simple_prepared(
             vec![50.0, 10.0, 50.0],
-            vec![SegmentBreakKind::Text, SegmentBreakKind::Space, SegmentBreakKind::Text],
+            vec![
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+            ],
         );
         let profile = EngineProfile::default();
         let mut lines = Vec::new();
-        let count = walk_prepared_lines(&prepared, 70.0, &profile, Some(&mut |line: &InternalLayoutLine| {
-            lines.push(line.clone());
-        }));
+        let count = walk_prepared_lines(
+            &prepared,
+            70.0,
+            &profile,
+            Some(&mut |line: &InternalLayoutLine| {
+                lines.push(line.clone());
+            }),
+        );
         assert_eq!(count, 2);
         assert_eq!(lines.len(), 2);
     }
@@ -2234,10 +2280,7 @@ mod tests {
     #[test]
     fn test_kp_single_word() {
         // Single word "hello" = 50px, fits in 200px.
-        let prepared = simple_prepared(
-            vec![50.0],
-            vec![SegmentBreakKind::Text],
-        );
+        let prepared = simple_prepared(vec![50.0], vec![SegmentBreakKind::Text]);
         let profile = EngineProfile::default();
         let count = count_prepared_lines_optimal(&prepared, 200.0, &profile, &kp_params());
         assert_eq!(count, 1);
@@ -2248,7 +2291,11 @@ mod tests {
         // "hello world" = 50 + 10 + 40 = 100px, fits in 200px.
         let prepared = simple_prepared(
             vec![50.0, 10.0, 40.0],
-            vec![SegmentBreakKind::Text, SegmentBreakKind::Space, SegmentBreakKind::Text],
+            vec![
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+            ],
         );
         let profile = EngineProfile::default();
         let count = count_prepared_lines_optimal(&prepared, 200.0, &profile, &kp_params());
@@ -2260,7 +2307,11 @@ mod tests {
         // "hello world" = 50 + 10 + 50 = 110px, 70px max → should wrap.
         let prepared = simple_prepared(
             vec![50.0, 10.0, 50.0],
-            vec![SegmentBreakKind::Text, SegmentBreakKind::Space, SegmentBreakKind::Text],
+            vec![
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+            ],
         );
         let profile = EngineProfile::default();
         let count = count_prepared_lines_optimal(&prepared, 70.0, &profile, &kp_params());
@@ -2272,7 +2323,11 @@ mod tests {
         // "hello world" wrapping at 70px.
         let prepared = simple_prepared(
             vec![50.0, 10.0, 50.0],
-            vec![SegmentBreakKind::Text, SegmentBreakKind::Space, SegmentBreakKind::Text],
+            vec![
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+            ],
         );
         let profile = EngineProfile::default();
         let mut lines = Vec::new();
@@ -2307,10 +2362,14 @@ mod tests {
         let prepared = simple_prepared(
             vec![40.0, 10.0, 20.0, 10.0, 30.0, 10.0, 40.0, 10.0, 20.0],
             vec![
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
                 SegmentBreakKind::Text,
             ],
         );
@@ -2336,10 +2395,14 @@ mod tests {
         let prepared = simple_prepared(
             vec![30.0, 10.0, 30.0, 10.0, 30.0, 10.0, 30.0, 10.0, 30.0],
             vec![
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
                 SegmentBreakKind::Text,
             ],
         );
@@ -2461,7 +2524,11 @@ mod tests {
         // "hello world" → [Text(50), Space(10), Text(40)]
         let prepared = simple_prepared(
             vec![50.0, 10.0, 40.0],
-            vec![SegmentBreakKind::Text, SegmentBreakKind::Space, SegmentBreakKind::Text],
+            vec![
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+            ],
         );
         let profile = EngineProfile::default();
         let items = build_kp_items(&prepared, &profile, &kp_params());
@@ -2483,7 +2550,11 @@ mod tests {
         // Line width = 40 + 10 + 40 = 90 (exact fit).
         let prepared = simple_prepared(
             vec![40.0, 10.0, 40.0],
-            vec![SegmentBreakKind::Text, SegmentBreakKind::Space, SegmentBreakKind::Text],
+            vec![
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+            ],
         );
         let profile = EngineProfile::default();
         let items = build_kp_items(&prepared, &profile, &kp_params());
@@ -2499,7 +2570,11 @@ mod tests {
         // and should fall back to greedy.
         let prepared = simple_prepared(
             vec![50.0, 10.0, 50.0],
-            vec![SegmentBreakKind::Text, SegmentBreakKind::Space, SegmentBreakKind::Text],
+            vec![
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+            ],
         );
         let profile = EngineProfile::default();
         let mut params = kp_params();
@@ -2517,10 +2592,14 @@ mod tests {
         let prepared = simple_prepared(
             vec![30.0, 10.0, 30.0, 10.0, 30.0, 10.0, 30.0, 10.0, 30.0],
             vec![
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
                 SegmentBreakKind::Text,
             ],
         );
@@ -2563,16 +2642,21 @@ mod tests {
         // As width decreases, line count should increase monotonically.
         let prepared = simple_prepared(
             vec![
-                30.0, 10.0, 30.0, 10.0, 30.0, 10.0, 30.0, 10.0,
-                30.0, 10.0, 30.0, 10.0, 30.0,
+                30.0, 10.0, 30.0, 10.0, 30.0, 10.0, 30.0, 10.0, 30.0, 10.0, 30.0, 10.0, 30.0,
             ],
             vec![
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
-                SegmentBreakKind::Text, SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
+                SegmentBreakKind::Text,
+                SegmentBreakKind::Space,
                 SegmentBreakKind::Text,
             ],
         );
@@ -2581,7 +2665,10 @@ mod tests {
         let mut prev_count = 0;
         for width in [500.0, 200.0, 100.0, 80.0, 50.0] {
             let count = count_prepared_lines_optimal(&prepared, width, &profile, &kp_params());
-            assert!(count >= prev_count, "line count decreased at width {width}: {count} < {prev_count}");
+            assert!(
+                count >= prev_count,
+                "line count decreased at width {width}: {count} < {prev_count}"
+            );
             prev_count = count;
         }
     }

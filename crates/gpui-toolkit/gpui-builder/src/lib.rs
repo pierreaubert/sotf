@@ -61,7 +61,9 @@ pub use types::{
 };
 
 // gpui-pretext re-exports for text-measured sizing
-pub use gpui_pretext::{EngineProfile as TextEngineProfile, PrepareOptions as TextPrepareOptions, TextMeasure};
+pub use gpui_pretext::{
+    EngineProfile as TextEngineProfile, PrepareOptions as TextPrepareOptions, TextMeasure,
+};
 
 // Compat re-exports
 pub use compat::{

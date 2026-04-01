@@ -1,11 +1,11 @@
 //! C-compatible FFI functions for embedding GPUI in macOS Audio Unit ViewControllers.
 
 use crate::helpers::nslog;
-use crate::window::{au_window, PendingViewInfo, PENDING_VIEW};
+use crate::window::{PENDING_VIEW, PendingViewInfo, au_window};
 use gpui::{
-    div, point, px, rgb, App, AppCell, AppContext, Context, ElementId,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement, PlatformInput, Render,
-    RequestFrameOptions, StatefulInteractiveElement as _, Styled, Window, WindowOptions,
+    App, AppCell, AppContext, Context, ElementId, InteractiveElement as _, IntoElement,
+    MouseButton, ParentElement, PlatformInput, Render, RequestFrameOptions,
+    StatefulInteractiveElement as _, Styled, Window, WindowOptions, div, point, px, rgb,
 };
 use objc::runtime::Object;
 use std::ffi::CStr;
@@ -301,13 +301,7 @@ pub extern "C" fn gpui_au_mouse_dragged(context: *mut AuContext, x: f32, y: f32,
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn gpui_au_scroll_wheel(
-    context: *mut AuContext,
-    x: f32,
-    y: f32,
-    dx: f32,
-    dy: f32,
-) {
+pub extern "C" fn gpui_au_scroll_wheel(context: *mut AuContext, x: f32, y: f32, dx: f32, dy: f32) {
     if context.is_null() {
         return;
     }

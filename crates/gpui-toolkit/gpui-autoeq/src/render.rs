@@ -22,8 +22,8 @@ use crate::config::ParamLimits;
 use crate::constants::*;
 use crate::docs;
 use crate::form::{
-    is_narrow_default_layout, is_narrow_room_eq_layout, is_single_column_default_grid, AutoEqForm,
-    AutoEqLayoutMode,
+    AutoEqForm, AutoEqLayoutMode, is_narrow_default_layout, is_narrow_room_eq_layout,
+    is_single_column_default_grid,
 };
 use crate::layout_tree::solve_autoeq_layout;
 use crate::theme::AutoEqFormTheme;

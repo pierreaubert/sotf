@@ -1,7 +1,7 @@
 //! macOS display handling using NSScreen.
 
 use core_graphics::geometry::CGRect;
-use gpui::{px, size, Bounds, DisplayId, Pixels, PlatformDisplay};
+use gpui::{Bounds, DisplayId, Pixels, PlatformDisplay, px, size};
 use objc::{class, msg_send, sel, sel_impl};
 use uuid::Uuid;
 

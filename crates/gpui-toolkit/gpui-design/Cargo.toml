@@ -1,0 +1,25 @@
+[package]
+name = "gpui-design"
+version = "0.6.0"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license = "MIT"
+repository.workspace = true
+description = "Platform-adaptive design system (Apple HIG, Material 3, Fluent, Neutral)"
+
+[features]
+default = []
+gpui = ["dep:gpui"]
+
+[dependencies]
+gpui = { workspace = true, optional = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lib]
+name = "gpui_design"
+path = "src/lib.rs"

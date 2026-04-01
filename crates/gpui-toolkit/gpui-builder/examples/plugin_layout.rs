@@ -8,8 +8,7 @@
 //! Run: cargo run -p gpui-builder --example plugin_layout
 
 use gpui_builder::{
-    PluginColumnConstraint, PluginLayoutThresholds, PluginLayoutTree,
-    plugin_adaptations, solve,
+    PluginColumnConstraint, PluginLayoutThresholds, PluginLayoutTree, plugin_adaptations, solve,
     types::LayoutPreferences,
 };
 
@@ -50,7 +49,11 @@ fn main() {
             dir = format!("{:?}", adapt.group_direction),
             knob = format!("{:?}", adapt.knob_size),
             sh = adapt.slider_height,
-            viz = if adapt.show_visualizations { "yes" } else { "no " },
+            viz = if adapt.show_visualizations {
+                "yes"
+            } else {
+                "no "
+            },
         );
     }
     println!();

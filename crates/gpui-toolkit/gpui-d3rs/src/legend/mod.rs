@@ -24,6 +24,12 @@
 
 use crate::color::D3Color;
 
+#[cfg(feature = "gpui")]
+mod render;
+
+#[cfg(feature = "gpui")]
+pub use render::render_legend;
+
 /// Position of the legend relative to the chart
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LegendPosition {
@@ -420,6 +426,22 @@ mod tests {
         let (width, height) = legend.estimate_dimensions(7.0);
         assert!(width > 0.0);
         assert!(height > 0.0);
+    }
+
+    #[test]
+    fn test_legend_horizontal_dimensions() {
+        let legend = LegendConfig::new()
+            .orientation(LegendOrientation::Horizontal)
+            .items(vec![
+                LegendItem::color("A", D3Color::rgb(255, 0, 0)),
+                LegendItem::color("B", D3Color::rgb(0, 255, 0)),
+                LegendItem::color("C", D3Color::rgb(0, 0, 255)),
+            ]);
+        let (w, h) = legend.estimate_dimensions(7.0);
+        // Width should fit all 3 items inline
+        assert!(w > 60.0);
+        // Height should be ~1 row
+        assert!(h < 40.0);
     }
 
     #[test]

@@ -8,8 +8,8 @@ use gpui::*;
 use gpui_ui_kit::{
     Alert, AlertVariant, Badge, BadgeVariant, BreadcrumbItem, Breadcrumbs, Button, ButtonSize,
     ButtonVariant, Card, Code, ConfirmDialogVariant, EmptyState, HStack, Heading,
-    KeyboardShortcutLabel, KeyboardShortcutSize, SearchBar, SearchBarSize, StackSpacing,
-    StatusBar, StatusBarPosition, Text, TextSize, TextWeight, VStack,
+    KeyboardShortcutLabel, KeyboardShortcutSize, SearchBar, SearchBarSize, StackSpacing, StatusBar,
+    StatusBarPosition, Text, TextSize, TextWeight, VStack,
 };
 
 /// Component showcase that displays all UI kit components
@@ -342,13 +342,9 @@ impl ComponentShowcase {
                             .child(KeyboardShortcutLabel::new("⌘+K"))
                             .child(KeyboardShortcutLabel::new("Ctrl+Shift+P"))
                             .child(
-                                KeyboardShortcutLabel::new("Alt+F4")
-                                    .size(KeyboardShortcutSize::Lg),
+                                KeyboardShortcutLabel::new("Alt+F4").size(KeyboardShortcutSize::Lg),
                             )
-                            .child(
-                                KeyboardShortcutLabel::new("⌘+S")
-                                    .size(KeyboardShortcutSize::Sm),
-                            )
+                            .child(KeyboardShortcutLabel::new("⌘+S").size(KeyboardShortcutSize::Sm))
                             .build(),
                     )
                     .build(),
@@ -380,12 +376,9 @@ impl ComponentShowcase {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Sm)
-                            .child(
-                                div().w(px(250.0)).child(
-                                    SearchBar::new("search-demo")
-                                        .placeholder("Search albums..."),
-                                ),
-                            )
+                            .child(div().w(px(250.0)).child(
+                                SearchBar::new("search-demo").placeholder("Search albums..."),
+                            ))
                             .child(
                                 div().w(px(200.0)).child(
                                     SearchBar::new("search-filled")

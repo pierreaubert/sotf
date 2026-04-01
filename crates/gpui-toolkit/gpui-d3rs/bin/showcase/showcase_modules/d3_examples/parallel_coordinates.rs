@@ -12,9 +12,9 @@ use gpui::*;
 
 const CARS_CSV: &str = include_str!("../../data/cars.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    let width = 800.0_f64;
-    let height = 420.0_f64;
+pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+    let width = app.content_width as f64;
+    let height = (width * 0.525).min(app.content_height as f64 * 0.6);
     let margin_top = 30.0;
     let margin_bottom = 30.0;
     let margin_left = 40.0;

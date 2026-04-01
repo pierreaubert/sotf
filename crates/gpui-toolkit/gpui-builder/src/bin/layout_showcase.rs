@@ -17,6 +17,7 @@ use gpui_builder::types::LayoutPreferences;
 use gpui_builder::{
     Axis, ContainerNode, DisplayTier, LayoutNode, Sizing, SlotNode, SolvedNode, solve,
 };
+use gpui_design::DesignExt;
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;
 
@@ -164,7 +165,15 @@ fn muted(color: Rgba, alpha: f32) -> Rgba {
     }
 }
 
-fn panel_box(label: &str, size_info: &str, bg: Rgba, fg: Rgba) -> impl IntoElement {
+fn panel_box(
+    label: &str,
+    size_info: &str,
+    bg: Rgba,
+    fg: Rgba,
+    base_size: f32,
+    small_size: f32,
+    gap: f32,
+) -> impl IntoElement {
     div()
         .size_full()
         .bg(bg)
@@ -172,17 +181,17 @@ fn panel_box(label: &str, size_info: &str, bg: Rgba, fg: Rgba) -> impl IntoEleme
         .flex_col()
         .items_center()
         .justify_center()
-        .gap_1()
+        .gap(px(gap))
         .child(
             div()
-                .text_size(px(14.0))
+                .text_size(px(base_size))
                 .font_weight(FontWeight::BOLD)
                 .text_color(fg)
                 .child(SharedString::from(label.to_string())),
         )
         .child(
             div()
-                .text_size(px(11.0))
+                .text_size(px(small_size))
                 .text_color(muted(fg, 0.5))
                 .child(SharedString::from(size_info.to_string())),
         )
@@ -204,6 +213,7 @@ fn size_label(node: &SolvedNode) -> String {
 impl Render for ShowcaseView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let ds = cx.design();
         let bounds = window.bounds();
         let w: f32 = bounds.size.width.into();
         let h: f32 = bounds.size.height.into();
@@ -222,19 +232,29 @@ impl Render for ShowcaseView {
         let content_w = content.width;
         let content_h = content.height;
 
-        // Colors
-        let header_bg = rgba(0x1a1a2eff);
-        let footer_bg = rgba(0x1a1a2eff);
-        let sidebar_bg = rgba(0x1e2d1eff);
-        let main_bg = theme.surface;
-        let inspector_bg = rgba(0x2d1e1eff);
+        // Colors — tinted variants of surface to distinguish panels
+        let header_bg = theme.surface;
+        let footer_bg = theme.surface;
+        let sidebar_bg = theme.muted;
+        let main_bg = theme.background;
+        let inspector_bg = theme.muted;
         let divider_color = theme.border;
         let accent = theme.accent;
         let fg = theme.text_primary;
+        let base_sz = ds.typography.base_size;
+        let small_sz = ds.typography.small_size;
 
         let axis_label = if is_h { "Horizontal" } else { "Vertical" };
-        let sidebar_pct = if is_h { self.sidebar_ratio_h } else { self.sidebar_ratio_v } * 100.0;
-        let inspector_pct = if is_h { self.inspector_ratio_h } else { self.inspector_ratio_v } * 100.0;
+        let sidebar_pct = if is_h {
+            self.sidebar_ratio_h
+        } else {
+            self.sidebar_ratio_v
+        } * 100.0;
+        let inspector_pct = if is_h {
+            self.inspector_ratio_h
+        } else {
+            self.inspector_ratio_v
+        } * 100.0;
 
         div()
             .id("showcase-root")
@@ -252,26 +272,57 @@ impl Render for ShowcaseView {
                     .flex()
                     .flex_row()
                     .items_center()
-                    .px_4()
+                    .px(px(ds.spacing.card_padding))
                     .justify_between()
                     .child(
-                        div().flex().flex_row().gap_3().items_center()
-                            .child(div().text_size(px(14.0)).font_weight(FontWeight::BOLD).text_color(accent).child("gpui-builder"))
-                            .child(div().text_size(px(11.0)).text_color(theme.text_muted).child(
-                                SharedString::from(format!("{w:.0}x{h:.0}  {axis_label}"))
-                            )),
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(ds.spacing.control_gap + ds.spacing.grid_unit))
+                            .items_center()
+                            .child(
+                                div()
+                                    .text_size(px(base_sz))
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(accent)
+                                    .child("gpui-builder"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(small_sz))
+                                    .text_color(theme.text_muted)
+                                    .child(SharedString::from(format!(
+                                        "{w:.0}x{h:.0}  {axis_label}"
+                                    ))),
+                            ),
                     )
                     .child(
-                        div().text_size(px(11.0)).text_color(theme.text_muted)
+                        div()
+                            .text_size(px(small_sz))
+                            .text_color(theme.text_muted)
                             .child("drag dividers | click to collapse | resize window"),
                     ),
             )
             // ---- Content ----
             .child(self.render_content(
-                is_h, content_w, content_h,
-                &sidebar, &main_n, &inspector,
-                sidebar_bg, main_bg, inspector_bg,
-                divider_color, accent, fg, &tabs, &theme, cx,
+                is_h,
+                content_w,
+                content_h,
+                &sidebar,
+                &main_n,
+                &inspector,
+                sidebar_bg,
+                main_bg,
+                inspector_bg,
+                divider_color,
+                accent,
+                fg,
+                &tabs,
+                &theme,
+                base_sz,
+                small_sz,
+                ds.typography.large_size,
+                cx,
             ))
             // ---- Footer ----
             .child(
@@ -282,17 +333,20 @@ impl Render for ShowcaseView {
                     .flex()
                     .flex_row()
                     .items_center()
-                    .px_4()
+                    .px(px(ds.spacing.card_padding))
                     .justify_between()
                     .child(
-                        div().text_size(px(10.0)).text_color(theme.text_muted).child(
-                            SharedString::from(format!("sidebar: {sidebar_pct:.0}%  inspector: {inspector_pct:.0}%"))
-                        ),
+                        div()
+                            .text_size(px(small_sz))
+                            .text_color(theme.text_muted)
+                            .child(SharedString::from(format!(
+                                "sidebar: {sidebar_pct:.0}%  inspector: {inspector_pct:.0}%"
+                            ))),
                     )
                     .child(if !tabs.is_empty() {
                         let labels: Vec<&str> = tabs.iter().map(|(_, l)| *l).collect();
                         div()
-                            .text_size(px(10.0))
+                            .text_size(px(small_sz))
                             .text_color(accent)
                             .child(SharedString::from(format!("Tabs: {}", labels.join(", "))))
                             .into_any_element()
@@ -321,70 +375,143 @@ impl ShowcaseView {
         fg: Rgba,
         tabs: &[(&str, &str)],
         theme: &gpui_ui_kit::theme::Theme,
+        base_sz: f32,
+        small_sz: f32,
+        large_sz: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let ds = cx.design();
         // Shared mouse handlers for divider dragging
         let base = div()
             .id("content-area")
             .overflow_hidden()
-            .on_mouse_move(cx.listener(move |view, event: &MouseMoveEvent, window, _cx| {
-                let Some(target) = view.dragging else { return };
-                let ws = window.bounds().size;
-                let mx: f32 = event.position.x.into();
-                let my: f32 = event.position.y.into();
-                let ww: f32 = ws.width.into();
-                let wh: f32 = ws.height.into();
-                match (target, is_h) {
-                    (DragTarget::Sidebar, true) => view.sidebar_ratio_h = (mx / ww).clamp(0.08, 0.45),
-                    (DragTarget::Sidebar, false) => view.sidebar_ratio_v = (my / wh).clamp(0.08, 0.45),
-                    (DragTarget::Inspector, true) => view.inspector_ratio_h = (1.0 - mx / ww).clamp(0.08, 0.45),
-                    (DragTarget::Inspector, false) => view.inspector_ratio_v = (1.0 - my / wh).clamp(0.08, 0.45),
-                }
-            }))
-            .on_mouse_up(MouseButton::Left, cx.listener(|view, _: &MouseUpEvent, _, _| {
-                view.dragging = None;
-            }));
+            .on_mouse_move(
+                cx.listener(move |view, event: &MouseMoveEvent, window, _cx| {
+                    let Some(target) = view.dragging else { return };
+                    let ws = window.bounds().size;
+                    let mx: f32 = event.position.x.into();
+                    let my: f32 = event.position.y.into();
+                    let ww: f32 = ws.width.into();
+                    let wh: f32 = ws.height.into();
+                    match (target, is_h) {
+                        (DragTarget::Sidebar, true) => {
+                            view.sidebar_ratio_h = (mx / ww).clamp(0.08, 0.45)
+                        }
+                        (DragTarget::Sidebar, false) => {
+                            view.sidebar_ratio_v = (my / wh).clamp(0.08, 0.45)
+                        }
+                        (DragTarget::Inspector, true) => {
+                            view.inspector_ratio_h = (1.0 - mx / ww).clamp(0.08, 0.45)
+                        }
+                        (DragTarget::Inspector, false) => {
+                            view.inspector_ratio_v = (1.0 - my / wh).clamp(0.08, 0.45)
+                        }
+                    }
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseUpEvent, _, _| {
+                    view.dragging = None;
+                }),
+            );
 
         if is_h {
-            base
-                .h(px(content_h))
+            base.h(px(content_h))
                 .w_full()
                 .flex()
                 .flex_row()
                 // Sidebar
                 .when(sidebar.visible, |d: Stateful<Div>| {
-                    d.child(div().w(px(sidebar.width)).h_full().overflow_hidden()
-                        .child(panel_box("Sidebar", &size_label(sidebar), sidebar_bg, fg)))
+                    d.child(
+                        div()
+                            .w(px(sidebar.width))
+                            .h_full()
+                            .overflow_hidden()
+                            .child(panel_box(
+                                "Sidebar",
+                                &size_label(sidebar),
+                                sidebar_bg,
+                                fg,
+                                base_sz,
+                                small_sz,
+                                ds.spacing.grid_unit,
+                            )),
+                    )
                 })
                 // Sidebar divider
                 .child(self.divider_v("sidebar", divider_color, accent, cx))
                 // Main
-                .child(div().flex_1().h_full().overflow_hidden()
-                    .child(self.main_panel(main_n, main_bg, fg, tabs, theme)))
+                .child(
+                    div().flex_1().h_full().overflow_hidden().child(
+                        self.main_panel(main_n, main_bg, fg, tabs, theme, &ds, large_sz, small_sz),
+                    ),
+                )
                 // Inspector divider + panel
                 .when(inspector.visible, |d: Stateful<Div>| {
                     d.child(self.divider_v("inspector", divider_color, accent, cx))
-                     .child(div().w(px(inspector.width)).h_full().overflow_hidden()
-                        .child(panel_box("Inspector", &size_label(inspector), inspector_bg, fg)))
+                        .child(
+                            div()
+                                .w(px(inspector.width))
+                                .h_full()
+                                .overflow_hidden()
+                                .child(panel_box(
+                                    "Inspector",
+                                    &size_label(inspector),
+                                    inspector_bg,
+                                    fg,
+                                    base_sz,
+                                    small_sz,
+                                    ds.spacing.grid_unit,
+                                )),
+                        )
                 })
                 .into_any_element()
         } else {
-            base
-                .h(px(content_h))
+            base.h(px(content_h))
                 .w_full()
                 .flex()
                 .flex_col()
                 .when(sidebar.visible, |d: Stateful<Div>| {
-                    d.child(div().h(px(sidebar.height)).w_full().overflow_hidden()
-                        .child(panel_box("Sidebar", &size_label(sidebar), sidebar_bg, fg)))
+                    d.child(
+                        div()
+                            .h(px(sidebar.height))
+                            .w_full()
+                            .overflow_hidden()
+                            .child(panel_box(
+                                "Sidebar",
+                                &size_label(sidebar),
+                                sidebar_bg,
+                                fg,
+                                base_sz,
+                                small_sz,
+                                ds.spacing.grid_unit,
+                            )),
+                    )
                 })
                 .child(self.divider_h("sidebar", divider_color, accent, cx))
-                .child(div().flex_1().w_full().overflow_hidden()
-                    .child(self.main_panel(main_n, main_bg, fg, tabs, theme)))
+                .child(
+                    div().flex_1().w_full().overflow_hidden().child(
+                        self.main_panel(main_n, main_bg, fg, tabs, theme, &ds, large_sz, small_sz),
+                    ),
+                )
                 .when(inspector.visible, |d: Stateful<Div>| {
                     d.child(self.divider_h("inspector", divider_color, accent, cx))
-                     .child(div().h(px(inspector.height)).w_full().overflow_hidden()
-                        .child(panel_box("Inspector", &size_label(inspector), inspector_bg, fg)))
+                        .child(
+                            div()
+                                .h(px(inspector.height))
+                                .w_full()
+                                .overflow_hidden()
+                                .child(panel_box(
+                                    "Inspector",
+                                    &size_label(inspector),
+                                    inspector_bg,
+                                    fg,
+                                    base_sz,
+                                    small_sz,
+                                    ds.spacing.grid_unit,
+                                )),
+                        )
                 })
                 .into_any_element()
         }
@@ -397,6 +524,9 @@ impl ShowcaseView {
         fg: Rgba,
         tabs: &[(&str, &str)],
         theme: &gpui_ui_kit::theme::Theme,
+        ds: &gpui_design::DesignSystem,
+        large_sz: f32,
+        small_sz: f32,
     ) -> impl IntoElement {
         let mut el = div()
             .size_full()
@@ -405,27 +535,40 @@ impl ShowcaseView {
             .flex_col()
             .items_center()
             .justify_center()
-            .gap_2()
+            .gap(px(ds.spacing.control_gap))
             .child(
-                div().text_size(px(16.0)).font_weight(FontWeight::BOLD).text_color(fg)
+                div()
+                    .text_size(px(large_sz))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(fg)
                     .child("Main Content"),
             )
             .child(
-                div().text_size(px(11.0)).text_color(muted(fg, 0.5))
-                    .child(SharedString::from(format!("{:.0} x {:.0}", node.width, node.height))),
+                div()
+                    .text_size(px(small_sz))
+                    .text_color(muted(fg, 0.5))
+                    .child(SharedString::from(format!(
+                        "{:.0} x {:.0}",
+                        node.width, node.height
+                    ))),
             );
 
         if !tabs.is_empty() {
             el = el.child(
-                div().mt_4().flex().flex_row().gap_2()
+                div()
+                    .mt(px(ds.spacing.section_gap))
+                    .flex()
+                    .flex_row()
+                    .gap(px(ds.spacing.control_gap))
                     .children(tabs.iter().map(|(_, label)| {
                         div()
-                            .px_3().py_1()
-                            .rounded_md()
+                            .px(px(ds.spacing.control_padding_x))
+                            .py(px(ds.spacing.control_padding_y * 0.5))
+                            .rounded(px(ds.corners.md))
                             .bg(muted(theme.accent, 0.15))
                             .border_1()
                             .border_color(muted(theme.accent, 0.3))
-                            .text_size(px(11.0))
+                            .text_size(px(small_sz))
                             .text_color(theme.accent)
                             .child(SharedString::from(label.to_string()))
                     })),
@@ -444,18 +587,27 @@ impl ShowcaseView {
     ) -> impl IntoElement {
         let id = SharedString::from(format!("div-v-{panel}"));
         let is_sidebar = panel == "sidebar";
-        let target = if is_sidebar { DragTarget::Sidebar } else { DragTarget::Inspector };
+        let target = if is_sidebar {
+            DragTarget::Sidebar
+        } else {
+            DragTarget::Inspector
+        };
         let panel_owned = panel.to_string();
 
         div()
             .id(id)
-            .w(px(6.0)).h_full().flex_shrink_0()
+            .w(px(6.0))
+            .h_full()
+            .flex_shrink_0()
             .bg(bg)
             .hover(move |s| s.bg(hover_bg))
             .cursor_col_resize()
-            .on_mouse_down(MouseButton::Left, cx.listener(move |view, _: &MouseDownEvent, _, _| {
-                view.dragging = Some(target);
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |view, _: &MouseDownEvent, _, _| {
+                    view.dragging = Some(target);
+                }),
+            )
             .on_click(cx.listener(move |view, _: &ClickEvent, _, _| {
                 if panel_owned == "sidebar" {
                     view.sidebar_collapsed = !view.sidebar_collapsed;
@@ -474,18 +626,27 @@ impl ShowcaseView {
     ) -> impl IntoElement {
         let id = SharedString::from(format!("div-h-{panel}"));
         let is_sidebar = panel == "sidebar";
-        let target = if is_sidebar { DragTarget::Sidebar } else { DragTarget::Inspector };
+        let target = if is_sidebar {
+            DragTarget::Sidebar
+        } else {
+            DragTarget::Inspector
+        };
         let panel_owned = panel.to_string();
 
         div()
             .id(id)
-            .h(px(6.0)).w_full().flex_shrink_0()
+            .h(px(6.0))
+            .w_full()
+            .flex_shrink_0()
             .bg(bg)
             .hover(move |s| s.bg(hover_bg))
             .cursor_row_resize()
-            .on_mouse_down(MouseButton::Left, cx.listener(move |view, _: &MouseDownEvent, _, _| {
-                view.dragging = Some(target);
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |view, _: &MouseDownEvent, _, _| {
+                    view.dragging = Some(target);
+                }),
+            )
             .on_click(cx.listener(move |view, _: &ClickEvent, _, _| {
                 if panel_owned == "sidebar" {
                     view.sidebar_collapsed = !view.sidebar_collapsed;

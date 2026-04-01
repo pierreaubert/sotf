@@ -265,6 +265,15 @@ impl Element for Surface3DElement {
 
         // Draw axis labels (AFTER rendering surface to be ON TOP)
         let camera = &self.state.borrow().camera;
+
+        // Pick overlay color that contrasts with the background
+        let bg = self.config.background_color;
+        let luminance = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2];
+        let overlay_color = if luminance > 0.5 {
+            gpui::rgba(0x000000ff) // dark text on light background
+        } else {
+            gpui::rgba(0xffffffff) // white text on dark background
+        };
         // Re-use width/height f32 from above
 
         // Helper to draw text at 3D position
@@ -280,7 +289,7 @@ impl Element for Surface3DElement {
                     let mut y = screen_pos.y + f32::from(bounds.origin.y);
 
                     let font_size = 10.0;
-                    let color = gpui::rgba(0xffffffff); // White text for dark backgrounds
+                    let color = overlay_color;
 
                     // Simple alignment adjustment
                     if align_right {
@@ -338,7 +347,7 @@ impl Element for Surface3DElement {
                         builder.move_to(p1);
                         builder.line_to(p2);
                         if let Ok(path) = builder.build() {
-                            window.paint_path(path, gpui::rgba(0xffffffff));
+                            window.paint_path(path, overlay_color);
                         }
                     }
 
@@ -386,7 +395,7 @@ impl Element for Surface3DElement {
                             screen_y,
                             font_size,
                             1.0,
-                            gpui::rgba(0xffffffff),
+                            overlay_color,
                             0.0, // Always upright (face camera)
                         );
                     }
@@ -599,7 +608,7 @@ impl Element for Surface3DElement {
                         builder.move_to(p1);
                         builder.line_to(p2);
                         if let Ok(path) = builder.build() {
-                            window.paint_path(path, gpui::rgba(0xffffffff));
+                            window.paint_path(path, overlay_color);
                         }
                     }
 
@@ -642,7 +651,7 @@ impl Element for Surface3DElement {
                             screen_y,
                             font_size,
                             1.0,
-                            gpui::rgba(0xffffffff),
+                            overlay_color,
                             0.0,
                         );
                     }
@@ -761,7 +770,7 @@ impl Element for Surface3DElement {
             ));
             builder.line_to(gpui::point(px(colorbar_x), px(colorbar_y)));
             if let Ok(path) = builder.build() {
-                window.paint_path(path, gpui::rgba(0xffffffff));
+                window.paint_path(path, overlay_color);
             }
 
             // Draw tick labels for colorbar
@@ -777,7 +786,7 @@ impl Element for Surface3DElement {
                 builder.move_to(gpui::point(px(colorbar_x + colorbar_width), px(y)));
                 builder.line_to(gpui::point(px(colorbar_x + colorbar_width + 4.0), px(y)));
                 if let Ok(path) = builder.build() {
-                    window.paint_path(path, gpui::rgba(0xffffffff));
+                    window.paint_path(path, overlay_color);
                 }
 
                 // Draw label
@@ -789,7 +798,7 @@ impl Element for Surface3DElement {
                     y - font_size / 2.0,
                     font_size,
                     1.0,
-                    gpui::rgba(0xffffffff),
+                    overlay_color,
                     0.0,
                 );
             }
@@ -806,7 +815,7 @@ impl Element for Surface3DElement {
                     label_y,
                     10.0,
                     1.0,
-                    gpui::rgba(0xffffffff),
+                    overlay_color,
                     0.0,
                 );
             }

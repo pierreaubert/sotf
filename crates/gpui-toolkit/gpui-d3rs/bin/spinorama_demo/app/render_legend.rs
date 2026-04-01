@@ -1,12 +1,12 @@
 impl SpinoramaApp {
-    fn render_legend(&self, colors: &HashMap<&'static str, D3Color>) -> Div {
+    fn render_legend(&self, colors: &HashMap<&'static str, D3Color>, ds: &DesignSystem, theme: &Theme) -> Div {
         div()
             .flex()
             .flex_wrap()
-            .gap_4()
-            .p_4()
-            .bg(rgb(0xf5f5f5))
-            .rounded_md()
+            .gap(px(ds.spacing.section_gap))
+            .p(px(ds.spacing.card_padding))
+            .bg(theme.muted)
+            .rounded(px(ds.corners.md))
             .children(CEA2034_CURVES.iter().map(|&name| {
                 let color = colors
                     .get(name)
@@ -17,15 +17,14 @@ impl SpinoramaApp {
                     (color.g * 255.0) as u32,
                     (color.b * 255.0) as u32,
                 );
-                let font_config = VectorFontConfig::horizontal(12.0, hsla(0.0, 0.0, 0.2, 1.0));
+                let font_config = VectorFontConfig::horizontal((12.0 * self.font_scale()).round(), Hsla::from(theme.text_primary));
 
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap(px(ds.spacing.control_gap))
                     .child(div().w(px(16.0)).h(px(3.0)).bg(rgb(r << 16 | g << 8 | b)))
                     .child(render_vector_text(name, &font_config))
             }))
     }
 }
-

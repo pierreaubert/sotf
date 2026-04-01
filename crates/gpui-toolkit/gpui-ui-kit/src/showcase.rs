@@ -10,7 +10,7 @@ use crate::i18n::{I18nExt, TranslationKey};
 use crate::menu::{Menu, MenuItem};
 use crate::theme::ThemeExt;
 use crate::wizard::StepStatus;
-use crate::workflow::{WorkflowCanvas, WorkflowGraph, WorkflowNodeData, Position};
+use crate::workflow::{Position, WorkflowCanvas, WorkflowGraph, WorkflowNodeData};
 use crate::*;
 use std::collections::HashSet;
 
@@ -1012,12 +1012,9 @@ impl Showcase {
         let x = 100.0 + (id as f32 * 30.0) % 400.0;
         let y = 100.0 + (id as f32 * 20.0) % 300.0;
 
-        let node = WorkflowNodeData::new(
-            format!("Node {}", id),
-            Position::new(x, y),
-        )
-        .with_ports(1, 1)
-        .with_size(160.0, 70.0);
+        let node = WorkflowNodeData::new(format!("Node {}", id), Position::new(x, y))
+            .with_ports(1, 1)
+            .with_size(160.0, 70.0);
 
         self.workflow_graph.add_node(node);
     }

@@ -47,20 +47,13 @@ pub enum Sizing<'a> {
     /// `initial` is the default ratio (0.0..=1.0); user preferences can override it.
     /// `min` and `max` are hard pixel bounds.
     /// Use for: resizable side panels (library, rack).
-    Fractional {
-        initial: f32,
-        min: f32,
-        max: f32,
-    },
+    Fractional { initial: f32, min: f32, max: f32 },
 
     /// Flex: takes all remaining space after siblings are allocated.
     /// If multiple Flex siblings exist, they split remaining space by weight.
     /// `min` is the absolute minimum in pixels.
     /// Use for: main content areas (queue panel, plugin main column).
-    Flex {
-        min: f32,
-        weight: f32,
-    },
+    Flex { min: f32, weight: f32 },
 
     /// Text-measured: size is computed by laying out `text` with gpui-pretext.
     ///
@@ -83,11 +76,23 @@ impl<'a> std::fmt::Debug for Sizing<'a> {
         match self {
             Sizing::Fixed(v) => write!(f, "Fixed({v})"),
             Sizing::Fractional { initial, min, max } => {
-                write!(f, "Fractional {{ initial: {initial}, min: {min}, max: {max} }}")
+                write!(
+                    f,
+                    "Fractional {{ initial: {initial}, min: {min}, max: {max} }}"
+                )
             }
             Sizing::Flex { min, weight } => write!(f, "Flex {{ min: {min}, weight: {weight} }}"),
-            Sizing::Text { text, line_height, min, .. } => {
-                write!(f, "Text {{ text: {:?}, line_height: {line_height}, min: {min} }}", text)
+            Sizing::Text {
+                text,
+                line_height,
+                min,
+                ..
+            } => {
+                write!(
+                    f,
+                    "Text {{ text: {:?}, line_height: {line_height}, min: {min} }}",
+                    text
+                )
             }
         }
     }
@@ -98,23 +103,45 @@ impl<'a> PartialEq for Sizing<'a> {
         match (self, other) {
             (Sizing::Fixed(a), Sizing::Fixed(b)) => a == b,
             (
-                Sizing::Fractional { initial: i1, min: mn1, max: mx1 },
-                Sizing::Fractional { initial: i2, min: mn2, max: mx2 },
+                Sizing::Fractional {
+                    initial: i1,
+                    min: mn1,
+                    max: mx1,
+                },
+                Sizing::Fractional {
+                    initial: i2,
+                    min: mn2,
+                    max: mx2,
+                },
             ) => i1 == i2 && mn1 == mn2 && mx1 == mx2,
-            (Sizing::Flex { min: mn1, weight: w1 }, Sizing::Flex { min: mn2, weight: w2 }) => {
-                mn1 == mn2 && w1 == w2
-            }
             (
-                Sizing::Text { text: t1, measure: m1, line_height: lh1, min: mn1 },
-                Sizing::Text { text: t2, measure: m2, line_height: lh2, min: mn2 },
+                Sizing::Flex {
+                    min: mn1,
+                    weight: w1,
+                },
+                Sizing::Flex {
+                    min: mn2,
+                    weight: w2,
+                },
+            ) => mn1 == mn2 && w1 == w2,
+            (
+                Sizing::Text {
+                    text: t1,
+                    measure: m1,
+                    line_height: lh1,
+                    min: mn1,
+                },
+                Sizing::Text {
+                    text: t2,
+                    measure: m2,
+                    line_height: lh2,
+                    min: mn2,
+                },
             ) => {
                 t1 == t2
                     && lh1 == lh2
                     && mn1 == mn2
-                    && std::ptr::eq(
-                        *m1 as *const dyn TextMeasure,
-                        *m2 as *const dyn TextMeasure,
-                    )
+                    && std::ptr::eq(*m1 as *const dyn TextMeasure, *m2 as *const dyn TextMeasure)
             }
             _ => false,
         }

@@ -198,6 +198,7 @@ pub use color_tokens::{
     BackgroundColors, BorderColors, ColorPalette, ColorToken, SemanticColors, TextColors, darken,
     desaturate, lighten, saturate, with_alpha,
 };
+pub use gpui_design::{DesignExt, DesignSystem, DesignSystemState};
 pub use i18n::{I18nExt, I18nState, Language, TranslationKey, Translations};
 pub use theme::{Theme, ThemeExt, ThemeState, ThemeVariant};
 

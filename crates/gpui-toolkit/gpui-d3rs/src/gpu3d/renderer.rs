@@ -326,11 +326,7 @@ impl Surface3DRenderer {
                         depth_write_enabled: Some(true),
                         depth_compare: Some(wgpu::CompareFunction::LessEqual),
                         stencil: Default::default(),
-                        bias: wgpu::DepthBiasState {
-                            constant: -4,      // Stronger bias to pull lines forward
-                            slope_scale: -2.0, // Slope-scaled bias for angled surfaces
-                            clamp: 0.0,
-                        },
+                        bias: Default::default(), // bias not compatible with LineList topology
                     }),
                     multisample: wgpu::MultisampleState {
                         count: config.msaa_samples,

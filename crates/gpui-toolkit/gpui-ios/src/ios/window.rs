@@ -10,22 +10,22 @@
 //! whose view hosts a CAMetalLayer. Rendering is performed by
 //! `gpui_wgpu::WgpuRenderer` which drives wgpu over the Metal backend.
 
-use super::events::*;
 use super::IosDisplay;
+use super::events::*;
 use crate::momentum::{MomentumScroller, VelocityTracker};
 use gpui::{
-    point, px, size, AnyWindowHandle, AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile,
-    Bounds, Capslock, DevicePixels, DispatchEventResult, GpuSpecs, Modifiers, Pixels,
-    PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
-    PromptButton, PromptLevel, RequestFrameOptions, Scene, Size, TileId, WindowAppearance,
-    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowParams,
+    AnyWindowHandle, AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile, Bounds, Capslock,
+    DevicePixels, DispatchEventResult, GpuSpecs, Modifiers, Pixels, PlatformAtlas, PlatformDisplay,
+    PlatformInput, PlatformInputHandler, PlatformWindow, Point, PromptButton, PromptLevel,
+    RequestFrameOptions, Scene, Size, TileId, WindowAppearance, WindowBackgroundAppearance,
+    WindowBounds, WindowControlArea, WindowParams, point, px, size,
 };
 use gpui_wgpu::{WgpuContext, WgpuRenderer, WgpuSurfaceConfig};
 use objc::{
     class,
     declare::ClassDecl,
     msg_send,
-    runtime::{Class, Object, Sel, BOOL, YES},
+    runtime::{BOOL, Class, Object, Sel, YES},
     sel, sel_impl,
 };
 use parking_lot::Mutex;
@@ -247,13 +247,11 @@ fn register_metal_view_class() -> &'static Class {
             {
                 decl.add_method(
                     sel!(pressesBegan:withEvent:),
-                    presses_began
-                        as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+                    presses_began as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
                 );
                 decl.add_method(
                     sel!(pressesEnded:withEvent:),
-                    presses_ended
-                        as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+                    presses_ended as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
                 );
                 decl.add_method(
                     sel!(canBecomeFocused),
@@ -418,12 +416,7 @@ fn register_text_input_view_class() -> &'static Class {
 //                     select=4, menu=5, playPause=6
 
 #[cfg(target_os = "tvos")]
-fn handle_presses(
-    view: &mut Object,
-    presses: *mut Object,
-    _event: *mut Object,
-    is_down: bool,
-) {
+fn handle_presses(view: &mut Object, presses: *mut Object, _event: *mut Object, is_down: bool) {
     unsafe {
         let window_ptr: *mut std::ffi::c_void = *view.get_ivar(GPUI_WINDOW_IVAR);
         if window_ptr.is_null() {
@@ -899,17 +892,14 @@ impl IosWindow {
                             // MouseDown at the original touch-down position.
                             // If a drag-handler (EQ knob, slider, etc.)
                             // consumes it, enter Dragging mode instead.
-                            let start_pos =
-                                gpui::point(gpui::px(start_x), gpui::px(start_y));
-                            let result = emit(PlatformInput::MouseDown(
-                                gpui::MouseDownEvent {
-                                    button: gpui::MouseButton::Left,
-                                    position: start_pos,
-                                    modifiers,
-                                    click_count: 1,
-                                    first_mouse: false,
-                                },
-                            ));
+                            let start_pos = gpui::point(gpui::px(start_x), gpui::px(start_y));
+                            let result = emit(PlatformInput::MouseDown(gpui::MouseDownEvent {
+                                button: gpui::MouseButton::Left,
+                                position: start_pos,
+                                modifiers,
+                                click_count: 1,
+                                first_mouse: false,
+                            }));
 
                             if !result.propagate {
                                 // GPUI consumed the press (drag handler, knob,
@@ -930,16 +920,15 @@ impl IosWindow {
                                     prev_x: logical_x,
                                     prev_y: logical_y,
                                 };
-                                emit(PlatformInput::ScrollWheel(
-                                    gpui::ScrollWheelEvent {
-                                        position,
-                                        delta: gpui::ScrollDelta::Pixels(
-                                            gpui::point(gpui::px(dx), gpui::px(dy)),
-                                        ),
-                                        modifiers,
-                                        touch_phase: gpui::TouchPhase::Started,
-                                    },
-                                ));
+                                emit(PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+                                    position,
+                                    delta: gpui::ScrollDelta::Pixels(gpui::point(
+                                        gpui::px(dx),
+                                        gpui::px(dy),
+                                    )),
+                                    modifiers,
+                                    touch_phase: gpui::TouchPhase::Started,
+                                }));
                             }
                         }
                         // Always emit MouseMove so interactive screens can
@@ -1188,10 +1177,7 @@ impl IosWindow {
                     };
                     emit(PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
                         position,
-                        delta: gpui::ScrollDelta::Pixels(gpui::point(
-                            gpui::px(dx),
-                            gpui::px(dy),
-                        )),
+                        delta: gpui::ScrollDelta::Pixels(gpui::point(gpui::px(dx), gpui::px(dy))),
                         modifiers,
                         touch_phase: gpui::TouchPhase::Moved,
                     }));

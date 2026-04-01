@@ -8,6 +8,7 @@
 //! - Clipboard uses NSPasteboard (macOS) instead of UIPasteboard
 
 use super::AuDisplay;
+use super::{AuDispatcher, AuTextSystem};
 use anyhow::anyhow;
 use futures::channel::oneshot;
 use gpui::{
@@ -16,7 +17,6 @@ use gpui::{
     PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem, PlatformWindow, Result,
     Task, ThermalState, WindowAppearance, WindowParams,
 };
-use super::{AuDispatcher, AuTextSystem};
 use objc::{class, msg_send, sel, sel_impl};
 use parking_lot::Mutex;
 use std::{
@@ -142,8 +142,7 @@ impl Platform for AuPlatform {
             if appearance_name.is_null() {
                 return WindowAppearance::Light;
             }
-            let dark_name: *mut objc::runtime::Object =
-                msg_send![class!(NSString), stringWithUTF8String: c"NSAppearanceNameDarkAqua".as_ptr()];
+            let dark_name: *mut objc::runtime::Object = msg_send![class!(NSString), stringWithUTF8String: c"NSAppearanceNameDarkAqua".as_ptr()];
             let is_dark: bool = msg_send![appearance_name, isEqualToString: dark_name];
             if is_dark {
                 WindowAppearance::Dark
@@ -241,8 +240,10 @@ impl Platform for AuPlatform {
         unsafe {
             let pasteboard: *mut objc::runtime::Object =
                 msg_send![class!(NSPasteboard), generalPasteboard];
-            let string_type: *mut objc::runtime::Object = msg_send![class!(NSPasteboardType), string];
-            let string: *mut objc::runtime::Object = msg_send![pasteboard, stringForType: string_type];
+            let string_type: *mut objc::runtime::Object =
+                msg_send![class!(NSPasteboardType), string];
+            let string: *mut objc::runtime::Object =
+                msg_send![pasteboard, stringForType: string_type];
             if string.is_null() {
                 return None;
             }

@@ -4,6 +4,11 @@
 
 use gpui::prelude::*;
 use gpui::*;
+use gpui_builder::{
+    Axis, ContainerNode, LayoutNode, Sizing, SlotNode, SolvedNode, solve, types::LayoutPreferences,
+};
+use gpui_design::DesignExt;
+use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::{MiniApp, MiniAppConfig};
 
 mod showcase_modules;
@@ -256,13 +261,16 @@ impl GeoProjectionType {
 
 pub struct ShowcaseApp {
     pub current_section: DemoSection,
+    // Available content dimensions (updated each render from window bounds)
+    pub content_width: f32,
+    pub content_height: f32,
     // Geo demo parameters
     pub geo_projection_type: GeoProjectionType,
     pub geo_rotation_lon: f64,
     pub geo_rotation_lat: f64,
     pub geo_zoom: f64,
-    pub stippling_iterations: usize,  // current displayed iteration
-    pub stippling_target: usize,      // target iteration (user selected)
+    pub stippling_iterations: usize, // current displayed iteration
+    pub stippling_target: usize,     // target iteration (user selected)
     pub stippling_state: Option<d3rs::examples::voronoi_stippling::StipplingState>,
     pub stippling_density: Option<Vec<f64>>,
     pub stippling_img_size: (usize, usize),
@@ -331,6 +339,8 @@ impl ShowcaseApp {
 
         Self {
             current_section: DemoSection::default(),
+            content_width: 700.0,
+            content_height: 600.0,
             // Geo demo defaults
             geo_projection_type: GeoProjectionType::default(),
             geo_rotation_lon: 0.0,
@@ -402,55 +412,98 @@ impl ShowcaseApp {
         }
     }
 
-    fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn solve_layout(&self, w: f32, h: f32) -> SolvedNode {
+        let content_children: &[LayoutNode<'_>] = &[
+            LayoutNode::Slot(SlotNode {
+                id: "sidebar",
+                sizing: Sizing::fractional(0.18, 120.0),
+                priority: 1.0,
+                collapsible: false,
+                display_tiers: &[],
+                collapse_label: None,
+            }),
+            LayoutNode::Slot(SlotNode {
+                id: "content",
+                sizing: Sizing::flex(200.0),
+                priority: 1.0,
+                collapsible: false,
+                display_tiers: &[],
+                collapse_label: None,
+            }),
+        ];
+
+        let root = LayoutNode::Container(ContainerNode {
+            id: "root",
+            axis: Axis::Horizontal,
+            auto_axis: Some(1.0),
+            sizing: Sizing::flex(0.0),
+            children: content_children,
+            divider_size: 0.0,
+        });
+
+        let prefs = LayoutPreferences {
+            ratios: &[],
+            collapsed: &[],
+        };
+
+        solve(&root, w, h, &prefs)
+    }
+
+    fn render_sidebar(&mut self, sidebar_width: f32, cx: &mut Context<Self>) -> impl IntoElement {
         let current = self.current_section;
+        let theme = cx.theme();
+        let ds = cx.design();
 
         div()
-            .w(px(200.0))
+            .w(px(sidebar_width))
             .id("sidebar-scroll")
             .h_full()
-            .bg(rgb(0x1e1e1e))
+            .bg(theme.surface)
             .border_r_1()
-            .border_color(rgb(0x3c3c3c))
+            .border_color(theme.border)
             .flex()
             .flex_col()
             .overflow_y_scroll()
-            .p_4()
-            .gap_2()
+            .p(px(ds.spacing.card_padding))
+            .gap(px(ds.spacing.control_gap))
             .child(
                 div()
-                    .text_lg()
+                    .text_size(px(ds.typography.large_size))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0xffffff))
-                    .mb_2()
+                    .text_color(theme.text_primary)
+                    .mb(px(ds.spacing.control_gap))
                     .child("d3rs Showcase"),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .mb_4()
+                    .gap(px(ds.spacing.control_gap))
+                    .mb(px(ds.spacing.section_gap))
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(rgb(0xaaaaaa))
+                            .text_size(px(ds.typography.small_size))
+                            .text_color(theme.text_muted)
                             .child("World Data:"),
                     )
                     .child(
                         div()
                             .id("data-toggle")
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
+                            .px(px(ds.spacing.control_padding_x * 0.7))
+                            .py(px(ds.spacing.control_padding_y * 0.5))
+                            .rounded(px(ds.corners.sm))
                             .cursor_pointer()
                             .bg(if self.use_large_data {
-                                rgb(0x448844)
+                                theme.accent
                             } else {
-                                rgb(0x444444)
+                                theme.surface_hover
                             })
-                            .text_color(rgb(0xffffff))
-                            .text_xs()
+                            .text_color(if self.use_large_data {
+                                theme.text_on_accent
+                            } else {
+                                theme.text_primary
+                            })
+                            .text_size(px(ds.typography.small_size * 0.85))
                             .child(if self.use_large_data {
                                 "Large (50m)"
                             } else {
@@ -464,25 +517,25 @@ impl ShowcaseApp {
             .children(DemoSection::all().into_iter().map(|section| {
                 let is_selected = section == current;
                 let bg = if is_selected {
-                    rgb(0x007acc)
+                    theme.accent
                 } else {
-                    rgb(0x1e1e1e)
+                    theme.surface
                 };
                 let hover_bg = if is_selected {
-                    rgb(0x007acc)
+                    theme.accent
                 } else {
-                    rgb(0x2d2d2d)
+                    theme.surface_hover
                 };
 
                 div()
                     .id(ElementId::Name(section.label().into()))
-                    .px_3()
-                    .py_2()
-                    .rounded_md()
+                    .px(px(ds.spacing.control_padding_x))
+                    .py(px(ds.spacing.control_padding_y))
+                    .rounded(px(ds.corners.md))
                     .cursor_pointer()
                     .bg(bg)
-                    .hover(|s| s.bg(hover_bg))
-                    .text_color(rgb(0xffffff))
+                    .hover(move |s| s.bg(hover_bg))
+                    .text_color(theme.text_primary)
                     .child(section.label())
                     .on_click(cx.listener(move |this, _, _window, _cx| {
                         this.current_section = section;
@@ -589,22 +642,27 @@ impl ShowcaseApp {
                 showcase_modules::d3_examples::electric_usage::render(self, cx)
             }
             DemoSection::D3StarMap => showcase_modules::d3_examples::star_map::render(self, cx),
-            DemoSection::D3VoronoiStippling => showcase_modules::d3_examples::voronoi_stippling::render(self, cx),
+            DemoSection::D3VoronoiStippling => {
+                showcase_modules::d3_examples::voronoi_stippling::render(self, cx)
+            }
         };
+
+        let theme = cx.theme();
+        let ds = cx.design();
 
         div()
             .id("content-scroll")
             .flex_1()
             .h_full()
             .overflow_y_scroll()
-            .bg(rgb(0xffffff))
-            .p_8()
+            .bg(theme.background)
+            .p(px(ds.spacing.section_gap * 2.0))
             .child(content)
     }
 }
 
 impl Render for ShowcaseApp {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Snapshot automation logic
         if self.snapshot_mode {
             if self.snapshot_index == 0 {
@@ -680,10 +738,20 @@ impl Render for ShowcaseApp {
             cx.notify();
         }
 
+        let bounds = window.bounds();
+        let w: f32 = bounds.size.width.into();
+        let h: f32 = bounds.size.height.into();
+        let solved = self.solve_layout(w, h);
+        let sidebar_width = solved.find("sidebar").unwrap().width;
+        let ds = cx.design();
+        self.content_width = (w - sidebar_width - ds.spacing.section_gap * 4.0).max(400.0);
+        self.content_height = (h - ds.spacing.section_gap * 4.0).max(300.0);
+
         div()
-            .flex()
             .size_full()
-            .child(self.render_sidebar(cx))
+            .flex()
+            .flex_row()
+            .child(self.render_sidebar(sidebar_width, cx))
             .child(self.render_content(cx))
     }
 }

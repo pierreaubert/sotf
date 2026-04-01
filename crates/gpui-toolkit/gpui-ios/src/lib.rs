@@ -142,4 +142,4 @@ pub fn safe_area_insets() -> (f32, f32, f32, f32) {
 pub mod ios;
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
-pub use ios::{current_platform, IosPlatform};
+pub use ios::{IosPlatform, current_platform};

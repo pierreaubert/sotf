@@ -563,20 +563,21 @@ mod tests {
 
     #[test]
     fn test_antimeridian_with_orthographic_projection() {
-        // Test antimeridian handling with non-Equirectangular projection
+        // Test antimeridian handling with non-Equirectangular projection.
+        // Use points on the visible hemisphere (within 90° of center at 0°,0°).
         use crate::geo::projection::Orthographic;
 
         let proj = Orthographic::new().scale(100.0).translate(0.0, 0.0);
         let path = GeoPath::new(proj);
 
-        let geometry = GeoJsonGeometry::LineString(vec![(170.0, 0.0), (-170.0, 0.0)]);
+        // Points at ±45° longitude are on the visible hemisphere
+        let geometry = GeoJsonGeometry::LineString(vec![(45.0, 0.0), (-45.0, 0.0)]);
         let svg = path.render(&geometry);
 
-        // Should detect crossing even with different projection
         let m_count = svg.matches('M').count();
         assert!(
             m_count >= 1,
-            "Should handle antimeridian with Orthographic projection"
+            "Should render visible-hemisphere line with Orthographic projection"
         );
     }
 

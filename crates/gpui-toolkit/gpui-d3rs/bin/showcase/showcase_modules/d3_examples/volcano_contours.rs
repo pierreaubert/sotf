@@ -68,7 +68,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let contours = generator.contours(&values, &thresholds);
 
     // Scales for positioning
-    let plot_width = 400.0;
+    let plot_width = (app.content_width as f64).min(app.content_height as f64 * 0.7);
     let plot_height = (VOLCANO_HEIGHT as f64 / VOLCANO_WIDTH as f64 * plot_width).round();
 
     let x_scale = LinearScale::new()

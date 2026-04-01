@@ -15,15 +15,15 @@ use gpui::*;
 /// Embedded energy.json data (48 nodes, 68 links).
 const ENERGY_JSON: &str = include_str!("../../data/energy.json");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let (names, links) = d3rs::examples::sankey::load_json(ENERGY_JSON);
 
     let result = d3rs::examples::sankey::compute(&names, &links);
 
     let scheme = ColorScheme::tableau10();
 
-    let width = 928.0_f64;
-    let height = 600.0_f64;
+    let width = app.content_width as f64;
+    let height = (width * 0.71).min(app.content_height as f64 * 0.8);
 
     let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
     let mut all_colors: Vec<Hsla> = Vec::new();

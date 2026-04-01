@@ -399,10 +399,10 @@ impl Theme {
             text_muted: rgb(0x555555),
             text_on_accent: rgb(0x000000),
             icon_on_accent: rgb(0x000000),
-            // Accent (black background with white border for buttons)
-            accent: rgb(0x000000),
-            accent_hover: rgb(0x222222),
-            accent_muted: rgba(0x33333333),
+            // Accent (white for high contrast on black background)
+            accent: rgb(0xffffff),
+            accent_hover: rgb(0xcccccc),
+            accent_muted: rgba(0xffffff33),
             // Semantic (grayscale for B&W theme)
             success: rgb(0xaaaaaa),
             warning: rgb(0x888888),

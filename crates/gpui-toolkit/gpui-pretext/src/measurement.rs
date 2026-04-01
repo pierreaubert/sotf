@@ -105,12 +105,17 @@ impl MeasureCache {
 
     /// Get per-grapheme widths for a segment (measured individually).
     /// Returns `None` if the segment has only one grapheme.
-    pub fn get_grapheme_widths(&mut self, seg: &str, measure: &dyn TextMeasure) -> Option<Vec<f64>> {
+    pub fn get_grapheme_widths(
+        &mut self,
+        seg: &str,
+        measure: &dyn TextMeasure,
+    ) -> Option<Vec<f64>> {
         // Check if already computed
         if let Some(metrics) = self.cache.get(seg)
-            && metrics.grapheme_widths.is_some() {
-                return metrics.grapheme_widths.clone();
-            }
+            && metrics.grapheme_widths.is_some()
+        {
+            return metrics.grapheme_widths.clone();
+        }
 
         let graphemes: Vec<&str> = seg.graphemes(true).collect();
         if graphemes.len() <= 1 {
@@ -146,9 +151,10 @@ impl MeasureCache {
     ) -> Option<Vec<f64>> {
         // Check if already computed
         if let Some(metrics) = self.cache.get(seg)
-            && metrics.grapheme_prefix_widths.is_some() {
-                return metrics.grapheme_prefix_widths.clone();
-            }
+            && metrics.grapheme_prefix_widths.is_some()
+        {
+            return metrics.grapheme_prefix_widths.clone();
+        }
 
         let graphemes: Vec<&str> = seg.graphemes(true).collect();
         if graphemes.len() <= 1 {
