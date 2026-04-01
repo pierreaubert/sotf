@@ -2,11 +2,11 @@
 // Binaural Decoder Plugin
 // ============================================================================
 
+use crate::params::PARAMS as BN;
 use arc_swap::ArcSwap;
 use math_audio_dsp::rtpghi::RtpghiProcessor;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
-use crate::params::PARAMS as BN;
 use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -333,7 +333,7 @@ impl BinauralDecoderPlugin {
     fn set_param_value(&mut self, index: usize, value: f64) {
         match index {
             0 => {} // sofa_file (FilePath — handled separately)
-            1 => {}  // input_channels (construction-only, requires buffer rebuild)
+            1 => {} // input_channels (construction-only, requires buffer rebuild)
             2 => self.enable_optimization = value > 0.5,
             3 => self.externalization.set_target(value as f32),
             4 => self.near_field_strength = value as f32,
@@ -356,30 +356,58 @@ impl BinauralDecoderPlugin {
             .and_then(|p| p.to_str())
             .unwrap_or("")
             .to_string();
-        self.cached_parameters.push(
-            Parameter::new_float("crossfade_ms", "Crossfade (ms)", self.crossfade_ms, 10.0, 500.0)
-        );
-        self.cached_parameters.push(
-            Parameter::new_string("hrtf_file", "HRTF File", hrtf_path_str)
-        );
-        self.cached_parameters.push(
-            Parameter::new_float("head_yaw_deg", "Head Yaw (deg)", self.head_yaw_deg.target(), -180.0, 180.0)
-        );
-        self.cached_parameters.push(
-            Parameter::new_float("head_pitch_deg", "Head Pitch (deg)", self.head_pitch_deg.target(), -180.0, 180.0)
-        );
-        self.cached_parameters.push(
-            Parameter::new_float("head_roll_deg", "Head Roll (deg)", self.head_roll_deg.target(), -180.0, 180.0)
-        );
-        self.cached_parameters.push(
-            Parameter::new_string("hrtf_database_dir", "HRTF Database Dir", self.hrtf_database_dir.clone())
-        );
-        self.cached_parameters.push(
-            Parameter::new_float("head_width_cm", "Head Width (cm)", self.head_width_cm, 10.0, 25.0)
-        );
-        self.cached_parameters.push(
-            Parameter::new_float("ear_height_cm", "Ear Height (cm)", self.ear_height_cm, 4.0, 16.0)
-        );
+        self.cached_parameters.push(Parameter::new_float(
+            "crossfade_ms",
+            "Crossfade (ms)",
+            self.crossfade_ms,
+            10.0,
+            500.0,
+        ));
+        self.cached_parameters.push(Parameter::new_string(
+            "hrtf_file",
+            "HRTF File",
+            hrtf_path_str,
+        ));
+        self.cached_parameters.push(Parameter::new_float(
+            "head_yaw_deg",
+            "Head Yaw (deg)",
+            self.head_yaw_deg.target(),
+            -180.0,
+            180.0,
+        ));
+        self.cached_parameters.push(Parameter::new_float(
+            "head_pitch_deg",
+            "Head Pitch (deg)",
+            self.head_pitch_deg.target(),
+            -180.0,
+            180.0,
+        ));
+        self.cached_parameters.push(Parameter::new_float(
+            "head_roll_deg",
+            "Head Roll (deg)",
+            self.head_roll_deg.target(),
+            -180.0,
+            180.0,
+        ));
+        self.cached_parameters.push(Parameter::new_string(
+            "hrtf_database_dir",
+            "HRTF Database Dir",
+            self.hrtf_database_dir.clone(),
+        ));
+        self.cached_parameters.push(Parameter::new_float(
+            "head_width_cm",
+            "Head Width (cm)",
+            self.head_width_cm,
+            10.0,
+            25.0,
+        ));
+        self.cached_parameters.push(Parameter::new_float(
+            "ear_height_cm",
+            "Ear Height (cm)",
+            self.ear_height_cm,
+            4.0,
+            16.0,
+        ));
     }
 
     pub fn from_params(params: BinauralDecoderParams) -> Self {
@@ -417,8 +445,7 @@ impl BinauralDecoderPlugin {
         if !Arc::ptr_eq(&new_state, &self.current_state_snapshot) {
             // State changed -- start crossfade from old to new
             // Crossfade duration in samples, rounded up to hop_size boundary
-            let crossfade_samples =
-                (self.sample_rate as f32 * self.crossfade_ms * 0.001) as usize;
+            let crossfade_samples = (self.sample_rate as f32 * self.crossfade_ms * 0.001) as usize;
             let crossfade_hops = crossfade_samples.div_ceil(self.hop_size);
             let total = crossfade_hops * self.hop_size;
 
@@ -564,8 +591,7 @@ impl BinauralDecoderPlugin {
                     let mag_new_l = (self.sum_left[k].re * self.sum_left[k].re
                         + self.sum_left[k].im * self.sum_left[k].im)
                         .sqrt();
-                    let mag_old_l = (self.crossfade_sum_left[k].re
-                        * self.crossfade_sum_left[k].re
+                    let mag_old_l = (self.crossfade_sum_left[k].re * self.crossfade_sum_left[k].re
                         + self.crossfade_sum_left[k].im * self.crossfade_sum_left[k].im)
                         .sqrt();
                     self.crossfade_mag_left[k] = mag_old_l * old_gain + mag_new_l * new_gain;
@@ -802,7 +828,13 @@ impl BinauralDecoderPlugin {
     /// To make virtual sources appear world-locked (they stay fixed while the head moves),
     /// we apply the *inverse* head rotation to the speaker positions before VBAP lookup.
     /// The inverse rotation is R_roll^T * R_pitch^T * R_yaw^T.
-    fn rotate_speaker_position(azimuth: f32, elevation: f32, yaw: f32, pitch: f32, roll: f32) -> (f32, f32) {
+    fn rotate_speaker_position(
+        azimuth: f32,
+        elevation: f32,
+        yaw: f32,
+        pitch: f32,
+        roll: f32,
+    ) -> (f32, f32) {
         if yaw == 0.0 && pitch == 0.0 && roll == 0.0 {
             return (azimuth, elevation);
         }
@@ -829,7 +861,7 @@ impl BinauralDecoderPlugin {
         let (sr, cr) = roll_r.sin_cos();
 
         // Rz(-yaw): rotate around Z by -yaw
-        let x1 =  cy * x + sy * y;
+        let x1 = cy * x + sy * y;
         let y1 = -sy * x + cy * y;
         let z1 = z;
 
@@ -840,7 +872,7 @@ impl BinauralDecoderPlugin {
 
         // Rx(-roll): rotate around X by -roll
         let x3 = x2;
-        let y3 =  cr * y2 + sr * z2;
+        let y3 = cr * y2 + sr * z2;
         let z3 = -sr * y2 + cr * z2;
 
         // Convert back to spherical coordinates
@@ -855,7 +887,12 @@ impl BinauralDecoderPlugin {
     ///
     /// This is called whenever head angles have changed by more than 0.5° since the last
     /// recompute. It only does meaningful work when a SOFA file is loaded.
-    fn recompute_hrtf_for_head_angles(&mut self, yaw: f32, pitch: f32, roll: f32) -> PluginResult<()> {
+    fn recompute_hrtf_for_head_angles(
+        &mut self,
+        yaw: f32,
+        pitch: f32,
+        roll: f32,
+    ) -> PluginResult<()> {
         self.last_hrtf_yaw = yaw;
         self.last_hrtf_pitch = pitch;
         self.last_hrtf_roll = roll;
@@ -1010,10 +1047,8 @@ impl Plugin for BinauralDecoderPlugin {
                         .map_err(|e| format!("HRTF resample failed: {}", e))?;
                 }
 
-                let mut filters = vec![
-                    vec![Complex::new(0.0, 0.0); self.freq_size * 2];
-                    self.input_channels
-                ];
+                let mut filters =
+                    vec![vec![Complex::new(0.0, 0.0); self.freq_size * 2]; self.input_channels];
                 for spk in self.speaker_config.speakers {
                     let ch = spk.channel;
                     if ch >= self.input_channels || self.lfe_channels.contains(&ch) {
@@ -1050,9 +1085,7 @@ impl Plugin for BinauralDecoderPlugin {
                             self.sample_rate,
                             &self.fft_r2c,
                         )
-                        .map_err(|e| {
-                            format!("Diffuse field EQ calculation failed: {}", e)
-                        })?,
+                        .map_err(|e| format!("Diffuse field EQ calculation failed: {}", e))?,
                     )
                 } else {
                     None
@@ -1105,9 +1138,11 @@ impl Plugin for BinauralDecoderPlugin {
                 .to_string();
             self.hrtf_database_dir = dir.clone();
             if self.sample_rate > 0 && !dir.is_empty() {
-                if let Some(best) =
-                    hrtf_database::best_match(std::path::Path::new(&dir), self.head_width_cm, self.ear_height_cm)
-                {
+                if let Some(best) = hrtf_database::best_match(
+                    std::path::Path::new(&dir),
+                    self.head_width_cm,
+                    self.ear_height_cm,
+                ) {
                     log::info!(
                         "[BinauralDecoder] hrtf_database_dir scan: best match = {}",
                         best.display()
@@ -1183,11 +1218,21 @@ impl Plugin for BinauralDecoderPlugin {
         match idx {
             8 => {
                 // late_reverb_rt60
-                self.fdn.set_room_params(self.late_reverb_rt60, self.late_reverb_damping, 1.0, self.sample_rate);
+                self.fdn.set_room_params(
+                    self.late_reverb_rt60,
+                    self.late_reverb_damping,
+                    1.0,
+                    self.sample_rate,
+                );
             }
             9 => {
                 // late_reverb_damping
-                self.fdn.set_room_params(self.late_reverb_rt60, self.late_reverb_damping, 1.0, self.sample_rate);
+                self.fdn.set_room_params(
+                    self.late_reverb_rt60,
+                    self.late_reverb_damping,
+                    1.0,
+                    self.sample_rate,
+                );
             }
             _ => {}
         }
@@ -1272,7 +1317,8 @@ impl Plugin for BinauralDecoderPlugin {
                         srir_path.display(),
                         e
                     );
-                    let refs = room::calculate_reflections(&self.room_model, self.speaker_config, sr);
+                    let refs =
+                        room::calculate_reflections(&self.room_model, self.speaker_config, sr);
                     for (ch, cr) in refs.into_iter().enumerate() {
                         if !self.lfe_channels.contains(&ch) {
                             self.cached_reflections.extend(cr);
@@ -1369,11 +1415,8 @@ impl Plugin for BinauralDecoderPlugin {
                 if refl.hrtf_filter.is_some() {
                     continue;
                 }
-                let tgt = sotf_host::sofa::SourcePosition::new(
-                    refl.azimuth_deg,
-                    refl.elevation_deg,
-                    1.0,
-                );
+                let tgt =
+                    sotf_host::sofa::SourcePosition::new(refl.azimuth_deg, refl.elevation_deg, 1.0);
                 let near = sofa.find_three_nearest(&tgt);
                 let gains_vbap = hrtf::calculate_vbap_gains(&tgt, &near, &sofa);
                 let (l_fft, r_fft) = hrtf::interpolate_hrtf_frequency_domain(
@@ -1425,7 +1468,10 @@ impl Plugin for BinauralDecoderPlugin {
         if angle_changed {
             // Recompute is best-effort: log errors but continue with old filters.
             if let Err(e) = self.recompute_hrtf_for_head_angles(yaw, pitch, roll) {
-                log::warn!("[BinauralDecoder] Head tracking HRTF recompute failed: {}", e);
+                log::warn!(
+                    "[BinauralDecoder] Head tracking HRTF recompute failed: {}",
+                    e
+                );
                 // Still update the cached angles so we don't spam errors every frame.
                 self.last_hrtf_yaw = yaw;
                 self.last_hrtf_pitch = pitch;
@@ -1611,8 +1657,7 @@ mod tests {
         hrtf::resample_sofa(&mut sofa, 48000).unwrap();
 
         // After resampling 44100->48000, IR length should increase proportionally
-        let expected_length =
-            (original_ir_length as f64 * 48000.0 / 44100.0).ceil() as usize;
+        let expected_length = (original_ir_length as f64 * 48000.0 / 44100.0).ceil() as usize;
         assert_eq!(sofa.sample_rate, 48000.0);
         assert_eq!(sofa.ir_length, expected_length);
         assert_eq!(
@@ -1636,14 +1681,10 @@ mod tests {
         let mut sofa = make_test_sofa(96000.0, original_ir_length, 2);
         hrtf::resample_sofa(&mut sofa, 48000).unwrap();
 
-        let expected_length =
-            (original_ir_length as f64 * 48000.0 / 96000.0).ceil() as usize;
+        let expected_length = (original_ir_length as f64 * 48000.0 / 96000.0).ceil() as usize;
         assert_eq!(sofa.sample_rate, 48000.0);
         assert_eq!(sofa.ir_length, expected_length);
-        assert_eq!(
-            sofa.impulse_responses.len(),
-            2 * 2 * expected_length
-        );
+        assert_eq!(sofa.impulse_responses.len(), 2 * 2 * expected_length);
     }
 
     #[test]
@@ -1784,7 +1825,10 @@ mod tests {
 
         // Should produce some non-zero output (passthrough with default HRTF)
         let has_signal = output.iter().any(|&s| s.abs() > 1e-6);
-        assert!(has_signal, "Output should contain signal with default passthrough HRTF");
+        assert!(
+            has_signal,
+            "Output should contain signal with default passthrough HRTF"
+        );
     }
 
     #[test]
@@ -2157,8 +2201,7 @@ mod tests {
     /// rotate_speaker_position must be identity when all angles are 0.
     #[test]
     fn test_rotate_speaker_position_identity() {
-        let (az, el) =
-            BinauralDecoderPlugin::rotate_speaker_position(45.0, 20.0, 0.0, 0.0, 0.0);
+        let (az, el) = BinauralDecoderPlugin::rotate_speaker_position(45.0, 20.0, 0.0, 0.0, 0.0);
         assert!(
             (az - 45.0).abs() < 1e-3,
             "azimuth should be unchanged: {}",
@@ -2175,14 +2218,17 @@ mod tests {
     #[test]
     fn test_rotate_speaker_position_yaw_only() {
         // Speaker at az=30, el=0. Head yaw=30 => inverse shift of -30 => az near 0.
-        let (az, el) =
-            BinauralDecoderPlugin::rotate_speaker_position(30.0, 0.0, 30.0, 0.0, 0.0);
+        let (az, el) = BinauralDecoderPlugin::rotate_speaker_position(30.0, 0.0, 30.0, 0.0, 0.0);
         assert!(
             (az - 0.0).abs() < 1e-3,
             "azimuth after yaw should be near 0, got {}",
             az
         );
-        assert!((el - 0.0).abs() < 1e-3, "elevation should stay 0, got {}", el);
+        assert!(
+            (el - 0.0).abs() < 1e-3,
+            "elevation should stay 0, got {}",
+            el
+        );
     }
 
     /// Processing with non-zero head yaw must not produce NaN or Inf output.
@@ -2281,8 +2327,8 @@ mod tests {
                     let angle = phase_shift * (k as f32 / freq_size as f32) * std::f32::consts::PI;
                     let (sin_a, cos_a) = angle.sin_cos();
                     let val = Complex::new(cos_a * 0.7, sin_a * 0.7);
-                    filters[ch][k] = val;               // left ear
-                    filters[ch][freq_size + k] = val;   // right ear
+                    filters[ch][k] = val; // left ear
+                    filters[ch][freq_size + k] = val; // right ear
                 }
             }
             Arc::new(BinauralState {
@@ -2304,7 +2350,8 @@ mod tests {
         let num_frames = fft_size * 4;
         let input: Vec<f32> = (0..num_frames * 2)
             .map(|i| {
-                let phase = 2.0 * std::f32::consts::PI * 1000.0 * (i / 2) as f32 / sample_rate as f32;
+                let phase =
+                    2.0 * std::f32::consts::PI * 1000.0 * (i / 2) as f32 / sample_rate as f32;
                 phase.sin() * 0.5
             })
             .collect();
@@ -2313,8 +2360,12 @@ mod tests {
             num_frames,
             sample_rate,
         };
-        linear_plugin.process(&input, &mut output_warmup, &ctx).unwrap();
-        spectral_plugin.process(&input, &mut output_warmup, &ctx).unwrap();
+        linear_plugin
+            .process(&input, &mut output_warmup, &ctx)
+            .unwrap();
+        spectral_plugin
+            .process(&input, &mut output_warmup, &ctx)
+            .unwrap();
 
         // Now switch to state B -- this triggers crossfade
         let state_b = make_state(4.0, 2);
@@ -2324,8 +2375,12 @@ mod tests {
         // Process during the crossfade
         let mut output_linear = vec![0.0f32; num_frames * 2];
         let mut output_spectral = vec![0.0f32; num_frames * 2];
-        linear_plugin.process(&input, &mut output_linear, &ctx).unwrap();
-        spectral_plugin.process(&input, &mut output_spectral, &ctx).unwrap();
+        linear_plugin
+            .process(&input, &mut output_linear, &ctx)
+            .unwrap();
+        spectral_plugin
+            .process(&input, &mut output_spectral, &ctx)
+            .unwrap();
 
         // Both outputs must be finite
         assert!(
@@ -2364,7 +2419,8 @@ mod tests {
                     let mut im = 0.0f64;
                     for n in 0..fft_size {
                         let sample = output[(analysis_start + n) * 2] as f64;
-                        let angle = -2.0 * std::f64::consts::PI * k as f64 * n as f64 / fft_size as f64;
+                        let angle =
+                            -2.0 * std::f64::consts::PI * k as f64 * n as f64 / fft_size as f64;
                         re += sample * angle.cos();
                         im += sample * angle.sin();
                     }
@@ -2433,10 +2489,7 @@ mod tests {
 
         // Set to Spectral (1)
         plugin
-            .set_parameter(
-                ParameterId::from("crossfade_mode"),
-                ParameterValue::Int(1),
-            )
+            .set_parameter(ParameterId::from("crossfade_mode"), ParameterValue::Int(1))
             .unwrap();
         assert_eq!(
             plugin.get_parameter(&ParameterId::from("crossfade_mode")),
@@ -2446,19 +2499,16 @@ mod tests {
 
         // Out-of-range value (2) is clamped to max valid index (1) by param_bridge
         plugin
-            .set_parameter(
-                ParameterId::from("crossfade_mode"),
-                ParameterValue::Int(2),
-            )
+            .set_parameter(ParameterId::from("crossfade_mode"), ParameterValue::Int(2))
             .unwrap();
-        assert_eq!(plugin.crossfade_mode_index, 1, "Out-of-range mode should be clamped to max");
+        assert_eq!(
+            plugin.crossfade_mode_index, 1,
+            "Out-of-range mode should be clamped to max"
+        );
 
         // Set back to Linear (0)
         plugin
-            .set_parameter(
-                ParameterId::from("crossfade_mode"),
-                ParameterValue::Int(0),
-            )
+            .set_parameter(ParameterId::from("crossfade_mode"), ParameterValue::Int(0))
             .unwrap();
         assert_eq!(plugin.crossfade_mode_index, 0);
     }

@@ -94,13 +94,17 @@ fn test_gate_hysteresis_prevents_chatter() {
     // Generate 1s of signal that alternates between -18dB and -22dB every 100ms
     let num_frames = sr as usize;
     let amp_high = 10.0f32.powf(-18.0 / 20.0); // -18dB
-    let amp_low = 10.0f32.powf(-22.0 / 20.0);  // -22dB
+    let amp_low = 10.0f32.powf(-22.0 / 20.0); // -22dB
     let switch_period = sr as usize / 10; // 100ms
 
     let mut buffer = vec![0.0f32; num_frames];
     for (i, sample) in buffer.iter_mut().enumerate() {
         let cycle = i / switch_period;
-        let amp = if cycle.is_multiple_of(2) { amp_high } else { amp_low };
+        let amp = if cycle.is_multiple_of(2) {
+            amp_high
+        } else {
+            amp_low
+        };
         let t = i as f32 / sr as f32;
         *sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * amp;
     }
@@ -126,10 +130,7 @@ fn test_gate_hysteresis_prevents_chatter() {
     // between gated (near-zero) and open (signal). Count frames that are near-zero
     // in the second half (after gate has settled).
     let second_half = &buffer[num_frames / 2..];
-    let near_zero_frames = second_half
-        .iter()
-        .filter(|&&s| s.abs() < 0.001)
-        .count();
+    let near_zero_frames = second_half.iter().filter(|&&s| s.abs() < 0.001).count();
 
     // With proper hysteresis, the gate should stay mostly open (since -22dB > -24dB close threshold).
     // Near-zero frames should be a small fraction of the total.

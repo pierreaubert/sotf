@@ -13,6 +13,7 @@
 
 pub mod params;
 
+use crate::params::{BAND_PARAMS, MAX_BANDS, PARAMS as DQ};
 use math_audio_dsp::fast_math::fast_log10;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
@@ -20,7 +21,6 @@ use sotf_host::analyzer::RealTimeCache;
 use sotf_host::dynamics_core::DynamicsCore;
 use sotf_host::dynamics_core::DynamicsMode;
 use sotf_host::param_specs::find_by_key as pk;
-use crate::params::{BAND_PARAMS, MAX_BANDS, PARAMS as DQ};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -539,8 +539,7 @@ impl DynamicEqPlugin {
             band.solo = band_params.solo;
 
             // If band values differ from global defaults, mark as overrides
-            band.use_band_threshold =
-                (band_params.band_threshold - params.threshold).abs() > 0.01;
+            band.use_band_threshold = (band_params.band_threshold - params.threshold).abs() > 0.01;
             band.use_band_ratio = (band_params.band_ratio - params.ratio).abs() > 0.01;
 
             band.rebuild_sidechain_filters(p.sample_rate);
@@ -897,12 +896,11 @@ impl InPlacePlugin for DynamicEqPlugin {
                         max_level = max_level.max(level);
                     }
                     let level_db = DB_CONVERSION_FACTOR * fast_log10(max_level.max(EPSILON));
-                    let gr =
-                        band.cores[0].calculate_gain_reduction(level_db, threshold, band_ratio, knee);
+                    let gr = band.cores[0]
+                        .calculate_gain_reduction(level_db, threshold, band_ratio, knee);
                     let smoothed = band.cores[0].apply_envelope(0, gr);
 
-                    let modulated_gain =
-                        compute_modulated_gain(band.target_gain_db, smoothed);
+                    let modulated_gain = compute_modulated_gain(band.target_gain_db, smoothed);
 
                     self.monitoring_gr[band_idx] = smoothed;
 
@@ -922,8 +920,7 @@ impl InPlacePlugin for DynamicEqPlugin {
                             .calculate_gain_reduction(level_db, threshold, band_ratio, knee);
                         let smoothed = band.cores[ch].apply_envelope(ch, gr);
 
-                        let modulated_gain =
-                            compute_modulated_gain(band.target_gain_db, smoothed);
+                        let modulated_gain = compute_modulated_gain(band.target_gain_db, smoothed);
 
                         band.update_eq_gain(ch, modulated_gain, sample_rate);
                         buffer[idx] = band.eq_filters[ch].process(buffer[idx] as f64) as f32;
@@ -1210,20 +1207,14 @@ mod tests {
 
         // Set threshold
         plugin
-            .set_parameter(
-                ParameterId::from("threshold"),
-                ParameterValue::Float(-30.0),
-            )
+            .set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-30.0))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("threshold"));
         assert_eq!(val, Some(ParameterValue::Float(-30.0)));
 
         // Set ratio
         plugin
-            .set_parameter(
-                ParameterId::from("ratio"),
-                ParameterValue::Float(5.0),
-            )
+            .set_parameter(ParameterId::from("ratio"), ParameterValue::Float(5.0))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("ratio"));
         assert_eq!(val, Some(ParameterValue::Float(5.0)));
@@ -1247,10 +1238,7 @@ mod tests {
 
         // Set num_bands
         plugin
-            .set_parameter(
-                ParameterId::from("num_bands"),
-                ParameterValue::Int(6),
-            )
+            .set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(6))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("num_bands"));
         assert_eq!(val, Some(ParameterValue::Int(6)));

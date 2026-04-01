@@ -35,11 +35,12 @@ impl ArrayGeometry {
     /// Get microphone positions as (x, y, z) tuples.
     pub fn positions(&self) -> Vec<(f32, f32, f32)> {
         match self {
-            Self::Linear { num_mics, spacing_m } => {
-                (0..*num_mics)
-                    .map(|i| (i as f32 * spacing_m, 0.0, 0.0))
-                    .collect()
-            }
+            Self::Linear {
+                num_mics,
+                spacing_m,
+            } => (0..*num_mics)
+                .map(|i| (i as f32 * spacing_m, 0.0, 0.0))
+                .collect(),
             Self::Circular { num_mics, radius_m } => {
                 let two_pi = 2.0 * std::f32::consts::PI;
                 (0..*num_mics)

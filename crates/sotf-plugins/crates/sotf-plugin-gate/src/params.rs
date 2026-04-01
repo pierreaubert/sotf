@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -138,8 +138,8 @@ pub const PARAMS: &[ParamSpec] = &[
 /// 11=range_db, 12=hysteresis_db, 13=knee_db, 14=lookahead_ms
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::toggle(6),  // link_channels
-        ControlSpec::knob(7),    // sidechain_hpf_hz
+        ControlSpec::toggle(6),   // link_channels
+        ControlSpec::knob(7),     // sidechain_hpf_hz
         ControlSpec::selector(8), // sidechain_hpf_order
         ControlSpec::selector(9), // detection_mode
     ],
@@ -427,10 +427,7 @@ mod tests {
             pk(PARAMS, "sidechain_external").default_bool()
         );
         assert_eq!(p.range_db, pk(PARAMS, "range_db").default_f64());
-        assert_eq!(
-            p.hysteresis_db,
-            pk(PARAMS, "hysteresis_db").default_f64()
-        );
+        assert_eq!(p.hysteresis_db, pk(PARAMS, "hysteresis_db").default_f64());
         assert_eq!(p.knee_db, pk(PARAMS, "knee_db").default_f64());
         assert_eq!(p.lookahead_ms, pk(PARAMS, "lookahead_ms").default_f64());
     }

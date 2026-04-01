@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -54,20 +54,56 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .setup()
     .doc("Oversampling factor for alias suppression"),
-    ParamSpec::float("Output", "output_gain", 0.0, -12.0, 12.0, 0.1, "dB", "Output")
-        .doc("Output gain compensation"),
+    ParamSpec::float(
+        "Output",
+        "output_gain",
+        0.0,
+        -12.0,
+        12.0,
+        0.1,
+        "dB",
+        "Output",
+    )
+    .doc("Output gain compensation"),
     ParamSpec::float("Mix", "mix", 0.5, 0.0, 1.0, 0.01, "%", "Output")
         .scaled(100.0)
         .output()
         .doc("Dry/wet blend"),
     // --- Phase 3A: SOTA additions ---
-    ParamSpec::float("Dynamic", "dynamic_amount", 0.0, 0.0, 1.0, 0.01, "%", "Dynamic")
-        .scaled(100.0)
-        .doc("Envelope-followed drive modulation depth"),
-    ParamSpec::float("Dyn Attack", "dynamic_attack_ms", 5.0, 0.1, 100.0, 0.5, "ms", "Dynamic")
-        .doc("Dynamic saturation envelope attack time"),
-    ParamSpec::float("Dyn Release", "dynamic_release_ms", 50.0, 1.0, 500.0, 1.0, "ms", "Dynamic")
-        .doc("Dynamic saturation envelope release time"),
+    ParamSpec::float(
+        "Dynamic",
+        "dynamic_amount",
+        0.0,
+        0.0,
+        1.0,
+        0.01,
+        "%",
+        "Dynamic",
+    )
+    .scaled(100.0)
+    .doc("Envelope-followed drive modulation depth"),
+    ParamSpec::float(
+        "Dyn Attack",
+        "dynamic_attack_ms",
+        5.0,
+        0.1,
+        100.0,
+        0.5,
+        "ms",
+        "Dynamic",
+    )
+    .doc("Dynamic saturation envelope attack time"),
+    ParamSpec::float(
+        "Dyn Release",
+        "dynamic_release_ms",
+        50.0,
+        1.0,
+        500.0,
+        1.0,
+        "ms",
+        "Dynamic",
+    )
+    .doc("Dynamic saturation envelope release time"),
     ParamSpec::bool_labeled("DC Block", "dc_blocker", true, "On", "Off", "Quality")
         .doc("Remove DC offset from asymmetric saturation"),
     ParamSpec::bool_labeled("ADAA", "use_adaa", true, "On", "Off", "Quality")
@@ -82,10 +118,10 @@ pub const PARAMS: &[ParamSpec] = &[
 ///             7=dynamic_amount, 8=dynamic_attack_ms, 9=dynamic_release_ms, 10=dc_blocker, 11=use_adaa
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::selector(0),  // mode
-        ControlSpec::selector(4),  // oversampling
-        ControlSpec::toggle(10),   // dc_blocker
-        ControlSpec::toggle(11),   // use_adaa
+        ControlSpec::selector(0), // mode
+        ControlSpec::selector(4), // oversampling
+        ControlSpec::toggle(10),  // dc_blocker
+        ControlSpec::toggle(11),  // use_adaa
     ],
     main: &[
         ControlGroup {
@@ -309,10 +345,7 @@ mod tests {
         assert_eq!(p.drive, pk(PARAMS, "drive").default_f64());
         assert_eq!(p.tone, pk(PARAMS, "tone").default_f64());
         assert_eq!(p.exciter_freq, pk(PARAMS, "exciter_freq").default_f64());
-        assert_eq!(
-            p.oversampling,
-            pk(PARAMS, "oversampling").default_f64()
-        );
+        assert_eq!(p.oversampling, pk(PARAMS, "oversampling").default_f64());
         assert_eq!(p.output_gain, pk(PARAMS, "output_gain").default_f64());
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64());
     }

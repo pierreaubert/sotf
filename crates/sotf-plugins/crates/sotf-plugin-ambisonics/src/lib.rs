@@ -104,9 +104,8 @@ impl AmbisonicsDecoderPlugin {
     }
 
     fn rebuild_decode_matrix(&mut self) -> Result<(), String> {
-        let speaker_config = get_speaker_config(&self.target_layout).ok_or_else(|| {
-            format!("Unknown speaker layout '{}'", self.target_layout)
-        })?;
+        let speaker_config = get_speaker_config(&self.target_layout)
+            .ok_or_else(|| format!("Unknown speaker layout '{}'", self.target_layout))?;
 
         let dm = DecodeMatrix::build(self.order, speaker_config, self.max_re_weighting)?;
         self.input_channels = channel_count(self.order);
@@ -140,11 +139,15 @@ impl AmbisonicsDecoderPlugin {
                 .with_importance(ParameterImportance::Critical)
                 .with_description("Target speaker layout (e.g. 5.1, 7.1.4)")
                 .build(),
-            Parameter::new_bool("max_re_weighting", "Max-rE Weighting", self.max_re_weighting)
-                .with_group("Ambisonics")
-                .with_importance(ParameterImportance::Useful)
-                .with_description("Improve energy preservation at high frequencies")
-                .build(),
+            Parameter::new_bool(
+                "max_re_weighting",
+                "Max-rE Weighting",
+                self.max_re_weighting,
+            )
+            .with_group("Ambisonics")
+            .with_importance(ParameterImportance::Useful)
+            .with_description("Improve energy preservation at high frequencies")
+            .build(),
             Parameter::new_bool("dual_band", "Dual-Band Decoding", self.dual_band)
                 .with_group("Ambisonics")
                 .with_importance(ParameterImportance::Useful)
@@ -356,14 +359,8 @@ impl Plugin for AmbisonicsDecoderPlugin {
                 let in_off = frame * in_ch;
                 let out_off = frame * out_ch;
 
-                basic_ref.decode_frame(
-                    &self.lf_buffer[in_off..in_off + in_ch],
-                    lf_frame,
-                );
-                dm_ref.decode_frame(
-                    &self.hf_buffer[in_off..in_off + in_ch],
-                    hf_frame,
-                );
+                basic_ref.decode_frame(&self.lf_buffer[in_off..in_off + in_ch], lf_frame);
+                dm_ref.decode_frame(&self.hf_buffer[in_off..in_off + in_ch], hf_frame);
 
                 for s in 0..out_ch {
                     output[out_off + s] = lf_frame[s] + hf_frame[s];
@@ -512,7 +509,10 @@ mod tests {
 
         // All non-LFE speakers should be non-zero
         for &level in &non_lfe_levels {
-            assert!(level.abs() > 0.01, "Speaker should produce output for omni signal");
+            assert!(
+                level.abs() > 0.01,
+                "Speaker should produce output for omni signal"
+            );
         }
     }
 
@@ -614,7 +614,10 @@ mod tests {
         let mut single_out = vec![0.0_f32; num_frames * out_ch];
         let mut dual_out = vec![0.0_f32; num_frames * out_ch];
 
-        let ctx = ProcessContext { sample_rate: 48000, num_frames };
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
         single.process(&input, &mut single_out, &ctx).unwrap();
         dual.process(&input, &mut dual_out, &ctx).unwrap();
 
@@ -652,7 +655,10 @@ mod tests {
         let num_frames = 256;
         let input = vec![0.0_f32; num_frames * 4];
         let mut output = vec![0.0_f32; num_frames * 6];
-        let ctx = ProcessContext { sample_rate: 48000, num_frames };
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
 
         let frames = plugin.process(&input, &mut output, &ctx).unwrap();
         assert_eq!(frames, num_frames);
@@ -686,14 +692,26 @@ mod tests {
             plugin.get_parameter(&ParameterId::from("dual_band")),
             Some(ParameterValue::Bool(true))
         );
-        assert!(plugin.basic_matrix.is_some(), "basic_matrix should be built after enabling dual_band");
-        assert!(plugin.crossover.is_some(), "crossover should be created after enabling dual_band");
+        assert!(
+            plugin.basic_matrix.is_some(),
+            "basic_matrix should be built after enabling dual_band"
+        );
+        assert!(
+            plugin.crossover.is_some(),
+            "crossover should be created after enabling dual_band"
+        );
 
         // Toggle back off
         plugin
             .set_parameter(ParameterId::from("dual_band"), ParameterValue::Bool(false))
             .unwrap();
-        assert!(plugin.basic_matrix.is_none(), "basic_matrix should be cleared after disabling dual_band");
-        assert!(plugin.crossover.is_none(), "crossover should be cleared after disabling dual_band");
+        assert!(
+            plugin.basic_matrix.is_none(),
+            "basic_matrix should be cleared after disabling dual_band"
+        );
+        assert!(
+            plugin.crossover.is_none(),
+            "crossover should be cleared after disabling dual_band"
+        );
     }
 }

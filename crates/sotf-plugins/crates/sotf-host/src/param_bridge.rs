@@ -101,9 +101,13 @@ fn spec_to_parameter(spec: &ParamSpec, value: f64) -> Parameter {
             min as f32,
             max as f32,
         ),
-        ParamType::Int { min, max, .. } => {
-            Parameter::new_int(spec.engine_key, spec.name, value as i32, min as i32, max as i32)
-        }
+        ParamType::Int { min, max, .. } => Parameter::new_int(
+            spec.engine_key,
+            spec.name,
+            value as i32,
+            min as i32,
+            max as i32,
+        ),
         ParamType::Bool { .. } => Parameter::new_bool(spec.engine_key, spec.name, value > 0.5),
         ParamType::Choice { labels, .. } => {
             let idx = value as i32;
@@ -232,8 +236,9 @@ mod tests {
 
     #[test]
     fn get_parameter_returns_none_for_unknown() {
-        let result =
-            get_parameter(TEST_PARAMS, &ParameterId::from("nonexistent"), |_| Some(0.0));
+        let result = get_parameter(TEST_PARAMS, &ParameterId::from("nonexistent"), |_| {
+            Some(0.0)
+        });
         assert!(result.is_none());
     }
 

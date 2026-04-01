@@ -205,7 +205,11 @@ impl UpmixerPlugin {
 
         // Apply height flux gate modulation: multiply smoothed gains by the gate
         // This focuses height content on onsets and reverberant tails
-        for (s, &gate) in smoothed.iter_mut().zip(self.height_flux_gate.iter()).take(n) {
+        for (s, &gate) in smoothed
+            .iter_mut()
+            .zip(self.height_flux_gate.iter())
+            .take(n)
+        {
             *s *= gate;
         }
 

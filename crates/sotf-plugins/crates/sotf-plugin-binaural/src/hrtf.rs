@@ -460,13 +460,8 @@ pub fn resample_sofa(sofa: &mut SofaFile, target_rate: u32) -> Result<(), String
         let ir_left = &sofa.impulse_responses[offset..offset + ir_length];
         let ir_right = &sofa.impulse_responses[offset + ir_length..offset + 2 * ir_length];
 
-        let resampled = resample_stereo_ir(
-            ir_left,
-            ir_right,
-            &mut resampler,
-            chunk_size,
-            new_ir_length,
-        )?;
+        let resampled =
+            resample_stereo_ir(ir_left, ir_right, &mut resampler, chunk_size, new_ir_length)?;
 
         new_impulse_responses.extend_from_slice(&resampled[0]);
         new_impulse_responses.extend_from_slice(&resampled[1]);
@@ -516,9 +511,8 @@ fn resample_stereo_ir(
         let input_chunk = vec![chunk_l, chunk_r];
         let mut output_chunk = vec![vec![0.0f32; output_frames], vec![0.0f32; output_frames]];
 
-        let input_adapter =
-            SequentialSliceOfVecs::new(&input_chunk, 2, input_frames_needed)
-                .map_err(|e| format!("Input adapter error: {e}"))?;
+        let input_adapter = SequentialSliceOfVecs::new(&input_chunk, 2, input_frames_needed)
+            .map_err(|e| format!("Input adapter error: {e}"))?;
         let mut output_adapter =
             SequentialSliceOfVecs::new_mut(&mut output_chunk, 2, output_frames)
                 .map_err(|e| format!("Output adapter error: {e}"))?;

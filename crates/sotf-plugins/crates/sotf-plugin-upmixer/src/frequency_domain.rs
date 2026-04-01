@@ -32,7 +32,6 @@ const STEERING_RELEASE_BASE: f32 = 0.02;
 /// Steering release alpha range scaled by frequency norm
 const STEERING_RELEASE_RANGE: f32 = 0.06;
 
-
 /// Smoothing alpha for DOA angle tracking (one-pole filter)
 const DOA_SMOOTHING_ALPHA: f32 = 0.2;
 
@@ -395,7 +394,6 @@ impl UpmixerPlugin {
                         self.direct2[i] = Complex::new(0.0, 0.0);
                         self.direct2_doa_per_bin[i] = 0.0;
                     }
-
                 }
 
                 // Full upmix band (after transition zone)
@@ -428,7 +426,6 @@ impl UpmixerPlugin {
                         self.direct2[i] = Complex::new(0.0, 0.0);
                         self.direct2_doa_per_bin[i] = 0.0;
                     }
-
                 }
 
                 let tr_red = 1.0
@@ -438,9 +435,7 @@ impl UpmixerPlugin {
                 for i in corr_start..end_bin {
                     // Height suitability: blend frequency weight with diffuseness
                     // Diffuse content is better suited for height channels than coherent content
-                    let h_suit = (self.height_freq_weights[i] * 0.5
-                        + diffuseness * 0.5)
-                        .min(1.0);
+                    let h_suit = (self.height_freq_weights[i] * 0.5 + diffuseness * 0.5).min(1.0);
                     self.height_band_gains[i] = (h_suit * tr_red).clamp(HEIGHT_MASK_FLOOR, 1.0);
                 }
             }
@@ -528,5 +523,4 @@ impl UpmixerPlugin {
 
         self.smooth_height_gains();
     }
-
 }

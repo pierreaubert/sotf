@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -30,17 +30,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "AEC",
     )
     .doc("Max echo path length to cancel"),
-    ParamSpec::float(
-        "Step Size",
-        "step_size",
-        0.5,
-        0.1,
-        0.9,
-        0.05,
-        "",
-        "AEC",
-    )
-    .doc("Adaptive filter convergence rate"),
+    ParamSpec::float("Step Size", "step_size", 0.5, 0.1, 0.9, 0.05, "", "AEC")
+        .doc("Adaptive filter convergence rate"),
     ParamSpec::bool_param("Post-Filter", "post_filter_enabled", true, "AEC")
         .output()
         .doc("Apply residual echo suppression"),

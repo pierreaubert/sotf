@@ -11,7 +11,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -29,17 +29,10 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::int("Num Filters", "num_filters", 5, 1, 10, 1, "", "EQ")
         .structural()
         .doc("Number of EQ bands"),
-    ParamSpec::choice(
-        "FIR Length",
-        "fir_length",
-        1,
-        FIR_LENGTH_OPTIONS,
-        "Quality",
-    )
-    .setup()
-    .doc("FIR length in taps (higher = better bass resolution, more latency)"),
-    ParamSpec::bool_param("Auto Gain", "auto_gain", false, "Output")
-        .doc("Compensate output level"),
+    ParamSpec::choice("FIR Length", "fir_length", 1, FIR_LENGTH_OPTIONS, "Quality")
+        .setup()
+        .doc("FIR length in taps (higher = better bass resolution, more latency)"),
+    ParamSpec::bool_param("Auto Gain", "auto_gain", false, "Output").doc("Compensate output level"),
     ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output")
         .scaled(100.0)
         .output()
@@ -60,14 +53,20 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
         "Band",
     )
     .doc("Filter type"),
-    ParamSpec::float("Frequency", "frequency", 1000.0, 20.0, 20000.0, 10.0, "Hz", "Band")
-        .doc("Center frequency"),
-    ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.05, "", "Band")
-        .doc("Bandwidth"),
-    ParamSpec::float("Gain", "gain_db", 0.0, -24.0, 24.0, 0.5, "dB", "Band")
-        .doc("Boost/cut"),
-    ParamSpec::bool_param("Active", "active", true, "Band")
-        .doc("Enable this band"),
+    ParamSpec::float(
+        "Frequency",
+        "frequency",
+        1000.0,
+        20.0,
+        20000.0,
+        10.0,
+        "Hz",
+        "Band",
+    )
+    .doc("Center frequency"),
+    ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.05, "", "Band").doc("Bandwidth"),
+    ParamSpec::float("Gain", "gain_db", 0.0, -24.0, 24.0, 0.5, "dB", "Band").doc("Boost/cut"),
+    ParamSpec::bool_param("Active", "active", true, "Band").doc("Enable this band"),
 ];
 
 // ============================================================================

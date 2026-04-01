@@ -111,11 +111,7 @@ struct PartitionLevel {
 }
 
 impl PartitionLevel {
-    fn new(
-        spec: &PartitionSpec,
-        ir_data: &[f32],
-        planner: &mut FftPlanner<f32>,
-    ) -> Self {
+    fn new(spec: &PartitionSpec, ir_data: &[f32], planner: &mut FftPlanner<f32>) -> Self {
         let fft_forward = planner.plan_fft_forward(spec.fft_size);
         let fft_inverse = planner.plan_fft_inverse(spec.fft_size);
         let scratch_len = fft_forward
@@ -204,7 +200,11 @@ impl PartitionLevel {
         self.fft_sum.fill(Complex::new(0.0, 0.0));
         for p in 0..num_parts {
             let fdl_idx = (self.fdl_head + p) % num_parts;
-            complex_mul_add_simd(&mut self.fft_sum, &self.fdl[fdl_idx], &self.ir_partitions[p]);
+            complex_mul_add_simd(
+                &mut self.fft_sum,
+                &self.fdl[fdl_idx],
+                &self.ir_partitions[p],
+            );
         }
 
         // IFFT

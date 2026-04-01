@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -88,8 +88,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlGroup {
             title: "ANALYSIS",
             controls: &[
-                ControlSpec::knob(1), // analysis_window_ms
-                ControlSpec::knob(2), // drift_smoothing
+                ControlSpec::knob(1),   // analysis_window_ms
+                ControlSpec::knob(2),   // drift_smoothing
                 ControlSpec::toggle(3), // multi_channel_analysis
             ],
         },
@@ -173,7 +173,11 @@ impl PluginParamDef for Params {
             0 => Some(self.correction_strength),
             1 => Some(self.analysis_window_ms),
             2 => Some(self.drift_smoothing),
-            3 => Some(if self.multi_channel_analysis { 1.0 } else { 0.0 }),
+            3 => Some(if self.multi_channel_analysis {
+                1.0
+            } else {
+                0.0
+            }),
             4 => Some(self.confidence_threshold),
             5 => Some(if self.phase_vocoder { 1.0 } else { 0.0 }),
             _ => None,
@@ -229,10 +233,7 @@ mod tests {
             original.multi_channel_analysis,
             restored.multi_channel_analysis
         );
-        assert_eq!(
-            original.confidence_threshold,
-            restored.confidence_threshold
-        );
+        assert_eq!(original.confidence_threshold, restored.confidence_threshold);
         assert_eq!(original.phase_vocoder, restored.phase_vocoder);
     }
 
@@ -259,9 +260,6 @@ mod tests {
             p.confidence_threshold,
             pk(PARAMS, "confidence_threshold").default_f64()
         );
-        assert_eq!(
-            p.phase_vocoder,
-            pk(PARAMS, "phase_vocoder").default_bool()
-        );
+        assert_eq!(p.phase_vocoder, pk(PARAMS, "phase_vocoder").default_bool());
     }
 }

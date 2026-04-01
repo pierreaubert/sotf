@@ -415,7 +415,7 @@ impl MatrixPlugin {
                 self.set_gain(0, 0, 0.5)?; // L -> M
                 self.set_gain(1, 0, 0.5)?; // R -> M
                 // S = (L-R)*0.5
-                self.set_gain(0, 1, 0.5)?;  // L -> S
+                self.set_gain(0, 1, 0.5)?; // L -> S
                 self.set_gain(1, 1, -0.5)?; // R -> S (negative)
             }
             PRESET_MS_DECODE => {
@@ -430,7 +430,7 @@ impl MatrixPlugin {
                 self.set_gain(0, 0, 1.0)?; // M -> L
                 self.set_gain(1, 0, 1.0)?; // S -> L
                 // R = M - S
-                self.set_gain(0, 1, 1.0)?;  // M -> R
+                self.set_gain(0, 1, 1.0)?; // M -> R
                 self.set_gain(1, 1, -1.0)?; // S -> R (negative)
             }
             PRESET_51_REMAP => {
@@ -488,7 +488,9 @@ impl Plugin for MatrixPlugin {
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         // Try PARAMS-based keys first (e.g. "gain")
-        if let Ok(_idx) = param_bridge::set_parameter(MX, &id, &value, |i, v| self.set_param_value(i, v)) {
+        if let Ok(_idx) =
+            param_bridge::set_parameter(MX, &id, &value, |i, v| self.set_param_value(i, v))
+        {
             self.rebuild_cached_parameters();
             return Ok(());
         }
@@ -609,7 +611,9 @@ impl Plugin for MatrixPlugin {
             let parts: Vec<&str> = rest.split('_').collect();
             let in_ch = parts[0].parse::<usize>().ok()?;
             let out_ch = parts[1].parse::<usize>().ok()?;
-            return self.get_phase_invert(in_ch, out_ch).map(ParameterValue::Bool);
+            return self
+                .get_phase_invert(in_ch, out_ch)
+                .map(ParameterValue::Bool);
         }
         if let Some(rest) = id_str.strip_prefix("mute_") {
             let ch = rest.parse::<usize>().ok()?;

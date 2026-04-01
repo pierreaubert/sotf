@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_plugin_denoiser::{DenoiserPlugin, DenoiserPluginParams};
 
 #[global_allocator]

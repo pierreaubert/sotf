@@ -5,11 +5,7 @@ use sotf_plugin_ambisonics::{AmbisonicsDecoderConfig, AmbisonicsDecoderPlugin};
 const SAMPLE_RATE: u32 = 48000;
 const FRAME_SIZE: usize = 512;
 
-fn benchmark_plugin(
-    c: &mut Criterion,
-    name: &str,
-    mut plugin: AmbisonicsDecoderPlugin,
-) {
+fn benchmark_plugin(c: &mut Criterion, name: &str, mut plugin: AmbisonicsDecoderPlugin) {
     plugin.initialize(SAMPLE_RATE).unwrap();
     let in_ch = plugin.input_channels();
     let out_ch = plugin.output_channels();

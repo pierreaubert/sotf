@@ -509,10 +509,7 @@ pub extern "C" fn plugin_free_string(s: *mut c_char) {
 /// * handle must be a valid plugin handle
 /// * out_len must be a valid pointer to write the buffer length
 #[unsafe(no_mangle)]
-pub extern "C" fn plugin_save_state(
-    handle: *const PluginHandle,
-    out_len: *mut usize,
-) -> *mut u8 {
+pub extern "C" fn plugin_save_state(handle: *const PluginHandle, out_len: *mut usize) -> *mut u8 {
     if handle.is_null() || out_len.is_null() {
         return ptr::null_mut();
     }

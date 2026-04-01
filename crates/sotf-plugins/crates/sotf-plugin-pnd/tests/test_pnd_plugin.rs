@@ -175,7 +175,9 @@ fn test_pnd_known_drift_correction() {
         assert!(
             output_error < 10.0,
             "Output frequency error ({:.1}Hz) should be small. Input freq={:.1}Hz, output freq={:.1}Hz",
-            output_error, drift_freq, measured_freq
+            output_error,
+            drift_freq,
+            measured_freq
         );
     }
 }

@@ -93,10 +93,7 @@ mod tests {
         let value = plugin2.get_parameter(&id);
         match value {
             Some(ParameterValue::Float(f)) => {
-                assert!(
-                    (f - 3.0).abs() < 0.01,
-                    "Expected gain_db=3.0, got {f}"
-                );
+                assert!((f - 3.0).abs() < 0.01, "Expected gain_db=3.0, got {f}");
             }
             other => panic!("Expected Float(3.0), got {other:?}"),
         }

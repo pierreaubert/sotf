@@ -4,16 +4,16 @@
 
 pub mod params;
 
+use crate::params::{BAND_TEMPLATE as MEB, GLOBAL_PARAMS as ME};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_dsp::stft::{RealFftProcessor, generate_hann_window};
-use sotf_host::lr4_crossover::Lr4Crossover;
 use realfft::RealFftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_makeup::MeasuredMakeup;
 use sotf_host::detector::{DetectionMode, LevelDetector};
-use crate::params::{BAND_TEMPLATE as MEB, GLOBAL_PARAMS as ME};
+use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
@@ -266,7 +266,13 @@ struct SpectralState {
 }
 
 impl SpectralState {
-    fn new(fft_size: usize, channels: usize, sample_rate: u32, crossover_frequencies: &[f32], num_bands: usize) -> Self {
+    fn new(
+        fft_size: usize,
+        channels: usize,
+        sample_rate: u32,
+        crossover_frequencies: &[f32],
+        num_bands: usize,
+    ) -> Self {
         let hop_size = fft_size / 4; // 75% overlap
         let num_bins = fft_size / 2 + 1;
 
@@ -287,7 +293,13 @@ impl SpectralState {
         let output_scale = 1.0 / (fft_size as f32 * 1.5);
 
         // Assign each bin to a band based on center frequency
-        let bin_to_band = Self::compute_bin_to_band(fft_size, num_bins, sample_rate, crossover_frequencies, num_bands);
+        let bin_to_band = Self::compute_bin_to_band(
+            fft_size,
+            num_bins,
+            sample_rate,
+            crossover_frequencies,
+            num_bands,
+        );
 
         // Per-bin state (all bins start in Open state)
         let bin_states: Vec<Vec<SpectralBinState>> = (0..channels)
@@ -339,7 +351,10 @@ impl SpectralState {
                 let freq = k as f32 * sample_rate as f32 / fft_size as f32;
                 // Find the first crossover that is above this bin's frequency
                 let mut band = 0;
-                for &xf in crossover_frequencies.iter().take(num_bands.saturating_sub(1)) {
+                for &xf in crossover_frequencies
+                    .iter()
+                    .take(num_bands.saturating_sub(1))
+                {
                     if freq < xf {
                         break;
                     }
@@ -351,7 +366,12 @@ impl SpectralState {
     }
 
     /// Update the bin→band mapping (called when crossover frequencies change).
-    fn update_bin_to_band(&mut self, sample_rate: u32, crossover_frequencies: &[f32], num_bands: usize) {
+    fn update_bin_to_band(
+        &mut self,
+        sample_rate: u32,
+        crossover_frequencies: &[f32],
+        num_bands: usize,
+    ) {
         self.bin_to_band = Self::compute_bin_to_band(
             self.fft_size,
             self.num_bins,
@@ -379,8 +399,14 @@ impl SpectralState {
         self.band_release_hop.resize(num_bands, 0.0);
 
         for b in 0..num_bands {
-            let a_ms = band_params.get(b).and_then(|p| p.attack_ms).unwrap_or(global_attack_ms);
-            let r_ms = band_params.get(b).and_then(|p| p.release_ms).unwrap_or(global_release_ms);
+            let a_ms = band_params
+                .get(b)
+                .and_then(|p| p.attack_ms)
+                .unwrap_or(global_attack_ms);
+            let r_ms = band_params
+                .get(b)
+                .and_then(|p| p.release_ms)
+                .unwrap_or(global_release_ms);
             // One-pole coefficient: e^(-1 / (time_s * rate))
             self.band_attack_hop[b] = (-1.0 / (a_ms * 0.001 * hop_rate)).exp();
             self.band_release_hop[b] = (-1.0 / (r_ms * 0.001 * hop_rate)).exp();
@@ -493,9 +519,7 @@ impl MultibandExpanderPlugin {
             band_params.push(BandExpanderParams::default());
         }
 
-        let measured_makeups = (0..nb)
-            .map(|_| MeasuredMakeup::new(1000.0, sr))
-            .collect();
+        let measured_makeups = (0..nb).map(|_| MeasuredMakeup::new(1000.0, sr)).collect();
 
         let det_mode_str = if params.detection_mode.is_empty() {
             "peak"
@@ -520,13 +544,7 @@ impl MultibandExpanderPlugin {
         let spectral = if mode_str == "spectral" {
             let fft_size = 1024;
             let mut ss = SpectralState::new(fft_size, channels, sr, &xfs, nb);
-            ss.update_band_coefficients(
-                nb,
-                &band_params,
-                params.attack_ms,
-                params.release_ms,
-                sr,
-            );
+            ss.update_band_coefficients(nb, &band_params, params.attack_ms, params.release_ms, sr);
             Some(ss)
         } else {
             None
@@ -578,23 +596,24 @@ impl MultibandExpanderPlugin {
     /// Order must match params::GLOBAL_PARAMS exactly.
     fn param_value(&self, index: usize) -> Option<f64> {
         match index {
-            0 => Some(self.num_bands as f64),                            // num_bands
-            1 => Some(self._crossover_preset as f64),                    // crossover_preset
-            2 => Some(self.crossover_frequencies[0] as f64),             // crossover_freq_1
-            3 => Some(self.crossover_frequencies[1] as f64),             // crossover_freq_2
-            4 => Some(self.crossover_frequencies[2] as f64),             // crossover_freq_3
-            5 => Some(self.crossover_frequencies[3] as f64),             // crossover_freq_4
-            6 => Some(self.threshold_db as f64),                         // threshold
-            7 => Some(self.ratio as f64),                                // ratio
-            8 => Some(self.attack_ms as f64),                            // attack
-            9 => Some(self.release_ms as f64),                           // release
-            10 => Some(self.range_db as f64),                            // range
-            11 => Some(self.knee_db as f64),                             // knee
-            12 => Some(self.hysteresis_db as f64),                       // hysteresis
-            13 => Some(self.hold_ms as f64),                             // hold
-            14 => Some(self.mix as f64),                                 // mix
-            15 => Some(if self.link_channels { 1.0 } else { 0.0 }),     // link_channels
-            16 => {                                                       // detection_mode
+            0 => Some(self.num_bands as f64),                       // num_bands
+            1 => Some(self._crossover_preset as f64),               // crossover_preset
+            2 => Some(self.crossover_frequencies[0] as f64),        // crossover_freq_1
+            3 => Some(self.crossover_frequencies[1] as f64),        // crossover_freq_2
+            4 => Some(self.crossover_frequencies[2] as f64),        // crossover_freq_3
+            5 => Some(self.crossover_frequencies[3] as f64),        // crossover_freq_4
+            6 => Some(self.threshold_db as f64),                    // threshold
+            7 => Some(self.ratio as f64),                           // ratio
+            8 => Some(self.attack_ms as f64),                       // attack
+            9 => Some(self.release_ms as f64),                      // release
+            10 => Some(self.range_db as f64),                       // range
+            11 => Some(self.knee_db as f64),                        // knee
+            12 => Some(self.hysteresis_db as f64),                  // hysteresis
+            13 => Some(self.hold_ms as f64),                        // hold
+            14 => Some(self.mix as f64),                            // mix
+            15 => Some(if self.link_channels { 1.0 } else { 0.0 }), // link_channels
+            16 => {
+                // detection_mode
                 let idx = if self.detection_mode == "rms" { 1 } else { 0 };
                 Some(idx as f64)
             }
@@ -606,24 +625,29 @@ impl MultibandExpanderPlugin {
     /// Order must match params::GLOBAL_PARAMS exactly.
     fn set_param_value(&mut self, index: usize, value: f64) {
         match index {
-            0 => self.num_bands = value as usize,                        // num_bands
-            1 => self._crossover_preset = value as i32,                  // crossover_preset
-            2 => self.crossover_frequencies[0] = value as f32,           // crossover_freq_1
-            3 => self.crossover_frequencies[1] = value as f32,           // crossover_freq_2
-            4 => self.crossover_frequencies[2] = value as f32,           // crossover_freq_3
-            5 => self.crossover_frequencies[3] = value as f32,           // crossover_freq_4
-            6 => self.threshold_db = value as f32,                       // threshold
-            7 => self.ratio = value as f32,                              // ratio
-            8 => self.attack_ms = value as f32,                          // attack
-            9 => self.release_ms = value as f32,                         // release
-            10 => self.range_db = value as f32,                          // range
-            11 => self.knee_db = value as f32,                           // knee
-            12 => self.hysteresis_db = value as f32,                     // hysteresis
-            13 => self.hold_ms = value as f32,                           // hold
-            14 => self.mix = value as f32,                               // mix
-            15 => self.link_channels = value > 0.5,                      // link_channels
-            16 => {                                                       // detection_mode
-                self.detection_mode = if value as i32 == 1 { "rms".to_string() } else { "peak".to_string() };
+            0 => self.num_bands = value as usize,              // num_bands
+            1 => self._crossover_preset = value as i32,        // crossover_preset
+            2 => self.crossover_frequencies[0] = value as f32, // crossover_freq_1
+            3 => self.crossover_frequencies[1] = value as f32, // crossover_freq_2
+            4 => self.crossover_frequencies[2] = value as f32, // crossover_freq_3
+            5 => self.crossover_frequencies[3] = value as f32, // crossover_freq_4
+            6 => self.threshold_db = value as f32,             // threshold
+            7 => self.ratio = value as f32,                    // ratio
+            8 => self.attack_ms = value as f32,                // attack
+            9 => self.release_ms = value as f32,               // release
+            10 => self.range_db = value as f32,                // range
+            11 => self.knee_db = value as f32,                 // knee
+            12 => self.hysteresis_db = value as f32,           // hysteresis
+            13 => self.hold_ms = value as f32,                 // hold
+            14 => self.mix = value as f32,                     // mix
+            15 => self.link_channels = value > 0.5,            // link_channels
+            16 => {
+                // detection_mode
+                self.detection_mode = if value as i32 == 1 {
+                    "rms".to_string()
+                } else {
+                    "peak".to_string()
+                };
             }
             _ => {}
         }
@@ -633,7 +657,11 @@ impl MultibandExpanderPlugin {
         let mut params = param_bridge::build_parameters(ME, |i| self.param_value(i));
 
         // processing_mode is not in GLOBAL_PARAMS, add manually
-        let proc_mode_idx = if self.processing_mode == "spectral" { 1 } else { 0 };
+        let proc_mode_idx = if self.processing_mode == "spectral" {
+            1
+        } else {
+            0
+        };
         params.push(
             Parameter::new_int("processing_mode", "Processing Mode", proc_mode_idx, 0, 1)
                 .with_group("General"),
@@ -764,8 +792,11 @@ impl MultibandExpanderPlugin {
         self.crossover_points.clear();
         for i in 0..(self.num_bands - 1) {
             let f = self.xover_smoothers[i].target();
-            self.crossover_points
-                .push(Lr4Crossover::new(f, self.sample_rate as f32, self.channels));
+            self.crossover_points.push(Lr4Crossover::new(
+                f,
+                self.sample_rate as f32,
+                self.channels,
+            ));
         }
     }
 
@@ -830,10 +861,7 @@ impl MultibandExpanderPlugin {
     /// threshold / ratio / knee / range / hold / hysteresis parameters.
     /// Attack/release coefficients are at *hop rate* so time constants are
     /// perceptually equivalent to the time-domain mode.
-    fn process_spectral_hop(
-        &mut self,
-        any_solo: bool,
-    ) {
+    fn process_spectral_hop(&mut self, any_solo: bool) {
         let ss = match &mut self.spectral {
             Some(s) => s,
             None => return,
@@ -864,7 +892,15 @@ impl MultibandExpanderPlugin {
         const MAX_MB_BANDS: usize = 5;
         let hop_rate = self.sample_rate as f32 / ss.hop_size as f32;
         let mut band_info = [BandInfo {
-            th: 0.0, rat: 1.0, kn: 0.0, rg: 0.0, hys: 0.0, hs: 0, bypass: false, active: true, solo: false,
+            th: 0.0,
+            rat: 1.0,
+            kn: 0.0,
+            rg: 0.0,
+            hys: 0.0,
+            hs: 0,
+            bypass: false,
+            active: true,
+            solo: false,
         }; MAX_MB_BANDS];
         for (b, info) in band_info.iter_mut().enumerate().take(self.num_bands) {
             let bp = self.band_params.get(b);
@@ -874,7 +910,9 @@ impl MultibandExpanderPlugin {
                 rat: bp.and_then(|p| p.ratio).unwrap_or(self.ratio),
                 kn: bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db),
                 rg: bp.and_then(|p| p.range_db).unwrap_or(self.range_db),
-                hys: bp.and_then(|p| p.hysteresis_db).unwrap_or(self.hysteresis_db),
+                hys: bp
+                    .and_then(|p| p.hysteresis_db)
+                    .unwrap_or(self.hysteresis_db),
                 hs: (hold_ms * 0.001 * hop_rate) as usize,
                 bypass: bp.map(|p| p.bypass).unwrap_or(false),
                 active: bp.map(|p| p.active).unwrap_or(true),
@@ -889,9 +927,12 @@ impl MultibandExpanderPlugin {
                 ss.windowed_buf[i] = ss.input_buffers[ch][i] * ss.analysis_window[i];
             }
             // forward() reads time_buffer, writes freq_buffer
-            ss.fft_processors[ch].time_buffer.copy_from_slice(&ss.windowed_buf);
+            ss.fft_processors[ch]
+                .time_buffer
+                .copy_from_slice(&ss.windowed_buf);
             ss.fft_processors[ch].forward();
-            ss.freq_scratch.copy_from_slice(&ss.fft_processors[ch].freq_buffer);
+            ss.freq_scratch
+                .copy_from_slice(&ss.fft_processors[ch].freq_buffer);
 
             // --- Per-bin expansion ---
             for k in 0..num_bins {
@@ -976,7 +1017,9 @@ impl MultibandExpanderPlugin {
             }
 
             // --- Inverse FFT ---
-            ss.fft_processors[ch].freq_buffer.copy_from_slice(&ss.freq_scratch);
+            ss.fft_processors[ch]
+                .freq_buffer
+                .copy_from_slice(&ss.freq_scratch);
             ss.fft_processors[ch].inverse();
 
             // Apply synthesis window (Hann) + scale, overlap-add into ring
@@ -1023,9 +1066,8 @@ impl MultibandExpanderPlugin {
         let nf = context.num_frames;
         let channels = self.channels;
 
-        let any_solo = (0..self.num_bands).any(|b| {
-            self.band_params.get(b).map(|p| p.solo).unwrap_or(false)
-        });
+        let any_solo =
+            (0..self.num_bands).any(|b| self.band_params.get(b).map(|p| p.solo).unwrap_or(false));
 
         let g_mix = self.mix_smoother.next_n(nf);
 
@@ -1038,7 +1080,7 @@ impl MultibandExpanderPlugin {
         // Zero the output portion of the buffer — we'll drain OLA into it
         buffer[..nf * channels].fill(0.0);
 
-        let mut input_pos = 0;  // frame index into the caller's buffer
+        let mut input_pos = 0; // frame index into the caller's buffer
         let mut output_pos = 0; // frame index into the caller's output
 
         // Safety: spectral must be Some when this path is called
@@ -1094,7 +1136,8 @@ impl MultibandExpanderPlugin {
                         let read_idx = (ss.output_read_position + i) & mask;
                         let out_base = (output_pos + i) * channels;
                         for ch in 0..channels {
-                            buffer[out_base + ch] += ss.output_accumulator[read_idx * channels + ch];
+                            buffer[out_base + ch] +=
+                                ss.output_accumulator[read_idx * channels + ch];
                         }
                     }
                     // Clear drained frames
@@ -1173,7 +1216,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         }
 
         // Try global params via param_bridge
-        if let Ok(idx) = param_bridge::set_parameter(ME, &id, &value, |i, v| self.set_param_value(i, v)) {
+        if let Ok(idx) =
+            param_bridge::set_parameter(ME, &id, &value, |i, v| self.set_param_value(i, v))
+        {
             // Side effects for specific global params
             match idx {
                 0 => {
@@ -1205,18 +1250,13 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         );
                     }
                     self.band_levels_db.resize(nb, -100.0);
-                    self.attenuation_flattened
-                        .resize(nb * self.channels, 0.0);
+                    self.attenuation_flattened.resize(nb * self.channels, 0.0);
                     self.is_open_buffer.resize(nb, false);
                     self.update_coefficients();
 
                     // Rebuild spectral bin->band mapping
                     if let Some(ss) = &mut self.spectral {
-                        ss.update_bin_to_band(
-                            self.sample_rate,
-                            &self.crossover_frequencies,
-                            nb,
-                        );
+                        ss.update_bin_to_band(self.sample_rate, &self.crossover_frequencies, nb);
                         ss.update_band_coefficients(
                             nb,
                             &self.band_params,
@@ -1233,7 +1273,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     // crossover_freq_1..4 changed
                     let xover_idx = idx - 2;
                     if xover_idx < self.xover_smoothers.len() {
-                        self.xover_smoothers[xover_idx].set_target(self.crossover_frequencies[xover_idx]);
+                        self.xover_smoothers[xover_idx]
+                            .set_target(self.crossover_frequencies[xover_idx]);
                     }
                     // Update spectral bin->band mapping
                     if let Some(ss) = &mut self.spectral {
@@ -1389,7 +1430,11 @@ impl InPlacePlugin for MultibandExpanderPlugin {
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         // Handle processing_mode separately (not in GLOBAL_PARAMS)
         if id.0 == "processing_mode" {
-            let idx = if self.processing_mode == "spectral" { 1 } else { 0 };
+            let idx = if self.processing_mode == "spectral" {
+                1
+            } else {
+                0
+            };
             return Some(ParameterValue::Int(idx));
         }
         // Try global params first
@@ -1644,8 +1689,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     } else {
                         let mut peak = 0.0f32;
                         for ch in 0..self.channels {
-                            peak = peak
-                                .max(self.band_buffers[off + frame * self.channels + ch].abs());
+                            peak =
+                                peak.max(self.band_buffers[off + frame * self.channels + ch].abs());
                         }
                         det_db = 20.0 * fast_log10(peak.max(1e-10));
                     }
@@ -1835,8 +1880,7 @@ mod tests {
         let quiet_amp = 0.001;
         let mut quiet: Vec<f32> = (0..nf)
             .map(|i| {
-                quiet_amp
-                    * (2.0 * std::f32::consts::PI * 50.0 * (nf + i) as f32 / 48000.0).sin()
+                quiet_amp * (2.0 * std::f32::consts::PI * 50.0 * (nf + i) as f32 / 48000.0).sin()
             })
             .collect();
         p.process_in_place(&mut quiet, &ctx).unwrap();
@@ -1994,7 +2038,11 @@ mod tests {
         p.initialize(48000).unwrap();
 
         // Check that latency is reported as fft_size
-        assert_eq!(p.latency_samples(), 1024, "Spectral mode latency should be fft_size=1024");
+        assert_eq!(
+            p.latency_samples(),
+            1024,
+            "Spectral mode latency should be fft_size=1024"
+        );
 
         // Generate pink-noise-like signal using sum of sines
         let nf = 8192usize;
@@ -2024,12 +2072,8 @@ mod tests {
         }
 
         // After the latency fill (~fft_size frames = 1024), output must not be all-zeros
-        let rms_out: f32 = (buf[1024 * 2..]
-            .iter()
-            .map(|s| s * s)
-            .sum::<f32>()
-            / ((nf - 1024) * 2) as f32)
-            .sqrt();
+        let rms_out: f32 =
+            (buf[1024 * 2..].iter().map(|s| s * s).sum::<f32>() / ((nf - 1024) * 2) as f32).sqrt();
         assert!(
             rms_out > 1e-5,
             "Spectral mode output should not be silent for loud input, RMS={rms_out:.8}"
@@ -2075,8 +2119,7 @@ mod tests {
         // Measure RMS of the second half to let the expander settle
         let half = num_frames / 2;
         let output_rms: f32 =
-            (buffer[half..].iter().map(|s| s * s).sum::<f32>() / (num_frames - half) as f32)
-                .sqrt();
+            (buffer[half..].iter().map(|s| s * s).sum::<f32>() / (num_frames - half) as f32).sqrt();
 
         assert!(
             output_rms < input_rms * 0.9,

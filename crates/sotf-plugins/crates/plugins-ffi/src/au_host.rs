@@ -79,13 +79,14 @@ impl AuHostState {
 
         // Determine band layout from ParamSpec metadata
         let global_specs = parameter_map::global_param_specs(&plugin_type);
-        let band_layout = parameter_map::band_template_info(&plugin_type).map(
-            |(params_per_band, max_bands)| BandLayout {
-                global_param_count: global_specs.len(),
-                params_per_band,
-                max_bands,
-            },
-        );
+        let band_layout =
+            parameter_map::band_template_info(&plugin_type).map(|(params_per_band, max_bands)| {
+                BandLayout {
+                    global_param_count: global_specs.len(),
+                    params_per_band,
+                    max_bands,
+                }
+            });
 
         Self {
             cache,
@@ -201,17 +202,12 @@ impl AuHostState {
         let theme = &self.theme;
         let knobs_per_row = 4;
 
-        let header = div()
-            .w_full()
-            .flex()
-            .justify_center()
-            .py(px(8.0))
-            .child(
-                div()
-                    .text_color(rgb(0xffffff))
-                    .text_xl()
-                    .child(format!("SOTF: {}", self.plugin_type)),
-            );
+        let header = div().w_full().flex().justify_center().py(px(8.0)).child(
+            div()
+                .text_color(rgb(0xffffff))
+                .text_xl()
+                .child(format!("SOTF: {}", self.plugin_type)),
+        );
 
         let mut rows = div().w_full().flex().flex_col().gap(px(8.0)).px(px(12.0));
         let mut row = div()
@@ -354,7 +350,11 @@ impl PluginViewHost for AuHostState {
         let defaults: Vec<(usize, f64)> = (0..ppb)
             .map(|f| {
                 let au_idx = base + f;
-                let default = self.cache.meta(au_idx).map(|m| m.default_value).unwrap_or(0.0);
+                let default = self
+                    .cache
+                    .meta(au_idx)
+                    .map(|m| m.default_value)
+                    .unwrap_or(0.0);
                 (au_idx, default)
             })
             .collect();
@@ -382,7 +382,11 @@ impl PluginViewHost for AuHostState {
             let src_base = global_count + (i + 1) * ppb;
             let dst_base = global_count + i * ppb;
             for f in 0..ppb {
-                let val = self.param_snapshot.get(src_base + f).copied().unwrap_or(0.0);
+                let val = self
+                    .param_snapshot
+                    .get(src_base + f)
+                    .copied()
+                    .unwrap_or(0.0);
                 updates.push((dst_base + f, val));
             }
         }

@@ -238,7 +238,10 @@ mod tests {
         let _ = filter.process(&mic, &reference);
 
         // Verify weights are non-zero
-        let has_nonzero = filter.weights.iter().any(|part| part.iter().any(|c| c.norm() > 0.0));
+        let has_nonzero = filter
+            .weights
+            .iter()
+            .any(|part| part.iter().any(|c| c.norm() > 0.0));
         assert!(has_nonzero);
 
         filter.reset();

@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -55,14 +55,7 @@ pub const PARAMS: &[ParamSpec] = &[
         .doc("Enable mid-range compensation band"),
     // ISO 226:2003: ear canal resonance creates max sensitivity at ~3.5 kHz
     ParamSpec::float(
-        "Mid Freq",
-        "mid_freq",
-        3500.0,
-        500.0,
-        8000.0,
-        50.0,
-        "Hz",
-        "Mid",
+        "Mid Freq", "mid_freq", 3500.0, 500.0, 8000.0, 50.0, "Hz", "Mid",
     )
     .doc("Mid peak center frequency"),
     ParamSpec::float("Mid Gain", "mid_gain", 3.0, -20.0, 20.0, 0.5, "dB", "Mid")

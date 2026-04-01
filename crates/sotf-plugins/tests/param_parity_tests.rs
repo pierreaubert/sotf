@@ -14,12 +14,11 @@
 use sotf_plugins::param_specs::{self, ParamSpec, ParamType};
 use sotf_plugins::{
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
-    ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin,
-    DelayPlugin, DenoiserPlugin, DownmixPlugin, ExpanderPlugin, GainPlugin,
-    GatePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
-    MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
-    ParameterId, ParameterValue, PndPlugin, Plugin, RoomModel, UpmixerPlugin, XtcPlugin,
-    XtcPluginParams,
+    ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, DelayPlugin,
+    DenoiserPlugin, DownmixPlugin, ExpanderPlugin, GainPlugin, GatePlugin, InPlacePluginAdapter,
+    LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin, MonoToStereoPlugin,
+    MultibandCompressorPlugin, MultibandExpanderPlugin, ParameterId, ParameterValue, Plugin,
+    PndPlugin, RoomModel, UpmixerPlugin, XtcPlugin, XtcPluginParams,
 };
 
 const SAMPLE_RATE: u32 = 48000;
@@ -71,9 +70,9 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "loudness_compensation",
-            plugin: Box::new(InPlacePluginAdapter::new(
-                LoudnessCompensationPlugin::new(2, 200.0, 3.0, 6000.0, 2.0),
-            )),
+            plugin: Box::new(InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
+                2, 200.0, 3.0, 6000.0, 2.0,
+            ))),
             params: param_specs::loudness_compensation::PARAMS,
         },
         PluginWithSpec {
@@ -85,15 +84,22 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "xtc",
-            plugin: Box::new(
-                XtcPlugin::new(XtcPluginParams::default(), SAMPLE_RATE).unwrap(),
-            ),
+            plugin: Box::new(XtcPlugin::new(XtcPluginParams::default(), SAMPLE_RATE).unwrap()),
             params: param_specs::xtc::PARAMS,
         },
         PluginWithSpec {
             name: "binaural",
             plugin: Box::new(BinauralDecoderPlugin::new(
-                2, 1024, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0,
+                2,
+                1024,
+                None,
+                true,
+                0.0,
+                0.0,
+                false,
+                120.0,
+                2.0,
+                0.0,
                 RoomModel::default(),
             )),
             params: param_specs::binaural::PARAMS,
@@ -125,9 +131,9 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "channel_mute_solo",
-            plugin: Box::new(InPlacePluginAdapter::new(
-                ChannelMuteSoloPlugin::new(2, true),
-            )),
+            plugin: Box::new(InPlacePluginAdapter::new(ChannelMuteSoloPlugin::new(
+                2, true,
+            ))),
             params: param_specs::channel_mute_solo::PARAMS,
         },
         PluginWithSpec {
@@ -154,22 +160,19 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "multiband_compressor",
-            plugin: Box::new(InPlacePluginAdapter::new(
-                MultibandCompressorPlugin::new(2),
-            )),
+            plugin: Box::new(InPlacePluginAdapter::new(MultibandCompressorPlugin::new(2))),
             params: param_specs::multiband_compressor::GLOBAL_PARAMS,
         },
         PluginWithSpec {
             name: "multiband_expander",
-            plugin: Box::new(InPlacePluginAdapter::new(
-                MultibandExpanderPlugin::new(2),
-            )),
+            plugin: Box::new(InPlacePluginAdapter::new(MultibandExpanderPlugin::new(2))),
             params: param_specs::multiband_expander::GLOBAL_PARAMS,
         },
         PluginWithSpec {
             name: "convolution",
             plugin: Box::new(InPlacePluginAdapter::new(ConvolutionPlugin::new(
-                2, SAMPLE_RATE,
+                2,
+                SAMPLE_RATE,
             ))),
             params: param_specs::convolution::PARAMS,
         },
@@ -218,9 +221,9 @@ fn all_params_spec_keys_are_registered_in_dsp_plugin() {
 
             // 2. Check set_parameter() accepts this key
             let test_val = default_test_value(spec);
-            let set_result =
-                pw.plugin
-                    .set_parameter(ParameterId::from(key), test_val.clone());
+            let set_result = pw
+                .plugin
+                .set_parameter(ParameterId::from(key), test_val.clone());
             if let Err(e) = set_result {
                 all_errors.push(format!(
                     "[{}] set_parameter('{}', {:?}) failed: {}",

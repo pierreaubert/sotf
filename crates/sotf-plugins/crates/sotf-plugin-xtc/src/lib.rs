@@ -44,10 +44,10 @@ use reflections::{
 
 use crate::params::PARAMS as XT;
 use arc_swap::ArcSwap;
+use math_audio_dsp::stft::generate_hann_window;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
-use math_audio_dsp::stft::generate_hann_window;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
 use sotf_host::param_bridge;
@@ -547,17 +547,45 @@ impl XtcPlugin {
             10 => Some(self.params.head_shadow_cutoff_hz as f64),
             11 => Some(self.params.head_shadow_slope_db_per_octave as f64),
             12 => Some(self.params.max_gain_db as f64),
-            13 => Some(if self.params.spectral_normalization { 1.0 } else { 0.0 }),
-            14 => Some(if self.params.pinna_model_enabled { 1.0 } else { 0.0 }),
-            15 => Some(if self.params.room_reflections_enabled { 1.0 } else { 0.0 }),
+            13 => Some(if self.params.spectral_normalization {
+                1.0
+            } else {
+                0.0
+            }),
+            14 => Some(if self.params.pinna_model_enabled {
+                1.0
+            } else {
+                0.0
+            }),
+            15 => Some(if self.params.room_reflections_enabled {
+                1.0
+            } else {
+                0.0
+            }),
             16 => Some(self.params.room_width_m as f64),
             17 => Some(self.params.room_depth_m as f64),
             18 => Some(self.params.wall_absorption as f64),
             19 => Some(self.params.reflection_beta_boost as f64),
-            20 => Some(if self.params.bypass_xtc_filters { 1.0 } else { 0.0 }),
-            21 => Some(if self.params.bypass_spectral_normalization { 1.0 } else { 0.0 }),
-            22 => Some(if self.params.bypass_neumann_refinement { 1.0 } else { 0.0 }),
-            23 => Some(if self.params.auto_gain_enabled { 1.0 } else { 0.0 }),
+            20 => Some(if self.params.bypass_xtc_filters {
+                1.0
+            } else {
+                0.0
+            }),
+            21 => Some(if self.params.bypass_spectral_normalization {
+                1.0
+            } else {
+                0.0
+            }),
+            22 => Some(if self.params.bypass_neumann_refinement {
+                1.0
+            } else {
+                0.0
+            }),
+            23 => Some(if self.params.auto_gain_enabled {
+                1.0
+            } else {
+                0.0
+            }),
             24 => Some(self.params.auto_gain_max_db as f64),
             25 => Some(self.params.auto_gain_smoothing_ms as f64),
             26 => Some(self.params.head_model as f64),
@@ -603,18 +631,28 @@ impl XtcPlugin {
     fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = param_bridge::build_parameters(XT, |i| self.param_value(i));
         // Append parameters not in PARAMS
-        self.cached_parameters.push(
-            Parameter::new_bool("enabled", "Enabled", self.params.enabled)
-        );
-        self.cached_parameters.push(
-            Parameter::new_float("kappa_target", "Kappa Target", self.params.kappa_target, 1.0, 1000.0)
-        );
-        self.cached_parameters.push(
-            Parameter::new_string("hrtf_file", "HRTF File", self.params.hrtf_file.clone().unwrap_or_default())
-        );
-        self.cached_parameters.push(
-            Parameter::new_string("itd_modeling", "ITD Mode", self.params.itd_modeling.clone())
-        );
+        self.cached_parameters.push(Parameter::new_bool(
+            "enabled",
+            "Enabled",
+            self.params.enabled,
+        ));
+        self.cached_parameters.push(Parameter::new_float(
+            "kappa_target",
+            "Kappa Target",
+            self.params.kappa_target,
+            1.0,
+            1000.0,
+        ));
+        self.cached_parameters.push(Parameter::new_string(
+            "hrtf_file",
+            "HRTF File",
+            self.params.hrtf_file.clone().unwrap_or_default(),
+        ));
+        self.cached_parameters.push(Parameter::new_string(
+            "itd_modeling",
+            "ITD Mode",
+            self.params.itd_modeling.clone(),
+        ));
     }
 
     /// Create from parameters helper
@@ -967,12 +1005,12 @@ impl Plugin for XtcPlugin {
 
         // Side effects based on parameter index
         let needs_filter_update = match idx {
-            0..=5 => true,    // geometry + head tracking
-            7..=9 => true,    // beta
-            10..=12 => true,  // shadow + filter
-            13 => true,       // spectral_normalization
-            14 => true,       // pinna_model_enabled
-            15..=19 => true,  // room
+            0..=5 => true,   // geometry + head tracking
+            7..=9 => true,   // beta
+            10..=12 => true, // shadow + filter
+            13 => true,      // spectral_normalization
+            14 => true,      // pinna_model_enabled
+            15..=19 => true, // room
             20 => {
                 // bypass_xtc_filters
                 self.limiter_envelope = 1.0;

@@ -380,8 +380,12 @@ fn test_crossover_delay_chain_multi_sample_rate() {
         };
 
         let mut crossover_output = vec![0.0f32; input.len()];
-        crossover.process(&input, &mut crossover_output, &context).unwrap();
-        delay.process_in_place(&mut crossover_output, &context).unwrap();
+        crossover
+            .process(&input, &mut crossover_output, &context)
+            .unwrap();
+        delay
+            .process_in_place(&mut crossover_output, &context)
+            .unwrap();
         assert_all_finite(&crossover_output, &format!("CrossoverDelay@{}Hz", sr));
     }
 }

@@ -695,7 +695,11 @@ fn test_formant_preservation_floors_gains_at_peaks() {
     // Verify the FormantPreserver fields are accessible and contain valid data
     // after processing (envelope computed, non-zero for signal with content).
     let preserver = &plugin_on.formant_preserver;
-    let max_env = preserver.envelope.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let max_env = preserver
+        .envelope
+        .iter()
+        .cloned()
+        .fold(f32::NEG_INFINITY, f32::max);
     assert!(
         max_env > 0.0 || max_env.is_finite(),
         "Envelope should be computed and finite after processing"
@@ -763,7 +767,10 @@ fn test_multi_resolution_mode() {
     let mut input2 = make_noisy_signal(num_frames, 2, -10.0, -30.0);
     plugin.process_in_place(&mut input2, &context).unwrap();
     let sum2: f32 = input2.iter().map(|x| x.abs()).sum();
-    assert!(sum2 > 0.0, "Re-enabled multi-resolution should still produce output");
+    assert!(
+        sum2 > 0.0,
+        "Re-enabled multi-resolution should still produce output"
+    );
 }
 
 /// Bootstrap noise floor seeding: process only 5 frames of noise, then 5 frames
@@ -829,7 +836,10 @@ fn test_mcra_noise_floor_converges_on_noise() {
 
     // The avg_reduction_db field should be non-zero after processing noisy signal
     let data = plugin.get_data();
-    assert!(data.is_some(), "get_data() should return Some after processing");
+    assert!(
+        data.is_some(),
+        "get_data() should return Some after processing"
+    );
 
     let data = data.unwrap();
     let denoiser_data = data
@@ -959,7 +969,10 @@ fn test_median_filter_reduces_spikes() {
     );
 
     // Edge elements should be unchanged
-    assert_eq!(gains[0], gains_before[0], "First element should be unchanged");
+    assert_eq!(
+        gains[0], gains_before[0],
+        "First element should be unchanged"
+    );
     assert_eq!(
         gains[len - 1],
         gains_before[len - 1],
@@ -995,10 +1008,7 @@ fn test_learn_noise_resets_mcra() {
 
     // Trigger learn_noise
     plugin
-        .set_parameter(
-            ParameterId::from("learn_noise"),
-            ParameterValue::Bool(true),
-        )
+        .set_parameter(ParameterId::from("learn_noise"), ParameterValue::Bool(true))
         .unwrap();
 
     // Frame counter should be reset to 0 (re-entered bootstrap)

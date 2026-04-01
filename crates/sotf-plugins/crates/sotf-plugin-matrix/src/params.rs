@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -18,10 +18,11 @@ use sotf_host::plugin_params::PluginParamDef;
 // Parameter Specifications
 // ============================================================================
 
-pub const PARAMS: &[ParamSpec] = &[ParamSpec::float(
-    "Gain", "gain", 0.0, 0.0, 1.0, 0.05, "", "Matrix",
-)
-.doc("Matrix routing coefficient")];
+pub const PARAMS: &[ParamSpec] =
+    &[
+        ParamSpec::float("Gain", "gain", 0.0, 0.0, 1.0, 0.05, "", "Matrix")
+            .doc("Matrix routing coefficient"),
+    ];
 
 // ============================================================================
 // UI Layout
@@ -83,7 +84,9 @@ impl PluginParamDef for Params {
     }
 
     fn set_param_value(&mut self, index: usize, value: f64) {
-        if index == 0 { self.gain = value }
+        if index == 0 {
+            self.gain = value
+        }
     }
 }
 

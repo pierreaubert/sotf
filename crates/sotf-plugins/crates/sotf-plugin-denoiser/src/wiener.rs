@@ -129,8 +129,8 @@ impl DenoiserPlugin {
                     // tonal_mask = how tonal this bin is (0..1)
                     // Blend: tonal bins keep current gain, transient bins push gain toward 1.0
                     let transient_weight = self.tt_transient_mask[k];
-                    self.gain[ch][k] = self.gain[ch][k] * (1.0 - 0.5 * transient_weight)
-                        + transient_weight * 0.5; // 50% less denoising on transients
+                    self.gain[ch][k] =
+                        self.gain[ch][k] * (1.0 - 0.5 * transient_weight) + transient_weight * 0.5; // 50% less denoising on transients
                 }
             }
 
@@ -188,8 +188,10 @@ impl DenoiserPlugin {
                 };
                 let incoherence = 1.0 - coherence;
                 let extra_reduction = incoherence * strength * 0.3;
-                self.smoothed_gain[0][k] = (self.smoothed_gain[0][k] - extra_reduction).max(floor_linear);
-                self.smoothed_gain[1][k] = (self.smoothed_gain[1][k] - extra_reduction).max(floor_linear);
+                self.smoothed_gain[0][k] =
+                    (self.smoothed_gain[0][k] - extra_reduction).max(floor_linear);
+                self.smoothed_gain[1][k] =
+                    (self.smoothed_gain[1][k] - extra_reduction).max(floor_linear);
             }
         }
 
@@ -331,8 +333,8 @@ impl DenoiserPlugin {
 
         // SNR thresholds for adaptive blend (in linear power ratio)
         // 3 dB = power ratio ~2, 10 dB = power ratio ~10
-        let snr_low = 2.0_f32;   // Below this: maximum wide smoothing
-        let snr_high = 10.0_f32;  // Above this: no extra smoothing
+        let snr_low = 2.0_f32; // Below this: maximum wide smoothing
+        let snr_high = 10.0_f32; // Above this: no extra smoothing
         let snr_range_inv = 1.0 / (snr_high - snr_low);
 
         // Copy narrow-smoothed gains to scratch for wide smoothing input

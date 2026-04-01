@@ -23,9 +23,9 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
     ABComparePlugin, AecPlugin, AecPluginParams, AutoGain, AutoGainParams, BandMergePlugin,
     BandSplitPlugin, BeamformerPlugin, ChannelMuteSoloPlugin, CompressorPlugin, CrossoverPlugin,
-    DelayPlugin, DenoiserPlugin, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter,
-    LoudnessCompensationPluginParams,
-    LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin,
+    DelayPlugin, DenoiserPlugin, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin, InPlacePlugin,
+    InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
+    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MatrixPlugin,
     MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
     SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams, XtcPlugin,
     XtcPluginParams,
@@ -301,9 +301,8 @@ fn test_fletcher_munson_zero_alloc() {
         reference_level_db: 69.0, // 83 + (-14)
         ..Default::default()
     };
-    let mut plugin = InPlacePluginAdapter::new(
-        LoudnessCompensationPlugin::from_params(2, params).unwrap()
-    );
+    let mut plugin =
+        InPlacePluginAdapter::new(LoudnessCompensationPlugin::from_params(2, params).unwrap());
     Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);

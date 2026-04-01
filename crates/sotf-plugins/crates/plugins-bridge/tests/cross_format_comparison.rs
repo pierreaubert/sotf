@@ -150,16 +150,14 @@ fn test_audio_output_equivalence() {
 
     for &plugin_type in &testable_plugins() {
         // Create two identical plugins via the factory
-        let mut plugin_direct =
-            match create_plugin(plugin_type, CHANNELS, SAMPLE_RATE, "{}") {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-        let mut plugin_bridge =
-            match create_plugin(plugin_type, CHANNELS, SAMPLE_RATE, "{}") {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
+        let mut plugin_direct = match create_plugin(plugin_type, CHANNELS, SAMPLE_RATE, "{}") {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let mut plugin_bridge = match create_plugin(plugin_type, CHANNELS, SAMPLE_RATE, "{}") {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
 
         plugin_direct.initialize(SAMPLE_RATE).ok();
         plugin_bridge.initialize(SAMPLE_RATE).ok();
@@ -193,8 +191,12 @@ fn test_audio_output_equivalence() {
         for _ in 0..4 {
             buf_direct = signal.clone();
             buf_bridge = signal.clone();
-            plugin_direct.process(&buf_direct.clone(), &mut buf_direct, &ctx).ok();
-            plugin_bridge.process(&buf_bridge.clone(), &mut buf_bridge, &ctx).ok();
+            plugin_direct
+                .process(&buf_direct.clone(), &mut buf_direct, &ctx)
+                .ok();
+            plugin_bridge
+                .process(&buf_bridge.clone(), &mut buf_bridge, &ctx)
+                .ok();
         }
 
         // Compare outputs

@@ -143,11 +143,7 @@ impl CrossoverPlugin {
                 20.0,
                 20000.0,
             ),
-            Parameter::new_string(
-                "mode",
-                "Mode",
-                self.mode.as_str().to_string(),
-            ),
+            Parameter::new_string("mode", "Mode", self.mode.as_str().to_string()),
         ];
 
         // Add extra frequency parameters for multi-way
@@ -274,8 +270,7 @@ impl Plugin for CrossoverPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        self.freq_smoother =
-            LogSmoother::new(self.freq_smoother.target(), 20.0, sample_rate);
+        self.freq_smoother = LogSmoother::new(self.freq_smoother.target(), 20.0, sample_rate);
         self.crossover_2way.reinit(
             self.freq_smoother.target(),
             sample_rate as f32,
@@ -352,8 +347,7 @@ impl Plugin for CrossoverPlugin {
 
                 match self.mode {
                     CrossoverMode::Lowpass => {
-                        output[out_off..out_off + in_ch]
-                            .copy_from_slice(&self.band_flat[..in_ch]);
+                        output[out_off..out_off + in_ch].copy_from_slice(&self.band_flat[..in_ch]);
                     }
                     CrossoverMode::Highpass => {
                         let hi_off = (num_bands - 1) * in_ch;
@@ -376,22 +370,22 @@ impl Plugin for CrossoverPlugin {
                 let out_off = frame * out_ch;
                 let frame_slice = &input[in_off..in_off + in_ch];
 
-                self.crossover_2way
-                    .process_frame(frame_slice, &mut self.low_buf, &mut self.high_buf);
+                self.crossover_2way.process_frame(
+                    frame_slice,
+                    &mut self.low_buf,
+                    &mut self.high_buf,
+                );
 
                 match self.mode {
                     CrossoverMode::Lowpass => {
-                        output[out_off..out_off + in_ch]
-                            .copy_from_slice(&self.low_buf);
+                        output[out_off..out_off + in_ch].copy_from_slice(&self.low_buf);
                     }
                     CrossoverMode::Highpass => {
-                        output[out_off..out_off + in_ch]
-                            .copy_from_slice(&self.high_buf);
+                        output[out_off..out_off + in_ch].copy_from_slice(&self.high_buf);
                     }
                     CrossoverMode::Both => {
                         // Low band first, then high band
-                        output[out_off..out_off + in_ch]
-                            .copy_from_slice(&self.low_buf);
+                        output[out_off..out_off + in_ch].copy_from_slice(&self.low_buf);
                         output[out_off + in_ch..out_off + 2 * in_ch]
                             .copy_from_slice(&self.high_buf);
                     }
@@ -558,9 +552,7 @@ mod tests {
         // so per-sample comparison with undelayed input is not valid.
         // Instead, verify RMS energy is preserved.
         let num_frames = 10000;
-        let input: Vec<f32> = (0..num_frames)
-            .map(|i| (i as f32 * 0.05).sin())
-            .collect();
+        let input: Vec<f32> = (0..num_frames).map(|i| (i as f32 * 0.05).sin()).collect();
         let mut output = vec![0.0f32; num_frames * 2];
         p.process(
             &input,
@@ -574,10 +566,7 @@ mod tests {
 
         // Compare RMS of input vs RMS of (low+high) over the settled region
         let settle = 2000;
-        let input_rms: f32 = (input[settle..]
-            .iter()
-            .map(|s| s * s)
-            .sum::<f32>()
+        let input_rms: f32 = (input[settle..].iter().map(|s| s * s).sum::<f32>()
             / (num_frames - settle) as f32)
             .sqrt();
 
@@ -623,8 +612,7 @@ mod tests {
 
     #[test]
     fn test_crossover_3way() {
-        let mut p =
-            CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
+        let mut p = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
         p.initialize(48000).unwrap();
         assert_eq!(p.input_channels(), 1);
         assert_eq!(p.output_channels(), 3); // 1 channel * 3 bands
@@ -670,9 +658,7 @@ mod tests {
         assert_eq!(p.output_channels(), 4); // 1 channel * 4 bands
 
         let num_frames = 1000;
-        let input: Vec<f32> = (0..num_frames)
-            .map(|i| (i as f32 * 0.1).sin())
-            .collect();
+        let input: Vec<f32> = (0..num_frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let mut output = vec![0.0f32; num_frames * 4];
         p.process(
             &input,
@@ -691,8 +677,7 @@ mod tests {
     #[test]
     fn test_crossover_3way_lowpass_mode() {
         // In lowpass mode, 3-way should output only the lowest band
-        let mut p =
-            CrossoverPlugin::new_multiway(1, "LR24", 500.0, "low", &[5000.0]).unwrap();
+        let mut p = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "low", &[5000.0]).unwrap();
         p.initialize(48000).unwrap();
         assert_eq!(p.output_channels(), 1); // Only lowest band
 
@@ -786,8 +771,7 @@ mod tests {
     /// continue producing finite output.
     #[test]
     fn test_3way_frequency_update_no_panic() {
-        let mut p =
-            CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
+        let mut p = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5000.0]).unwrap();
         p.initialize(48000).unwrap();
         assert_eq!(p.output_channels(), 3); // 3 bands
 

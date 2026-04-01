@@ -1,6 +1,6 @@
+use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::{CountingAlloc, assert_no_allocs, run_standard_tests};
 use sotf_host::{Plugin, ProcessContext};
-use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_plugin_beamformer::BeamformerPlugin;
 
 #[global_allocator]

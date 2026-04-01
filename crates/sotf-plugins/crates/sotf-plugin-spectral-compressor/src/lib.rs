@@ -14,7 +14,7 @@
 
 pub mod params;
 
-use math_audio_dsp::stft::{generate_hann_window, RealFftProcessor};
+use math_audio_dsp::stft::{RealFftProcessor, generate_hann_window};
 use math_audio_dsp::tonal_transient::TonalTransientSeparator;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext}
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
-use crate::params::{TARGET_MODES, PARAMS as SC};
+use crate::params::{PARAMS as SC, TARGET_MODES};
 
 // ============================================================================
 // FFT size helpers
@@ -204,9 +204,7 @@ impl StftState {
         // 75% overlap, dual periodic Hann (Hann²): COLA sum = 1.5 (exact)
         let output_scale = 1.0 / (fft_size as f32 * 1.5);
 
-        let bin_envelopes: Vec<Vec<f32>> = (0..channels)
-            .map(|_| vec![0.0; num_bins])
-            .collect();
+        let bin_envelopes: Vec<Vec<f32>> = (0..channels).map(|_| vec![0.0; num_bins]).collect();
 
         let output_accumulator_frames = (fft_size * 4).next_power_of_two();
         let output_accumulator = vec![0.0f32; output_accumulator_frames * channels];
@@ -450,8 +448,8 @@ impl SpectralCompressorPlugin {
                 );
                 for k in 0..num_bins {
                     let mask = match target_mode {
-                        1 => self.stft.tonal_mask[k],     // Tonal: compress where tonal is dominant
-                        2 => self.stft.transient_mask[k],  // Transient: compress where transient is dominant
+                        1 => self.stft.tonal_mask[k], // Tonal: compress where tonal is dominant
+                        2 => self.stft.transient_mask[k], // Transient: compress where transient is dominant
                         _ => 1.0,
                     };
                     // Scale gain reduction by mask: if mask=0, no compression on this bin
@@ -476,7 +474,13 @@ impl SpectralCompressorPlugin {
                 let b = self.stft.gains_scratch[k];
                 let c = self.stft.gains_scratch[k + 1];
                 let med = if a <= b {
-                    if b <= c { b } else if a <= c { c } else { a }
+                    if b <= c {
+                        b
+                    } else if a <= c {
+                        c
+                    } else {
+                        a
+                    }
                 } else if a <= c {
                     a
                 } else if b <= c {
@@ -625,18 +629,28 @@ impl SpectralCompressorPlugin {
             )
             .with_importance(ParameterImportance::Critical),
             // Phase 4A: SOTA
-            Parameter::new_string("target_mode", "Target", TARGET_MODES[self.target_mode.min(2)].to_string())
-                .with_group("Analysis")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_string(
+                "target_mode",
+                "Target",
+                TARGET_MODES[self.target_mode.min(2)].to_string(),
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("delta_listen", "Delta Listen", self.delta_monitor.enabled())
                 .with_group("Output")
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("adaptive_threshold", "Adaptive", self.adaptive_threshold)
                 .with_group("Analysis")
                 .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("adaptive_offset_db", "Adapt Offset", self.adaptive_offset_db, -20.0, 20.0)
-                .with_group("Analysis")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "adaptive_offset_db",
+                "Adapt Offset",
+                self.adaptive_offset_db,
+                -20.0,
+                20.0,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::Useful),
         ];
     }
 }
@@ -749,7 +763,9 @@ impl InPlacePlugin for SpectralCompressorPlugin {
             "knee" => Some(ParameterValue::Float(self.knee_db)),
             "spectral_smoothing" => Some(ParameterValue::Float(self.spectral_smoothing)),
             "mix" => Some(ParameterValue::Float(self.mix)),
-            "target_mode" => Some(ParameterValue::String(TARGET_MODES[self.target_mode.min(2)].to_string())),
+            "target_mode" => Some(ParameterValue::String(
+                TARGET_MODES[self.target_mode.min(2)].to_string(),
+            )),
             "delta_listen" => Some(ParameterValue::Bool(self.delta_monitor.enabled())),
             "adaptive_threshold" => Some(ParameterValue::Bool(self.adaptive_threshold)),
             "adaptive_offset_db" => Some(ParameterValue::Float(self.adaptive_offset_db)),
@@ -881,12 +897,12 @@ impl InPlacePlugin for SpectralCompressorPlugin {
         }
 
         // Phase 4A: Delta monitoring — replace output with wet-dry difference
-        self.delta_monitor.apply_if_enabled(&self.dry_buffer[..total], &mut buffer[..total]);
+        self.delta_monitor
+            .apply_if_enabled(&self.dry_buffer[..total], &mut buffer[..total]);
 
         flush_denormals_inplace(buffer);
         Ok(nf)
     }
-
 }
 
 // ============================================================================
@@ -940,8 +956,7 @@ mod tests {
         // Generate stereo sine
         let mut signal = vec![0.0f32; num_frames * channels];
         for i in 0..num_frames {
-            let sample =
-                amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / 48000.0).sin();
+            let sample = amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / 48000.0).sin();
             signal[i * channels] = sample;
             signal[i * channels + 1] = sample;
         }
@@ -970,7 +985,9 @@ mod tests {
         assert!(
             (ratio - 1.0).abs() < 0.05,
             "Passthrough RMS ratio should be ~1.0, got {:.4} (in={:.4}, out={:.4})",
-            ratio, rms_in, rms_out
+            ratio,
+            rms_in,
+            rms_out
         );
     }
 
@@ -985,8 +1002,7 @@ mod tests {
 
         let mut signal = vec![0.0f32; num_frames * channels];
         for i in 0..num_frames {
-            let sample =
-                amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / 48000.0).sin();
+            let sample = amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / 48000.0).sin();
             signal[i * channels] = sample;
             signal[i * channels + 1] = sample;
         }
@@ -1026,8 +1042,7 @@ mod tests {
 
         let mut signal = vec![0.0f32; num_frames * channels];
         for i in 0..num_frames {
-            let sample =
-                amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / 48000.0).sin();
+            let sample = amplitude * (2.0 * std::f32::consts::PI * freq * i as f32 / 48000.0).sin();
             signal[i * channels] = sample;
             signal[i * channels + 1] = sample;
         }

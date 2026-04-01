@@ -606,30 +606,21 @@ mod tests {
 
         // Set attack to 50%
         plugin
-            .set_parameter(
-                ParameterId::from("attack"),
-                ParameterValue::Float(50.0),
-            )
+            .set_parameter(ParameterId::from("attack"), ParameterValue::Float(50.0))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("attack"));
         assert_eq!(val, Some(ParameterValue::Float(50.0)));
 
         // Set sustain to -75%
         plugin
-            .set_parameter(
-                ParameterId::from("sustain"),
-                ParameterValue::Float(-75.0),
-            )
+            .set_parameter(ParameterId::from("sustain"), ParameterValue::Float(-75.0))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("sustain"));
         assert_eq!(val, Some(ParameterValue::Float(-75.0)));
 
         // Set sensitivity
         plugin
-            .set_parameter(
-                ParameterId::from("sensitivity"),
-                ParameterValue::Float(6.0),
-            )
+            .set_parameter(ParameterId::from("sensitivity"), ParameterValue::Float(6.0))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("sensitivity"));
         assert_eq!(val, Some(ParameterValue::Float(6.0)));

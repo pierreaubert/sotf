@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -37,9 +37,18 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .setup()
     .doc("Detection sensitivity offset"),
-    ParamSpec::float("Output", "output_gain", 0.0, -12.0, 12.0, 0.1, "dB", "Output")
-        .output()
-        .doc("Output gain compensation"),
+    ParamSpec::float(
+        "Output",
+        "output_gain",
+        0.0,
+        -12.0,
+        12.0,
+        0.1,
+        "dB",
+        "Output",
+    )
+    .output()
+    .doc("Output gain compensation"),
     ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output")
         .scaled(100.0)
         .output()

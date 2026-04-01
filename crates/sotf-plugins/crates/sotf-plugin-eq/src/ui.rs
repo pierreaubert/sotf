@@ -7,6 +7,7 @@
 //!
 //! Decoupled from app-gpui — renders via [`PluginViewHost`] trait.
 
+use crate::params::BAND_TEMPLATE as EQ;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
@@ -15,7 +16,6 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use plugins_gpui::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
 use plugins_gpui::{PluginViewHost, PluginViewTheme};
 use sotf_audio_player_midi::mapping::MidiOverlay;
-use crate::params::BAND_TEMPLATE as EQ;
 use sotf_host::param_specs::find_by_key as pk;
 
 use std::cell::RefCell;
@@ -1372,8 +1372,8 @@ pub fn get_filter_type_index(filter_type: &BiquadFilterType) -> usize {
         BiquadFilterType::AllPass => 7,
         BiquadFilterType::HighpassVariableQ => 4, // Map to Highpass
         BiquadFilterType::LowshelfOrf => 1,       // Map to Lowshelf
-        BiquadFilterType::HighshelfOrf => 2,       // Map to Highshelf
-        BiquadFilterType::PeakMatched => 0,        // Map to Peak
+        BiquadFilterType::HighshelfOrf => 2,      // Map to Highshelf
+        BiquadFilterType::PeakMatched => 0,       // Map to Peak
     }
 }
 

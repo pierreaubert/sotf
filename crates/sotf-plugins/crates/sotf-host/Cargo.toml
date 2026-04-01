@@ -17,6 +17,7 @@ default = []
 qa = ["dep:criterion"]
 
 [dependencies]
+gpui-design = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 arc-swap = { workspace = true }

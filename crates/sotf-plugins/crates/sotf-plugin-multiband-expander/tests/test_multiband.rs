@@ -50,7 +50,9 @@ fn test_multiband_expander_processes_audio() {
             sample_rate: sr,
             num_frames: end - pos,
         };
-        plugin.process_in_place(&mut buffer[pos..end], &ctx).unwrap();
+        plugin
+            .process_in_place(&mut buffer[pos..end], &ctx)
+            .unwrap();
     }
 
     // Verify output is finite and the plugin processed without error
@@ -65,8 +67,5 @@ fn test_multiband_expander_processes_audio() {
 
     // Output should have some energy (plugin didn't zero everything out)
     let output_energy: f32 = buffer[num_frames / 2..].iter().map(|x| x * x).sum();
-    assert!(
-        output_energy > 0.0,
-        "Output should have non-zero energy"
-    );
+    assert!(output_energy > 0.0, "Output should have non-zero energy");
 }

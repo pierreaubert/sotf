@@ -94,8 +94,14 @@ fn main() {
     println!("Denoiser configuration:");
     println!("  Reduction:           {} dB", params.reduction_db);
     println!("  Floor:               {} dB", params.floor_db);
-    println!("  Crackle removal:     on (sensitivity {})", params.crack_sensitivity);
-    println!("  Hiss removal:        on (>{} Hz, strength {})", params.hiss_frequency_hz, params.hiss_strength);
+    println!(
+        "  Crackle removal:     on (sensitivity {})",
+        params.crack_sensitivity
+    );
+    println!(
+        "  Hiss removal:        on (>{} Hz, strength {})",
+        params.hiss_frequency_hz, params.hiss_strength
+    );
     println!("  Spectral sub:        on");
     println!("  Multi-resolution:    on");
     println!();
@@ -108,7 +114,10 @@ fn main() {
         .expect("Failed to initialize denoiser");
 
     let latency = plugin.latency_samples();
-    println!("Plugin latency: {latency} samples ({:.2} ms)", latency as f64 * 1000.0 / sample_rate as f64);
+    println!(
+        "Plugin latency: {latency} samples ({:.2} ms)",
+        latency as f64 * 1000.0 / sample_rate as f64
+    );
 
     // ── Process in blocks ───────────────────────────────────────────────
     let mut output_samples: Vec<f32> = Vec::with_capacity(samples.len());
@@ -150,8 +159,14 @@ fn main() {
         &samples[..]
     };
     let len = usable_input.len().min(output_trimmed.len());
-    let input_energy: f64 = usable_input[..len].iter().map(|&x| (x as f64).powi(2)).sum();
-    let output_energy: f64 = output_trimmed[..len].iter().map(|&x| (x as f64).powi(2)).sum();
+    let input_energy: f64 = usable_input[..len]
+        .iter()
+        .map(|&x| (x as f64).powi(2))
+        .sum();
+    let output_energy: f64 = output_trimmed[..len]
+        .iter()
+        .map(|&x| (x as f64).powi(2))
+        .sum();
 
     println!();
     println!("Results:");
@@ -159,7 +174,10 @@ fn main() {
     println!("  Output energy: {output_energy:.4}");
     if input_energy > 0.0 {
         let ratio = output_energy / input_energy;
-        println!("  Energy ratio:  {ratio:.3} ({:.1} dB)", 10.0 * ratio.log10());
+        println!(
+            "  Energy ratio:  {ratio:.3} ({:.1} dB)",
+            10.0 * ratio.log10()
+        );
     }
 
     // Show denoiser monitoring data.
@@ -188,6 +206,9 @@ fn main() {
 
     println!();
     println!("Output: {output_path}");
-    println!("  Frames: {output_frames} ({:.2} s)", output_frames as f64 / sample_rate as f64);
+    println!(
+        "  Frames: {output_frames} ({:.2} s)",
+        output_frames as f64 / sample_rate as f64
+    );
     println!("\n=== Done ===");
 }

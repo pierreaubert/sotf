@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -131,9 +131,6 @@ mod tests {
     #[test]
     fn deserialize_empty_json_uses_defaults() {
         let p: Params = serde_json::from_str("{}").unwrap();
-        assert_eq!(
-            p.input_channels,
-            pk(PARAMS, "input_channels").default_f64()
-        );
+        assert_eq!(p.input_channels, pk(PARAMS, "input_channels").default_f64());
     }
 }

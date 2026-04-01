@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -352,19 +352,13 @@ mod tests {
         let p: Params = serde_json::from_str("{}").unwrap();
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64());
         assert_eq!(p.mix_mode, pk(PARAMS, "mix_mode").default_usize());
-        assert_eq!(
-            p.selected_path,
-            pk(PARAMS, "selected_path").default_usize()
-        );
+        assert_eq!(p.selected_path, pk(PARAMS, "selected_path").default_usize());
         assert_eq!(p.bypass, pk(PARAMS, "bypass").default_bool());
         assert_eq!(
             p.auto_gain_enabled,
             pk(PARAMS, "auto_gain_enabled").default_bool()
         );
-        assert_eq!(
-            p.loudness_type,
-            pk(PARAMS, "loudness_type").default_usize()
-        );
+        assert_eq!(p.loudness_type, pk(PARAMS, "loudness_type").default_usize());
         assert_eq!(
             p.max_auto_gain_db,
             pk(PARAMS, "max_auto_gain_db").default_f64()

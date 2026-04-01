@@ -2,7 +2,7 @@
 // Plugin Host Trait - Common interface for plugin hosts
 // ============================================================================
 
-use crate::automation::{automation_utils, ParameterAutomation};
+use crate::automation::{ParameterAutomation, automation_utils};
 use crate::lookahead::LookaheadBuffer;
 use crate::parameters::{ParameterId, ParameterValue};
 use crate::plugin::{Plugin, ProcessContext};
@@ -91,7 +91,9 @@ impl<'a> BufferGuard<'a> {
     }
 
     fn get_mut(&mut self) -> &mut ProcessBuffers {
-        self.buffers.as_mut().expect("ProcessBuffers missing from guard")
+        self.buffers
+            .as_mut()
+            .expect("ProcessBuffers missing from guard")
     }
 }
 
@@ -845,13 +847,25 @@ impl DawHost {
                 }
                 // Apply compensation delay if needed, then sum into merge buffer
                 Self::apply_compensation_and_sum(
-                    e, cm.len(), nf, &cmb[..ms], mb, delay_scratch, compensation_delays,
+                    e,
+                    cm.len(),
+                    nf,
+                    &cmb[..ms],
+                    mb,
+                    delay_scratch,
+                    compensation_delays,
                 );
             } else {
                 let len = is.min(sd.len());
                 // Apply compensation delay if needed, then sum into merge buffer
                 Self::apply_compensation_and_sum(
-                    e, n.input_channels(), nf, &sd[..len], mb, delay_scratch, compensation_delays,
+                    e,
+                    n.input_channels(),
+                    nf,
+                    &sd[..len],
+                    mb,
+                    delay_scratch,
+                    compensation_delays,
                 );
             }
         }
@@ -984,7 +998,10 @@ impl DawHost {
     /// compensation delay buffers for edges feeding into merge points where path
     /// latencies differ. This ensures all paths through the DAG are time-aligned
     /// at merge points.
-    fn compute_compensation_delays(&mut self, num_slots: usize) -> HashMap<(NodeId, NodeId), LookaheadBuffer> {
+    fn compute_compensation_delays(
+        &mut self,
+        num_slots: usize,
+    ) -> HashMap<(NodeId, NodeId), LookaheadBuffer> {
         // Step 1: Compute cumulative latency from inputs to each node using topological order.
         // For each node, the cumulative latency is:
         //   node's own latency + max(cumulative latency of predecessors)
@@ -1035,7 +1052,9 @@ impl DawHost {
                     let pred_latency = self.node_latency_from_input[edge.from_node];
                     let compensation = max_pred_latency - pred_latency;
                     if compensation > 0 {
-                        let pred_channels = self.nodes.get(&edge.from_node)
+                        let pred_channels = self
+                            .nodes
+                            .get(&edge.from_node)
                             .map(|n| n.output_channels())
                             .unwrap_or(2);
                         delays.insert(
@@ -1434,7 +1453,8 @@ mod tests {
     #[test]
     fn test_cached_latency_single_plugin() {
         let mut g = DawHost::new(2, 48000);
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 42))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 42)))
+            .unwrap();
         g.build().unwrap();
         assert_eq!(g.total_latency_samples(), 42);
     }
@@ -1442,9 +1462,12 @@ mod tests {
     #[test]
     fn test_cached_latency_chain_sums() {
         let mut g = DawHost::new(2, 48000);
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20))).unwrap();
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 30))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10)))
+            .unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20)))
+            .unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 30)))
+            .unwrap();
         g.build().unwrap();
         assert_eq!(g.total_latency_samples(), 60);
     }
@@ -1452,11 +1475,13 @@ mod tests {
     #[test]
     fn test_cached_latency_invalidated_on_add_node() {
         let mut g = DawHost::new(2, 48000);
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10)))
+            .unwrap();
         g.build().unwrap();
         assert_eq!(g.total_latency_samples(), 10);
         // Adding another plugin invalidates the cache
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20)))
+            .unwrap();
         g.build().unwrap();
         assert_eq!(g.total_latency_samples(), 30);
     }
@@ -1464,8 +1489,10 @@ mod tests {
     #[test]
     fn test_cached_latency_invalidated_on_remove() {
         let mut g = DawHost::new(2, 48000);
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10)))
+            .unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20)))
+            .unwrap();
         g.build().unwrap();
         assert_eq!(g.total_latency_samples(), 30);
         g.remove_plugin(0).unwrap();
@@ -1525,8 +1552,10 @@ mod tests {
     #[test]
     fn test_bypass_reduces_latency() {
         let mut g = DawHost::new(2, 48000);
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 10)))
+            .unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(2, 1.0, 20)))
+            .unwrap();
         g.build().unwrap();
         assert_eq!(g.total_latency_samples(), 30);
 
@@ -1566,7 +1595,10 @@ mod tests {
         let id = g
             .add_node(
                 "upmix".into(),
-                Box::new(ChannelChangingPlugin { in_ch: 2, out_ch: 5 }),
+                Box::new(ChannelChangingPlugin {
+                    in_ch: 2,
+                    out_ch: 5,
+                }),
             )
             .unwrap();
         let result = g.bypass_node(id);
@@ -1639,10 +1671,18 @@ mod tests {
         // Compensation should delay path B by 10 samples so they align at the merge.
         let mut g = DawHost::new(1, 48000);
 
-        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 2.0, 10))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 3.0, 0))).unwrap();
-        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let inp = g
+            .add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 2.0, 10)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 3.0, 0)))
+            .unwrap();
+        let out = g
+            .add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
 
         g.add_edge(GraphEdge::new(inp, a)).unwrap();
         g.add_edge(GraphEdge::new(inp, b)).unwrap();
@@ -1672,10 +1712,18 @@ mod tests {
         // Both paths have equal latency, no compensation needed.
         let mut g = DawHost::new(1, 48000);
 
-        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 5))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 5))).unwrap();
-        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let inp = g
+            .add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 5)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 5)))
+            .unwrap();
+        let out = g
+            .add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
 
         g.add_edge(GraphEdge::new(inp, a)).unwrap();
         g.add_edge(GraphEdge::new(inp, b)).unwrap();
@@ -1694,8 +1742,10 @@ mod tests {
     fn test_latency_compensation_chain_no_merge() {
         // Simple chain: A -> B -> C, no parallel paths, no compensation needed.
         let mut g = DawHost::new(1, 48000);
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 20))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 10)))
+            .unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 20)))
+            .unwrap();
         g.build().unwrap();
 
         let bufs = g.process_buffers.as_ref().unwrap();
@@ -1712,10 +1762,18 @@ mod tests {
         // B should be delayed by 2 frames to align with A.
         let mut g = DawHost::new(1, 48000);
 
-        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 2))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 0))).unwrap();
-        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let inp = g
+            .add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 2)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 0)))
+            .unwrap();
+        let out = g
+            .add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
 
         g.add_edge(GraphEdge::new(inp, a)).unwrap();
         g.add_edge(GraphEdge::new(inp, b)).unwrap();
@@ -1737,8 +1795,14 @@ mod tests {
         // it just reports latency). So both contribute 1.0, but B is delayed by 2.
         // Frames 0-1: A=1.0 + B_delayed=0.0 = 1.0
         // Frames 2-7: A=1.0 + B_delayed=1.0 = 2.0
-        assert_eq!(output[0], 1.0, "Frame 0: only A contributes (B is compensated/delayed)");
-        assert_eq!(output[1], 1.0, "Frame 1: only A contributes (B is compensated/delayed)");
+        assert_eq!(
+            output[0], 1.0,
+            "Frame 0: only A contributes (B is compensated/delayed)"
+        );
+        assert_eq!(
+            output[1], 1.0,
+            "Frame 1: only A contributes (B is compensated/delayed)"
+        );
         assert_eq!(output[2], 2.0, "Frame 2: both A and delayed B contribute");
         assert_eq!(output[7], 2.0, "Frame 7: both A and delayed B contribute");
     }
@@ -1749,11 +1813,21 @@ mod tests {
         // Compensation: B delayed by 10, C delayed by 20
         let mut g = DawHost::new(1, 48000);
 
-        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 20))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
-        let c = g.add_node("C".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 0))).unwrap();
-        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let inp = g
+            .add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 20)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 10)))
+            .unwrap();
+        let c = g
+            .add_node("C".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 0)))
+            .unwrap();
+        let out = g
+            .add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
 
         g.add_edge(GraphEdge::new(inp, a)).unwrap();
         g.add_edge(GraphEdge::new(inp, b)).unwrap();
@@ -1777,10 +1851,18 @@ mod tests {
         // Bypassed nodes contribute zero latency, affecting compensation
         let mut g = DawHost::new(1, 48000);
 
-        let inp = g.add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
-        let out = g.add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let inp = g
+            .add_node("input".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 10)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::with_latency(1, 1.0, 10)))
+            .unwrap();
+        let out = g
+            .add_node("output".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
 
         g.add_edge(GraphEdge::new(inp, a)).unwrap();
         g.add_edge(GraphEdge::new(inp, b)).unwrap();
@@ -1818,7 +1900,10 @@ mod tests {
             // guard holds &mut slot, so we can't check slot here,
             // but on drop it must restore the buffers.
         }
-        assert!(slot.is_some(), "Slot should be restored after guard dropped");
+        assert!(
+            slot.is_some(),
+            "Slot should be restored after guard dropped"
+        );
     }
 
     #[test]
@@ -1853,9 +1938,12 @@ mod tests {
         // Chain: A(lat=5) -> B(lat=10) -> C(lat=3)
         // Cumulative: A=5, B=15, C=18
         let mut g = DawHost::new(1, 48000);
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 5))).unwrap();
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 10))).unwrap();
-        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 3))).unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 5)))
+            .unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 10)))
+            .unwrap();
+        g.add_plugin(Box::new(ScalerPlugin::with_latency(1, 1.0, 3)))
+            .unwrap();
         g.build().unwrap();
 
         let id_a = g.chain_nodes[0];
@@ -1901,7 +1989,9 @@ mod tests {
             id: crate::parameters::ParameterId,
             val: crate::parameters::ParameterValue,
         ) -> Result<(), String> {
-            if id.0 == "gain" && let crate::parameters::ParameterValue::Float(v) = val {
+            if id.0 == "gain"
+                && let crate::parameters::ParameterValue::Float(v) = val
+            {
                 self.gain = v;
                 return Ok(());
             }
@@ -2011,7 +2101,9 @@ mod tests {
     #[test]
     fn test_cycle_detection_self_loop() {
         let mut g = DawHost::new(2, 48000);
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
         // Self-loops are rejected at add_edge level
         assert!(g.add_edge(GraphEdge::new(a, a)).is_err());
     }
@@ -2019,8 +2111,12 @@ mod tests {
     #[test]
     fn test_cycle_detection_two_node_cycle() {
         let mut g = DawHost::new(2, 48000);
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
         g.add_edge(GraphEdge::new(a, b)).unwrap();
         g.add_edge(GraphEdge::new(b, a)).unwrap();
         assert!(g.build().is_err());
@@ -2029,9 +2125,15 @@ mod tests {
     #[test]
     fn test_cycle_detection_three_node_cycle() {
         let mut g = DawHost::new(2, 48000);
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
-        let c = g.add_node("C".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
+        let c = g
+            .add_node("C".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
         g.add_edge(GraphEdge::new(a, b)).unwrap();
         g.add_edge(GraphEdge::new(b, c)).unwrap();
         g.add_edge(GraphEdge::new(c, a)).unwrap();
@@ -2044,10 +2146,18 @@ mod tests {
         // A scales by 2, B scales by 3, C scales by 5, D scales by 1
         // D merges (sums) B and C outputs: input * 2 * 3 + input * 2 * 5 = input * 16
         let mut g = DawHost::new(2, 48000);
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(2, 2.0))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::new(2, 3.0))).unwrap();
-        let c = g.add_node("C".into(), Box::new(ScalerPlugin::new(2, 5.0))).unwrap();
-        let d = g.add_node("D".into(), Box::new(ScalerPlugin::new(2, 1.0))).unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::new(2, 2.0)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::new(2, 3.0)))
+            .unwrap();
+        let c = g
+            .add_node("C".into(), Box::new(ScalerPlugin::new(2, 5.0)))
+            .unwrap();
+        let d = g
+            .add_node("D".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+            .unwrap();
         g.add_edge(GraphEdge::new(a, b)).unwrap();
         g.add_edge(GraphEdge::new(a, c)).unwrap();
         g.add_edge(GraphEdge::new(b, d)).unwrap();
@@ -2076,10 +2186,18 @@ mod tests {
         // B path total: 10, C path total: 30
         // B should be delayed by 20 samples to align with C
         let mut g = DawHost::new(2, 48000);
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 0))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 10))).unwrap();
-        let c = g.add_node("C".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 30))).unwrap();
-        let d = g.add_node("D".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 0))).unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 0)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 10)))
+            .unwrap();
+        let c = g
+            .add_node("C".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 30)))
+            .unwrap();
+        let d = g
+            .add_node("D".into(), Box::new(ScalerPlugin::with_latency(2, 1.0, 0)))
+            .unwrap();
         g.add_edge(GraphEdge::new(a, b)).unwrap();
         g.add_edge(GraphEdge::new(a, c)).unwrap();
         g.add_edge(GraphEdge::new(b, d)).unwrap();
@@ -2094,14 +2212,25 @@ mod tests {
     fn test_diamond_with_valid_dag_builds_ok() {
         // Ensure diamond topology (not a cycle) is accepted
         let mut g = DawHost::new(1, 44100);
-        let a = g.add_node("A".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
-        let b = g.add_node("B".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
-        let c = g.add_node("C".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
-        let d = g.add_node("D".into(), Box::new(ScalerPlugin::new(1, 1.0))).unwrap();
+        let a = g
+            .add_node("A".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let b = g
+            .add_node("B".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let c = g
+            .add_node("C".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
+        let d = g
+            .add_node("D".into(), Box::new(ScalerPlugin::new(1, 1.0)))
+            .unwrap();
         g.add_edge(GraphEdge::new(a, b)).unwrap();
         g.add_edge(GraphEdge::new(a, c)).unwrap();
         g.add_edge(GraphEdge::new(b, d)).unwrap();
         g.add_edge(GraphEdge::new(c, d)).unwrap();
-        assert!(g.build().is_ok(), "Diamond DAG should not be rejected as cycle");
+        assert!(
+            g.build().is_ok(),
+            "Diamond DAG should not be rejected as cycle"
+        );
     }
 }

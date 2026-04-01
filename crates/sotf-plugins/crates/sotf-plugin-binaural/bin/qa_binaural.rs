@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_plugin_binaural::BinauralDecoderPlugin;
 
 #[global_allocator]
@@ -11,15 +11,15 @@ fn main() {
 
     let mut plugin = BinauralDecoderPlugin::new(
         input_channels,
-        1024,  // fft_size
-        None,  // no HRTF file (uses built-in)
-        false, // disable optimization
-        0.5,   // externalization
-        0.0,   // near_field_strength
-        false, // diffuse_field_eq
-        80.0,  // lfe_crossover
-        3.0,   // lfe_distance
-        0.0,   // lfe_level
+        1024,               // fft_size
+        None,               // no HRTF file (uses built-in)
+        false,              // disable optimization
+        0.5,                // externalization
+        0.0,                // near_field_strength
+        false,              // diffuse_field_eq
+        80.0,               // lfe_crossover
+        3.0,                // lfe_distance
+        0.0,                // lfe_level
         Default::default(), // room_model
     );
     plugin.initialize(sample_rate).unwrap();

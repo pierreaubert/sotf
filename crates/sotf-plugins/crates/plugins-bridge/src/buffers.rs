@@ -81,7 +81,10 @@ impl ScratchBuffers {
     /// Returns `None` if the requested size exceeds the pre-allocated capacity.
     pub fn interleaved_mut(&mut self, channels: usize, frames: usize) -> Option<&mut [f32]> {
         let needed = channels * frames;
-        if channels > self.max_channels || frames > self.max_frames || needed > self.interleaved.len() {
+        if channels > self.max_channels
+            || frames > self.max_frames
+            || needed > self.interleaved.len()
+        {
             return None;
         }
         let slice = &mut self.interleaved[..needed];

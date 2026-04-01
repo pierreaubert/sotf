@@ -107,9 +107,7 @@ impl DynamicParams {
     pub fn sync_to_plugin(&self, plugin: &mut dyn sotf_host::plugin::Plugin) {
         for (id, entry) in &self.param_map {
             let value = match entry.kind {
-                ParamKind::Float => {
-                    ParameterValue::Float(self.float_params[entry.index].value())
-                }
+                ParamKind::Float => ParameterValue::Float(self.float_params[entry.index].value()),
                 ParamKind::Bool => ParameterValue::Bool(self.bool_params[entry.index].value()),
                 ParamKind::Int => ParameterValue::Int(self.int_params[entry.index].value()),
             };

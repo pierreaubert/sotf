@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, measure_peak_db, run_standard_tests};
 use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::{CountingAlloc, measure_peak_db, run_standard_tests};
 use sotf_plugin_linear_phase_eq::{BandConfig, LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 use std::f32::consts::PI;
 
@@ -23,8 +23,7 @@ fn main() {
         }],
     };
 
-    let mut inner =
-        LinearPhaseEqPlugin::from_params(channels, sample_rate, params).unwrap();
+    let mut inner = LinearPhaseEqPlugin::from_params(channels, sample_rate, params).unwrap();
     inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: LinearPhaseEQ Plugin ===");

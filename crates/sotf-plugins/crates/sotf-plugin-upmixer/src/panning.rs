@@ -163,15 +163,13 @@ impl UpmixerPlugin {
                             let a_stereo =
                                 a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
                             // Surrounds get direct residues + decorrelated ambient
-                            let mut out =
-                                (dl_val * plds + dr_val * prds) + a_stereo * dec[i];
+                            let mut out = (dl_val * plds + dr_val * prds) + a_stereo * dec[i];
 
                             // Add secondary source contribution steered by DOA.
                             // Gain = max(0, cos(doa2 - spk_az)) provides soft directional routing.
                             if multi_source {
                                 let doa2 = self.direct2_doa_per_bin[i];
-                                let d2_gain =
-                                    fast_cos(doa2 - spk_az_rad).max(0.0);
+                                let d2_gain = fast_cos(doa2 - spk_az_rad).max(0.0);
                                 out += self.direct2[i] * (d2_gain * dg);
                             }
 

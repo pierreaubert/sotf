@@ -4,13 +4,13 @@
 
 pub mod params;
 
+use crate::params::PARAMS as PD;
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
-use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
-use crate::params::PARAMS as PD;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{deinterleave_stereo, interleave_stereo};
@@ -127,9 +127,8 @@ impl PhaseVocoderChannel {
             let deviation = phase_diff - bin as f32 * expected_phase_advance;
 
             // Wrap to [-pi, pi]
-            let wrapped = deviation - (deviation / (2.0 * std::f32::consts::PI)).round()
-                * 2.0
-                * std::f32::consts::PI;
+            let wrapped = deviation
+                - (deviation / (2.0 * std::f32::consts::PI)).round() * 2.0 * std::f32::consts::PI;
 
             // True frequency (in bins)
             let true_freq = bin as f32 + wrapped / expected_phase_advance;
@@ -150,7 +149,9 @@ impl PhaseVocoderChannel {
         // Restore conjugate symmetry for correct real-valued IFFT
         let n = PV_FFT_SIZE;
         self.ifft_buf[0].im = 0.0;
-        if n > 1 { self.ifft_buf[n / 2].im = 0.0; }
+        if n > 1 {
+            self.ifft_buf[n / 2].im = 0.0;
+        }
         for bin in 1..n / 2 {
             self.ifft_buf[n - bin] = self.ifft_buf[bin].conj();
         }
@@ -378,13 +379,9 @@ impl PndPlugin {
             )
             .with_group("Correction")
             .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "phase_vocoder",
-                "Phase Vocoder",
-                self.phase_vocoder,
-            )
-            .with_group("Correction")
-            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("phase_vocoder", "Phase Vocoder", self.phase_vocoder)
+                .with_group("Correction")
+                .with_importance(ParameterImportance::Useful),
         ];
     }
 
@@ -410,7 +407,10 @@ impl PndPlugin {
         let num_frames = context.num_frames;
         let nf = context.num_frames;
 
-        let vocoder = self.vocoder.as_mut().ok_or("Phase vocoder not initialized")?;
+        let vocoder = self
+            .vocoder
+            .as_mut()
+            .ok_or("Phase vocoder not initialized")?;
 
         // Deinterleave input into planar buffers for analysis
         for c in 0..self.channels {
@@ -436,8 +436,13 @@ impl PndPlugin {
                 a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
             });
             let median_drift = self.channel_drift_scratch[mid];
-            let avg_confidence =
-                self.analyzers.iter().take(n).map(|a| a.confidence()).sum::<f32>() / n as f32;
+            let avg_confidence = self
+                .analyzers
+                .iter()
+                .take(n)
+                .map(|a| a.confidence())
+                .sum::<f32>()
+                / n as f32;
             (median_drift, avg_confidence)
         } else {
             let drift = self.analyzers[0].analyze(&self.planar_input[0][..num_frames]);
@@ -533,8 +538,7 @@ impl PndPlugin {
                 self.analysis_window_ms,
             ));
         }
-        self.channel_drift_scratch
-            .resize(num_analyzers.max(1), 0.0);
+        self.channel_drift_scratch.resize(num_analyzers.max(1), 0.0);
     }
 
     /// Process one resampler chunk from the input ring buffer.
@@ -593,8 +597,13 @@ impl PndPlugin {
             });
             let median_drift = self.channel_drift_scratch[mid];
             // Average confidence across all analyzers
-            let avg_confidence =
-                self.analyzers.iter().take(n).map(|a| a.confidence()).sum::<f32>() / n as f32;
+            let avg_confidence = self
+                .analyzers
+                .iter()
+                .take(n)
+                .map(|a| a.confidence())
+                .sum::<f32>()
+                / n as f32;
             (median_drift, avg_confidence)
         } else {
             // Single-channel mode: analyze channel 0 only
@@ -908,7 +917,8 @@ impl Plugin for PndPlugin {
             } else {
                 // Aggregate: average confidence, sum matched/total across analyzers
                 let n = self.analyzers.len();
-                let avg_conf = self.analyzers.iter().map(|a| a.confidence()).sum::<f32>() / n as f32;
+                let avg_conf =
+                    self.analyzers.iter().map(|a| a.confidence()).sum::<f32>() / n as f32;
                 let total_matched: usize =
                     self.analyzers.iter().map(|a| a.matched_partials()).sum();
                 let total_pk: usize = self.analyzers.iter().map(|a| a.total_peaks()).sum();
@@ -1019,9 +1029,7 @@ mod tests {
                 num_frames: nf,
             };
 
-            let input: Vec<f32> = (0..nf * 2)
-                .map(|i| 0.3 * (i as f32 * 0.01).sin())
-                .collect();
+            let input: Vec<f32> = (0..nf * 2).map(|i| 0.3 * (i as f32 * 0.01).sin()).collect();
             let mut output = vec![0.0f32; nf * 2];
             let result = p.process(&input, &mut output, &ctx);
             assert!(

@@ -127,13 +127,8 @@ impl BeamformerPlugin {
         let steering_vectors =
             compute_all_steering_vectors(&geometry, 0.0, FFT_SIZE, sample_rate as f32);
 
-        let superdirective = SuperdirectiveBeamformer::new(
-            &geometry,
-            0.0,
-            FFT_SIZE,
-            sample_rate as f32,
-            0.01,
-        );
+        let superdirective =
+            SuperdirectiveBeamformer::new(&geometry, 0.0, FFT_SIZE, sample_rate as f32, 0.01);
 
         let delays = vec![0.0f32; num_mics];
         let window = math_audio_dsp::stft::generate_hann_window(FFT_SIZE);
@@ -327,8 +322,7 @@ impl Plugin for BeamformerPlugin {
                 for i in 0..nf {
                     // Deinterleave and accumulate
                     for ch in 0..self.num_mics {
-                        self.input_buffers[ch][self.input_fill] =
-                            input[i * self.num_mics + ch];
+                        self.input_buffers[ch][self.input_fill] = input[i * self.num_mics + ch];
                     }
                     self.input_fill += 1;
 
@@ -354,8 +348,11 @@ impl Plugin for BeamformerPlugin {
                                 for k in 0..spectrum_size {
                                     let mut sum = Complex::new(0.0, 0.0);
                                     for m in 0..self.stft_channels.len() {
-                                        if k < self.stft_channels[m].len() && m < self.mvdr.weights_buf[k].len() {
-                                            sum += self.mvdr.weights_buf[k][m].conj() * self.stft_channels[m][k];
+                                        if k < self.stft_channels[m].len()
+                                            && m < self.mvdr.weights_buf[k].len()
+                                        {
+                                            sum += self.mvdr.weights_buf[k][m].conj()
+                                                * self.stft_channels[m][k];
                                         }
                                     }
                                     self.fft.freq_buffer[k] = sum;
@@ -367,7 +364,8 @@ impl Plugin for BeamformerPlugin {
                                     self.fft.freq_buffer[..spectrum_size]
                                         .copy_from_slice(&result[..spectrum_size]);
                                 } else {
-                                    self.fft.freq_buffer[..spectrum_size].fill(Complex::new(0.0, 0.0));
+                                    self.fft.freq_buffer[..spectrum_size]
+                                        .fill(Complex::new(0.0, 0.0));
                                 }
                             }
                             BeamformerType::Gsc => unreachable!(),

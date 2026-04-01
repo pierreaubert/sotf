@@ -20,7 +20,7 @@ use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 pub mod params;
 
-use crate::params::{SPEAKER_CONFIGS, PARAMS as UP};
+use crate::params::{PARAMS as UP, SPEAKER_CONFIGS};
 use sotf_host::param_bridge;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -597,7 +597,7 @@ impl UpmixerPlugin {
             hr_sharpen: Smoother::new(1.0, 5.0, sample_rate),
             safety_cap_db: default_safety_cap_db(),
             prev_safety_scale: 1.0, // Start with no gain reduction
-            decorrelation_mode: 0, // Default to Velvet Noise
+            decorrelation_mode: 0,  // Default to Velvet Noise
 
             // Sub-harmonic synthesis parameters
             subharmonic_freq_hz: default_subharmonic_freq_hz(),
@@ -852,7 +852,11 @@ impl UpmixerPlugin {
             4 => Some(self.height_gain.target() as f64),
             5 => Some(self.lfe_gain.target() as f64),
             6 => Some(self.lfe_cutoff_hz_smoother.target() as f64),
-            7 => Some(if self.enable_subharmonic_synth { 1.0 } else { 0.0 }),
+            7 => Some(if self.enable_subharmonic_synth {
+                1.0
+            } else {
+                0.0
+            }),
             8 => Some(self.subharmonic_gain.target() as f64),
             9 => Some(self.subharmonic_freq_hz as f64),
             10 => Some(self.subharmonic_attack_ms as f64),
@@ -890,10 +894,18 @@ impl UpmixerPlugin {
                 Some(idx as f64)
             }
             37 => Some(if self.bypass_decorrelation { 1.0 } else { 0.0 }),
-            38 => Some(if self.bypass_transient_detection { 1.0 } else { 0.0 }),
+            38 => Some(if self.bypass_transient_detection {
+                1.0
+            } else {
+                0.0
+            }),
             39 => Some(if self.bypass_all_processing { 1.0 } else { 0.0 }),
             40 => Some(if self.enable_ml_detection { 1.0 } else { 0.0 }),
-            41 => Some(if self.multi_source_extraction { 1.0 } else { 0.0 }),
+            41 => Some(if self.multi_source_extraction {
+                1.0
+            } else {
+                0.0
+            }),
             42 => Some(self.multi_source_threshold as f64),
             43 => Some(if self.binaural_preview { 1.0 } else { 0.0 }),
             _ => None,
@@ -967,7 +979,11 @@ impl UpmixerPlugin {
     pub fn from_params(params: UpmixerPluginParams) -> Self {
         // Low-latency mode halves the FFT size from 2048 to 1024 (21ms vs 43ms at 48kHz).
         // If the user explicitly set a custom fft_size, low_latency overrides it.
-        let fft_size = if params.low_latency { 1024 } else { params.fft_size };
+        let fft_size = if params.low_latency {
+            1024
+        } else {
+            params.fft_size
+        };
         let mut plugin = Self::new(
             fft_size,
             &params.speaker_config,
@@ -1087,8 +1103,7 @@ impl UpmixerPlugin {
         // Regenerate Hann window
         self.window = (0..new_fft_size)
             .map(|i| {
-                0.5 * (1.0
-                    - ((2.0 * std::f32::consts::PI * i as f32) / new_fft_size as f32).cos())
+                0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / new_fft_size as f32).cos())
             })
             .collect();
 
@@ -1126,8 +1141,7 @@ impl UpmixerPlugin {
         self.prev_magnitude_spectrum = vec![0.0; spectrum_size];
         self.height_prev_magnitude = vec![0.0; spectrum_size];
         self.height_flux_gate = vec![0.0; spectrum_size];
-        self.blended_decorrelation_filters =
-            vec![vec![Complex::new(1.0, 0.0); spectrum_size]; nch];
+        self.blended_decorrelation_filters = vec![vec![Complex::new(1.0, 0.0); spectrum_size]; nch];
         self.prev_decorrelation_strength = -1.0; // Force recompute on next process()
         self.direct2 = vec![zero_complex; spectrum_size];
         self.direct2_doa_per_bin = vec![0.0; spectrum_size];
@@ -1209,8 +1223,7 @@ impl UpmixerPlugin {
             && self.ml_inference_handle.is_some()
             && let Some(ref mut extractor) = self.mfcc_extractor
         {
-            let features =
-                *extractor.compute(&self.freq_domain_left, &self.freq_domain_right);
+            let features = *extractor.compute(&self.freq_domain_left, &self.freq_domain_right);
             if let Some(ref mut handle) = self.ml_inference_handle {
                 handle.send_features(&features);
                 return handle.read_v_prob();
@@ -1274,7 +1287,8 @@ impl Plugin for UpmixerPlugin {
                 let config_idx = value
                     .as_int()
                     .ok_or_else(|| "speaker_config must be an integer".to_string())?;
-                let config_id = SPEAKER_CONFIGS.get(config_idx as usize)
+                let config_id = SPEAKER_CONFIGS
+                    .get(config_idx as usize)
                     .ok_or_else(|| "Invalid configuration index".to_string())?;
                 self.rebuild_cached_parameters();
                 return self.change_speaker_config(config_id);

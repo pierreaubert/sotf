@@ -11,8 +11,8 @@
 // - Speech-only (optimized for voice, not music)
 // - Internal 48kHz processing (resamples internally if needed)
 
-use crate::backend::{DenoiserAlgorithm, DenoiserBackend};
 use crate::DenoiserData;
+use crate::backend::{DenoiserAlgorithm, DenoiserBackend};
 
 const RNNOISE_FRAME_SIZE: usize = 480;
 
@@ -116,10 +116,7 @@ impl DenoiserBackend for RnnoiseBackend {
                 }
 
                 // Estimate reduction
-                let input_power: f32 = self.accum_buffers[0]
-                    .iter()
-                    .map(|x| x * x)
-                    .sum::<f32>()
+                let input_power: f32 = self.accum_buffers[0].iter().map(|x| x * x).sum::<f32>()
                     / RNNOISE_FRAME_SIZE as f32;
                 let output_power: f32 = self.output_buffers[0]
                     [self.output_buffers[0].len() - RNNOISE_FRAME_SIZE..]
@@ -129,8 +126,8 @@ impl DenoiserBackend for RnnoiseBackend {
                     / RNNOISE_FRAME_SIZE as f32;
 
                 if input_power > 1e-10 {
-                    self.avg_reduction_db =
-                        0.9 * self.avg_reduction_db + 0.1 * 10.0 * (input_power / output_power.max(1e-10)).log10();
+                    self.avg_reduction_db = 0.9 * self.avg_reduction_db
+                        + 0.1 * 10.0 * (input_power / output_power.max(1e-10)).log10();
                 }
 
                 self.accum_fill = 0;
@@ -217,10 +214,7 @@ mod tests {
 
         // Output should be near zero
         for (i, &s) in buffer.iter().enumerate() {
-            assert!(
-                s.abs() < 0.01,
-                "Sample {i} should be near zero, got {s}"
-            );
+            assert!(s.abs() < 0.01, "Sample {i} should be near zero, got {s}");
         }
     }
 

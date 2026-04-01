@@ -10,11 +10,10 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
-    ChannelMuteSoloPlugin, CrossoverPlugin, DelayPlugin, EqPlugin, ExpanderPlugin,
-    GatePlugin, InPlacePlugin,
-    InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
-    LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
+    ChannelMuteSoloPlugin, CrossoverPlugin, DelayPlugin, EqPlugin, ExpanderPlugin, GatePlugin,
+    InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
+    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MatrixPlugin,
+    MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
     SpectrumAnalyzerPlugin, SpectrumConfig,
 };
 use std::hint::black_box;
@@ -399,7 +398,11 @@ fn benchmark_crossover(c: &mut Criterion) {
         group.bench_function("lr24_lowpass", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -420,7 +423,11 @@ fn benchmark_crossover(c: &mut Criterion) {
         group.bench_function("lr48_lowpass", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -441,7 +448,11 @@ fn benchmark_crossover(c: &mut Criterion) {
         group.bench_function(format!("lr24_{}ch", channels), |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -617,7 +628,7 @@ fn benchmark_loudness(c: &mut Criterion) {
             ..Default::default()
         };
         let mut plugin = InPlacePluginAdapter::new(
-            LoudnessCompensationPlugin::from_params(CHANNELS, params).unwrap()
+            LoudnessCompensationPlugin::from_params(CHANNELS, params).unwrap(),
         );
         Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 

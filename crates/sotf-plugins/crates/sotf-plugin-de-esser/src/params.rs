@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -53,17 +53,9 @@ pub const PARAMS: &[ParamSpec] = &[
     .doc("Sibilance detection threshold"),
     ParamSpec::float("Ratio", "ratio", 4.0, 1.0, 20.0, 0.1, ":1", "Dynamics")
         .doc("Compression ratio for sibilance"),
-    ParamSpec::float("Attack", "attack", 0.5, 0.1, 10.0, 0.1, "ms", "Dynamics")
-        .doc("Attack time"),
+    ParamSpec::float("Attack", "attack", 0.5, 0.1, 10.0, 0.1, "ms", "Dynamics").doc("Attack time"),
     ParamSpec::float(
-        "Release",
-        "release",
-        20.0,
-        5.0,
-        200.0,
-        1.0,
-        "ms",
-        "Dynamics",
+        "Release", "release", 20.0, 5.0, 200.0, 1.0, "ms", "Dynamics",
     )
     .doc("Release time"),
     // Mode

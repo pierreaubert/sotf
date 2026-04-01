@@ -4,11 +4,11 @@
 
 pub mod params;
 
+use crate::params::PARAMS as LM;
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
-use crate::params::PARAMS as LM;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -245,7 +245,8 @@ impl LimiterPlugin {
             .with_importance(ParameterImportance::Useful),
             // Must match PARAMS order: idx 8=link_amount, idx 9=feed_forward
             Parameter::new_float(
-                "link_amount", "Link",
+                "link_amount",
+                "Link",
                 self.link_amount,
                 pk(LM, "link_amount").min_f64() as f32,
                 pk(LM, "link_amount").max_f64() as f32,
@@ -286,11 +287,8 @@ impl LimiterPlugin {
             self.lookahead_buffer.resize(new_len * self.channels, 0.0);
             self.lookahead_pos = 0;
         }
-        self.dual_release_env.set_times(
-            self.release_ms,
-            self.release_ms * 5.0,
-            self.sample_rate,
-        );
+        self.dual_release_env
+            .set_times(self.release_ms, self.release_ms * 5.0, self.sample_rate);
     }
 }
 
@@ -346,9 +344,7 @@ impl InPlacePlugin for LimiterPlugin {
                 .as_bool()
                 .unwrap_or(pk(LM, "true_peak").default_bool());
         } else if id == self.param_isp_mode {
-            self.isp_mode = value
-                .as_bool()
-                .unwrap_or(pk(LM, "isp_mode").default_bool());
+            self.isp_mode = value.as_bool().unwrap_or(pk(LM, "isp_mode").default_bool());
         } else if id == self.param_dual_release {
             self.dual_release = value
                 .as_bool()
@@ -410,11 +406,8 @@ impl InPlacePlugin for LimiterPlugin {
         self.output_isp_detectors
             .resize_with(self.channels, TruePeakDetector::new);
         self.isp_correction_db = 0.0;
-        self.dual_release_env = DualRelease::new(
-            self.release_ms,
-            self.release_ms * 5.0,
-            sample_rate,
-        );
+        self.dual_release_env =
+            DualRelease::new(self.release_ms, self.release_ms * 5.0, sample_rate);
         Ok(())
     }
 
@@ -774,11 +767,8 @@ mod tests {
         p.initialize(48000).unwrap();
         assert!(!p.true_peak);
 
-        p.set_parameter(
-            ParameterId::from("true_peak"),
-            ParameterValue::Bool(true),
-        )
-        .unwrap();
+        p.set_parameter(ParameterId::from("true_peak"), ParameterValue::Bool(true))
+            .unwrap();
         assert!(p.true_peak);
 
         let val = p.get_parameter(&ParameterId::from("true_peak"));
@@ -911,14 +901,20 @@ mod tests {
         let thresh_lin = fast_pow10(-6.0 / 20.0);
 
         // mix=0 (dry): after lookahead fills, peaks should exceed threshold (no limiting)
-        let dry_peak: f32 = buf_dry[500..].iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        let dry_peak: f32 = buf_dry[500..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f32, f32::max);
         assert!(
             dry_peak > thresh_lin,
             "mix=0 (dry) should pass through unaltered, peak={dry_peak:.4} > threshold={thresh_lin:.4}"
         );
 
         // mix=1 (wet): after lookahead fills, peaks should be below threshold
-        let wet_peak: f32 = buf_wet[500..].iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        let wet_peak: f32 = buf_wet[500..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0f32, f32::max);
         assert!(
             wet_peak <= thresh_lin * 1.1,
             "mix=1 (wet) should be limited, peak={wet_peak:.4} > threshold={thresh_lin:.4}"
@@ -1085,11 +1081,8 @@ mod tests {
         p.initialize(48000).unwrap();
         assert!(!p.isp_mode);
 
-        p.set_parameter(
-            ParameterId::from("isp_mode"),
-            ParameterValue::Bool(true),
-        )
-        .unwrap();
+        p.set_parameter(ParameterId::from("isp_mode"), ParameterValue::Bool(true))
+            .unwrap();
         assert!(p.isp_mode);
 
         let val = p.get_parameter(&ParameterId::from("isp_mode"));

@@ -2,8 +2,8 @@
 // Denoiser Plugin Configuration
 // ============================================================================
 
-use serde::{Deserialize, Serialize};
 use crate::params::PARAMS as DN;
+use serde::{Deserialize, Serialize};
 use sotf_host::param_specs::find_by_key as pk;
 
 // Default functions for serde

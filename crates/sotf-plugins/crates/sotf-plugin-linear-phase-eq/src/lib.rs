@@ -111,7 +111,14 @@ struct EqBand {
 }
 
 impl EqBand {
-    fn new(filter_type: BiquadFilterType, frequency: f64, q: f64, gain_db: f64, active: bool, sample_rate: f64) -> Self {
+    fn new(
+        filter_type: BiquadFilterType,
+        frequency: f64,
+        q: f64,
+        gain_db: f64,
+        active: bool,
+        sample_rate: f64,
+    ) -> Self {
         let biquad = Biquad::new(filter_type, frequency, sample_rate, q, gain_db);
         Self {
             filter_type,
@@ -123,7 +130,15 @@ impl EqBand {
         }
     }
 
-    fn update(&mut self, filter_type: BiquadFilterType, frequency: f64, q: f64, gain_db: f64, active: bool, sample_rate: f64) {
+    fn update(
+        &mut self,
+        filter_type: BiquadFilterType,
+        frequency: f64,
+        q: f64,
+        gain_db: f64,
+        active: bool,
+        sample_rate: f64,
+    ) {
         self.filter_type = filter_type;
         self.frequency = frequency;
         self.q = q;
@@ -183,10 +198,23 @@ impl LinearPhaseEqPlugin {
         let fir_length = fir_length_from_index(fir_length_index);
         let num_filters = default_num_filters();
 
-        Self::build(channels, sample_rate, num_filters, fir_length_index, fir_length, false, 1.0, Vec::new())
+        Self::build(
+            channels,
+            sample_rate,
+            num_filters,
+            fir_length_index,
+            fir_length,
+            false,
+            1.0,
+            Vec::new(),
+        )
     }
 
-    pub fn from_params(channels: usize, sample_rate: u32, params: LinearPhaseEqPluginParams) -> Result<Self, String> {
+    pub fn from_params(
+        channels: usize,
+        sample_rate: u32,
+        params: LinearPhaseEqPluginParams,
+    ) -> Result<Self, String> {
         let fir_length_index = params.fir_length_index.min(FIR_LENGTH_OPTIONS.len() - 1);
         let fir_length = fir_length_from_index(fir_length_index);
         let num_filters = params.num_filters.clamp(1, 10);
@@ -198,14 +226,37 @@ impl LinearPhaseEqPlugin {
                 break;
             }
             let ft = parse_filter_type(&fc.filter_type)?;
-            bands.push(EqBand::new(ft, fc.frequency, fc.q, fc.gain_db, fc.active, sr));
+            bands.push(EqBand::new(
+                ft,
+                fc.frequency,
+                fc.q,
+                fc.gain_db,
+                fc.active,
+                sr,
+            ));
         }
         // Fill remaining bands with defaults
         while bands.len() < num_filters {
-            bands.push(EqBand::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0, true, sr));
+            bands.push(EqBand::new(
+                BiquadFilterType::Peak,
+                1000.0,
+                1.0,
+                0.0,
+                true,
+                sr,
+            ));
         }
 
-        Ok(Self::build(channels, sample_rate, num_filters, fir_length_index, fir_length, params.auto_gain, params.mix, bands))
+        Ok(Self::build(
+            channels,
+            sample_rate,
+            num_filters,
+            fir_length_index,
+            fir_length,
+            params.auto_gain,
+            params.mix,
+            bands,
+        ))
     }
 
     fn build(
@@ -221,7 +272,14 @@ impl LinearPhaseEqPlugin {
         let sr = sample_rate as f64;
         // Fill bands to num_filters
         while bands.len() < num_filters {
-            bands.push(EqBand::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0, true, sr));
+            bands.push(EqBand::new(
+                BiquadFilterType::Peak,
+                1000.0,
+                1.0,
+                0.0,
+                true,
+                sr,
+            ));
         }
 
         // FFT size = fir_length + max_frame_size - 1, rounded up to power of 2.
@@ -354,7 +412,11 @@ impl LinearPhaseEqPlugin {
 
         // FFT the FIR
         self.fft_forward
-            .process_with_scratch(&mut self.input_buf, &mut self.fir_spectrum, &mut self.fft_scratch_fwd)
+            .process_with_scratch(
+                &mut self.input_buf,
+                &mut self.fir_spectrum,
+                &mut self.fft_scratch_fwd,
+            )
             .expect("FIR FFT failed");
     }
 
@@ -416,14 +478,8 @@ impl LinearPhaseEqPlugin {
                 .with_group(&group),
             );
             params.push(
-                Parameter::new_float(
-                    &format!("band_{}_q", i),
-                    "Q",
-                    band.q as f32,
-                    0.1,
-                    10.0,
-                )
-                .with_group(&group),
+                Parameter::new_float(&format!("band_{}_q", i), "Q", band.q as f32, 0.1, 10.0)
+                    .with_group(&group),
             );
             params.push(
                 Parameter::new_float(
@@ -459,8 +515,10 @@ impl LinearPhaseEqPlugin {
             self.output_buf.resize(fft_size, 0.0);
             self.freq_buf.resize(freq_size, Complex::new(0.0, 0.0));
             self.fir_spectrum.resize(freq_size, Complex::new(0.0, 0.0));
-            self.fft_scratch_fwd.resize(self.fft_forward.get_scratch_len(), Complex::new(0.0, 0.0));
-            self.fft_scratch_inv.resize(self.fft_inverse.get_scratch_len(), Complex::new(0.0, 0.0));
+            self.fft_scratch_fwd
+                .resize(self.fft_forward.get_scratch_len(), Complex::new(0.0, 0.0));
+            self.fft_scratch_inv
+                .resize(self.fft_inverse.get_scratch_len(), Complex::new(0.0, 0.0));
             for ch_overlap in &mut self.overlap {
                 ch_overlap.resize(fft_size, 0.0);
                 ch_overlap.fill(0.0);
@@ -475,8 +533,9 @@ impl LinearPhaseEqPlugin {
 
 impl InPlacePlugin for LinearPhaseEqPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Linear-Phase EQ", env!("CARGO_PKG_VERSION"), "SOTF")
-            .with_description("Parametric EQ with linear-phase FIR convolution for zero phase distortion")
+        PluginInfo::new("Linear-Phase EQ", env!("CARGO_PKG_VERSION"), "SOTF").with_description(
+            "Parametric EQ with linear-phase FIR convolution for zero phase distortion",
+        )
     }
 
     fn channels(&self) -> usize {
@@ -500,7 +559,12 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
                         // Grow bands if needed
                         while self.bands.len() < new_count {
                             self.bands.push(EqBand::new(
-                                BiquadFilterType::Peak, 1000.0, 1.0, 0.0, true, sr,
+                                BiquadFilterType::Peak,
+                                1000.0,
+                                1.0,
+                                0.0,
+                                true,
+                                sr,
                             ));
                         }
                         // Shrink if needed (just adjust num_filters, keep bands allocated)
@@ -604,7 +668,9 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
                 {
                     let band = &self.bands[idx];
                     return match param {
-                        "type" => Some(ParameterValue::Int(filter_type_to_index(band.filter_type) as i32)),
+                        "type" => Some(ParameterValue::Int(
+                            filter_type_to_index(band.filter_type) as i32
+                        )),
                         "freq" => Some(ParameterValue::Float(band.frequency as f32)),
                         "q" => Some(ParameterValue::Float(band.q as f32)),
                         "gain" => Some(ParameterValue::Float(band.gain_db as f32)),
@@ -624,7 +690,8 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
             // Rebuild all biquads at new sample rate
             let sr = sample_rate as f64;
             for band in &mut self.bands {
-                band.biquad = Biquad::new(band.filter_type, band.frequency, sr, band.q, band.gain_db);
+                band.biquad =
+                    Biquad::new(band.filter_type, band.frequency, sr, band.q, band.gain_db);
             }
             self.fir_dirty = true;
         }
@@ -638,7 +705,11 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
         }
     }
 
-    fn process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext) -> PluginResult<usize> {
+    fn process_in_place(
+        &mut self,
+        buffer: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
         enable_ftz_daz();
         let nf = context.num_frames;
         let nc = self.channels;
@@ -677,9 +748,11 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
             self.input_buf[nf..self.fft_size].fill(0.0);
 
             // FFT the input
-            if let Err(e) = self.fft_forward
-                .process_with_scratch(&mut self.input_buf, &mut self.freq_buf, &mut self.fft_scratch_fwd)
-            {
+            if let Err(e) = self.fft_forward.process_with_scratch(
+                &mut self.input_buf,
+                &mut self.freq_buf,
+                &mut self.fft_scratch_fwd,
+            ) {
                 return Err(format!("Forward FFT failed: {:?}", e));
             }
 
@@ -689,9 +762,11 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
             }
 
             // IFFT
-            if let Err(e) = self.fft_inverse
-                .process_with_scratch(&mut self.freq_buf, &mut self.output_buf, &mut self.fft_scratch_inv)
-            {
+            if let Err(e) = self.fft_inverse.process_with_scratch(
+                &mut self.freq_buf,
+                &mut self.output_buf,
+                &mut self.fft_scratch_inv,
+            ) {
                 return Err(format!("Inverse FFT failed: {:?}", e));
             }
 
@@ -723,12 +798,20 @@ impl InPlacePlugin for LinearPhaseEqPlugin {
             let add_old = old_remaining.min(new_tail_len);
             for i in 0..new_tail_len {
                 let new_val = self.output_buf[nf + i];
-                let old_val = if i < add_old { overlap_buf[nf + i] } else { 0.0 };
+                let old_val = if i < add_old {
+                    overlap_buf[nf + i]
+                } else {
+                    0.0
+                };
                 overlap_buf[i] = new_val + old_val;
             }
 
             // Clear rest of overlap buffer
-            for ov in overlap_buf.iter_mut().take(overlap_total).skip(new_tail_len) {
+            for ov in overlap_buf
+                .iter_mut()
+                .take(overlap_total)
+                .skip(new_tail_len)
+            {
                 *ov = 0.0;
             }
 
@@ -868,7 +951,7 @@ mod tests {
             for frame in 0..num_frames {
                 let t = (start_frame + frame) as f32 / sr as f32;
                 let sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
-                buffer[frame * channels] = sample;     // L
+                buffer[frame * channels] = sample; // L
                 buffer[frame * channels + 1] = sample; // R
             }
             let ctx = make_context(num_frames);
@@ -897,10 +980,7 @@ mod tests {
             }
             // Tolerance: FIR windowing (Kaiser window) causes small deviations,
             // especially at frequencies near Nyquist. 0.1 corresponds to ~0.8 dB.
-            assert!(
-                max_error < 0.1,
-                "Passthrough error too large: {max_error}"
-            );
+            assert!(max_error < 0.1, "Passthrough error too large: {max_error}");
         }
     }
 
@@ -1049,10 +1129,7 @@ mod tests {
 
         // Set mix
         plugin
-            .set_parameter(
-                ParameterId::from("mix"),
-                ParameterValue::Float(0.5),
-            )
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("mix"));
         match val {

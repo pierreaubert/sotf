@@ -6,7 +6,7 @@
 use crate::{
     ABComparePlugin, ABComparePluginParams, AecPlugin, AecPluginParams, BandMergePlugin,
     BandMergePluginParams, BandSplitPlugin, BandSplitPluginParams, BeamformerPlugin,
-    BeamformerPluginParams, BinauralDecoderPlugin, BinauralDecoderParams, ChannelMuteSoloParams,
+    BeamformerPluginParams, BinauralDecoderParams, BinauralDecoderPlugin, ChannelMuteSoloParams,
     ChannelMuteSoloPlugin, CompressorPlugin, CompressorPluginParams, ConvolutionPlugin,
     ConvolutionPluginParams, CrossfeedPlugin, CrossfeedPluginParams, CrossoverPlugin,
     CrossoverPluginParams, DeEsserPlugin, DeEsserPluginParams, DelayPlugin, DelayPluginParams,
@@ -17,7 +17,7 @@ use crate::{
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
     MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams, MultibandCompressorPlugin,
     MultibandCompressorPluginParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
-    PndPlugin, PndPluginParams, Plugin, ResamplerPlugin, SaturationPlugin, SaturationPluginParams,
+    Plugin, PndPlugin, PndPluginParams, ResamplerPlugin, SaturationPlugin, SaturationPluginParams,
     SpectralCompressorPlugin, SpectralCompressorPluginParams, SpectrumAnalyzerPlugin,
     SpectrumConfig, StereoImagerPlugin, StereoImagerPluginParams, TransientShaperPlugin,
     TransientShaperPluginParams, UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
@@ -125,9 +125,8 @@ pub fn create_plugin(
         }
 
         "multiband_expander" => {
-            let params: MultibandExpanderPluginParams =
-                serde_json::from_value(parameters.clone())
-                    .map_err(|e| format!("Failed to parse multiband expander params: {e}"))?;
+            let params: MultibandExpanderPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse multiband expander params: {e}"))?;
             let plugin = MultibandExpanderPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
@@ -155,9 +154,8 @@ pub fn create_plugin(
         }
 
         "spectral_compressor" => {
-            let params: SpectralCompressorPluginParams =
-                serde_json::from_value(parameters.clone())
-                    .map_err(|e| format!("Failed to parse spectral compressor params: {e}"))?;
+            let params: SpectralCompressorPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse spectral compressor params: {e}"))?;
             let plugin = SpectralCompressorPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
@@ -195,13 +193,18 @@ pub fn create_plugin(
             use crate::plugin_loudness_compensation::FletcherMunsonCompat;
             let fm: FletcherMunsonCompat = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse Fletcher-Munson params: {e}"))?;
-            let plugin = LoudnessCompensationPlugin::from_params(channels, fm.into_loudness_compensation_params())?;
+            let plugin = LoudnessCompensationPlugin::from_params(
+                channels,
+                fm.into_loudness_compensation_params(),
+            )?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         "crossfeed" => {
             if channels != 2 {
-                return Err(format!("Crossfeed requires 2 input channels (stereo), got {channels}"));
+                return Err(format!(
+                    "Crossfeed requires 2 input channels (stereo), got {channels}"
+                ));
             }
             let params: CrossfeedPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse crossfeed params: {e}"))?;
@@ -212,7 +215,9 @@ pub fn create_plugin(
 
         "xtc" | "crosstalk_cancellation" => {
             if channels != 2 {
-                return Err(format!("XTC requires 2 input channels (stereo), got {channels}"));
+                return Err(format!(
+                    "XTC requires 2 input channels (stereo), got {channels}"
+                ));
             }
             let params: XtcPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse XTC params: {e}"))?;
@@ -248,9 +253,7 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
-        "matrix" => {
-            create_matrix_plugin(parameters, channels)
-        }
+        "matrix" => create_matrix_plugin(parameters, channels),
 
         "channel_mute_solo" => {
             let params: ChannelMuteSoloParams = serde_json::from_value(parameters.clone())
@@ -285,12 +288,19 @@ pub fn create_plugin(
                 #[serde(default = "default_chunk_size")]
                 chunk_size: usize,
             }
-            fn default_chunk_size() -> usize { 1024 }
+            fn default_chunk_size() -> usize {
+                1024
+            }
 
             let params: ResamplerParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse resampler params: {e}"))?;
-            let plugin = ResamplerPlugin::new(channels, params.input_sample_rate, params.output_sample_rate, params.chunk_size)
-                .map_err(|e| format!("Failed to create resampler: {e}"))?;
+            let plugin = ResamplerPlugin::new(
+                channels,
+                params.input_sample_rate,
+                params.output_sample_rate,
+                params.chunk_size,
+            )
+            .map_err(|e| format!("Failed to create resampler: {e}"))?;
             Ok(Box::new(plugin))
         }
 
@@ -347,9 +357,7 @@ pub fn create_plugin(
         }
 
         #[cfg(not(feature = "iamf"))]
-        "ambisonics_decoder" => {
-            Err("Ambisonics decoder requires the 'iamf' feature".to_string())
-        }
+        "ambisonics_decoder" => Err("Ambisonics decoder requires the 'iamf' feature".to_string()),
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         "hal_input" => {
@@ -403,7 +411,9 @@ fn create_matrix_plugin(
             .map_err(|e| format!("Failed to create sparse matrix plugin: {e}"))?
     } else if let (Some(in_ch), Some(out_ch)) = (params.input_channels, params.output_channels) {
         if in_ch == out_ch && in_ch != channels {
-            log::info!("[factory:matrix] Resizing square matrix from {in_ch}x{out_ch} to {channels}x{channels}");
+            log::info!(
+                "[factory:matrix] Resizing square matrix from {in_ch}x{out_ch} to {channels}x{channels}"
+            );
             let mut matrix = params.matrix;
             resize_matrix(&mut matrix, in_ch, out_ch, channels, channels);
             MatrixPlugin::with_matrix(channels, channels, matrix)
@@ -423,7 +433,10 @@ fn create_matrix_plugin(
     if let Some(mut states) = params.channel_states {
         let needed = plugin.output_channels();
         if states.len() != needed {
-            log::info!("[factory] Resizing channel_states from {} to {needed}", states.len());
+            log::info!(
+                "[factory] Resizing channel_states from {} to {needed}",
+                states.len()
+            );
             states.resize(needed, crate::ChannelState::default());
         }
         plugin = plugin.with_channel_states(states);

@@ -116,7 +116,12 @@ fn main() {
         denoiser_latency as f64 * 1000.0 / sample_rate as f64
     );
 
-    let denoised = process_plugin_mono(&mut denoiser_plugin, &mono_samples, total_frames, sample_rate);
+    let denoised = process_plugin_mono(
+        &mut denoiser_plugin,
+        &mono_samples,
+        total_frames,
+        sample_rate,
+    );
 
     if let Some(data) = denoiser_plugin.get_data()
         && let Some(d) = data.downcast_ref::<DenoiserData>()
@@ -149,7 +154,8 @@ fn main() {
     );
 
     let pnd_frames = denoised.len();
-    let stabilised = process_plugin_variable(&mut pnd_plugin, &denoised, pnd_frames, 1, 1, sample_rate);
+    let stabilised =
+        process_plugin_variable(&mut pnd_plugin, &denoised, pnd_frames, 1, 1, sample_rate);
 
     if let Some(data) = pnd_plugin.get_data()
         && let Some(d) = data.downcast_ref::<PndData>()
@@ -164,7 +170,7 @@ fn main() {
     // ── Stage 3: Mono → Stereo ──────────────────────────────────────────
     println!("\n--- Stage 3: Mono to Stereo ---");
     let m2s_params = MonoToStereoPluginParams {
-        stereo_width: 0.6,  // moderate width — natural, not exaggerated
+        stereo_width: 0.6, // moderate width — natural, not exaggerated
         freq_dependent: true,
         haas_delay_ms: 0.8, // subtle Haas delay
     };
@@ -202,9 +208,7 @@ fn main() {
         "  Total pipeline latency: {total_latency} samples ({:.2} ms)",
         total_latency as f64 * 1000.0 / sample_rate as f64
     );
-    println!(
-        "  Input:  {total_frames} frames mono ({duration_s:.2} s)"
-    );
+    println!("  Input:  {total_frames} frames mono ({duration_s:.2} s)");
     println!(
         "  Output: {output_frames} frames stereo ({:.2} s)",
         output_frames as f64 / sample_rate as f64

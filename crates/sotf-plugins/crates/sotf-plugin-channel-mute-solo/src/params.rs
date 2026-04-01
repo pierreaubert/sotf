@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -19,8 +19,7 @@ use sotf_host::plugin_params::PluginParamDef;
 // ============================================================================
 
 pub const PARAMS: &[ParamSpec] = &[
-    ParamSpec::bool_param("Enabled", "enabled", true, "General")
-        .doc("Master enable for mute/solo"),
+    ParamSpec::bool_param("Enabled", "enabled", true, "General").doc("Master enable for mute/solo"),
     ParamSpec::float(
         "Dim Gain",
         "dim_gain_db",

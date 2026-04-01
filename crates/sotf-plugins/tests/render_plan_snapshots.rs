@@ -50,7 +50,10 @@ snapshot_plugin!(band_merge, sotf_plugin_band_merge::params::Params);
 snapshot_plugin!(band_split, sotf_plugin_band_split::params::Params);
 snapshot_plugin!(beamformer, sotf_plugin_beamformer::params::Params);
 snapshot_plugin!(binaural, sotf_plugin_binaural::params::Params);
-snapshot_plugin!(channel_mute_solo, sotf_plugin_channel_mute_solo::params::Params);
+snapshot_plugin!(
+    channel_mute_solo,
+    sotf_plugin_channel_mute_solo::params::Params
+);
 snapshot_plugin!(convolution, sotf_plugin_convolution::params::Params);
 snapshot_plugin!(crossfeed, sotf_plugin_crossfeed::params::Params);
 snapshot_plugin!(delay, sotf_plugin_delay::params::Params);
@@ -59,11 +62,17 @@ snapshot_plugin!(dither, sotf_plugin_dither::params::Params);
 snapshot_plugin!(downmix, sotf_plugin_downmix::params::Params);
 
 // fletcher_munson merged into loudness_compensation
-snapshot_plugin!(fletcher_munson, sotf_plugin_loudness_compensation::params::Params);
+snapshot_plugin!(
+    fletcher_munson,
+    sotf_plugin_loudness_compensation::params::Params
+);
 snapshot_plugin!(gain, sotf_plugin_gain::params::Params);
 snapshot_plugin!(gate, sotf_plugin_gate::params::Params);
 snapshot_plugin!(limiter, sotf_plugin_limiter::params::Params);
-snapshot_plugin!(loudness_compensation, sotf_plugin_loudness_compensation::params::Params);
+snapshot_plugin!(
+    loudness_compensation,
+    sotf_plugin_loudness_compensation::params::Params
+);
 snapshot_plugin!(matrix, sotf_plugin_matrix::params::Params);
 snapshot_plugin!(mono_to_stereo, sotf_plugin_mono_to_stereo::params::Params);
 snapshot_plugin!(pnd, sotf_plugin_pnd::params::Params);

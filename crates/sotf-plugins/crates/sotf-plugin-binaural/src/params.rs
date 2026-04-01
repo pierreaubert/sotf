@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -97,8 +97,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     main: &[ControlGroup {
         title: "CONTROLS",
         controls: &[
-            ControlSpec::knob(3),   // externalization
-            ControlSpec::knob(4),   // near_field_strength
+            ControlSpec::knob(3),     // externalization
+            ControlSpec::knob(4),     // near_field_strength
             ControlSpec::selector(5), // crossfade_mode
         ],
     }],
@@ -146,9 +146,15 @@ pub struct Params {
     pub headphone_eq_enabled: bool,
 }
 
-fn d_late_reverb_mix() -> f64 { pk(PARAMS, "late_reverb_mix").default_f64() }
-fn d_late_reverb_rt60() -> f64 { pk(PARAMS, "late_reverb_rt60").default_f64() }
-fn d_late_reverb_damping() -> f64 { pk(PARAMS, "late_reverb_damping").default_f64() }
+fn d_late_reverb_mix() -> f64 {
+    pk(PARAMS, "late_reverb_mix").default_f64()
+}
+fn d_late_reverb_rt60() -> f64 {
+    pk(PARAMS, "late_reverb_rt60").default_f64()
+}
+fn d_late_reverb_damping() -> f64 {
+    pk(PARAMS, "late_reverb_damping").default_f64()
+}
 
 fn d_input_channels() -> usize {
     pk(PARAMS, "input_channels").default_usize()
@@ -260,10 +266,7 @@ mod tests {
         let json = serde_json::to_value(&original).unwrap();
         let restored: Params = serde_json::from_value(json).unwrap();
         assert_eq!(original.input_channels, restored.input_channels);
-        assert_eq!(
-            original.enable_optimization,
-            restored.enable_optimization
-        );
+        assert_eq!(original.enable_optimization, restored.enable_optimization);
         assert_eq!(original.externalization, restored.externalization);
         assert_eq!(original.near_field_strength, restored.near_field_strength);
         assert_eq!(original.crossfade_mode, restored.crossfade_mode);

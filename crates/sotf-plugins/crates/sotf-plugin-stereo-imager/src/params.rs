@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -48,17 +48,44 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .doc("Mid/high crossover frequency"),
     // 3: Low band width
-    ParamSpec::float("Low Width", "low_width", 1.0, 0.0, 2.0, 0.01, "", "Band Width")
-        .scaled(100.0)
-        .doc("Low band stereo width"),
+    ParamSpec::float(
+        "Low Width",
+        "low_width",
+        1.0,
+        0.0,
+        2.0,
+        0.01,
+        "",
+        "Band Width",
+    )
+    .scaled(100.0)
+    .doc("Low band stereo width"),
     // 4: Mid band width
-    ParamSpec::float("Mid Width", "mid_width", 1.0, 0.0, 2.0, 0.01, "", "Band Width")
-        .scaled(100.0)
-        .doc("Mid band stereo width"),
+    ParamSpec::float(
+        "Mid Width",
+        "mid_width",
+        1.0,
+        0.0,
+        2.0,
+        0.01,
+        "",
+        "Band Width",
+    )
+    .scaled(100.0)
+    .doc("Mid band stereo width"),
     // 5: High band width
-    ParamSpec::float("High Width", "high_width", 1.0, 0.0, 2.0, 0.01, "", "Band Width")
-        .scaled(100.0)
-        .doc("High band stereo width"),
+    ParamSpec::float(
+        "High Width",
+        "high_width",
+        1.0,
+        0.0,
+        2.0,
+        0.01,
+        "",
+        "Band Width",
+    )
+    .scaled(100.0)
+    .doc("High band stereo width"),
     // 6: Mono bass toggle
     ParamSpec::bool_labeled("Mono Bass", "mono_bass", false, "On", "Off", "Options")
         .doc("Collapse stereo below low-mid crossover"),

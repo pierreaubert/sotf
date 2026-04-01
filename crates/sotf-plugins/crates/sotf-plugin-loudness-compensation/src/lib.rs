@@ -20,11 +20,11 @@
 pub mod iso226;
 pub mod params;
 
-use iso226::{compute_iso226_delta, interpolate_delta, ISO226_NUM_FREQS};
+use crate::params::PARAMS as LC;
+use iso226::{ISO226_NUM_FREQS, compute_iso226_delta, interpolate_delta};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 use sotf_host::param_specs::find_by_key as pk;
-use crate::params::PARAMS as LC;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -272,7 +272,8 @@ pub type FletcherMunsonPluginParams = LoudnessCompensationPluginParams;
 const ISO_FILTER_COUNT: usize = 7;
 
 /// Center frequencies for the 7 ISO 226 compensation bands.
-const ISO_BAND_FREQS: [f64; ISO_FILTER_COUNT] = [50.0, 150.0, 500.0, 1500.0, 3500.0, 7000.0, 10000.0];
+const ISO_BAND_FREQS: [f64; ISO_FILTER_COUNT] =
+    [50.0, 150.0, 500.0, 1500.0, 3500.0, 7000.0, 10000.0];
 
 /// Q factors for the 7 ISO 226 compensation bands.
 const ISO_BAND_QS: [f64; ISO_FILTER_COUNT] = [0.7, 0.8, 1.0, 1.2, 1.5, 1.2, 0.8];
@@ -463,15 +464,9 @@ impl LoudnessCompensationPlugin {
             )
             .with_description("Auto-gain position: pre, post, or disabled")
             .with_group("Auto Gain"),
-            Parameter::new_int(
-                "mode",
-                "Mode",
-                self.mode_index as i32,
-                0,
-                2,
-            )
-            .with_description("0 = Manual, 1 = ISO 226, 2 = Auto")
-            .with_group("Compensation"),
+            Parameter::new_int("mode", "Mode", self.mode_index as i32, 0, 2)
+                .with_description("0 = Manual, 1 = ISO 226, 2 = Auto")
+                .with_group("Compensation"),
             Parameter::new_float(
                 "playback_level_db",
                 "Playback Level",
@@ -512,11 +507,7 @@ impl LoudnessCompensationPlugin {
         let lg = self.low_gain / 2.0;
         let hg = self.high_gain / 2.0;
         // When midrange is disabled, set gain to 0 dB so the peak filter is a no-op
-        let mg = if self.mid_enabled {
-            self.mid_gain
-        } else {
-            0.0
-        };
+        let mg = if self.mid_enabled { self.mid_gain } else { 0.0 };
         for ch in 0..self.num_channels {
             if self.filters[ch].len() == Self::FILTER_COUNT {
                 // Update coefficients in place — preserves filter delay state
@@ -606,8 +597,10 @@ impl LoudnessCompensationPlugin {
     /// Called at parameter-change time only, never in the hot path.
     fn rebuild_iso_filters(&mut self) {
         let sr = self.sample_rate as f64;
-        self.iso_deltas =
-            compute_iso226_delta(self.playback_level_db as f64, self.reference_level_db as f64);
+        self.iso_deltas = compute_iso226_delta(
+            self.playback_level_db as f64,
+            self.reference_level_db as f64,
+        );
 
         for ch in 0..self.num_channels {
             if self.iso_filters[ch].len() == ISO_FILTER_COUNT {
@@ -1002,19 +995,45 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
         let q = 0.707;
         let lg = self.low_gain / 2.0;
         let hg = self.high_gain / 2.0;
-        let mg = if self.mid_enabled {
-            self.mid_gain
-        } else {
-            0.0
-        };
+        let mg = if self.mid_enabled { self.mid_gain } else { 0.0 };
         for ch in 0..self.num_channels {
             // Reset manual filters
             self.filters[ch].clear();
-            self.filters[ch].push(Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64));
-            self.filters[ch].push(Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64));
-            self.filters[ch].push(Biquad::new(BiquadFilterType::Peak, self.mid_freq as f64, sr, self.mid_q as f64, mg as f64));
-            self.filters[ch].push(Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64));
-            self.filters[ch].push(Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64));
+            self.filters[ch].push(Biquad::new(
+                BiquadFilterType::Lowshelf,
+                self.low_freq as f64,
+                sr,
+                q,
+                lg as f64,
+            ));
+            self.filters[ch].push(Biquad::new(
+                BiquadFilterType::Lowshelf,
+                self.low_freq as f64,
+                sr,
+                q,
+                lg as f64,
+            ));
+            self.filters[ch].push(Biquad::new(
+                BiquadFilterType::Peak,
+                self.mid_freq as f64,
+                sr,
+                self.mid_q as f64,
+                mg as f64,
+            ));
+            self.filters[ch].push(Biquad::new(
+                BiquadFilterType::Highshelf,
+                self.high_freq as f64,
+                sr,
+                q,
+                hg as f64,
+            ));
+            self.filters[ch].push(Biquad::new(
+                BiquadFilterType::Highshelf,
+                self.high_freq as f64,
+                sr,
+                q,
+                hg as f64,
+            ));
 
             // Reset ISO 226 filters
             self.iso_filters[ch].clear();
@@ -1220,8 +1239,11 @@ mod tests {
         assert!(p.mid_enabled);
 
         // Disable mid band
-        p.set_parameter(ParameterId::from("mid_enabled"), ParameterValue::Bool(false))
-            .unwrap();
+        p.set_parameter(
+            ParameterId::from("mid_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
         assert!(!p.mid_enabled);
 
         // The peak filter (index 2) should have gain_db == 0.0.
@@ -1333,12 +1355,24 @@ mod tests {
         // When playback_level == reference_level, ISO 226 mode should be near-passthrough
         let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
-        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1)).unwrap();
-        p.set_parameter(ParameterId::from("playback_level_db"), ParameterValue::Float(83.0)).unwrap();
-        p.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
+            .unwrap();
+        p.set_parameter(
+            ParameterId::from("playback_level_db"),
+            ParameterValue::Float(83.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(83.0),
+        )
+        .unwrap();
 
         let nf = 4800;
-        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
         let signal: Vec<f32> = (0..nf)
             .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0).sin())
             .collect();
@@ -1347,8 +1381,10 @@ mod tests {
         p.process_in_place(&mut buf, &ctx).unwrap();
 
         // Measure RMS in the settled half
-        let input_rms: f32 = (signal[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
-        let output_rms: f32 = (buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let input_rms: f32 =
+            (signal[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        let output_rms: f32 =
+            (buf[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
         let diff_db = 20.0 * (output_rms / input_rms).log10();
         assert!(
             diff_db.abs() < 1.0,
@@ -1361,13 +1397,25 @@ mod tests {
         // At lower playback level, bass should be boosted relative to mid
         let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
-        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1)).unwrap();
-        p.set_parameter(ParameterId::from("playback_level_db"), ParameterValue::Float(60.0)).unwrap();
-        p.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
+            .unwrap();
+        p.set_parameter(
+            ParameterId::from("playback_level_db"),
+            ParameterValue::Float(60.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(83.0),
+        )
+        .unwrap();
 
         let nf = 9600;
         let sr = 48000.0f32;
-        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
 
         // Process a 50 Hz signal
         let mut low_buf: Vec<f32> = (0..nf)
@@ -1378,17 +1426,28 @@ mod tests {
         // Process a 1 kHz signal with a fresh plugin at same settings
         let mut p2 = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
         InPlacePlugin::initialize(&mut p2, 48000).unwrap();
-        p2.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1)).unwrap();
-        p2.set_parameter(ParameterId::from("playback_level_db"), ParameterValue::Float(60.0)).unwrap();
-        p2.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
+        p2.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
+            .unwrap();
+        p2.set_parameter(
+            ParameterId::from("playback_level_db"),
+            ParameterValue::Float(60.0),
+        )
+        .unwrap();
+        p2.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(83.0),
+        )
+        .unwrap();
 
         let mut mid_buf: Vec<f32> = (0..nf)
             .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin())
             .collect();
         p2.process_in_place(&mut mid_buf, &ctx).unwrap();
 
-        let low_rms: f32 = (low_buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
-        let mid_rms: f32 = (mid_buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let low_rms: f32 =
+            (low_buf[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        let mid_rms: f32 =
+            (mid_buf[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
 
         assert!(
             low_rms > mid_rms * 1.2,
@@ -1402,10 +1461,12 @@ mod tests {
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
         assert_eq!(p.mode_index, 0);
 
-        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1)).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
+            .unwrap();
         assert_eq!(p.mode_index, 1);
 
-        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(0)).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(0))
+            .unwrap();
         assert_eq!(p.mode_index, 0);
     }
 
@@ -1439,13 +1500,25 @@ mod tests {
         // Auto mode with volume=-20 should produce bass boost
         let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
-        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2)).unwrap();
-        p.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
-        p.set_parameter(ParameterId::from("playback_volume_db"), ParameterValue::Float(-20.0)).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
+            .unwrap();
+        p.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(83.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("playback_volume_db"),
+            ParameterValue::Float(-20.0),
+        )
+        .unwrap();
 
         let nf = 9600;
         let sr = 48000.0f32;
-        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
 
         // Process a 50 Hz signal
         let mut low_buf: Vec<f32> = (0..nf)
@@ -1456,17 +1529,28 @@ mod tests {
         // Process a 1 kHz signal with a fresh plugin at same settings
         let mut p2 = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
         InPlacePlugin::initialize(&mut p2, 48000).unwrap();
-        p2.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2)).unwrap();
-        p2.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
-        p2.set_parameter(ParameterId::from("playback_volume_db"), ParameterValue::Float(-20.0)).unwrap();
+        p2.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
+            .unwrap();
+        p2.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(83.0),
+        )
+        .unwrap();
+        p2.set_parameter(
+            ParameterId::from("playback_volume_db"),
+            ParameterValue::Float(-20.0),
+        )
+        .unwrap();
 
         let mut mid_buf: Vec<f32> = (0..nf)
             .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin())
             .collect();
         p2.process_in_place(&mut mid_buf, &ctx).unwrap();
 
-        let low_rms: f32 = (low_buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
-        let mid_rms: f32 = (mid_buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let low_rms: f32 =
+            (low_buf[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        let mid_rms: f32 =
+            (mid_buf[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
 
         assert!(
             low_rms > mid_rms * 1.2,
@@ -1480,12 +1564,24 @@ mod tests {
         // => no compensation (flat response)
         let mut p = LoudnessCompensationPlugin::new(1, 100.0, 0.0, 10000.0, 0.0);
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
-        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2)).unwrap();
-        p.set_parameter(ParameterId::from("reference_level_db"), ParameterValue::Float(83.0)).unwrap();
-        p.set_parameter(ParameterId::from("playback_volume_db"), ParameterValue::Float(0.0)).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
+            .unwrap();
+        p.set_parameter(
+            ParameterId::from("reference_level_db"),
+            ParameterValue::Float(83.0),
+        )
+        .unwrap();
+        p.set_parameter(
+            ParameterId::from("playback_volume_db"),
+            ParameterValue::Float(0.0),
+        )
+        .unwrap();
 
         let nf = 4800;
-        let ctx = ProcessContext { sample_rate: 48000, num_frames: nf };
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
         let signal: Vec<f32> = (0..nf)
             .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0).sin())
             .collect();
@@ -1493,8 +1589,10 @@ mod tests {
         let mut buf = signal.clone();
         p.process_in_place(&mut buf, &ctx).unwrap();
 
-        let input_rms: f32 = (signal[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
-        let output_rms: f32 = (buf[nf/2..].iter().map(|s| s*s).sum::<f32>() / (nf/2) as f32).sqrt();
+        let input_rms: f32 =
+            (signal[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        let output_rms: f32 =
+            (buf[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
         let diff_db = 20.0 * (output_rms / input_rms).log10();
         assert!(
             diff_db.abs() < 1.0,
@@ -1508,10 +1606,12 @@ mod tests {
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
         assert_eq!(p.mode_index, 0);
 
-        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2)).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(2))
+            .unwrap();
         assert_eq!(p.mode_index, 2);
 
-        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(0)).unwrap();
+        p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(0))
+            .unwrap();
         assert_eq!(p.mode_index, 0);
     }
 }

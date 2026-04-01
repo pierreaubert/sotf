@@ -7,8 +7,8 @@ pub mod params;
 use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalOutputWriter;
@@ -190,8 +190,7 @@ impl Plugin for HalOutputPlugin {
                 // Approximate fill level from write success ratio since the
                 // HalOutputWriter doesn't expose capacity/available_samples yet.
                 if !input.is_empty() {
-                    self.buffer_fill_level =
-                        (samples_written as f32 / input.len() as f32) * 100.0;
+                    self.buffer_fill_level = (samples_written as f32 / input.len() as f32) * 100.0;
                 }
 
                 if samples_written < input.len() {

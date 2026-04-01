@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -474,7 +474,10 @@ mod tests {
         assert_eq!(original.autogain_enabled, restored.autogain_enabled);
         assert_eq!(original.autogain_target_lufs, restored.autogain_target_lufs);
         assert_eq!(original.autogain_max_gain_db, restored.autogain_max_gain_db);
-        assert_eq!(original.autogain_smoothing_ms, restored.autogain_smoothing_ms);
+        assert_eq!(
+            original.autogain_smoothing_ms,
+            restored.autogain_smoothing_ms
+        );
     }
 
     #[test]
@@ -490,31 +493,16 @@ mod tests {
         );
         assert_eq!(p.enabled, pk(PARAMS, "enabled").default_bool());
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64());
-        assert_eq!(
-            p.bauer_fcut_hz,
-            pk(PARAMS, "bauer_fcut_hz").default_f64()
-        );
-        assert_eq!(
-            p.bauer_feed_db,
-            pk(PARAMS, "bauer_feed_db").default_f64()
-        );
+        assert_eq!(p.bauer_fcut_hz, pk(PARAMS, "bauer_fcut_hz").default_f64());
+        assert_eq!(p.bauer_feed_db, pk(PARAMS, "bauer_feed_db").default_f64());
         assert_eq!(p.meier_level, pk(PARAMS, "meier_level").default_f64());
-        assert_eq!(
-            p.mb_low_freq_hz,
-            pk(PARAMS, "mb_low_freq_hz").default_f64()
-        );
+        assert_eq!(p.mb_low_freq_hz, pk(PARAMS, "mb_low_freq_hz").default_f64());
         assert_eq!(
             p.mb_mid_high_freq_hz,
             pk(PARAMS, "mb_mid_high_freq_hz").default_f64()
         );
-        assert_eq!(
-            p.mb_low_feed_db,
-            pk(PARAMS, "mb_low_feed_db").default_f64()
-        );
-        assert_eq!(
-            p.mb_mid_feed_db,
-            pk(PARAMS, "mb_mid_feed_db").default_f64()
-        );
+        assert_eq!(p.mb_low_feed_db, pk(PARAMS, "mb_low_feed_db").default_f64());
+        assert_eq!(p.mb_mid_feed_db, pk(PARAMS, "mb_mid_feed_db").default_f64());
         assert_eq!(
             p.mb_high_feed_db,
             pk(PARAMS, "mb_high_feed_db").default_f64()

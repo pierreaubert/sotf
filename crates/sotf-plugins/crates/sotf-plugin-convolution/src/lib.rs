@@ -262,9 +262,11 @@ impl ConvolutionPlugin {
                         }
                     }
                     if self.zero_latency_head && self.head_taps > 0 {
-                        self.nupc_engines.push(
-                            nupc::NupcEngine::new_with_head(&ir_data, PARTITION_SIZE, self.head_taps),
-                        );
+                        self.nupc_engines.push(nupc::NupcEngine::new_with_head(
+                            &ir_data,
+                            PARTITION_SIZE,
+                            self.head_taps,
+                        ));
                     } else {
                         self.nupc_engines
                             .push(nupc::NupcEngine::new(&ir_data, PARTITION_SIZE));
@@ -326,10 +328,7 @@ impl ConvolutionPlugin {
         let codec_params = track.codec_params.clone();
 
         let sample_rate = codec_params.sample_rate.unwrap_or(0);
-        let num_channels = codec_params
-            .channels
-            .map(|c| c.count())
-            .unwrap_or(1);
+        let num_channels = codec_params.channels.map(|c| c.count()).unwrap_or(1);
 
         let mut decoder = IR_CODEC_REGISTRY
             .make(&codec_params, &DecoderOptions::default())
@@ -346,7 +345,9 @@ impl ConvolutionPlugin {
                 }
                 Err(e) => return Err(format!("Read: {e}")),
             };
-            let decoded = decoder.decode(&packet).map_err(|e| format!("Decode: {e}"))?;
+            let decoded = decoder
+                .decode(&packet)
+                .map_err(|e| format!("Decode: {e}"))?;
             match &decoded {
                 AudioBufferRef::F32(buf) => {
                     for (ch, sample_ch) in samples.iter_mut().enumerate() {
@@ -362,9 +363,7 @@ impl ConvolutionPlugin {
                 AudioBufferRef::S24(buf) => {
                     let scale = 1.0 / 8388608.0;
                     for (ch, sample_ch) in samples.iter_mut().enumerate() {
-                        sample_ch.extend(
-                            buf.chan(ch).iter().map(|s| s.inner() as f32 * scale),
-                        );
+                        sample_ch.extend(buf.chan(ch).iter().map(|s| s.inner() as f32 * scale));
                     }
                 }
                 AudioBufferRef::S32(buf) => {
@@ -407,7 +406,8 @@ impl ConvolutionPlugin {
         let estimated_output_len =
             (source_len as f64 * target_rate as f64 / source_rate as f64) as usize + chunk_size;
 
-        let mut output_channels: Vec<Vec<f32>> = vec![Vec::with_capacity(estimated_output_len); num_channels];
+        let mut output_channels: Vec<Vec<f32>> =
+            vec![Vec::with_capacity(estimated_output_len); num_channels];
 
         let mut pos = 0;
         while pos < source_len {
@@ -593,18 +593,18 @@ impl InPlacePlugin for ConvolutionPlugin {
                         let n_accum = pool.len().max(1);
                         let chunk_size = num_partitions.div_ceil(n_accum);
 
-                        pool.par_iter_mut()
-                            .enumerate()
-                            .for_each(|(idx, acc)| {
-                                let start = idx * chunk_size;
-                                let end = (start + chunk_size).min(num_partitions);
-                                for (p, ir_slice) in ir_partitions.iter().enumerate().take(end).skip(start) {
-                                    let fdl_p = (fdl_head + p) % num_partitions;
-                                    let fdl_off = (fdl_p * channels + ch) * FFT_SIZE;
-                                    let fdl_slice = &fdl_flat[fdl_off..fdl_off + FFT_SIZE];
-                                    complex_mul_add_simd(acc, fdl_slice, ir_slice);
-                                }
-                            });
+                        pool.par_iter_mut().enumerate().for_each(|(idx, acc)| {
+                            let start = idx * chunk_size;
+                            let end = (start + chunk_size).min(num_partitions);
+                            for (p, ir_slice) in
+                                ir_partitions.iter().enumerate().take(end).skip(start)
+                            {
+                                let fdl_p = (fdl_head + p) % num_partitions;
+                                let fdl_off = (fdl_p * channels + ch) * FFT_SIZE;
+                                let fdl_slice = &fdl_flat[fdl_off..fdl_off + FFT_SIZE];
+                                complex_mul_add_simd(acc, fdl_slice, ir_slice);
+                            }
+                        });
 
                         // Merge all accumulators into fft_sum
                         self.fft_sum.fill(Complex::new(0.0, 0.0));
@@ -672,7 +672,11 @@ mod tests {
     use sotf_host::plugin::{InPlacePlugin, ProcessContext};
 
     /// Helper: create a ConvolutionPlugin and load a synthetic IR directly.
-    fn make_plugin_with_ir(channels: usize, sample_rate: u32, ir: Vec<Vec<f32>>) -> ConvolutionPlugin {
+    fn make_plugin_with_ir(
+        channels: usize,
+        sample_rate: u32,
+        ir: Vec<Vec<f32>>,
+    ) -> ConvolutionPlugin {
         let mut plugin = ConvolutionPlugin::new(channels, sample_rate);
         plugin.initialize(sample_rate).unwrap();
 
@@ -732,9 +736,7 @@ mod tests {
 
         // Process a few blocks of a sine wave
         let total_frames = PARTITION_SIZE * 4;
-        let mut buffer: Vec<f32> = (0..total_frames)
-            .map(|i| (i as f32 * 0.1).sin())
-            .collect();
+        let mut buffer: Vec<f32> = (0..total_frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let original = buffer.clone();
 
         // Process in partition-sized blocks
@@ -753,10 +755,7 @@ mod tests {
         // Verify output is finite and has energy (convolution with unity IR)
         let output_energy: f32 = buffer.iter().map(|s| s * s).sum();
         let input_energy: f32 = original.iter().map(|s| s * s).sum();
-        assert!(
-            output_energy.is_finite(),
-            "Output must be finite"
-        );
+        assert!(output_energy.is_finite(), "Output must be finite");
         assert!(
             output_energy > 0.0,
             "Unity IR convolution should produce non-zero output"
@@ -826,9 +825,7 @@ mod tests {
 
         // Process enough blocks for the convolution to settle
         let total_frames = PARTITION_SIZE * 3;
-        let mut buffer: Vec<f32> = (0..total_frames)
-            .map(|i| (i as f32 * 0.1).sin())
-            .collect();
+        let mut buffer: Vec<f32> = (0..total_frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let original = buffer.clone();
 
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
@@ -849,7 +846,9 @@ mod tests {
             assert!(
                 (got - exp).abs() < 1e-4,
                 "mix=0 passthrough mismatch at sample {}: got {}, expected {}",
-                i, got, exp
+                i,
+                got,
+                exp
             );
         }
     }
@@ -969,8 +968,13 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
-            plugin_par.process_in_place(&mut buf_par[block_start..block_end], &ctx).unwrap();
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin_par
+                .process_in_place(&mut buf_par[block_start..block_end], &ctx)
+                .unwrap();
         }
 
         // --- Run the sequential-path plugin (1-partition Dirac, sequential) ---
@@ -985,8 +989,13 @@ mod tests {
         for block_start in (0..total_frames).step_by(PARTITION_SIZE) {
             let block_end = (block_start + PARTITION_SIZE).min(total_frames);
             let nf = block_end - block_start;
-            let ctx = ProcessContext { sample_rate: sr, num_frames: nf };
-            plugin_seq.process_in_place(&mut buf_seq[block_start..block_end], &ctx).unwrap();
+            let ctx = ProcessContext {
+                sample_rate: sr,
+                num_frames: nf,
+            };
+            plugin_seq
+                .process_in_place(&mut buf_seq[block_start..block_end], &ctx)
+                .unwrap();
         }
 
         // Both plugins convolve with a Dirac, so outputs should match to float
@@ -994,7 +1003,11 @@ mod tests {
         // partitions 1-9 of the longer IR take one extra block to flush), so we
         // compare the settled region (skip the first 2 partitions).
         let skip = PARTITION_SIZE * 2;
-        for (i, (&par, &seq)) in buf_par[skip..].iter().zip(buf_seq[skip..].iter()).enumerate() {
+        for (i, (&par, &seq)) in buf_par[skip..]
+            .iter()
+            .zip(buf_seq[skip..].iter())
+            .enumerate()
+        {
             assert!(
                 (par - seq).abs() < 1e-5,
                 "Parallel/sequential output mismatch at sample {}: parallel={par}, sequential={seq}",
@@ -1004,7 +1017,10 @@ mod tests {
 
         // Sanity: output must be finite and have energy.
         let energy: f32 = buf_par[skip..].iter().map(|s| s * s).sum();
-        assert!(energy.is_finite() && energy > 0.0, "Parallel path must produce non-zero finite output");
+        assert!(
+            energy.is_finite() && energy > 0.0,
+            "Parallel path must produce non-zero finite output"
+        );
     }
 
     /// Long IR stability: no NaN or Inf after 10000 frames.

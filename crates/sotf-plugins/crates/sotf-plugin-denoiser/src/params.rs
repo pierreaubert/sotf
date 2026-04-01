@@ -12,7 +12,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -305,24 +305,13 @@ pub const PARAMS: &[ParamSpec] = &[
     .secondary("Noise Profile")
     .doc("Discard captured noise profile"),
     // 29: algorithm
-    ParamSpec::choice(
-        "Algorithm",
-        "algorithm",
-        0,
-        ALGORITHMS,
-        "General",
-    )
-    .structural()
-    .doc("Denoising algorithm selection"),
+    ParamSpec::choice("Algorithm", "algorithm", 0, ALGORITHMS, "General")
+        .structural()
+        .doc("Denoising algorithm selection"),
     // 30: formant_preservation
-    ParamSpec::bool_param(
-        "Formant Preserve",
-        "formant_preservation",
-        false,
-        "Formant",
-    )
-    .secondary("Formant")
-    .doc("Protect vocal formant structure"),
+    ParamSpec::bool_param("Formant Preserve", "formant_preservation", false, "Formant")
+        .secondary("Formant")
+        .doc("Protect vocal formant structure"),
     // 31: formant_strength
     ParamSpec::float(
         "Formant Strength",
@@ -338,22 +327,31 @@ pub const PARAMS: &[ParamSpec] = &[
     .secondary("Formant")
     .doc("Formant preservation amount"),
     // 32: multi_resolution
-    ParamSpec::bool_param(
-        "Multi-Res",
-        "multi_resolution",
-        false,
-        "General",
-    )
-    .structural()
-    .secondary("General")
-    .doc("Multi-resolution FFT analysis"),
+    ParamSpec::bool_param("Multi-Res", "multi_resolution", false, "General")
+        .structural()
+        .secondary("General")
+        .doc("Multi-resolution FFT analysis"),
     // --- Phase 4B: SOTA additions ---
-    ParamSpec::bool_param("Harmonic/Percussive", "harmonic_percussive", false, "Advanced")
-        .doc("Separate tonal and transient components for differential denoising"),
+    ParamSpec::bool_param(
+        "Harmonic/Percussive",
+        "harmonic_percussive",
+        false,
+        "Advanced",
+    )
+    .doc("Separate tonal and transient components for differential denoising"),
     ParamSpec::bool_param("Spatial Denoise", "spatial_denoise", false, "Advanced")
         .doc("Use inter-channel coherence for noise detection (stereo+ only)"),
-    ParamSpec::float("Spatial Strength", "spatial_strength", 0.5, 0.0, 1.0, 0.1, "", "Advanced")
-        .doc("Weight of inter-channel coherence in noise estimation"),
+    ParamSpec::float(
+        "Spatial Strength",
+        "spatial_strength",
+        0.5,
+        0.0,
+        1.0,
+        0.1,
+        "",
+        "Advanced",
+    )
+    .doc("Weight of inter-channel coherence in noise estimation"),
 ];
 
 // ============================================================================
@@ -710,10 +708,22 @@ impl PluginParamDef for Params {
             12 => Some(self.transparency),
             13 => Some(if self.dd_enabled { 1.0 } else { 0.0 }),
             14 => Some(self.dd_alpha),
-            15 => Some(if self.psychoacoustic_masking { 1.0 } else { 0.0 }),
+            15 => Some(if self.psychoacoustic_masking {
+                1.0
+            } else {
+                0.0
+            }),
             16 => Some(if self.transient_enabled { 1.0 } else { 0.0 }),
-            17 => Some(if self.spectral_smoothing_enabled { 1.0 } else { 0.0 }),
-            18 => Some(if self.temporal_smoothing_enabled { 1.0 } else { 0.0 }),
+            17 => Some(if self.spectral_smoothing_enabled {
+                1.0
+            } else {
+                0.0
+            }),
+            18 => Some(if self.temporal_smoothing_enabled {
+                1.0
+            } else {
+                0.0
+            }),
             19 => Some(if self.hiss_enabled { 1.0 } else { 0.0 }),
             20 => Some(self.hiss_threshold_db),
             21 => Some(self.hiss_frequency_hz),
@@ -818,10 +828,7 @@ mod tests {
         assert_eq!(original.attack_ms, restored.attack_ms);
         assert_eq!(original.release_ms, restored.release_ms);
         assert_eq!(original.low_latency, restored.low_latency);
-        assert_eq!(
-            original.polyphonic_detection,
-            restored.polyphonic_detection
-        );
+        assert_eq!(original.polyphonic_detection, restored.polyphonic_detection);
         assert_eq!(original.crack_sensitivity, restored.crack_sensitivity);
         assert_eq!(original.mcra_alpha_s, restored.mcra_alpha_s);
         assert_eq!(original.mcra_alpha_p, restored.mcra_alpha_p);
@@ -847,23 +854,14 @@ mod tests {
         assert_eq!(original.hiss_threshold_db, restored.hiss_threshold_db);
         assert_eq!(original.hiss_frequency_hz, restored.hiss_frequency_hz);
         assert_eq!(original.hiss_strength, restored.hiss_strength);
-        assert_eq!(
-            original.spectral_sub_enabled,
-            restored.spectral_sub_enabled
-        );
+        assert_eq!(original.spectral_sub_enabled, restored.spectral_sub_enabled);
         assert_eq!(original.spectral_sub_alpha, restored.spectral_sub_alpha);
         assert_eq!(original.spectral_sub_beta, restored.spectral_sub_beta);
         assert_eq!(original.learn_noise, restored.learn_noise);
-        assert_eq!(
-            original.use_captured_profile,
-            restored.use_captured_profile
-        );
+        assert_eq!(original.use_captured_profile, restored.use_captured_profile);
         assert_eq!(original.clear_profile, restored.clear_profile);
         assert_eq!(original.algorithm, restored.algorithm);
-        assert_eq!(
-            original.formant_preservation,
-            restored.formant_preservation
-        );
+        assert_eq!(original.formant_preservation, restored.formant_preservation);
         assert_eq!(original.formant_strength, restored.formant_strength);
         assert_eq!(original.multi_resolution, restored.multi_resolution);
     }
@@ -871,10 +869,7 @@ mod tests {
     #[test]
     fn deserialize_empty_json_uses_defaults() {
         let p: Params = serde_json::from_str("{}").unwrap();
-        assert_eq!(
-            p.reduction_db,
-            pk(PARAMS, "reduction_db").default_f64()
-        );
+        assert_eq!(p.reduction_db, pk(PARAMS, "reduction_db").default_f64());
         assert_eq!(p.floor_db, pk(PARAMS, "floor_db").default_f64());
         assert_eq!(p.smoothing, pk(PARAMS, "smoothing").default_f64());
         assert_eq!(p.attack_ms, pk(PARAMS, "attack_ms").default_f64());
@@ -888,20 +883,11 @@ mod tests {
             p.crack_sensitivity,
             pk(PARAMS, "crack_sensitivity").default_f64()
         );
-        assert_eq!(
-            p.mcra_alpha_s,
-            pk(PARAMS, "mcra_alpha_s").default_f64()
-        );
-        assert_eq!(
-            p.mcra_alpha_p,
-            pk(PARAMS, "mcra_alpha_p").default_f64()
-        );
+        assert_eq!(p.mcra_alpha_s, pk(PARAMS, "mcra_alpha_s").default_f64());
+        assert_eq!(p.mcra_alpha_p, pk(PARAMS, "mcra_alpha_p").default_f64());
         assert_eq!(p.mcra_l, pk(PARAMS, "mcra_l").default_usize());
         assert_eq!(p.mcra_delta, pk(PARAMS, "mcra_delta").default_f64());
-        assert_eq!(
-            p.transparency,
-            pk(PARAMS, "transparency").default_f64()
-        );
+        assert_eq!(p.transparency, pk(PARAMS, "transparency").default_f64());
         assert_eq!(p.dd_enabled, pk(PARAMS, "dd_enabled").default_bool());
         assert_eq!(p.dd_alpha, pk(PARAMS, "dd_alpha").default_f64());
         assert_eq!(
@@ -929,10 +915,7 @@ mod tests {
             p.hiss_frequency_hz,
             pk(PARAMS, "hiss_frequency_hz").default_f64()
         );
-        assert_eq!(
-            p.hiss_strength,
-            pk(PARAMS, "hiss_strength").default_f64()
-        );
+        assert_eq!(p.hiss_strength, pk(PARAMS, "hiss_strength").default_f64());
         assert_eq!(
             p.spectral_sub_enabled,
             pk(PARAMS, "spectral_sub_enabled").default_bool()
@@ -950,10 +933,7 @@ mod tests {
             p.use_captured_profile,
             pk(PARAMS, "use_captured_profile").default_bool()
         );
-        assert_eq!(
-            p.clear_profile,
-            pk(PARAMS, "clear_profile").default_bool()
-        );
+        assert_eq!(p.clear_profile, pk(PARAMS, "clear_profile").default_bool());
         assert_eq!(p.algorithm, pk(PARAMS, "algorithm").default_usize());
         assert_eq!(
             p.formant_preservation,

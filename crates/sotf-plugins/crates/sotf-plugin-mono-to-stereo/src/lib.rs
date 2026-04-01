@@ -4,14 +4,14 @@
 
 pub mod params;
 
+use crate::params::PARAMS as MS;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::find_by_key as pk;
-use crate::params::PARAMS as MS;
 use sotf_host::param_bridge;
-use sotf_host::parameters::{Parameter, ParameterValue};
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::ParameterId;
+use sotf_host::parameters::{Parameter, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;
 use std::sync::Arc;
@@ -218,8 +218,7 @@ impl MonoToStereoPlugin {
 
     /// Recompute haas_delay_samples from haas_delay_ms and sample_rate
     fn update_haas_delay_samples(&mut self) {
-        let computed =
-            ((self.haas_delay_ms / 1000.0) * self.sample_rate as f32).round() as usize;
+        let computed = ((self.haas_delay_ms / 1000.0) * self.sample_rate as f32).round() as usize;
         self.haas_delay_samples = computed.min(HAAS_DELAY_BUF_SIZE - 1);
     }
 
@@ -454,8 +453,7 @@ impl Plugin for MonoToStereoPlugin {
                             - delay_samples)
                             & delay_mask;
                         output[(output_pos + i) * 2 + 1] = self.haas_delay_buf[read_pos];
-                        self.haas_delay_write_pos =
-                            (self.haas_delay_write_pos + 1) & delay_mask;
+                        self.haas_delay_write_pos = (self.haas_delay_write_pos + 1) & delay_mask;
                     } else {
                         output[(output_pos + i) * 2 + 1] = right_sample;
                     }
@@ -600,7 +598,10 @@ mod tests {
         // Measure RMS in settled region
         let start = FFT_SIZE * 8;
         let end = FFT_SIZE * 18;
-        let input_rms: f64 = (input[start..end].iter().map(|s| (*s as f64).powi(2)).sum::<f64>()
+        let input_rms: f64 = (input[start..end]
+            .iter()
+            .map(|s| (*s as f64).powi(2))
+            .sum::<f64>()
             / (end - start) as f64)
             .sqrt();
 

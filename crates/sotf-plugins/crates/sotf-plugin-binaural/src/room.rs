@@ -402,10 +402,7 @@ fn ssir_result_to_reflections(
 
     // Skip the direct sound segment (index 0) — it's handled by the main HRTF path.
     // Convert each early reflection segment into a Reflection.
-    let direct_toa = result
-        .direct_sound()
-        .map(|ds| ds.toa_sample)
-        .unwrap_or(0);
+    let direct_toa = result.direct_sound().map(|ds| ds.toa_sample).unwrap_or(0);
 
     let rate_ratio = engine_sample_rate as f64 / wav_sample_rate as f64;
 

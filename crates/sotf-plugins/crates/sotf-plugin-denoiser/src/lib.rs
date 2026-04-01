@@ -23,8 +23,8 @@ use rustfft::num_complex::Complex;
 pub mod params;
 
 use crate::params::PARAMS as DN;
-use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::param_bridge;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_plugin_pnd::analysis::PndAnalyzer;
@@ -444,7 +444,13 @@ impl DenoiserPlugin {
             spatial_denoise: false,
             spatial_strength: 0.5,
             tonal_transient_seps: (0..channels)
-                .map(|_| math_audio_dsp::tonal_transient::TonalTransientSeparator::new(spectrum_size, 7, 7))
+                .map(|_| {
+                    math_audio_dsp::tonal_transient::TonalTransientSeparator::new(
+                        spectrum_size,
+                        7,
+                        7,
+                    )
+                })
                 .collect(),
             tt_magnitudes: vec![0.0; spectrum_size],
             tt_tonal_mask: vec![0.0; spectrum_size],
@@ -482,10 +488,22 @@ impl DenoiserPlugin {
             12 => Some(self.transparency as f64),
             13 => Some(if self.dd_enabled { 1.0 } else { 0.0 }),
             14 => Some(self.dd_alpha as f64),
-            15 => Some(if self.psychoacoustic_masking { 1.0 } else { 0.0 }),
+            15 => Some(if self.psychoacoustic_masking {
+                1.0
+            } else {
+                0.0
+            }),
             16 => Some(if self.transient_enabled { 1.0 } else { 0.0 }),
-            17 => Some(if self.spectral_smoothing_enabled { 1.0 } else { 0.0 }),
-            18 => Some(if self.temporal_smoothing_enabled { 1.0 } else { 0.0 }),
+            17 => Some(if self.spectral_smoothing_enabled {
+                1.0
+            } else {
+                0.0
+            }),
+            18 => Some(if self.temporal_smoothing_enabled {
+                1.0
+            } else {
+                0.0
+            }),
             19 => Some(if self.hiss_enabled { 1.0 } else { 0.0 }),
             20 => Some(self.hiss_threshold_db as f64),
             21 => Some(self.hiss_frequency_hz as f64),
@@ -497,7 +515,11 @@ impl DenoiserPlugin {
             27 => Some(if self.use_captured_profile { 1.0 } else { 0.0 }),
             28 => Some(0.0), // clear_profile: trigger-only, always reads as false
             29 => Some(self.algorithm as f64),
-            30 => Some(if self.formant_preserver.enabled { 1.0 } else { 0.0 }),
+            30 => Some(if self.formant_preserver.enabled {
+                1.0
+            } else {
+                0.0
+            }),
             31 => Some(self.formant_preserver.strength as f64),
             32 => Some(if self.multi_resolution { 1.0 } else { 0.0 }),
             33 => Some(if self.harmonic_percussive { 1.0 } else { 0.0 }),
@@ -986,8 +1008,14 @@ impl InPlacePlugin for DenoiserPlugin {
             let floor = self.floor_linear;
             let channels = self.channels;
             if let Some(ref mut mrs) = self.multi_res_state {
-                mrs.feed_and_process(&buffer[..total_samples], channels,
-                                      attack, release, reduction, floor);
+                mrs.feed_and_process(
+                    &buffer[..total_samples],
+                    channels,
+                    attack,
+                    release,
+                    reduction,
+                    floor,
+                );
             }
         }
 

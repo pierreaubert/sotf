@@ -60,7 +60,10 @@ fn main() {
     plugin
         .process(&input_silent, &mut output_silent, &ctx)
         .unwrap();
-    let peak = output_silent.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+    let peak = output_silent
+        .iter()
+        .map(|s| s.abs())
+        .fold(0.0_f32, f32::max);
     println!("  Peak output for silence: {:.10}", peak);
     assert!(peak < 1e-10, "Silence in must produce silence out");
     println!("  Silence: PASS");

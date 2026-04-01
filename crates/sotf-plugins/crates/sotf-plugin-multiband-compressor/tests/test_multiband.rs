@@ -86,9 +86,8 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
     let orig_rms: f32 = (original[skip..].iter().map(|x| x * x).sum::<f32>()
         / (original.len() - skip) as f32)
         .sqrt();
-    let out_rms: f32 = (input[skip..].iter().map(|x| x * x).sum::<f32>()
-        / (input.len() - skip) as f32)
-        .sqrt();
+    let out_rms: f32 =
+        (input[skip..].iter().map(|x| x * x).sum::<f32>() / (input.len() - skip) as f32).sqrt();
     let rms_ratio_db = 20.0 * (out_rms / orig_rms).log10();
 
     assert!(
@@ -97,14 +96,8 @@ fn test_multiband_compressor_ms_mode_roundtrip() {
     );
 
     // Stereo channels should still differ (M/S decode preserved channel separation)
-    let l_rms: f32 = input[skip..]
-        .chunks(2)
-        .map(|c| c[0] * c[0])
-        .sum::<f32>();
-    let r_rms: f32 = input[skip..]
-        .chunks(2)
-        .map(|c| c[1] * c[1])
-        .sum::<f32>();
+    let l_rms: f32 = input[skip..].chunks(2).map(|c| c[0] * c[0]).sum::<f32>();
+    let r_rms: f32 = input[skip..].chunks(2).map(|c| c[1] * c[1]).sum::<f32>();
     assert!(
         (l_rms - r_rms).abs() > 0.001,
         "L and R channels should remain different after M/S roundtrip"

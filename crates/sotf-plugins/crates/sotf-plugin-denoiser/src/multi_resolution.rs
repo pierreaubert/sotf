@@ -110,7 +110,9 @@ impl SmallFftState {
         self.prev_mag.fill(0.0);
         self.current_flux = 0.0;
         self.time_domain.fill(0.0);
-        self.freq_domain.iter_mut().for_each(|c| *c = Complex::new(0.0, 0.0));
+        self.freq_domain
+            .iter_mut()
+            .for_each(|c| *c = Complex::new(0.0, 0.0));
     }
 }
 
@@ -290,8 +292,7 @@ impl MultiResState {
             for k in 0..spectrum_size {
                 let power = state.freq_domain[k].norm_sqr();
 
-                let s_tmp =
-                    mcra_alpha_s * state.smoothed_psd[k] + (1.0 - mcra_alpha_s) * power;
+                let s_tmp = mcra_alpha_s * state.smoothed_psd[k] + (1.0 - mcra_alpha_s) * power;
                 state.smoothed_psd[k] = s_tmp;
 
                 if reset_a {
@@ -309,13 +310,11 @@ impl MultiResState {
                 let s_r = s_tmp / s_min;
                 let indicator = if s_r > mcra_delta { 1.0_f32 } else { 0.0 };
 
-                let p = mcra_alpha_p * state.speech_presence[k]
-                    + (1.0 - mcra_alpha_p) * indicator;
+                let p = mcra_alpha_p * state.speech_presence[k] + (1.0 - mcra_alpha_p) * indicator;
                 state.speech_presence[k] = p;
 
                 let alpha_d = mcra_alpha_s + (1.0 - mcra_alpha_s) * p;
-                state.noise_psd[k] =
-                    alpha_d * state.noise_psd[k] + (1.0 - alpha_d) * power;
+                state.noise_psd[k] = alpha_d * state.noise_psd[k] + (1.0 - alpha_d) * power;
             }
             state.frame_counter += 1;
 
@@ -327,7 +326,11 @@ impl MultiResState {
                 let g = (snr / (snr + reduction_linear)).max(floor_linear);
 
                 let prev = state.smoothed_gain[k];
-                let coeff = if g > prev { attack_coeff } else { release_coeff };
+                let coeff = if g > prev {
+                    attack_coeff
+                } else {
+                    release_coeff
+                };
                 state.smoothed_gain[k] = g + coeff * (prev - g);
             }
 
@@ -347,12 +350,10 @@ impl MultiResState {
         if channels_with_flux > 0 {
             let avg_flux = total_flux / channels_with_flux as f32;
             // Map raw flux to [0, 1] via linear ramp between FLUX_LOW and FLUX_HIGH
-            let raw_weight =
-                ((avg_flux - FLUX_LOW) / (FLUX_HIGH - FLUX_LOW)).clamp(0.0, 1.0);
+            let raw_weight = ((avg_flux - FLUX_LOW) / (FLUX_HIGH - FLUX_LOW)).clamp(0.0, 1.0);
             // One-pole smoothing (~2-frame time constant)
             const FLUX_SMOOTH: f32 = 0.5;
-            self.flux_weight =
-                FLUX_SMOOTH * self.flux_weight + (1.0 - FLUX_SMOOTH) * raw_weight;
+            self.flux_weight = FLUX_SMOOTH * self.flux_weight + (1.0 - FLUX_SMOOTH) * raw_weight;
         }
     }
 
@@ -386,9 +387,9 @@ impl MultiResState {
             for (k, g_large) in large.iter_mut().enumerate().take(large_spectrum_size) {
                 // Integer linear frequency mapping large bin k → small bin.
                 // Equivalent to round(k * small_spectrum_size / large_spectrum_size).
-                let k_small =
-                    ((k * small_spectrum_size + large_spectrum_size / 2) / large_spectrum_size)
-                        .min(small_spectrum_size - 1);
+                let k_small = ((k * small_spectrum_size + large_spectrum_size / 2)
+                    / large_spectrum_size)
+                    .min(small_spectrum_size - 1);
 
                 *g_large = flux_w * small_gains[k_small] + large_w * *g_large;
             }

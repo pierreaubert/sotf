@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -21,18 +21,9 @@ use sotf_host::plugin_params::PluginParamDef;
 pub const BEAMFORMER_TYPES: &[&str] = &["MVDR", "Superdirective", "GSC"];
 
 pub const PARAMS: &[ParamSpec] = &[
-    ParamSpec::int(
-        "Microphones",
-        "num_mics",
-        2,
-        2,
-        8,
-        1,
-        "",
-        "Array",
-    )
-    .structural()
-    .doc("Number of array microphones"),
+    ParamSpec::int("Microphones", "num_mics", 2, 2, 8, 1, "", "Array")
+        .structural()
+        .doc("Number of array microphones"),
     ParamSpec::float(
         "Mic Spacing",
         "mic_spacing_cm",

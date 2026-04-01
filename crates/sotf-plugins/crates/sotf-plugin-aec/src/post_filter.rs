@@ -120,9 +120,7 @@ mod tests {
         let mut sup = ResidualEchoSuppressor::new(8, 1.5, 0.01);
 
         // Error with no echo estimate → should pass through mostly unchanged
-        let error: Vec<Complex<f32>> = (0..8)
-            .map(|i| Complex::new(i as f32 * 0.1, 0.0))
-            .collect();
+        let error: Vec<Complex<f32>> = (0..8).map(|i| Complex::new(i as f32 * 0.1, 0.0)).collect();
         let echo_est = vec![Complex::new(0.0, 0.0); 8];
 
         let output = sup.process(&error, &echo_est);
@@ -145,9 +143,7 @@ mod tests {
         let mut sup = ResidualEchoSuppressor::new(8, 1.5, 0.01);
 
         // Echo estimate equals error → should suppress to floor
-        let spectrum: Vec<Complex<f32>> = (0..8)
-            .map(|_| Complex::new(1.0, 0.0))
-            .collect();
+        let spectrum: Vec<Complex<f32>> = (0..8).map(|_| Complex::new(1.0, 0.0)).collect();
 
         // Process multiple frames to let smoothing converge
         for _ in 0..20 {

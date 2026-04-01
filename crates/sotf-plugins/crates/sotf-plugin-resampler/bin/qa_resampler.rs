@@ -1,5 +1,5 @@
 use sotf_host::plugin::{Plugin, ProcessContext};
-use sotf_host::{assert_no_allocs, CountingAlloc};
+use sotf_host::{CountingAlloc, assert_no_allocs};
 use sotf_plugin_resampler::ResamplerPlugin;
 
 #[global_allocator]
@@ -19,8 +19,7 @@ fn main() {
 
     let num_frames = 1024;
     let input = vec![0.5f32; num_frames * channels];
-    let max_out_frames =
-        ((num_frames as f64 * output_sr as f64 / input_sr as f64) as usize) + 128;
+    let max_out_frames = ((num_frames as f64 * output_sr as f64 / input_sr as f64) as usize) + 128;
     let mut output = vec![0.0f32; max_out_frames * channels];
     let ctx = ProcessContext {
         sample_rate: input_sr,
@@ -64,8 +63,7 @@ fn main() {
     println!("\n[Test 4] Performance Benchmark");
     let bench_frames = 48000 * 5;
     let bench_input = vec![0.1f32; bench_frames * channels];
-    let bench_max_out =
-        ((bench_frames as f64 * output_sr as f64 / input_sr as f64) as usize) + 128;
+    let bench_max_out = ((bench_frames as f64 * output_sr as f64 / input_sr as f64) as usize) + 128;
     let mut bench_output = vec![0.0f32; bench_max_out * channels];
 
     let start = std::time::Instant::now();

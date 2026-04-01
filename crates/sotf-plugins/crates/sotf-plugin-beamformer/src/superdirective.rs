@@ -61,7 +61,11 @@ impl SuperdirectiveBeamformer {
                         Complex::new(1.0, 0.0)
                     } else {
                         let arg = 2.0 * std::f32::consts::PI * freq * dist / 343.0;
-                        let sinc = if arg.abs() < 1e-6 { 1.0 } else { arg.sin() / arg };
+                        let sinc = if arg.abs() < 1e-6 {
+                            1.0
+                        } else {
+                            arg.sin() / arg
+                        };
                         Complex::new(sinc, 0.0)
                     }
                 });

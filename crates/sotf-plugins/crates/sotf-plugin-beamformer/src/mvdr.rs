@@ -51,7 +51,10 @@ impl MvdrBeamformer {
     /// * `num_mics` - Number of microphones (max MAX_MICS)
     /// * `spectrum_size` - Number of frequency bins (fft_size/2 + 1)
     pub fn new(num_mics: usize, spectrum_size: usize) -> Self {
-        assert!(num_mics <= MAX_MICS, "num_mics ({num_mics}) > MAX_MICS ({MAX_MICS})");
+        assert!(
+            num_mics <= MAX_MICS,
+            "num_mics ({num_mics}) > MAX_MICS ({MAX_MICS})"
+        );
 
         // Initialize noise covariance as identity for each bin
         let mut noise_cov = vec![Complex::new(0.0, 0.0); spectrum_size * num_mics * num_mics];
@@ -85,8 +88,8 @@ impl MvdrBeamformer {
         let m = self.num_mics.min(stft_channels.len());
 
         // Simple energy-based noise detection
-        let total_energy: f32 = stft_channels[0].iter().map(|c| c.norm_sqr()).sum::<f32>()
-            / self.spectrum_size as f32;
+        let total_energy: f32 =
+            stft_channels[0].iter().map(|c| c.norm_sqr()).sum::<f32>() / self.spectrum_size as f32;
 
         let is_noise = self.frame_count < 20 || total_energy < self.noise_threshold;
         self.frame_count += 1;
@@ -149,8 +152,7 @@ impl MvdrBeamformer {
             let sigma = self.diag_load * trace / m as f32;
 
             // Copy R into scratch_r_loaded and add diagonal loading
-            self.scratch_r_loaded[..mm]
-                .copy_from_slice(&self.noise_cov[cov_off..cov_off + mm]);
+            self.scratch_r_loaded[..mm].copy_from_slice(&self.noise_cov[cov_off..cov_off + mm]);
             for i in 0..m {
                 self.scratch_r_loaded[i * m + i] += Complex::new(sigma, 0.0);
             }
@@ -180,13 +182,11 @@ impl MvdrBeamformer {
                         self.weights_buf[k][i] = self.scratch_r_inv_d[i] / denom;
                     }
                 } else {
-                    self.weights_buf[k]
-                        .fill(Complex::new(1.0 / m as f32, 0.0));
+                    self.weights_buf[k].fill(Complex::new(1.0 / m as f32, 0.0));
                 }
             } else {
                 // Fallback to delay-and-sum (uniform weights)
-                self.weights_buf[k]
-                    .fill(Complex::new(1.0 / m as f32, 0.0));
+                self.weights_buf[k].fill(Complex::new(1.0 / m as f32, 0.0));
             }
         }
         &self.weights_buf
@@ -246,7 +246,8 @@ impl MvdrBeamformer {
                 }
                 let factor = self.scratch_r_loaded[row * m + col];
                 for j in 0..m {
-                    self.scratch_r_loaded[row * m + j] -= factor * self.scratch_r_loaded[col * m + j];
+                    self.scratch_r_loaded[row * m + j] -=
+                        factor * self.scratch_r_loaded[col * m + j];
                     self.scratch_r_inv[row * m + j] -= factor * self.scratch_r_inv[col * m + j];
                 }
             }

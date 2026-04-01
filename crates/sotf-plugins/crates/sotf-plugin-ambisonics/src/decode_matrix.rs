@@ -275,7 +275,10 @@ mod tests {
     fn test_too_few_speakers() {
         let config = get_speaker_config("2.0").expect("2.0 config should exist");
         let result = DecodeMatrix::build(2, config, false);
-        assert!(result.is_err(), "2.0 has only 2 speakers, too few for SOA (9 channels)");
+        assert!(
+            result.is_err(),
+            "2.0 has only 2 speakers, too few for SOA (9 channels)"
+        );
     }
 
     #[test]

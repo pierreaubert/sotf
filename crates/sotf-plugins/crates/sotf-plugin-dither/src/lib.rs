@@ -514,12 +514,11 @@ mod tests {
         );
 
         // Test unknown parameter
-        assert!(plugin
-            .set_parameter(
-                ParameterId::from("unknown"),
-                ParameterValue::Float(0.0),
-            )
-            .is_err());
+        assert!(
+            plugin
+                .set_parameter(ParameterId::from("unknown"), ParameterValue::Float(0.0),)
+                .is_err()
+        );
         assert_eq!(plugin.get_parameter(&ParameterId::from("unknown")), None);
     }
 

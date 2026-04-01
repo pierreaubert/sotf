@@ -4,6 +4,7 @@
 
 pub mod params;
 
+use crate::params::{MODES, PARAMS as DE};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,6 @@ use sotf_host::dynamics_core::DynamicsCore;
 use sotf_host::dynamics_core::DynamicsMode;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
-use crate::params::{MODES, PARAMS as DE};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -284,8 +284,10 @@ impl DeEsserPlugin {
     }
 
     fn rebuild_detection_filters(&mut self) {
-        self.hp_filters = Self::make_hp_filters(self.channels, self.frequency, self.q, self.sample_rate);
-        self.lp_filters = Self::make_lp_filters(self.channels, self.frequency, self.q, self.sample_rate);
+        self.hp_filters =
+            Self::make_hp_filters(self.channels, self.frequency, self.q, self.sample_rate);
+        self.lp_filters =
+            Self::make_lp_filters(self.channels, self.frequency, self.q, self.sample_rate);
     }
 
     fn rebuild_crossovers(&mut self) {
@@ -400,9 +402,7 @@ impl InPlacePlugin for DeEsserPlugin {
                 self.rebuild_crossovers();
             }
         } else if id == self.param_q {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DE, "q").default_f64() as f32);
+            let v = value.as_float().unwrap_or(pk(DE, "q").default_f64() as f32);
             if v.is_finite() {
                 self.q = v.clamp(0.5, 5.0);
                 self.rebuild_detection_filters();
@@ -743,10 +743,7 @@ mod tests {
 
         // Set threshold
         plugin
-            .set_parameter(
-                ParameterId::from("threshold"),
-                ParameterValue::Float(-30.0),
-            )
+            .set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-30.0))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("threshold"));
         assert_eq!(val, Some(ParameterValue::Float(-30.0)));
@@ -759,10 +756,7 @@ mod tests {
             )
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("mode"));
-        assert_eq!(
-            val,
-            Some(ParameterValue::String("Wideband".to_string()))
-        );
+        assert_eq!(val, Some(ParameterValue::String("Wideband".to_string())));
 
         // Set mix
         plugin

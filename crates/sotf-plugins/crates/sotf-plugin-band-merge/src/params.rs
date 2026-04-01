@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -18,10 +18,9 @@ use sotf_host::plugin_params::PluginParamDef;
 // Parameter Specifications
 // ============================================================================
 
-pub const PARAMS: &[ParamSpec] =
-    &[ParamSpec::int("Bands", "bands", 2, 2, 8, 1, "", "General")
-        .structural()
-        .doc("Number of bands to recombine")];
+pub const PARAMS: &[ParamSpec] = &[ParamSpec::int("Bands", "bands", 2, 2, 8, 1, "", "General")
+    .structural()
+    .doc("Number of bands to recombine")];
 
 // ============================================================================
 // UI Layout
@@ -61,9 +60,7 @@ fn d_bands() -> usize {
 
 impl Default for Params {
     fn default() -> Self {
-        Self {
-            bands: d_bands(),
-        }
+        Self { bands: d_bands() }
     }
 }
 
@@ -85,7 +82,9 @@ impl PluginParamDef for Params {
     }
 
     fn set_param_value(&mut self, index: usize, value: f64) {
-        if index == 0 { self.bands = value as usize }
+        if index == 0 {
+            self.bands = value as usize
+        }
     }
 }
 

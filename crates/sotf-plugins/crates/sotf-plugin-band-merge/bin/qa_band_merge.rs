@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
 
 #[global_allocator]

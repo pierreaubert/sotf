@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -89,9 +89,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     tabs: &[TabSpec {
         name: "Advanced",
         controls: &[
-            ControlSpec::knob(1), // haas_delay_ms
-            ControlSpec::knob(4), // decor_low_hz
-            ControlSpec::knob(5), // decor_high_hz
+            ControlSpec::knob(1),   // haas_delay_ms
+            ControlSpec::knob(4),   // decor_low_hz
+            ControlSpec::knob(5),   // decor_high_hz
             ControlSpec::toggle(6), // freq_dependent
         ],
     }],
@@ -244,14 +244,8 @@ mod tests {
     #[test]
     fn deserialize_empty_json_uses_defaults() {
         let p: Params = serde_json::from_str("{}").unwrap();
-        assert_eq!(
-            p.stereo_width,
-            pk(PARAMS, "stereo_width").default_f64()
-        );
-        assert_eq!(
-            p.haas_delay_ms,
-            pk(PARAMS, "haas_delay_ms").default_f64()
-        );
+        assert_eq!(p.stereo_width, pk(PARAMS, "stereo_width").default_f64());
+        assert_eq!(p.haas_delay_ms, pk(PARAMS, "haas_delay_ms").default_f64());
         assert_eq!(
             p.enable_comp_eq,
             pk(PARAMS, "enable_comp_eq").default_bool()
@@ -260,14 +254,8 @@ mod tests {
             p.comp_eq_depth_db,
             pk(PARAMS, "comp_eq_depth_db").default_f64()
         );
-        assert_eq!(
-            p.decor_low_hz,
-            pk(PARAMS, "decor_low_hz").default_f64()
-        );
-        assert_eq!(
-            p.decor_high_hz,
-            pk(PARAMS, "decor_high_hz").default_f64()
-        );
+        assert_eq!(p.decor_low_hz, pk(PARAMS, "decor_low_hz").default_f64());
+        assert_eq!(p.decor_high_hz, pk(PARAMS, "decor_high_hz").default_f64());
         assert_eq!(
             p.freq_dependent,
             pk(PARAMS, "freq_dependent").default_bool()

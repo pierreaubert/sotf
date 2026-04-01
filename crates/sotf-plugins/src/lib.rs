@@ -169,32 +169,32 @@ pub use sotf_host::test_utils;
 pub use sotf_plugin_ab_compare as plugin_ab_compare;
 pub use sotf_plugin_aec as plugin_aec;
 pub use sotf_plugin_band_merge as plugin_band_merge;
-pub use sotf_plugin_beamformer as plugin_beamformer;
 pub use sotf_plugin_band_split as plugin_band_split;
+pub use sotf_plugin_beamformer as plugin_beamformer;
 pub use sotf_plugin_binaural as plugin_binaural;
 pub use sotf_plugin_channel_mute_solo as plugin_channel_mute_solo;
-pub use sotf_plugin_multiband_compressor as plugin_compressor;
 pub use sotf_plugin_convolution as plugin_convolution;
 pub use sotf_plugin_crossfeed as plugin_crossfeed;
 pub use sotf_plugin_crossover as plugin_crossover;
-pub use sotf_plugin_delay as plugin_delay;
 pub use sotf_plugin_de_esser as plugin_de_esser;
-pub use sotf_plugin_dynamic_eq as plugin_dynamic_eq;
+pub use sotf_plugin_delay as plugin_delay;
 pub use sotf_plugin_denoiser as plugin_denoiser;
 pub use sotf_plugin_dither;
 pub use sotf_plugin_downmix as plugin_downmix;
+pub use sotf_plugin_dynamic_eq as plugin_dynamic_eq;
 pub use sotf_plugin_eq as plugin_eq;
-pub use sotf_plugin_linear_phase_eq as plugin_linear_phase_eq;
-pub use sotf_plugin_multiband_expander as plugin_expander;
-/// Backward compat: Fletcher-Munson is now part of loudness_compensation.
-pub use sotf_plugin_loudness_compensation as plugin_fletcher_munson;
 pub use sotf_plugin_gain as plugin_gain;
 pub use sotf_plugin_gate as plugin_gate;
 pub use sotf_plugin_limiter as plugin_limiter;
+pub use sotf_plugin_linear_phase_eq as plugin_linear_phase_eq;
+/// Backward compat: Fletcher-Munson is now part of loudness_compensation.
+pub use sotf_plugin_loudness_compensation as plugin_fletcher_munson;
 pub use sotf_plugin_loudness_compensation as plugin_loudness_compensation;
 pub use sotf_plugin_matrix as plugin_matrix;
 pub use sotf_plugin_mono_to_stereo as plugin_mono_to_stereo;
+pub use sotf_plugin_multiband_compressor as plugin_compressor;
 pub use sotf_plugin_multiband_compressor as plugin_multiband_compressor;
+pub use sotf_plugin_multiband_expander as plugin_expander;
 pub use sotf_plugin_multiband_expander as plugin_multiband_expander;
 pub use sotf_plugin_pnd as plugin_pnd;
 pub use sotf_plugin_resampler as plugin_resampler;
@@ -213,9 +213,9 @@ pub use sotf_plugin_hal_output as plugin_hal_output;
 // Re-export all public types for backward compatibility
 pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
 pub use plugin_aec::{AecPlugin, AecPluginParams};
-pub use plugin_beamformer::{BeamformerPlugin, BeamformerPluginParams, BeamformerType};
 pub use plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
 pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};
+pub use plugin_beamformer::{BeamformerPlugin, BeamformerPluginParams, BeamformerType};
 pub use plugin_binaural::{
     BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,
 };
@@ -228,20 +228,20 @@ pub use plugin_crossfeed::{
     CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, CrossfeedPreset,
 };
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
-pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_de_esser::{DeEsserData, DeEsserPlugin, DeEsserPluginParams};
-pub use plugin_dynamic_eq::{DynamicEqData, DynamicEqPlugin, DynamicEqPluginParams};
+pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
-pub use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
+pub use plugin_dynamic_eq::{DynamicEqData, DynamicEqPlugin, DynamicEqPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 pub use plugin_linear_phase_eq::{LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
+pub use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 pub type ExpanderPlugin = sotf_plugin_multiband_expander::MultibandExpanderPlugin;
 pub type ExpanderPluginParams = sotf_plugin_multiband_expander::MultibandExpanderPluginParams;
-pub use plugin_loudness_compensation::{FletcherMunsonPlugin, FletcherMunsonPluginParams};
 pub use plugin_gain::{GainPlugin, GainPluginParams};
 pub use plugin_gate::{GateData, GatePlugin, GatePluginParams};
 pub use plugin_limiter::{LimiterData, LimiterPlugin, LimiterPluginParams};
+pub use plugin_loudness_compensation::{FletcherMunsonPlugin, FletcherMunsonPluginParams};
 pub use plugin_loudness_compensation::{
     LoudnessCompensation, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
 };

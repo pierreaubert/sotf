@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_plugin_matrix::MatrixPlugin;
 
 #[global_allocator]
@@ -20,7 +20,7 @@ fn main() {
     let num_frames = 4096;
     let mut input = vec![0.0f32; num_frames * input_channels];
     for i in 0..num_frames {
-        input[i * input_channels] = 0.5;     // L
+        input[i * input_channels] = 0.5; // L
         input[i * input_channels + 1] = 0.3; // R
     }
     let mut output = vec![0.0f32; num_frames * output_channels];
@@ -34,14 +34,8 @@ fn main() {
     let out_r = output[(num_frames - 1) * output_channels + 1];
     println!("  L: in=0.50, out={:.4}", out_l);
     println!("  R: in=0.30, out={:.4}", out_r);
-    assert!(
-        (out_l - 0.5).abs() < 0.05,
-        "L should pass through identity"
-    );
-    assert!(
-        (out_r - 0.3).abs() < 0.05,
-        "R should pass through identity"
-    );
+    assert!((out_l - 0.5).abs() < 0.05, "L should pass through identity");
+    assert!((out_r - 0.3).abs() < 0.05, "R should pass through identity");
 
     // Run standard QA tests
     run_standard_tests(&mut plugin, "MatrixPlugin");

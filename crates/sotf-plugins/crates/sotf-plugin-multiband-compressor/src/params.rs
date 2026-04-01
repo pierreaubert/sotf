@@ -27,19 +27,39 @@ pub const HPF_ORDERS: &[&str] = &["2nd", "4th"];
 /// `compressor::PARAMS` without crossover entries). Indices match the old standalone
 /// `sotf-plugin-compressor` crate.
 pub const PARAMS: &[ParamSpec] = &[
-    ParamSpec::float("Threshold", "threshold", -20.0, -60.0, 0.0, 1.0, "dB", "Dynamics")
-        .doc("Level above which compression starts"),
+    ParamSpec::float(
+        "Threshold",
+        "threshold",
+        -20.0,
+        -60.0,
+        0.0,
+        1.0,
+        "dB",
+        "Dynamics",
+    )
+    .doc("Level above which compression starts"),
     ParamSpec::float("Ratio", "ratio", 4.0, 1.0, 20.0, 0.1, ":1", "Dynamics")
         .doc("Compression amount (input:output)"),
     ParamSpec::float("Attack", "attack", 5.0, 0.1, 100.0, 0.5, "ms", "Timing")
         .doc("Time to reach full compression"),
-    ParamSpec::float("Release", "release", 50.0, 10.0, 1000.0, 5.0, "ms", "Timing")
-        .doc("Time to return to unity gain"),
+    ParamSpec::float(
+        "Release", "release", 50.0, 10.0, 1000.0, 5.0, "ms", "Timing",
+    )
+    .doc("Time to return to unity gain"),
     ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Dynamics")
         .doc("Softness of threshold transition"),
-    ParamSpec::float("Makeup Gain", "makeup_gain", 0.0, -24.0, 24.0, 0.5, "dB", "Output")
-        .output()
-        .doc("Post-compression gain boost"),
+    ParamSpec::float(
+        "Makeup Gain",
+        "makeup_gain",
+        0.0,
+        -24.0,
+        24.0,
+        0.5,
+        "dB",
+        "Output",
+    )
+    .output()
+    .doc("Post-compression gain boost"),
     ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output")
         .scaled(100.0)
         .output()
@@ -47,28 +67,80 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::bool_param("Auto Makeup", "auto_makeup", false, "Output")
         .output()
         .doc("Auto-compensate for gain reduction"),
-    ParamSpec::bool_labeled("Link Channels", "link_channels", true, "Linked", "Unlinked", "Channels")
-        .setup()
-        .doc("Stereo-link detector for L/R"),
-    ParamSpec::float("Sidechain HPF", "sidechain_hpf_hz", 80.0, 0.0, 200.0, 5.0, "Hz", "Sidechain")
-        .setup()
-        .doc("High-pass on detector input"),
-    ParamSpec::choice("Sidechain HPF Order", "sidechain_hpf_order", 0, HPF_ORDERS, "Sidechain")
-        .setup()
-        .doc("Butterworth HPF slope"),
-    ParamSpec::choice("Detection Mode", "detection_mode", 0, DETECTION_MODES, "Sidechain")
-        .setup()
-        .doc("Peak or RMS level detection"),
-    ParamSpec::float("Lookahead", "lookahead_ms", 0.0, 0.0, 20.0, 0.5, "ms", "Timing")
-        .doc("Pre-delay for transient catching"),
-    ParamSpec::bool_param("Program Dependent Release", "program_dependent_release", false, "Timing")
-        .doc("Adapts release to signal content"),
-    ParamSpec::bool_param("Measured Auto Makeup", "measured_auto_makeup", false, "Output")
-        .output()
-        .doc("Makeup based on measured reduction"),
-    ParamSpec::bool_param("External Sidechain", "sidechain_external", false, "Sidechain")
-        .setup()
-        .doc("Use external signal for detection"),
+    ParamSpec::bool_labeled(
+        "Link Channels",
+        "link_channels",
+        true,
+        "Linked",
+        "Unlinked",
+        "Channels",
+    )
+    .setup()
+    .doc("Stereo-link detector for L/R"),
+    ParamSpec::float(
+        "Sidechain HPF",
+        "sidechain_hpf_hz",
+        80.0,
+        0.0,
+        200.0,
+        5.0,
+        "Hz",
+        "Sidechain",
+    )
+    .setup()
+    .doc("High-pass on detector input"),
+    ParamSpec::choice(
+        "Sidechain HPF Order",
+        "sidechain_hpf_order",
+        0,
+        HPF_ORDERS,
+        "Sidechain",
+    )
+    .setup()
+    .doc("Butterworth HPF slope"),
+    ParamSpec::choice(
+        "Detection Mode",
+        "detection_mode",
+        0,
+        DETECTION_MODES,
+        "Sidechain",
+    )
+    .setup()
+    .doc("Peak or RMS level detection"),
+    ParamSpec::float(
+        "Lookahead",
+        "lookahead_ms",
+        0.0,
+        0.0,
+        20.0,
+        0.5,
+        "ms",
+        "Timing",
+    )
+    .doc("Pre-delay for transient catching"),
+    ParamSpec::bool_param(
+        "Program Dependent Release",
+        "program_dependent_release",
+        false,
+        "Timing",
+    )
+    .doc("Adapts release to signal content"),
+    ParamSpec::bool_param(
+        "Measured Auto Makeup",
+        "measured_auto_makeup",
+        false,
+        "Output",
+    )
+    .output()
+    .doc("Makeup based on measured reduction"),
+    ParamSpec::bool_param(
+        "External Sidechain",
+        "sidechain_external",
+        false,
+        "Sidechain",
+    )
+    .setup()
+    .doc("Use external signal for detection"),
 ];
 
 /// Single-band compressor UI layout (backward compat, referencing PARAMS indices).
@@ -80,21 +152,39 @@ pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::selector(11), // detection_mode
     ],
     main: &[
-        ControlGroup { title: "DYNAMICS", controls: &[
-            ControlSpec::slider(0), ControlSpec::slider(1), ControlSpec::slider(4),
-        ]},
-        ControlGroup { title: "TIMING", controls: &[
-            ControlSpec::slider(2), ControlSpec::slider(3), ControlSpec::knob(12), ControlSpec::toggle(13),
-        ]},
+        ControlGroup {
+            title: "DYNAMICS",
+            controls: &[
+                ControlSpec::slider(0),
+                ControlSpec::slider(1),
+                ControlSpec::slider(4),
+            ],
+        },
+        ControlGroup {
+            title: "TIMING",
+            controls: &[
+                ControlSpec::slider(2),
+                ControlSpec::slider(3),
+                ControlSpec::knob(12),
+                ControlSpec::toggle(13),
+            ],
+        },
     ],
     output: &[
         ControlSpec::meter(-30.0, 0.0),
-        ControlSpec::toggle(7), ControlSpec::toggle(14), ControlSpec::knob(5), ControlSpec::knob(6),
+        ControlSpec::toggle(7),
+        ControlSpec::toggle(14),
+        ControlSpec::knob(5),
+        ControlSpec::knob(6),
     ],
     tabs: &[],
-    visualizations: &[VizSlot::TransferCurve { position: VizPosition::BelowGroup("DYNAMICS") }],
+    visualizations: &[VizSlot::TransferCurve {
+        position: VizPosition::BelowGroup("DYNAMICS"),
+    }],
     column_constraints: &[
-        ColumnConstraint::config(100.0, 0.5), ColumnConstraint::main(300.0), ColumnConstraint::output(120.0, 0.6),
+        ColumnConstraint::config(100.0, 0.5),
+        ColumnConstraint::main(300.0),
+        ColumnConstraint::output(120.0, 0.6),
     ],
     dynamic_sections: &[],
 };
@@ -156,11 +246,29 @@ pub const GLOBAL_PARAMS: &[ParamSpec] = multiband_global_params![
         .setup()
         .doc("Mid/Side processing mode"),
     // --- Phase 3C: SOTA additions ---
-    ParamSpec::float("Sidechain Tilt", "sidechain_tilt_db", 0.0, -6.0, 6.0, 0.5, "dB", "Global")
-        .doc("Detection tilt: +dB = more HF sensitive, -dB = more LF sensitive"),
-    ParamSpec::float("Link Amount", "link_amount", 1.0, 0.0, 1.0, 0.01, "%", "Global")
-        .scaled(100.0)
-        .doc("Channel linking: 0%=independent, 100%=linked"),
+    ParamSpec::float(
+        "Sidechain Tilt",
+        "sidechain_tilt_db",
+        0.0,
+        -6.0,
+        6.0,
+        0.5,
+        "dB",
+        "Global"
+    )
+    .doc("Detection tilt: +dB = more HF sensitive, -dB = more LF sensitive"),
+    ParamSpec::float(
+        "Link Amount",
+        "link_amount",
+        1.0,
+        0.0,
+        1.0,
+        0.01,
+        "%",
+        "Global"
+    )
+    .scaled(100.0)
+    .doc("Channel linking: 0%=independent, 100%=linked"),
 ];
 
 // ============================================================================
@@ -169,8 +277,7 @@ pub const GLOBAL_PARAMS: &[ParamSpec] = multiband_global_params![
 
 /// Template for each compressor band (repeated per band).
 pub const BAND_TEMPLATE: &[ParamSpec] = &[
-    ParamSpec::bool_param("Solo", "solo", false, "Band")
-        .doc("Solo this band (mute others)"),
+    ParamSpec::bool_param("Solo", "solo", false, "Band").doc("Solo this band (mute others)"),
     ParamSpec::bool_param("Bypass", "bypass", false, "Band")
         .doc("Bypass compression for this band"),
     ParamSpec::float(
@@ -190,8 +297,7 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
         .doc("Band attack time"),
     ParamSpec::float("Release", "release", 50.0, 10.0, 1000.0, 5.0, "ms", "Band")
         .doc("Band release time"),
-    ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Band")
-        .doc("Band knee softness"),
+    ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Band").doc("Band knee softness"),
     ParamSpec::float(
         "Makeup Gain",
         "makeup_gain",

@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 use std::f32::consts::PI;
 

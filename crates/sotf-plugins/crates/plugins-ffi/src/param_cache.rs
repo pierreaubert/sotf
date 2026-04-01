@@ -39,7 +39,9 @@ pub struct AtomicParamCache {
 const _: () = {
     #[expect(dead_code, reason = "compile-time Send+Sync assertion")]
     fn assert_send_sync<T: Send + Sync>() {}
-    fn _check() { assert_send_sync::<AtomicParamCache>(); }
+    fn _check() {
+        assert_send_sync::<AtomicParamCache>();
+    }
 };
 
 impl AtomicParamCache {
@@ -134,11 +136,7 @@ pub extern "C" fn au_param_cache_create(count: usize) -> *mut AtomicParamCache {
 /// Called from Swift's `implementorValueObserver` on the AU main thread
 /// whenever a parameter changes (from host automation, MIDI, or UI).
 #[unsafe(no_mangle)]
-pub extern "C" fn au_param_cache_write(
-    cache: *mut AtomicParamCache,
-    index: usize,
-    value: f64,
-) {
+pub extern "C" fn au_param_cache_write(cache: *mut AtomicParamCache, index: usize, value: f64) {
     if cache.is_null() {
         return;
     }
@@ -150,10 +148,7 @@ pub extern "C" fn au_param_cache_write(
 
 /// Read a denormalized parameter value from the cache.
 #[unsafe(no_mangle)]
-pub extern "C" fn au_param_cache_read(
-    cache: *const AtomicParamCache,
-    index: usize,
-) -> f64 {
+pub extern "C" fn au_param_cache_read(cache: *const AtomicParamCache, index: usize) -> f64 {
     if cache.is_null() {
         return 0.0;
     }
@@ -199,7 +194,14 @@ pub extern "C" fn au_param_cache_set_meta(
             .unwrap_or("")
             .to_string()
     };
-    cache.set_meta(index, name_str, unit_str, min_value, max_value, default_value);
+    cache.set_meta(
+        index,
+        name_str,
+        unit_str,
+        min_value,
+        max_value,
+        default_value,
+    );
 }
 
 /// Destroy a parameter cache.

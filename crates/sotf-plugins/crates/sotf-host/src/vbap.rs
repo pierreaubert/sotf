@@ -55,7 +55,9 @@ impl VbapPanner {
     /// `num_channels`: total output channel count (must equal max(channel)+1).
     pub fn new(speakers: &[SpeakerPosition], num_channels: usize) -> Self {
         // Check if any speaker has non-zero elevation
-        let has_height = speakers.iter().any(|s| !s.is_lfe && s.elevation.abs() > 1.0);
+        let has_height = speakers
+            .iter()
+            .any(|s| !s.is_lfe && s.elevation.abs() > 1.0);
 
         // Build 2D speaker list: non-LFE speakers only, sorted by azimuth descending
         // (largest azimuth first = leftmost first for our convention)
@@ -309,7 +311,10 @@ mod tests {
         );
 
         let energy = sum_gain_energy(gains);
-        assert!((energy - 1.0).abs() < 0.1, "Expected unit energy, got {energy:.3}");
+        assert!(
+            (energy - 1.0).abs() < 0.1,
+            "Expected unit energy, got {energy:.3}"
+        );
     }
 
     #[test]
@@ -328,7 +333,10 @@ mod tests {
         );
 
         let energy = sum_gain_energy(gains);
-        assert!((energy - 1.0).abs() < 0.1, "Expected unit energy, got {energy:.3}");
+        assert!(
+            (energy - 1.0).abs() < 0.1,
+            "Expected unit energy, got {energy:.3}"
+        );
     }
 
     #[test]
@@ -347,7 +355,10 @@ mod tests {
         );
 
         let energy = sum_gain_energy(gains);
-        assert!((energy - 1.0).abs() < 0.1, "Expected unit energy, got {energy:.3}");
+        assert!(
+            (energy - 1.0).abs() < 0.1,
+            "Expected unit energy, got {energy:.3}"
+        );
     }
 
     #[test]
@@ -376,10 +387,16 @@ mod tests {
 
         // Both speakers should receive roughly equal gain
         let diff = (gains[0] - gains[1]).abs();
-        assert!(diff < 0.05, "Expected phantom center (equal L/R), diff={diff:.3}");
+        assert!(
+            diff < 0.05,
+            "Expected phantom center (equal L/R), diff={diff:.3}"
+        );
 
         let energy = sum_gain_energy(gains);
-        assert!((energy - 1.0).abs() < 0.1, "Expected unit energy, got {energy:.3}");
+        assert!(
+            (energy - 1.0).abs() < 0.1,
+            "Expected unit energy, got {energy:.3}"
+        );
     }
 
     #[test]

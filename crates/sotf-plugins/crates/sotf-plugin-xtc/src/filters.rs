@@ -220,7 +220,14 @@ pub(crate) fn compute_xtc_filters_full_with_cache(
     cache: &GeometryCache,
     room_data: Option<Arc<RoomReflectionData>>,
 ) -> XtcFilters {
-    compute_xtc_filters_full_with_cache_and_hrtf(params, _sample_rate, num_bins, cache, room_data, None)
+    compute_xtc_filters_full_with_cache_and_hrtf(
+        params,
+        _sample_rate,
+        num_bins,
+        cache,
+        room_data,
+        None,
+    )
 }
 
 /// Internal filter computation with pre-computed geometry cache and optional HRTF data.
@@ -359,8 +366,8 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let pinna_left_contra = pinna_left_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
         let delta_t_left = delay_left_contra - delay_left_ipsi;
-        let g_ll =
-            head_shadowing(freq, asym.angle_left_contra, a, params.head_model) * asym.amplitude_ratio_left;
+        let g_ll = head_shadowing(freq, asym.angle_left_contra, a, params.head_model)
+            * asym.amplitude_ratio_left;
         let phase_ll_contra = -2.0 * PI * freq * delta_t_left;
         let h_ll_contra = Complex::new(g_ll * phase_ll_contra.cos(), g_ll * phase_ll_contra.sin())
             * pinna_left_contra;
@@ -371,8 +378,8 @@ fn compute_xtc_filters_asymmetric_with_cache(
             .as_deref()
             .map_or(1.0, |lut| lut[bin]);
         let delta_t_right = delay_right_contra - delay_right_ipsi;
-        let g_rr =
-            head_shadowing(freq, asym.angle_right_contra, a, params.head_model) * asym.amplitude_ratio_right;
+        let g_rr = head_shadowing(freq, asym.angle_right_contra, a, params.head_model)
+            * asym.amplitude_ratio_right;
         let phase_rr_contra = -2.0 * PI * freq * delta_t_right;
         let h_rr_contra = Complex::new(g_rr * phase_rr_contra.cos(), g_rr * phase_rr_contra.sin())
             * pinna_right_contra;
@@ -699,8 +706,7 @@ fn compute_xtc_filters_symmetric_with_cache(
             // sigmoid(x) = 1/(1 + exp((x - x0) / w)) where x = freq, x0 = 300, w = 50.
             let explicit_phase = -2.0 * PI * freq * itd;
             // Unit-amplitude phasor: no head-shadowing amplitude factor at LF.
-            let h_contra_explicit =
-                Complex::new(explicit_phase.cos(), explicit_phase.sin());
+            let h_contra_explicit = Complex::new(explicit_phase.cos(), explicit_phase.sin());
 
             let crossover_hz = 300.0_f32;
             let blend = 1.0 / (1.0 + ((freq - crossover_hz) / 50.0).exp());
@@ -773,13 +779,7 @@ fn compute_xtc_filters_symmetric_with_cache(
     }
 
     // Phase 3: effort-constrained gain limiting
-    apply_effort_constraint(
-        &mut filter_ll,
-        &mut filter_lr,
-        None,
-        None,
-        max_gain_linear,
-    );
+    apply_effort_constraint(&mut filter_ll, &mut filter_lr, None, None, max_gain_linear);
 
     (filter_ll, filter_lr)
 }
@@ -1103,7 +1103,12 @@ pub(crate) fn head_shadowing_woodworth(freq: f32, angle_rad: f32, head_radius: f
 /// Dispatch head shadowing based on the configured model.
 /// Returns magnitude-only shadow gain (0..1) for API compatibility.
 /// head_model: 0 = Woodworth, 1 = Brown-Duda
-pub(crate) fn head_shadowing(freq: f32, angle_rad: f32, head_radius: f32, head_model: usize) -> f32 {
+pub(crate) fn head_shadowing(
+    freq: f32,
+    angle_rad: f32,
+    head_radius: f32,
+    head_model: usize,
+) -> f32 {
     match head_model {
         1 => head_shadowing_brown_duda(freq, angle_rad, head_radius).0,
         _ => head_shadowing_woodworth(freq, angle_rad, head_radius),
@@ -1118,11 +1123,7 @@ pub(crate) fn head_shadowing(freq: f32, angle_rad: f32, head_radius: f32, head_m
 ///
 /// Reference: Brown, C.P. & Duda, R.O. (1998). "A structural model for binaural
 /// sound synthesis." IEEE Trans. Speech & Audio Processing, 6(5), 476-488.
-pub(crate) fn head_shadowing_brown_duda(
-    freq: f32,
-    angle_rad: f32,
-    head_radius: f32,
-) -> (f32, f32) {
+pub(crate) fn head_shadowing_brown_duda(freq: f32, angle_rad: f32, head_radius: f32) -> (f32, f32) {
     if freq <= 0.0 {
         return (1.0, 0.0);
     }
@@ -1485,8 +1486,8 @@ pub(crate) fn apply_effort_constraint(
 ) {
     let num_bins = filter_ll.len();
     // Scale budget by number of active filter arrays (2 for symmetric, 4 for asymmetric/HRTF)
-    let num_filters = 2 + if filter_rl.is_some() { 1 } else { 0 }
-        + if filter_rr.is_some() { 1 } else { 0 };
+    let num_filters =
+        2 + if filter_rl.is_some() { 1 } else { 0 } + if filter_rr.is_some() { 1 } else { 0 };
     let e_max = max_gain_linear * max_gain_linear * num_bins as f32 * num_filters as f32;
 
     // Compute total effort across all filter components

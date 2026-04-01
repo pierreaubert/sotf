@@ -2,15 +2,17 @@
 
 use super::config::{GraphEdgeConfig, GraphNodeConfig, PathConfig};
 use sotf_host::InPlacePluginAdapter;
+use sotf_host::PluginFactoryFn;
 use sotf_host::host::{DawHost, GraphEdge};
 use sotf_host::plugin::Plugin;
-use sotf_host::PluginFactoryFn;
-use sotf_plugin_multiband_compressor::{MultibandCompressorPlugin, MultibandCompressorPluginParams};
 use sotf_plugin_delay::{DelayPlugin, DelayPluginParams};
 use sotf_plugin_eq::{EqPlugin, EqPluginParams};
 use sotf_plugin_gain::{GainPlugin, GainPluginParams};
 use sotf_plugin_gate::{GatePlugin, GatePluginParams};
 use sotf_plugin_limiter::{LimiterPlugin, LimiterPluginParams};
+use sotf_plugin_multiband_compressor::{
+    MultibandCompressorPlugin, MultibandCompressorPluginParams,
+};
 use std::collections::HashMap;
 
 /// Create a plugin, delegating to the external factory if provided,
@@ -51,8 +53,9 @@ fn create_plugin_builtin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
         "compressor" => {
-            let params: MultibandCompressorPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Invalid Compressor params: {}", e))?;
+            let params: MultibandCompressorPluginParams =
+                serde_json::from_value(parameters.clone())
+                    .map_err(|e| format!("Invalid Compressor params: {}", e))?;
             let plugin = MultibandCompressorPlugin::from_params(num_channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
@@ -104,13 +107,19 @@ pub fn build_path_from_config_with_factory(
             plugin_type,
             parameters,
         } => {
-            let plugin = create_plugin(plugin_type, parameters, num_channels, sample_rate, factory)?;
+            let plugin =
+                create_plugin(plugin_type, parameters, num_channels, sample_rate, factory)?;
             host.add_plugin(plugin)?;
         }
         PathConfig::Rack { plugins } => {
             for p in plugins {
-                let plugin =
-                    create_plugin(&p.plugin_type, &p.parameters, num_channels, sample_rate, factory)?;
+                let plugin = create_plugin(
+                    &p.plugin_type,
+                    &p.parameters,
+                    num_channels,
+                    sample_rate,
+                    factory,
+                )?;
                 host.add_plugin(plugin)?;
             }
         }

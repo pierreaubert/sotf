@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -45,32 +45,15 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float("Ratio", "ratio", 2.0, 1.0, 20.0, 0.1, ":1", "Dynamics")
         .doc("Global dynamics ratio"),
     // Global: attack
-    ParamSpec::float(
-        "Attack",
-        "attack",
-        5.0,
-        0.1,
-        100.0,
-        0.1,
-        "ms",
-        "Timing",
-    )
-    .doc("Global attack time"),
+    ParamSpec::float("Attack", "attack", 5.0, 0.1, 100.0, 0.1, "ms", "Timing")
+        .doc("Global attack time"),
     // Global: release
     ParamSpec::float(
-        "Release",
-        "release",
-        50.0,
-        10.0,
-        1000.0,
-        1.0,
-        "ms",
-        "Timing",
+        "Release", "release", 50.0, 10.0, 1000.0, 1.0, "ms", "Timing",
     )
     .doc("Global release time"),
     // Global: knee
-    ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Dynamics")
-        .doc("Global soft knee"),
+    ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Dynamics").doc("Global soft knee"),
     // Global: link_channels
     ParamSpec::bool_labeled(
         "Link Channels",
@@ -105,8 +88,7 @@ pub const BAND_PARAMS: &[ParamSpec] = &[
         "EQ",
     )
     .doc("Band center frequency"),
-    ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.01, "", "EQ")
-        .doc("Band Q factor (bandwidth)"),
+    ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.01, "", "EQ").doc("Band Q factor (bandwidth)"),
     ParamSpec::float("Gain", "gain", 0.0, -24.0, 24.0, 0.1, "dB", "EQ")
         .doc("Target EQ gain when triggered"),
     ParamSpec::float(
@@ -120,17 +102,8 @@ pub const BAND_PARAMS: &[ParamSpec] = &[
         "Dynamics",
     )
     .doc("Band-specific threshold (overrides global)"),
-    ParamSpec::float(
-        "Ratio",
-        "band_ratio",
-        2.0,
-        1.0,
-        20.0,
-        0.1,
-        ":1",
-        "Dynamics",
-    )
-    .doc("Band-specific ratio (overrides global)"),
+    ParamSpec::float("Ratio", "band_ratio", 2.0, 1.0, 20.0, 0.1, ":1", "Dynamics")
+        .doc("Band-specific ratio (overrides global)"),
     ParamSpec::bool_param("Active", "active", true, "Band").doc("Enable/disable this band"),
     ParamSpec::bool_param("Solo", "solo", false, "Band").doc("Solo this band"),
 ];
@@ -150,18 +123,16 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::slider(0), // num_bands
         ControlSpec::toggle(6), // link_channels
     ],
-    main: &[
-        ControlGroup {
-            title: "DYNAMICS",
-            controls: &[
-                ControlSpec::slider(1), // threshold
-                ControlSpec::slider(2), // ratio
-                ControlSpec::slider(3), // attack
-                ControlSpec::slider(4), // release
-                ControlSpec::slider(5), // knee
-            ],
-        },
-    ],
+    main: &[ControlGroup {
+        title: "DYNAMICS",
+        controls: &[
+            ControlSpec::slider(1), // threshold
+            ControlSpec::slider(2), // ratio
+            ControlSpec::slider(3), // attack
+            ControlSpec::slider(4), // release
+            ControlSpec::slider(5), // knee
+        ],
+    }],
     output: &[
         ControlSpec::meter(-30.0, 0.0), // GR meter
         ControlSpec::knob(7),           // mix

@@ -16,10 +16,10 @@ pub mod delta_monitor;
 pub mod design_system;
 pub mod detector;
 pub mod dynamics_core;
-pub mod envelope_follower;
-pub mod fir_crossover;
 pub mod envelope;
+pub mod envelope_follower;
 pub mod error;
+pub mod fir_crossover;
 pub mod host;
 pub mod layout_solver;
 pub mod lookahead;
@@ -40,12 +40,15 @@ pub mod smoothing;
 pub mod sofa;
 pub mod speaker_config;
 pub mod stft_common;
-pub mod true_peak;
-pub mod vbap;
 #[cfg(any(feature = "qa", test, debug_assertions))]
 pub mod test_utils;
+pub mod true_peak;
+pub mod vbap;
 
-pub use adaa::{Adaa1, Adaa2, adaa1_hardclip, adaa1_softclip, adaa1_tanh, adaa2_hardclip, adaa2_softclip, adaa2_tanh};
+pub use adaa::{
+    Adaa1, Adaa2, adaa1_hardclip, adaa1_softclip, adaa1_tanh, adaa2_hardclip, adaa2_softclip,
+    adaa2_tanh,
+};
 pub use analyzer::{AnalyzerData, LoudnessData, SpectrumData};
 
 /// Function signature for plugin factories.
@@ -56,31 +59,33 @@ pub type PluginFactoryFn = fn(
     channels: usize,
     sample_rate: u32,
 ) -> Result<Box<dyn plugin::Plugin>, String>;
-pub use auto_makeup::MeasuredMakeup;
-pub use channel_linking::{compute_linked_levels, link_stereo};
-pub use dc_blocker::DcBlocker;
-pub use delta_monitor::DeltaMonitor;
-pub use detector::{DetectionMode, LevelDetector};
-pub use fir_crossover::{FirCrossover, MultibandFirCrossover};
-pub use dynamics_core::SidechainFilterMode;
-pub use envelope::DualRelease;
-pub use envelope_follower::EnvelopeFollower;
-pub use lookahead::LookaheadBuffer;
-pub use lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
-pub use lufs_target::LufsTarget;
-pub use oversampling::{Oversampler, OversampledPlugin, interleaved_to_planar, planar_to_interleaved};
-pub use true_peak::TruePeakDetector;
 pub use analyzer_loudness_monitor::{LoudnessMonitor, LoudnessMonitorPlugin};
 pub use analyzer_spectrum::{
     SpectralTiltCorrection, SpectrumAnalyzer, SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo,
     TiltReferenceFreq,
 };
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+pub use auto_makeup::MeasuredMakeup;
+pub use channel_linking::{compute_linked_levels, link_stereo};
+pub use dc_blocker::DcBlocker;
+pub use delta_monitor::DeltaMonitor;
+pub use detector::{DetectionMode, LevelDetector};
+pub use dynamics_core::SidechainFilterMode;
+pub use envelope::DualRelease;
+pub use envelope_follower::EnvelopeFollower;
+pub use fir_crossover::{FirCrossover, MultibandFirCrossover};
 pub use host::{DawHost, GraphEdge, Host};
+pub use lookahead::LookaheadBuffer;
+pub use lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
+pub use lufs_target::LufsTarget;
+pub use oversampling::{
+    OversampledPlugin, Oversampler, interleaved_to_planar, planar_to_interleaved,
+};
 pub use parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 pub use plugin::{
     InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
 };
+pub use true_peak::TruePeakDetector;
 
 #[cfg(feature = "qa")]
 pub use test_utils::benchmark_plugin_full;

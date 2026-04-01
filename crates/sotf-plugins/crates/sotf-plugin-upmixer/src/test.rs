@@ -63,17 +63,21 @@ mod upmixer_tests {
         assert!((plugin.center_spread.target() - 0.7).abs() < 1e-6);
 
         // Values outside [0.0, 1.0] are clamped by param_bridge
-        plugin.set_parameter(
-            ParameterId::from("center_spread"),
-            ParameterValue::Float(1.5),
-        ).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("center_spread"),
+                ParameterValue::Float(1.5),
+            )
+            .unwrap();
         assert!((plugin.center_spread.target() - 1.0).abs() < 1e-6); // clamped to max
 
         // Test lower bound clamping
-        plugin.set_parameter(
-            ParameterId::from("center_spread"),
-            ParameterValue::Float(-0.5),
-        ).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("center_spread"),
+                ParameterValue::Float(-0.5),
+            )
+            .unwrap();
         assert!((plugin.center_spread.target() - 0.0).abs() < 1e-6); // clamped to min
     }
 
@@ -94,17 +98,21 @@ mod upmixer_tests {
         assert!((plugin.stereo_width.target() - 0.3).abs() < 1e-6);
 
         // Values outside [0.0, 1.0] are clamped by param_bridge
-        plugin.set_parameter(
-            ParameterId::from("stereo_width"),
-            ParameterValue::Float(2.0),
-        ).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("stereo_width"),
+                ParameterValue::Float(2.0),
+            )
+            .unwrap();
         assert!((plugin.stereo_width.target() - 1.0).abs() < 1e-6); // clamped to max
 
         // Test lower bound clamping
-        plugin.set_parameter(
-            ParameterId::from("stereo_width"),
-            ParameterValue::Float(-1.0),
-        ).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("stereo_width"),
+                ParameterValue::Float(-1.0),
+            )
+            .unwrap();
         assert!((plugin.stereo_width.target() - 0.0).abs() < 1e-6); // clamped to min
     }
 
@@ -1989,7 +1997,8 @@ mod upmixer_tests {
     #[test]
     fn test_subharmonic_synthesis_produces_sub_frequency() {
         let mut plugin = UpmixerPlugin::new(
-            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, true, // enable sub-harmonic
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0,
+            true, // enable sub-harmonic
             0.5,
         );
         plugin.initialize(44100).unwrap();
@@ -2258,20 +2267,24 @@ mod upmixer_tests {
         assert_eq!(val, Some(ParameterValue::Float(0.25)));
 
         // Values outside [0.05, 0.5] are clamped by param_bridge
-        plugin.set_parameter(
-            ParameterId::from("multi_source_threshold"),
-            ParameterValue::Float(0.001), // Below minimum -> clamped to 0.05
-        ).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("multi_source_threshold"),
+                ParameterValue::Float(0.001), // Below minimum -> clamped to 0.05
+            )
+            .unwrap();
         assert!(
             (plugin.multi_source_threshold - 0.05).abs() < 1e-6,
             "Threshold should be clamped to min 0.05, got {}",
             plugin.multi_source_threshold
         );
 
-        plugin.set_parameter(
-            ParameterId::from("multi_source_threshold"),
-            ParameterValue::Float(0.9), // Above maximum -> clamped to 0.5
-        ).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("multi_source_threshold"),
+                ParameterValue::Float(0.9), // Above maximum -> clamped to 0.5
+            )
+            .unwrap();
         assert!(
             (plugin.multi_source_threshold - 0.5).abs() < 1e-6,
             "Threshold should be clamped to max 0.5, got {}",

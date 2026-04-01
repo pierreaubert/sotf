@@ -130,7 +130,9 @@ fn extract_tagged_value(text: &str, tags: &[&str]) -> Option<f32> {
                 .chars()
                 .take_while(|c| c.is_ascii_digit() || *c == '.')
                 .collect();
-            if !num_str.is_empty() && let Ok(v) = num_str.parse::<f32>() {
+            if !num_str.is_empty()
+                && let Ok(v) = num_str.parse::<f32>()
+            {
                 return Some(v);
             }
         }
@@ -226,10 +228,10 @@ mod tests {
 
         // Create empty .sofa files with various dims
         let files = [
-            "head_13_ear_08.sofa",  // hw mismatch 2, eh mismatch 2 → score -4
-            "head_15_ear_10.sofa",  // exact match → score 0
-            "head_16_ear_10.sofa",  // hw mismatch 1, exact eh → score -1
-            "generic.sofa",         // no dims → score 0
+            "head_13_ear_08.sofa", // hw mismatch 2, eh mismatch 2 → score -4
+            "head_15_ear_10.sofa", // exact match → score 0
+            "head_16_ear_10.sofa", // hw mismatch 1, exact eh → score -1
+            "generic.sofa",        // no dims → score 0
         ];
         for name in &files {
             let _ = std::fs::write(tmp.join(name), b"");

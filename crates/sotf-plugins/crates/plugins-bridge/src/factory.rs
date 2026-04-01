@@ -113,8 +113,11 @@ pub fn create_plugin(
         "Convolution" | "convolution" => {
             let params: sotf_plugin_convolution::ConvolutionPluginParams =
                 parse_params(config_json)?;
-            let plugin =
-                sotf_plugin_convolution::ConvolutionPlugin::from_params(channels, sample_rate, params)?;
+            let plugin = sotf_plugin_convolution::ConvolutionPlugin::from_params(
+                channels,
+                sample_rate,
+                params,
+            )?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
@@ -183,7 +186,8 @@ pub fn create_plugin(
         "MonoToStereo" | "mono_to_stereo" => {
             let params: sotf_plugin_mono_to_stereo::MonoToStereoPluginParams =
                 parse_params(config_json)?;
-            let plugin = sotf_plugin_mono_to_stereo::MonoToStereoPlugin::from_params(channels, params);
+            let plugin =
+                sotf_plugin_mono_to_stereo::MonoToStereoPlugin::from_params(channels, params);
             Ok(Box::new(plugin))
         }
 
@@ -214,7 +218,8 @@ pub fn create_plugin(
         "StereoImager" | "stereo_imager" => {
             let params: sotf_plugin_stereo_imager::StereoImagerPluginParams =
                 parse_params(config_json)?;
-            let plugin = sotf_plugin_stereo_imager::StereoImagerPlugin::from_params(channels, params);
+            let plugin =
+                sotf_plugin_stereo_imager::StereoImagerPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
@@ -227,26 +232,28 @@ pub fn create_plugin(
         }
 
         "Saturation" | "saturation" => {
-            let params: sotf_plugin_saturation::SaturationPluginParams =
-                parse_params(config_json)?;
-            let plugin =
-                sotf_plugin_saturation::SaturationPlugin::from_params(channels, params);
+            let params: sotf_plugin_saturation::SaturationPluginParams = parse_params(config_json)?;
+            let plugin = sotf_plugin_saturation::SaturationPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         "LinearPhaseEQ" | "linear_phase_eq" => {
             let params: sotf_plugin_linear_phase_eq::LinearPhaseEqPluginParams =
                 parse_params(config_json)?;
-            let plugin =
-                sotf_plugin_linear_phase_eq::LinearPhaseEqPlugin::from_params(channels, sample_rate, params)?;
+            let plugin = sotf_plugin_linear_phase_eq::LinearPhaseEqPlugin::from_params(
+                channels,
+                sample_rate,
+                params,
+            )?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         "SpectralCompressor" | "spectral_compressor" => {
             let params: sotf_plugin_spectral_compressor::SpectralCompressorPluginParams =
                 parse_params(config_json)?;
-            let plugin =
-                sotf_plugin_spectral_compressor::SpectralCompressorPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_spectral_compressor::SpectralCompressorPlugin::from_params(
+                channels, params,
+            );
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 

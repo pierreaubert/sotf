@@ -294,8 +294,10 @@ impl InPlacePlugin for StereoImagerPlugin {
         self.sample_rate = sample_rate;
 
         // Reinitialize crossovers at the correct sample rate
-        self.crossover_low.reinit(self.low_mid_freq, sample_rate as f32, 2);
-        self.crossover_high.reinit(self.mid_high_freq, sample_rate as f32, 2);
+        self.crossover_low
+            .reinit(self.low_mid_freq, sample_rate as f32, 2);
+        self.crossover_high
+            .reinit(self.mid_high_freq, sample_rate as f32, 2);
 
         // Reset smoothers at the new sample rate
         self.width_smoother = Smoother::new(self.width, SMOOTHING_MS, sample_rate);
@@ -577,14 +579,8 @@ mod tests {
         let r = buffer[last + 1];
 
         // L should be wider than original 0.8, R should be narrower than 0.2
-        assert!(
-            l > 0.9,
-            "Wide L should be > 0.9, got {l}"
-        );
-        assert!(
-            r < 0.1,
-            "Wide R should be < 0.1, got {r}"
-        );
+        assert!(l > 0.9, "Wide L should be > 0.9, got {l}");
+        assert!(r < 0.1, "Wide R should be < 0.1, got {r}");
 
         // The difference (L-R) should be roughly 4x the original side
         // Original side content: (0.8-0.2)/2 = 0.3 * 2 (width) = 0.6 each way
@@ -605,39 +601,28 @@ mod tests {
 
         // Set width
         plugin
-            .set_parameter(
-                ParameterId::from("width"),
-                ParameterValue::Float(1.5),
-            )
+            .set_parameter(ParameterId::from("width"), ParameterValue::Float(1.5))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("width"));
         assert_eq!(val, Some(ParameterValue::Float(1.5)));
 
         // Set mono_bass
         plugin
-            .set_parameter(
-                ParameterId::from("mono_bass"),
-                ParameterValue::Bool(true),
-            )
+            .set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(true))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("mono_bass"));
         assert_eq!(val, Some(ParameterValue::Bool(true)));
 
         // Set mix
         plugin
-            .set_parameter(
-                ParameterId::from("mix"),
-                ParameterValue::Float(0.75),
-            )
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.75))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("mix"));
         assert_eq!(val, Some(ParameterValue::Float(0.75)));
 
         // Unknown parameter should fail
-        let result = plugin.set_parameter(
-            ParameterId::from("nonexistent"),
-            ParameterValue::Float(1.0),
-        );
+        let result =
+            plugin.set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0));
         assert!(result.is_err());
 
         // Unknown get should return None

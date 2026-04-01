@@ -12,11 +12,11 @@
 use sotf_plugins::{
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, CrossoverPlugin,
-    DelayPlugin, DenoiserPlugin, DownmixPlugin, EqPlugin, ExpanderPlugin,
-    GainPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
-    LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
-    MultibandExpanderPlugin, ParameterValue, Plugin, PndPlugin, ProcessContext, ResamplerPlugin,
-    RoomModel, SpectrumAnalyzerPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams,
+    DelayPlugin, DenoiserPlugin, DownmixPlugin, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin,
+    InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin,
+    MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
+    ParameterValue, Plugin, PndPlugin, ProcessContext, ResamplerPlugin, RoomModel,
+    SpectrumAnalyzerPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams,
 };
 
 const SAMPLE_RATE: u32 = 48000;
@@ -36,7 +36,9 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     plugins.push(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))));
 
     // 3. Compressor
-    plugins.push(Box::new(InPlacePluginAdapter::new(CompressorPlugin::new(2))));
+    plugins.push(Box::new(InPlacePluginAdapter::new(CompressorPlugin::new(
+        2,
+    ))));
 
     // 4. Limiter
     plugins.push(Box::new(InPlacePluginAdapter::new(LimiterPlugin::new(

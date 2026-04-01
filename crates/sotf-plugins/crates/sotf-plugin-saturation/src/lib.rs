@@ -197,7 +197,7 @@ pub struct SaturationPlugin {
 
     // --- Phase 3A: SOTA DSP state ---
     dc_blocker: DcBlocker,
-    adaa_tanh: Vec<Adaa1>,     // Per-channel to avoid state corruption in interleaved processing
+    adaa_tanh: Vec<Adaa1>, // Per-channel to avoid state corruption in interleaved processing
     adaa_softclip: Vec<Adaa1>, // Per-channel
     envelope_followers: Vec<EnvelopeFollower>, // Per-channel for dynamic saturation
     lufs_target: Option<LufsTarget>, // Auto-loudness compensation
@@ -484,37 +484,43 @@ impl SaturationPlugin {
             .with_importance(ParameterImportance::Useful),
             // Phase 3A: SOTA params
             Parameter::new_float(
-                "dynamic_amount", "Dynamic",
+                "dynamic_amount",
+                "Dynamic",
                 self.dynamic_amount,
                 pk(SAT, "dynamic_amount").min_f64() as f32,
                 pk(SAT, "dynamic_amount").max_f64() as f32,
-            ).with_group("Dynamic").with_importance(ParameterImportance::Useful),
+            )
+            .with_group("Dynamic")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
-                "dynamic_attack_ms", "Dyn Attack",
+                "dynamic_attack_ms",
+                "Dyn Attack",
                 self.dynamic_attack_ms,
                 pk(SAT, "dynamic_attack_ms").min_f64() as f32,
                 pk(SAT, "dynamic_attack_ms").max_f64() as f32,
-            ).with_group("Dynamic").with_importance(ParameterImportance::Useful),
+            )
+            .with_group("Dynamic")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
-                "dynamic_release_ms", "Dyn Release",
+                "dynamic_release_ms",
+                "Dyn Release",
                 self.dynamic_release_ms,
                 pk(SAT, "dynamic_release_ms").min_f64() as f32,
                 pk(SAT, "dynamic_release_ms").max_f64() as f32,
-            ).with_group("Dynamic").with_importance(ParameterImportance::Useful),
+            )
+            .with_group("Dynamic")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("dc_blocker", "DC Block", self.dc_blocker_enabled)
-                .with_group("Quality").with_importance(ParameterImportance::Useful),
+                .with_group("Quality")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("use_adaa", "ADAA", self.use_adaa)
-                .with_group("Quality").with_importance(ParameterImportance::Useful),
+                .with_group("Quality")
+                .with_importance(ParameterImportance::Useful),
         ];
     }
 
     /// Process exciter mode without oversampling: split -> saturate HF -> recombine
-    fn process_exciter_direct(
-        &mut self,
-        buffer: &mut [f32],
-        num_frames: usize,
-        drive: f32,
-    ) {
+    fn process_exciter_direct(&mut self, buffer: &mut [f32], num_frames: usize, drive: f32) {
         let nc = self.channels;
         for frame in 0..num_frames {
             for ch in 0..nc {
@@ -630,7 +636,11 @@ impl InPlacePlugin for SaturationPlugin {
             if v.is_finite() {
                 self.dynamic_attack_ms = v.clamp(0.1, 100.0);
                 for ef in &mut self.envelope_followers {
-                    ef.set_times(self.dynamic_attack_ms, self.dynamic_release_ms, self.sample_rate);
+                    ef.set_times(
+                        self.dynamic_attack_ms,
+                        self.dynamic_release_ms,
+                        self.sample_rate,
+                    );
                 }
             }
         } else if id == self.param_dynamic_release_ms {
@@ -638,7 +648,11 @@ impl InPlacePlugin for SaturationPlugin {
             if v.is_finite() {
                 self.dynamic_release_ms = v.clamp(1.0, 500.0);
                 for ef in &mut self.envelope_followers {
-                    ef.set_times(self.dynamic_attack_ms, self.dynamic_release_ms, self.sample_rate);
+                    ef.set_times(
+                        self.dynamic_attack_ms,
+                        self.dynamic_release_ms,
+                        self.sample_rate,
+                    );
                 }
             }
         } else if id == self.param_dc_blocker {
@@ -672,7 +686,11 @@ impl InPlacePlugin for SaturationPlugin {
         } else if id == &self.param_dynamic_release_ms {
             Some(ParameterValue::Float(self.dynamic_release_ms))
         } else if id == &self.param_dc_blocker {
-            Some(ParameterValue::Float(if self.dc_blocker_enabled { 1.0 } else { 0.0 }))
+            Some(ParameterValue::Float(if self.dc_blocker_enabled {
+                1.0
+            } else {
+                0.0
+            }))
         } else if id == &self.param_use_adaa {
             Some(ParameterValue::Float(if self.use_adaa { 1.0 } else { 0.0 }))
         } else {
@@ -702,7 +720,9 @@ impl InPlacePlugin for SaturationPlugin {
         self.adaa_tanh = (0..self.channels).map(|_| adaa1_tanh()).collect();
         self.adaa_softclip = (0..self.channels).map(|_| adaa1_softclip()).collect();
         self.envelope_followers = (0..self.channels)
-            .map(|_| EnvelopeFollower::new(self.dynamic_attack_ms, self.dynamic_release_ms, sample_rate))
+            .map(|_| {
+                EnvelopeFollower::new(self.dynamic_attack_ms, self.dynamic_release_ms, sample_rate)
+            })
             .collect();
 
         // Pre-allocate buffers for max expected frame size
@@ -729,8 +749,12 @@ impl InPlacePlugin for SaturationPlugin {
 
         // Reset SOTA DSP components
         self.dc_blocker.reset();
-        for a in &mut self.adaa_tanh { a.reset(); }
-        for a in &mut self.adaa_softclip { a.reset(); }
+        for a in &mut self.adaa_tanh {
+            a.reset();
+        }
+        for a in &mut self.adaa_softclip {
+            a.reset();
+        }
         for ef in &mut self.envelope_followers {
             ef.reset();
         }
@@ -1200,10 +1224,7 @@ mod tests {
 
         // Set drive
         plugin
-            .set_parameter(
-                ParameterId::from("drive"),
-                ParameterValue::Float(8.0),
-            )
+            .set_parameter(ParameterId::from("drive"), ParameterValue::Float(8.0))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("drive"));
         assert_eq!(val, Some(ParameterValue::Float(8.0)));
@@ -1220,10 +1241,7 @@ mod tests {
 
         // Set tone
         plugin
-            .set_parameter(
-                ParameterId::from("tone"),
-                ParameterValue::Float(2.5),
-            )
+            .set_parameter(ParameterId::from("tone"), ParameterValue::Float(2.5))
             .unwrap();
         let val = plugin.get_parameter(&ParameterId::from("tone"));
         assert_eq!(val, Some(ParameterValue::Float(2.5)));

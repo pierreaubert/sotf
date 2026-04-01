@@ -59,8 +59,7 @@ impl DenoiserPlugin {
                     } else {
                         // Cosine taper from 1.0 to 0.0 over TAPER_HALF_WIDTH bins
                         let t = (dist - 1.0) / (TAPER_HALF_WIDTH as f32 - 1.0);
-                        let cosine_weight =
-                            0.5 * (1.0 + (std::f32::consts::PI * t.min(1.0)).cos());
+                        let cosine_weight = 0.5 * (1.0 + (std::f32::consts::PI * t.min(1.0)).cos());
                         // Blend between floor and 1.0
                         floor_linear + cosine_weight * (1.0 - floor_linear)
                     };

@@ -253,8 +253,7 @@ impl DelayLine {
             return sample;
         }
         self.buffer[self.write_pos] = sample;
-        let read_pos =
-            (self.write_pos + self.capacity - self.delay_samples) % self.capacity;
+        let read_pos = (self.write_pos + self.capacity - self.delay_samples) % self.capacity;
         let out = self.buffer[read_pos];
         self.write_pos = (self.write_pos + 1) % self.capacity;
         out
@@ -429,7 +428,11 @@ impl CrossfeedPlugin {
             10 => Some(self.params.mb_mid_feed_db as f64),
             11 => Some(self.params.mb_high_feed_db as f64),
             12 => Some(self.params.itd_delay_ms as f64),
-            13 => Some(if self.params.autogain_enabled { 1.0 } else { 0.0 }),
+            13 => Some(if self.params.autogain_enabled {
+                1.0
+            } else {
+                0.0
+            }),
             14 => Some(self.params.autogain_target_lufs as f64),
             15 => Some(self.params.autogain_max_gain_db as f64),
             16 => Some(self.params.autogain_smoothing_ms as f64),
@@ -483,8 +486,14 @@ impl CrossfeedPlugin {
         self.cached_parameters = param_bridge::build_parameters(CF, |i| self.param_value(i));
         // Append parameters not in PARAMS
         self.cached_parameters.push(
-            Parameter::new_float("head_yaw_deg", "Head Yaw", self.params.head_yaw_deg, -90.0, 90.0)
-                .with_group("Head Tracking")
+            Parameter::new_float(
+                "head_yaw_deg",
+                "Head Yaw",
+                self.params.head_yaw_deg,
+                -90.0,
+                90.0,
+            )
+            .with_group("Head Tracking"),
         );
     }
 
@@ -644,10 +653,8 @@ impl InPlacePlugin for CrossfeedPlugin {
             if v.is_finite() {
                 self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
                 self.yaw_smoother.set_target(self.params.head_yaw_deg);
-                let effective = compute_dynamic_itd_ms(
-                    self.params.head_yaw_deg,
-                    self.params.itd_delay_ms,
-                );
+                let effective =
+                    compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
                 self.itd_delay_l.set_delay(effective, self.sample_rate);
                 self.itd_delay_r.set_delay(effective, self.sample_rate);
             }
@@ -661,13 +668,11 @@ impl InPlacePlugin for CrossfeedPlugin {
         match idx {
             3 => self.mix_smoother.set_target(self.params.mix), // mix
             4 | 5 => self.update_filters(),                     // bauer_fcut_hz, bauer_feed_db
-            7 | 8 => self.update_filters(),                     // mb_low_freq_hz, mb_mid_high_freq_hz
+            7 | 8 => self.update_filters(), // mb_low_freq_hz, mb_mid_high_freq_hz
             12 => {
                 // itd_delay_ms
-                let effective = compute_dynamic_itd_ms(
-                    self.params.head_yaw_deg,
-                    self.params.itd_delay_ms,
-                );
+                let effective =
+                    compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
                 self.itd_delay_l.set_delay(effective, self.sample_rate);
                 self.itd_delay_r.set_delay(effective, self.sample_rate);
             }
@@ -720,7 +725,8 @@ impl InPlacePlugin for CrossfeedPlugin {
         self.update_filters();
         self.mix_smoother = Smoother::new(self.params.mix, 20.0, sr);
         self.yaw_smoother = Smoother::new(self.params.head_yaw_deg, 10.0, sr);
-        let effective_itd = compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
+        let effective_itd =
+            compute_dynamic_itd_ms(self.params.head_yaw_deg, self.params.itd_delay_ms);
         self.itd_delay_l = DelayLine::new(effective_itd, sr);
         self.itd_delay_r = DelayLine::new(effective_itd, sr);
         if let Some(ag) = &mut self.auto_gain {
@@ -920,7 +926,11 @@ mod tests {
         .unwrap();
         // Right channel should get some crossfeed
         let last_r = buffer[(n - 1) * 2 + 1];
-        assert!(last_r.abs() > 0.0, "MB crossfeed should bleed, got {}", last_r);
+        assert!(
+            last_r.abs() > 0.0,
+            "MB crossfeed should bleed, got {}",
+            last_r
+        );
     }
 
     #[test]
@@ -1084,7 +1094,10 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(buffer, original, "Disabled crossfeed should pass through unchanged");
+        assert_eq!(
+            buffer, original,
+            "Disabled crossfeed should pass through unchanged"
+        );
     }
 
     #[test]

@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -272,18 +272,12 @@ mod tests {
     #[test]
     fn deserialize_empty_json_uses_defaults() {
         let p: Params = serde_json::from_str("{}").unwrap();
-        assert_eq!(
-            p.center_gain_db,
-            pk(PARAMS, "center_gain_db").default_f64()
-        );
+        assert_eq!(p.center_gain_db, pk(PARAMS, "center_gain_db").default_f64());
         assert_eq!(
             p.surround_gain_db,
             pk(PARAMS, "surround_gain_db").default_f64()
         );
-        assert_eq!(
-            p.height_gain_db,
-            pk(PARAMS, "height_gain_db").default_f64()
-        );
+        assert_eq!(p.height_gain_db, pk(PARAMS, "height_gain_db").default_f64());
         assert_eq!(p.lfe_gain_db, pk(PARAMS, "lfe_gain_db").default_f64());
         assert_eq!(
             p.phase_coherence,

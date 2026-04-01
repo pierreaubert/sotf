@@ -78,9 +78,8 @@ impl Oversampler {
 
         // Up-resampler: input sample_rate 1, output sample_rate factor
         // chunk_size = OS_CHUNK_SIZE (fixed input)
-        let resampler_up =
-            Fft::<f32>::new(1, f, OS_CHUNK_SIZE, 1, channels, FixedSync::Input)
-                .map_err(|e| format!("Failed to create up-resampler: {:?}", e))?;
+        let resampler_up = Fft::<f32>::new(1, f, OS_CHUNK_SIZE, 1, channels, FixedSync::Input)
+            .map_err(|e| format!("Failed to create up-resampler: {:?}", e))?;
 
         // Down-resampler: input sample_rate factor, output sample_rate 1
         // chunk_size = OS_CHUNK_SIZE * factor (fixed input, produces OS_CHUNK_SIZE output)
@@ -192,7 +191,8 @@ impl Oversampler {
 
             // Shift residual_in left by OS_CHUNK_SIZE frames
             let remaining = (self.residual_frames - OS_CHUNK_SIZE) * nc;
-            self.residual_in.copy_within(chunk_len..chunk_len + remaining, 0);
+            self.residual_in
+                .copy_within(chunk_len..chunk_len + remaining, 0);
             self.residual_frames -= OS_CHUNK_SIZE;
 
             // Process the chunk
@@ -225,7 +225,8 @@ impl Oversampler {
                 // Compact: move remaining data to front so write_offset stays consistent
                 let remaining = self.residual_out_frames * nc;
                 let src_start = (self.residual_out_read + frames_to_copy) * nc;
-                self.residual_out.copy_within(src_start..src_start + remaining, 0);
+                self.residual_out
+                    .copy_within(src_start..src_start + remaining, 0);
                 self.residual_out_read = 0;
             }
             frames_written += frames_to_copy;
@@ -236,11 +237,7 @@ impl Oversampler {
 
     /// Process one OS_CHUNK_SIZE chunk of interleaved input through
     /// upsample -> callback -> downsample.
-    fn process_chunk<F>(
-        &mut self,
-        input_chunk: &[f32],
-        process_fn: &mut F,
-    ) -> Result<(), String>
+    fn process_chunk<F>(&mut self, input_chunk: &[f32], process_fn: &mut F) -> Result<(), String>
     where
         F: FnMut(&mut [Vec<f32>], usize),
     {
@@ -255,9 +252,8 @@ impl Oversampler {
         {
             let in_adapter = SequentialSliceOfVecs::new(&self.up_in, nc, OS_CHUNK_SIZE)
                 .map_err(|e| format!("up in adapter: {:?}", e))?;
-            let mut out_adapter =
-                SequentialSliceOfVecs::new_mut(&mut self.up_out, nc, up_out_max)
-                    .map_err(|e| format!("up out adapter: {:?}", e))?;
+            let mut out_adapter = SequentialSliceOfVecs::new_mut(&mut self.up_out, nc, up_out_max)
+                .map_err(|e| format!("up out adapter: {:?}", e))?;
             self.resampler_up
                 .process_into_buffer(&in_adapter, &mut out_adapter, None)
                 .map_err(|e| format!("upsample: {:?}", e))?;
@@ -277,9 +273,8 @@ impl Oversampler {
         // Step 5: downsample
         let down_out_max = self.resampler_down.output_frames_max();
         let down_frames = {
-            let in_adapter =
-                SequentialSliceOfVecs::new(&self.down_in, nc, OS_CHUNK_SIZE * factor)
-                    .map_err(|e| format!("down in adapter: {:?}", e))?;
+            let in_adapter = SequentialSliceOfVecs::new(&self.down_in, nc, OS_CHUNK_SIZE * factor)
+                .map_err(|e| format!("down in adapter: {:?}", e))?;
             let mut out_adapter =
                 SequentialSliceOfVecs::new_mut(&mut self.down_out, nc, down_out_max)
                     .map_err(|e| format!("down out adapter: {:?}", e))?;
@@ -651,42 +646,83 @@ mod tests {
 
     #[test]
     fn test_oversampled_plugin_latency() {
-        use crate::plugin::{InPlacePlugin, PluginInfo, ProcessContext};
         use crate::parameters::{Parameter, ParameterId, ParameterValue};
+        use crate::plugin::{InPlacePlugin, PluginInfo, ProcessContext};
 
         /// Trivial passthrough plugin for testing
         struct PassthroughPlugin;
         impl InPlacePlugin for PassthroughPlugin {
-            fn info(&self) -> PluginInfo { PluginInfo::new("Test", "1.0", "Test") }
-            fn channels(&self) -> usize { 2 }
-            fn parameters(&self) -> Vec<Parameter> { vec![] }
-            fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> crate::plugin::PluginResult<()> { Ok(()) }
-            fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> { None }
-            fn process_in_place(&mut self, _buffer: &mut [f32], context: &ProcessContext) -> crate::plugin::PluginResult<usize> {
+            fn info(&self) -> PluginInfo {
+                PluginInfo::new("Test", "1.0", "Test")
+            }
+            fn channels(&self) -> usize {
+                2
+            }
+            fn parameters(&self) -> Vec<Parameter> {
+                vec![]
+            }
+            fn set_parameter(
+                &mut self,
+                _: ParameterId,
+                _: ParameterValue,
+            ) -> crate::plugin::PluginResult<()> {
+                Ok(())
+            }
+            fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
+                None
+            }
+            fn process_in_place(
+                &mut self,
+                _buffer: &mut [f32],
+                context: &ProcessContext,
+            ) -> crate::plugin::PluginResult<usize> {
                 Ok(context.num_frames)
             }
         }
 
         let os = OversampledPlugin::new(PassthroughPlugin, 2, 2).unwrap();
         // Should have non-zero latency from the oversampler
-        assert!(os.latency_samples() > 0, "Oversampled plugin should have latency");
+        assert!(
+            os.latency_samples() > 0,
+            "Oversampled plugin should have latency"
+        );
     }
 
     #[test]
     fn test_oversampled_plugin_processes_audio() {
-        use crate::plugin::{InPlacePlugin, PluginInfo, ProcessContext};
         use crate::parameters::{Parameter, ParameterId, ParameterValue};
+        use crate::plugin::{InPlacePlugin, PluginInfo, ProcessContext};
 
         /// Plugin that doubles all samples (to verify processing happens at OS rate)
         struct DoublerPlugin;
         impl InPlacePlugin for DoublerPlugin {
-            fn info(&self) -> PluginInfo { PluginInfo::new("Doubler", "1.0", "Test") }
-            fn channels(&self) -> usize { 1 }
-            fn parameters(&self) -> Vec<Parameter> { vec![] }
-            fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> crate::plugin::PluginResult<()> { Ok(()) }
-            fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> { None }
-            fn process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext) -> crate::plugin::PluginResult<usize> {
-                for s in buffer[..context.num_frames].iter_mut() { *s *= 2.0; }
+            fn info(&self) -> PluginInfo {
+                PluginInfo::new("Doubler", "1.0", "Test")
+            }
+            fn channels(&self) -> usize {
+                1
+            }
+            fn parameters(&self) -> Vec<Parameter> {
+                vec![]
+            }
+            fn set_parameter(
+                &mut self,
+                _: ParameterId,
+                _: ParameterValue,
+            ) -> crate::plugin::PluginResult<()> {
+                Ok(())
+            }
+            fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
+                None
+            }
+            fn process_in_place(
+                &mut self,
+                buffer: &mut [f32],
+                context: &ProcessContext,
+            ) -> crate::plugin::PluginResult<usize> {
+                for s in buffer[..context.num_frames].iter_mut() {
+                    *s *= 2.0;
+                }
                 Ok(context.num_frames)
             }
         }
@@ -695,7 +731,10 @@ mod tests {
         os.initialize(48000).unwrap();
 
         // Feed a few blocks to prime the oversampler pipeline
-        let ctx = ProcessContext { sample_rate: 48000, num_frames: 256 };
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 256,
+        };
         let mut buf = vec![0.5f32; 256];
         os.process_in_place(&mut buf, &ctx).unwrap();
 
@@ -703,7 +742,10 @@ mod tests {
         let mut buf2 = vec![0.5f32; 256];
         os.process_in_place(&mut buf2, &ctx).unwrap();
         let max = buf2.iter().copied().fold(0.0f32, f32::max);
-        assert!(max > 0.8, "Doubler through oversampler should produce amplified output: max={max}");
+        assert!(
+            max > 0.8,
+            "Doubler through oversampler should produce amplified output: max={max}"
+        );
     }
 
     #[test]

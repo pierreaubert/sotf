@@ -361,11 +361,7 @@ mod tests {
         fn parameters(&self) -> Vec<Parameter> {
             vec![]
         }
-        fn set_parameter(
-            &mut self,
-            _id: ParameterId,
-            _value: ParameterValue,
-        ) -> PluginResult<()> {
+        fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
             Ok(())
         }
         fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
@@ -393,11 +389,7 @@ mod tests {
         fn parameters(&self) -> Vec<Parameter> {
             vec![]
         }
-        fn set_parameter(
-            &mut self,
-            _id: ParameterId,
-            _value: ParameterValue,
-        ) -> PluginResult<()> {
+        fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
             Ok(())
         }
         fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {

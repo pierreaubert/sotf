@@ -238,12 +238,10 @@ impl ResamplerPlugin {
     fn rebuild_cached_parameters(&mut self) {
         let nominal_ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
         self.cached_parameters = vec![
-            Parameter::new_string(
-                "quality",
-                "Quality",
-                self.quality.as_str().to_string(),
-            )
-            .with_description("Resampling quality: fast (64-tap), medium (128-tap), high (256-tap)"),
+            Parameter::new_string("quality", "Quality", self.quality.as_str().to_string())
+                .with_description(
+                    "Resampling quality: fast (64-tap), medium (128-tap), high (256-tap)",
+                ),
             Parameter::new_bool("dynamic_ratio", "Dynamic Ratio", self.dynamic_ratio)
                 .with_description("Enable runtime ratio changes without rebuilding"),
             Parameter::new_float(
@@ -253,7 +251,9 @@ impl ResamplerPlugin {
                 (nominal_ratio / 2.0) as f32,
                 (nominal_ratio * 2.0) as f32,
             )
-            .with_description("Current resampling ratio (only adjustable when dynamic_ratio is enabled)"),
+            .with_description(
+                "Current resampling ratio (only adjustable when dynamic_ratio is enabled)",
+            ),
         ];
     }
 
@@ -313,7 +313,9 @@ impl ResamplerPlugin {
     /// When `ramp` is true, the ratio change is smoothly interpolated.
     pub fn set_ratio(&mut self, new_ratio: f64, ramp: bool) -> Result<(), String> {
         if !self.dynamic_ratio {
-            return Err("Dynamic ratio is not enabled. Set dynamic_ratio to true first.".to_string());
+            return Err(
+                "Dynamic ratio is not enabled. Set dynamic_ratio to true first.".to_string(),
+            );
         }
         let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
         resampler
@@ -328,7 +330,9 @@ impl ResamplerPlugin {
     /// For example, `rel_ratio=1.01` increases the ratio by 1%.
     pub fn set_ratio_relative(&mut self, rel_ratio: f64, ramp: bool) -> Result<(), String> {
         if !self.dynamic_ratio {
-            return Err("Dynamic ratio is not enabled. Set dynamic_ratio to true first.".to_string());
+            return Err(
+                "Dynamic ratio is not enabled. Set dynamic_ratio to true first.".to_string(),
+            );
         }
         let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
         resampler
@@ -371,8 +375,9 @@ impl Plugin for ResamplerPlugin {
             let s = value
                 .as_string()
                 .ok_or_else(|| "quality must be a string".to_string())?;
-            let new_quality = ResamplerQuality::from_str(s)
-                .ok_or_else(|| format!("Invalid quality '{}': expected fast, medium, or high", s))?;
+            let new_quality = ResamplerQuality::from_str(s).ok_or_else(|| {
+                format!("Invalid quality '{}': expected fast, medium, or high", s)
+            })?;
             if new_quality != self.quality {
                 self.quality = new_quality;
                 self.rebuild_resampler()?;
@@ -757,9 +762,7 @@ mod tests {
 
         // Process a loud signal
         let loud_input: Vec<f32> = (0..num_frames * 2)
-            .map(|i| {
-                0.9 * (2.0 * std::f32::consts::PI * 1000.0 * (i / 2) as f32 / 44100.0).sin()
-            })
+            .map(|i| 0.9 * (2.0 * std::f32::consts::PI * 1000.0 * (i / 2) as f32 / 44100.0).sin())
             .collect();
         let max_output = resampler.output_frames_for_input(num_frames);
         let mut output = vec![0.0_f32; max_output * 2];
@@ -774,8 +777,7 @@ mod tests {
         resampler.process(&silence, &mut output2, &ctx).unwrap();
 
         // After reset + processing silence, output RMS should be very low
-        let rms: f32 =
-            (output2.iter().map(|x| x * x).sum::<f32>() / output2.len() as f32).sqrt();
+        let rms: f32 = (output2.iter().map(|x| x * x).sum::<f32>() / output2.len() as f32).sqrt();
         assert!(
             rms < 0.01,
             "After reset and processing silence, output should be near-silent, \
@@ -829,12 +831,14 @@ mod tests {
         assert_eq!(resampler.quality(), ResamplerQuality::High);
 
         // Invalid quality should fail
-        assert!(resampler
-            .set_parameter(
-                ParameterId::from("quality"),
-                ParameterValue::String("ultra".to_string()),
-            )
-            .is_err());
+        assert!(
+            resampler
+                .set_parameter(
+                    ParameterId::from("quality"),
+                    ParameterValue::String("ultra".to_string()),
+                )
+                .is_err()
+        );
     }
 
     #[test]
@@ -869,11 +873,8 @@ mod tests {
 
             let expected_frames = (num_frames as f64 * 48000.0 / 44100.0) as usize;
             let check_samples = expected_frames * 2;
-            let rms: f32 = output[..check_samples]
-                .iter()
-                .map(|x| x * x)
-                .sum::<f32>()
-                / check_samples as f32;
+            let rms: f32 =
+                output[..check_samples].iter().map(|x| x * x).sum::<f32>() / check_samples as f32;
             assert!(
                 rms.sqrt() > 0.1,
                 "Quality {:?} should produce valid output",
@@ -950,12 +951,11 @@ mod tests {
         resampler.initialize(44100).unwrap();
 
         // Trying to set ratio parameter when dynamic is off should fail
-        assert!(resampler
-            .set_parameter(
-                ParameterId::from("ratio"),
-                ParameterValue::Float(1.1),
-            )
-            .is_err());
+        assert!(
+            resampler
+                .set_parameter(ParameterId::from("ratio"), ParameterValue::Float(1.1),)
+                .is_err()
+        );
 
         // Enable dynamic ratio
         resampler
@@ -969,10 +969,7 @@ mod tests {
         let nominal = resampler.ratio() as f32;
         let new_ratio = nominal * 1.01;
         resampler
-            .set_parameter(
-                ParameterId::from("ratio"),
-                ParameterValue::Float(new_ratio),
-            )
+            .set_parameter(ParameterId::from("ratio"), ParameterValue::Float(new_ratio))
             .unwrap();
         assert!(
             (resampler.current_ratio() - new_ratio as f64).abs() < 1e-4,

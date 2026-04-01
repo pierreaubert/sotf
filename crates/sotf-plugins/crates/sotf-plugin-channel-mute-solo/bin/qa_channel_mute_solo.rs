@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
 
 #[global_allocator]
@@ -43,7 +43,10 @@ fn main() {
 
     let ch0_last = buffer[(num_frames - 1) * channels].abs();
     let ch1_last = buffer[(num_frames - 1) * channels + 1].abs();
-    println!("  Ch0 (muted): {:.4}, Ch1 (pass): {:.4}", ch0_last, ch1_last);
+    println!(
+        "  Ch0 (muted): {:.4}, Ch1 (pass): {:.4}",
+        ch0_last, ch1_last
+    );
     assert!(ch0_last < 0.01, "Muted channel should be near zero");
     assert!(
         (ch1_last - 1.0).abs() < 0.01,

@@ -224,7 +224,10 @@ pub struct UpmixerPluginParams {
     pub low_latency: bool,
 
     /// Speaker configuration ("5.1", "7.1", "5.1.4", etc.)
-    #[serde(default = "default_speaker_config", deserialize_with = "deserialize_speaker_config")]
+    #[serde(
+        default = "default_speaker_config",
+        deserialize_with = "deserialize_speaker_config"
+    )]
     pub speaker_config: String,
 
     #[serde(default = "default_gain_front_direct")]

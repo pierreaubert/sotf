@@ -146,7 +146,11 @@ impl DelayPlugin {
                 .with_unit("Hz"),
             Parameter::new_float("lfo_depth_ms", "LFO Depth", self.lfo_depth_ms, 0.0, 5.0)
                 .with_unit("ms"),
-            Parameter::new_bool("allpass_feedback", "Allpass Feedback", self.allpass_feedback),
+            Parameter::new_bool(
+                "allpass_feedback",
+                "Allpass Feedback",
+                self.allpass_feedback,
+            ),
         ];
     }
 
@@ -318,8 +322,7 @@ impl InPlacePlugin for DelayPlugin {
         let fb = self.feedback_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
 
-        let lfo_active =
-            self.lfo_rate_hz > 0.0 && self.lfo_depth_ms > 0.0 && self.sample_rate > 0;
+        let lfo_active = self.lfo_rate_hz > 0.0 && self.lfo_depth_ms > 0.0 && self.sample_rate > 0;
         let lfo_phase_inc = if lfo_active {
             self.lfo_rate_hz / self.sample_rate as f32
         } else {
@@ -350,8 +353,7 @@ impl InPlacePlugin for DelayPlugin {
                 // 4-point Lagrange interpolation read positions:
                 // We want samples at positions: int_delay-1, int_delay, int_delay+1, int_delay+2
                 // relative to write_pos (going backwards in time)
-                let r0 =
-                    (self.write_pos + self.max_samples - int_delay) % self.max_samples;
+                let r0 = (self.write_pos + self.max_samples - int_delay) % self.max_samples;
                 let r_m1 = (r0 + 1) % self.max_samples;
                 let r1 = (r0 + self.max_samples - 1) % self.max_samples;
                 let r2 = (r1 + self.max_samples - 1) % self.max_samples;
@@ -442,11 +444,8 @@ mod tests {
         p.initialize(48000).unwrap();
 
         // Enable LFO
-        p.set_parameter(
-            ParameterId::from("lfo_rate_hz"),
-            ParameterValue::Float(5.0),
-        )
-        .unwrap();
+        p.set_parameter(ParameterId::from("lfo_rate_hz"), ParameterValue::Float(5.0))
+            .unwrap();
         p.set_parameter(
             ParameterId::from("lfo_depth_ms"),
             ParameterValue::Float(2.0),
@@ -550,11 +549,8 @@ mod tests {
         p.initialize(48000).unwrap();
 
         // Set and get lfo_rate_hz
-        p.set_parameter(
-            ParameterId::from("lfo_rate_hz"),
-            ParameterValue::Float(7.5),
-        )
-        .unwrap();
+        p.set_parameter(ParameterId::from("lfo_rate_hz"), ParameterValue::Float(7.5))
+            .unwrap();
         assert_eq!(
             p.get_parameter(&ParameterId::from("lfo_rate_hz")),
             Some(ParameterValue::Float(7.5))
@@ -590,9 +586,7 @@ mod tests {
         p.initialize(48000).unwrap();
 
         let num_frames = 1000;
-        let original: Vec<f32> = (0..num_frames)
-            .map(|i| (i as f32 * 0.1).sin())
-            .collect();
+        let original: Vec<f32> = (0..num_frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let mut buffer = original.clone();
         p.process_in_place(
             &mut buffer,
@@ -669,27 +663,30 @@ mod tests {
         p.initialize(48000).unwrap();
 
         // LFO rate out of range should fail
-        assert!(p
-            .set_parameter(
+        assert!(
+            p.set_parameter(
                 ParameterId::from("lfo_rate_hz"),
                 ParameterValue::Float(15.0)
             )
-            .is_err());
+            .is_err()
+        );
 
         // LFO depth out of range should fail
-        assert!(p
-            .set_parameter(
+        assert!(
+            p.set_parameter(
                 ParameterId::from("lfo_depth_ms"),
                 ParameterValue::Float(10.0)
             )
-            .is_err());
+            .is_err()
+        );
 
         // Wrong type should fail
-        assert!(p
-            .set_parameter(
+        assert!(
+            p.set_parameter(
                 ParameterId::from("allpass_feedback"),
                 ParameterValue::Float(1.0)
             )
-            .is_err());
+            .is_err()
+        );
     }
 }

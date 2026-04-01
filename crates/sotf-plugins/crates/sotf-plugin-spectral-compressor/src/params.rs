@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -29,20 +29,39 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::choice("FFT Size", "fft_size", 1, FFT_SIZES, "Analysis")
         .setup()
         .doc("FFT window size (higher = better frequency resolution, more latency)"),
-    ParamSpec::float("Threshold", "threshold", -20.0, -60.0, 0.0, 0.5, "dB", "Dynamics")
-        .doc("Compression threshold per bin"),
+    ParamSpec::float(
+        "Threshold",
+        "threshold",
+        -20.0,
+        -60.0,
+        0.0,
+        0.5,
+        "dB",
+        "Dynamics",
+    )
+    .doc("Compression threshold per bin"),
     ParamSpec::float("Ratio", "ratio", 2.0, 1.0, 20.0, 0.1, ":1", "Dynamics")
         .doc("Compression ratio"),
     ParamSpec::float("Attack", "attack", 5.0, 0.1, 100.0, 0.1, "ms", "Dynamics")
         .doc("Per-bin attack time"),
-    ParamSpec::float("Release", "release", 50.0, 10.0, 1000.0, 1.0, "ms", "Dynamics")
-        .doc("Per-bin release time"),
-    ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Dynamics")
-        .doc("Soft knee width"),
-    ParamSpec::float("Spectral Smooth", "spectral_smoothing", 0.3, 0.0, 1.0, 0.01, "", "Quality")
-        .scaled(100.0)
-        .setup()
-        .doc("Frequency-axis smoothing (reduces musical artifacts)"),
+    ParamSpec::float(
+        "Release", "release", 50.0, 10.0, 1000.0, 1.0, "ms", "Dynamics",
+    )
+    .doc("Per-bin release time"),
+    ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Dynamics").doc("Soft knee width"),
+    ParamSpec::float(
+        "Spectral Smooth",
+        "spectral_smoothing",
+        0.3,
+        0.0,
+        1.0,
+        0.01,
+        "",
+        "Quality",
+    )
+    .scaled(100.0)
+    .setup()
+    .doc("Frequency-axis smoothing (reduces musical artifacts)"),
     ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output")
         .scaled(100.0)
         .output()
@@ -53,10 +72,24 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::bool_labeled("Delta Listen", "delta_listen", false, "On", "Off", "Output")
         .output()
         .doc("Solo the compression delta (hear what's being removed)"),
-    ParamSpec::bool_param("Adaptive Threshold", "adaptive_threshold", false, "Analysis")
-        .doc("Auto-set threshold relative to long-term spectral average per bin"),
-    ParamSpec::float("Adaptive Offset", "adaptive_offset_db", 0.0, -20.0, 20.0, 0.5, "dB", "Analysis")
-        .doc("Offset from adaptive threshold (positive = less compression)"),
+    ParamSpec::bool_param(
+        "Adaptive Threshold",
+        "adaptive_threshold",
+        false,
+        "Analysis",
+    )
+    .doc("Auto-set threshold relative to long-term spectral average per bin"),
+    ParamSpec::float(
+        "Adaptive Offset",
+        "adaptive_offset_db",
+        0.0,
+        -20.0,
+        20.0,
+        0.5,
+        "dB",
+        "Analysis",
+    )
+    .doc("Offset from adaptive threshold (positive = less compression)"),
 ];
 
 // ============================================================================

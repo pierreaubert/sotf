@@ -194,10 +194,7 @@ mod tests {
         }
         // Gain in dB should be clamped to max_gain_db
         let gain_db = 20.0 * last_gain.log10();
-        assert!(
-            gain_db <= 6.5,
-            "Gain exceeds max: {gain_db} dB"
-        );
+        assert!(gain_db <= 6.5, "Gain exceeds max: {gain_db} dB");
     }
 
     #[test]

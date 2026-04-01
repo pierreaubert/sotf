@@ -39,12 +39,7 @@ impl GscBeamformer {
     /// * `steering_delays` - Time delay per mic in samples (from look direction)
     /// * `filter_length` - NLMS filter length (default: 64)
     /// * `mu` - NLMS step size (default: 0.01)
-    pub fn new(
-        num_mics: usize,
-        steering_delays: &[f32],
-        filter_length: usize,
-        mu: f32,
-    ) -> Self {
+    pub fn new(num_mics: usize, steering_delays: &[f32], filter_length: usize, mu: f32) -> Self {
         assert!(num_mics >= 2, "GSC requires at least 2 microphones");
 
         // Fixed beamformer: uniform real-valued weights for delay-and-sum.
@@ -110,7 +105,10 @@ impl GscBeamformer {
         let references = &self.reference_scratch[..num_refs];
 
         // Store references in delay lines
-        for (buf, &ref_val) in self.reference_buffers[..num_refs].iter_mut().zip(references) {
+        for (buf, &ref_val) in self.reference_buffers[..num_refs]
+            .iter_mut()
+            .zip(references)
+        {
             buf[self.ref_write_pos] = ref_val;
         }
 
@@ -205,10 +203,7 @@ mod tests {
         }
 
         // The GSC should improve the output compared to raw microphone
-        assert!(
-            error_power.is_finite(),
-            "Error power should be finite"
-        );
+        assert!(error_power.is_finite(), "Error power should be finite");
     }
 
     #[test]
@@ -223,7 +218,10 @@ mod tests {
         }
 
         // Verify weights are non-zero
-        let has_nonzero = gsc.adaptive_weights.iter().any(|w| w.iter().any(|&v| v != 0.0));
+        let has_nonzero = gsc
+            .adaptive_weights
+            .iter()
+            .any(|w| w.iter().any(|&v| v != 0.0));
         assert!(has_nonzero, "Weights should be non-zero after adaptation");
 
         gsc.reset();

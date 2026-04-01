@@ -1,11 +1,11 @@
 //! Conversion from `DesignSystem` to `AudioDesignTokens`.
 //!
-//! This module bridges `sotf-host::design_system::DesignSystem` (the full
-//! platform design system) and `gpui_ui_kit::audio_design_tokens::AudioDesignTokens`
-//! (the lightweight tokens consumed by audio UI components).
+//! This module bridges `gpui_design::DesignSystem` (the full platform design
+//! system) and `gpui_ui_kit::audio_design_tokens::AudioDesignTokens` (the
+//! lightweight tokens consumed by audio UI components).
 
+use gpui_design::{DesignSystem, ToggleVariant};
 use gpui_ui_kit::audio_design_tokens::AudioDesignTokens;
-use sotf_host::design_system::{DesignSystem, ToggleVariant};
 
 /// Convert a `DesignSystem` into `AudioDesignTokens` for UI components.
 pub fn audio_tokens_from_ds(ds: &DesignSystem) -> AudioDesignTokens {
@@ -65,7 +65,10 @@ mod tests {
     fn test_material_toggle_is_thumb_on_track() {
         let ds = DesignSystem::material3();
         let tokens = audio_tokens_from_ds(&ds);
-        assert_eq!(tokens.toggle_variant, AudioDesignTokens::TOGGLE_THUMB_ON_TRACK);
+        assert_eq!(
+            tokens.toggle_variant,
+            AudioDesignTokens::TOGGLE_THUMB_ON_TRACK
+        );
     }
 
     #[test]

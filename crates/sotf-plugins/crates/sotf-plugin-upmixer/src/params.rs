@@ -11,7 +11,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -935,7 +935,11 @@ impl PluginParamDef for Params {
             4 => Some(self.height_gain),
             5 => Some(self.lfe_gain),
             6 => Some(self.lfe_cutoff_hz),
-            7 => Some(if self.enable_subharmonic_synth { 1.0 } else { 0.0 }),
+            7 => Some(if self.enable_subharmonic_synth {
+                1.0
+            } else {
+                0.0
+            }),
             8 => Some(self.subharmonic_gain),
             9 => Some(self.subharmonic_freq_hz),
             10 => Some(self.subharmonic_attack_ms),
@@ -966,10 +970,18 @@ impl PluginParamDef for Params {
             35 => Some(if self.low_latency { 1.0 } else { 0.0 }),
             36 => Some(self.frequency_resolution as f64),
             37 => Some(if self.bypass_decorrelation { 1.0 } else { 0.0 }),
-            38 => Some(if self.bypass_transient_detection { 1.0 } else { 0.0 }),
+            38 => Some(if self.bypass_transient_detection {
+                1.0
+            } else {
+                0.0
+            }),
             39 => Some(if self.bypass_all_processing { 1.0 } else { 0.0 }),
             40 => Some(if self.enable_ml_detection { 1.0 } else { 0.0 }),
-            41 => Some(if self.multi_source_extraction { 1.0 } else { 0.0 }),
+            41 => Some(if self.multi_source_extraction {
+                1.0
+            } else {
+                0.0
+            }),
             42 => Some(self.multi_source_threshold),
             43 => Some(if self.binaural_preview { 1.0 } else { 0.0 }),
             _ => None,
@@ -1109,10 +1121,7 @@ mod tests {
             restored.surround_direct_bleed
         );
         assert_eq!(original.rear_ambient_boost, restored.rear_ambient_boost);
-        assert_eq!(
-            original.rear_late_reflection,
-            restored.rear_late_reflection
-        );
+        assert_eq!(original.rear_late_reflection, restored.rear_late_reflection);
         assert_eq!(original.dialogue_weight, restored.dialogue_weight);
         assert_eq!(original.voice_freq_min_hz, restored.voice_freq_min_hz);
         assert_eq!(original.voice_freq_max_hz, restored.voice_freq_max_hz);
@@ -1130,14 +1139,8 @@ mod tests {
         );
         assert_eq!(original.safety_cap_db, restored.safety_cap_db);
         assert_eq!(original.low_latency, restored.low_latency);
-        assert_eq!(
-            original.frequency_resolution,
-            restored.frequency_resolution
-        );
-        assert_eq!(
-            original.bypass_decorrelation,
-            restored.bypass_decorrelation
-        );
+        assert_eq!(original.frequency_resolution, restored.frequency_resolution);
+        assert_eq!(original.bypass_decorrelation, restored.bypass_decorrelation);
         assert_eq!(
             original.bypass_transient_detection,
             restored.bypass_transient_detection
@@ -1178,10 +1181,7 @@ mod tests {
         );
         assert_eq!(p.height_gain, pk(PARAMS, "height_gain").default_f64());
         assert_eq!(p.lfe_gain, pk(PARAMS, "lfe_gain").default_f64());
-        assert_eq!(
-            p.lfe_cutoff_hz,
-            pk(PARAMS, "lfe_cutoff_hz").default_f64()
-        );
+        assert_eq!(p.lfe_cutoff_hz, pk(PARAMS, "lfe_cutoff_hz").default_f64());
         assert_eq!(
             p.enable_subharmonic_synth,
             pk(PARAMS, "enable_subharmonic_synth").default_bool()
@@ -1203,20 +1203,14 @@ mod tests {
             pk(PARAMS, "subharmonic_release_ms").default_f64()
         );
         assert_eq!(p.stereo_width, pk(PARAMS, "stereo_width").default_f64());
-        assert_eq!(
-            p.center_spread,
-            pk(PARAMS, "center_spread").default_f64()
-        );
+        assert_eq!(p.center_spread, pk(PARAMS, "center_spread").default_f64());
         assert_eq!(p.bandpass_hz, pk(PARAMS, "bandpass_hz").default_f64());
         assert_eq!(
             p.enable_hr_direct,
             pk(PARAMS, "enable_hr_direct").default_bool()
         );
         assert_eq!(p.hr_sharpen, pk(PARAMS, "hr_sharpen").default_f64());
-        assert_eq!(
-            p.ambient_boost,
-            pk(PARAMS, "ambient_boost").default_f64()
-        );
+        assert_eq!(p.ambient_boost, pk(PARAMS, "ambient_boost").default_f64());
         assert_eq!(
             p.decorrelation_mode,
             pk(PARAMS, "decorrelation_mode").default_usize()
@@ -1281,10 +1275,7 @@ mod tests {
             p.dialogue_coherence_weight,
             pk(PARAMS, "dialogue_coherence_weight").default_f64()
         );
-        assert_eq!(
-            p.safety_cap_db,
-            pk(PARAMS, "safety_cap_db").default_f64()
-        );
+        assert_eq!(p.safety_cap_db, pk(PARAMS, "safety_cap_db").default_f64());
         assert_eq!(p.low_latency, pk(PARAMS, "low_latency").default_bool());
         assert_eq!(
             p.frequency_resolution,

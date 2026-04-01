@@ -4,10 +4,10 @@
 
 pub mod params;
 
+use crate::params::{CROSSOVER_TYPES, PARAMS as BS};
 use serde::{Deserialize, Serialize};
 use sotf_host::lr4_crossover::MultibandLr4Crossover;
 use sotf_host::param_bridge;
-use crate::params::{CROSSOVER_TYPES, PARAMS as BS};
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -147,7 +147,12 @@ impl BandSplitPlugin {
     /// Order must match params::PARAMS exactly.
     fn param_value(&self, index: usize) -> Option<f64> {
         match index {
-            0 => Some(self.freq_smoothers.first().map(|s| s.target() as f64).unwrap_or(300.0)),
+            0 => Some(
+                self.freq_smoothers
+                    .first()
+                    .map(|s| s.target() as f64)
+                    .unwrap_or(300.0),
+            ),
             1 => Some(self.crossover_type_index as f64),
             _ => None,
         }
@@ -176,15 +181,27 @@ impl BandSplitPlugin {
         for (i, smoother) in self.freq_smoothers.iter().enumerate().skip(1) {
             let key = format!("frequency_{}", i + 1);
             let label = format!("Frequency {}", i + 1);
-            params.push(sotf_host::parameters::Parameter::new_float(&key, &label, smoother.target(), 20.0, 20000.0));
+            params.push(sotf_host::parameters::Parameter::new_float(
+                &key,
+                &label,
+                smoother.target(),
+                20.0,
+                20000.0,
+            ));
         }
         // Add dynamic per-band gain parameters
         for i in 0..self.num_bands {
             let key = format!("band_{}_gain_db", i);
             let label = format!("Band {} Gain (dB)", i + 1);
             params.push(
-                sotf_host::parameters::Parameter::new_float(&key, &label, self.band_gains_db[i], -24.0, 24.0)
-                    .with_group("Band Gains"),
+                sotf_host::parameters::Parameter::new_float(
+                    &key,
+                    &label,
+                    self.band_gains_db[i],
+                    -24.0,
+                    24.0,
+                )
+                .with_group("Band Gains"),
             );
         }
         self.cached_parameters = params;
@@ -208,7 +225,9 @@ impl Plugin for BandSplitPlugin {
         let name = &id.0;
 
         // Try static PARAMS first (frequency at index 0, crossover_type at index 1)
-        if let Ok(idx) = param_bridge::set_parameter(BS, &id, &value, |i, v| self.set_param_value(i, v)) {
+        if let Ok(idx) =
+            param_bridge::set_parameter(BS, &id, &value, |i, v| self.set_param_value(i, v))
+        {
             // Side effect: frequency change needs to propagate to crossover
             if idx == 0 {
                 // frequency was already set via set_param_value -> smoother.set_target
@@ -376,8 +395,7 @@ mod tests {
 
     #[test]
     fn test_band_split_three_bands() {
-        let mut p =
-            BandSplitPlugin::new_multiband(1, &[500.0, 5000.0], "LR24").unwrap();
+        let mut p = BandSplitPlugin::new_multiband(1, &[500.0, 5000.0], "LR24").unwrap();
         p.initialize(48000).unwrap();
         assert_eq!(p.output_channels(), 3); // 1 channel * 3 bands
         let i = vec![1.0; 1000];
@@ -397,8 +415,7 @@ mod tests {
 
     #[test]
     fn test_band_split_four_bands() {
-        let mut p =
-            BandSplitPlugin::new_multiband(1, &[200.0, 2000.0, 10000.0], "LR24").unwrap();
+        let mut p = BandSplitPlugin::new_multiband(1, &[200.0, 2000.0, 10000.0], "LR24").unwrap();
         p.initialize(48000).unwrap();
         assert_eq!(p.output_channels(), 4);
         let i = vec![1.0; 500];
@@ -418,8 +435,7 @@ mod tests {
 
     #[test]
     fn test_band_split_stereo_three_bands() {
-        let mut p =
-            BandSplitPlugin::new_multiband(2, &[500.0, 5000.0], "LR24").unwrap();
+        let mut p = BandSplitPlugin::new_multiband(2, &[500.0, 5000.0], "LR24").unwrap();
         p.initialize(48000).unwrap();
         assert_eq!(p.input_channels(), 2);
         assert_eq!(p.output_channels(), 6); // 2 channels * 3 bands
@@ -495,8 +511,7 @@ mod tests {
     #[test]
     fn test_band_split_too_many_bands() {
         // 5 bands (4 crossovers) should fail
-        let result =
-            BandSplitPlugin::new_multiband(1, &[200.0, 500.0, 2000.0, 8000.0], "LR24");
+        let result = BandSplitPlugin::new_multiband(1, &[200.0, 500.0, 2000.0, 8000.0], "LR24");
         assert!(result.is_err());
     }
 
@@ -547,8 +562,7 @@ mod tests {
 
     #[test]
     fn test_band_split_frequency_parameter() {
-        let mut p =
-            BandSplitPlugin::new_multiband(1, &[500.0, 5000.0], "LR24").unwrap();
+        let mut p = BandSplitPlugin::new_multiband(1, &[500.0, 5000.0], "LR24").unwrap();
         p.initialize(48000).unwrap();
 
         // Check frequency_2 parameter

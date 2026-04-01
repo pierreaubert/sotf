@@ -4,8 +4,8 @@
 
 pub mod params;
 
-use sotf_host::param_specs::find_by_key as pk;
 use crate::params::PARAMS as GN;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{apply_gain_simd, apply_per_channel_gain_simd};

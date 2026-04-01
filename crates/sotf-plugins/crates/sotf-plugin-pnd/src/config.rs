@@ -2,9 +2,9 @@
 // PND Plugin Configuration
 // ============================================================================
 
+use crate::params::PARAMS as PD;
 use serde::{Deserialize, Serialize};
 use sotf_host::param_specs::find_by_key as pk;
-use crate::params::PARAMS as PD;
 
 pub fn default_correction_strength() -> f32 {
     pk(PD, "correction_strength").default_f64() as f32

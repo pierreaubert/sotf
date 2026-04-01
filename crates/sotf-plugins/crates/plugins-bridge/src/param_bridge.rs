@@ -120,9 +120,7 @@ impl ParamBridge {
 
     /// Find parameter index by engine_key.
     pub fn find_index(&self, engine_key: &str) -> Option<usize> {
-        self.specs
-            .iter()
-            .position(|s| s.engine_key == engine_key)
+        self.specs.iter().position(|s| s.engine_key == engine_key)
     }
 
     /// Normalize a raw value to 0.0-1.0 range.
@@ -309,7 +307,16 @@ mod tests {
     use sotf_host::param_specs::ParamSpec;
 
     fn make_float_spec(min: f64, max: f64) -> ParamSpec {
-        ParamSpec::float("Test", "test", (min + max) / 2.0, min, max, 0.0, "dB", "General")
+        ParamSpec::float(
+            "Test",
+            "test",
+            (min + max) / 2.0,
+            min,
+            max,
+            0.0,
+            "dB",
+            "General",
+        )
     }
 
     fn make_freq_spec() -> ParamSpec {

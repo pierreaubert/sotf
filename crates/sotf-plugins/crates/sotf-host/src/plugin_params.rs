@@ -10,8 +10,8 @@
 
 use crate::param_specs::ParamSpec;
 use crate::plugin_layout::PluginLayout;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// Trait that each plugin's `Params` struct implements to serve as
 /// the single source of truth for all parameter definitions.

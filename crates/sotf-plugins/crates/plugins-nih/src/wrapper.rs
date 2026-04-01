@@ -41,25 +41,19 @@ macro_rules! sotf_nih_plugin {
 
                 // If no ParamSpec params, try creating a temp plugin for its parameters()
                 if infos.is_empty() {
-                    if let Ok(plugin) = plugins_bridge::create_plugin(
-                        $plugin_type,
-                        $channels,
-                        48000,
-                        "{}",
-                    ) {
+                    if let Ok(plugin) =
+                        plugins_bridge::create_plugin($plugin_type, $channels, 48000, "{}")
+                    {
                         for param in plugin.parameters() {
-                            let (min, max, default) = match (
-                                &param.min_value,
-                                &param.max_value,
-                                &param.default_value,
-                            ) {
-                                (
-                                    Some(sotf_host::parameters::ParameterValue::Float(min)),
-                                    Some(sotf_host::parameters::ParameterValue::Float(max)),
-                                    sotf_host::parameters::ParameterValue::Float(def),
-                                ) => (*min as f64, *max as f64, *def as f64),
-                                _ => (0.0, 1.0, 0.0),
-                            };
+                            let (min, max, default) =
+                                match (&param.min_value, &param.max_value, &param.default_value) {
+                                    (
+                                        Some(sotf_host::parameters::ParameterValue::Float(min)),
+                                        Some(sotf_host::parameters::ParameterValue::Float(max)),
+                                        sotf_host::parameters::ParameterValue::Float(def),
+                                    ) => (*min as f64, *max as f64, *def as f64),
+                                    _ => (0.0, 1.0, 0.0),
+                                };
 
                             infos.push(plugins_bridge::param_bridge::BridgedParamInfo {
                                 id: param.id.0.clone(),
@@ -93,13 +87,12 @@ macro_rules! sotf_nih_plugin {
             const URL: &'static str = "https://spinorama.org";
             const EMAIL: &'static str = "";
             const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-            const AUDIO_IO_LAYOUTS: &'static [nih_plug::prelude::AudioIOLayout] = &[
-                nih_plug::prelude::AudioIOLayout {
+            const AUDIO_IO_LAYOUTS: &'static [nih_plug::prelude::AudioIOLayout] =
+                &[nih_plug::prelude::AudioIOLayout {
                     main_input_channels: std::num::NonZeroU32::new($channels),
                     main_output_channels: std::num::NonZeroU32::new($channels),
                     ..nih_plug::prelude::AudioIOLayout::const_default()
-                },
-            ];
+                }];
 
             type SysExMessage = ();
             type BackgroundTask = ();
@@ -117,12 +110,8 @@ macro_rules! sotf_nih_plugin {
                 self.sample_rate = buffer_config.sample_rate as u32;
                 let channels: usize = $channels;
 
-                match plugins_bridge::create_plugin(
-                    $plugin_type,
-                    channels,
-                    self.sample_rate,
-                    "{}",
-                ) {
+                match plugins_bridge::create_plugin($plugin_type, channels, self.sample_rate, "{}")
+                {
                     Ok(mut plugin) => {
                         if let Err(e) = plugin.initialize(self.sample_rate) {
                             log::error!("Failed to initialize {}: {e}", $plugin_type);
@@ -157,14 +146,14 @@ macro_rules! sotf_nih_plugin {
                 let num_channels = buffer.channels();
 
                 // Sync nih-plug params → SOTF plugin
-                self.bridge.sync_params_to_plugin(&self.params, plugin.as_mut());
+                self.bridge
+                    .sync_params_to_plugin(&self.params, plugin.as_mut());
 
                 // Interleave input
                 let channel_slices = buffer.as_slice();
                 for frame in 0..num_frames {
                     for ch in 0..num_channels {
-                        self.interleaved_in[frame * num_channels + ch] =
-                            channel_slices[ch][frame];
+                        self.interleaved_in[frame * num_channels + ch] = channel_slices[ch][frame];
                     }
                 }
 
@@ -188,8 +177,7 @@ macro_rules! sotf_nih_plugin {
                 let channel_slices = buffer.as_slice();
                 for frame in 0..num_frames {
                     for ch in 0..num_channels {
-                        channel_slices[ch][frame] =
-                            self.interleaved_out[frame * num_channels + ch];
+                        channel_slices[ch][frame] = self.interleaved_out[frame * num_channels + ch];
                     }
                 }
 

@@ -98,8 +98,7 @@ pub struct AecPlugin {
 impl AecPlugin {
     pub fn new(sample_rate: u32) -> Self {
         let block_size = DEFAULT_BLOCK_SIZE;
-        let echo_tail_samples =
-            (DEFAULT_ECHO_TAIL_MS / 1000.0 * sample_rate as f32) as usize;
+        let echo_tail_samples = (DEFAULT_ECHO_TAIL_MS / 1000.0 * sample_rate as f32) as usize;
 
         let fft_size = block_size * 2;
         let mut planner = FftPlanner::new();
@@ -147,8 +146,7 @@ impl AecPlugin {
     }
 
     fn rebuild_aec(&mut self) {
-        let echo_tail_samples =
-            (self.echo_tail_ms / 1000.0 * self.sample_rate as f32) as usize;
+        let echo_tail_samples = (self.echo_tail_ms / 1000.0 * self.sample_rate as f32) as usize;
         self.aec = TwoPathAec::new(
             self.block_size,
             echo_tail_samples,
@@ -297,11 +295,14 @@ impl Plugin for AecPlugin {
                     // Copy into pre-allocated buffer since IFFT needs mutable access
                     let n_sup = suppressed.len();
                     if self.post_filter_ifft_buf.len() < n_sup {
-                        self.post_filter_ifft_buf.resize(n_sup, Complex::new(0.0, 0.0));
+                        self.post_filter_ifft_buf
+                            .resize(n_sup, Complex::new(0.0, 0.0));
                     }
                     self.post_filter_ifft_buf[..n_sup].copy_from_slice(suppressed);
-                    self.fft_inverse
-                        .process_with_scratch(&mut self.post_filter_ifft_buf[..n_sup], &mut self.fft_scratch);
+                    self.fft_inverse.process_with_scratch(
+                        &mut self.post_filter_ifft_buf[..n_sup],
+                        &mut self.fft_scratch,
+                    );
                     let inv_n = 1.0 / n_sup as f32;
                     let b = self.block_size;
                     for i in 0..b.min(error_len) {

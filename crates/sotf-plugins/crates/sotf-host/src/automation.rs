@@ -367,8 +367,8 @@ pub mod automation_utils {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::automation_utils::*;
+    use super::*;
 
     #[test]
     fn test_linear_curve_midpoint() {
@@ -402,18 +402,17 @@ mod tests {
 
     #[test]
     fn test_linear_curve_single_value() {
-        let curve = AutomationCurve::Linear {
-            values: vec![42.0],
-        };
+        let curve = AutomationCurve::Linear { values: vec![42.0] };
         let val = eval_curve(&curve, 500, 1000);
-        assert_eq!(val, 42.0, "Single-value linear curve should return that value");
+        assert_eq!(
+            val, 42.0,
+            "Single-value linear curve should return that value"
+        );
     }
 
     #[test]
     fn test_linear_curve_empty() {
-        let curve = AutomationCurve::Linear {
-            values: vec![],
-        };
+        let curve = AutomationCurve::Linear { values: vec![] };
         let val = eval_curve(&curve, 500, 1000);
         assert_eq!(val, 0.0, "Empty linear curve should return 0.0");
     }
@@ -497,10 +496,7 @@ mod tests {
         );
 
         let val_end = eval_curve(&curve, total_frames - 1, total_frames);
-        assert!(
-            val_end > 0.9,
-            "End of ramp should be ~1.0, got {val_end}"
-        );
+        assert!(val_end > 0.9, "End of ramp should be ~1.0, got {val_end}");
 
         // Verify monotonic increase across several positions
         let mut prev = 0.0f32;

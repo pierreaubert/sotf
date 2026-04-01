@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -65,9 +65,16 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float("Link", "link_amount", 1.0, 0.0, 1.0, 0.01, "%", "Detection")
         .scaled(100.0)
         .doc("Channel linking: 0%=independent, 100%=linked (all channels see max peak)"),
-    ParamSpec::bool_labeled("Feed Forward", "feed_forward", false, "On", "Off", "Detection")
-        .setup()
-        .doc("Scan lookahead buffer for anticipatory gain reduction"),
+    ParamSpec::bool_labeled(
+        "Feed Forward",
+        "feed_forward",
+        false,
+        "On",
+        "Off",
+        "Detection",
+    )
+    .setup()
+    .doc("Scan lookahead buffer for anticipatory gain reduction"),
 ];
 
 // ============================================================================
@@ -76,7 +83,13 @@ pub const PARAMS: &[ParamSpec] = &[
 
 /// Limiter: idx 0=threshold, 1=release, 2=lookahead, 3=soft_knee, 4=true_peak, 5=isp_mode, 6=dual_release, 7=mix, 8=link_amount, 9=feed_forward
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::toggle(3), ControlSpec::toggle(4), ControlSpec::toggle(5), ControlSpec::toggle(6), ControlSpec::toggle(9)], // soft_knee, true_peak, isp_mode, dual_release, feed_forward
+    config: &[
+        ControlSpec::toggle(3),
+        ControlSpec::toggle(4),
+        ControlSpec::toggle(5),
+        ControlSpec::toggle(6),
+        ControlSpec::toggle(9),
+    ], // soft_knee, true_peak, isp_mode, dual_release, feed_forward
     main: &[
         ControlGroup {
             title: "DYNAMICS",

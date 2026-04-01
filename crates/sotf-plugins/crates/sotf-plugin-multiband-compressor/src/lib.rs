@@ -4,14 +4,14 @@
 
 pub mod params;
 
+use crate::params::{BAND_TEMPLATE as MCB, GLOBAL_PARAMS as MC};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
+use sotf_host::auto_makeup::MeasuredMakeup;
 use sotf_host::lookahead::LookaheadBuffer;
 use sotf_host::lr4_crossover::Lr4Crossover;
-use sotf_host::auto_makeup::MeasuredMakeup;
-use crate::params::{BAND_TEMPLATE as MCB, GLOBAL_PARAMS as MC};
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
@@ -225,9 +225,7 @@ impl MultibandCompressorPlugin {
                 }
             })
             .collect();
-        let measured_makeups = (0..nb)
-            .map(|_| MeasuredMakeup::new(1000.0, sr))
-            .collect();
+        let measured_makeups = (0..nb).map(|_| MeasuredMakeup::new(1000.0, sr)).collect();
 
         let mut p = Self {
             channels,
@@ -274,23 +272,23 @@ impl MultibandCompressorPlugin {
     /// Order must match params::GLOBAL_PARAMS exactly.
     fn param_value(&self, index: usize) -> Option<f64> {
         match index {
-            0 => Some(self.num_bands as f64),                            // num_bands
-            1 => Some(self._crossover_preset as f64),                    // crossover_preset
-            2 => Some(self.crossover_frequencies[0] as f64),             // crossover_freq_1
-            3 => Some(self.crossover_frequencies[1] as f64),             // crossover_freq_2
-            4 => Some(self.crossover_frequencies[2] as f64),             // crossover_freq_3
-            5 => Some(self.crossover_frequencies[3] as f64),             // crossover_freq_4
-            6 => Some(self.threshold_db as f64),                         // threshold
-            7 => Some(self.ratio as f64),                                // ratio
-            8 => Some(self.attack_ms as f64),                            // attack
-            9 => Some(self.release_ms as f64),                           // release
-            10 => Some(self.knee_db as f64),                             // knee
-            11 => Some(self.mix as f64),                                 // mix
-            12 => Some(if self.link_channels { 1.0 } else { 0.0 }),     // link_channels
-            13 => Some(self.per_band_lookahead_ms as f64),               // per_band_lookahead_ms
-            14 => Some(if self.ms_mode { 1.0 } else { 0.0 }),           // ms_mode
-            15 => Some(self.sidechain_tilt_db as f64),                   // sidechain_tilt_db
-            16 => Some(self.link_amount as f64),                         // link_amount
+            0 => Some(self.num_bands as f64),                       // num_bands
+            1 => Some(self._crossover_preset as f64),               // crossover_preset
+            2 => Some(self.crossover_frequencies[0] as f64),        // crossover_freq_1
+            3 => Some(self.crossover_frequencies[1] as f64),        // crossover_freq_2
+            4 => Some(self.crossover_frequencies[2] as f64),        // crossover_freq_3
+            5 => Some(self.crossover_frequencies[3] as f64),        // crossover_freq_4
+            6 => Some(self.threshold_db as f64),                    // threshold
+            7 => Some(self.ratio as f64),                           // ratio
+            8 => Some(self.attack_ms as f64),                       // attack
+            9 => Some(self.release_ms as f64),                      // release
+            10 => Some(self.knee_db as f64),                        // knee
+            11 => Some(self.mix as f64),                            // mix
+            12 => Some(if self.link_channels { 1.0 } else { 0.0 }), // link_channels
+            13 => Some(self.per_band_lookahead_ms as f64),          // per_band_lookahead_ms
+            14 => Some(if self.ms_mode { 1.0 } else { 0.0 }),       // ms_mode
+            15 => Some(self.sidechain_tilt_db as f64),              // sidechain_tilt_db
+            16 => Some(self.link_amount as f64),                    // link_amount
             _ => None,
         }
     }
@@ -299,23 +297,23 @@ impl MultibandCompressorPlugin {
     /// Order must match params::GLOBAL_PARAMS exactly.
     fn set_param_value(&mut self, index: usize, value: f64) {
         match index {
-            0 => self.num_bands = value as usize,                        // num_bands
-            1 => self._crossover_preset = value as i32,                  // crossover_preset
-            2 => self.crossover_frequencies[0] = value as f32,           // crossover_freq_1
-            3 => self.crossover_frequencies[1] = value as f32,           // crossover_freq_2
-            4 => self.crossover_frequencies[2] = value as f32,           // crossover_freq_3
-            5 => self.crossover_frequencies[3] = value as f32,           // crossover_freq_4
-            6 => self.threshold_db = value as f32,                       // threshold
-            7 => self.ratio = value as f32,                              // ratio
-            8 => self.attack_ms = value as f32,                          // attack
-            9 => self.release_ms = value as f32,                         // release
-            10 => self.knee_db = value as f32,                           // knee
-            11 => self.mix = value as f32,                               // mix
-            12 => self.link_channels = value > 0.5,                      // link_channels
-            13 => self.per_band_lookahead_ms = value as f32,             // per_band_lookahead_ms
-            14 => self.ms_mode = value > 0.5,                            // ms_mode
-            15 => self.sidechain_tilt_db = value as f32,                 // sidechain_tilt_db
-            16 => self.link_amount = value as f32,                       // link_amount
+            0 => self.num_bands = value as usize,              // num_bands
+            1 => self._crossover_preset = value as i32,        // crossover_preset
+            2 => self.crossover_frequencies[0] = value as f32, // crossover_freq_1
+            3 => self.crossover_frequencies[1] = value as f32, // crossover_freq_2
+            4 => self.crossover_frequencies[2] = value as f32, // crossover_freq_3
+            5 => self.crossover_frequencies[3] = value as f32, // crossover_freq_4
+            6 => self.threshold_db = value as f32,             // threshold
+            7 => self.ratio = value as f32,                    // ratio
+            8 => self.attack_ms = value as f32,                // attack
+            9 => self.release_ms = value as f32,               // release
+            10 => self.knee_db = value as f32,                 // knee
+            11 => self.mix = value as f32,                     // mix
+            12 => self.link_channels = value > 0.5,            // link_channels
+            13 => self.per_band_lookahead_ms = value as f32,   // per_band_lookahead_ms
+            14 => self.ms_mode = value > 0.5,                  // ms_mode
+            15 => self.sidechain_tilt_db = value as f32,       // sidechain_tilt_db
+            16 => self.link_amount = value as f32,             // link_amount
             _ => {}
         }
     }
@@ -423,13 +421,15 @@ impl MultibandCompressorPlugin {
         self.sidechain_tilt_biquads = (0..self.num_bands)
             .map(|_| {
                 (0..self.channels)
-                    .map(|_| Biquad::new(
-                        BiquadFilterType::Highshelf,
-                        1000.0,
-                        self.sample_rate as f64,
-                        0.707,
-                        self.sidechain_tilt_db as f64,
-                    ))
+                    .map(|_| {
+                        Biquad::new(
+                            BiquadFilterType::Highshelf,
+                            1000.0,
+                            self.sample_rate as f64,
+                            0.707,
+                            self.sidechain_tilt_db as f64,
+                        )
+                    })
                     .collect()
             })
             .collect();
@@ -439,8 +439,11 @@ impl MultibandCompressorPlugin {
         self.crossover_points.clear();
         for i in 0..(self.num_bands - 1) {
             let f = self.xover_smoothers[i].target();
-            self.crossover_points
-                .push(Lr4Crossover::new(f, self.sample_rate as f32, self.channels));
+            self.crossover_points.push(Lr4Crossover::new(
+                f,
+                self.sample_rate as f32,
+                self.channels,
+            ));
         }
     }
 
@@ -490,7 +493,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         // Try global params first via param_bridge
-        if let Ok(idx) = param_bridge::set_parameter(MC, &id, &value, |i, v| self.set_param_value(i, v)) {
+        if let Ok(idx) =
+            param_bridge::set_parameter(MC, &id, &value, |i, v| self.set_param_value(i, v))
+        {
             // Side effects for specific global params
             match idx {
                 0 => {
@@ -508,15 +513,16 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         });
                     }
                     while self.lookahead_buffers.len() < nb {
-                        self.lookahead_buffers.push(if self.per_band_lookahead_ms > 0.0 {
-                            LookaheadBuffer::from_ms(
-                                self.per_band_lookahead_ms,
-                                self.sample_rate,
-                                self.channels,
-                            )
-                        } else {
-                            LookaheadBuffer::new(1, self.channels)
-                        });
+                        self.lookahead_buffers
+                            .push(if self.per_band_lookahead_ms > 0.0 {
+                                LookaheadBuffer::from_ms(
+                                    self.per_band_lookahead_ms,
+                                    self.sample_rate,
+                                    self.channels,
+                                )
+                            } else {
+                                LookaheadBuffer::new(1, self.channels)
+                            });
                     }
                     while self.measured_makeups.len() < nb {
                         self.measured_makeups
@@ -531,7 +537,8 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                     // crossover_freq_1..4 changed
                     let xover_idx = idx - 2;
                     if xover_idx < self.xover_smoothers.len() {
-                        self.xover_smoothers[xover_idx].set_target(self.crossover_frequencies[xover_idx]);
+                        self.xover_smoothers[xover_idx]
+                            .set_target(self.crossover_frequencies[xover_idx]);
                     }
                 }
                 6 => {
@@ -775,7 +782,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 let idx = frame * 2;
                 let l = buffer[idx];
                 let r = buffer[idx + 1];
-                buffer[idx] = (l + r) * 0.5;     // Mid
+                buffer[idx] = (l + r) * 0.5; // Mid
                 buffer[idx + 1] = (l - r) * 0.5; // Side
             }
         }
@@ -856,7 +863,11 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             let mut band_max_abs = 0.0f32;
 
             // Use link_amount for continuous blending (backward compat: link_channels overrides)
-            let link = if self.link_channels { 1.0f32 } else { self.link_amount };
+            let link = if self.link_channels {
+                1.0f32
+            } else {
+                self.link_amount
+            };
 
             for frame in 0..nf {
                 // Detect max-of-channels level for linked detection
@@ -890,8 +901,10 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                     let input = &self.band_buffers[f_off..f_off + self.channels];
                     // Copy input into temp since process_frame borrows both
                     self.lookahead_frame_tmp.copy_from_slice(input);
-                    self.lookahead_buffers[b]
-                        .process_frame(&self.lookahead_frame_tmp, &mut self.band_buffers[f_off..f_off + self.channels]);
+                    self.lookahead_buffers[b].process_frame(
+                        &self.lookahead_frame_tmp,
+                        &mut self.band_buffers[f_off..f_off + self.channels],
+                    );
                 }
 
                 for ch in 0..self.channels {
@@ -957,7 +970,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 let idx = frame * 2;
                 let m = buffer[idx];
                 let s = buffer[idx + 1];
-                buffer[idx] = m + s;     // L = M + S
+                buffer[idx] = m + s; // L = M + S
                 buffer[idx + 1] = m - s; // R = M - S
             }
         }
@@ -1064,9 +1077,7 @@ mod tests {
         };
 
         // Process a block with default crossover
-        let mut b1: Vec<f32> = (0..nf)
-            .map(|i| 0.3 * (i as f32 * 0.1).sin())
-            .collect();
+        let mut b1: Vec<f32> = (0..nf).map(|i| 0.3 * (i as f32 * 0.1).sin()).collect();
         p.process_in_place(&mut b1, &ctx).unwrap();
         let last_before = b1[nf - 1];
 

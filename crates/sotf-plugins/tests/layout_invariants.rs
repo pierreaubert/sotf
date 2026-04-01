@@ -29,7 +29,6 @@ fn assert_layout_invariants<P: PluginParamDef>() {
 
     // 4. Column constraints include Main (which never collapses)
     assert_has_main_column(plugin_type, layout);
-
 }
 
 fn all_controls(layout: &PluginLayout) -> Vec<(&'static str, &ControlSpec)> {
@@ -158,7 +157,6 @@ fn assert_has_main_column(plugin_type: &str, layout: &PluginLayout) {
     );
 }
 
-
 // Generate invariant tests for all plugins
 macro_rules! invariant_test {
     ($test_name:ident, $params_type:ty) => {
@@ -169,16 +167,37 @@ macro_rules! invariant_test {
     };
 }
 
-invariant_test!(invariants_ab_compare, sotf_plugin_ab_compare::params::Params);
+invariant_test!(
+    invariants_ab_compare,
+    sotf_plugin_ab_compare::params::Params
+);
 invariant_test!(invariants_aec, sotf_plugin_aec::params::Params);
-invariant_test!(invariants_ambisonics, sotf_plugin_ambisonics::params::Params);
-invariant_test!(invariants_band_merge, sotf_plugin_band_merge::params::Params);
-invariant_test!(invariants_band_split, sotf_plugin_band_split::params::Params);
-invariant_test!(invariants_beamformer, sotf_plugin_beamformer::params::Params);
+invariant_test!(
+    invariants_ambisonics,
+    sotf_plugin_ambisonics::params::Params
+);
+invariant_test!(
+    invariants_band_merge,
+    sotf_plugin_band_merge::params::Params
+);
+invariant_test!(
+    invariants_band_split,
+    sotf_plugin_band_split::params::Params
+);
+invariant_test!(
+    invariants_beamformer,
+    sotf_plugin_beamformer::params::Params
+);
 invariant_test!(invariants_binaural, sotf_plugin_binaural::params::Params);
-invariant_test!(invariants_channel_mute_solo, sotf_plugin_channel_mute_solo::params::Params);
+invariant_test!(
+    invariants_channel_mute_solo,
+    sotf_plugin_channel_mute_solo::params::Params
+);
 
-invariant_test!(invariants_convolution, sotf_plugin_convolution::params::Params);
+invariant_test!(
+    invariants_convolution,
+    sotf_plugin_convolution::params::Params
+);
 invariant_test!(invariants_crossfeed, sotf_plugin_crossfeed::params::Params);
 invariant_test!(invariants_delay, sotf_plugin_delay::params::Params);
 invariant_test!(invariants_denoiser, sotf_plugin_denoiser::params::Params);
@@ -186,13 +205,22 @@ invariant_test!(invariants_dither, sotf_plugin_dither::params::Params);
 invariant_test!(invariants_downmix, sotf_plugin_downmix::params::Params);
 
 // fletcher_munson merged into loudness_compensation
-invariant_test!(invariants_fletcher_munson, sotf_plugin_loudness_compensation::params::Params);
+invariant_test!(
+    invariants_fletcher_munson,
+    sotf_plugin_loudness_compensation::params::Params
+);
 invariant_test!(invariants_gain, sotf_plugin_gain::params::Params);
 invariant_test!(invariants_gate, sotf_plugin_gate::params::Params);
 invariant_test!(invariants_limiter, sotf_plugin_limiter::params::Params);
-invariant_test!(invariants_loudness_compensation, sotf_plugin_loudness_compensation::params::Params);
+invariant_test!(
+    invariants_loudness_compensation,
+    sotf_plugin_loudness_compensation::params::Params
+);
 invariant_test!(invariants_matrix, sotf_plugin_matrix::params::Params);
-invariant_test!(invariants_mono_to_stereo, sotf_plugin_mono_to_stereo::params::Params);
+invariant_test!(
+    invariants_mono_to_stereo,
+    sotf_plugin_mono_to_stereo::params::Params
+);
 invariant_test!(invariants_pnd, sotf_plugin_pnd::params::Params);
 invariant_test!(invariants_upmixer, sotf_plugin_upmixer::params::Params);
 invariant_test!(invariants_xtc, sotf_plugin_xtc::params::Params);

@@ -312,30 +312,33 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         } else if let Some(rest) = id.0.strip_prefix("mute_") {
             // Per-channel mute: mute_0, mute_1, ...
             if let Ok(ch) = rest.parse::<usize>()
-                && ch < self.channels {
-                    self.channel_states[ch].muted = value.as_bool().unwrap_or(false);
-                    self.update_smoother_targets();
-                    self.rebuild_cached_parameters();
-                    return Ok(());
-                }
+                && ch < self.channels
+            {
+                self.channel_states[ch].muted = value.as_bool().unwrap_or(false);
+                self.update_smoother_targets();
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
             Err(format!("Invalid channel index in {}", id))
         } else if let Some(rest) = id.0.strip_prefix("solo_") {
             if let Ok(ch) = rest.parse::<usize>()
-                && ch < self.channels {
-                    self.channel_states[ch].soloed = value.as_bool().unwrap_or(false);
-                    self.update_smoother_targets();
-                    self.rebuild_cached_parameters();
-                    return Ok(());
-                }
+                && ch < self.channels
+            {
+                self.channel_states[ch].soloed = value.as_bool().unwrap_or(false);
+                self.update_smoother_targets();
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
             Err(format!("Invalid channel index in {}", id))
         } else if let Some(rest) = id.0.strip_prefix("dim_") {
             if let Ok(ch) = rest.parse::<usize>()
-                && ch < self.channels {
-                    self.channel_states[ch].dimmed = value.as_bool().unwrap_or(false);
-                    self.update_smoother_targets();
-                    self.rebuild_cached_parameters();
-                    return Ok(());
-                }
+                && ch < self.channels
+            {
+                self.channel_states[ch].dimmed = value.as_bool().unwrap_or(false);
+                self.update_smoother_targets();
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
             Err(format!("Invalid channel index in {}", id))
         } else {
             Err(format!("Unknown parameter: {}", id))
@@ -701,10 +704,7 @@ mod tests {
     fn test_fade_ms_via_set_parameter() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
         plugin
-            .set_parameter(
-                ParameterId::from("fade_ms"),
-                ParameterValue::Float(50.0),
-            )
+            .set_parameter(ParameterId::from("fade_ms"), ParameterValue::Float(50.0))
             .unwrap();
 
         assert!((plugin.fade_ms() - 50.0).abs() < f32::EPSILON);
@@ -761,10 +761,8 @@ mod tests {
     fn test_dim_gain_out_of_range_rejected() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
         // Above max (0.0)
-        let result = plugin.set_parameter(
-            ParameterId::from("dim_gain_db"),
-            ParameterValue::Float(1.0),
-        );
+        let result =
+            plugin.set_parameter(ParameterId::from("dim_gain_db"), ParameterValue::Float(1.0));
         assert!(result.is_err());
         // Below min (-60.0)
         let result = plugin.set_parameter(
@@ -778,16 +776,12 @@ mod tests {
     fn test_fade_ms_out_of_range_rejected() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
         // Below min (0.0)
-        let result = plugin.set_parameter(
-            ParameterId::from("fade_ms"),
-            ParameterValue::Float(-1.0),
-        );
+        let result =
+            plugin.set_parameter(ParameterId::from("fade_ms"), ParameterValue::Float(-1.0));
         assert!(result.is_err());
         // Above max (100.0)
-        let result = plugin.set_parameter(
-            ParameterId::from("fade_ms"),
-            ParameterValue::Float(200.0),
-        );
+        let result =
+            plugin.set_parameter(ParameterId::from("fade_ms"), ParameterValue::Float(200.0));
         assert!(result.is_err());
     }
 

@@ -4,11 +4,11 @@
 
 pub mod params;
 
-use sotf_host::param_specs::find_by_key as pk;
 use crate::params::PARAMS as DM;
 use sotf_host::param_bridge;
-use sotf_host::parameters::ParameterValue;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::ParameterId;
+use sotf_host::parameters::ParameterValue;
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 
@@ -1331,7 +1331,10 @@ mod tests {
             if height_powers.len() > 1 {
                 // Minimum check: all height powers should be finite and positive
                 for &hp in &height_powers {
-                    assert!(hp > 0.0 && hp.is_finite(), "{config_id}: invalid height power: {hp}");
+                    assert!(
+                        hp > 0.0 && hp.is_finite(),
+                        "{config_id}: invalid height power: {hp}"
+                    );
                 }
             }
 

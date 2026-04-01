@@ -4,13 +4,13 @@
 
 pub mod params;
 
+use crate::params::{HPF_ORDERS, PARAMS as GT};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
-use math_audio_iir_fir::{peq_butterworth_highpass, Biquad};
+use math_audio_iir_fir::{Biquad, peq_butterworth_highpass};
 use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
-use crate::params::{HPF_ORDERS, PARAMS as GT};
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -384,9 +384,7 @@ impl GatePlugin {
             let peq = peq_butterworth_highpass(order, fc as f64, self.sample_rate as f64);
             // One set of biquad sections per channel (each needs independent state)
             let sections: Vec<Biquad> = peq.into_iter().map(|(_, bq)| bq).collect();
-            self.sidechain_hpf_biquads = (0..self.channels)
-                .map(|_| sections.clone())
-                .collect();
+            self.sidechain_hpf_biquads = (0..self.channels).map(|_| sections.clone()).collect();
         } else {
             self.sidechain_hpf_biquads.clear();
         }
@@ -480,8 +478,7 @@ impl InPlacePlugin for GatePlugin {
             .map(|_| LevelDetector::new(mode, sample_rate))
             .collect();
 
-        let max_samples =
-            (MAX_LOOKAHEAD_MS * 0.001 * sample_rate as f32).round() as usize;
+        let max_samples = (MAX_LOOKAHEAD_MS * 0.001 * sample_rate as f32).round() as usize;
         for buf in &mut self.lookahead_buffers {
             buf.resize(max_samples, 1);
         }
@@ -535,7 +532,8 @@ impl InPlacePlugin for GatePlugin {
                     let level = self.detect_level(ch, filtered);
                     det = det.max(level);
                     // Update monitoring
-                    self.monitoring_levels[ch] = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
+                    self.monitoring_levels[ch] =
+                        DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
                 }
 
                 let idb = DB_CONVERSION_FACTOR * fast_log10(det.max(EPSILON));
@@ -582,7 +580,8 @@ impl InPlacePlugin for GatePlugin {
                     let sc_idx = frame_start + sc_offset + ch;
                     let filtered = self.apply_sidechain_filter(ch, buffer[sc_idx]);
                     let level_abs = self.detect_level(ch, filtered);
-                    self.monitoring_levels[ch] = DB_CONVERSION_FACTOR * fast_log10(level_abs.max(EPSILON));
+                    self.monitoring_levels[ch] =
+                        DB_CONVERSION_FACTOR * fast_log10(level_abs.max(EPSILON));
                     let idb = self.monitoring_levels[ch];
                     let atten_target = self.calculate_gate_attenuation(idb, thresh);
 
@@ -604,7 +603,8 @@ impl InPlacePlugin for GatePlugin {
                         self.release_coeff
                     };
                     self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
-                    let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[ch] / DB_CONVERSION_FACTOR);
+                    let gain =
+                        (1.0 - mix) + mix * fast_pow10(-self.envelope[ch] / DB_CONVERSION_FACTOR);
                     if use_lookahead {
                         let delayed = self.lookahead_buffers[ch].push(buffer[idx]);
                         buffer[idx] = delayed * gain;
@@ -700,8 +700,7 @@ mod tests {
         let num_frames = 9600; // 200ms
         let mut buf_low = vec![0.0f32; num_frames];
         for (i, sample) in buf_low.iter_mut().enumerate() {
-            *sample =
-                amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr as f32).sin();
+            *sample = amplitude * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr as f32).sin();
         }
 
         let ctx = ProcessContext {
@@ -712,8 +711,8 @@ mod tests {
 
         // The 50 Hz signal should be significantly attenuated because the HPF
         // at 200 Hz filters out the 50 Hz from the sidechain detection.
-        let rms_low: f32 = buf_low[4800..].iter().map(|x| x * x).sum::<f32>()
-            / (num_frames - 4800) as f32;
+        let rms_low: f32 =
+            buf_low[4800..].iter().map(|x| x * x).sum::<f32>() / (num_frames - 4800) as f32;
         let rms_low = rms_low.sqrt();
 
         // --- Test 2: 1 kHz signal with HPF=200 Hz. Gate should open. ---
@@ -747,8 +746,8 @@ mod tests {
 
         p_high.process_in_place(&mut buf_high, &ctx).unwrap();
 
-        let rms_high: f32 = buf_high[4800..].iter().map(|x| x * x).sum::<f32>()
-            / (num_frames - 4800) as f32;
+        let rms_high: f32 =
+            buf_high[4800..].iter().map(|x| x * x).sum::<f32>() / (num_frames - 4800) as f32;
         let rms_high = rms_high.sqrt();
 
         // 1 kHz should pass through much louder than 50 Hz (gate open vs closed)
@@ -804,7 +803,7 @@ mod tests {
         // -18 dBFS (above open threshold -20 dB) and -22 dBFS (between open and
         // close thresholds, so gate should stay open once opened).
         let amp_high = 10.0_f32.powf(-18.0 / 20.0); // -18 dBFS
-        let amp_low = 10.0_f32.powf(-22.0 / 20.0);  // -22 dBFS  (above close threshold -24 dB)
+        let amp_low = 10.0_f32.powf(-22.0 / 20.0); // -22 dBFS  (above close threshold -24 dB)
         let num_frames = sr as usize; // 1 second
         let mut buffer: Vec<f32> = (0..num_frames)
             .map(|i| {

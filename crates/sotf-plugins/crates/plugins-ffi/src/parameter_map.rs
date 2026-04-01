@@ -77,19 +77,20 @@ impl ParameterMap {
         // Fallback: if no static specs produced params, use Plugin::parameters()
         if cached_infos.is_empty() {
             for param in plugin.parameters() {
-                let (min, max, default) = match (&param.min_value, &param.max_value, &param.default_value) {
-                    (
-                        Some(sotf_host::parameters::ParameterValue::Float(min)),
-                        Some(sotf_host::parameters::ParameterValue::Float(max)),
-                        sotf_host::parameters::ParameterValue::Float(def),
-                    ) => (*min as f64, *max as f64, *def as f64),
-                    (
-                        Some(sotf_host::parameters::ParameterValue::Int(min)),
-                        Some(sotf_host::parameters::ParameterValue::Int(max)),
-                        sotf_host::parameters::ParameterValue::Int(def),
-                    ) => (*min as f64, *max as f64, *def as f64),
-                    _ => (0.0, 1.0, 0.0),
-                };
+                let (min, max, default) =
+                    match (&param.min_value, &param.max_value, &param.default_value) {
+                        (
+                            Some(sotf_host::parameters::ParameterValue::Float(min)),
+                            Some(sotf_host::parameters::ParameterValue::Float(max)),
+                            sotf_host::parameters::ParameterValue::Float(def),
+                        ) => (*min as f64, *max as f64, *def as f64),
+                        (
+                            Some(sotf_host::parameters::ParameterValue::Int(min)),
+                            Some(sotf_host::parameters::ParameterValue::Int(max)),
+                            sotf_host::parameters::ParameterValue::Int(def),
+                        ) => (*min as f64, *max as f64, *def as f64),
+                        _ => (0.0, 1.0, 0.0),
+                    };
 
                 let id = CString::new(param.id.0.clone()).unwrap().into_raw() as *const c_char;
                 let name = CString::new(param.name.clone()).unwrap().into_raw() as *const c_char;
@@ -145,9 +146,9 @@ impl ParameterMap {
         let param_id = unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") };
         let normalized = self.get_normalized(plugin, param_id)?;
         // Use bridge for correct denormalization (handles log scaling for Hz params)
-        self.bridge
-            .denormalize(index, normalized)
-            .or(Some(info.min_value + normalized * (info.max_value - info.min_value)))
+        self.bridge.denormalize(index, normalized).or(Some(
+            info.min_value + normalized * (info.max_value - info.min_value),
+        ))
     }
 
     /// Set denormalized parameter value by index.
@@ -160,7 +161,9 @@ impl ParameterMap {
         index: usize,
         value: f64,
     ) -> Result<(), String> {
-        let info = self.cached_infos.get(index)
+        let info = self
+            .cached_infos
+            .get(index)
             .ok_or_else(|| format!("Parameter index {index} out of range"))?;
         let param_id = unsafe { std::ffi::CStr::from_ptr(info.id).to_str().unwrap_or("") };
         // Use bridge for correct normalization (handles log scaling for Hz params)
@@ -185,9 +188,7 @@ impl ParameterMap {
     ) -> Result<(), String> {
         // Try ParamBridge first
         if let Some(index) = self.bridge.find_index(param_id) {
-            return self
-                .bridge
-                .set_normalized(plugin, index, normalized_value);
+            return self.bridge.set_normalized(plugin, index, normalized_value);
         }
 
         // Fallback: direct set using raw parameter system
@@ -231,7 +232,13 @@ impl ParameterMap {
         let raw = match value {
             sotf_host::parameters::ParameterValue::Float(f) => f as f64,
             sotf_host::parameters::ParameterValue::Int(i) => i as f64,
-            sotf_host::parameters::ParameterValue::Bool(b) => if b { 1.0 } else { 0.0 },
+            sotf_host::parameters::ParameterValue::Bool(b) => {
+                if b {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             _ => return None,
         };
         if info.logarithmic && info.min_value > 0.0 {
@@ -280,9 +287,7 @@ fn get_band_template(
         "MultibandCompressor" | "multiband_compressor" => {
             Some((multiband_compressor::BAND_TEMPLATE, 5))
         }
-        "MultibandExpander" | "multiband_expander" => {
-            Some((multiband_expander::BAND_TEMPLATE, 5))
-        }
+        "MultibandExpander" | "multiband_expander" => Some((multiband_expander::BAND_TEMPLATE, 5)),
         "DynamicEQ" | "dynamic_eq" => Some((dynamic_eq::BAND_PARAMS, 8)),
         "LinearPhaseEQ" | "linear_phase_eq" => Some((linear_phase_eq::BAND_TEMPLATE, 20)),
         _ => None,
@@ -405,11 +410,11 @@ fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::Param
         "LinearPhaseEQ" | "linear_phase_eq" => linear_phase_eq::PARAMS,
         "Dither" | "dither" => dither::PARAMS,
         // Plugins without param_specs entries fall back to Plugin::parameters() in from_plugin()
-        "Delay" | "delay"
-        | "Matrix" | "matrix"
-        | "Crossover" | "crossover"
-        | "Resampler" | "resampler" => &[],
-        other => panic!("get_param_specs: unknown plugin type \"{other}\" — add it to the match arm"),
+        "Delay" | "delay" | "Matrix" | "matrix" | "Crossover" | "crossover" | "Resampler"
+        | "resampler" => &[],
+        other => {
+            panic!("get_param_specs: unknown plugin type \"{other}\" — add it to the match arm")
+        }
     }
 }
 

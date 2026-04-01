@@ -21,14 +21,13 @@ use sotf_plugins::{
     ConvolutionPlugin, ConvolutionPluginParams, CrossfeedMode, CrossfeedPlugin,
     CrossfeedPluginParams, CrossoverPlugin, CrossoverPluginParams, DawHost, DelayPlugin,
     DelayPluginParams, DenoiserPlugin, DenoiserPluginParams, DownmixPlugin, DownmixPluginParams,
-    EqPlugin, EqPluginParams, GainPlugin,
-    GainPluginParams, GatePlugin, GatePluginParams, InPlacePluginAdapter, LimiterPlugin,
-    LimiterPluginParams, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
-    LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams,
-    MultibandCompressorPlugin, MultibandCompressorPluginParams, MultibandExpanderPlugin,
-    MultibandExpanderPluginParams, Plugin, PndPlugin, PndPluginParams, RoomModel,
-    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams, XtcPlugin,
-    XtcPluginParams,
+    EqPlugin, EqPluginParams, GainPlugin, GainPluginParams, GatePlugin, GatePluginParams,
+    InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams, LoudnessCompensationPlugin,
+    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin,
+    MonoToStereoPluginParams, MultibandCompressorPlugin, MultibandCompressorPluginParams,
+    MultibandExpanderPlugin, MultibandExpanderPluginParams, Plugin, PndPlugin, PndPluginParams,
+    RoomModel, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams,
+    XtcPlugin, XtcPluginParams,
 };
 use std::fs::File;
 use std::io::Write;
@@ -1454,10 +1453,7 @@ impl PluginFuzzer for MonoToStereoFuzzer {
 
         let plugin = MonoToStereoPlugin::from_params(1, params.clone());
 
-        let desc = format!(
-            "width={:.2}",
-            params.stereo_width
-        );
+        let desc = format!("width={:.2}", params.stereo_width);
 
         (Box::new(plugin), desc)
     }

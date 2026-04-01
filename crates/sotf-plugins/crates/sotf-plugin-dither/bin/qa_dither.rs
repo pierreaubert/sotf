@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 
 #[global_allocator]
@@ -9,9 +9,9 @@ fn main() {
     let sample_rate = 48000;
     let channels = 2;
     let params = DitherPluginParams {
-        bit_depth: 0,      // 16-bit
+        bit_depth: 0, // 16-bit
         noise_shaping: true,
-        dither_type: 0,    // TPDF
+        dither_type: 0, // TPDF
     };
 
     let mut inner = DitherPlugin::from_params(channels, params);

@@ -158,11 +158,7 @@ pub fn build_render_plan_from_layout(
             .map(|g| group_to_plan(g, params))
             .collect(),
         output_controls: controls_to_plans(layout.output, params),
-        tabs: layout
-            .tabs
-            .iter()
-            .map(|t| tab_to_plan(t, params))
-            .collect(),
+        tabs: layout.tabs.iter().map(|t| tab_to_plan(t, params)).collect(),
         viz_slots: layout.visualizations.iter().map(viz_to_plan).collect(),
         dynamic_sections: layout
             .dynamic_sections
@@ -384,8 +380,13 @@ mod tests {
 
     #[test]
     fn test_build_plan_wide() {
-        let plan =
-            build_render_plan_from_layout("test_plugin", &TEST_PARAMS, &TEST_LAYOUT, 1200.0, &DesignSystem::neutral());
+        let plan = build_render_plan_from_layout(
+            "test_plugin",
+            &TEST_PARAMS,
+            &TEST_LAYOUT,
+            1200.0,
+            &DesignSystem::neutral(),
+        );
 
         assert_eq!(plan.plugin_type, "test_plugin");
         assert_eq!(plan.width, 1200.0);
@@ -403,8 +404,13 @@ mod tests {
 
     #[test]
     fn test_build_plan_vertical_mode() {
-        let plan =
-            build_render_plan_from_layout("test_plugin", &TEST_PARAMS, &TEST_LAYOUT, 350.0, &DesignSystem::neutral());
+        let plan = build_render_plan_from_layout(
+            "test_plugin",
+            &TEST_PARAMS,
+            &TEST_LAYOUT,
+            350.0,
+            &DesignSystem::neutral(),
+        );
 
         assert_eq!(plan.orientation, "vertical");
         assert_eq!(plan.knob_size, "xs");
@@ -429,7 +435,13 @@ mod tests {
 
     #[test]
     fn test_build_plan_with_viz() {
-        let plan = build_render_plan_from_layout("comp", &TEST_PARAMS, &VIZ_LAYOUT, 1000.0, &DesignSystem::neutral());
+        let plan = build_render_plan_from_layout(
+            "comp",
+            &TEST_PARAMS,
+            &VIZ_LAYOUT,
+            1000.0,
+            &DesignSystem::neutral(),
+        );
 
         assert_eq!(plan.viz_slots.len(), 1);
         assert_eq!(plan.viz_slots[0].viz_type, "transfer_curve");
@@ -457,7 +469,13 @@ mod tests {
 
     #[test]
     fn test_build_plan_with_dynamic_section() {
-        let plan = build_render_plan_from_layout("mb_comp", &TEST_PARAMS, &DS_LAYOUT, 1000.0, &DesignSystem::neutral());
+        let plan = build_render_plan_from_layout(
+            "mb_comp",
+            &TEST_PARAMS,
+            &DS_LAYOUT,
+            1000.0,
+            &DesignSystem::neutral(),
+        );
 
         assert_eq!(plan.dynamic_sections.len(), 1);
         assert_eq!(plan.dynamic_sections[0].instance_name, "Band");
@@ -483,7 +501,13 @@ mod tests {
 
     #[test]
     fn test_meter_control_plan() {
-        let plan = build_render_plan_from_layout("test", &TEST_PARAMS, &METER_LAYOUT, 1000.0, &DesignSystem::neutral());
+        let plan = build_render_plan_from_layout(
+            "test",
+            &TEST_PARAMS,
+            &METER_LAYOUT,
+            1000.0,
+            &DesignSystem::neutral(),
+        );
 
         let meter = &plan.main_groups[0].controls[0];
         assert_eq!(meter.param_name, "(meter)");

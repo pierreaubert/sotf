@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
+use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -571,7 +571,11 @@ impl PluginParamDef for Params {
             10 => Some(self.head_shadow_cutoff_hz),
             11 => Some(self.head_shadow_slope_db_per_octave),
             12 => Some(self.max_gain_db),
-            13 => Some(if self.spectral_normalization { 1.0 } else { 0.0 }),
+            13 => Some(if self.spectral_normalization {
+                1.0
+            } else {
+                0.0
+            }),
             14 => Some(if self.pinna_model_enabled { 1.0 } else { 0.0 }),
             15 => Some(if self.room_reflections_enabled {
                 1.0
@@ -676,10 +680,7 @@ mod tests {
         );
         assert_eq!(original.beta_base, restored.beta_base);
         assert_eq!(original.beta_low_freq_boost, restored.beta_low_freq_boost);
-        assert_eq!(
-            original.beta_high_freq_boost,
-            restored.beta_high_freq_boost
-        );
+        assert_eq!(original.beta_high_freq_boost, restored.beta_high_freq_boost);
         assert_eq!(
             original.head_shadow_cutoff_hz,
             restored.head_shadow_cutoff_hz

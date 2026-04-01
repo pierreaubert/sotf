@@ -201,16 +201,26 @@ impl EqPlugin {
                         math_audio_iir_fir::BiquadFilterType::Lowpass => SvfFilterType::Lowpass,
                         math_audio_iir_fir::BiquadFilterType::Highpass => SvfFilterType::Highpass,
                         math_audio_iir_fir::BiquadFilterType::Lowshelf
-                        | math_audio_iir_fir::BiquadFilterType::LowshelfOrf => SvfFilterType::Lowshelf,
+                        | math_audio_iir_fir::BiquadFilterType::LowshelfOrf => {
+                            SvfFilterType::Lowshelf
+                        }
                         math_audio_iir_fir::BiquadFilterType::Highshelf
-                        | math_audio_iir_fir::BiquadFilterType::HighshelfOrf => SvfFilterType::Highshelf,
+                        | math_audio_iir_fir::BiquadFilterType::HighshelfOrf => {
+                            SvfFilterType::Highshelf
+                        }
                         math_audio_iir_fir::BiquadFilterType::Bandpass => SvfFilterType::Bandpass,
                         math_audio_iir_fir::BiquadFilterType::Notch => SvfFilterType::Notch,
                         math_audio_iir_fir::BiquadFilterType::AllPass => SvfFilterType::Allpass,
                         // Other biquad types (HighpassVariableQ etc.) map to closest SVF type
                         _ => SvfFilterType::Peak,
                     };
-                    ch_svfs.push(SvfFilter::new(svf_type, primary.freq, sr, primary.q, primary.db_gain));
+                    ch_svfs.push(SvfFilter::new(
+                        svf_type,
+                        primary.freq,
+                        sr,
+                        primary.q,
+                        primary.db_gain,
+                    ));
                 }
             }
             self.svf_filters.push(ch_svfs);
@@ -226,10 +236,15 @@ impl EqPlugin {
             ),
             Parameter::new_int("oversampling", "OS", self.oversampling_factor as i32, 1, 4)
                 .with_description("Oversampling factor: 1 (off), 2 (2x), 4 (4x)"),
-            Parameter::new_bool("tdf2", "TDF-II", self.use_tdf2)
-                .with_description("Use Transposed Direct Form II for better numerical stability at high Q"),
-            Parameter::new_string("topology", "Topology", if self.topology == 1 { "SVF" } else { "Biquad" }.to_string())
-                .with_description("Filter topology: Biquad or SVF (zero-delay feedback)"),
+            Parameter::new_bool("tdf2", "TDF-II", self.use_tdf2).with_description(
+                "Use Transposed Direct Form II for better numerical stability at high Q",
+            ),
+            Parameter::new_string(
+                "topology",
+                "Topology",
+                if self.topology == 1 { "SVF" } else { "Biquad" }.to_string(),
+            )
+            .with_description("Filter topology: Biquad or SVF (zero-delay feedback)"),
         ];
 
         if !self.filters.is_empty() {
@@ -344,22 +359,21 @@ impl EqPlugin {
                 other => Err(format!("Type: {}", other)),
             }
         };
-        let config_to_stages =
-            |f: &BiquadFilterConfig| -> Result<(Vec<Biquad>, usize), String> {
-                let filter_type = parse_filter_type(&f.filter_type)?;
-                let order = f.order.clamp(2, 8);
-                // Round order to nearest even
-                let order = (order / 2) * 2;
-                let stages = create_band_stages(
-                    filter_type,
-                    f.freq,
-                    sample_rate as f64,
-                    f.q,
-                    f.db_gain,
-                    order,
-                );
-                Ok((stages, order))
-            };
+        let config_to_stages = |f: &BiquadFilterConfig| -> Result<(Vec<Biquad>, usize), String> {
+            let filter_type = parse_filter_type(&f.filter_type)?;
+            let order = f.order.clamp(2, 8);
+            // Round order to nearest even
+            let order = (order / 2) * 2;
+            let stages = create_band_stages(
+                filter_type,
+                f.freq,
+                sample_rate as f64,
+                f.q,
+                f.db_gain,
+                order,
+            );
+            Ok((stages, order))
+        };
         let auto_gain = AutoGain::new(num_channels, sample_rate, params.auto_gain)?;
         let mut eq = if let Some(cfgs) = params.channel_filters {
             if cfgs.len() != num_channels {
@@ -489,12 +503,10 @@ impl EqPlugin {
                 for ch in 0..self.num_channels {
                     let mut s = planar[ch][frame] as f64;
                     for (band_idx, stages) in self.filters[ch].iter_mut().enumerate() {
-                        if let Some(trans) =
-                            self.transitions.get(band_idx).and_then(|t| t.as_ref())
+                        if let Some(trans) = self.transitions.get(band_idx).and_then(|t| t.as_ref())
                         {
-                            let t = 1.0
-                                - (trans.samples_remaining as f64
-                                    / trans.total_samples as f64);
+                            let t =
+                                1.0 - (trans.samples_remaining as f64 / trans.total_samples as f64);
                             let interpolated = trans.old_coeffs.lerp(&trans.new_coeffs, t);
                             if let Some((first, rest)) = stages.split_first_mut() {
                                 s = first.process_with_coefficients(s, &interpolated);
@@ -537,7 +549,6 @@ impl EqPlugin {
             }
         }
     }
-
 }
 
 impl InPlacePlugin for EqPlugin {
@@ -568,9 +579,10 @@ impl InPlacePlugin for EqPlugin {
             self.oversampling_factor = new_factor as u32;
             // Re-initialize oversampling state (uses current sample_rate)
             if self.oversampling_factor > 1 {
-                self.oversampler = Some(
-                    Oversampler::new(self.oversampling_factor, self.num_channels)?,
-                );
+                self.oversampler = Some(Oversampler::new(
+                    self.oversampling_factor,
+                    self.num_channels,
+                )?);
                 // Recalculate biquad coefficients at oversampled rate
                 let os_rate = self.sample_rate as f64 * self.oversampling_factor as f64;
                 self.apply_sample_rate_to_filters(os_rate);
@@ -637,7 +649,8 @@ impl InPlacePlugin for EqPlugin {
                         self.band_orders[b_idx] = new_order;
                         for ch in 0..self.num_channels {
                             if let Some(band) = self.filters[ch].get_mut(b_idx) {
-                                *band = create_band_stages(ft, freq, srate, q, total_gain, new_order);
+                                *band =
+                                    create_band_stages(ft, freq, srate, q, total_gain, new_order);
                             }
                         }
                     }
@@ -664,8 +677,8 @@ impl InPlacePlugin for EqPlugin {
                     }
                     // Capture old coefficients from primary stage before updating.
                     let old_coeffs = if let Some(Some(active)) = self.transitions.get(b_idx) {
-                        let t = 1.0
-                            - (active.samples_remaining as f64 / active.total_samples as f64);
+                        let t =
+                            1.0 - (active.samples_remaining as f64 / active.total_samples as f64);
                         Some(active.old_coeffs.lerp(&active.new_coeffs, t))
                     } else {
                         self.filters[0]
@@ -752,7 +765,9 @@ impl InPlacePlugin for EqPlugin {
         } else if name == "tdf2" {
             Some(ParameterValue::Bool(self.use_tdf2))
         } else if name == "topology" {
-            Some(ParameterValue::String(if self.topology == 1 { "SVF" } else { "Biquad" }.to_string()))
+            Some(ParameterValue::String(
+                if self.topology == 1 { "SVF" } else { "Biquad" }.to_string(),
+            ))
         } else if let Some(rest) = name.strip_prefix("band_") {
             // Parse "band_N_field" without heap allocation.
             // Find the next '_' to split index from field.
@@ -804,9 +819,10 @@ impl InPlacePlugin for EqPlugin {
 
         // Rebuild oversampling state if active
         if self.oversampling_factor > 1 {
-            self.oversampler = Some(
-                Oversampler::new(self.oversampling_factor, self.num_channels)?,
-            );
+            self.oversampler = Some(Oversampler::new(
+                self.oversampling_factor,
+                self.num_channels,
+            )?);
         } else {
             self.oversampler = None;
         }
@@ -904,8 +920,7 @@ impl InPlacePlugin for EqPlugin {
                             {
                                 // Interpolate primary stage coefficients
                                 let t = 1.0
-                                    - (trans.samples_remaining as f64
-                                        / trans.total_samples as f64);
+                                    - (trans.samples_remaining as f64 / trans.total_samples as f64);
                                 let interpolated = trans.old_coeffs.lerp(&trans.new_coeffs, t);
                                 if let Some((first, rest)) = stages.split_first_mut() {
                                     s = first.process_with_coefficients(s, &interpolated);
@@ -983,8 +998,8 @@ impl InPlacePlugin for EqPlugin {
 mod tests {
     use crate::*;
     use math_audio_iir_fir::{Biquad, BiquadFilterType};
-    use sotf_host::*;
     use sotf_host::parameters::{ParameterId, ParameterValue};
+    use sotf_host::*;
 
     #[test]
     fn test_eq_passthrough() {
@@ -1079,7 +1094,11 @@ mod tests {
             auto_gain: Default::default(),
         };
         let result = EqPlugin::from_params(2, 48000, params);
-        assert!(result.is_ok(), "EqPlugin should parse 'allpass' filter type, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "EqPlugin should parse 'allpass' filter type, got: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -1275,12 +1294,7 @@ mod tests {
 
         // All output samples should be finite
         for (i, &s) in buf.iter().enumerate() {
-            assert!(
-                s.is_finite(),
-                "sample {} not finite: {}",
-                i,
-                s
-            );
+            assert!(s.is_finite(), "sample {} not finite: {}", i, s);
         }
     }
 
@@ -1334,20 +1348,24 @@ mod tests {
         InPlacePlugin::initialize(&mut p, 48000).unwrap();
 
         // Factor 3 is invalid
-        assert!(InPlacePlugin::set_parameter(
-            &mut p,
-            ParameterId::from("oversampling"),
-            ParameterValue::Int(3),
-        )
-        .is_err());
+        assert!(
+            InPlacePlugin::set_parameter(
+                &mut p,
+                ParameterId::from("oversampling"),
+                ParameterValue::Int(3),
+            )
+            .is_err()
+        );
 
         // Factor 0 is invalid
-        assert!(InPlacePlugin::set_parameter(
-            &mut p,
-            ParameterId::from("oversampling"),
-            ParameterValue::Int(0),
-        )
-        .is_err());
+        assert!(
+            InPlacePlugin::set_parameter(
+                &mut p,
+                ParameterId::from("oversampling"),
+                ParameterValue::Int(0),
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1538,12 +1556,7 @@ mod tests {
             .unwrap();
         }
         for (i, &s) in silence.iter().enumerate() {
-            assert!(
-                s.abs() < 1e-6,
-                "sample {} not silent after reset: {}",
-                i,
-                s
-            );
+            assert!(s.abs() < 1e-6, "sample {} not silent after reset: {}", i, s);
         }
     }
 
@@ -1568,11 +1581,8 @@ mod tests {
         let mut p = EqPlugin::from_params(nc, 48000, params).unwrap();
 
         // Enable oversampling
-        p.set_parameter(
-            ParameterId::from("oversampling"),
-            ParameterValue::Int(2),
-        )
-        .unwrap();
+        p.set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
+            .unwrap();
 
         // Process enough frames to trigger the oversampling chunk path (>= OS_CHUNK_SIZE)
         let frames = 512;

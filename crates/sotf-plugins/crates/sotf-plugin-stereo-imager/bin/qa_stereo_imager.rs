@@ -1,5 +1,5 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_plugin_stereo_imager::{StereoImagerPlugin, StereoImagerPluginParams};
 
 #[global_allocator]
@@ -29,7 +29,7 @@ fn main() {
     let num_frames = 24000;
     let mut buffer = vec![0.0f32; num_frames * channels];
     for i in 0..num_frames {
-        buffer[i * channels] = 0.5;     // L
+        buffer[i * channels] = 0.5; // L
         buffer[i * channels + 1] = 0.3; // R
     }
     let ctx = ProcessContext {
