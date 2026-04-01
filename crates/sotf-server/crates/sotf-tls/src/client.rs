@@ -151,7 +151,7 @@ pub fn build_client_tls_config_with_cert(
 /// Parse a TOFU error message to extract the decision type and fingerprint(s).
 ///
 /// Returns `Some(TofuResult)` if the error is a TOFU decision, `None` otherwise.
-#[must_use] 
+#[must_use]
 pub fn parse_tofu_error(error_msg: &str) -> Option<TofuResult> {
     if let Some(fp) = error_msg.strip_prefix(TOFU_UNKNOWN_PREFIX) {
         Some(TofuResult::Unknown {
@@ -160,9 +160,9 @@ pub fn parse_tofu_error(error_msg: &str) -> Option<TofuResult> {
     } else if let Some(rest) = error_msg.strip_prefix(TOFU_CHANGED_PREFIX) {
         let parts: Vec<&str> = rest.splitn(2, '|').collect();
         (parts.len() == 2).then(|| TofuResult::Changed {
-                old_fingerprint: parts[0].to_string(),
-                new_fingerprint: parts[1].to_string(),
-            })
+            old_fingerprint: parts[0].to_string(),
+            new_fingerprint: parts[1].to_string(),
+        })
     } else {
         None
     }

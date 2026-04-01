@@ -16,8 +16,8 @@
 use crate::discovery::CastDevice;
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Chromecast Default Media Receiver app ID.
 #[allow(dead_code)]
@@ -181,12 +181,8 @@ impl ChromecastSender {
 
     /// Start streaming audio. Tells the Chromecast to play from our HTTP server.
     pub fn start_stream(&mut self, sample_rate: u32, channels: u16) -> Result<(), String> {
-        let local_ip = self
-            .local_ip
-            .ok_or("Not connected")?;
-        let http_port = self
-            .http_port
-            .ok_or("HTTP server not started")?;
+        let local_ip = self.local_ip.ok_or("Not connected")?;
+        let http_port = self.http_port.ok_or("HTTP server not started")?;
 
         // Configure the ring buffer
         {
@@ -198,10 +194,7 @@ impl ChromecastSender {
 
         let stream_url = format!("http://{}:{}/stream.wav", local_ip, http_port);
 
-        log::info!(
-            "[Chromecast] Telling device to play from {}",
-            stream_url,
-        );
+        log::info!("[Chromecast] Telling device to play from {}", stream_url,);
 
         self.state = ChromecastState::Streaming;
         self.streaming.store(true, Ordering::Relaxed);

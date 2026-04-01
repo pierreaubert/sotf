@@ -98,7 +98,8 @@ impl AirPlaySender {
     pub fn connect(&mut self) -> Result<(), String> {
         self.state = AirPlayState::Connecting;
 
-        let addr = std::net::SocketAddr::V4(SocketAddrV4::new(self.device.address, self.device.port));
+        let addr =
+            std::net::SocketAddr::V4(SocketAddrV4::new(self.device.address, self.device.port));
 
         // TCP connection for RTSP control
         let stream = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))
@@ -158,10 +159,7 @@ impl AirPlaySender {
         let rtp_socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
             .map_err(|e| format!("RTP socket bind failed: {}", e))?;
         rtp_socket
-            .connect(SocketAddrV4::new(
-                self.device.address,
-                self.rtp_remote_port,
-            ))
+            .connect(SocketAddrV4::new(self.device.address, self.rtp_remote_port))
             .map_err(|e| format!("RTP socket connect failed: {}", e))?;
         self.rtp_socket = Some(rtp_socket);
 
@@ -264,10 +262,7 @@ impl AirPlaySender {
     // --- Internal ---
 
     fn send_rtp_packet(&self, pcm_data: &[u8]) -> Result<(), String> {
-        let socket = self
-            .rtp_socket
-            .as_ref()
-            .ok_or("No RTP socket")?;
+        let socket = self.rtp_socket.as_ref().ok_or("No RTP socket")?;
 
         let seq = self.rtp_seq.fetch_add(1, Ordering::Relaxed);
         let ts = self
@@ -316,10 +311,7 @@ impl AirPlaySender {
     ) -> Result<String, String> {
         use std::io::{BufRead, BufReader, Write};
 
-        let stream = self
-            .rtsp_stream
-            .as_mut()
-            .ok_or("No RTSP connection")?;
+        let stream = self.rtsp_stream.as_mut().ok_or("No RTSP connection")?;
 
         self.cseq += 1;
 
@@ -392,7 +384,9 @@ impl AirPlaySender {
         );
 
         // Check for RTSP error
-        if let Some(status_line) = response.lines().next() && !status_line.contains("200") {
+        if let Some(status_line) = response.lines().next()
+            && !status_line.contains("200")
+        {
             return Err(format!("RTSP error: {}", status_line));
         }
 

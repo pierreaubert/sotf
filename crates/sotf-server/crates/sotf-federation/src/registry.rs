@@ -36,11 +36,7 @@ impl SourceRegistry {
     }
 
     /// Register a provider with its configuration.
-    pub fn register(
-        &mut self,
-        provider: Box<dyn LibraryProvider>,
-        config: SourceConfig,
-    ) {
+    pub fn register(&mut self, provider: Box<dyn LibraryProvider>, config: SourceConfig) {
         let key = provider.source_id().0.clone();
         self.configs.insert(key.clone(), config);
         self.providers.insert(key, provider);
@@ -178,10 +174,9 @@ mod tests {
         });
         // Using LocalFilesProvider as a stand-in; in practice this would be SubsonicProvider etc.
         // We override the source_id via the config key.
-        registry.providers.insert(
-            "subsonic:test".to_string(),
-            Box::new(remote),
-        );
+        registry
+            .providers
+            .insert("subsonic:test".to_string(), Box::new(remote));
         registry.configs.insert(
             "subsonic:test".to_string(),
             SourceConfig {
@@ -198,7 +193,7 @@ mod tests {
         let enabled = registry.enabled_providers();
         assert_eq!(enabled.len(), 2);
         assert_eq!(enabled[0].2, 100); // local first (higher priority)
-        assert_eq!(enabled[1].2, 50);  // subsonic second
+        assert_eq!(enabled[1].2, 50); // subsonic second
     }
 
     #[test]

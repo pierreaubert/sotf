@@ -6,6 +6,6 @@ pub mod tofu;
 
 pub use cert_gen::fingerprint;
 pub use cert_store::CertStore;
-pub use client::{build_client_tls_config, build_client_tls_config_with_cert, TofuVerifier};
+pub use client::{TofuVerifier, build_client_tls_config, build_client_tls_config_with_cert};
 pub use server::{build_server_tls_config, build_server_tls_config_mtls, tls_accept};
 pub use tofu::{TofuResult, TofuStore, TrustedHost};

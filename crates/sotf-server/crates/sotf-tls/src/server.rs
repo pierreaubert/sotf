@@ -33,13 +33,18 @@ pub fn build_server_tls_config(
 ///
 /// # Errors
 /// Returns an error if the server certificate or key is invalid.
-#[allow(clippy::implicit_hasher, reason = "HashSet is stored in Arc<Mutex<>> so generalizing the hasher is impractical")]
+#[allow(
+    clippy::implicit_hasher,
+    reason = "HashSet is stored in Arc<Mutex<>> so generalizing the hasher is impractical"
+)]
 pub fn build_server_tls_config_mtls(
     cert: CertificateDer<'static>,
     key: PrivateKeyDer<'static>,
     trusted_fingerprints: Arc<Mutex<HashSet<String>>>,
 ) -> Result<Arc<rustls::ServerConfig>, String> {
-    let verifier = Arc::new(PinnedClientVerifier { trusted_fingerprints });
+    let verifier = Arc::new(PinnedClientVerifier {
+        trusted_fingerprints,
+    });
 
     let config = rustls::ServerConfig::builder()
         .with_client_cert_verifier(verifier)

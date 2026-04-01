@@ -27,7 +27,7 @@ impl std::fmt::Display for MpdPlayState {
 
 /// Status snapshot returned by the adapter.
 pub struct MpdStatus {
-    pub volume: u8,        // 0-100
+    pub volume: u8, // 0-100
     pub repeat: bool,
     pub random: bool,
     pub single: bool,
@@ -334,10 +334,7 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
         }
         MpdCommand::Count(filters) => {
             let songs = adapter.search(filters, false);
-            let total_time: f64 = songs
-                .iter()
-                .filter_map(|s| s.duration)
-                .sum();
+            let total_time: f64 = songs.iter().filter_map(|s| s.duration).sum();
             MpdResponse::ok_with(vec![
                 kv("songs", songs.len()),
                 kv("playtime", total_time as u64),
@@ -386,15 +383,53 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
         // Reflection
         MpdCommand::Commands => {
             let cmds = [
-                "add", "addid", "clear", "close", "commands", "consume",
-                "count", "currentsong", "delete", "deleteid", "decoders",
-                "disableoutput", "enableoutput", "find", "idle", "list",
-                "listall", "lsinfo", "next", "noidle", "notcommands",
-                "outputs", "pause", "ping", "play", "playid", "playlistid",
-                "playlistinfo", "previous", "random", "repeat", "search",
-                "seek", "seekcur", "seekid", "setvol", "shuffle", "single",
-                "stats", "status", "stop", "swap", "tagtypes",
-                "toggleoutput", "update", "urlhandlers", "volume",
+                "add",
+                "addid",
+                "clear",
+                "close",
+                "commands",
+                "consume",
+                "count",
+                "currentsong",
+                "delete",
+                "deleteid",
+                "decoders",
+                "disableoutput",
+                "enableoutput",
+                "find",
+                "idle",
+                "list",
+                "listall",
+                "lsinfo",
+                "next",
+                "noidle",
+                "notcommands",
+                "outputs",
+                "pause",
+                "ping",
+                "play",
+                "playid",
+                "playlistid",
+                "playlistinfo",
+                "previous",
+                "random",
+                "repeat",
+                "search",
+                "seek",
+                "seekcur",
+                "seekid",
+                "setvol",
+                "shuffle",
+                "single",
+                "stats",
+                "status",
+                "stop",
+                "swap",
+                "tagtypes",
+                "toggleoutput",
+                "update",
+                "urlhandlers",
+                "volume",
             ];
             let kvs = cmds.iter().map(|c| kv("command", c)).collect();
             MpdResponse::ok_with(kvs)
@@ -402,15 +437,20 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
         MpdCommand::NotCommands => MpdResponse::ok(),
         MpdCommand::TagTypes => {
             let tags = [
-                "Artist", "Album", "Title", "Track", "Genre", "Date",
-                "Composer", "Disc", "AlbumArtist",
+                "Artist",
+                "Album",
+                "Title",
+                "Track",
+                "Genre",
+                "Date",
+                "Composer",
+                "Disc",
+                "AlbumArtist",
             ];
             let kvs = tags.iter().map(|t| kv("tagtype", t)).collect();
             MpdResponse::ok_with(kvs)
         }
-        MpdCommand::UrlHandlers => {
-            MpdResponse::ok_with(vec![kv("handler", "file://")])
-        }
+        MpdCommand::UrlHandlers => MpdResponse::ok_with(vec![kv("handler", "file://")]),
         MpdCommand::Decoders => {
             let mut kvs = Vec::new();
             for (name, suffixes, mime) in [
@@ -456,15 +496,33 @@ mod tests {
     struct DummyAdapter;
 
     impl PlayerAdapter for DummyAdapter {
-        fn play(&self, _pos: Option<u32>) -> Result<(), String> { Ok(()) }
-        fn pause(&self, _state: Option<bool>) -> Result<(), String> { Ok(()) }
-        fn stop(&self) -> Result<(), String> { Ok(()) }
-        fn next(&self) -> Result<(), String> { Ok(()) }
-        fn previous(&self) -> Result<(), String> { Ok(()) }
-        fn seek_pos(&self, _pos: u32, _time: f64) -> Result<(), String> { Ok(()) }
-        fn seek_cur(&self, _time: f64) -> Result<(), String> { Ok(()) }
-        fn set_volume(&self, _vol: u8) -> Result<(), String> { Ok(()) }
-        fn volume_change(&self, _delta: i8) -> Result<(), String> { Ok(()) }
+        fn play(&self, _pos: Option<u32>) -> Result<(), String> {
+            Ok(())
+        }
+        fn pause(&self, _state: Option<bool>) -> Result<(), String> {
+            Ok(())
+        }
+        fn stop(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn next(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn previous(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn seek_pos(&self, _pos: u32, _time: f64) -> Result<(), String> {
+            Ok(())
+        }
+        fn seek_cur(&self, _time: f64) -> Result<(), String> {
+            Ok(())
+        }
+        fn set_volume(&self, _vol: u8) -> Result<(), String> {
+            Ok(())
+        }
+        fn volume_change(&self, _delta: i8) -> Result<(), String> {
+            Ok(())
+        }
         fn status(&self) -> MpdStatus {
             MpdStatus {
                 volume: 75,
@@ -482,16 +540,36 @@ mod tests {
                 playlist_version: 1,
             }
         }
-        fn current_song(&self) -> Option<MpdSongInfo> { None }
-        fn playlist_info(&self, _range: Option<(u32, Option<u32>)>) -> Vec<MpdSongInfo> { vec![] }
-        fn playlist_song_by_id(&self, _id: u32) -> Option<MpdSongInfo> { None }
-        fn add(&self, _uri: &str) -> Result<(), String> { Ok(()) }
-        fn add_id(&self, _uri: &str, _pos: Option<u32>) -> Result<u32, String> { Ok(0) }
-        fn delete(&self, _pos: u32) -> Result<(), String> { Ok(()) }
-        fn clear(&self) -> Result<(), String> { Ok(()) }
-        fn search(&self, _filters: &[FilterExpr], _exact: bool) -> Vec<MpdSongInfo> { vec![] }
-        fn list_tag(&self, _tag: &str, _filters: &[FilterExpr]) -> Vec<String> { vec![] }
-        fn lsinfo(&self, _path: Option<&str>) -> Vec<MpdDirEntry> { vec![] }
+        fn current_song(&self) -> Option<MpdSongInfo> {
+            None
+        }
+        fn playlist_info(&self, _range: Option<(u32, Option<u32>)>) -> Vec<MpdSongInfo> {
+            vec![]
+        }
+        fn playlist_song_by_id(&self, _id: u32) -> Option<MpdSongInfo> {
+            None
+        }
+        fn add(&self, _uri: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn add_id(&self, _uri: &str, _pos: Option<u32>) -> Result<u32, String> {
+            Ok(0)
+        }
+        fn delete(&self, _pos: u32) -> Result<(), String> {
+            Ok(())
+        }
+        fn clear(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn search(&self, _filters: &[FilterExpr], _exact: bool) -> Vec<MpdSongInfo> {
+            vec![]
+        }
+        fn list_tag(&self, _tag: &str, _filters: &[FilterExpr]) -> Vec<String> {
+            vec![]
+        }
+        fn lsinfo(&self, _path: Option<&str>) -> Vec<MpdDirEntry> {
+            vec![]
+        }
     }
 
     #[test]

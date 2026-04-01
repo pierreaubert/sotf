@@ -6,8 +6,12 @@
 /// Looks for `<actionName>...</actionName>` and extracts inner text of child elements.
 pub fn extract_soap_action(body: &str) -> Option<(&str, Vec<(&str, &str)>)> {
     // Find the SOAP Body content
-    let body_start = body.find("<s:Body>").or_else(|| body.find("<SOAP-ENV:Body>"))?;
-    let body_end = body.find("</s:Body>").or_else(|| body.find("</SOAP-ENV:Body>"))?;
+    let body_start = body
+        .find("<s:Body>")
+        .or_else(|| body.find("<SOAP-ENV:Body>"))?;
+    let body_end = body
+        .find("</s:Body>")
+        .or_else(|| body.find("</SOAP-ENV:Body>"))?;
     let inner = &body[body_start..body_end];
 
     // Find the action element (first element inside Body with namespace prefix u:)
@@ -26,10 +30,12 @@ pub fn extract_soap_action(body: &str) -> Option<(&str, Vec<(&str, &str)>)> {
     while pos < action_content.len() {
         let rest = &action_content[pos..];
         // Stop at the closing action tag
-        if rest.starts_with("</u:") || rest.starts_with("</") && rest[2..].starts_with(action_name) {
+        if rest.starts_with("</u:") || rest.starts_with("</") && rest[2..].starts_with(action_name)
+        {
             break;
         }
-        if rest.starts_with('<') && !rest.starts_with("</")
+        if rest.starts_with('<')
+            && !rest.starts_with("</")
             && let Some(tag_close) = rest[1..].find('>')
         {
             let tag = &rest[1..1 + tag_close];

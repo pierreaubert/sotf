@@ -91,7 +91,10 @@ impl DlnaDiscovery {
                     let response = String::from_utf8_lossy(&buf[..len]);
                     if let Some(device) = parse_search_response(&response, from) {
                         // Deduplicate by USN
-                        if !devices.iter().any(|d: &DiscoveredDevice| d.usn == device.usn) {
+                        if !devices
+                            .iter()
+                            .any(|d: &DiscoveredDevice| d.usn == device.usn)
+                        {
                             log::debug!(
                                 "[DLNA Discovery] Found: {} at {}",
                                 device.usn,
@@ -166,10 +169,7 @@ mod tests {
         let from: SocketAddr = "192.168.1.50:8200".parse().unwrap();
         let device = parse_search_response(response, from).unwrap();
 
-        assert_eq!(
-            device.location,
-            "http://192.168.1.50:8200/description.xml"
-        );
+        assert_eq!(device.location, "http://192.168.1.50:8200/description.xml");
         assert!(device.device_type.contains("MediaRenderer"));
         assert!(device.usn.contains("abc-123"));
     }

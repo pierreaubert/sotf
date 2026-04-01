@@ -318,7 +318,9 @@ fn parse_mdns_response(
     }
 
     // Fall back to sender IP if no A record
-    if address == Ipv4Addr::UNSPECIFIED && let SocketAddr::V4(v4) = from {
+    if address == Ipv4Addr::UNSPECIFIED
+        && let SocketAddr::V4(v4) = from
+    {
         address = *v4.ip();
     }
 

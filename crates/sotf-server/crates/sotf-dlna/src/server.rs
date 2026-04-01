@@ -136,7 +136,10 @@ async fn handle_server_request(
     let mut reader = BufReader::new(reader);
 
     let mut request_line = String::new();
-    reader.read_line(&mut request_line).await.map_err(|e| e.to_string())?;
+    reader
+        .read_line(&mut request_line)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
@@ -148,9 +151,14 @@ async fn handle_server_request(
     let mut content_length = 0usize;
     loop {
         let mut line = String::new();
-        reader.read_line(&mut line).await.map_err(|e| e.to_string())?;
+        reader
+            .read_line(&mut line)
+            .await
+            .map_err(|e| e.to_string())?;
         let trimmed = line.trim();
-        if trimmed.is_empty() { break; }
+        if trimmed.is_empty() {
+            break;
+        }
         if let Some((key, value)) = trimmed.split_once(':')
             && key.to_lowercase() == "content-length"
         {
@@ -178,13 +186,14 @@ async fn handle_server_request(
         ("POST", "/ContentDirectory/control") => {
             handle_content_directory(&body_str, adapter, base_url)
         }
-        ("POST", "/ConnectionManager/control") => {
-            handle_cm_action(&body_str)
-        }
+        ("POST", "/ConnectionManager/control") => handle_cm_action(&body_str),
         _ => http_response(404, "text/plain", "Not Found"),
     };
 
-    writer.write_all(response.as_bytes()).await.map_err(|e| e.to_string())?;
+    writer
+        .write_all(response.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -197,16 +206,19 @@ fn handle_content_directory(
         return http_soap_fault(402, "Invalid SOAP");
     };
 
-    let find_arg = |name: &str| -> Option<&str> {
-        args.iter().find(|(k, _)| *k == name).map(|(_, v)| *v)
-    };
+    let find_arg =
+        |name: &str| -> Option<&str> { args.iter().find(|(k, _)| *k == name).map(|(_, v)| *v) };
 
     match action {
         "Browse" => {
             let object_id = find_arg("ObjectID").unwrap_or("0");
             let flag = find_arg("BrowseFlag").unwrap_or("BrowseDirectChildren");
-            let start: u32 = find_arg("StartingIndex").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let count: u32 = find_arg("RequestedCount").and_then(|v| v.parse().ok()).unwrap_or(50);
+            let start: u32 = find_arg("StartingIndex")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let count: u32 = find_arg("RequestedCount")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50);
 
             let (didl_xml, total, returned) = if flag == "BrowseMetadata" {
                 // Return metadata for a single object
@@ -231,33 +243,39 @@ fn handle_content_directory(
             } else if object_id == "0" {
                 // Browse root → list albums
                 let (albums, total) = adapter.browse_albums(start, count);
-                let containers: Vec<DidlContainer> = albums.iter().map(|a| DidlContainer {
-                    id: a.id.clone(),
-                    parent_id: "0".to_string(),
-                    title: format!("{} - {}", a.artist, a.title),
-                    child_count: a.track_count,
-                }).collect();
+                let containers: Vec<DidlContainer> = albums
+                    .iter()
+                    .map(|a| DidlContainer {
+                        id: a.id.clone(),
+                        parent_id: "0".to_string(),
+                        title: format!("{} - {}", a.artist, a.title),
+                        child_count: a.track_count,
+                    })
+                    .collect();
                 let returned = containers.len() as u32;
                 (didl::didl_lite(&containers, &[]), total, returned)
             } else {
                 // Browse album → list tracks
                 let tracks = adapter.browse_album_tracks(object_id);
-                let items: Vec<DidlItem> = tracks.iter().map(|t| DidlItem {
-                    id: t.id.clone(),
-                    parent_id: t.album_id.clone(),
-                    title: t.title.clone(),
-                    artist: Some(t.artist.clone()),
-                    album: Some(t.album.clone()),
-                    genre: t.genre.clone(),
-                    track_number: t.track_number,
-                    duration: t.duration_secs,
-                    resource_url: format!("{}/media/{}", base_url, t.id),
-                    mime_type: t.mime_type.clone(),
-                    sample_rate: t.sample_rate,
-                    channels: t.channels,
-                    bit_depth: t.bit_depth,
-                    file_size: t.file_size,
-                }).collect();
+                let items: Vec<DidlItem> = tracks
+                    .iter()
+                    .map(|t| DidlItem {
+                        id: t.id.clone(),
+                        parent_id: t.album_id.clone(),
+                        title: t.title.clone(),
+                        artist: Some(t.artist.clone()),
+                        album: Some(t.album.clone()),
+                        genre: t.genre.clone(),
+                        track_number: t.track_number,
+                        duration: t.duration_secs,
+                        resource_url: format!("{}/media/{}", base_url, t.id),
+                        mime_type: t.mime_type.clone(),
+                        sample_rate: t.sample_rate,
+                        channels: t.channels,
+                        bit_depth: t.bit_depth,
+                        file_size: t.file_size,
+                    })
+                    .collect();
                 let total = items.len() as u32;
                 let returned = items.len() as u32;
                 (didl::didl_lite(&[], &items), total, returned)
@@ -283,26 +301,33 @@ fn handle_content_directory(
         }
         "Search" => {
             let query = find_arg("SearchCriteria").unwrap_or("");
-            let start: u32 = find_arg("StartingIndex").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let count: u32 = find_arg("RequestedCount").and_then(|v| v.parse().ok()).unwrap_or(50);
+            let start: u32 = find_arg("StartingIndex")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let count: u32 = find_arg("RequestedCount")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50);
 
             let (tracks, total) = adapter.search_tracks(query, start, count);
-            let items: Vec<DidlItem> = tracks.iter().map(|t| DidlItem {
-                id: t.id.clone(),
-                parent_id: t.album_id.clone(),
-                title: t.title.clone(),
-                artist: Some(t.artist.clone()),
-                album: Some(t.album.clone()),
-                genre: t.genre.clone(),
-                track_number: t.track_number,
-                duration: t.duration_secs,
-                resource_url: format!("{}/media/{}", base_url, t.id),
-                mime_type: t.mime_type.clone(),
-                sample_rate: t.sample_rate,
-                channels: t.channels,
-                bit_depth: t.bit_depth,
-                file_size: t.file_size,
-            }).collect();
+            let items: Vec<DidlItem> = tracks
+                .iter()
+                .map(|t| DidlItem {
+                    id: t.id.clone(),
+                    parent_id: t.album_id.clone(),
+                    title: t.title.clone(),
+                    artist: Some(t.artist.clone()),
+                    album: Some(t.album.clone()),
+                    genre: t.genre.clone(),
+                    track_number: t.track_number,
+                    duration: t.duration_secs,
+                    resource_url: format!("{}/media/{}", base_url, t.id),
+                    mime_type: t.mime_type.clone(),
+                    sample_rate: t.sample_rate,
+                    channels: t.channels,
+                    bit_depth: t.bit_depth,
+                    file_size: t.file_size,
+                })
+                .collect();
 
             let escaped_didl = didl::didl_lite(&[], &items)
                 .replace('&', "&amp;")
@@ -329,7 +354,10 @@ fn handle_content_directory(
             let resp = xml::soap_response(
                 action,
                 CD_SERVICE,
-                &[("SearchCaps", "dc:title,dc:creator,upnp:album,upnp:artist,upnp:genre")],
+                &[(
+                    "SearchCaps",
+                    "dc:title,dc:creator,upnp:album,upnp:artist,upnp:genre",
+                )],
             );
             http_soap_response(&resp)
         }
@@ -353,7 +381,8 @@ fn handle_cm_action(body: &str) -> String {
     match action {
         "GetProtocolInfo" => {
             let protocols = "http-get:*:audio/flac:*,http-get:*:audio/mpeg:*,http-get:*:audio/wav:*,http-get:*:audio/ogg:*,http-get:*:audio/aac:*";
-            let resp = xml::soap_response(action, CM_SERVICE, &[("Source", protocols), ("Sink", "")]);
+            let resp =
+                xml::soap_response(action, CM_SERVICE, &[("Source", protocols), ("Sink", "")]);
             http_soap_response(&resp)
         }
         _ => http_soap_fault(401, &format!("Invalid Action: {}", action)),
@@ -368,7 +397,11 @@ fn http_response(status: u16, content_type: &str, body: &str) -> String {
     };
     format!(
         "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        status, status_text, content_type, body.len(), body,
+        status,
+        status_text,
+        content_type,
+        body.len(),
+        body,
     )
 }
 

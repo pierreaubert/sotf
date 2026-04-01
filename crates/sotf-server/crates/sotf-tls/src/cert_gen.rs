@@ -16,7 +16,9 @@ pub fn generate_self_signed(
     let mut params = CertificateParams::new(hostnames.to_vec())
         .map_err(|e| format!("invalid hostnames: {e}"))?;
 
-    params.distinguished_name.push(DnType::CommonName, "SOTF Server");
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "SOTF Server");
     params
         .distinguished_name
         .push(DnType::OrganizationName, "SOTF");
@@ -27,9 +29,21 @@ pub fn generate_self_signed(
 
     // Valid for 365 days
     params.not_before = rcgen::date_time_ymd(
-        chrono::Utc::now().format("%Y").to_string().parse().unwrap_or(2026),
-        chrono::Utc::now().format("%m").to_string().parse().unwrap_or(1),
-        chrono::Utc::now().format("%d").to_string().parse().unwrap_or(1),
+        chrono::Utc::now()
+            .format("%Y")
+            .to_string()
+            .parse()
+            .unwrap_or(2026),
+        chrono::Utc::now()
+            .format("%m")
+            .to_string()
+            .parse()
+            .unwrap_or(1),
+        chrono::Utc::now()
+            .format("%d")
+            .to_string()
+            .parse()
+            .unwrap_or(1),
     );
     let next_year = chrono::Utc::now() + chrono::Duration::days(365);
     params.not_after = rcgen::date_time_ymd(
@@ -44,8 +58,7 @@ pub fn generate_self_signed(
         .map_err(|e| format!("cert generation failed: {e}"))?;
 
     let cert_der = CertificateDer::from(cert.der().to_vec());
-    let key_der =
-        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_pair.serialize_der().clone()));
+    let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_pair.serialize_der().clone()));
 
     Ok((cert_der, key_der))
 }
@@ -53,7 +66,7 @@ pub fn generate_self_signed(
 /// Compute the SHA-256 fingerprint of a DER-encoded certificate.
 ///
 /// Returns a colon-separated hex string like `"AB:CD:EF:..."`.
-#[must_use] 
+#[must_use]
 pub fn fingerprint(cert_der: &CertificateDer<'_>) -> String {
     let digest = Sha256::digest(cert_der.as_ref());
     digest
@@ -64,7 +77,7 @@ pub fn fingerprint(cert_der: &CertificateDer<'_>) -> String {
 }
 
 /// Enumerate all non-loopback IPv4 and IPv6 addresses on local interfaces.
-#[must_use] 
+#[must_use]
 pub fn local_ip_addresses() -> Vec<IpAddr> {
     let mut addrs = Vec::new();
     // Use a simple UDP socket trick to find the default route IP
@@ -72,9 +85,10 @@ pub fn local_ip_addresses() -> Vec<IpAddr> {
         // Connect to a public DNS to determine our local IP
         if socket.connect("8.8.8.8:80").is_ok()
             && let Ok(local_addr) = socket.local_addr()
-                && !local_addr.ip().is_loopback() {
-                    addrs.push(local_addr.ip());
-                }
+            && !local_addr.ip().is_loopback()
+        {
+            addrs.push(local_addr.ip());
+        }
     }
     // Always include loopback for local testing
     addrs.push(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
@@ -103,11 +117,8 @@ mod tests {
 
     #[test]
     fn test_fingerprint_format() {
-        let (cert, _) = generate_self_signed(
-            &["test.local".to_string()],
-            &[],
-        )
-        .expect("cert generation should succeed");
+        let (cert, _) = generate_self_signed(&["test.local".to_string()], &[])
+            .expect("cert generation should succeed");
 
         let fp = fingerprint(&cert);
         // SHA-256 = 32 bytes = 32 hex pairs + 31 colons = 95 chars

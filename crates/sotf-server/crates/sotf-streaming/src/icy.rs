@@ -31,11 +31,7 @@ impl IcyMetadata {
         let rest = &text[value_start..];
         let end = rest.find("';")?;
         let value = rest[..end].to_string();
-        if value.is_empty() {
-            None
-        } else {
-            Some(value)
-        }
+        if value.is_empty() { None } else { Some(value) }
     }
 }
 
@@ -45,16 +41,14 @@ mod tests {
 
     #[test]
     fn test_parse_typical_metadata() {
-        let raw = b"StreamTitle='Pink Floyd - Comfortably Numb';StreamUrl='http://radio.example.com';";
+        let raw =
+            b"StreamTitle='Pink Floyd - Comfortably Numb';StreamUrl='http://radio.example.com';";
         let meta = IcyMetadata::parse(raw);
         assert_eq!(
             meta.stream_title.as_deref(),
             Some("Pink Floyd - Comfortably Numb")
         );
-        assert_eq!(
-            meta.stream_url.as_deref(),
-            Some("http://radio.example.com")
-        );
+        assert_eq!(meta.stream_url.as_deref(), Some("http://radio.example.com"));
     }
 
     #[test]

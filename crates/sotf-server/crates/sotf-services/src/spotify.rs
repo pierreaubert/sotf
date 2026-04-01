@@ -70,9 +70,7 @@ impl StreamingService for SpotifyService {
         let rt = tokio::runtime::Handle::try_current()
             .map_err(|e| ServiceError::Other(format!("No tokio runtime: {}", e)))?;
 
-        let session = rt
-            .block_on(librespot_core::Session::new(session_config, None))
-            ;
+        let session = rt.block_on(librespot_core::Session::new(session_config, None));
 
         rt.block_on(session.connect(credentials, false))
             .map_err(|e| ServiceError::AuthError(format!("Spotify login failed: {}", e)))?;
@@ -155,7 +153,11 @@ impl StreamingService for SpotifyService {
         // Start playing the track
         player.load(spotify_id, true, 0);
 
-        log::info!("[Spotify] Streaming track {} at {:?} quality", track_id, quality);
+        log::info!(
+            "[Spotify] Streaming track {} at {:?} quality",
+            track_id,
+            quality
+        );
 
         // Create PcmStream that reads from the channel
         let reader = ChannelReader::new(rx);
@@ -208,7 +210,9 @@ impl librespot_playback::audio_backend::Sink for ChannelSink {
 
     fn write(
         &mut self,
-        packet: librespot_playback::audio_backend::SinkResult<librespot_playback::decoder::AudioPacket>,
+        packet: librespot_playback::audio_backend::SinkResult<
+            librespot_playback::decoder::AudioPacket,
+        >,
     ) -> Result<(), librespot_playback::audio_backend::SinkError> {
         match packet {
             Ok(librespot_playback::decoder::AudioPacket::Samples(samples)) => {

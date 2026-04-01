@@ -7,7 +7,7 @@
 // Optional TLS via the `tls` feature.
 
 use crate::handler::{PlayerAdapter, handle_command};
-use crate::protocol::{self, MpdCommand, MpdResponse, MPD_VERSION};
+use crate::protocol::{self, MPD_VERSION, MpdCommand, MpdResponse};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
@@ -36,7 +36,8 @@ pub struct MpdServerConfig {
     pub password: Option<String>,
     /// Trusted client certificate fingerprints (only used when auth_mode == Certificate).
     #[cfg(feature = "tls")]
-    pub trusted_client_fingerprints: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    pub trusted_client_fingerprints:
+        std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
 }
 
 impl Default for MpdServerConfig {
@@ -269,10 +270,7 @@ where
             if let Some(ref expected) = password {
                 if pw == expected {
                     authenticated = true;
-                    writer
-                        .write_all(b"OK\n")
-                        .await
-                        .map_err(|e| e.to_string())?;
+                    writer.write_all(b"OK\n").await.map_err(|e| e.to_string())?;
                 } else {
                     let err = protocol::MpdError::new(
                         protocol::MpdErrorCode::Password,
@@ -286,10 +284,7 @@ where
                 }
             } else {
                 // No password configured, accept anything
-                writer
-                    .write_all(b"OK\n")
-                    .await
-                    .map_err(|e| e.to_string())?;
+                writer.write_all(b"OK\n").await.map_err(|e| e.to_string())?;
             }
             continue;
         }
@@ -415,15 +410,33 @@ mod tests {
     struct DummyAdapter;
 
     impl PlayerAdapter for DummyAdapter {
-        fn play(&self, _pos: Option<u32>) -> Result<(), String> { Ok(()) }
-        fn pause(&self, _state: Option<bool>) -> Result<(), String> { Ok(()) }
-        fn stop(&self) -> Result<(), String> { Ok(()) }
-        fn next(&self) -> Result<(), String> { Ok(()) }
-        fn previous(&self) -> Result<(), String> { Ok(()) }
-        fn seek_pos(&self, _pos: u32, _time: f64) -> Result<(), String> { Ok(()) }
-        fn seek_cur(&self, _time: f64) -> Result<(), String> { Ok(()) }
-        fn set_volume(&self, _vol: u8) -> Result<(), String> { Ok(()) }
-        fn volume_change(&self, _delta: i8) -> Result<(), String> { Ok(()) }
+        fn play(&self, _pos: Option<u32>) -> Result<(), String> {
+            Ok(())
+        }
+        fn pause(&self, _state: Option<bool>) -> Result<(), String> {
+            Ok(())
+        }
+        fn stop(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn next(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn previous(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn seek_pos(&self, _pos: u32, _time: f64) -> Result<(), String> {
+            Ok(())
+        }
+        fn seek_cur(&self, _time: f64) -> Result<(), String> {
+            Ok(())
+        }
+        fn set_volume(&self, _vol: u8) -> Result<(), String> {
+            Ok(())
+        }
+        fn volume_change(&self, _delta: i8) -> Result<(), String> {
+            Ok(())
+        }
         fn status(&self) -> MpdStatus {
             MpdStatus {
                 volume: 50,
@@ -455,15 +468,33 @@ mod tests {
                 id: 0,
             })
         }
-        fn playlist_info(&self, _range: Option<(u32, Option<u32>)>) -> Vec<MpdSongInfo> { vec![] }
-        fn playlist_song_by_id(&self, _id: u32) -> Option<MpdSongInfo> { None }
-        fn add(&self, _uri: &str) -> Result<(), String> { Ok(()) }
-        fn add_id(&self, _uri: &str, _pos: Option<u32>) -> Result<u32, String> { Ok(42) }
-        fn delete(&self, _pos: u32) -> Result<(), String> { Ok(()) }
-        fn clear(&self) -> Result<(), String> { Ok(()) }
-        fn search(&self, _filters: &[FilterExpr], _exact: bool) -> Vec<MpdSongInfo> { vec![] }
-        fn list_tag(&self, _tag: &str, _filters: &[FilterExpr]) -> Vec<String> { vec![] }
-        fn lsinfo(&self, _path: Option<&str>) -> Vec<MpdDirEntry> { vec![] }
+        fn playlist_info(&self, _range: Option<(u32, Option<u32>)>) -> Vec<MpdSongInfo> {
+            vec![]
+        }
+        fn playlist_song_by_id(&self, _id: u32) -> Option<MpdSongInfo> {
+            None
+        }
+        fn add(&self, _uri: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn add_id(&self, _uri: &str, _pos: Option<u32>) -> Result<u32, String> {
+            Ok(42)
+        }
+        fn delete(&self, _pos: u32) -> Result<(), String> {
+            Ok(())
+        }
+        fn clear(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn search(&self, _filters: &[FilterExpr], _exact: bool) -> Vec<MpdSongInfo> {
+            vec![]
+        }
+        fn list_tag(&self, _tag: &str, _filters: &[FilterExpr]) -> Vec<String> {
+            vec![]
+        }
+        fn lsinfo(&self, _path: Option<&str>) -> Vec<MpdDirEntry> {
+            vec![]
+        }
     }
 
     #[test]

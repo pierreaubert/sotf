@@ -1,6 +1,6 @@
 use crate::icy::IcyMetadata;
 use reqwest::blocking::Client;
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_TYPE, RANGE};
+use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderValue, RANGE};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -126,9 +126,11 @@ impl HttpMediaSource {
             .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e.to_string()))?;
 
         if !response.status().is_success() && response.status().as_u16() != 206 {
-            return Err(io::Error::other(
-                format!("HTTP {} for {}", response.status(), self.url),
-            ));
+            return Err(io::Error::other(format!(
+                "HTTP {} for {}",
+                response.status(),
+                self.url
+            )));
         }
 
         let headers = response.headers();
@@ -210,7 +212,11 @@ impl HttpMediaSource {
                     return Ok(());
                 }
                 Err(e) => {
-                    log::warn!("[HttpMediaSource] Reconnection attempt {} failed: {}", attempt, e);
+                    log::warn!(
+                        "[HttpMediaSource] Reconnection attempt {} failed: {}",
+                        attempt,
+                        e
+                    );
                     delay_ms *= 2;
                 }
             }
@@ -472,7 +478,11 @@ fn url_extension_hint(url: &str) -> Option<String> {
 
 /// Map an HTTP Content-Type to a Symphonia format hint.
 fn content_type_to_hint(content_type: &str) -> Option<String> {
-    let ct = content_type.split(';').next().unwrap_or(content_type).trim();
+    let ct = content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim();
     match ct {
         "audio/mpeg" | "audio/mp3" => Some("mp3".to_string()),
         "audio/flac" | "audio/x-flac" => Some("flac".to_string()),
@@ -515,34 +525,19 @@ mod tests {
             url_extension_hint("http://example.com/song.ogg?token=abc"),
             Some("ogg".to_string())
         );
-        assert_eq!(
-            url_extension_hint("http://example.com/stream"),
-            None
-        );
-        assert_eq!(
-            url_extension_hint("http://example.com/song.xyz"),
-            None
-        );
+        assert_eq!(url_extension_hint("http://example.com/stream"), None);
+        assert_eq!(url_extension_hint("http://example.com/song.xyz"), None);
     }
 
     #[test]
     fn test_content_type_to_hint() {
-        assert_eq!(
-            content_type_to_hint("audio/mpeg"),
-            Some("mp3".to_string())
-        );
-        assert_eq!(
-            content_type_to_hint("audio/flac"),
-            Some("flac".to_string())
-        );
+        assert_eq!(content_type_to_hint("audio/mpeg"), Some("mp3".to_string()));
+        assert_eq!(content_type_to_hint("audio/flac"), Some("flac".to_string()));
         assert_eq!(
             content_type_to_hint("audio/ogg; codecs=vorbis"),
             Some("ogg".to_string())
         );
-        assert_eq!(
-            content_type_to_hint("audio/wav"),
-            Some("wav".to_string())
-        );
+        assert_eq!(content_type_to_hint("audio/wav"), Some("wav".to_string()));
         assert_eq!(content_type_to_hint("text/html"), None);
     }
 

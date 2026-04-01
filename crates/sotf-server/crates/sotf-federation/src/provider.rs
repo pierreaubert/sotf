@@ -104,10 +104,18 @@ pub struct ProviderTrack {
 #[derive(Debug, Clone)]
 pub enum LibraryEvent {
     AlbumAdded(ProviderAlbum),
-    AlbumRemoved { album_id: String },
+    AlbumRemoved {
+        album_id: String,
+    },
     AlbumUpdated(ProviderAlbum),
-    TrackAdded { album_id: String, track: ProviderTrack },
-    TrackRemoved { album_id: String, track_id: String },
+    TrackAdded {
+        album_id: String,
+        track: ProviderTrack,
+    },
+    TrackRemoved {
+        album_id: String,
+        track_id: String,
+    },
     /// Provider requests a full re-sync (e.g., database was rebuilt).
     FullSyncRequired,
 }

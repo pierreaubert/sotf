@@ -124,19 +124,19 @@ pub enum MpdCommand {
     Password(String),
 
     // Playback control
-    Play(Option<u32>),     // position in playlist (optional)
-    PlayId(Option<u32>),   // song id (optional)
-    Pause(Option<bool>),   // toggle or explicit
+    Play(Option<u32>),   // position in playlist (optional)
+    PlayId(Option<u32>), // song id (optional)
+    Pause(Option<bool>), // toggle or explicit
     Stop,
     Next,
     Previous,
-    Seek(u32, f64),        // songpos, time_secs
-    SeekId(u32, f64),      // songid, time_secs
-    SeekCur(f64),          // relative or absolute seconds
+    Seek(u32, f64),   // songpos, time_secs
+    SeekId(u32, f64), // songid, time_secs
+    SeekCur(f64),     // relative or absolute seconds
 
     // Playback options
-    SetVol(u8),            // 0-100
-    Volume(i8),            // relative change
+    SetVol(u8), // 0-100
+    Volume(i8), // relative change
     Random(bool),
     Repeat(bool),
     Single(SingleMode),
@@ -150,23 +150,23 @@ pub enum MpdCommand {
     // Queue / playlist
     PlaylistInfo(Option<(u32, Option<u32>)>), // optional range
     PlaylistId(Option<u32>),
-    Add(String),           // URI
+    Add(String),                // URI
     AddId(String, Option<u32>), // URI, optional position
-    Delete(u32),           // position
-    DeleteId(u32),         // song id
+    Delete(u32),                // position
+    DeleteId(u32),              // song id
     Clear,
     Shuffle,
-    Move(u32, u32),        // from, to
-    Swap(u32, u32),        // pos1, pos2
+    Move(u32, u32), // from, to
+    Swap(u32, u32), // pos1, pos2
 
     // Database / library
-    ListAll(Option<String>),    // optional path
-    LsInfo(Option<String>),     // optional path
+    ListAll(Option<String>), // optional path
+    LsInfo(Option<String>),  // optional path
     Find(Vec<FilterExpr>),
     Search(Vec<FilterExpr>),
     List(String, Vec<FilterExpr>), // tag, optional filter
     Count(Vec<FilterExpr>),
-    Update(Option<String>),     // optional path
+    Update(Option<String>), // optional path
 
     // Output
     Outputs,
@@ -187,7 +187,7 @@ pub enum MpdCommand {
     CommandListEnd,
 
     // Idle / notify
-    Idle(Vec<String>),     // optional subsystems
+    Idle(Vec<String>), // optional subsystems
     NoIdle,
 }
 
@@ -208,11 +208,7 @@ pub struct FilterExpr {
 pub fn parse_command(line: &str) -> Result<MpdCommand, MpdError> {
     let line = line.trim();
     if line.is_empty() {
-        return Err(MpdError::new(
-            MpdErrorCode::UnknownCmd,
-            "",
-            "empty command",
-        ));
+        return Err(MpdError::new(MpdErrorCode::UnknownCmd, "", "empty command"));
     }
 
     let mut parts = CommandTokenizer::new(line);
@@ -250,7 +246,11 @@ pub fn parse_command(line: &str) -> Result<MpdCommand, MpdError> {
         "setvol" => {
             let vol = parts.require_u32(&cmd)?;
             if vol > 100 {
-                return Err(MpdError::new(MpdErrorCode::Arg, &cmd, "volume must be 0-100"));
+                return Err(MpdError::new(
+                    MpdErrorCode::Arg,
+                    &cmd,
+                    "volume must be 0-100",
+                ));
             }
             Ok(MpdCommand::SetVol(vol as u8))
         }
@@ -445,9 +445,8 @@ impl<'a> CommandTokenizer<'a> {
     }
 
     fn require_string(&mut self, cmd: &str) -> Result<String, MpdError> {
-        self.next_token().ok_or_else(|| {
-            MpdError::new(MpdErrorCode::Arg, cmd, "missing required argument")
-        })
+        self.next_token()
+            .ok_or_else(|| MpdError::new(MpdErrorCode::Arg, cmd, "missing required argument"))
     }
 
     fn require_u32(&mut self, cmd: &str) -> Result<u32, MpdError> {
@@ -518,9 +517,15 @@ mod tests {
         assert!(matches!(parse_command("ping"), Ok(MpdCommand::Ping)));
         assert!(matches!(parse_command("stop"), Ok(MpdCommand::Stop)));
         assert!(matches!(parse_command("next"), Ok(MpdCommand::Next)));
-        assert!(matches!(parse_command("previous"), Ok(MpdCommand::Previous)));
+        assert!(matches!(
+            parse_command("previous"),
+            Ok(MpdCommand::Previous)
+        ));
         assert!(matches!(parse_command("status"), Ok(MpdCommand::Status)));
-        assert!(matches!(parse_command("currentsong"), Ok(MpdCommand::CurrentSong)));
+        assert!(matches!(
+            parse_command("currentsong"),
+            Ok(MpdCommand::CurrentSong)
+        ));
         assert!(matches!(parse_command("clear"), Ok(MpdCommand::Clear)));
         assert!(matches!(parse_command("close"), Ok(MpdCommand::Close)));
     }
@@ -528,14 +533,26 @@ mod tests {
     #[test]
     fn test_parse_play() {
         assert!(matches!(parse_command("play"), Ok(MpdCommand::Play(None))));
-        assert!(matches!(parse_command("play 5"), Ok(MpdCommand::Play(Some(5)))));
+        assert!(matches!(
+            parse_command("play 5"),
+            Ok(MpdCommand::Play(Some(5)))
+        ));
     }
 
     #[test]
     fn test_parse_pause() {
-        assert!(matches!(parse_command("pause"), Ok(MpdCommand::Pause(None))));
-        assert!(matches!(parse_command("pause 1"), Ok(MpdCommand::Pause(Some(true)))));
-        assert!(matches!(parse_command("pause 0"), Ok(MpdCommand::Pause(Some(false)))));
+        assert!(matches!(
+            parse_command("pause"),
+            Ok(MpdCommand::Pause(None))
+        ));
+        assert!(matches!(
+            parse_command("pause 1"),
+            Ok(MpdCommand::Pause(Some(true)))
+        ));
+        assert!(matches!(
+            parse_command("pause 0"),
+            Ok(MpdCommand::Pause(Some(false)))
+        ));
     }
 
     #[test]
@@ -608,7 +625,10 @@ mod tests {
     fn test_parse_unknown_command() {
         assert!(matches!(
             parse_command("foobar"),
-            Err(MpdError { code: MpdErrorCode::UnknownCmd, .. })
+            Err(MpdError {
+                code: MpdErrorCode::UnknownCmd,
+                ..
+            })
         ));
     }
 
@@ -626,10 +646,7 @@ mod tests {
 
     #[test]
     fn test_mpd_response_format() {
-        let resp = MpdResponse::ok_with(vec![
-            kv("volume", 75),
-            kv("state", "play"),
-        ]);
+        let resp = MpdResponse::ok_with(vec![kv("volume", 75), kv("state", "play")]);
         let formatted = resp.format();
         assert!(formatted.contains("volume: 75\n"));
         assert!(formatted.contains("state: play\n"));
@@ -672,7 +689,13 @@ mod tests {
 
     #[test]
     fn test_parse_random_repeat() {
-        assert!(matches!(parse_command("random 1"), Ok(MpdCommand::Random(true))));
-        assert!(matches!(parse_command("repeat 0"), Ok(MpdCommand::Repeat(false))));
+        assert!(matches!(
+            parse_command("random 1"),
+            Ok(MpdCommand::Random(true))
+        ));
+        assert!(matches!(
+            parse_command("repeat 0"),
+            Ok(MpdCommand::Repeat(false))
+        ));
     }
 }

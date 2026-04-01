@@ -28,11 +28,12 @@ impl CertStore {
         let key_path = tls_dir.join("server.key.der");
 
         if cert_path.exists() && key_path.exists() {
-            log::info!("[TLS] Loading existing certificate from {}", tls_dir.display());
-            let cert_bytes =
-                std::fs::read(&cert_path).map_err(|e| format!("read cert: {e}"))?;
-            let key_bytes =
-                std::fs::read(&key_path).map_err(|e| format!("read key: {e}"))?;
+            log::info!(
+                "[TLS] Loading existing certificate from {}",
+                tls_dir.display()
+            );
+            let cert_bytes = std::fs::read(&cert_path).map_err(|e| format!("read cert: {e}"))?;
+            let key_bytes = std::fs::read(&key_path).map_err(|e| format!("read key: {e}"))?;
 
             let cert = CertificateDer::from(cert_bytes);
             let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_bytes));
@@ -57,25 +58,25 @@ impl CertStore {
     }
 
     /// SHA-256 fingerprint of the server certificate.
-    #[must_use] 
+    #[must_use]
     pub fn server_fingerprint(&self) -> String {
         cert_gen::fingerprint(&self.cert)
     }
 
     /// Borrow the certificate.
-    #[must_use] 
+    #[must_use]
     pub fn cert(&self) -> &CertificateDer<'static> {
         &self.cert
     }
 
     /// Clone the certificate for use in TLS config.
-    #[must_use] 
+    #[must_use]
     pub fn cert_clone(&self) -> CertificateDer<'static> {
         self.cert.clone()
     }
 
     /// Clone the private key for use in TLS config.
-    #[must_use] 
+    #[must_use]
     pub fn key_clone(&self) -> PrivateKeyDer<'static> {
         self.key.clone_key()
     }
@@ -90,10 +91,8 @@ impl CertStore {
         let cert_path = tls_dir.join("server.der");
         let key_path = tls_dir.join("server.key.der");
 
-        std::fs::write(&cert_path, cert.as_ref())
-            .map_err(|e| format!("write cert: {e}"))?;
-        std::fs::write(&key_path, key_bytes(&key))
-            .map_err(|e| format!("write key: {e}"))?;
+        std::fs::write(&cert_path, cert.as_ref()).map_err(|e| format!("write cert: {e}"))?;
+        std::fs::write(&key_path, key_bytes(&key)).map_err(|e| format!("write key: {e}"))?;
 
         // Restrict key file permissions on Unix
         #[cfg(unix)]

@@ -147,7 +147,9 @@ impl StreamingService for TidalService {
                 // Return the verification URL for the user to visit
                 Err(ServiceError::AuthError(format!(
                     "Visit {} and enter code: {}",
-                    device_auth.verification_uri_complete.as_deref()
+                    device_auth
+                        .verification_uri_complete
+                        .as_deref()
                         .unwrap_or(&device_auth.verification_uri),
                     device_auth.user_code
                 )))
@@ -166,9 +168,11 @@ impl StreamingService for TidalService {
         let resp = self
             .client
             .get(format!("{}/search/tracks", API_BASE))
-            .bearer_auth(self.access_token.as_ref().ok_or_else(|| {
-                ServiceError::AuthError("Not authenticated".to_string())
-            })?)
+            .bearer_auth(
+                self.access_token
+                    .as_ref()
+                    .ok_or_else(|| ServiceError::AuthError("Not authenticated".to_string()))?,
+            )
             .query(&[
                 ("query", query),
                 ("limit", &limit.to_string()),
@@ -198,10 +202,12 @@ impl StreamingService for TidalService {
                 album: t.album.title,
                 duration_secs: t.duration as f64,
                 track_number: Some(t.track_number),
-                album_art_url: t
-                    .album
-                    .cover
-                    .map(|c| format!("https://resources.tidal.com/images/{}/640x640.jpg", c.replace('-', "/"))),
+                album_art_url: t.album.cover.map(|c| {
+                    format!(
+                        "https://resources.tidal.com/images/{}/640x640.jpg",
+                        c.replace('-', "/")
+                    )
+                }),
                 available_qualities: vec![AudioQuality::High, AudioQuality::Lossless],
             })
             .collect())
@@ -211,9 +217,11 @@ impl StreamingService for TidalService {
         let resp = self
             .client
             .get(format!("{}/search/albums", API_BASE))
-            .bearer_auth(self.access_token.as_ref().ok_or_else(|| {
-                ServiceError::AuthError("Not authenticated".to_string())
-            })?)
+            .bearer_auth(
+                self.access_token
+                    .as_ref()
+                    .ok_or_else(|| ServiceError::AuthError("Not authenticated".to_string()))?,
+            )
             .query(&[
                 ("query", query),
                 ("limit", &limit.to_string()),
@@ -242,9 +250,12 @@ impl StreamingService for TidalService {
                 artist: a.artist.name,
                 year: a.release_date.and_then(|d| d[..4].parse().ok()),
                 track_count: a.number_of_tracks,
-                album_art_url: a
-                    .cover
-                    .map(|c| format!("https://resources.tidal.com/images/{}/640x640.jpg", c.replace('-', "/"))),
+                album_art_url: a.cover.map(|c| {
+                    format!(
+                        "https://resources.tidal.com/images/{}/640x640.jpg",
+                        c.replace('-', "/")
+                    )
+                }),
             })
             .collect())
     }
@@ -290,9 +301,11 @@ impl StreamingService for TidalService {
         let resp = self
             .client
             .get(format!("{}/tracks/{}/urlpostpaywall", API_BASE, track_id))
-            .bearer_auth(self.access_token.as_ref().ok_or_else(|| {
-                ServiceError::AuthError("Not authenticated".to_string())
-            })?)
+            .bearer_auth(
+                self.access_token
+                    .as_ref()
+                    .ok_or_else(|| ServiceError::AuthError("Not authenticated".to_string()))?,
+            )
             .query(&[
                 ("audioquality", quality_str),
                 ("urlusagemode", "STREAM"),

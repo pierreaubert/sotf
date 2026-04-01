@@ -210,7 +210,12 @@ async fn handle_http_request(
     }
     let body_str = String::from_utf8_lossy(&body);
 
-    log::debug!("[DLNA Renderer] {} {} ({} bytes)", method, path, content_length);
+    log::debug!(
+        "[DLNA Renderer] {} {} ({} bytes)",
+        method,
+        path,
+        content_length
+    );
 
     // Route request
     let response = match (method, path) {
@@ -218,15 +223,11 @@ async fn handle_http_request(
             let xml = device.description_xml(base_url);
             http_response(200, "text/xml", &xml)
         }
-        ("POST", "/AVTransport/control") => {
-            handle_avtransport_action(&body_str, adapter)
-        }
+        ("POST", "/AVTransport/control") => handle_avtransport_action(&body_str, adapter),
         ("POST", "/RenderingControl/control") => {
             handle_rendering_control_action(&body_str, adapter)
         }
-        ("POST", "/ConnectionManager/control") => {
-            handle_connection_manager_action(&body_str)
-        }
+        ("POST", "/ConnectionManager/control") => handle_connection_manager_action(&body_str),
         _ => http_response(404, "text/plain", "Not Found"),
     };
 
@@ -243,9 +244,8 @@ fn handle_avtransport_action(body: &str, adapter: &Arc<dyn RendererAdapter>) -> 
         return http_soap_fault(402, "Invalid SOAP action");
     };
 
-    let find_arg = |name: &str| -> Option<&str> {
-        args.iter().find(|(k, _)| *k == name).map(|(_, v)| *v)
-    };
+    let find_arg =
+        |name: &str| -> Option<&str> { args.iter().find(|(k, _)| *k == name).map(|(_, v)| *v) };
 
     let result = match action {
         "SetAVTransportURI" => {
@@ -336,9 +336,8 @@ fn handle_rendering_control_action(body: &str, adapter: &Arc<dyn RendererAdapter
         return http_soap_fault(402, "Invalid SOAP action");
     };
 
-    let find_arg = |name: &str| -> Option<&str> {
-        args.iter().find(|(k, _)| *k == name).map(|(_, v)| *v)
-    };
+    let find_arg =
+        |name: &str| -> Option<&str> { args.iter().find(|(k, _)| *k == name).map(|(_, v)| *v) };
 
     match action {
         "SetVolume" => {
@@ -376,7 +375,10 @@ fn handle_rendering_control_action(body: &str, adapter: &Arc<dyn RendererAdapter
             http_soap_response(&resp)
         }
         _ => {
-            log::debug!("[DLNA Renderer] Unknown RenderingControl action: {}", action);
+            log::debug!(
+                "[DLNA Renderer] Unknown RenderingControl action: {}",
+                action
+            );
             http_soap_fault(401, &format!("Invalid Action: {}", action))
         }
     }
@@ -397,11 +399,8 @@ fn handle_connection_manager_action(body: &str) -> String {
                              http-get:*:audio/aiff:*,\
                              http-get:*:audio/aac:*,\
                              http-get:*:audio/x-flac:*";
-            let resp = xml::soap_response(
-                action,
-                CM_SERVICE,
-                &[("Source", ""), ("Sink", protocols)],
-            );
+            let resp =
+                xml::soap_response(action, CM_SERVICE, &[("Source", ""), ("Sink", protocols)]);
             http_soap_response(&resp)
         }
         _ => http_soap_fault(401, &format!("Invalid Action: {}", action)),

@@ -96,7 +96,11 @@ pub async fn listen_and_respond(
     let location = format!("http://{}:{}/description.xml", local_ip, device.http_port);
     let mut buf = [0u8; 2048];
 
-    log::info!("[SSDP] Listening for M-SEARCH on {}:{}", SSDP_MULTICAST, SSDP_PORT);
+    log::info!(
+        "[SSDP] Listening for M-SEARCH on {}:{}",
+        SSDP_MULTICAST,
+        SSDP_PORT
+    );
 
     loop {
         let mut cancel = cancel.clone();
@@ -147,7 +151,13 @@ fn is_matching_search(msg: &str, device: &DlnaDevice) -> bool {
         .lines()
         .find(|l| l.to_lowercase().starts_with("st:"))
         .unwrap_or("");
-    let st = st_line.split(':').skip(1).collect::<Vec<_>>().join(":").trim().to_string();
+    let st = st_line
+        .split(':')
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join(":")
+        .trim()
+        .to_string();
 
     st == "ssdp:all"
         || st == "upnp:rootdevice"
@@ -168,10 +178,7 @@ mod tests {
     #[test]
     fn test_is_matching_search_device_type() {
         let device = DlnaDevice::new_renderer("Test", 8200);
-        let msg = format!(
-            "M-SEARCH\r\nST: {}\r\n",
-            device.device_type.urn()
-        );
+        let msg = format!("M-SEARCH\r\nST: {}\r\n", device.device_type.urn());
         assert!(is_matching_search(&msg, &device));
     }
 

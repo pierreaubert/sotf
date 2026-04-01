@@ -114,12 +114,8 @@ fn prepare_mpd_playback(parsed: &MpdStreamUrl) -> Result<(), String> {
     )
     .map_err(|e| format!("MPD connect failed ({addr}): {e}"))?;
 
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .ok();
-    stream
-        .set_write_timeout(Some(Duration::from_secs(5)))
-        .ok();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(5))).ok();
 
     let mut reader = BufReader::new(stream);
 
@@ -140,10 +136,7 @@ fn prepare_mpd_playback(parsed: &MpdStreamUrl) -> Result<(), String> {
     // Clear queue, add track, play
     send_mpd(&mut reader, "clear")?;
 
-    let escaped = parsed
-        .file_path
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"");
+    let escaped = parsed.file_path.replace('\\', "\\\\").replace('"', "\\\"");
     send_mpd(&mut reader, &format!("add \"{escaped}\""))?;
     send_mpd(&mut reader, "play")?;
 

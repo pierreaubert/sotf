@@ -54,7 +54,7 @@ impl TofuStore {
     }
 
     /// Check whether a host's fingerprint is trusted.
-    #[must_use] 
+    #[must_use]
     pub fn check(&self, host_port: &str, fingerprint: &str) -> TofuResult {
         match self.hosts.get(host_port) {
             Some(entry) if entry.fingerprint == fingerprint => TofuResult::Trusted,
@@ -111,15 +111,14 @@ impl TofuStore {
     }
 
     /// List all trusted hosts.
-    #[must_use] 
+    #[must_use]
     pub fn list(&self) -> Vec<(&str, &TrustedHost)> {
         self.hosts.iter().map(|(k, v)| (k.as_str(), v)).collect()
     }
 
     fn save(&self) -> Result<(), String> {
         if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("create tls dir: {e}"))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("create tls dir: {e}"))?;
         }
         let content = toml::to_string_pretty(&self.hosts)
             .map_err(|e| format!("serialize known_hosts: {e}"))?;
@@ -197,7 +196,10 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::semicolon_outside_block, reason = "conflicts with semicolon_if_nothing_returned")]
+    #[allow(
+        clippy::semicolon_outside_block,
+        reason = "conflicts with semicolon_if_nothing_returned"
+    )]
     fn test_persistence() {
         let tmp = tempfile::tempdir().expect("tmpdir");
 
@@ -210,10 +212,7 @@ mod tests {
 
         // Reload from disk
         let store = TofuStore::load(tmp.path()).expect("reload");
-        assert_eq!(
-            store.check("host:9999", "FF:00"),
-            TofuResult::Trusted
-        );
+        assert_eq!(store.check("host:9999", "FF:00"), TofuResult::Trusted);
         let list = store.list();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].1.display_name, "Persistent");

@@ -14,12 +14,8 @@ pub enum DlnaDeviceType {
 impl DlnaDeviceType {
     pub fn urn(&self) -> &str {
         match self {
-            DlnaDeviceType::MediaRenderer => {
-                "urn:schemas-upnp-org:device:MediaRenderer:1"
-            }
-            DlnaDeviceType::MediaServer => {
-                "urn:schemas-upnp-org:device:MediaServer:1"
-            }
+            DlnaDeviceType::MediaRenderer => "urn:schemas-upnp-org:device:MediaRenderer:1",
+            DlnaDeviceType::MediaServer => "urn:schemas-upnp-org:device:MediaServer:1",
         }
     }
 }

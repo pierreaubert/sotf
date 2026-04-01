@@ -40,12 +40,11 @@ impl DlnaProvider {
         let (host, base_url, body) = http_get(&self.config.location_url)?;
 
         // Parse the device description XML to find the ContentDirectory service control URL
-        let control_url = extract_content_directory_control_url(&body)
-            .ok_or_else(|| {
-                ProviderError::Other(
-                    "ContentDirectory service not found in device description".to_string(),
-                )
-            })?;
+        let control_url = extract_content_directory_control_url(&body).ok_or_else(|| {
+            ProviderError::Other(
+                "ContentDirectory service not found in device description".to_string(),
+            )
+        })?;
 
         // Resolve relative URL against the device base
         let full_url = if control_url.starts_with("http") {
@@ -259,9 +258,8 @@ fn http_get(url: &str) -> Result<(String, String, String), ProviderError> {
 
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
 
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n"
-    );
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n");
     stream
         .write_all(request.as_bytes())
         .map_err(|e| ProviderError::Network(format!("write: {e}")))?;
@@ -437,8 +435,8 @@ fn parse_didl_items(didl: &str) -> Vec<ParsedItem> {
         let artist = extract_xml_text(block, "dc:creator")
             .or_else(|| extract_xml_text(block, "upnp:artist"));
         let genre = extract_xml_text(block, "upnp:genre");
-        let track_number = extract_xml_text(block, "upnp:originalTrackNumber")
-            .and_then(|s| s.parse().ok());
+        let track_number =
+            extract_xml_text(block, "upnp:originalTrackNumber").and_then(|s| s.parse().ok());
 
         // Parse <res> element for resource URL and attributes
         let (resource_url, mime_type, duration_secs, channels, sample_rate, bit_depth) =
@@ -469,7 +467,14 @@ fn parse_didl_items(didl: &str) -> Vec<ParsedItem> {
 /// Parse a `<res protocolInfo="..." duration="..." ...>URL</res>` element.
 fn parse_res_element(
     block: &str,
-) -> (String, String, Option<f64>, Option<u32>, Option<u32>, Option<u32>) {
+) -> (
+    String,
+    String,
+    Option<f64>,
+    Option<u32>,
+    Option<u32>,
+    Option<u32>,
+) {
     let Some(res_start) = block.find("<res ") else {
         return (String::new(), String::new(), None, None, None, None);
     };
@@ -502,8 +507,7 @@ fn parse_res_element(
     let duration = extract_xml_attr(res_block, "duration").and_then(|d| parse_upnp_duration(&d));
 
     let channels = extract_xml_attr(res_block, "nrAudioChannels").and_then(|s| s.parse().ok());
-    let sample_rate =
-        extract_xml_attr(res_block, "sampleFrequency").and_then(|s| s.parse().ok());
+    let sample_rate = extract_xml_attr(res_block, "sampleFrequency").and_then(|s| s.parse().ok());
     let bit_depth = extract_xml_attr(res_block, "bitsPerSample").and_then(|s| s.parse().ok());
 
     (url, mime, duration, channels, sample_rate, bit_depth)
@@ -580,14 +584,8 @@ mod tests {
     #[test]
     fn test_extract_xml_attr() {
         let xml = r#"<container id="album-1" parentID="0">"#;
-        assert_eq!(
-            extract_xml_attr(xml, "id"),
-            Some("album-1".to_string())
-        );
-        assert_eq!(
-            extract_xml_attr(xml, "parentID"),
-            Some("0".to_string())
-        );
+        assert_eq!(extract_xml_attr(xml, "id"), Some("album-1".to_string()));
+        assert_eq!(extract_xml_attr(xml, "parentID"), Some("0".to_string()));
     }
 
     #[test]
@@ -596,10 +594,7 @@ mod tests {
         let containers = parse_didl_containers(didl);
         assert_eq!(containers.len(), 2);
         assert_eq!(containers[0], ("1".to_string(), "The Wall".to_string()));
-        assert_eq!(
-            containers[1],
-            ("2".to_string(), "OK Computer".to_string())
-        );
+        assert_eq!(containers[1], ("2".to_string(), "OK Computer".to_string()));
     }
 
     #[test]
@@ -639,14 +634,8 @@ mod tests {
 
     #[test]
     fn test_mime_to_format_hint() {
-        assert_eq!(
-            mime_to_format_hint("audio/flac"),
-            Some("flac".to_string())
-        );
-        assert_eq!(
-            mime_to_format_hint("audio/mpeg"),
-            Some("mp3".to_string())
-        );
+        assert_eq!(mime_to_format_hint("audio/flac"), Some("flac".to_string()));
+        assert_eq!(mime_to_format_hint("audio/mpeg"), Some("mp3".to_string()));
         assert_eq!(mime_to_format_hint("unknown/type"), None);
     }
 }
