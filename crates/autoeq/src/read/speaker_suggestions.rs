@@ -41,32 +41,37 @@ fn extract_speaker_name_from_error(error_message: &str) -> Option<String> {
     None
 }
 
-/// Fetch the list of available speakers from the API
-pub async fn fetch_available_speakers() -> Result<Vec<String>, Box<dyn Error>> {
-    let url = "https://api.spinorama.org/v1/speakers";
-
+/// Fetch a list of names from a spinorama API endpoint (speakers or headphones)
+async fn fetch_name_list(url: &str, kind: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let response = reqwest::get(url).await?;
     if !response.status().is_success() {
-        return Err(format!("Failed to fetch speakers list: {}", response.status()).into());
+        return Err(format!("Failed to fetch {} list: {}", kind, response.status()).into());
     }
 
     let api_response: Value = response.json().await?;
 
-    // Parse the response as an array of speaker names
-    if let Some(speakers_array) = api_response.as_array() {
-        let mut speakers = Vec::new();
-
-        for speaker in speakers_array {
-            if let Some(speaker_name) = speaker.as_str() {
-                speakers.push(speaker_name.to_string());
-            }
-        }
-
-        return Ok(speakers);
+    if let Some(array) = api_response.as_array() {
+        let names: Vec<String> = array
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+        return Ok(names);
     }
 
-    Err("Invalid response format from speakers API - expected array".into())
+    Err(format!("Invalid response format from {} API - expected array", kind).into())
 }
+
+/// Fetch the list of available speakers from the API
+pub async fn fetch_available_speakers() -> Result<Vec<String>, Box<dyn Error>> {
+    fetch_name_list("https://api.spinorama.org/v1/speakers", "speakers").await
+}
+
+/// Fetch the list of available headphones from the API
+pub async fn fetch_available_headphones() -> Result<Vec<String>, Box<dyn Error>> {
+    fetch_name_list("https://api.spinorama.org/v1/headphones", "headphones").await
+}
+
+
 
 /// Find the closest matching speaker names using Levenshtein distance
 pub fn find_similar_speakers(

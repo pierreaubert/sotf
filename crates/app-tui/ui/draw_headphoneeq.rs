@@ -83,36 +83,127 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
     match s.step {
         HeadphoneEqStep::SelectFile => {
+            use sotf_audio_player::headphone_eq_types::HeadphoneMeasurementSource;
+
+            let is_spinorama =
+                s.measurement_source == HeadphoneMeasurementSource::Spinorama;
+
             let inner = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3), // measurement path
+                    Constraint::Length(3), // source toggle
+                    Constraint::Length(if is_spinorama { 8 } else { 3 }), // measurement/search
                     Constraint::Length(3), // target preset
                     Constraint::Length(3), // custom target path
                     Constraint::Min(1),    // help
                 ])
                 .split(content);
 
-            let meas_style = if s.selected_field == 0 {
+            // Row 0: Source toggle
+            let source_style = if s.selected_field == 0 {
                 Style::default().fg(app.theme.accent_primary)
             } else {
                 Style::default().fg(app.theme.fg_primary)
             };
-            let meas_label = if s.editing_measurement {
-                "Measurement CSV (editing)"
-            } else {
-                "Measurement CSV"
-            };
-            let meas = Paragraph::new(if s.measurement_path.is_empty() {
-                "<type path or paste>".to_string()
-            } else {
-                s.measurement_path.clone()
-            })
-            .style(meas_style)
-            .block(Block::default().borders(Borders::ALL).title(meas_label));
-            f.render_widget(meas, inner[0]);
+            let source = Paragraph::new(s.measurement_source.label())
+                .style(source_style)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Source (Left/Right to toggle)"),
+                );
+            f.render_widget(source, inner[0]);
 
-            let target_style = if s.selected_field == 1 {
+            // Row 1: Measurement path or Spinorama search
+            let meas_style = if s.selected_field == 1 {
+                Style::default().fg(app.theme.accent_primary)
+            } else {
+                Style::default().fg(app.theme.fg_primary)
+            };
+
+            if is_spinorama {
+                // Spinorama mode: show search and headphone list
+                let search_area = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(3), Constraint::Min(1)])
+                    .split(inner[1]);
+
+                let search_label = if s.editing_search {
+                    if s.loading_headphones {
+                        "Search (loading...)"
+                    } else {
+                        "Search (editing)"
+                    }
+                } else if s.loading_download {
+                    "Search (downloading...)"
+                } else {
+                    "Search headphones (Enter to edit)"
+                };
+                let search_text = if s.search_query.is_empty() && !s.editing_search {
+                    if let Some(ref name) = s.selected_headphone {
+                        format!("Selected: {}", name)
+                    } else {
+                        "<type to search>".to_string()
+                    }
+                } else {
+                    s.search_query.clone()
+                };
+                let search = Paragraph::new(search_text)
+                    .style(meas_style)
+                    .block(Block::default().borders(Borders::ALL).title(search_label));
+                f.render_widget(search, search_area[0]);
+
+                // Headphone list (show when editing search)
+                if s.editing_search && !s.filtered_headphones.is_empty() {
+                    let items: Vec<ratatui::widgets::ListItem> = s
+                        .filtered_headphones
+                        .iter()
+                        .take(10)
+                        .enumerate()
+                        .map(|(i, name)| {
+                            let style = if i == s.selected_headphone_idx {
+                                Style::default()
+                                    .fg(app.theme.bg_primary)
+                                    .bg(app.theme.accent_primary)
+                            } else {
+                                Style::default().fg(app.theme.fg_primary)
+                            };
+                            ratatui::widgets::ListItem::new(name.as_str()).style(style)
+                        })
+                        .collect();
+                    let list = ratatui::widgets::List::new(items).block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(format!("{} matches", s.filtered_headphones.len())),
+                    );
+                    f.render_widget(list, search_area[1]);
+                }
+
+                // Show measurement path if downloaded
+                if !s.measurement_path.is_empty() && !s.editing_search {
+                    let path = Paragraph::new(format!("Downloaded: {}", s.measurement_path))
+                        .style(Style::default().fg(app.theme.fg_secondary));
+                    f.render_widget(path, search_area[1]);
+                }
+            } else {
+                // File mode: measurement path input
+                let meas_label = if s.editing_measurement {
+                    "Measurement CSV (editing)"
+                } else {
+                    "Measurement CSV"
+                };
+                let meas = Paragraph::new(if s.measurement_path.is_empty() {
+                    "<type path or paste>".to_string()
+                } else {
+                    s.measurement_path.clone()
+                })
+                .style(meas_style)
+                .block(Block::default().borders(Borders::ALL).title(meas_label));
+                f.render_widget(meas, inner[1]);
+            }
+
+            // Row 2: Target preset
+            let target_style = if s.selected_field == 2 {
                 Style::default().fg(app.theme.accent_primary)
             } else {
                 Style::default().fg(app.theme.fg_primary)
@@ -124,10 +215,11 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         .borders(Borders::ALL)
                         .title("Target Preset (Left/Right to cycle)"),
                 );
-            f.render_widget(target, inner[1]);
+            f.render_widget(target, inner[2]);
 
+            // Row 3: Custom target path
             if s.target_preset == "custom" {
-                let custom_style = if s.selected_field == 2 {
+                let custom_style = if s.selected_field == 3 {
                     Style::default().fg(app.theme.accent_primary)
                 } else {
                     Style::default().fg(app.theme.fg_primary)
@@ -144,20 +236,20 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 })
                 .style(custom_style)
                 .block(Block::default().borders(Borders::ALL).title(custom_label));
-                f.render_widget(custom, inner[2]);
+                f.render_widget(custom, inner[3]);
             }
 
             let help = Paragraph::new(
-                " Up/Down=select field  Enter=edit text  Left/Right=cycle preset  Tab=next step",
+                " Up/Down=select field  Enter=edit  Left/Right=toggle/cycle  Tab=next step",
             )
             .style(Style::default().fg(app.theme.fg_secondary));
-            f.render_widget(help, inner[3]);
+            f.render_widget(help, inner[4]);
 
             // Autocomplete overlay below the active input field
             let editing_field_rect = if s.editing_measurement {
-                Some(inner[0])
+                Some(inner[1])
             } else if s.editing_custom_target {
-                Some(inner[2])
+                Some(inner[3])
             } else {
                 None
             };

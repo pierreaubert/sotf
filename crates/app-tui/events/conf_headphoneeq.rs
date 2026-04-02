@@ -68,6 +68,10 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             return None;
         }
         // Then dismiss text editing
+        if app.headphone_eq.editing_search {
+            app.headphone_eq.editing_search = false;
+            return None;
+        }
         if app.headphone_eq.editing_measurement {
             app.headphone_eq.editing_measurement = false;
             app.clear_autocomplete();
@@ -129,6 +133,52 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
 
     match app.headphone_eq.step {
         HeadphoneEqStep::SelectFile => {
+            // Headphone search mode (spinorama)
+            if app.headphone_eq.editing_search {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Enter => {
+                        app.headphone_eq.editing_search = false;
+                        // If Enter and a headphone is highlighted, select it
+                        if key.code == KeyCode::Enter
+                            && !app.headphone_eq.filtered_headphones.is_empty()
+                        {
+                            let idx = app.headphone_eq.selected_headphone_idx;
+                            if let Some(name) =
+                                app.headphone_eq.filtered_headphones.get(idx).cloned()
+                            {
+                                app.headphone_eq.selected_headphone = Some(name.clone());
+                                // Start download
+                                app.headphone_eq.loading_download = true;
+                                spawn_headphone_download(&name);
+                            }
+                        }
+                    }
+                    KeyCode::Down => {
+                        if !app.headphone_eq.filtered_headphones.is_empty() {
+                            app.headphone_eq.selected_headphone_idx = (app
+                                .headphone_eq
+                                .selected_headphone_idx
+                                + 1)
+                                .min(app.headphone_eq.filtered_headphones.len() - 1);
+                        }
+                    }
+                    KeyCode::Up => {
+                        if app.headphone_eq.selected_headphone_idx > 0 {
+                            app.headphone_eq.selected_headphone_idx -= 1;
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        app.headphone_eq.search_query.pop();
+                        app.headphone_eq.update_filter();
+                    }
+                    KeyCode::Char(c) => {
+                        app.headphone_eq.search_query.push(c);
+                        app.headphone_eq.update_filter();
+                    }
+                    _ => {}
+                }
+                return None;
+            }
             if app.headphone_eq.editing_measurement {
                 match key.code {
                     KeyCode::Enter => {
@@ -241,6 +291,19 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 }
                 return None;
             }
+            // Fields layout:
+            // 0 = source (File/Spinorama) — cycles with Left/Right
+            // 1 = measurement path (File) / search field (Spinorama)
+            // 2 = target preset — cycles with Left/Right
+            // 3 = custom target path (only when preset == "custom")
+            let max_field = {
+                let base = 2; // source, measurement/search, target
+                if app.headphone_eq.target_preset == "custom" {
+                    base + 1
+                } else {
+                    base
+                }
+            };
             match key.code {
                 KeyCode::Up => {
                     if app.headphone_eq.selected_field > 0 {
@@ -250,57 +313,70 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     }
                 }
                 KeyCode::Down => {
-                    let max = if app.headphone_eq.target_preset == "custom" {
-                        2
-                    } else {
-                        1
-                    };
-                    if app.headphone_eq.selected_field < max {
+                    if app.headphone_eq.selected_field < max_field {
                         app.headphone_eq.selected_field += 1;
                     }
                 }
                 KeyCode::Enter => {
+                    use sotf_audio_player::headphone_eq_types::HeadphoneMeasurementSource;
                     match app.headphone_eq.selected_field {
-                        0 => {
-                            app.headphone_eq.editing_measurement = true;
+                        0 => {} // source cycles with Left/Right
+                        1 => {
+                            match app.headphone_eq.measurement_source {
+                                HeadphoneMeasurementSource::File => {
+                                    app.headphone_eq.editing_measurement = true;
+                                }
+                                HeadphoneMeasurementSource::Spinorama => {
+                                    app.headphone_eq.editing_search = true;
+                                    // Auto-fetch headphone list if empty
+                                    if app.headphone_eq.available_headphones.is_empty()
+                                        && !app.headphone_eq.loading_headphones
+                                    {
+                                        app.headphone_eq.loading_headphones = true;
+                                        spawn_headphone_list_load();
+                                    }
+                                }
+                            }
                         }
-                        1 => {} // target preset cycles with Left/Right
-                        2 => {
+                        2 => {} // target preset cycles with Left/Right
+                        3 => {
                             app.headphone_eq.editing_custom_target = true;
                         }
                         _ => {}
                     }
                 }
                 KeyCode::Left | KeyCode::Right | KeyCode::Char('+') | KeyCode::Char('-') => {
-                    if app.headphone_eq.selected_field == 1 {
-                        let delta = match key.code {
-                            KeyCode::Char('+') | KeyCode::Right => 1i32,
-                            _ => -1,
-                        };
-                        app.headphone_eq.target_preset = super::cycle_string(
-                            &app.headphone_eq.target_preset,
-                            HEADPHONE_TARGET_PRESETS,
-                            delta,
-                        );
-                        // Clamp selected_field if "custom" row disappeared
-                        let max = if app.headphone_eq.target_preset == "custom" {
-                            2
-                        } else {
-                            1
-                        };
-                        if app.headphone_eq.selected_field > max {
-                            app.headphone_eq.selected_field = max;
+                    let delta = match key.code {
+                        KeyCode::Char('+') | KeyCode::Right => 1i32,
+                        _ => -1,
+                    };
+                    match app.headphone_eq.selected_field {
+                        0 => {
+                            // Toggle source
+                            app.headphone_eq.measurement_source =
+                                app.headphone_eq.measurement_source.toggle();
                         }
+                        2 => {
+                            app.headphone_eq.target_preset = super::cycle_string(
+                                &app.headphone_eq.target_preset,
+                                HEADPHONE_TARGET_PRESETS,
+                                delta,
+                            );
+                            // Clamp selected_field if "custom" row disappeared
+                            let new_max = if app.headphone_eq.target_preset == "custom" {
+                                3
+                            } else {
+                                2
+                            };
+                            if app.headphone_eq.selected_field > new_max {
+                                app.headphone_eq.selected_field = new_max;
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 KeyCode::Tab => {
-                    // Cycle through fields
-                    let max = if app.headphone_eq.target_preset == "custom" {
-                        2
-                    } else {
-                        1
-                    };
-                    if app.headphone_eq.selected_field < max {
+                    if app.headphone_eq.selected_field < max_field {
                         app.headphone_eq.selected_field += 1;
                     } else {
                         app.headphone_eq.selected_field = 0;
@@ -813,6 +889,119 @@ fn spawn_headphone_eq_optimization(app: &mut App) {
     });
 }
 
+// ==========================================================================
+// Headphone list fetch (spinorama.org)
+// ==========================================================================
+
+#[allow(clippy::type_complexity)]
+static HEADPHONE_LIST_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<Vec<String>, String>>>>> =
+    std::sync::OnceLock::new();
+
+fn spawn_headphone_list_load() {
+    let result_slot = HEADPHONE_LIST_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    if let Ok(mut g) = result_slot.lock() {
+        *g = None;
+    }
+
+    let slot = result_slot.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let result = rt
+            .block_on(async { autoeq::fetch_available_headphones().await })
+            .map_err(|e| e.to_string());
+        if let Ok(mut guard) = slot.lock() {
+            *guard = Some(result);
+        }
+    });
+}
+
+/// Poll headphone list fetch. Returns true if UI needs a redraw.
+pub fn poll_headphone_list_load(app: &mut App) -> bool {
+    if !app.headphone_eq.loading_headphones {
+        return false;
+    }
+    let result_slot = HEADPHONE_LIST_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    if let Ok(mut guard) = result_slot.lock()
+        && let Some(result) = guard.take()
+    {
+        app.headphone_eq.loading_headphones = false;
+        match result {
+            Ok(headphones) => {
+                app.headphone_eq.available_headphones = headphones;
+                app.headphone_eq.update_filter();
+            }
+            Err(e) => {
+                app.headphone_eq.headphones_error = Some(e);
+            }
+        }
+        return true;
+    }
+    false
+}
+
+// ==========================================================================
+// Headphone measurement download (spinorama.org)
+// ==========================================================================
+
+static HEADPHONE_DOWNLOAD_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<String, String>>>>> =
+    std::sync::OnceLock::new();
+
+fn spawn_headphone_download(headphone_name: &str) {
+    let result_slot = HEADPHONE_DOWNLOAD_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    if let Ok(mut g) = result_slot.lock() {
+        *g = None;
+    }
+
+    let name = headphone_name.to_string();
+    let slot = result_slot.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let result = rt.block_on(async {
+            let (csv_path, _) = autoeq::fetch_headphone_frequency_response(&name)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            Ok::<String, String>(csv_path)
+        });
+        if let Ok(mut guard) = slot.lock() {
+            *guard = Some(result);
+        }
+    });
+}
+
+/// Poll headphone download. Returns true if UI needs a redraw.
+pub fn poll_headphone_download(app: &mut App) -> bool {
+    if !app.headphone_eq.loading_download {
+        return false;
+    }
+    let result_slot = HEADPHONE_DOWNLOAD_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    if let Ok(mut guard) = result_slot.lock()
+        && let Some(result) = guard.take()
+    {
+        app.headphone_eq.loading_download = false;
+        match result {
+            Ok(csv_path) => {
+                app.headphone_eq.measurement_path = csv_path;
+            }
+            Err(e) => {
+                app.headphone_eq.headphones_error = Some(e);
+            }
+        }
+        return true;
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -906,23 +1095,23 @@ mod tests {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.target_preset = "harman-over-ear-2018".to_string();
-        app.headphone_eq.selected_field = 1;
+        app.headphone_eq.selected_field = 2; // target preset (max for non-custom)
 
-        // Down should NOT go past 1 for non-custom presets
+        // Down should NOT go past 2 for non-custom presets
         handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
-        assert_eq!(app.headphone_eq.selected_field, 1);
+        assert_eq!(app.headphone_eq.selected_field, 2);
     }
 
     #[test]
-    fn headphone_eq_down_allows_field_2_for_custom() {
+    fn headphone_eq_down_allows_field_3_for_custom() {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.target_preset = "custom".to_string();
-        app.headphone_eq.selected_field = 1;
+        app.headphone_eq.selected_field = 2; // target preset
 
-        // Down should go to 2 when preset is "custom"
+        // Down should go to 3 when preset is "custom"
         handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
-        assert_eq!(app.headphone_eq.selected_field, 2);
+        assert_eq!(app.headphone_eq.selected_field, 3);
     }
 
     #[test]
@@ -1017,10 +1206,10 @@ mod tests {
     fn headphone_eq_right_on_select_file_cycles_preset() {
         let mut app = make_app();
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
-        app.headphone_eq.selected_field = 1; // target preset field
+        app.headphone_eq.selected_field = 2; // target preset field
         let old_preset = app.headphone_eq.target_preset.clone();
         handle_headphone_eq_keys(&mut app, key(KeyCode::Right));
-        // Right on field 1 should cycle the target preset
+        // Right on field 2 should cycle the target preset
         assert_ne!(app.headphone_eq.target_preset, old_preset);
         // Should stay on SelectFile step (not navigate)
         assert_eq!(app.headphone_eq.step, HeadphoneEqStep::SelectFile);

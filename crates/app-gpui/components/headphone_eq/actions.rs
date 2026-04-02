@@ -428,6 +428,208 @@ impl PlayerView {
             }
         }
     }
+
+    // ========================================================================
+    // Headphone API Download (spinorama.org)
+    // ========================================================================
+
+    pub(crate) fn fetch_headphone_list(&mut self, cx: &mut Context<Self>) {
+        log::info!("Fetching headphone list from API...");
+        self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .loading_headphones = true;
+            state.app.measurement_state.headphone_eq_state.error_message = None;
+        });
+        cx.notify();
+
+        static HEADPHONES_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
+            std::sync::Mutex::new(None);
+        *HEADPHONES_RESULT.lock().unwrap() = None;
+
+        std::thread::spawn(|| {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+            let result = rt.block_on(async { autoeq::fetch_available_headphones().await });
+            *HEADPHONES_RESULT.lock().unwrap() = Some(result.map_err(|e| e.to_string()));
+        });
+
+        let weak_state = self.state.downgrade();
+        cx.spawn(async move |_, cx| {
+            loop {
+                smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                let result = HEADPHONES_RESULT.lock().unwrap().take();
+                if let Some(result) = result {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        break;
+                    };
+                    match result {
+                        Ok(headphones) => {
+                            log::info!(
+                                "Fetched {} headphones from spinorama.org",
+                                headphones.len()
+                            );
+                            state_entity.update(cx, |state, cx| {
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .available_headphones = headphones;
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .loading_headphones = false;
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .headphones_cached_at = Some(std::time::Instant::now());
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .update_headphone_suggestions();
+                                cx.notify();
+                            });
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch headphones: {}", e);
+                            state_entity.update(cx, |state, cx| {
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .loading_headphones = false;
+                                state.app.measurement_state.headphone_eq_state.error_message =
+                                    Some(format!("Failed to fetch headphones: {}", e));
+                                cx.notify();
+                            });
+                        }
+                    }
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Select a headphone and auto-download its measurement.
+    /// Chains: versions → auto-select first → measurements → auto-select first → download curve → save CSV.
+    pub(crate) fn select_headphone(&mut self, headphone: &str, cx: &mut Context<Self>) {
+        log::info!("Selected headphone: {}", headphone);
+        let headphone_name = headphone.to_string();
+
+        self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .selected_headphone = Some(headphone_name.clone());
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .loading_download = true;
+            state.app.measurement_state.headphone_eq_state.error_message = None;
+            // Clear any previous measurement_path from a previous download
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .measurement_path = None;
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .downloaded_curve = None;
+        });
+        cx.notify();
+
+        // Single thread: fetch versions → first version → measurements → first measurement → download curve → save CSV
+        // Result contains (csv_path, curve_data)
+        static DOWNLOAD_RESULT: std::sync::Mutex<
+            Option<Result<(String, Vec<(f64, f64)>), String>>,
+        > = std::sync::Mutex::new(None);
+        *DOWNLOAD_RESULT.lock().unwrap() = None;
+
+        let headphone_for_thread = headphone_name.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+            let result = rt.block_on(async {
+                let (csv_path, curve) =
+                    autoeq::fetch_headphone_frequency_response(&headphone_for_thread)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                let curve_data: Vec<(f64, f64)> = curve
+                    .freq
+                    .iter()
+                    .zip(curve.spl.iter())
+                    .map(|(&f, &s)| (f, s))
+                    .collect();
+
+                Ok::<(String, Vec<(f64, f64)>), String>((csv_path, curve_data))
+            });
+            *DOWNLOAD_RESULT.lock().unwrap() = Some(result);
+        });
+
+        let weak_state = self.state.downgrade();
+        cx.spawn(async move |_, cx| {
+            loop {
+                smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                let result = DOWNLOAD_RESULT.lock().unwrap().take();
+                if let Some(result) = result {
+                    let Some(state_entity) = weak_state.upgrade() else {
+                        break;
+                    };
+                    match result {
+                        Ok((csv_path, curve_data)) => {
+                            log::info!(
+                                "Downloaded headphone measurement to: {} ({} points)",
+                                csv_path,
+                                curve_data.len()
+                            );
+                            state_entity.update(cx, |state, cx| {
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .measurement_path = Some(csv_path);
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .downloaded_curve = Some(curve_data);
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .loading_download = false;
+                                cx.notify();
+                            });
+                        }
+                        Err(e) => {
+                            log::error!("Headphone download failed: {}", e);
+                            state_entity.update(cx, |state, cx| {
+                                state
+                                    .app
+                                    .measurement_state
+                                    .headphone_eq_state
+                                    .loading_download = false;
+                                state.app.measurement_state.headphone_eq_state.error_message =
+                                    Some(e);
+                                cx.notify();
+                            });
+                        }
+                    }
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
 }
 
 /// Helper to zip two vectors into a vector of tuples

@@ -1004,3 +1004,142 @@ fn extract_contour_data(plot_data: &Value) -> Result<ContourPlotData, Box<dyn Er
 
     Err("Failed to extract contour data from plot data".into())
 }
+
+// ==========================================================================
+// Headphone API
+// ==========================================================================
+
+/// Return the cache directory for a headphone under `data_cached/headphones/org.spinorama/`
+fn headphone_cache_dir(headphone: &str) -> std::path::PathBuf {
+    let mut p = std::path::PathBuf::from("data_cached");
+    p.push("headphones");
+    p.push("org.spinorama");
+    p.push(crate::read::directory::sanitize_dir_name(headphone));
+    p
+}
+
+/// Fetch a headphone's frequency response from the spinorama API.
+///
+/// Uses `GET /v1/headphone/{name}/frequency_response`.
+/// The API returns CSV data (4-column: L_freq, L_spl, R_freq, R_spl with header rows).
+/// Caches the raw CSV and also writes a simplified 2-column CSV for the optimization pipeline.
+pub async fn fetch_headphone_frequency_response(
+    headphone: &str,
+) -> Result<(String, crate::Curve), Box<dyn Error>> {
+    let cache_dir = headphone_cache_dir(headphone);
+    let raw_cache = cache_dir.join("frequency_response_raw.csv");
+    let csv_path = cache_dir.join("measurement.csv");
+
+    // Try local cache first
+    let csv_text = if let Ok(content) = fs::read_to_string(&raw_cache).await {
+        content
+    } else {
+        fetch_headphone_csv_from_api(headphone, &cache_dir, &raw_cache).await?
+    };
+
+    // Parse the CSV (handles 2-col and 4-col with multiple header rows)
+    let curve = parse_headphone_csv(&csv_text)?;
+
+    // Write simplified 2-column CSV for the optimization pipeline
+    fs::create_dir_all(&cache_dir).await?;
+    let mut out = String::from("frequency,spl\n");
+    for (f, s) in curve.freq.iter().zip(curve.spl.iter()) {
+        out.push_str(&format!("{},{}\n", f, s));
+    }
+    fs::write(&csv_path, &out).await?;
+
+    Ok((csv_path.to_string_lossy().to_string(), curve))
+}
+
+async fn fetch_headphone_csv_from_api(
+    headphone: &str,
+    cache_dir: &std::path::Path,
+    raw_cache: &std::path::Path,
+) -> Result<String, Box<dyn Error>> {
+    let encoded = urlencoding::encode(headphone);
+    let url = format!(
+        "https://api.spinorama.org/v1/headphone/{}/frequency_response",
+        encoded
+    );
+
+    let response = reqwest::get(&url).await?;
+    if !response.status().is_success() {
+        return Err(format!("API request failed with status: {}", response.status()).into());
+    }
+
+    let body = response.text().await?;
+
+    // Check for JSON error response (the API returns JSON errors even though
+    // successful responses are CSV)
+    if body.trim_start().starts_with('{') {
+        if let Ok(json) = serde_json::from_str::<Value>(&body) {
+            if let Some(error_msg) = json.get("error").and_then(|e| e.as_str()) {
+                return Err(error_msg.to_string().into());
+            }
+        }
+    }
+
+    // Cache the raw CSV
+    if let Err(e) = fs::create_dir_all(cache_dir).await {
+        log::debug!("Failed to create headphone cache dir: {}", e);
+    } else if let Err(e) = fs::write(raw_cache, &body).await {
+        log::debug!("Failed to write headphone cache: {}", e);
+    }
+
+    Ok(body)
+}
+
+/// Parse headphone frequency response CSV from the spinorama API.
+///
+/// Format: 4-column CSV with multiple header rows:
+/// ```text
+/// "Frequency Response Reference 425 Hz @ 94 dBSPL",,,
+/// "Left (94 dB)",,Right,
+/// X,Y,X,Y
+/// Hz,dBSPL,Hz,dBSPL
+/// 19.23,104.00,19.23,102.33
+/// ...
+/// ```
+/// Non-numeric rows are automatically skipped. L/R channels are averaged.
+fn parse_headphone_csv(csv_text: &str) -> Result<crate::Curve, Box<dyn Error>> {
+    let mut frequencies = Vec::new();
+    let mut spl_values = Vec::new();
+
+    for line in csv_text.lines() {
+        let line = line.trim().trim_matches('"');
+        if line.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split(',').map(|s| s.trim().trim_matches('"')).collect();
+
+        if parts.len() >= 4 {
+            // 4-column: freq_L, spl_L, freq_R, spl_R → average L/R
+            if let (Ok(freq_l), Ok(spl_l), Ok(_freq_r), Ok(spl_r)) = (
+                parts[0].parse::<f64>(),
+                parts[1].parse::<f64>(),
+                parts[2].parse::<f64>(),
+                parts[3].parse::<f64>(),
+            ) {
+                frequencies.push(freq_l);
+                spl_values.push((spl_l + spl_r) / 2.0);
+            }
+        } else if parts.len() >= 2 {
+            // 2-column: freq, spl
+            if let (Ok(freq), Ok(spl)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
+                frequencies.push(freq);
+                spl_values.push(spl);
+            }
+        }
+    }
+
+    if frequencies.is_empty() {
+        return Err("No valid frequency response data found in CSV".into());
+    }
+
+    Ok(crate::Curve {
+        freq: Array1::from(frequencies),
+        spl: Array1::from(spl_values),
+        phase: None,
+    })
+}

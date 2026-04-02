@@ -1,6 +1,8 @@
 //! Core types for the TUI application state management
 pub use sotf_audio_player::QueueItem;
-use sotf_audio_player::headphone_eq_types::{HeadphoneEqBiquad, HeadphoneEqOptimizerConfig};
+use sotf_audio_player::headphone_eq_types::{
+    HeadphoneEqBiquad, HeadphoneEqOptimizerConfig, HeadphoneMeasurementSource,
+};
 use sotf_audio_player::recording_types::{
     ChannelRecording, PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType,
     RecordingStep,
@@ -227,13 +229,25 @@ pub struct HeadphoneEqTuiState {
     pub step: HeadphoneEqStep,
     /// When true, the wizard step tab bar has focus (Left/Right change step).
     pub step_tab_focused: bool,
-    // Step 1: file selection
+    // Step 1: measurement source
+    pub measurement_source: HeadphoneMeasurementSource,
+    // Step 1 (File mode): file selection
     pub measurement_path: String,
     pub target_preset: String,
     pub custom_target_path: String,
     pub editing_measurement: bool,
     pub editing_custom_target: bool,
     pub selected_field: usize,
+    // Step 1 (Spinorama mode): headphone search
+    pub search_query: String,
+    pub available_headphones: Vec<String>,
+    pub filtered_headphones: Vec<String>,
+    pub selected_headphone_idx: usize,
+    pub selected_headphone: Option<String>,
+    pub loading_headphones: bool,
+    pub loading_download: bool,
+    pub headphones_error: Option<String>,
+    pub editing_search: bool,
     // Step 2: configuration (shared config struct)
     pub config: HeadphoneEqOptimizerConfig,
     pub config_selected_field: usize,
@@ -263,17 +277,51 @@ pub struct HeadphoneEqTuiState {
     pub update_existing_eq_info: Option<(usize, usize)>,
 }
 
+impl HeadphoneEqTuiState {
+    /// Update filtered headphones based on search query
+    pub fn update_filter(&mut self) {
+        if self.search_query.is_empty() {
+            self.filtered_headphones = self.available_headphones.clone();
+        } else {
+            let query_lower = self.search_query.to_lowercase();
+            self.filtered_headphones = self
+                .available_headphones
+                .iter()
+                .filter(|h| h.to_lowercase().contains(&query_lower))
+                .cloned()
+                .collect();
+        }
+        // Clamp index
+        if !self.filtered_headphones.is_empty() {
+            self.selected_headphone_idx =
+                self.selected_headphone_idx.min(self.filtered_headphones.len() - 1);
+        } else {
+            self.selected_headphone_idx = 0;
+        }
+    }
+}
+
 impl Default for HeadphoneEqTuiState {
     fn default() -> Self {
         Self {
             step: HeadphoneEqStep::SelectFile,
             step_tab_focused: false,
+            measurement_source: HeadphoneMeasurementSource::default(),
             measurement_path: String::new(),
             target_preset: "harman-over-ear-2018".to_string(),
             custom_target_path: String::new(),
             editing_measurement: false,
             editing_custom_target: false,
             selected_field: 0,
+            search_query: String::new(),
+            available_headphones: Vec::new(),
+            filtered_headphones: Vec::new(),
+            selected_headphone_idx: 0,
+            selected_headphone: None,
+            loading_headphones: false,
+            loading_download: false,
+            headphones_error: None,
+            editing_search: false,
             config: HeadphoneEqOptimizerConfig::default(),
             config_selected_field: 0,
             editing_value: false,

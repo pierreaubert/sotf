@@ -10377,7 +10377,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.16"
+version = "1.0.17"
 dependencies = [
  "arc-swap",
  "chrono",
@@ -10520,7 +10520,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.88"
+version = "0.5.89"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",

@@ -2,6 +2,32 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Source of headphone measurement data
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HeadphoneMeasurementSource {
+    /// Load from a local CSV file
+    #[default]
+    File,
+    /// Download from api.spinorama.org
+    Spinorama,
+}
+
+impl HeadphoneMeasurementSource {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::File => "Load from File",
+            Self::Spinorama => "Download from spinorama.org",
+        }
+    }
+
+    pub fn toggle(&self) -> Self {
+        match self {
+            Self::File => Self::Spinorama,
+            Self::Spinorama => Self::File,
+        }
+    }
+}
+
 /// Headphone EQ workflow step
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HeadphoneEqStep {

@@ -51,6 +51,7 @@ pub enum InputMode {
     About,
     EditingParam,
     SpinoramaSpeakerSearch,
+    HeadphoneSearch,
     /// Modal shown on startup when library is empty
     EmptyLibraryPrompt,
     /// Modal for editing a plugin node in the graph view
@@ -78,6 +79,7 @@ impl InputMode {
                 | InputMode::LoadApoFile
                 | InputMode::LoadSofaFile
                 | InputMode::SpinoramaSpeakerSearch
+                | InputMode::HeadphoneSearch
         )
     }
 }
