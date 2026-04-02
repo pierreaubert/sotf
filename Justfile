@@ -98,7 +98,7 @@ test-proptest:
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest: test-negative test-proptest
-	AEQ_E2E_DEVICE='BlackHole 64ch' RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d"
+	AEQ_E2E_DEVICE='BlackHole 64ch' RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples --features="qa, onnx, hal, gpu-2d, gpu-3d, iamf"
 
 # ----------------------------------------------------------------------
 # LINT
