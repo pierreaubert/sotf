@@ -315,6 +315,12 @@ fn run_playback_thread(
         config.channels = hw_channels;
     }
 
+    // Query device's native (maximum) channel count for retry fallback.
+    let device_native_channels: Option<u16> = device
+        .supported_output_configs()
+        .ok()
+        .and_then(|configs| configs.map(|c| c.channels()).max());
+
     // Create shared state (ring buffer with ~500ms capacity)
     let mut buffer_capacity = playback_buffer_capacity(sample_rate, channels, buffer_ms);
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
@@ -323,15 +329,43 @@ fn run_playback_thread(
     // Pre-allocate buffer for channel conversions (fallback downmix/upmix)
     let mut conversion_buffer = Vec::with_capacity(4096);
 
-    // Build cpal stream
-    let mut stream = build_output_stream(
+    // Build cpal stream — retry with device native channel count if the requested
+    // count is rejected (some pro interfaces only accept their max channel count).
+    let mut stream = match build_output_stream(
         &device,
         &config,
         Arc::clone(&state),
         event_tx.clone(),
         consumer,
         output_format,
-    )?;
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            let native_ch = device_native_channels.unwrap_or(channels as u16);
+            if native_ch != channels as u16 {
+                log::warn!(
+                    "[Playback Thread] Stream build failed with {}ch ({}) — retrying with device native {}ch",
+                    channels, e, native_ch
+                );
+                channels = native_ch as usize;
+                config.channels = native_ch;
+                buffer_capacity = playback_buffer_capacity(sample_rate, channels, buffer_ms);
+                let (new_producer, new_consumer) = RingBuffer::<f32>::new(buffer_capacity);
+                state = Arc::new(PlaybackState::new(buffer_capacity));
+                producer = new_producer;
+                build_output_stream(
+                    &device,
+                    &config,
+                    Arc::clone(&state),
+                    event_tx.clone(),
+                    new_consumer,
+                    output_format,
+                )?
+            } else {
+                return Err(e);
+            }
+        }
+    };
 
     // Start stream
     stream
@@ -1225,8 +1259,10 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
         return (fmt, config.channels);
     }
 
-    // Second try: find the best alternative channel count.
-    // Prefer the highest channel count <= requested (downmix), otherwise lowest available.
+    // Second try: device has a config with ch >= requested that supports this sample rate.
+    // Use the requested channel count (not the device's) — CoreAudio/ALSA/WASAPI can
+    // typically open a stream with fewer channels than the device maximum. This avoids
+    // inflating to e.g. 94 channels on a Fireface UFX+ when only 6 are needed.
     let mut available_channels: Vec<u16> = supported
         .iter()
         .filter(|c| {
@@ -1237,12 +1273,30 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
     available_channels.sort();
     available_channels.dedup();
 
-    // Pick highest ch <= requested, or fallback to the first available
+    if available_channels
+        .iter()
+        .any(|&ch| ch >= config.channels)
+    {
+        // Pick format from ANY sample-rate-compatible config (ignoring channel count).
+        let fmt = pick_format_any_channels(&candidates, config.sample_rate);
+        if let Some(fmt) = fmt {
+            log::info!(
+                "[Playback Thread] No exact {}ch config; using requested count with {:?} format \
+                 (device supports {:?}ch). Device configs: {:?}",
+                config.channels,
+                fmt,
+                available_channels,
+                log_configs()
+            );
+            return (fmt, config.channels);
+        }
+    }
+
+    // Third try: downmix — pick highest channel count <= requested.
     let alt_ch = available_channels
         .iter()
         .rev()
         .find(|&&ch| ch <= config.channels)
-        .or(available_channels.first())
         .copied();
 
     if let Some(ch) = alt_ch
@@ -1293,6 +1347,27 @@ fn pick_preferred_output_format(
                 && candidate.2 <= sample_rate
                 && candidate.3 >= sample_rate
         })
+    })
+}
+
+/// Pick preferred format from ANY channel count config (for sample-rate compatibility).
+/// Used when no exact channel match exists but the device supports >= requested channels.
+fn pick_format_any_channels(
+    candidates: &[(SampleFormat, u16, cpal::SampleRate, cpal::SampleRate)],
+    sample_rate: cpal::SampleRate,
+) -> Option<SampleFormat> {
+    [
+        SampleFormat::F32,
+        SampleFormat::I32,
+        SampleFormat::I16,
+        SampleFormat::U32,
+        SampleFormat::U16,
+    ]
+    .into_iter()
+    .find(|fmt| {
+        candidates
+            .iter()
+            .any(|c| c.0 == *fmt && c.2 <= sample_rate && c.3 >= sample_rate)
     })
 }
 
