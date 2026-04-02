@@ -140,6 +140,12 @@ pub trait Plugin: Send {
         None
     }
 
+    /// RT diagnostics: returns (contention_count, update_count) from internal
+    /// RealTimeCache, then resets counters. Default returns (0, 0).
+    fn take_cache_contention_stats(&mut self) -> (u64, u64) {
+        (0, 0)
+    }
+
     /// Returns the number of output frames for given input frames.
     /// Default: returns input unchanged (no frame count change).
     /// Plugins that change frame count (like resamplers) should override this.

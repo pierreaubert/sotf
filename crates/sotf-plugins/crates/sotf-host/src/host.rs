@@ -125,6 +125,11 @@ pub trait Host {
     fn process(&mut self, input: &[f32], output: &mut [f32]) -> Result<usize, String>;
     fn reset(&mut self);
     fn total_latency_samples(&self) -> usize;
+    /// RT diagnostics: collect cache contention stats from all analyzer plugins.
+    /// Returns Vec of (plugin_index, contention_count, update_count).
+    fn take_analyzer_contention_stats(&mut self) -> Vec<(usize, u64, u64)> {
+        Vec::new()
+    }
 }
 
 pub type NodeId = usize;
@@ -1199,6 +1204,18 @@ impl Host for DawHost {
     fn get_plugin_data(&self, i: usize) -> Option<Arc<dyn Any + Send + Sync>> {
         let &node_id = self.chain_nodes.get(i)?;
         self.plugins.get(node_id)?.as_ref()?.get_data()
+    }
+    fn take_analyzer_contention_stats(&mut self) -> Vec<(usize, u64, u64)> {
+        let mut stats = Vec::new();
+        for (i, &node_id) in self.chain_nodes.iter().enumerate() {
+            if let Some(Some(plugin)) = self.plugins.get_mut(node_id) {
+                let (contention, updates) = plugin.take_cache_contention_stats();
+                if updates > 0 {
+                    stats.push((i, contention, updates));
+                }
+            }
+        }
+        stats
     }
 }
 

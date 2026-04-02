@@ -164,6 +164,9 @@ enum GateState {
 
 struct BandExpander {
     envelope: Vec<f32>,
+    /// Peak envelope follower per channel (linear amplitude).
+    /// Prevents instantaneous zero-crossing dips from inflating expansion.
+    peak_env: Vec<f32>,
     gate_state: Vec<GateState>,
     hold_counter: Vec<usize>,
     attack_coeff: f32,
@@ -173,6 +176,7 @@ struct BandExpander {
 impl BandExpander {
     fn reset(&mut self) {
         self.envelope.fill(0.0);
+        self.peak_env.fill(0.0);
         self.gate_state.fill(GateState::Open);
         self.hold_counter.fill(0);
     }
@@ -507,6 +511,7 @@ impl MultibandExpanderPlugin {
         for _ in 0..nb {
             bexps.push(BandExpander {
                 envelope: vec![0.0; channels],
+                peak_env: vec![0.0; channels],
                 gate_state: vec![GateState::Open; channels],
                 hold_counter: vec![0; channels],
                 attack_coeff: 0.0,
@@ -1231,6 +1236,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     while self.band_expanders.len() < nb {
                         self.band_expanders.push(BandExpander {
                             envelope: vec![0.0; self.channels],
+                            peak_env: vec![0.0; self.channels],
                             gate_state: vec![GateState::Open; self.channels],
                             hold_counter: vec![0; self.channels],
                             attack_coeff: 0.0,
@@ -1675,10 +1681,17 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             let mut band_max_abs = 0.0f32;
 
             for frame in 0..nf {
+                // Update per-channel peak envelope followers first
+                for ch in 0..self.channels {
+                    let s = self.band_buffers[off + frame * self.channels + ch].abs();
+                    // Instant attack, release using attack_coeff (fast decay prevents
+                    // zero-crossing dips from inflating expansion targets)
+                    bexp.peak_env[ch] = s.max(bexp.attack_coeff * bexp.peak_env[ch]);
+                }
+
                 let mut det_db = 0.0f32;
                 if self.link_channels {
                     if use_rms {
-                        // For linked RMS: compute max RMS across channels
                         let mut max_rms_db = -120.0f32;
                         for ch in 0..self.channels {
                             let s = self.band_buffers[off + frame * self.channels + ch];
@@ -1689,8 +1702,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     } else {
                         let mut peak = 0.0f32;
                         for ch in 0..self.channels {
-                            peak =
-                                peak.max(self.band_buffers[off + frame * self.channels + ch].abs());
+                            peak = peak.max(bexp.peak_env[ch]);
                         }
                         det_db = 20.0 * fast_log10(peak.max(1e-10));
                     }
@@ -1706,7 +1718,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     } else if use_rms {
                         self.level_detectors[b][ch].process(self.band_buffers[idx])
                     } else {
-                        20.0 * fast_log10(sample_abs.max(1e-10))
+                        20.0 * fast_log10(bexp.peak_env[ch].max(1e-10))
                     };
 
                     let target = match bexp.gate_state[ch] {

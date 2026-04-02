@@ -331,3 +331,10 @@ plugins-check:
 [group('plugins')]
 plugins-clippy:
 	cargo clippy -p sotf-plugins --no-default-features
+
+# ----------------------------------------------------------------------
+# QA
+# ----------------------------------------------------------------------
+
+[group('qa')]
+qa-plugin: plugins-qa plugins-bench

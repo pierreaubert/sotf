@@ -159,6 +159,18 @@ struct ProcessingState {
     /// Spare Arc from previous plugin_data_cache swap, reused via Arc::get_mut
     /// to avoid per-frame Vec allocation when no UI reader holds a reference.
     spare_cache_arc: Option<std::sync::Arc<super::PluginDataVec>>,
+    /// RT diagnostics: how many frames hit the cache fallback (allocation) path
+    cache_fallback_count: u64,
+    /// RT diagnostics: how many frames reused the spare Arc (zero-alloc fast path)
+    cache_reuse_count: u64,
+    /// RT diagnostics: max process_frame duration in the current reporting window
+    max_frame_duration: std::time::Duration,
+    /// RT diagnostics: last time we logged diagnostics
+    last_rt_diag: std::time::Instant,
+    /// RT diagnostics: how many frames took longer than the frame period
+    frames_over_budget: u64,
+    /// RT diagnostics: how many recycle misses (fallback Vec allocation)
+    recycle_miss_count: u64,
 }
 
 impl ProcessingState {
@@ -177,6 +189,12 @@ impl ProcessingState {
             first_frame_time: None,
             sample_rate,
             spare_cache_arc: None,
+            cache_fallback_count: 0,
+            cache_reuse_count: 0,
+            max_frame_duration: std::time::Duration::ZERO,
+            last_rt_diag: std::time::Instant::now(),
+            frames_over_budget: 0,
+            recycle_miss_count: 0,
         }
     }
 
@@ -394,7 +412,7 @@ fn run_processing_thread(
     sample_rate: u32,
     channels: usize,
     plugin_data_cache: super::PluginDataCache,
-    gc_tx: super::GcSender,
+    _gc_tx: super::GcSender,
     recycle_rx: Receiver<Vec<f32>>,
     decoder_recycle_tx: SyncSender<Vec<f32>>,
 ) -> Result<(), String> {
@@ -444,8 +462,21 @@ fn run_processing_thread(
                     process_buffer.resize(output_samples, 0.0);
                 }
 
+                let frame_start = std::time::Instant::now();
                 match state.process_frame(&frame.data, &mut process_buffer, frame.num_frames) {
                     Ok(actual_output_frames) => {
+                        let frame_elapsed = frame_start.elapsed();
+                        if frame_elapsed > state.max_frame_duration {
+                            state.max_frame_duration = frame_elapsed;
+                        }
+                        // Budget = frame_period. If processing exceeds it, the pipeline falls behind.
+                        let frame_budget = std::time::Duration::from_secs_f64(
+                            frame.num_frames as f64 / state.sample_rate as f64,
+                        );
+                        if frame_elapsed > frame_budget {
+                            state.frames_over_budget += 1;
+                        }
+
                         // Recycle the decoder frame's buffer back for reuse
                         decoder_recycle_tx.try_send(frame.data).ok();
 
@@ -456,17 +487,23 @@ fn run_processing_thread(
 
                         // Update shared plugin data cache so the UI can read
                         // analyzer results without blocking the audio pipeline.
-                        // Uses spare Arc reuse: after swap, keep the old Arc. Next
-                        // frame, if refcount==1 (no active UI reader), Arc::get_mut
-                        // lets us mutate in place — zero allocations in steady state.
+                        //
+                        // Spare Arc reuse: after swap, keep the old Arc. Next frame,
+                        // if refcount==1 (no active UI reader), Arc::get_mut lets us
+                        // mutate in place — zero allocations.
+                        //
+                        // On contention (UI holds the spare), we skip the update
+                        // rather than allocating. The UI sees one frame of stale
+                        // analyzer data (~21ms) — imperceptible for spectrum/loudness.
                         {
                             let analyzer_indices = state.host.analyzer_indices();
                             if !analyzer_indices.is_empty() {
                                 let plugin_count = state.host.plugin_count();
 
-                                let reused = if let Some(mut spare) = state.spare_cache_arc.take() {
+                                if let Some(mut spare) = state.spare_cache_arc.take() {
                                     if let Some(vec) = std::sync::Arc::get_mut(&mut spare) {
                                         // Sole owner — mutate in place, zero allocations
+                                        state.cache_reuse_count += 1;
                                         if vec.len() != plugin_count {
                                             vec.resize(plugin_count, None);
                                         }
@@ -475,25 +512,16 @@ fn run_processing_thread(
                                         }
                                         let old = plugin_data_cache.swap(spare);
                                         state.spare_cache_arc = Some(old);
-                                        true
                                     } else {
-                                        // UI thread still reading — send to GC, fall back to clone
-                                        gc_tx
-                                            .try_send(super::gc_thread::GcItem::AnyArc(spare))
-                                            .ok();
-                                        false
+                                        // Contention: UI thread still holds this Arc.
+                                        // Keep spare for next attempt, skip this update.
+                                        state.cache_fallback_count += 1;
+                                        state.spare_cache_arc = Some(spare);
                                     }
                                 } else {
-                                    false
-                                };
-
-                                if !reused {
-                                    // First frame or rare contention: clone + allocate
-                                    let old = plugin_data_cache.load();
-                                    let mut new_cache = (**old).clone();
-                                    if new_cache.len() != plugin_count {
-                                        new_cache.resize(plugin_count, None);
-                                    }
+                                    // First frame: allocate once to bootstrap the spare.
+                                    state.cache_fallback_count += 1;
+                                    let mut new_cache = vec![None; plugin_count];
                                     for &i in analyzer_indices {
                                         new_cache[i] = state.host.get_plugin_data(i);
                                     }
@@ -525,6 +553,7 @@ fn run_processing_thread(
                                 }
                                 Err(_) => {
                                     // Fallback if recycle queue is empty (ramp-up or stall)
+                                    state.recycle_miss_count += 1;
                                     Vec::with_capacity(actual_output_samples)
                                 }
                             };
@@ -570,6 +599,47 @@ fn run_processing_thread(
                     }
                 }
                 state.process_buffer = process_buffer;
+
+                // RT diagnostics: log every 5 seconds
+                if state.last_rt_diag.elapsed() >= std::time::Duration::from_secs(5) {
+                    let total_cache = state.cache_reuse_count + state.cache_fallback_count;
+                    let fallback_pct = if total_cache > 0 {
+                        state.cache_fallback_count as f64 / total_cache as f64 * 100.0
+                    } else {
+                        0.0
+                    };
+                    log::info!(
+                        "[Processing Thread] RT_DIAG: frames={}, cache_reuse={}, cache_fallback={} ({:.1}%), \
+                         max_frame={:.2}ms, over_budget={}, recycle_miss={}",
+                        state.frame_count,
+                        state.cache_reuse_count,
+                        state.cache_fallback_count,
+                        fallback_pct,
+                        state.max_frame_duration.as_secs_f64() * 1000.0,
+                        state.frames_over_budget,
+                        state.recycle_miss_count,
+                    );
+                    // Log per-analyzer contention stats
+                    let analyzer_stats = state.host.take_analyzer_contention_stats();
+                    for (idx, contention, updates) in &analyzer_stats {
+                        if *contention > 0 && *updates > 0 {
+                            log::warn!(
+                                "[Processing Thread] RT_DIAG: analyzer[{}] contention={}/{} ({:.1}%)",
+                                idx,
+                                contention,
+                                updates,
+                                *contention as f64 / *updates as f64 * 100.0,
+                            );
+                        }
+                    }
+                    // Reset per-window counters
+                    state.cache_reuse_count = 0;
+                    state.cache_fallback_count = 0;
+                    state.max_frame_duration = std::time::Duration::ZERO;
+                    state.frames_over_budget = 0;
+                    state.recycle_miss_count = 0;
+                    state.last_rt_diag = std::time::Instant::now();
+                }
             }
             Ok(DecoderMessage::EndOfStream) => {
                 let mut pending_msg = Some(ProcessingMessage::EndOfStream);

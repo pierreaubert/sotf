@@ -367,4 +367,7 @@ impl Plugin for SpectrumAnalyzerPlugin {
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
+    fn take_cache_contention_stats(&mut self) -> (u64, u64) {
+        self.cache.take_contention_stats()
+    }
 }

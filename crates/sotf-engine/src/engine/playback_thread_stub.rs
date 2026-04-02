@@ -469,6 +469,7 @@ impl PlaybackThread {
         sample_rate: u32,
         buffer_ms: u32,
         channels: usize,
+        frame_size: usize,
         _output_device: Option<String>,
         recycle_tx: SyncSender<Vec<f32>>,
         _allow_virtual_output: bool,
@@ -485,6 +486,7 @@ impl PlaybackThread {
                     sample_rate,
                     buffer_ms,
                     channels,
+                    frame_size,
                     recycle_tx,
                 ) {
                     log::error!("[Playback Thread iOS] Error: {}", e);
@@ -539,6 +541,7 @@ fn run_playback_ios(
     sample_rate: u32,
     buffer_ms: u32,
     channels: usize,
+    frame_size: usize,
     recycle_tx: SyncSender<Vec<f32>>,
 ) -> Result<(), String> {
     // Create ring buffer
@@ -613,7 +616,7 @@ fn run_playback_ios(
 
         // Check for ring buffer space
         let available_space = producer.slots();
-        let min_space = 1024 * channels * 2;
+        let min_space = frame_size * channels * 2;
         if available_space < min_space {
             std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
             continue;

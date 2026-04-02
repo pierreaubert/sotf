@@ -585,6 +585,7 @@ fn run_manager_thread(
         config.output_sample_rate,
         config.buffer_ms,
         actual_output_channels,
+        config.frame_size,
         config.output_device.clone(),
         recycle_tx,
         config.allow_virtual_output,

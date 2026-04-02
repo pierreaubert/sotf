@@ -43,6 +43,7 @@ impl PlaybackThread {
         sample_rate: u32,
         buffer_ms: u32,
         channels: usize,
+        frame_size: usize,
         output_device: Option<String>,
         recycle_tx: SyncSender<Vec<f32>>,
         allow_virtual_output: bool,
@@ -60,6 +61,7 @@ impl PlaybackThread {
                     sample_rate,
                     buffer_ms,
                     channels,
+                    frame_size,
                     output_device,
                     recycle_tx,
                     allow_virtual_output,
@@ -165,6 +167,7 @@ fn run_playback_thread(
     sample_rate: u32,
     buffer_ms: u32,
     initial_channels: usize,
+    frame_size: usize,
     output_device: Option<String>,
     recycle_tx: SyncSender<Vec<f32>>,
     allow_virtual_output: bool,
@@ -793,8 +796,8 @@ fn run_playback_thread(
         // Check if ring buffer has space
         let available_space = producer.slots();
 
-        // Only pull from queue if we have space for at least a few frames
-        let min_space_required = 1024 * channels * 2; // Space for ~2 frames (assuming 1024 size)
+        // Only pull from queue if we have space for at least 2 frames
+        let min_space_required = frame_size * channels * 2;
 
         if available_space < min_space_required {
             // Ring buffer is full, sleep briefly and let the audio callback drain it
