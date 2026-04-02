@@ -16,6 +16,9 @@ mutants.out
 # dont commit env file if any
 .env
 
+# dont let claude and friends change git config
+/.git/config
+
 # marketing/product/insights ...
 /product
 
