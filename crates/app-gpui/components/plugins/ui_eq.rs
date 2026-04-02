@@ -483,9 +483,9 @@ fn render_eq_visualization(
 
         // Control point circle
         let border_color = if is_selected {
-            gpui::white()
+            theme.text_primary
         } else {
-            gpui::hsla(0.0, 0.0, 1.0, 0.5) // semi-transparent white
+            Rgba { a: 0.5, ..theme.text_primary }
         };
 
         // Calculate Q bar width
@@ -522,9 +522,9 @@ fn render_eq_visualization(
                 .bg(rgba_color)
                 .border(px(1.0))
                 .border_color(if is_selected {
-                    gpui::white()
+                    theme.text_primary
                 } else {
-                    gpui::hsla(0.0, 0.0, 1.0, 0.4)
+                    Rgba { a: 0.4, ..theme.text_primary }
                 })
                 .cursor(gpui::CursorStyle::ResizeLeftRight)
                 .hover(|s| s.size(px(Q_HANDLE_RADIUS * 2.5)))
@@ -596,9 +596,9 @@ fn render_eq_visualization(
                 .bg(rgba_color)
                 .border(px(1.0))
                 .border_color(if is_selected {
-                    gpui::white()
+                    theme.text_primary
                 } else {
-                    gpui::hsla(0.0, 0.0, 1.0, 0.4)
+                    Rgba { a: 0.4, ..theme.text_primary }
                 })
                 .cursor(gpui::CursorStyle::ResizeLeftRight)
                 .hover(|s| s.size(px(Q_HANDLE_RADIUS * 2.5)))

@@ -55,7 +55,7 @@ impl Default for SpectrumConfig {
 pub fn render_spectrum_heatmap(
     data: SpectrumGrid,
     config: SpectrumConfig,
-    _theme: &Theme,
+    theme: &Theme,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
 ) -> impl IntoElement {
     if data.x_values.is_empty() || data.y_values.is_empty() || data.z_values.is_empty() {
@@ -68,7 +68,7 @@ pub fn render_spectrum_heatmap(
             .child(
                 div()
                     .text_base()
-                    .text_color(gpui::rgb(0x666666))
+                    .text_color(theme.text_secondary)
                     .child("No spectrum data available."),
             )
             .into_any_element();
@@ -86,7 +86,7 @@ pub fn render_spectrum_heatmap(
             .justify_center()
             .w(px(config.width))
             .h(px(config.height))
-            .text_color(gpui::rgb(0xFF0000))
+            .text_color(theme.error)
             .child("Data dimension mismatch")
             .into_any_element();
     }
@@ -138,7 +138,7 @@ pub fn render_spectrum_heatmap(
             .justify_center()
             .w(px(config.width))
             .h(px(config.height))
-            .text_color(gpui::rgb(0xFF0000))
+            .text_color(theme.error)
             .child(format!("Error building chart: {}", e))
             .into_any_element(),
     }

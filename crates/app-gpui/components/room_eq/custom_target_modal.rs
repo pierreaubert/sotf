@@ -9,6 +9,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
+use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize, TextWeight,
 };
@@ -42,14 +43,15 @@ struct TargetControlPointDrag {
 }
 
 impl Render for TargetControlPointDrag {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
         div()
             .w(px(CONTROL_POINT_RADIUS * 2.0))
             .h(px(CONTROL_POINT_RADIUS * 2.0))
             .rounded_full()
-            .bg(gpui::rgba(0x3b82f6ff)) // Blue
+            .bg(theme.accent)
             .border(px(2.0))
-            .border_color(gpui::white())
+            .border_color(theme.text_on_accent)
             .shadow_lg()
     }
 }
@@ -567,9 +569,9 @@ fn render_target_curve_graph(
             .w(px(CONTROL_POINT_RADIUS * 2.0))
             .h(px(CONTROL_POINT_RADIUS * 2.0))
             .rounded_full()
-            .bg(gpui::rgba(0x3b82f6ff)) // Blue
+            .bg(theme.accent)
             .border(px(2.0))
-            .border_color(gpui::white())
+            .border_color(theme.text_on_accent)
             .shadow_md()
             .cursor(gpui::CursorStyle::PointingHand)
             .hover(|s| s.size(px(CONTROL_POINT_RADIUS * 2.5)))

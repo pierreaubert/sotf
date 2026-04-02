@@ -637,8 +637,7 @@ impl PlayerView {
                 })
                 .when(noise_floor_warning.is_some(), |stack| {
                     let warning_msg = noise_floor_warning.clone().unwrap_or_default();
-                    // Use a semi-transparent amber/warning background (HSL: ~45deg hue for amber)
-                    let warning_bg = gpui::hsla(0.125, 0.8, 0.5, 0.15);
+                    let warning_bg = theme.warning_background;
                     stack.child(
                         div()
                             .p_3()
