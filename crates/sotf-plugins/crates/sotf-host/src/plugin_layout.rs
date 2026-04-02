@@ -334,25 +334,79 @@ impl PluginLayout {
                 ));
             }
         };
-        for c in self.config {
-            if let ControlType::BarMeter { .. } = c.control_type {
-                continue; // meters don't reference params
+        let check_controls = |controls: &[ControlSpec], section: &str, errors: &mut Vec<String>| {
+            for c in controls {
+                if let ControlType::BarMeter { .. } = c.control_type {
+                    continue; // meters don't reference params
+                }
+                check(c.param_index, section, errors);
             }
-            check(c.param_index, "config", &mut errors);
-        }
+        };
+        check_controls(self.config, "config", &mut errors);
         for group in self.main {
-            for c in group.controls {
+            check_controls(group.controls, &format!("main/{}", group.title), &mut errors);
+        }
+        check_controls(self.output, "output", &mut errors);
+        for tab in self.tabs {
+            check_controls(tab.controls, &format!("tab/{}", tab.name), &mut errors);
+        }
+        for ds in self.dynamic_sections {
+            check_controls(
+                ds.template_controls,
+                &format!("dynamic/{}", ds.instance_name),
+                &mut errors,
+            );
+        }
+        errors
+    }
+
+    /// Collect all param indices referenced by this layout (config, main, output,
+    /// tabs, dynamic_sections). Returns a sorted, deduplicated Vec.
+    pub fn referenced_indices(&self) -> Vec<usize> {
+        let mut indices = Vec::new();
+        let collect = |controls: &[ControlSpec], out: &mut Vec<usize>| {
+            for c in controls {
                 if let ControlType::BarMeter { .. } = c.control_type {
                     continue;
                 }
-                check(c.param_index, &format!("main/{}", group.title), &mut errors);
+                out.push(c.param_index);
+            }
+        };
+        collect(self.config, &mut indices);
+        for group in self.main {
+            collect(group.controls, &mut indices);
+        }
+        collect(self.output, &mut indices);
+        for tab in self.tabs {
+            collect(tab.controls, &mut indices);
+        }
+        for ds in self.dynamic_sections {
+            collect(ds.template_controls, &mut indices);
+            if let Some(idx) = ds.count_param_index {
+                indices.push(idx);
             }
         }
-        for c in self.output {
-            if let ControlType::BarMeter { .. } = c.control_type {
-                continue;
+        indices.sort_unstable();
+        indices.dedup();
+        indices
+    }
+
+    /// Validate that every PARAMS index appears in the layout. Returns errors
+    /// listing any param indices that are in PARAMS but missing from the layout.
+    pub fn validate_coverage(
+        &self,
+        params: &[crate::param_specs::ParamSpec],
+        plugin_name: &str,
+    ) -> Vec<String> {
+        let referenced = self.referenced_indices();
+        let mut errors = Vec::new();
+        for (idx, param) in params.iter().enumerate() {
+            if !referenced.contains(&idx) {
+                errors.push(format!(
+                    "{plugin_name}: param index {idx} ({}) is in PARAMS but missing from LAYOUT",
+                    param.name
+                ));
             }
-            check(c.param_index, "output", &mut errors);
         }
         errors
     }
