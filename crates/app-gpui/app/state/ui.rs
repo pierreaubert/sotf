@@ -96,6 +96,8 @@ pub struct UIState {
     pub scanner_threads: Option<u8>,
     /// Maximum number of CPU cores SotF is allowed to use (None = all available)
     pub max_cpu_cores: Option<u8>,
+    /// Selected design system language (None = platform default)
+    pub design_language: Option<String>,
     /// Current tutorial screen index (0-6)
     pub tutorial_screen: usize,
     /// Whether "don't show again" checkbox is checked in tutorial dialog
@@ -130,6 +132,7 @@ impl Default for UIState {
             release_channel: ReleaseChannel::default(),
             scanner_threads: None,
             max_cpu_cores: None,
+            design_language: None,
             tutorial_screen: 0,
             tutorial_dont_show: false,
         }

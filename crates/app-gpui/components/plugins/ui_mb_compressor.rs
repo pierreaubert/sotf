@@ -17,6 +17,7 @@ use super::common::{
 };
 use crate::app::AppState;
 use crate::app::types::PluginUpdateType;
+use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -55,6 +56,7 @@ const TRANSFER_CURVE_SIZE: f32 = 140.0;
 
 /// Render the Multiband Compressor plugin
 pub fn render_mb_compressor_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: MbCompressorRenderState,
@@ -74,16 +76,16 @@ pub fn render_mb_compressor_plugin(
         .flex()
         .flex_col()
         .flex_shrink_0()
-        .gap_3()
-        .child(render_section_title("GLOBAL", theme))
+        .gap(d.gap_md)
+        .child(render_section_title(d, "GLOBAL", theme))
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(d.grid)
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_secondary)
                         .child("Bands"),
@@ -185,10 +187,10 @@ pub fn render_mb_compressor_plugin(
                 format!("{}", i)
             };
             div()
-                .px_4()
+                .px(d.card)
                 .pb(px(6.0))
                 .pt(px(4.0))
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(if is_selected {
                     FontWeight::BOLD
                 } else {
@@ -203,7 +205,7 @@ pub fn render_mb_compressor_plugin(
                 .border_color(if is_selected {
                     theme.accent
                 } else {
-                    gpui::rgba(0x00000000)
+                    gpui::Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }
                 })
                 .cursor_pointer()
                 .hover(|s| {
@@ -229,6 +231,7 @@ pub fn render_mb_compressor_plugin(
 
     // Transfer curve for current band
     let transfer_curve = render_transfer_curve_with_level(
+        d,
         state.threshold_db,
         state.ratio,
         state.knee_db,
@@ -241,17 +244,17 @@ pub fn render_mb_compressor_plugin(
     // Band sliders (DYNAMICS + TIMING side by side, transfer curve below both)
     let slider_row = div()
         .flex()
-        .gap_4()
+        .gap(d.section)
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
-                .child(render_section_title("DYNAMICS", theme))
+                .gap(d.grid)
+                .child(render_section_title(d, "DYNAMICS", theme))
                 .child(
                     div()
                         .flex()
-                        .gap_2()
+                        .gap(d.gap)
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
@@ -303,12 +306,12 @@ pub fn render_mb_compressor_plugin(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
-                .child(render_section_title("TIMING", theme))
+                .gap(d.grid)
+                .child(render_section_title(d, "TIMING", theme))
                 .child(
                     div()
                         .flex()
-                        .gap_2()
+                        .gap(d.gap)
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
@@ -363,7 +366,7 @@ pub fn render_mb_compressor_plugin(
     let sliders = div()
         .flex()
         .flex_col()
-        .gap_2()
+        .gap(d.gap)
         .child(slider_row)
         .child(transfer_curve);
 
@@ -371,7 +374,7 @@ pub fn render_mb_compressor_plugin(
         .flex()
         .flex_col()
         .flex_1()
-        .gap_3()
+        .gap(d.gap_md)
         .child(band_tabs)
         .child(sliders);
 
@@ -380,7 +383,7 @@ pub fn render_mb_compressor_plugin(
         center_col = center_col.child(
             div()
                 .flex()
-                .gap_4()
+                .gap(d.section)
                 .justify_center()
                 .child(render_toggle(
                     entity.clone(),
@@ -430,8 +433,8 @@ pub fn render_mb_compressor_plugin(
         .flex()
         .flex_col()
         .flex_shrink_0()
-        .gap_3()
-        .child(render_section_title("OUTPUT", theme))
+        .gap(d.gap_md)
+        .child(render_section_title(d, "OUTPUT", theme))
         .child(render_toggle(
             entity.clone(),
             plugin_idx,
@@ -458,10 +461,10 @@ pub fn render_mb_compressor_plugin(
         ));
 
     // === Main layout: 3 columns, centered ===
-    div().w_full().flex().justify_center().p_3().child(
+    div().w_full().flex().justify_center().p(d.pad_x).child(
         div()
             .flex()
-            .gap_4()
+            .gap(d.section)
             .child(global_col)
             .child(center_col)
             .child(right_col),

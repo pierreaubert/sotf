@@ -2,6 +2,7 @@
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
+use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::{FOOTER_HEIGHT_REMS, PlayerView};
 use gpui::prelude::*;
@@ -161,6 +162,7 @@ const BREAKPOINT_HIDE_STUDIO_DEVICE: f32 = 400.0;
 
 impl PlayerView {
     pub(crate) fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
         let translations = state.app.ui_state.translations.clone();
@@ -208,7 +210,7 @@ impl PlayerView {
                     .build()
                     .flex_1()
                     .h_full()
-                    .px_4(),
+                    .px(d.card),
             )
     }
 
@@ -272,6 +274,7 @@ impl PlayerView {
         translations: &crate::i18n::Translations,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
         let no_track_label = translations.playback_no_track;
@@ -291,18 +294,18 @@ impl PlayerView {
                 .align(StackAlign::Start)
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(accent)
                         .child("HAL Input Active"),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .text_color(text_secondary)
                         .child("Processing system audio"),
                 )
-                .child(div().text_xs().text_color(text_primary).child(format!(
+                .child(div().text_size(d.text_xs).text_color(text_primary).child(format!(
                     "{} plugins active",
                     state.app.plugin_state.chain.plugins().len()
                 )))
@@ -347,7 +350,7 @@ impl PlayerView {
             // Title
             .child(
                 div()
-                    .text_sm()
+                    .text_size(d.text_sm)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(text_primary)
                     .overflow_hidden()
@@ -358,7 +361,7 @@ impl PlayerView {
             // Album
             .child(
                 div()
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .text_color(text_secondary)
                     .overflow_hidden()
                     .text_ellipsis()
@@ -368,7 +371,7 @@ impl PlayerView {
             // Artist
             .child(
                 div()
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .text_color(text_muted)
                     .overflow_hidden()
                     .text_ellipsis()
@@ -386,6 +389,7 @@ impl PlayerView {
         show_waveform: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
 
@@ -446,9 +450,9 @@ impl PlayerView {
             .flex()
             .flex_col()
             .items_center()
-            .gap_4()
-            .pt_2()
-            .pb_2()
+            .gap(d.section)
+            .pt(d.pad_y)
+            .pb(d.pad_y)
             .justify_between()
             .flex_1()
             .max_w(rems(37.5))
@@ -462,7 +466,7 @@ impl PlayerView {
                     .when(!is_hal_mode, |el| {
                         el.child(
                             div()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(text_muted)
                                 .min_w(rems(2.5))
                                 .child(position_str.clone()),
@@ -472,7 +476,7 @@ impl PlayerView {
                         div()
                             .flex()
                             .items_center()
-                            .gap_1()
+                            .gap(d.grid)
                             // Previous track
                             .child({
                                 let tt = theme_clone.clone();
@@ -647,7 +651,7 @@ impl PlayerView {
                     .when(!is_hal_mode, |el| {
                         el.child(
                             div()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(text_muted)
                                 .min_w(rems(2.5))
                                 .flex()
@@ -700,9 +704,9 @@ impl PlayerView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .gap_1()
-                        .mt_2()
-                        .text_xs()
+                        .gap(d.grid)
+                        .mt(d.gap)
+                        .text_size(d.text_xs)
                         .text_color(text_muted)
                         .child(position_str)
                         .child("/")
@@ -718,6 +722,7 @@ impl PlayerView {
         show_studio_device: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let default_device_label = translations.playback_default_device;
         let (
             volume,
@@ -763,7 +768,7 @@ impl PlayerView {
         div()
             .flex()
             .items_center()
-            .gap_3()
+            .gap(d.gap_md)
             .when(show_studio_device, |el| el.min_w(rems(11.25)))
             .justify_end()
             .relative()
@@ -772,9 +777,9 @@ impl PlayerView {
                 el.child(
                     div()
                         .id("studio-button")
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
+                        .px(d.pad_y)
+                        .py(d.pad_y_half)
+                        .rounded(d.r_md)
                         .cursor_pointer()
                         .hover(|style| style.bg(surface_hover))
                         .on_mouse_up(
@@ -792,7 +797,7 @@ impl PlayerView {
                                 .flex()
                                 .flex_col()
                                 .items_center()
-                                .gap_1()
+                                .gap(d.grid)
                                 .child(
                                     Icon::new(IconName::SlidersHorizontal)
                                         .size(IconSize::Xxl)
@@ -800,7 +805,7 @@ impl PlayerView {
                                 )
                                 .child(
                                     div()
-                                        .text_xs()
+                                        .text_size(d.text_xs)
                                         .text_color(text_secondary)
                                         .text_center()
                                         .child(studio_label),
@@ -813,9 +818,9 @@ impl PlayerView {
                 el.child(
                     div()
                         .id("device-selector")
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
+                        .px(d.pad_y)
+                        .py(d.pad_y_half)
+                        .rounded(d.r_md)
                         .cursor_pointer()
                         .hover(|style| style.bg(surface_hover))
                         .on_mouse_up(
@@ -833,7 +838,7 @@ impl PlayerView {
                                 .flex()
                                 .flex_col()
                                 .items_center()
-                                .gap_1()
+                                .gap(d.grid)
                                 // Speaker icon
                                 .child(
                                     Icon::new(IconName::Speaker)
@@ -843,7 +848,7 @@ impl PlayerView {
                                 // Device name below
                                 .child(
                                     div()
-                                        .text_xs()
+                                        .text_size(d.text_xs)
                                         .text_color(text_secondary)
                                         .text_center()
                                         .max_w(rems(5.0))
@@ -870,6 +875,7 @@ impl PlayerView {
         header_label: &'static str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let (devices, selected_index, theme) = {
             let state = self.state.read(cx);
             (
@@ -890,9 +896,9 @@ impl PlayerView {
             .bg(theme.surface)
             .border_1()
             .border_color(theme.border)
-            .rounded_md()
+            .rounded(d.r_md)
             .shadow_lg()
-            .py_1()
+            .py(d.pad_y_half)
             .overflow_y_scroll()
             // Stop click propagation so overlay doesn't close popup
             .on_mouse_down(MouseButton::Left, |_, _, _| {})
@@ -904,13 +910,13 @@ impl PlayerView {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_3()
-                    .py_2()
+                    .px(d.pad_x)
+                    .py(d.pad_y)
                     .border_b_1()
                     .border_color(theme_header.border)
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme_header.text_muted)
                             .child(header_label),
@@ -919,15 +925,15 @@ impl PlayerView {
                         div()
                             .flex()
                             .items_center()
-                            .gap_1()
+                            .gap(d.grid)
                             .child(
                                 div()
                                     .id("scan-cast")
                                     .cursor_pointer()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_sm()
-                                    .text_xs()
+                                    .px(d.pad_y)
+                                    .py(d.pad_y_half)
+                                    .rounded(d.r_sm)
+                                    .text_size(d.text_xs)
                                     .text_color(theme_header.text_muted)
                                     .hover(|s| s.bg(theme_header.surface_hover))
                                     .on_mouse_up(
@@ -945,8 +951,8 @@ impl PlayerView {
                                 div()
                                     .id("refresh-devices")
                                     .cursor_pointer()
-                                    .p_1()
-                                    .rounded_sm()
+                                    .p(d.grid)
+                                    .rounded(d.r_sm)
                                     .hover(|s| s.bg(theme_header.surface_hover))
                                     .on_mouse_up(
                                         MouseButton::Left,
@@ -959,7 +965,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         div()
-                                            .text_2xl()
+                                            .text_size(d.text_lg)
                                             .text_color(theme_header.text_muted)
                                             .child("⟳"),
                                     ),
@@ -979,20 +985,20 @@ impl PlayerView {
 
                 div()
                     .id(SharedString::from(format!("device-{}", idx)))
-                    .px_3()
-                    .py_1()
-                    .mx_1()
+                    .px(d.pad_x)
+                    .py(d.pad_y_half)
+                    .mx(d.grid)
                     .my(px(1.0))
-                    .rounded_sm()
+                    .rounded(d.r_sm)
                     .cursor_pointer()
-                    .text_sm()
-                    .when(is_selected, |d| {
-                        d.bg(theme.surface_hover)
+                    .text_size(d.text_sm)
+                    .when(is_selected, |el| {
+                        el.bg(theme.surface_hover)
                             .text_color(theme.text_primary)
                             .font_weight(FontWeight::MEDIUM)
                     })
-                    .when(!is_selected, |d| {
-                        d.text_color(theme.text_secondary).hover(|style| {
+                    .when(!is_selected, |el| {
+                        el.text_color(theme.text_secondary).hover(|style| {
                             style.bg(theme.surface_hover).text_color(theme.text_primary)
                         })
                     })
@@ -1026,8 +1032,8 @@ impl PlayerView {
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
-                            .when(is_selected, |d| d.child("✓"))
+                            .gap(d.gap)
+                            .when(is_selected, |el| el.child("✓"))
                             .child(display_name),
                     )
             }))
@@ -1044,13 +1050,13 @@ impl PlayerView {
                     .flex_col()
                     .border_t_1()
                     .border_color(theme_cast.border)
-                    .mt_1()
-                    .pt_1()
+                    .mt(d.grid)
+                    .pt(d.pad_y_half)
                     .child(
                         div()
-                            .px_3()
-                            .py_1()
-                            .text_xs()
+                            .px(d.pad_x)
+                            .py(d.pad_y_half)
+                            .text_size(d.text_xs)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme_cast.text_muted)
                             .child(if cast_running {
@@ -1063,9 +1069,9 @@ impl PlayerView {
                 if cast_devices.is_empty() && !cast_running {
                     section = section.child(
                         div()
-                            .px_3()
-                            .py_1()
-                            .text_xs()
+                            .px(d.pad_x)
+                            .py(d.pad_y_half)
+                            .text_size(d.text_xs)
                             .text_color(theme_cast.text_muted)
                             .child("No Cast devices found"),
                     );
@@ -1080,20 +1086,20 @@ impl PlayerView {
                     section = section.child(
                         div()
                             .id(SharedString::from(format!("cast-device-{}", idx)))
-                            .px_3()
-                            .py_1()
-                            .mx_1()
+                            .px(d.pad_x)
+                            .py(d.pad_y_half)
+                            .mx(d.grid)
                             .my(px(1.0))
-                            .rounded_sm()
+                            .rounded(d.r_sm)
                             .cursor_pointer()
-                            .text_sm()
-                            .when(is_selected, |d| {
-                                d.bg(theme_item.surface_hover)
+                            .text_size(d.text_sm)
+                            .when(is_selected, |el| {
+                                el.bg(theme_item.surface_hover)
                                     .text_color(theme_item.text_primary)
                                     .font_weight(FontWeight::MEDIUM)
                             })
-                            .when(!is_selected, |d| {
-                                d.text_color(theme_item.text_secondary).hover(|style| {
+                            .when(!is_selected, |el| {
+                                el.text_color(theme_item.text_secondary).hover(|style| {
                                     style
                                         .bg(theme_item.surface_hover)
                                         .text_color(theme_item.text_primary)
@@ -1119,12 +1125,12 @@ impl PlayerView {
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap_2()
-                                    .when(is_selected, |d| d.child("✓"))
+                                    .gap(d.gap)
+                                    .when(is_selected, |el| el.child("✓"))
                                     .child(name)
                                     .child(
                                         div()
-                                            .text_xs()
+                                            .text_size(d.text_xs)
                                             .text_color(theme_cast.text_muted)
                                             .child(format!("({})", dtype)),
                                     ),

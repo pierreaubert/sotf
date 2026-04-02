@@ -1,5 +1,6 @@
 //! Keybindings settings content
 
+use crate::components::design::Ds;
 use crate::app::keybindings::{KeybindingCategory, KeymapPreset, get_documented_keybindings};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -13,6 +14,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let current_preset = state.app.ui_state.keymap_preset;
         let theme = state.app.ui_state.theme.clone();
@@ -32,17 +34,17 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(d.section_lg)
             .size_full()
             // Preset selection
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_3()
+                    .gap(d.gap_md)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .child("Keymap Preset"),
@@ -72,7 +74,7 @@ impl PlayerView {
                     })
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .child(current_preset.description()),
                     ),
@@ -82,10 +84,10 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_3()
+                    .gap(d.gap_md)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .child("Keybinding Comparison"),
@@ -99,14 +101,14 @@ impl PlayerView {
                             .max_h(rems(31.25))
                             .border_1()
                             .border_color(theme.border)
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .bg(theme.surface)
                             // Table header
-                            .child(render_table_header(&theme))
+                            .child(render_table_header(&d, &theme))
                             // Table body by category
                             .children(KeybindingCategory::all().iter().filter_map(|category| {
                                 by_category.get(category).map(|rows| {
-                                    render_category_section(*category, rows, &theme, current_preset)
+                                    render_category_section(&d, *category, rows, &theme, current_preset)
                                 })
                             })),
                     ),
@@ -114,19 +116,19 @@ impl PlayerView {
     }
 }
 
-fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
+fn render_table_header(d: &Ds, theme: &crate::app::Theme) -> impl IntoElement {
     div()
         .flex()
         .w_full()
         .bg(theme.surface_hover)
         .border_b_1()
         .border_color(theme.border)
-        .px_3()
-        .py_2()
+        .px(d.pad_x)
+        .py(d.pad_y)
         .child(
             div()
                 .flex_1()
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
                 .child("Action"),
@@ -134,7 +136,7 @@ fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
         .child(
             div()
                 .w(rems(6.25))
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
                 .text_align(gpui::TextAlign::Center)
@@ -143,7 +145,7 @@ fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
         .child(
             div()
                 .w(rems(6.25))
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
                 .text_align(gpui::TextAlign::Center)
@@ -152,7 +154,7 @@ fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
         .child(
             div()
                 .w(rems(6.25))
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
                 .text_align(gpui::TextAlign::Center)
@@ -161,7 +163,7 @@ fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
         .child(
             div()
                 .w(rems(6.25))
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
                 .text_align(gpui::TextAlign::Center)
@@ -169,7 +171,7 @@ fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
         )
 }
 
-fn render_category_section(
+fn render_category_section(d: &Ds, 
     category: KeybindingCategory,
     rows: &[(String, HashMap<KeymapPreset, String>)],
     theme: &crate::app::Theme,
@@ -185,7 +187,7 @@ fn render_category_section(
     let row_elements: Vec<_> = rows
         .iter()
         .map(|(action, keys)| {
-            render_comparison_row(
+            render_comparison_row(d, 
                 action.clone(),
                 keys.clone(),
                 current_preset,
@@ -208,11 +210,11 @@ fn render_category_section(
                 .bg(background)
                 .border_b_1()
                 .border_color(border)
-                .px_3()
-                .py_1()
+                .px(d.pad_x)
+                .py(d.pad_y_half)
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .font_weight(FontWeight::BOLD)
                         .text_color(accent)
                         .child(category.name()),
@@ -222,7 +224,7 @@ fn render_category_section(
         .children(row_elements)
 }
 
-fn render_comparison_row(
+fn render_comparison_row(d: &Ds, 
     action: String,
     keys: HashMap<KeymapPreset, String>,
     current_preset: KeymapPreset,
@@ -246,7 +248,7 @@ fn render_comparison_row(
             let is_current = *preset == current_preset;
             div()
                 .w(rems(6.25))
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_align(gpui::TextAlign::Center)
                 .text_color(if is_current { accent } else { text_muted })
                 .font_weight(if is_current {
@@ -263,13 +265,13 @@ fn render_comparison_row(
         .w_full()
         .border_b_1()
         .border_color(border)
-        .px_3()
-        .py_1()
+        .px(d.pad_x)
+        .py(d.pad_y_half)
         .hover(move |s| s.bg(surface_hover))
         .child(
             div()
                 .flex_1()
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(text_secondary)
                 .child(action),
         )

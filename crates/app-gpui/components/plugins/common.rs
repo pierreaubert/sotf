@@ -1,6 +1,7 @@
 //! Common utilities for plugin UI components
 
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -18,6 +19,7 @@ use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 /// When `range_hint` is `Some("0.0 — 100.0")` and the row is selected,
 /// the range is displayed as muted text beneath the value.
 pub fn render_param_row(
+    d: &Ds,
     name: &str,
     value: &str,
     idx: usize,
@@ -32,9 +34,9 @@ pub fn render_param_row(
         .flex()
         .items_center()
         .justify_between()
-        .px_3()
-        .py_2()
-        .rounded_lg()
+        .px(d.pad_x)
+        .py(d.pad_y)
+        .rounded(d.r_lg)
         .bg(if is_selected {
             theme.accent_muted
         } else {
@@ -49,7 +51,7 @@ pub fn render_param_row(
         // Parameter name
         .child(
             div()
-                .text_sm()
+                .text_size(d.text_sm)
                 .text_color(if is_selected {
                     theme.text_primary
                 } else {
@@ -71,25 +73,25 @@ pub fn render_param_row(
                 .child(
                     div()
                         .min_w(rems(5.0))
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
+                        .px(d.pad_y)
+                        .py(d.pad_y_half)
+                        .rounded(d.r_md)
                         .bg(if is_selected {
                             theme.background
                         } else {
                             theme.background_secondary
                         })
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child(value.to_string()),
                 )
-                .when(is_selected && range_hint.is_some(), |d| {
-                    d.child(
+                .when(is_selected && range_hint.is_some(), |el| {
+                    el.child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_muted)
-                            .px_2()
+                            .px(d.pad_y)
                             .child(range_hint.unwrap_or("").to_string()),
                     )
                 }),
@@ -98,6 +100,7 @@ pub fn render_param_row(
 
 /// Render a parameter row with name, value, and optional MIDI assignment badge
 pub fn render_param_row_with_midi(
+    d: &Ds,
     name: &str,
     value: &str,
     idx: usize,
@@ -115,9 +118,9 @@ pub fn render_param_row_with_midi(
         .flex()
         .items_center()
         .justify_between()
-        .px_3()
-        .py_2()
-        .rounded_lg()
+        .px(d.pad_x)
+        .py(d.pad_y)
+        .rounded(d.r_lg)
         .bg(if is_learn_target {
             Theme::with_opacity(theme.warning, 0.2)
         } else if is_selected {
@@ -138,10 +141,10 @@ pub fn render_param_row_with_midi(
             div()
                 .flex()
                 .items_center()
-                .gap_2()
+                .gap(d.gap)
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .text_color(if is_selected {
                             theme.text_primary
                         } else {
@@ -157,22 +160,22 @@ pub fn render_param_row_with_midi(
                 .children(
                     midi_overlay
                         .and_then(|o| o.assignments.get(&idx))
-                        .map(|assignment| render_midi_badge(assignment, theme)),
+                        .map(|assignment| render_midi_badge(d, assignment, theme)),
                 ),
         )
         // Value
         .child(
             div()
                 .min_w(rems(5.0))
-                .px_2()
-                .py_1()
-                .rounded_md()
+                .px(d.pad_y)
+                .py(d.pad_y_half)
+                .rounded(d.r_md)
                 .bg(if is_selected {
                     theme.background
                 } else {
                     theme.background_secondary
                 })
-                .text_sm()
+                .text_size(d.text_sm)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_primary)
                 .child(value.to_string()),
@@ -180,7 +183,7 @@ pub fn render_param_row_with_midi(
 }
 
 /// Render a small MIDI control badge (e.g., "K1", "F3") next to a parameter name
-pub fn render_midi_badge(assignment: &ParamAssignment, theme: &Theme) -> impl IntoElement {
+pub fn render_midi_badge(d: &Ds, assignment: &ParamAssignment, theme: &Theme) -> impl IntoElement {
     let icon = match assignment.control_kind {
         PhysicalControlKind::Fader => "▏",
         PhysicalControlKind::Pot => "◎",
@@ -204,13 +207,13 @@ pub fn render_midi_badge(assignment: &ParamAssignment, theme: &Theme) -> impl In
         .bg(Theme::with_opacity(badge_color, 0.2))
         .child(
             div()
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(badge_color)
                 .child(icon.to_string()),
         )
         .child(
             div()
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(badge_color)
                 .child(assignment.control_label.clone()),
@@ -219,6 +222,7 @@ pub fn render_midi_badge(assignment: &ParamAssignment, theme: &Theme) -> impl In
 
 /// Render a MIDI page indicator (e.g., "Page 1/3")
 pub fn render_midi_page_indicator(
+    d: &Ds,
     current_page: usize,
     total_pages: usize,
     theme: &Theme,
@@ -226,25 +230,26 @@ pub fn render_midi_page_indicator(
     div()
         .flex()
         .items_center()
-        .gap_1()
-        .px_2()
-        .py_1()
-        .rounded_md()
+        .gap(d.grid)
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .rounded(d.r_md)
         .bg(theme.surface)
-        .child(div().text_xs().text_color(theme.text_muted).child(format!(
-            "MIDI {}/{}",
-            current_page + 1,
-            total_pages
-        )))
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .text_color(theme.text_muted)
+                .child(format!("MIDI {}/{}", current_page + 1, total_pages)),
+        )
 }
 
 /// Render a section header (with bottom margin - use for bordered sections)
-pub fn render_section_header(title: &str, theme: &Theme) -> impl IntoElement {
+pub fn render_section_header(d: &Ds, title: &str, theme: &Theme) -> impl IntoElement {
     div()
-        .text_sm()
+        .text_size(d.text_sm)
         .font_weight(FontWeight::BOLD)
         .text_color(theme.text_primary)
-        .mb_2()
+        .mb(d.gap)
         .child(title.to_string())
 }
 
@@ -253,14 +258,14 @@ pub fn render_section_header(title: &str, theme: &Theme) -> impl IntoElement {
 /// ```text
 /// DYNAMICS ─────────────────
 /// ```
-pub fn render_section_title(title: &str, theme: &Theme) -> impl IntoElement {
+pub fn render_section_title(d: &Ds, title: &str, theme: &Theme) -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap_2()
+        .gap(d.gap)
         .child(
             div()
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_secondary)
                 .flex_shrink_0()
@@ -272,56 +277,60 @@ pub fn render_section_title(title: &str, theme: &Theme) -> impl IntoElement {
 /// Trait extension for applying parameter section styling to any Div
 pub trait ParamSectionStyle {
     /// Apply base param section styling (rounded, background, border) without padding
-    fn param_section_base(self, theme: &Theme) -> Self;
-    /// Apply param section styling with standard p_3 padding
-    fn param_section_style(self, theme: &Theme) -> Self;
-    /// Apply param section styling with larger p_4 padding
-    fn param_section_style_lg(self, theme: &Theme) -> Self;
+    fn param_section_base(self, d: &Ds, theme: &Theme) -> Self;
+    /// Apply param section styling with standard padding
+    fn param_section_style(self, d: &Ds, theme: &Theme) -> Self;
+    /// Apply param section styling with larger padding
+    fn param_section_style_lg(self, d: &Ds, theme: &Theme) -> Self;
 }
 
 impl ParamSectionStyle for Div {
-    fn param_section_base(self, theme: &Theme) -> Self {
-        self.rounded_xl()
+    fn param_section_base(self, d: &Ds, theme: &Theme) -> Self {
+        self.rounded(d.r_xl)
             .bg(theme.background_secondary)
             .border_1()
             .border_color(theme.border)
     }
 
-    fn param_section_style(self, theme: &Theme) -> Self {
-        self.param_section_base(theme).p_3()
+    fn param_section_style(self, d: &Ds, theme: &Theme) -> Self {
+        self.param_section_base(d, theme).p(d.pad_x)
     }
 
-    fn param_section_style_lg(self, theme: &Theme) -> Self {
-        self.param_section_base(theme).p_4()
+    fn param_section_style_lg(self, d: &Ds, theme: &Theme) -> Self {
+        self.param_section_base(d, theme).p(d.card)
     }
 }
 
 /// Create a new parameter section container with flex column layout
-pub fn render_param_section(theme: &Theme) -> Div {
-    div().flex().flex_col().gap_2().param_section_style(theme)
-}
-
-/// Create a new parameter section container with flex column layout and larger padding
-pub fn render_param_section_lg(theme: &Theme) -> Div {
+pub fn render_param_section(d: &Ds, theme: &Theme) -> Div {
     div()
         .flex()
         .flex_col()
-        .gap_2()
-        .param_section_style_lg(theme)
+        .gap(d.gap)
+        .param_section_style(d, theme)
+}
+
+/// Create a new parameter section container with flex column layout and larger padding
+pub fn render_param_section_lg(d: &Ds, theme: &Theme) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.gap)
+        .param_section_style_lg(d, theme)
 }
 
 /// Render keyboard hints for edit mode
-pub fn render_edit_hints(theme: &Theme) -> impl IntoElement {
+pub fn render_edit_hints(d: &Ds, theme: &Theme) -> impl IntoElement {
     div()
-        .mt_4()
-        .p_3()
-        .rounded_lg()
+        .mt(d.section)
+        .p(d.pad_x)
+        .rounded(d.r_lg)
         .bg(theme.background_secondary)
         .border_1()
         .border_color(theme.border)
         .flex()
-        .gap_4()
-        .text_xs()
+        .gap(d.section)
+        .text_size(d.text_xs)
         .text_color(theme.text_muted)
         .child("↑/↓: Select")
         .child("←/→: Adjust")
@@ -393,6 +402,7 @@ pub fn render_toggle_button(
 
 /// Render a value with unit and color coding
 pub fn render_colored_value(
+    d: &Ds,
     value: f64,
     unit: &str,
     zero_is_neutral: bool,
@@ -411,7 +421,7 @@ pub fn render_colored_value(
     };
 
     div()
-        .text_sm()
+        .text_size(d.text_sm)
         .font_weight(FontWeight::BOLD)
         .text_color(color)
         .child(format!("{:+.1}{}", value, unit))
@@ -646,13 +656,14 @@ pub fn render_vertical_slider_with_ticks(
 
 /// Render a simple transfer curve visualization (input vs output)
 pub fn render_transfer_curve(
+    d: &Ds,
     threshold_db: f64,
     ratio: f64,
     knee_db: f64,
     is_limiter: bool,
     theme: &Theme,
 ) -> impl IntoElement {
-    render_transfer_curve_sized(threshold_db, ratio, knee_db, is_limiter, 200.0, theme)
+    render_transfer_curve_sized(d, threshold_db, ratio, knee_db, is_limiter, 200.0, theme)
 }
 
 /// Compute the output dB for a given input dB on the transfer curve
@@ -678,6 +689,7 @@ fn compute_transfer(
 
 /// Render a transfer curve visualization with custom width
 pub fn render_transfer_curve_sized(
+    d: &Ds,
     threshold_db: f64,
     ratio: f64,
     knee_db: f64,
@@ -685,7 +697,7 @@ pub fn render_transfer_curve_sized(
     width: f32,
     theme: &Theme,
 ) -> impl IntoElement {
-    render_transfer_curve_with_level(threshold_db, ratio, knee_db, is_limiter, width, None, theme)
+    render_transfer_curve_with_level(d, threshold_db, ratio, knee_db, is_limiter, width, None, theme)
 }
 
 /// Render a transfer curve with optional input level indicator.
@@ -695,6 +707,7 @@ pub fn render_transfer_curve_sized(
 /// on the curve.
 #[allow(clippy::too_many_arguments)]
 pub fn render_transfer_curve_with_level(
+    d: &Ds,
     threshold_db: f64,
     ratio: f64,
     knee_db: f64,
@@ -709,12 +722,12 @@ pub fn render_transfer_curve_with_level(
     div()
         .flex()
         .flex_col()
-        .gap_1()
+        .gap(d.grid)
         .child(
             div()
                 .w(px(curve_width))
                 .h(px(curve_height))
-                .rounded_lg()
+                .rounded(d.r_lg)
                 .overflow_hidden()
                 .child(TransferCurveElement {
                     width: curve_width,
@@ -738,7 +751,7 @@ pub fn render_transfer_curve_with_level(
                 .flex()
                 .justify_between()
                 .w(px(curve_width))
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_muted)
                 .child("-60 dB")
                 .child("0 dB"),
@@ -1121,6 +1134,7 @@ impl Element for TransferCurveElement {
 /// a div with drag event handlers.
 #[allow(clippy::too_many_arguments)]
 pub fn render_interactive_transfer_curve(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     threshold_db: f64,
@@ -1147,7 +1161,7 @@ pub fn render_interactive_transfer_curve(
     div()
         .flex()
         .flex_col()
-        .gap_1()
+        .gap(d.grid)
         .child(
             div()
                 .id(ElementId::Name(SharedString::from(format!(
@@ -1155,7 +1169,7 @@ pub fn render_interactive_transfer_curve(
                 ))))
                 .w(px(curve_width))
                 .h(px(curve_height))
-                .rounded_lg()
+                .rounded(d.r_lg)
                 .overflow_hidden()
                 .cursor_pointer()
                 // Drag to adjust threshold (horizontal) and ratio (vertical)
@@ -1265,7 +1279,7 @@ pub fn render_interactive_transfer_curve(
                 .flex()
                 .justify_between()
                 .w(px(curve_width))
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_muted)
                 .child("-60 dB")
                 .child("0 dB"),
@@ -1283,15 +1297,16 @@ pub fn render_interactive_transfer_curve(
 /// └──────────────┴──────────────────┴──────────────┘
 /// ```
 pub fn render_dynamics_layout(
+    d: &Ds,
     transfer_curve: impl IntoElement,
     controls: impl IntoElement,
     meter_section: impl IntoElement,
     meter_width: f32,
 ) -> impl IntoElement {
-    div().flex().flex_col().gap_4().child(
+    div().flex().flex_col().gap(d.section).child(
         div()
             .flex()
-            .gap_4()
+            .gap(d.section)
             // Column 1: Transfer curve
             .child(
                 div()

@@ -13,6 +13,7 @@ use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{PluginGraph, PluginSettings, PluginType, SpecialNodeType};
 
 use crate::app::types::Screen;
+use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::{
     render_compressor_plugin, render_downmix_plugin, render_eq_plugin, render_gain_plugin,
@@ -53,13 +54,14 @@ pub enum PaletteItemType {
 }
 
 impl Render for PaletteDragData {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         div()
-            .px_3()
-            .py_2()
+            .px(d.pad_x)
+            .py(d.pad_y)
             .bg(self.color)
-            .rounded_md()
-            .text_sm()
+            .rounded(d.r_md)
+            .text_size(d.text_sm)
             .text_color(self.text_on_accent)
             .shadow_lg()
             .child(self.label.clone())
@@ -253,6 +255,7 @@ impl PlayerView {
         plugin_count: usize,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
 
         let state_for_home = self.state.clone();
@@ -263,8 +266,8 @@ impl PlayerView {
             .flex()
             .justify_between()
             .items_center()
-            .px_4()
-            .py_2()
+            .px(d.card)
+            .py(d.pad_y)
             .bg(theme.background_secondary)
             .border_b_1()
             .border_color(theme.border)
@@ -278,7 +281,7 @@ impl PlayerView {
                     .w(rems(2.5))
                     .h(rems(2.0))
                     .cursor_pointer()
-                    .rounded_md()
+                    .rounded(d.r_md)
                     .hover(move |s| s.bg(surface_hover))
                     .child(Icon::new(IconName::Home).color(text_muted))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
@@ -292,23 +295,23 @@ impl PlayerView {
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .gap(d.gap_md)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
                             .child("SIGNAL"),
                     )
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .child(format!("#{} plugins", plugin_count)),
                     )
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .child(format!("#{} links", connection_count)),
                     ),
@@ -318,10 +321,10 @@ impl PlayerView {
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap(d.gap)
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .child(format!("{} nodes", node_count)),
                     )
@@ -329,11 +332,11 @@ impl PlayerView {
                     .child(
                         div()
                             .id("reset-view")
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
+                            .px(d.pad_y)
+                            .py(d.pad_y_half)
+                            .rounded(d.r_md)
                             .bg(theme.surface)
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
                             .cursor_pointer()
                             .hover(|s| s.bg(theme.surface_hover))
@@ -357,6 +360,7 @@ impl PlayerView {
 
     /// Render the sidebar palette with plugin types (draggable)
     fn render_graph_palette(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
 
         // Input sources
@@ -402,19 +406,19 @@ impl PlayerView {
             .bg(theme.surface)
             .border_r_1()
             .border_color(theme.border)
-            .py_2()
+            .py(d.pad_y)
             .overflow_y_scroll()
             // Input sources section
             .child(
                 div()
-                    .px_2()
-                    .pb_2()
-                    .text_xs()
+                    .px(d.pad_y)
+                    .pb(d.pad_y)
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.text_muted)
                     .child("INPUT"),
             )
-            .child(div().flex().flex_col().gap_1().px_2().mb_3().children(
+            .child(div().flex().flex_col().gap(d.grid).px(d.pad_y).mb(d.gap_md).children(
                 input_items.into_iter().map(|(label, item_type, color)| {
                     let drag_data = PaletteDragData {
                         item_type,
@@ -424,13 +428,13 @@ impl PlayerView {
                     };
                     div()
                         .id(SharedString::from(format!("palette-{}", label)))
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
+                        .px(d.pad_y)
+                        .py(d.pad_y_half)
+                        .rounded(d.r_md)
                         .bg(theme.background)
                         .border_l_2()
                         .border_color(color)
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .text_color(theme.text_secondary)
                         .cursor_grab()
                         .hover(|s| s.bg(theme.background_secondary))
@@ -443,9 +447,9 @@ impl PlayerView {
             // Plugins section header
             .child(
                 div()
-                    .px_2()
-                    .pb_2()
-                    .text_xs()
+                    .px(d.pad_y)
+                    .pb(d.pad_y)
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.text_muted)
                     .child("PLUGINS"),
@@ -456,10 +460,10 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .px_2()
-                    .mb_2()
-                    .child(div().text_xs().text_color(theme.text_muted).child(category))
+                    .gap(d.grid)
+                    .px(d.pad_y)
+                    .mb(d.gap)
+                    .child(div().text_size(d.text_xs).text_color(theme.text_muted).child(category))
                     .children(plugins.into_iter().map(|(plugin_type, label)| {
                         let color = plugin_color(&plugin_type, &theme);
                         let drag_data = PaletteDragData {
@@ -470,13 +474,13 @@ impl PlayerView {
                         };
                         div()
                             .id(SharedString::from(format!("palette-{:?}", plugin_type)))
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
+                            .px(d.pad_y)
+                            .py(d.pad_y_half)
+                            .rounded(d.r_md)
                             .bg(theme.background)
                             .border_l_2()
                             .border_color(color)
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
                             .cursor_grab()
                             .hover(|s| s.bg(theme.background_secondary))
@@ -856,6 +860,7 @@ fn build_menu_items(
 impl PlayerView {
     /// Render the plugin node editor modal
     pub(crate) fn render_plugin_node_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -949,7 +954,7 @@ impl PlayerView {
                     .w(rems(43.75))
                     .max_h(rems(37.5))
                     .bg(theme.surface)
-                    .rounded_lg()
+                    .rounded(d.r_lg)
                     .border_1()
                     .border_color(theme.border)
                     .shadow_lg()
@@ -966,14 +971,14 @@ impl PlayerView {
                             .flex()
                             .justify_between()
                             .items_center()
-                            .px_4()
-                            .py_3()
+                            .px(d.card)
+                            .py(d.pad_x)
                             .bg(theme.background_secondary)
                             .border_b_1()
                             .border_color(theme.border)
                             .child(
                                 div()
-                                    .text_base()
+                                    .text_size(d.text_base)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(theme.text_primary)
                                     .child(title),
@@ -982,16 +987,16 @@ impl PlayerView {
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap_2()
+                                    .gap(d.gap)
                                     // Load button
                                     .child(
                                         div()
                                             .id("modal-load")
-                                            .px_3()
-                                            .py_1()
-                                            .rounded_md()
+                                            .px(d.pad_x)
+                                            .py(d.pad_y_half)
+                                            .rounded(d.r_md)
                                             .bg(theme.surface)
-                                            .text_sm()
+                                            .text_size(d.text_sm)
                                             .text_color(theme.text_secondary)
                                             .cursor_pointer()
                                             .hover(|s| s.bg(theme.surface_hover))
@@ -1001,11 +1006,11 @@ impl PlayerView {
                                     .child(
                                         div()
                                             .id("modal-save")
-                                            .px_3()
-                                            .py_1()
-                                            .rounded_md()
+                                            .px(d.pad_x)
+                                            .py(d.pad_y_half)
+                                            .rounded(d.r_md)
                                             .bg(theme.surface)
-                                            .text_sm()
+                                            .text_size(d.text_sm)
                                             .text_color(theme.text_secondary)
                                             .cursor_pointer()
                                             .hover(|s| s.bg(theme.surface_hover))
@@ -1016,11 +1021,11 @@ impl PlayerView {
                                         let state = state_for_close.clone();
                                         div()
                                             .id("modal-close")
-                                            .px_3()
-                                            .py_1()
-                                            .rounded_md()
+                                            .px(d.pad_x)
+                                            .py(d.pad_y_half)
+                                            .rounded(d.r_md)
                                             .bg(theme.error)
-                                            .text_sm()
+                                            .text_size(d.text_sm)
                                             .text_color(theme.text_on_accent)
                                             .cursor_pointer()
                                             .hover(|s| s.opacity(0.8))
@@ -1043,7 +1048,7 @@ impl PlayerView {
                             .id("plugin-modal-body")
                             .flex_1()
                             .overflow_y_scroll()
-                            .p_4()
+                            .p(d.card)
                             .child(self.render_plugin_node_content(
                                 &node_type,
                                 plugin_type.as_deref(),
@@ -1064,6 +1069,7 @@ impl PlayerView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let d = Ds::from_cx(cx);
         match node_type {
             NODE_TYPE_PLUGIN => {
                 // If we have actual plugin settings, render the real plugin UI
@@ -1076,17 +1082,17 @@ impl PlayerView {
                     Some("EQ") => div()
                         .flex()
                         .flex_col()
-                        .gap_4()
+                        .gap(d.section)
                         .child(
                             div()
-                                .text_lg()
+                                .text_size(d.text_lg)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_primary)
                                 .child("Parametric EQ"),
                         )
                         .child(
                             div()
-                                .text_sm()
+                                .text_size(d.text_sm)
                                 .text_color(theme.text_muted)
                                 .child("No plugin data available"),
                         )
@@ -1094,23 +1100,23 @@ impl PlayerView {
                     Some("Gain") => div()
                         .flex()
                         .flex_col()
-                        .gap_4()
+                        .gap(d.section)
                         .child(
                             div()
-                                .text_lg()
+                                .text_size(d.text_lg)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_primary)
                                 .child("Gain"),
                         )
                         .child(
                             div()
-                                .text_sm()
+                                .text_size(d.text_sm)
                                 .text_color(theme.text_muted)
                                 .child("No plugin data available"),
                         )
                         .into_any_element(),
                     _ => div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .text_color(theme.text_muted)
                         .child(format!("Plugin type: {}", plugin_type.unwrap_or("Unknown")))
                         .into_any_element(),
@@ -1119,17 +1125,17 @@ impl PlayerView {
             NODE_TYPE_PLAYER => div()
                 .flex()
                 .flex_col()
-                .gap_4()
+                .gap(d.section)
                 .child(
                     div()
-                        .text_lg()
+                        .text_size(d.text_lg)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child("Audio Player"),
                 )
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .text_color(theme.text_muted)
                         .child("This node represents the audio file playback source."),
                 )
@@ -1137,17 +1143,17 @@ impl PlayerView {
             NODE_TYPE_OUTPUT_DEVICE => div()
                 .flex()
                 .flex_col()
-                .gap_4()
+                .gap(d.section)
                 .child(
                     div()
-                        .text_lg()
+                        .text_size(d.text_lg)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child("Output Device"),
                 )
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .text_color(theme.text_muted)
                         .child("This node represents the audio output destination."),
                 )
@@ -1155,23 +1161,23 @@ impl PlayerView {
             NODE_TYPE_INPUT_DEVICE => div()
                 .flex()
                 .flex_col()
-                .gap_4()
+                .gap(d.section)
                 .child(
                     div()
-                        .text_lg()
+                        .text_size(d.text_lg)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child("Input Device"),
                 )
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .text_color(theme.text_muted)
                         .child("This node represents an audio input source."),
                 )
                 .into_any_element(),
             _ => div()
-                .text_sm()
+                .text_size(d.text_sm)
                 .text_color(theme.text_muted)
                 .child("Unknown node type")
                 .into_any_element(),
@@ -1185,6 +1191,7 @@ impl PlayerView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let d = Ds::from_cx(cx);
         let entity = self.state.clone();
         let plugin_idx = 0; // Modal doesn't need actual index for display
 
@@ -1214,6 +1221,7 @@ impl PlayerView {
             .into_any_element(),
 
             PluginSettings::Gain { gain_db, .. } => render_gain_plugin(
+                &d,
                 entity,
                 plugin_idx,
                 ui_gain::GainRenderState {
@@ -1238,6 +1246,7 @@ impl PlayerView {
                 sidechain_hpf_hz,
                 ..
             } => render_compressor_plugin(
+                &d,
                 entity,
                 plugin_idx,
                 ui_compressor::CompressorRenderState {
@@ -1267,6 +1276,7 @@ impl PlayerView {
                 mix,
                 ..
             } => render_limiter_plugin(
+                &d,
                 entity,
                 plugin_idx,
                 ui_limiter::LimiterRenderState {
@@ -1294,6 +1304,7 @@ impl PlayerView {
                 sidechain_hpf_hz,
                 ..
             } => render_gate_plugin(
+                &d,
                 entity,
                 plugin_idx,
                 ui_gate::GateRenderState {
@@ -1359,6 +1370,7 @@ impl PlayerView {
                 multi_source_threshold,
                 ..
             } => render_upmixer_plugin(
+                &d,
                 entity,
                 plugin_idx,
                 ui_upmixer::UpmixerRenderState {
@@ -1424,6 +1436,7 @@ impl PlayerView {
                 phase_blend_high_hz,
                 ..
             } => render_downmix_plugin(
+                &d,
                 entity,
                 plugin_idx,
                 ui_downmix::DownmixRenderState {
@@ -1450,6 +1463,7 @@ impl PlayerView {
                 decor_high_hz,
                 ..
             } => render_mono_to_stereo_plugin(
+                &d,
                 entity,
                 plugin_idx,
                 ui_mono_to_stereo::MonoToStereoRenderState {
@@ -1472,17 +1486,17 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_4()
+                    .gap(d.section)
                     .child(
                         div()
-                            .text_lg()
+                            .text_size(d.text_lg)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .child(name),
                     )
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .text_color(theme.text_muted)
                             .child("Plugin controls not yet implemented for this type"),
                     )

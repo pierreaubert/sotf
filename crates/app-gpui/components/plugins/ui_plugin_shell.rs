@@ -6,6 +6,7 @@
 //! - Bypass toggle
 //! - Elevated background panel for plugin content
 
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -187,6 +188,7 @@ pub fn plugin_short_name(
 /// ```
 #[allow(clippy::type_complexity)]
 pub fn render_plugin_shell(
+    d: &Ds,
     plugin_type: &PluginType,
     enabled: bool,
     theme: &Theme,
@@ -200,7 +202,7 @@ pub fn render_plugin_shell(
     div()
         .flex()
         .flex_col()
-        .rounded_xl()
+        .rounded(d.r_xl)
         .bg(theme.background_secondary)
         .border_1()
         .border_color(theme.border)
@@ -213,8 +215,8 @@ pub fn render_plugin_shell(
                 .flex()
                 .items_center()
                 .justify_between()
-                .px_4()
-                .py_2()
+                .px(d.card)
+                .py(d.pad_y)
                 .border_b_1()
                 .border_color(theme.border)
                 // Left: icon + name
@@ -222,11 +224,11 @@ pub fn render_plugin_shell(
                     div()
                         .flex()
                         .items_center()
-                        .gap_2()
-                        .child(div().text_base().text_color(accent).child(icon.to_string()))
+                        .gap(d.gap)
+                        .child(div().text_size(d.text_base).text_color(accent).child(icon.to_string()))
                         .child(
                             div()
-                                .text_sm()
+                                .text_size(d.text_sm)
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(theme.text_primary)
                                 .child(name),
@@ -244,15 +246,15 @@ pub fn render_plugin_shell(
                         .cursor_pointer()
                         .flex()
                         .items_center()
-                        .gap_1()
-                        .px_2()
+                        .gap(d.grid)
+                        .px(d.pad_y)
                         .py(px(2.0))
-                        .rounded_md()
+                        .rounded(d.r_md)
                         .hover(move |s| s.bg(Theme::opacity_20pct(bypass_color)))
                         .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(bypass_color))
                         .child(
                             div()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(bypass_color)
                                 .child(if enabled { "ON" } else { "OFF" }),
@@ -263,5 +265,5 @@ pub fn render_plugin_shell(
                 })),
         )
         // Content area with padding
-        .child(div().p_4().child(content))
+        .child(div().p(d.card).child(content))
 }

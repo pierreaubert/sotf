@@ -1,6 +1,7 @@
 //! Library settings content
 
 use crate::app::types::ReplayGainMode;
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -14,6 +15,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -34,15 +36,15 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap_4()
+            .gap(d.section)
             // Library Overview Stats
             .child(
                 div()
                     .flex()
-                    .gap_6()
-                    .p_4()
+                    .gap(d.section_lg)
+                    .p(d.card)
                     .bg(theme.background_secondary)
-                    .rounded_md()
+                    .rounded(d.r_md)
                     .border_1()
                     .border_color(theme.border)
                     .child(
@@ -51,13 +53,13 @@ impl PlayerView {
                             .flex_col()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
                                     .child(translations.settings_total_albums),
                             )
                             .child(
                                 div()
-                                    .text_xl()
+                                    .text_size(d.text_lg)
                                     .font_weight(FontWeight::BOLD)
                                     .child(format!("{}", album_count)),
                             ),
@@ -68,13 +70,13 @@ impl PlayerView {
                             .flex_col()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
                                     .child(translations.settings_total_tracks),
                             )
                             .child(
                                 div()
-                                    .text_xl()
+                                    .text_size(d.text_lg)
                                     .font_weight(FontWeight::BOLD)
                                     .child(format!("{}", track_count)),
                             ),
@@ -85,13 +87,13 @@ impl PlayerView {
                             .flex_col()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
                                     .child(translations.settings_directories),
                             )
                             .child(
                                 div()
-                                    .text_xl()
+                                    .text_size(d.text_lg)
                                     .font_weight(FontWeight::BOLD)
                                     .child(format!("{}", directories.len())),
                             ),
@@ -105,7 +107,7 @@ impl PlayerView {
                     .items_center()
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .child(translations.settings_managed_directories),
                     )
@@ -146,7 +148,7 @@ impl PlayerView {
                     .flex_col()
                     .border_1()
                     .border_color(theme.border)
-                    .rounded_md()
+                    .rounded(d.r_md)
                     .overflow_hidden()
                     .children(directories.iter().enumerate().map(|(idx, dir)| {
                         let theme = theme.clone();
@@ -160,7 +162,7 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .p_3()
+                            .p(d.pad_x)
                             .bg(bg)
                             .border_b_1()
                             .border_color(theme.border)
@@ -168,13 +170,13 @@ impl PlayerView {
                                 div()
                                     .flex()
                                     .flex_col()
-                                    .gap_1()
-                                    .child(div().text_sm().child(dir.path.display().to_string()))
+                                    .gap(d.grid)
+                                    .child(div().text_size(d.text_sm).child(dir.path.display().to_string()))
                                     .child(
                                         div()
                                             .flex()
-                                            .gap_4()
-                                            .text_xs()
+                                            .gap(d.section)
+                                            .text_size(d.text_xs)
                                             .text_color(theme.text_secondary)
                                             .child(format!(
                                                 "{} {}",
@@ -212,13 +214,13 @@ impl PlayerView {
             // Actions Section
             .child(
                 div()
-                    .mt_4()
+                    .mt(d.section)
                     .flex()
                     .flex_col()
-                    .gap_3()
+                    .gap(d.gap_md)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .child(translations.settings_library_actions),
                     )
@@ -273,13 +275,13 @@ impl PlayerView {
             // ReplayGain Section
             .child(
                 div()
-                    .mt_4()
+                    .mt(d.section)
                     .flex()
                     .flex_col()
-                    .gap_3()
+                    .gap(d.gap_md)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .child(translations.settings_replaygain),
                     )
@@ -287,10 +289,10 @@ impl PlayerView {
                         div()
                             .flex()
                             .flex_col()
-                            .gap_4()
-                            .p_4()
+                            .gap(d.section)
+                            .p(d.card)
                             .bg(theme.background_secondary)
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .border_1()
                             .border_color(theme.border)
                             .child(
@@ -303,13 +305,13 @@ impl PlayerView {
                                             .flex_col()
                                             .child(
                                                 div()
-                                                    .text_sm()
+                                                    .text_size(d.text_sm)
                                                     .font_weight(FontWeight::BOLD)
                                                     .child(translations.settings_enable_replaygain),
                                             )
                                             .child(
                                                 div()
-                                                    .text_xs()
+                                                    .text_size(d.text_xs)
                                                     .text_color(theme.text_secondary)
                                                     .child(translations.settings_replaygain_desc),
                                             ),
@@ -354,13 +356,13 @@ impl PlayerView {
                                             .flex_col()
                                             .child(
                                                 div()
-                                                    .text_sm()
+                                                    .text_size(d.text_sm)
                                                     .font_weight(FontWeight::BOLD)
                                                     .child(translations.settings_mode),
                                             )
                                             .child(
                                                 div()
-                                                    .text_xs()
+                                                    .text_size(d.text_xs)
                                                     .text_color(theme.text_secondary)
                                                     .child(translations.settings_mode_desc),
                                             ),
@@ -435,7 +437,7 @@ impl PlayerView {
                                             .flex_col()
                                             .child(
                                                 div()
-                                                    .text_sm()
+                                                    .text_size(d.text_sm)
                                                     .font_weight(FontWeight::BOLD)
                                                     .child(
                                                         translations.settings_compute_replaygain,
@@ -443,7 +445,7 @@ impl PlayerView {
                                             )
                                             .child(
                                                 div()
-                                                    .text_xs()
+                                                    .text_size(d.text_xs)
                                                     .text_color(theme.text_secondary)
                                                     .child(
                                                         translations
@@ -489,13 +491,13 @@ impl PlayerView {
             // Audio Analysis Section (Bliss)
             .child(
                 div()
-                    .mt_4()
+                    .mt(d.section)
                     .flex()
                     .flex_col()
-                    .gap_3()
+                    .gap(d.gap_md)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .child(translations.settings_audio_analysis),
                     )
@@ -503,10 +505,10 @@ impl PlayerView {
                         div()
                             .flex()
                             .flex_col()
-                            .gap_4()
-                            .p_4()
+                            .gap(d.section)
+                            .p(d.card)
                             .bg(theme.background_secondary)
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .border_1()
                             .border_color(theme.border)
                             .child(
@@ -519,13 +521,13 @@ impl PlayerView {
                                             .flex_col()
                                             .child(
                                                 div()
-                                                    .text_sm()
+                                                    .text_size(d.text_sm)
                                                     .font_weight(FontWeight::BOLD)
                                                     .child(translations.settings_compute_bliss),
                                             )
                                             .child(
                                                 div()
-                                                    .text_xs()
+                                                    .text_size(d.text_xs)
                                                     .text_color(theme.text_secondary)
                                                     .child(
                                                         translations.settings_compute_bliss_desc,
@@ -572,13 +574,13 @@ impl PlayerView {
                                             .flex_col()
                                             .child(
                                                 div()
-                                                    .text_sm()
+                                                    .text_size(d.text_sm)
                                                     .font_weight(FontWeight::BOLD)
                                                     .child(translations.settings_compute_waveform),
                                             )
                                             .child(
                                                 div()
-                                                    .text_xs()
+                                                    .text_size(d.text_xs)
                                                     .text_color(theme.text_secondary)
                                                     .child(
                                                         translations.settings_compute_waveform_desc,
@@ -625,13 +627,13 @@ impl PlayerView {
             // Database Maintenance Section
             .child(
                 div()
-                    .mt_4()
+                    .mt(d.section)
                     .flex()
                     .flex_col()
-                    .gap_3()
+                    .gap(d.gap_md)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .child(translations.settings_database_maintenance),
                     )
@@ -639,10 +641,10 @@ impl PlayerView {
                         div()
                             .flex()
                             .flex_col()
-                            .gap_4()
-                            .p_4()
+                            .gap(d.section)
+                            .p(d.card)
                             .bg(theme.background_secondary)
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .border_1()
                             .border_color(theme.border)
                             .child(
@@ -655,13 +657,13 @@ impl PlayerView {
                                             .flex_col()
                                             .child(
                                                 div()
-                                                    .text_sm()
+                                                    .text_size(d.text_sm)
                                                     .font_weight(FontWeight::BOLD)
                                                     .child(translations.settings_clean_database),
                                             )
                                             .child(
                                                 div()
-                                                    .text_xs()
+                                                    .text_size(d.text_xs)
                                                     .text_color(theme.text_secondary)
                                                     .child(
                                                         translations.settings_clean_database_desc,
@@ -691,20 +693,20 @@ impl PlayerView {
             .when(scan_in_progress, |el| {
                 el.child(
                     div()
-                        .mt_4()
-                        .p_3()
+                        .mt(d.section)
+                        .p(d.pad_x)
                         .bg(theme.background_secondary)
-                        .rounded_md()
+                        .rounded(d.r_md)
                         .flex()
                         .items_center()
-                        .gap_3()
+                        .gap(d.gap_md)
                         .child(
                             div()
-                                .text_sm()
+                                .text_size(d.text_sm)
                                 .child(translations.settings_scanning_in_progress),
                         )
                         .child(
-                            div().text_xs().text_color(theme.text_secondary).child(
+                            div().text_size(d.text_xs).text_color(theme.text_secondary).child(
                                 translations
                                     .settings_scan_progress
                                     .replace("{}", &scan_progress_tracks.to_string())
@@ -717,6 +719,7 @@ impl PlayerView {
 
     /// Render the scanner threads section for library settings
     fn render_scanner_threads_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let current_threads = state.app.ui_state.scanner_threads;
@@ -732,13 +735,13 @@ impl PlayerView {
         let state_entity = self.state.clone();
 
         div()
-            .mt_4()
+            .mt(d.section)
             .flex()
             .flex_col()
-            .gap_3()
+            .gap(d.gap_md)
             .child(
                 div()
-                    .text_sm()
+                    .text_size(d.text_sm)
                     .font_weight(FontWeight::BOLD)
                     .child("Scanner Threads"),
             )
@@ -746,10 +749,10 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_4()
-                    .p_4()
+                    .gap(d.section)
+                    .p(d.card)
                     .bg(theme.background_secondary)
-                    .rounded_md()
+                    .rounded(d.r_md)
                     .border_1()
                     .border_color(theme.border)
                     .child(

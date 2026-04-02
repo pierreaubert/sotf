@@ -5,6 +5,7 @@
 //! a registered custom view fall through to the generic layout renderer.
 
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::*;
@@ -150,8 +151,9 @@ fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> Any
     }
 }
 
-fn render_spectrum(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>) -> AnyElement {
+fn render_spectrum(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
     use super::ui_spectrum;
+    let d = Ds::from_cx(cx);
     if let PluginSettings::SpectrumAnalyzer {
         num_bins,
         min_freq,
@@ -162,6 +164,7 @@ fn render_spectrum(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>)
     } = ctx.settings
     {
         super::render_spectrum_analyzer_plugin(
+            &d,
             ctx.entity.clone(),
             ctx.plugin_idx,
             ui_spectrum::SpectrumRenderState {
@@ -185,7 +188,8 @@ fn render_spectrum(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>)
     }
 }
 
-fn render_mute_solo(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>) -> AnyElement {
+fn render_mute_solo(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
+    let d = Ds::from_cx(cx);
     use super::ui_mute_solo;
     if let PluginSettings::ChannelMuteSolo {
         enabled,
@@ -194,6 +198,7 @@ fn render_mute_solo(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>
     } = ctx.settings
     {
         super::render_mute_solo_plugin(
+            &d,
             ctx.entity.clone(),
             ctx.plugin_idx,
             ui_mute_solo::ChannelMuteSoloRenderState {
@@ -210,7 +215,8 @@ fn render_mute_solo(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>
     }
 }
 
-fn render_matrix(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>) -> AnyElement {
+fn render_matrix(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
+    let d = Ds::from_cx(cx);
     use super::ui_matrix;
     if let PluginSettings::Matrix {
         input_channels,
@@ -221,6 +227,7 @@ fn render_matrix(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>) -
     {
         let speaker_config = ctx.plugin_chain.speaker_config_at_index(ctx.plugin_idx);
         super::render_matrix_plugin(
+            &d,
             ctx.entity.clone(),
             ctx.plugin_idx,
             ui_matrix::MatrixRenderState {
@@ -241,8 +248,10 @@ fn render_matrix(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>) -
     }
 }
 
-fn render_loudness(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>) -> AnyElement {
+fn render_loudness(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
+    let d = Ds::from_cx(cx);
     super::render_loudness_monitor_plugin(
+        &d,
         ctx.loudness.clone(),
         ctx.plugin_idx,
         ctx.is_editing,
@@ -253,8 +262,9 @@ fn render_loudness(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>)
 
 fn render_mb_compressor(
     ctx: &CustomViewRenderContext,
-    _cx: &mut Context<PlayerView>,
+    cx: &mut Context<PlayerView>,
 ) -> AnyElement {
+    let d = Ds::from_cx(cx);
     use super::ui_mb_compressor;
     if let PluginSettings::MultibandCompressor {
         num_bands,
@@ -304,6 +314,7 @@ fn render_mb_compressor(
             )
         };
         super::render_mb_compressor_plugin(
+            &d,
             ctx.entity.clone(),
             ctx.plugin_idx,
             ui_mb_compressor::MbCompressorRenderState {
@@ -337,7 +348,8 @@ fn render_mb_compressor(
     }
 }
 
-fn render_mb_expander(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerView>) -> AnyElement {
+fn render_mb_expander(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
+    let d = Ds::from_cx(cx);
     use super::ui_mb_expander;
     if let PluginSettings::MultibandExpander {
         num_bands,
@@ -394,6 +406,7 @@ fn render_mb_expander(ctx: &CustomViewRenderContext, _cx: &mut Context<PlayerVie
             )
         };
         super::render_mb_expander_plugin(
+            &d,
             ctx.entity.clone(),
             ctx.plugin_idx,
             ui_mb_expander::MbExpanderRenderState {

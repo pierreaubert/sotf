@@ -11,6 +11,7 @@
 use super::common::render_section_title;
 use super::editing::PluginEditingManager;
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -43,6 +44,7 @@ struct ParamRow {
 
 /// Render a simple table-based parameter list for any plugin
 pub fn render_simple_plugin_view(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     settings: &PluginSettings,
@@ -118,15 +120,15 @@ pub fn render_simple_plugin_view(
     let text_muted = theme.text_muted;
     let warning_color = theme.warning;
 
-    let mut container = div().flex().flex_col().gap_2();
+    let mut container = div().flex().flex_col().gap(d.gap);
 
     for (group_name, rows) in groups {
         // Section title above each group table
         container = container.child(
             div()
-                .mt_2()
-                .mb_1()
-                .child(render_section_title(&group_name.to_uppercase(), theme)),
+                .mt(d.gap)
+                .mb(d.grid)
+                .child(render_section_title(d, &group_name.to_uppercase(), theme)),
         );
 
         // Determine which row in this group is selected
@@ -149,6 +151,9 @@ pub fn render_simple_plugin_view(
         let theme_for_name = theme.clone();
 
         let entity_for_value = entity.clone();
+        let ds_for_name = *d;
+        let ds_for_value = *d;
+        let ds_for_doc = *d;
 
         let table = Table::new(
             SharedString::from(format!("simple-params-{}", group_name)),
@@ -161,11 +166,12 @@ pub fn render_simple_plugin_view(
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {
                     let is_sel = selected_in_group_for_name.contains(&row_idx);
-                    let mut name_row = div().w_full().flex().justify_end().items_center().gap_1();
+                    let mut name_row = div().w_full().flex().justify_end().items_center().gap(ds_for_name.grid);
 
                     // MIDI badge (before param name)
                     if let Some(ref assignment) = row.midi_assignment {
                         name_row = name_row.child(super::common::render_midi_badge(
+                            &ds_for_name,
                             assignment,
                             &theme_for_name,
                         ));
@@ -181,7 +187,7 @@ pub fn render_simple_plugin_view(
 
                     name_row.child(
                         div()
-                            .text_sm()
+                            .text_size(ds_for_name.text_sm)
                             .text_color(name_color)
                             .child(row.name.clone()),
                     )
@@ -284,6 +290,7 @@ pub fn render_simple_plugin_view(
                             let entity_next = entity_for_value.clone();
 
                             render_choice_buttons(
+                                ds_for_value,
                                 &row.value_str,
                                 accent,
                                 move |_window, cx| {
@@ -306,10 +313,10 @@ pub fn render_simple_plugin_view(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap_2()
+                                .gap(ds_for_value.gap)
                                 .child(
                                     div()
-                                        .text_sm()
+                                        .text_size(ds_for_value.text_sm)
                                         .font_weight(FontWeight::MEDIUM)
                                         .text_color(if is_sel { accent } else { text_primary })
                                         .child(row.value_str.clone()),
@@ -325,7 +332,7 @@ pub fn render_simple_plugin_view(
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, _row_idx, _, _| {
                     div()
-                        .text_xs()
+                        .text_size(ds_for_doc.text_xs)
                         .text_color(text_muted)
                         .child(row.doc.clone())
                 }),
@@ -353,6 +360,7 @@ pub fn render_simple_plugin_view(
 
 /// Render clickable ◄ value ► buttons for Choice parameters
 fn render_choice_buttons(
+    d: Ds,
     value_str: &str,
     accent: Rgba,
     on_prev: impl Fn(&mut Window, &mut App) + 'static,
@@ -363,14 +371,14 @@ fn render_choice_buttons(
     div()
         .flex()
         .items_center()
-        .gap_1()
+        .gap(d.grid)
         .child(
             div()
                 .id(SharedString::from(format!(
                     "choice-prev-{}-{}",
                     plugin_idx, param_idx
                 )))
-                .text_sm()
+                .text_size(d.text_sm)
                 .text_color(accent)
                 .cursor_pointer()
                 .on_click(move |_, window, cx| on_prev(window, cx))
@@ -378,10 +386,10 @@ fn render_choice_buttons(
         )
         .child(
             div()
-                .text_sm()
+                .text_size(d.text_sm)
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(accent)
-                .mx_1()
+                .mx(d.grid)
                 .child(value_str.to_string()),
         )
         .child(
@@ -390,7 +398,7 @@ fn render_choice_buttons(
                     "choice-next-{}-{}",
                     plugin_idx, param_idx
                 )))
-                .text_sm()
+                .text_size(d.text_sm)
                 .text_color(accent)
                 .cursor_pointer()
                 .on_click(move |_, window, cx| on_next(window, cx))

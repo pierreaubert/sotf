@@ -7,6 +7,7 @@
 
 use super::common::{render_knob, render_section_title, render_toggle};
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -27,6 +28,7 @@ pub struct DownmixRenderState {
 
 /// Render the Downmix plugin
 pub fn render_downmix_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: DownmixRenderState,
@@ -35,17 +37,17 @@ pub fn render_downmix_plugin(
     div()
         .flex()
         .flex_col()
-        .gap_4()
+        .gap(d.section)
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(render_section_title("CHANNEL GAINS", theme))
+                .gap(d.gap)
+                .child(render_section_title(d, "CHANNEL GAINS", theme))
                 .child(
                     div()
                         .flex()
-                        .gap_4()
+                        .gap(d.section)
                         .justify_around()
                         .child(render_knob(
                             entity.clone(),
@@ -109,9 +111,9 @@ pub fn render_downmix_plugin(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(render_section_title("PHASE COHERENCE", theme))
-                .child(div().flex().items_center().gap_4().child(render_toggle(
+                .gap(d.gap)
+                .child(render_section_title(d, "PHASE COHERENCE", theme))
+                .child(div().flex().items_center().gap(d.section).child(render_toggle(
                     entity.clone(),
                     plugin_idx,
                     "Enable FFT Phase Alignment",
@@ -121,11 +123,11 @@ pub fn render_downmix_plugin(
                     state.is_editing,
                     theme,
                 )))
-                .when(state.phase_coherence, |d| {
-                    d.child(
+                .when(state.phase_coherence, |el| {
+                    el.child(
                         div()
                             .flex()
-                            .gap_4()
+                            .gap(d.section)
                             .justify_around()
                             .child(render_knob(
                                 entity.clone(),

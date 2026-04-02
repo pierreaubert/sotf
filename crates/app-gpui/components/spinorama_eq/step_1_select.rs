@@ -1,3 +1,4 @@
+use crate::components::design::Ds;
 use crate::components::graphs::speaker_graphs::{
     render_spinorama_cea2034_graph, render_spinorama_horizontal_graph, render_spinorama_pir_graph,
     render_spinorama_vertical_graph,
@@ -19,6 +20,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
@@ -177,18 +179,18 @@ impl PlayerView {
                             .id("speaker-suggestions-scroll")
                             .flex()
                             .flex_col()
-                            .gap_1()
+                            .gap(d.grid)
                             .max_h(px(300.0))
                             .overflow_y_scroll()
-                            .when(suggestions.is_empty() && is_loading, |d| {
-                                d.child(
+                            .when(suggestions.is_empty() && is_loading, |el| {
+                                el.child(
                                     Text::new("Loading speakers from spinorama.org...")
                                         .size(TextSize::Xs)
                                         .color(theme.text_muted),
                                 )
                             })
-                            .when(suggestions.is_empty() && !is_loading, |d| {
-                                d.child(
+                            .when(suggestions.is_empty() && !is_loading, |el| {
+                                el.child(
                                     Text::new(if search_query.is_empty() {
                                         "No speakers loaded. Click Refresh to load."
                                     } else {
@@ -211,9 +213,9 @@ impl PlayerView {
                                         "speaker-option-{}",
                                         speaker_name
                                     )))
-                                    .px_3()
-                                    .py_2()
-                                    .rounded_md()
+                                    .px(d.pad_x)
+                                    .py(d.pad_y)
+                                    .rounded(d.r_md)
                                     .cursor_pointer()
                                     .bg(if is_selected { accent } else { surface })
                                     .text_color(if is_selected {
@@ -221,7 +223,7 @@ impl PlayerView {
                                     } else {
                                         text_primary
                                     })
-                                    .text_sm()
+                                    .text_size(d.text_sm)
                                     .hover(|s| {
                                         s.bg(if is_selected {
                                             accent
@@ -323,9 +325,9 @@ impl PlayerView {
                                                                             version
                                                                         ),
                                                                     ))
-                                                                    .px_3()
-                                                                    .py_1()
-                                                                    .rounded_md()
+                                                                    .px(d.pad_x)
+                                                                    .py(d.pad_y_half)
+                                                                    .rounded(d.r_md)
                                                                     .cursor_pointer()
                                                                     .bg(if is_selected {
                                                                         accent
@@ -343,7 +345,7 @@ impl PlayerView {
                                                                     } else {
                                                                         text_primary
                                                                     })
-                                                                    .text_sm()
+                                                                    .text_size(d.text_sm)
                                                                     .hover(|s| {
                                                                         s.bg(if is_selected {
                                                                             accent
@@ -457,14 +459,14 @@ impl PlayerView {
                             .flex()
                             .flex_col()
                             .w_full()
-                            .gap_4()
+                            .gap(d.section)
                             // Row 1: CEA2034 Spinorama and PIR
                             .child(
                                 div()
                                     .flex()
                                     .flex_row()
                                     .w_full()
-                                    .gap_4()
+                                    .gap(d.section)
                                     // Left: CEA2034 Spinorama
                                     .child(
                                         div().flex_1().child(
@@ -514,7 +516,7 @@ impl PlayerView {
                                     .flex()
                                     .flex_row()
                                     .w_full()
-                                    .gap_4()
+                                    .gap(d.section)
                                     // Left: Horizontal reflections
                                     .child(
                                         div().flex_1().child(

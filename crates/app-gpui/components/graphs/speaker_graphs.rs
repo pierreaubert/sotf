@@ -1,3 +1,4 @@
+use crate::components::design::Ds;
 use crate::components::graphs::common::{colors, rgba_to_u32, theme_to_chart_theme};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -10,6 +11,7 @@ impl PlayerView {
     /// Render Spinorama speaker optimization result graphs
     pub fn render_speaker_optimization_result_graphs(
         &self,
+        d: &Ds,
         result: &SpeakerOptimizationResult,
         theme: &Theme,
         available_width: f32,
@@ -24,13 +26,13 @@ impl PlayerView {
             .flex()
             .flex_col()
             .w_full()
-            .gap_8()
+            .gap(d.section)
             // Row 1: CEA2034 with and without EQ
             .child(
                 div()
                     .flex()
                     .flex_row()
-                    .gap_4()
+                    .gap(d.section)
                     .child(render_cea2034_from_result(
                         result,
                         theme,
@@ -47,12 +49,11 @@ impl PlayerView {
                     )),
             )
             // Row 2: Main Response | Filter Response
-            .gap_4()
             .child(
                 div()
                     .flex()
                     .flex_row()
-                    .gap_4()
+                    .gap(d.section)
                     .child(render_spinorama_main_response_plot(
                         result,
                         theme,
@@ -67,13 +68,13 @@ impl PlayerView {
                     )),
             )
             // Row 4: Tonal Balance ON | Tonal Balance LW
-            .gap_4()
             .child(
                 div()
                     .flex()
                     .flex_row()
-                    .gap_4()
+                    .gap(d.section)
                     .child(render_tonal_balance_plot(
+                        d,
                         result,
                         "ON",
                         theme,
@@ -81,6 +82,7 @@ impl PlayerView {
                         graph_height,
                     ))
                     .child(render_tonal_balance_plot(
+                        d,
                         result,
                         "LW",
                         theme,
@@ -89,13 +91,13 @@ impl PlayerView {
                     )),
             )
             // Row 5: Tonal Balance ER | Tonal Balance SP
-            .gap_4()
             .child(
                 div()
                     .flex()
                     .flex_row()
-                    .gap_4()
+                    .gap(d.section)
                     .child(render_tonal_balance_plot(
+                        d,
                         result,
                         "ER",
                         theme,
@@ -103,6 +105,7 @@ impl PlayerView {
                         graph_height,
                     ))
                     .child(render_tonal_balance_plot(
+                        d,
                         result,
                         "SP",
                         theme,
@@ -110,7 +113,6 @@ impl PlayerView {
                         graph_height,
                     )),
             )
-            .gap_4()
     }
 }
 
@@ -571,6 +573,7 @@ fn render_cea2034_from_result(
 
 /// Render Tonal Balance Trend Lines (Before vs After)
 fn render_tonal_balance_plot(
+    d: &Ds,
     result: &SpeakerOptimizationResult,
     curve_type: &str,
     theme: &Theme,
@@ -771,6 +774,6 @@ fn render_tonal_balance_plot(
         .flex()
         .flex_col()
         .when_some(chart.ok(), |el, c| el.child(c))
-        .gap_2()
+        .gap(d.gap)
         .when_some(hist_chart, |el, c| el.child(c))
 }

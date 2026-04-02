@@ -10,6 +10,7 @@ use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
 use super::common::render_knob;
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -31,16 +32,16 @@ pub struct SpectrumColors {
     pub high: Rgba,
 }
 
+impl SpectrumColors {
+    pub fn from_theme(theme: &Theme) -> Self {
+        Self::from(&theme.spectrum_colors)
+    }
+}
+
 impl Default for SpectrumColors {
     fn default() -> Self {
-        // These defaults match the dark theme spectrum colors.
-        // When rendering, use Theme::spectrum_colors for theme-aware colors.
-        Self {
-            background: rgb(0x1a1a1a), // Dark background from theme.surface
-            low: rgb(0x22c55e),        // Green for bass (theme.success)
-            mid: rgb(0xeab308),        // Yellow for mids (theme.warning)
-            high: rgb(0xef4444),       // Red for highs (theme.error)
-        }
+        let theme = Theme::from_id(crate::theme::ThemeId::default());
+        Self::from_theme(&theme)
     }
 }
 
@@ -455,7 +456,7 @@ fn generate_freq_labels(min_freq: f32, max_freq: f32) -> Vec<(String, f32)> {
 }
 
 /// Render horizontal frequency axis (logarithmic scale)
-fn render_frequency_axis(min_freq: f32, max_freq: f32, theme: &Theme) -> impl IntoElement {
+fn render_frequency_axis(d: &Ds, min_freq: f32, max_freq: f32, theme: &Theme) -> impl IntoElement {
     let freq_labels = generate_freq_labels(min_freq, max_freq);
 
     div()
@@ -467,7 +468,7 @@ fn render_frequency_axis(min_freq: f32, max_freq: f32, theme: &Theme) -> impl In
                 .absolute()
                 .left(relative(pos))
                 .top_0()
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_muted)
                 .child(
                     div()
@@ -478,7 +479,7 @@ fn render_frequency_axis(min_freq: f32, max_freq: f32, theme: &Theme) -> impl In
 }
 
 /// Render vertical dB axis (-60dB to +3dB)
-fn render_db_axis(theme: &Theme) -> impl IntoElement {
+fn render_db_axis(d: &Ds, theme: &Theme) -> impl IntoElement {
     // Range: -100 dB to +3 dB (103 dB total)
     // Position = (3 - db) / 103
     let db_labels = [
@@ -500,9 +501,9 @@ fn render_db_axis(theme: &Theme) -> impl IntoElement {
                 .absolute()
                 .top(relative(*pos as f32))
                 .right_0()
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_muted)
-                .pr_1()
+                .pr(d.grid)
                 .child(
                     div()
                         .mt(px(-6.0)) // Center vertically
@@ -547,6 +548,7 @@ pub struct SpectrumRenderState<'a> {
 /// | [Bins] [Min Hz] [Max Hz] [Smooth] [Tilt] [Reference]               |
 /// +--------------------------------------------------------------------+
 pub fn render_spectrum_analyzer_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: SpectrumRenderState,
@@ -557,21 +559,21 @@ pub fn render_spectrum_analyzer_plugin(
         .flex()
         .flex_col()
         .w_full()
-        .gap_2()
+        .gap(d.gap)
         // Main spectrum area with dB axis
         .child(
-            div().flex().gap_1().child(render_db_axis(theme)).child(
+            div().flex().gap(d.grid).child(render_db_axis(d, theme)).child(
                 div()
                     .flex_1()
                     .h(px(200.0))
                     .bg(theme.surface)
-                    .rounded_lg()
+                    .rounded(d.r_lg)
                     .border_1()
                     .border_color(theme.border)
                     .flex()
                     .items_end()
                     .gap_px()
-                    .p_2()
+                    .p(d.pad_y)
                     .child(if let Some(data) = state.data {
                         let magnitudes: Arc<[f32]> = Arc::from(data.magnitudes.as_ref().as_slice());
                         SpectrumElement::new(magnitudes)
@@ -597,16 +599,16 @@ pub fn render_spectrum_analyzer_plugin(
             div()
                 .flex()
                 .child(div().w(px(32.0)))
-                .child(render_frequency_axis(state.min_freq, state.max_freq, theme)),
+                .child(render_frequency_axis(d, state.min_freq, state.max_freq, theme)),
         );
 
     // === BOTTOM: Config params (horizontal row with wrapping) ===
     let config_row = div()
         .flex()
         .flex_wrap()
-        .gap_3()
+        .gap(d.gap_md)
         .items_end()
-        .pt_2()
+        .pt(d.pad_y)
         .child(render_knob(
             entity.clone(),
             plugin_idx,
@@ -668,10 +670,10 @@ pub fn render_spectrum_analyzer_plugin(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(d.grid)
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_secondary)
                         .child("Tilt"),
@@ -726,10 +728,10 @@ pub fn render_spectrum_analyzer_plugin(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(d.grid)
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_secondary)
                         .child("Reference"),
@@ -785,8 +787,8 @@ pub fn render_spectrum_analyzer_plugin(
     div()
         .flex()
         .flex_col()
-        .gap_2()
-        .p_3()
+        .gap(d.gap)
+        .p(d.pad_x)
         .w_full()
         .child(spectrum_display)
         .child(config_row)
@@ -796,6 +798,7 @@ impl PlayerView {
     /// Render the full-screen spectrum analyzer display
     /// Uses GPU-accelerated SpectrumElement for high-performance rendering
     pub(crate) fn render_spectrum_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -812,9 +815,9 @@ impl PlayerView {
                     div()
                         .flex()
                         .flex_1()
-                        .gap_1()
+                        .gap(d.grid)
                         // dB axis (vertical, left side)
-                        .child(render_db_axis(&theme))
+                        .child(render_db_axis(&d, &theme))
                         // GPU-accelerated spectrum visualization
                         .child(
                             div().flex_1().child(
@@ -831,7 +834,7 @@ impl PlayerView {
                     div()
                         .flex()
                         .child(div().w(px(32.0))) // Spacer to align with dB axis
-                        .child(render_frequency_axis(20.0, 20000.0, &theme)),
+                        .child(render_frequency_axis(&d, 20.0, 20000.0, &theme)),
                 )
         } else {
             div()
@@ -847,12 +850,12 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
-            .p_4()
+            .p(d.card)
             .child(
                 div()
-                    .text_lg()
+                    .text_size(d.text_lg)
                     .font_weight(FontWeight::SEMIBOLD)
-                    .mb_4()
+                    .mb(d.section)
                     .child("Spectrum Analyzer"),
             )
             .child(content)

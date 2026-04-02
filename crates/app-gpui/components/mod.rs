@@ -1,6 +1,7 @@
 // Screen rendering modules
 //
 
+pub mod design;
 pub mod dialogs;
 pub mod graphs;
 pub mod headphone_eq;
@@ -19,6 +20,7 @@ pub use plugins::{
 
 use crate::app::Screen;
 use crate::app::types::PluginUpdateType;
+use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
@@ -40,16 +42,17 @@ pub(crate) struct ThemedTooltip {
 }
 
 impl Render for ThemedTooltip {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         div()
-            .px_2()
-            .py_1()
+            .px(d.pad_y)
+            .py(d.pad_y_half)
             .bg(self.bg)
             .border_1()
             .border_color(self.border)
             .rounded(px(4.0))
             .shadow_md()
-            .text_xs()
+            .text_size(d.text_xs)
             .text_color(self.text_color)
             .whitespace_nowrap()
             .child(self.text.clone())
@@ -69,6 +72,7 @@ pub(crate) fn themed_tooltip(text: &'static str, theme: &Theme, cx: &mut App) ->
 
 impl PlayerView {
     pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let active_tab = state.app.ui_state.active_settings_tab;
@@ -123,8 +127,8 @@ impl PlayerView {
                 div()
                     .w_full()
                     .bg(theme.surface)
-                    .px_4()
-                    .pt_2()
+                    .px(d.card)
+                    .pt(d.pad_y)
                     .flex()
                     .items_center()
                     // Home button on the left
@@ -137,7 +141,7 @@ impl PlayerView {
                             .w(rems(2.5))
                             .h(rems(2.0))
                             .cursor_pointer()
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .hover(move |s| s.bg(theme.surface_hover))
                             .child(Icon::new(IconName::Home).color(text_muted))
                             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
@@ -212,19 +216,19 @@ impl PlayerView {
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap_2()
-                                        .px_4()
-                                        .py_2()
-                                        .text_sm()
+                                        .gap(d.gap)
+                                        .px(d.card)
+                                        .py(d.pad_y)
+                                        .text_size(d.text_sm)
                                         .text_color(if is_selected {
                                             text_selected
                                         } else {
                                             text_unselected
                                         })
-                                        .when(!is_selected, |d| {
-                                            d.hover(move |s| s.text_color(text_hover))
+                                        .when(!is_selected, |el| {
+                                            el.hover(move |s| s.text_color(text_hover))
                                         })
-                                        .when(is_selected, |d| d.font_weight(FontWeight::SEMIBOLD))
+                                        .when(is_selected, |el| el.font_weight(FontWeight::SEMIBOLD))
                                         .child(label),
                                 )
                                 .child(
@@ -253,7 +257,7 @@ impl PlayerView {
                     .id("settings-content-scroll")
                     .overflow_y_scroll()
                     .flex_1()
-                    .p_4()
+                    .p(d.card)
                     .child(content),
             )
     }

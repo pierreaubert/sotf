@@ -2,6 +2,7 @@
 
 use crate::app::actions::QuitApp;
 use crate::app::{ActiveMenu, LayoutMode, Screen};
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -19,6 +20,7 @@ const MOD_PREFIX: &str = "Ctrl+";
 impl PlayerView {
     /// Render the application menu bar with dropdown menus
     pub(crate) fn render_menu_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let (theme, active_menu, scan_in_progress, scan_progress_tracks, translations) = {
             let state = self.state.read(cx);
             (
@@ -64,8 +66,8 @@ impl PlayerView {
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .text_xs()
+                    .gap(d.gap)
+                    .text_size(d.text_xs)
                     .text_color(theme.text_muted)
                     .when(scan_in_progress, |el| {
                         el.child(LoadingDots::new().color(theme.accent))
@@ -76,8 +78,8 @@ impl PlayerView {
                     }),
             )
             .build()
-            .px_4()
-            .py_1()
+            .px(d.card)
+            .py(d.pad_y_half)
             .bg(theme.background_secondary)
             .border_b_1()
             .border_color(theme.border)
@@ -292,6 +294,7 @@ impl PlayerView {
 
     /// Render the tab bar header (for compact mode)
     pub(crate) fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let (theme, layout_mode, current_screen, translations) = {
             let state = self.state.read(cx);
             (
@@ -319,13 +322,13 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_between()
-            .p_4()
+            .p(d.card)
             .bg(theme.surface)
             .border_b_1()
             .border_color(theme.border)
             .child(
                 div()
-                    .text_xl()
+                    .text_size(d.text_lg)
                     .font_weight(FontWeight::BOLD)
                     .child(translations.app_title),
             )

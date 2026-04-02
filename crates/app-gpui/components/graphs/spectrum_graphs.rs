@@ -2,6 +2,7 @@
 //!
 //! Visualizations for spectrum data using Heatmaps / Surface plots.
 
+use crate::components::design::Ds;
 use crate::theme::Theme;
 
 use gpui::prelude::*;
@@ -53,6 +54,7 @@ impl Default for SpectrumConfig {
 
 /// Render a spectrum heatmap
 pub fn render_spectrum_heatmap(
+    d: Ds,
     data: SpectrumGrid,
     config: SpectrumConfig,
     theme: &Theme,
@@ -68,7 +70,8 @@ pub fn render_spectrum_heatmap(
             .child(
                 div()
                     .text_base()
-                    .text_color(theme.text_secondary)
+                    .text_size(d.text_base)
+                    .text_color(theme.text_muted)
                     .child("No spectrum data available."),
             )
             .into_any_element();

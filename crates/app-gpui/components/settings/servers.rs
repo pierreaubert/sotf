@@ -1,5 +1,6 @@
 //! Server settings content
 
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -14,6 +15,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -22,24 +24,24 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(d.section_lg)
             .child(
                 div()
-                    .text_sm()
+                    .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
                     .child("Server Settings"),
             )
             .child(
                 div()
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .text_color(theme.text_secondary)
                     .child("Configure servers that expose your library to other players. MPD uses TLS for security. DLNA uses plain HTTP for device compatibility."),
             )
             // MPD Server section
-            .child(self.render_mpd_section(&server_config, &theme, &translations, cx))
+            .child(self.render_mpd_section(&server_config, &theme, &translations, &d, cx))
             // DLNA Server section
-            .child(self.render_dlna_section(&server_config, &theme, &translations, cx))
+            .child(self.render_dlna_section(&server_config, &theme, &translations, &d, cx))
     }
 
     fn render_mpd_section(
@@ -47,6 +49,7 @@ impl PlayerView {
         server_config: &sotf_audio_player::federation_config::ServerConfig,
         theme: &crate::app::theme::Theme,
         translations: &crate::app::i18n::Translations,
+        d: &Ds,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let mpd = &server_config.mpd;
@@ -65,10 +68,10 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap_3()
-            .p_4()
+            .gap(d.gap_md)
+            .p(d.card)
             .bg(theme.background_secondary)
-            .rounded_md()
+            .rounded(d.r_md)
             .border_1()
             .border_color(if mpd_enabled {
                 theme.accent
@@ -123,6 +126,7 @@ impl PlayerView {
                         &bind_address,
                         "0.0.0.0",
                         theme,
+                        d,
                         move |val, _window, cx| {
                             let v = val.to_string();
                             state_for_bind.update(cx, |state, _cx| {
@@ -137,6 +141,7 @@ impl PlayerView {
                         &port,
                         "6600",
                         theme,
+                        d,
                         move |val, _window, cx| {
                             let v = val.to_string();
                             state_for_port.update(cx, |state, _cx| {
@@ -149,11 +154,11 @@ impl PlayerView {
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
+                            .gap(d.gap)
                             .child(
                                 div()
                                     .w(px(120.0))
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
                                     .child("TLS"),
                             )
@@ -188,11 +193,11 @@ impl PlayerView {
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
+                            .gap(d.gap)
                             .child(
                                 div()
                                     .w(px(120.0))
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
                                     .child("Auth"),
                             )
@@ -256,6 +261,7 @@ impl PlayerView {
                                 "Enter password"
                             },
                             theme,
+                            d,
                             move |val, _window, cx| {
                                 let v = val.to_string();
                                 state_for_pw.update(cx, |state, _cx| {
@@ -270,17 +276,17 @@ impl PlayerView {
                             div()
                                 .flex()
                                 .items_center()
-                                .gap_2()
+                                .gap(d.gap)
                                 .child(
                                     div()
                                         .w(px(120.0))
-                                        .text_xs()
+                                        .text_size(d.text_xs)
                                         .text_color(theme.text_secondary)
                                         .child(""),
                                 )
                                 .child(
                                     div()
-                                        .text_xs()
+                                        .text_size(d.text_xs)
                                         .text_color(theme.text_muted)
                                         .child("Clients authenticate via TLS certificate. Add trusted client fingerprints to allow access."),
                                 ),
@@ -295,6 +301,7 @@ impl PlayerView {
         server_config: &sotf_audio_player::federation_config::ServerConfig,
         theme: &crate::app::theme::Theme,
         translations: &crate::app::i18n::Translations,
+        d: &Ds,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let dlna = &server_config.dlna;
@@ -308,10 +315,10 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap_3()
-            .p_4()
+            .gap(d.gap_md)
+            .p(d.card)
             .bg(theme.background_secondary)
-            .rounded_md()
+            .rounded(d.r_md)
             .border_1()
             .border_color(if dlna_enabled {
                 theme.accent
@@ -368,6 +375,7 @@ impl PlayerView {
                         &friendly_name,
                         "SOTF Media Server",
                         theme,
+                        d,
                         move |val, _window, cx| {
                             let v = val.to_string();
                             state_for_name.update(cx, |state, _cx| {
@@ -382,6 +390,7 @@ impl PlayerView {
                         &port,
                         "8200",
                         theme,
+                        d,
                         move |val, _window, cx| {
                             let v = val.to_string();
                             state_for_port.update(cx, |state, _cx| {
@@ -394,17 +403,17 @@ impl PlayerView {
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
+                            .gap(d.gap)
                             .child(
                                 div()
                                     .w(px(120.0))
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
                                     .child("Protocol"),
                             )
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(theme.text_muted)
                                     .child("HTTP (no TLS - device compat)"),
                             ),
@@ -420,16 +429,17 @@ fn server_editable_field(
     value: &str,
     placeholder: &str,
     theme: &crate::app::theme::Theme,
+    d: &Ds,
     on_change: impl Fn(&str, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap_2()
+        .gap(d.gap)
         .child(
             div()
                 .w(px(120.0))
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
                 .child(label.to_string()),
         )

@@ -508,6 +508,70 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn set_design_system(
+        &mut self,
+        name: &str,
+        system: gpui_design::DesignSystem,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.set_global(gpui_design::DesignSystemState::with_system(system));
+        self.state.update(cx, |state, cx| {
+            state.app.ui_state.design_language = Some(name.to_string());
+            let layout = state.layout.read(cx);
+            if let Err(e) = state.app.save_config(layout) {
+                log::error!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
+    }
+
+    fn set_design_neutral(
+        &mut self,
+        _: &SetDesignNeutral,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_design_system("neutral", gpui_design::DesignSystem::neutral(), window, cx);
+    }
+
+    fn set_design_apple_hig(
+        &mut self,
+        _: &SetDesignAppleHig,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_design_system(
+            "apple_hig",
+            gpui_design::DesignSystem::apple_hig(),
+            window,
+            cx,
+        );
+    }
+
+    fn set_design_material3(
+        &mut self,
+        _: &SetDesignMaterial3,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_design_system(
+            "material3",
+            gpui_design::DesignSystem::material3(),
+            window,
+            cx,
+        );
+    }
+
+    fn set_design_fluent(
+        &mut self,
+        _: &SetDesignFluent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_design_system("fluent", gpui_design::DesignSystem::fluent(), window, cx);
+    }
+
     fn cycle_language(&mut self, _: &CycleLanguage, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             state.app.next_language();

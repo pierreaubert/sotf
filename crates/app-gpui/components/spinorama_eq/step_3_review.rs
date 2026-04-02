@@ -1,3 +1,4 @@
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -9,6 +10,7 @@ impl PlayerView {
     // ========================================================================
 
     pub(crate) fn render_spinorama_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
@@ -151,6 +153,7 @@ impl PlayerView {
                                     .weight(TextWeight::Semibold),
                             )
                             .content(self.render_speaker_optimization_result_graphs(
+                                &d,
                                 &full_res,
                                 &theme_for_graphs,
                                 1200.0,
@@ -176,9 +179,9 @@ impl PlayerView {
                                 .id("spinorama-filter-list-scroll")
                                 .flex()
                                 .flex_col()
-                                .gap_1()
-                                .p_2()
-                                .rounded_md()
+                                .gap(d.grid)
+                                .p(d.pad_y)
+                                .rounded(d.r_md)
                                 .bg(theme.surface)
                                 .max_h(px(200.0))
                                 .overflow_y_scroll()
@@ -192,24 +195,24 @@ impl PlayerView {
                                         .flex()
                                         .justify_between()
                                         .items_center()
-                                        .px_2()
-                                        .py_1()
+                                        .px(d.pad_y)
+                                        .py(d.pad_y_half)
                                         .rounded(px(4.0))
                                         .bg(theme.background)
                                         .child(
                                             div()
                                                 .flex()
                                                 .items_center()
-                                                .gap_2()
+                                                .gap(d.gap)
                                                 .child(
                                                     div()
-                                                        .text_xs()
+                                                        .text_size(d.text_xs)
                                                         .text_color(theme.accent)
                                                         .child(format!("#{}", i + 1)),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_xs()
+                                                        .text_size(d.text_xs)
                                                         .text_color(theme.text_secondary)
                                                         .child(filter_type),
                                                 ),
@@ -218,22 +221,22 @@ impl PlayerView {
                                             div()
                                                 .flex()
                                                 .items_center()
-                                                .gap_3()
+                                                .gap(d.gap_md)
                                                 .child(
                                                     div()
-                                                        .text_xs()
+                                                        .text_size(d.text_xs)
                                                         .text_color(theme.text_primary)
                                                         .child(format!("{:.0} Hz", freq)),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_xs()
+                                                        .text_size(d.text_xs)
                                                         .text_color(theme.text_muted)
                                                         .child(format!("Q {:.2}", q)),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_xs()
+                                                        .text_size(d.text_xs)
                                                         .text_color(if gain >= 0.0 {
                                                             theme.success
                                                         } else {

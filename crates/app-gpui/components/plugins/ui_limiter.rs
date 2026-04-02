@@ -17,6 +17,7 @@ use super::common::{
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -41,6 +42,7 @@ const SLIDER_HEIGHT: f32 = 180.0;
 
 /// Render the Limiter plugin
 pub fn render_limiter_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: LimiterRenderState,
@@ -65,8 +67,8 @@ pub fn render_limiter_plugin(
         .flex()
         .flex_col()
         .flex_shrink_0()
-        .gap_3()
-        .child(render_section_title("SETUP", theme))
+        .gap(d.gap_md)
+        .child(render_section_title(d, "SETUP", theme))
         .child(render_toggle(
             entity.clone(),
             plugin_idx,
@@ -80,6 +82,7 @@ pub fn render_limiter_plugin(
 
     // === CENTER COLUMN: Sliders (top) + Interactive transfer curve (bottom) ===
     let transfer_curve = render_interactive_transfer_curve(
+        d,
         entity.clone(),
         plugin_idx,
         state.threshold_db,
@@ -101,12 +104,12 @@ pub fn render_limiter_plugin(
     let dynamics_col = div()
         .flex()
         .flex_col()
-        .gap_1()
-        .child(render_section_title("DYNAMICS", theme))
+        .gap(d.grid)
+        .child(render_section_title(d, "DYNAMICS", theme))
         .child(
             div()
                 .flex()
-                .gap_2()
+                .gap(d.gap)
                 .child(render_vertical_slider_with_ticks(
                     entity.clone(),
                     plugin_idx,
@@ -128,12 +131,12 @@ pub fn render_limiter_plugin(
     let timing_col = div()
         .flex()
         .flex_col()
-        .gap_1()
-        .child(render_section_title("TIMING", theme))
+        .gap(d.grid)
+        .child(render_section_title(d, "TIMING", theme))
         .child(
             div()
                 .flex()
-                .gap_2()
+                .gap(d.gap)
                 .child(render_vertical_slider_with_ticks(
                     entity.clone(),
                     plugin_idx,
@@ -169,7 +172,7 @@ pub fn render_limiter_plugin(
     let center_col = div()
         .flex()
         .flex_shrink_0()
-        .gap_4()
+        .gap(d.section)
         .child(dynamics_col)
         .child(timing_col);
 
@@ -178,9 +181,9 @@ pub fn render_limiter_plugin(
         .flex()
         .flex_col()
         .flex_shrink_0()
-        .gap_3()
-        .child(render_section_title("OUTPUT", theme))
-        .child(render_gr_meter(meter_value, -20.0, theme))
+        .gap(d.gap_md)
+        .child(render_section_title(d, "OUTPUT", theme))
+        .child(render_gr_meter(d, meter_value, -20.0, theme))
         .child(render_knob(
             entity.clone(),
             plugin_idx,
@@ -197,10 +200,10 @@ pub fn render_limiter_plugin(
         ));
 
     // === Main layout: 3 columns, centered ===
-    div().w_full().flex().justify_center().p_3().child(
+    div().w_full().flex().justify_center().p(d.pad_x).child(
         div()
             .flex()
-            .gap_4()
+            .gap(d.section)
             .child(setup_col)
             .child(center_col)
             .child(right_col),

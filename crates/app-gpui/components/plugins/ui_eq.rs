@@ -7,6 +7,7 @@
 
 use super::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -781,6 +782,7 @@ fn render_eq_visualization(
 /// Render a knob with an optional MIDI badge underneath
 #[allow(clippy::too_many_arguments)]
 fn render_eq_knob_with_midi(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     label: &str,
@@ -800,7 +802,7 @@ fn render_eq_knob_with_midi(
         .flex()
         .flex_col()
         .items_center()
-        .gap_1()
+        .gap(d.grid)
         .child(render_knob_sized(
             entity,
             plugin_idx,
@@ -816,7 +818,7 @@ fn render_eq_knob_with_midi(
             PotentiometerSize::Xs,
             theme,
         ))
-        .children(midi_assignment.map(|assignment| render_midi_badge(assignment, theme)))
+        .children(midi_assignment.map(|assignment| render_midi_badge(d, assignment, theme)))
 }
 
 /// Render the EQ plugin with graphical visualization
@@ -827,6 +829,8 @@ pub fn render_eq_plugin(
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
+    let ds = Ds::from_cx(cx);
+
     // Read selected channel from AppState
     let app_state = entity.read(cx);
     let selected_eq_channel = app_state.app.plugin_state.selected_eq_channel;
@@ -909,7 +913,7 @@ pub fn render_eq_plugin(
         .flex()
         .flex_col()
         .items_center() // Center band selector and knob box
-        .gap_4()
+        .gap(ds.section)
         .when(use_horizontal_layout, |d| d.min_w(rems(18.75)))
         .when(!use_horizontal_layout, |d| d.w_full())
         // Channel Mode Toggle and Channel Selector
@@ -927,25 +931,25 @@ pub fn render_eq_plugin(
                 .flex()
                 .items_center()
                 .justify_center()
-                .gap_4()
-                .p_2()
+                .gap(ds.section)
+                .p(ds.pad_y)
                 .bg(theme.surface)
-                .rounded_lg()
+                .rounded(ds.r_lg)
                 // Mode toggle buttons
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap_1()
+                        .gap(ds.grid)
                         // All Channels button
                         .child({
                             let is_selected = !per_channel_mode;
                             div()
                                 .id("eq-mode-all")
-                                .px_3()
-                                .py_1()
-                                .text_sm()
-                                .rounded_md()
+                                .px(ds.pad_x)
+                                .py(ds.pad_y_half)
+                                .text_size(ds.text_sm)
+                                .rounded(ds.r_md)
                                 .cursor_pointer()
                                 .when(is_selected, |d| {
                                     d.bg(accent)
@@ -973,10 +977,10 @@ pub fn render_eq_plugin(
                             let is_selected = per_channel_mode;
                             div()
                                 .id("eq-mode-per-channel")
-                                .px_3()
-                                .py_1()
-                                .text_sm()
-                                .rounded_md()
+                                .px(ds.pad_x)
+                                .py(ds.pad_y_half)
+                                .text_size(ds.text_sm)
+                                .rounded(ds.r_md)
                                 .cursor_pointer()
                                 .when(is_selected, |d| {
                                     d.bg(accent)
@@ -1006,21 +1010,21 @@ pub fn render_eq_plugin(
                         div()
                             .flex()
                             .items_center()
-                            .gap_1()
+                            .gap(ds.grid)
                             .border(px(1.0))
                             .border_color(border)
-                            .rounded_md()
-                            .px_2()
+                            .rounded(ds.r_md)
+                            .px(ds.pad_y)
                             .children((0..channels).map(|ch| {
                                 let entity = entity.clone();
                                 let is_selected = ch == selected_eq_channel;
                                 let ch_name = get_channel_name(ch, channels);
                                 div()
                                     .id(("eq-channel", ch))
-                                    .px_2()
-                                    .py_1()
-                                    .text_sm()
-                                    .rounded_sm()
+                                    .px(ds.pad_y)
+                                    .py(ds.pad_y_half)
+                                    .text_size(ds.text_sm)
+                                    .rounded(ds.r_sm)
                                     .cursor_pointer()
                                     .when(is_selected, |d| {
                                         d.bg(accent)
@@ -1048,10 +1052,10 @@ pub fn render_eq_plugin(
                 .flex()
                 .items_center()
                 .justify_center() // Center tabs
-                .gap_2()
-                .p_1()
+                .gap(ds.gap)
+                .p(ds.grid)
                 .bg(theme.surface)
-                .rounded_lg();
+                .rounded(ds.r_lg);
 
             // Build each band tab manually
             for band_idx in 0..num_bands {
@@ -1081,11 +1085,11 @@ pub fn render_eq_plugin(
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap_1()
-                    .px_3()
-                    .py_2()
-                    .text_sm()
-                    .rounded_md()
+                    .gap(ds.grid)
+                    .px(ds.pad_x)
+                    .py(ds.pad_y)
+                    .text_size(ds.text_sm)
+                    .rounded(ds.r_md)
                     .cursor_pointer()
                     .when(is_selected, |d: Stateful<Div>| {
                         d.bg(accent)
@@ -1111,7 +1115,7 @@ pub fn render_eq_plugin(
                     .child(
                         div()
                             .flex()
-                            .gap_1()
+                            .gap(ds.grid)
                             // Mute button (small circle)
                             .child({
                                 let entity_clone2 = entity.clone();
@@ -1125,7 +1129,7 @@ pub fn render_eq_plugin(
                                     .bg(if is_muted { error } else { bg_secondary })
                                     .border(px(1.0))
                                     .border_color(if is_muted { error } else { border })
-                                    .text_xs()
+                                    .text_size(ds.text_xs)
                                     .font_weight(FontWeight::BOLD)
                                     .cursor_pointer()
                                     .when(is_muted, |d| d.text_color(text_primary))
@@ -1166,7 +1170,7 @@ pub fn render_eq_plugin(
                                     .bg(if is_soloed { success } else { bg_secondary })
                                     .border(px(1.0))
                                     .border_color(if is_soloed { success } else { border })
-                                    .text_xs()
+                                    .text_size(ds.text_xs)
                                     .font_weight(FontWeight::BOLD)
                                     .cursor_pointer()
                                     .when(is_soloed, |d| d.text_color(text_primary))
@@ -1207,11 +1211,11 @@ pub fn render_eq_plugin(
                         .id("eq-add-band")
                         .focusable()
                         .key_context("plugin-control")
-                        .px_3()
+                        .px(ds.pad_x)
                         .py_1p5()
-                        .text_sm()
+                        .text_size(ds.text_sm)
                         .font_weight(FontWeight::BOLD)
-                        .rounded_sm()
+                        .rounded(ds.r_sm)
                         .cursor_pointer()
                         .bg(theme.success)
                         .text_color(theme.text_on_accent)
@@ -1238,15 +1242,16 @@ pub fn render_eq_plugin(
                         .flex()
                         .items_center()
                         .justify_center()
-                        .gap_2()
+                        .gap(ds.gap)
                         .children(overlay.controller_name.as_ref().map(|name| {
                             div()
-                                .text_xs()
+                                .text_size(ds.text_xs)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_secondary)
                                 .child(name.clone())
                         }))
                         .child(render_midi_page_indicator(
+                            &ds,
                             overlay.current_page,
                             overlay.total_pages,
                             theme,
@@ -1264,18 +1269,19 @@ pub fn render_eq_plugin(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_2()
-                    .p_3()
+                    .gap(ds.gap)
+                    .p(ds.pad_x)
                     .bg(theme.background_secondary)
-                    .rounded_md()
+                    .rounded(ds.r_md)
                     // Filter type selector
                     .child(
                         div()
                             .flex()
                             .flex_col()
-                            .gap_1()
-                            .child(div().text_xs().text_color(theme.text_muted).child("Type"))
+                            .gap(ds.grid)
+                            .child(div().text_size(ds.text_xs).text_color(theme.text_muted).child("Type"))
                             .child(render_filter_type_selector(
+                                &ds,
                                 entity.clone(),
                                 plugin_idx,
                                 &filter.filter_type,
@@ -1289,9 +1295,10 @@ pub fn render_eq_plugin(
                     .child(
                         div()
                             .flex()
-                            .gap_6()
+                            .gap(ds.section_lg)
                             .justify_center()
                             .child(render_eq_knob_with_midi(
+                                &ds,
                                 entity.clone(),
                                 plugin_idx,
                                 "Freq",
@@ -1306,6 +1313,7 @@ pub fn render_eq_plugin(
                                 theme,
                             ))
                             .child(render_eq_knob_with_midi(
+                                &ds,
                                 entity.clone(),
                                 plugin_idx,
                                 "Q",
@@ -1320,6 +1328,7 @@ pub fn render_eq_plugin(
                                 theme,
                             ))
                             .child(render_eq_knob_with_midi(
+                                &ds,
                                 entity.clone(),
                                 plugin_idx,
                                 "Gain",
@@ -1344,7 +1353,7 @@ pub fn render_eq_plugin(
         div()
             .flex()
             .flex_row()
-            .gap_3()
+            .gap(ds.gap_md)
             .child(graph_section)
             .child(controls_section)
     } else {
@@ -1353,7 +1362,7 @@ pub fn render_eq_plugin(
             .flex()
             .flex_col()
             .items_center()
-            .gap_8() // Increased gap between graph and controls
+            .gap(ds.section_xl) // Increased gap between graph and controls
             .child(graph_section)
             .child(controls_section)
     }
@@ -1406,6 +1415,7 @@ pub fn get_filter_type_index(filter_type: &BiquadFilterType) -> usize {
 
 /// Render a filter type selector using exclusive buttons
 fn render_filter_type_selector(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     current_type: &BiquadFilterType,
@@ -1427,27 +1437,28 @@ fn render_filter_type_selector(
     ];
 
     let current_index = get_filter_type_index(current_type);
+    let d = *d;
 
     div()
         .flex()
         .flex_wrap()
-        .gap_1()
+        .gap(d.grid)
         .children(filter_types.into_iter().map(move |(idx, abbrev)| {
             let is_active = idx == current_index;
             let entity_clone = entity.clone();
 
             div()
-                .px_2()
-                .py_1()
-                .text_xs()
+                .px(d.pad_y)
+                .py(d.pad_y_half)
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
-                .rounded_sm()
+                .rounded(d.r_sm)
                 .cursor_pointer()
-                .when(is_active, |d| {
-                    d.bg(theme.accent).text_color(theme.text_on_accent)
+                .when(is_active, |el| {
+                    el.bg(theme.accent).text_color(theme.text_on_accent)
                 })
-                .when(!is_active, |d| {
-                    d.bg(theme.background_secondary)
+                .when(!is_active, |el| {
+                    el.bg(theme.background_secondary)
                         .text_color(theme.text_secondary)
                         .hover(|s| s.bg(theme.surface_hover))
                 })

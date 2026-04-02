@@ -4,6 +4,7 @@
 //! Displays: Magnitude, Phase, Group Delay, and Impulse Response graphs.
 
 use crate::app::types::{PlotSmoothing, RecordingResult};
+use crate::components::design::Ds;
 use crate::components::graphs::response_graphs::{
     CHANNEL_COLORS, ChartConfig, Series, render_line_chart,
 };
@@ -268,6 +269,7 @@ impl PlayerView {
 
     /// Render magnitude plot
     fn render_magnitude_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -288,13 +290,14 @@ impl PlayerView {
                     self.render_magnitude_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme).into_any_element()
                 }),
         )
     }
 
     /// Render phase plot
     fn render_phase_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -315,13 +318,14 @@ impl PlayerView {
                     self.render_phase_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme).into_any_element()
                 }),
         )
     }
 
     /// Render group delay plot
     fn render_group_delay_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -342,13 +346,14 @@ impl PlayerView {
                     self.render_group_delay_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme).into_any_element()
                 }),
         )
     }
 
     /// Render impulse response plot
     fn render_impulse_response_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -368,13 +373,14 @@ impl PlayerView {
                     self.render_impulse_response_chart(&results, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme).into_any_element()
                 }),
         )
     }
 
     /// Render distortion plot
     fn render_distortion_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -392,16 +398,17 @@ impl PlayerView {
                         .color(theme.accent),
                 )
                 .child(if has_results {
-                    self.render_distortion_chart(&results, smoothing, &theme)
+                    self.render_distortion_chart(&d, &results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme).into_any_element()
                 }),
         )
     }
 
     /// Render RT60 plot
     fn render_rt60_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -422,13 +429,14 @@ impl PlayerView {
                     self.render_rt60_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme).into_any_element()
                 }),
         )
     }
 
     /// Render Clarity plot
     fn render_clarity_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -449,13 +457,14 @@ impl PlayerView {
                     self.render_clarity_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme).into_any_element()
                 }),
         )
     }
 
     /// Render Spectrogram plot
     fn render_spectrogram_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let sample_rate = state
@@ -478,10 +487,10 @@ impl PlayerView {
                         .color(theme.accent),
                 )
                 .child(if has_results {
-                    self.render_spectrogram_chart(&results, &theme, sample_rate)
+                    self.render_spectrogram_chart(&d, &results, &theme, sample_rate)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme).into_any_element()
                 }),
         )
     }
@@ -489,6 +498,7 @@ impl PlayerView {
     /// Render spectrogram chart
     fn render_spectrogram_chart(
         &self,
+        d: &Ds,
         results: &[(String, usize, RecordingResult)],
         theme: &crate::theme::Theme,
         sample_rate: f32,
@@ -499,7 +509,7 @@ impl PlayerView {
             && !spectrogram.is_empty()
         {
             return self
-                .render_spectrogram_canvas(spectrogram, theme, sample_rate)
+                .render_spectrogram_canvas(*d, spectrogram, theme, sample_rate)
                 .into_any_element();
         }
 
@@ -507,7 +517,7 @@ impl PlayerView {
             .h(px(300.0))
             .w_full()
             .bg(theme.surface)
-            .rounded_md()
+            .rounded(d.r_md)
             .flex()
             .items_center()
             .justify_center()
@@ -521,6 +531,7 @@ impl PlayerView {
 
     fn render_spectrogram_canvas(
         &self,
+        d: Ds,
         spectrogram: &[Vec<f32>],
         theme: &crate::theme::Theme,
         sample_rate: f32,
@@ -620,20 +631,20 @@ impl PlayerView {
             ..Default::default()
         };
 
-        render_spectrum_heatmap(grid, config, theme, None).into_any_element()
+        render_spectrum_heatmap(d, grid, config, theme, None).into_any_element()
     }
 
-    fn render_no_data_placeholder(&self, theme: &crate::theme::Theme) -> impl IntoElement {
+    fn render_no_data_placeholder(&self, d: &Ds, theme: &crate::theme::Theme) -> impl IntoElement {
         div()
             .h(px(200.0))
             .w_full()
-            .rounded_md()
+            .rounded(d.r_md)
             .bg(theme.surface)
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
-            .gap_2()
+            .gap(d.gap)
             .child(
                 Text::new("No Recordings Available")
                     .size(TextSize::Sm)
@@ -865,6 +876,7 @@ impl PlayerView {
     /// Render distortion chart
     fn render_distortion_chart(
         &self,
+        d: &Ds,
         results: &[(String, usize, RecordingResult)],
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
@@ -894,7 +906,7 @@ impl PlayerView {
                 .h(px(250.0))
                 .w_full()
                 .bg(theme.surface)
-                .rounded_md()
+                .rounded(d.r_md)
                 .flex()
                 .items_center()
                 .justify_center()

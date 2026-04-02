@@ -7,6 +7,7 @@
 
 use super::common::{render_knob, render_vertical_slider_with_ticks};
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -140,6 +141,7 @@ const CONFIG_ITEMS: [&str; 7] = [
 
 /// Render the upmixer plugin controls
 pub fn render_upmixer_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: UpmixerRenderState,
@@ -148,18 +150,18 @@ pub fn render_upmixer_plugin(
     let selected_config = state.upmixer_tab;
 
     // Main area: Channel Gains + Spatial Controls side by side (centered)
-    let main_area = render_main_area(entity.clone(), plugin_idx, &state, theme);
+    let main_area = render_main_area(d, entity.clone(), plugin_idx, &state, theme);
 
     // Tab bar below main area
-    let tab_bar = render_tab_bar(entity.clone(), selected_config, theme);
+    let tab_bar = render_tab_bar(d, entity.clone(), selected_config, theme);
 
     // Configuration row: conditional on selected_config (1-7)
-    let config_row = render_config_row(entity.clone(), plugin_idx, selected_config, &state, theme);
+    let config_row = render_config_row(d, entity.clone(), plugin_idx, selected_config, &state, theme);
 
     // Diagnostic toggles row
-    let diag_row = render_config_diagnostic(entity.clone(), plugin_idx, &state, theme);
+    let diag_row = render_config_diagnostic(d, entity.clone(), plugin_idx, &state, theme);
 
-    div().w_full().flex().justify_center().p_3().child(
+    div().w_full().flex().justify_center().p(d.pad_x).child(
         VStack::new()
             .spacing(StackSpacing::Xs)
             .child(main_area)
@@ -174,6 +176,7 @@ pub fn render_upmixer_plugin(
 
 /// Render an underline tab button
 fn render_tab_button(
+    d: &Ds,
     id: &'static str,
     label: &str,
     is_active: bool,
@@ -182,10 +185,10 @@ fn render_tab_button(
     div()
         .id(id)
         .cursor_pointer()
-        .px_4()
+        .px(d.card)
         .pb(px(6.0))
         .pt(px(4.0))
-        .text_xs()
+        .text_size(d.text_xs)
         .text_center()
         .font_weight(if is_active {
             FontWeight::BOLD
@@ -202,7 +205,7 @@ fn render_tab_button(
         .border_color(if is_active {
             theme.accent
         } else {
-            gpui::rgba(0x00000000)
+            gpui::Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }
         })
         .hover(|s| {
             s.text_color(theme.text_primary).border_color(if is_active {
@@ -216,6 +219,7 @@ fn render_tab_button(
 
 /// Render the tab bar below the main blocks
 fn render_tab_bar(
+    d: &Ds,
     entity: Entity<AppState>,
     selected_config: usize,
     theme: &Theme,
@@ -232,6 +236,7 @@ fn render_tab_bar(
             let is_active = selected_config == config_idx;
             let entity = entity.clone();
             render_tab_button(
+                d,
                 match i {
                     0 => "cfg-lfe",
                     1 => "cfg-dialogue",
@@ -261,6 +266,7 @@ fn render_tab_bar(
 
 /// Render the main area: Channel Gains + Spatial Controls side by side
 fn render_main_area(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -274,8 +280,8 @@ fn render_main_area(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(render_section_header("Channel Gains", theme))
+                .gap(d.gap)
+                .child(render_section_header(d, "Channel Gains", theme))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -341,17 +347,17 @@ fn render_main_area(
                         ))
                         .build(),
                 )
-                .p_2()
+                .p(d.pad_y)
                 .bg(theme.surface)
-                .rounded_lg(),
+                .rounded(d.r_lg),
         )
         // Spatial Controls
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(render_section_header("Spatial Controls", theme))
+                .gap(d.gap)
+                .child(render_section_header(d, "Spatial Controls", theme))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -417,15 +423,16 @@ fn render_main_area(
                         ))
                         .build(),
                 )
-                .p_2()
+                .p(d.pad_y)
                 .bg(theme.surface)
-                .rounded_lg(),
+                .rounded(d.r_lg),
         )
         .build()
 }
 
 /// Render the configuration row based on selected config menu item
 fn render_config_row(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     selected_config: usize,
@@ -433,33 +440,33 @@ fn render_config_row(
     theme: &Theme,
 ) -> impl IntoElement {
     let content: AnyElement = match selected_config {
-        1 => render_config_lfe(entity, plugin_idx, state, theme).into_any_element(),
-        2 => render_config_dialogue(entity, plugin_idx, state, theme).into_any_element(),
-        3 => render_config_ambient(entity, plugin_idx, state, theme).into_any_element(),
-        4 => render_config_height(entity, plugin_idx, state, theme).into_any_element(),
-        5 => render_config_hr_direct(entity, plugin_idx, state, theme).into_any_element(),
-        6 => render_config_decorrelation(entity, plugin_idx, state, theme).into_any_element(),
-        7 => render_config_analysis(entity, plugin_idx, state, theme).into_any_element(),
+        1 => render_config_lfe(d, entity, plugin_idx, state, theme).into_any_element(),
+        2 => render_config_dialogue(d, entity, plugin_idx, state, theme).into_any_element(),
+        3 => render_config_ambient(d, entity, plugin_idx, state, theme).into_any_element(),
+        4 => render_config_height(d, entity, plugin_idx, state, theme).into_any_element(),
+        5 => render_config_hr_direct(d, entity, plugin_idx, state, theme).into_any_element(),
+        6 => render_config_decorrelation(d, entity, plugin_idx, state, theme).into_any_element(),
+        7 => render_config_analysis(d, entity, plugin_idx, state, theme).into_any_element(),
         _ => div().into_any_element(),
     };
 
     div()
         .w_full()
-        .p_3()
+        .p(d.pad_x)
         .bg(theme.background_secondary)
-        .rounded_lg()
+        .rounded(d.r_lg)
         .border_1()
         .border_color(theme.border)
         .child(content)
 }
 
 /// Render a section header
-fn render_section_header(label: &str, theme: &Theme) -> impl IntoElement {
+fn render_section_header(d: &Ds, label: &str, theme: &Theme) -> impl IntoElement {
     div()
-        .text_xs()
+        .text_size(d.text_xs)
         .font_weight(FontWeight::BOLD)
         .text_color(theme.text_muted)
-        .pb_1()
+        .pb(d.pad_y_half)
         .child(label.to_string())
 }
 
@@ -469,6 +476,7 @@ fn render_section_header(label: &str, theme: &Theme) -> impl IntoElement {
 
 /// LFE & Bass configuration row
 fn render_config_lfe(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -483,10 +491,10 @@ fn render_config_lfe(
             div()
                 .flex()
                 .items_center()
-                .gap_3()
-                .child(render_section_header("LFE & Bass", theme))
+                .gap(d.gap_md)
+                .child(render_section_header(d, "LFE & Bass", theme))
                 .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
-                .child(render_section_header("SubHarmonic", theme))
+                .child(render_section_header(d, "SubHarmonic", theme))
                 .child(
                     Toggle::new(("subharm-toggle", plugin_idx))
                         .checked(subharm_enabled)
@@ -546,8 +554,8 @@ fn render_config_lfe(
                 .child(
                     div()
                         .flex()
-                        .gap_3()
-                        .when(!subharm_enabled, |d| d.opacity(0.3))
+                        .gap(d.gap_md)
+                        .when(!subharm_enabled, |el| el.opacity(0.3))
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -612,6 +620,7 @@ fn render_config_lfe(
 
 /// Dialogue configuration row
 fn render_config_dialogue(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -619,7 +628,7 @@ fn render_config_dialogue(
 ) -> impl IntoElement {
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_section_header("Dialogue", theme))
+        .child(render_section_header(d, "Dialogue", theme))
         .child(
             HStack::new()
                 .spacing(StackSpacing::Md)
@@ -716,6 +725,7 @@ fn render_config_dialogue(
 
 /// Ambient configuration row
 fn render_config_ambient(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -723,7 +733,7 @@ fn render_config_ambient(
 ) -> impl IntoElement {
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_section_header("Ambient", theme))
+        .child(render_section_header(d, "Ambient", theme))
         .child(
             HStack::new()
                 .spacing(StackSpacing::Md)
@@ -776,6 +786,7 @@ fn render_config_ambient(
 
 /// Height configuration row (pure height channel params, no HR Direct)
 fn render_config_height(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -783,7 +794,7 @@ fn render_config_height(
 ) -> impl IntoElement {
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_section_header("Height", theme))
+        .child(render_section_header(d, "Height", theme))
         .child(
             HStack::new()
                 .spacing(StackSpacing::Md)
@@ -836,6 +847,7 @@ fn render_config_height(
 
 /// HR Direct configuration row
 fn render_config_hr_direct(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -847,8 +859,8 @@ fn render_config_hr_direct(
             div()
                 .flex()
                 .items_center()
-                .gap_3()
-                .child(render_section_header("HR Direct", theme))
+                .gap(d.gap_md)
+                .child(render_section_header(d, "HR Direct", theme))
                 .child(
                     Toggle::new(("hr-direct-toggle", plugin_idx))
                         .checked(state.enable_hr_direct)
@@ -911,6 +923,7 @@ fn render_config_hr_direct(
 
 /// Decorrelation configuration row
 fn render_config_decorrelation(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -925,13 +938,14 @@ fn render_config_decorrelation(
             div()
                 .flex()
                 .items_center()
-                .gap_3()
-                .child(render_section_header("Decorrelation", theme))
+                .gap(d.gap_md)
+                .child(render_section_header(d, "Decorrelation", theme))
                 .child(HStack::new().spacing(StackSpacing::Xs).children(
                     decorrelation_modes.into_iter().map(|(mode, label)| {
                         let is_active = decorrelation_mode == mode;
                         let entity = entity.clone();
                         render_tab_button(
+                            d,
                             if mode == 0 {
                                 "decorr-velvet"
                             } else {
@@ -1009,6 +1023,7 @@ fn render_config_decorrelation(
 
 /// Analysis & Source Extraction configuration row
 fn render_config_analysis(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -1020,10 +1035,10 @@ fn render_config_analysis(
             div()
                 .flex()
                 .items_center()
-                .gap_3()
-                .child(render_section_header("Analysis", theme))
+                .gap(d.gap_md)
+                .child(render_section_header(d, "Analysis", theme))
                 .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
-                .child(render_section_header("Source Extraction", theme))
+                .child(render_section_header(d, "Source Extraction", theme))
                 .child(
                     Toggle::new(("multi-source-toggle", plugin_idx))
                         .checked(state.multi_source_extraction)
@@ -1053,6 +1068,7 @@ fn render_config_analysis(
                 .spacing(StackSpacing::Md)
                 // Analysis: Low Latency toggle
                 .child(render_diag_toggle(
+                    d,
                     entity.clone(),
                     plugin_idx,
                     "Low Latency",
@@ -1067,10 +1083,10 @@ fn render_config_analysis(
                     div()
                         .flex()
                         .items_center()
-                        .gap_2()
+                        .gap(d.gap)
                         .child(
                             div()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(theme.text_secondary)
                                 .child("Resolution".to_string()),
                         )
@@ -1078,6 +1094,7 @@ fn render_config_analysis(
                             let is_active = freq_res == i;
                             let entity = entity.clone();
                             render_tab_button(
+                                d,
                                 match i {
                                     0 => "freq-erb",
                                     1 => "freq-fine",
@@ -1126,6 +1143,7 @@ fn render_config_analysis(
 
 /// Config tab: diagnostic toggles in a row
 fn render_config_diagnostic(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
@@ -1133,11 +1151,12 @@ fn render_config_diagnostic(
 ) -> impl IntoElement {
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_section_header("Configuration", theme))
+        .child(render_section_header(d, "Configuration", theme))
         .child(
             HStack::new()
                 .spacing(StackSpacing::Lg)
                 .child(render_diag_toggle(
+                    d,
                     entity.clone(),
                     plugin_idx,
                     "Bypass Decorrelation",
@@ -1146,6 +1165,7 @@ fn render_config_diagnostic(
                     theme,
                 ))
                 .child(render_diag_toggle(
+                    d,
                     entity.clone(),
                     plugin_idx,
                     "Bypass Transients",
@@ -1154,6 +1174,7 @@ fn render_config_diagnostic(
                     theme,
                 ))
                 .child(render_diag_toggle(
+                    d,
                     entity.clone(),
                     plugin_idx,
                     "Bypass All Processing",
@@ -1162,6 +1183,7 @@ fn render_config_diagnostic(
                     theme,
                 ))
                 .child(render_diag_toggle(
+                    d,
                     entity,
                     plugin_idx,
                     "ML Detection",
@@ -1176,6 +1198,7 @@ fn render_config_diagnostic(
 
 /// Render a single diagnostic toggle with label
 fn render_diag_toggle(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     label: &str,
@@ -1186,10 +1209,10 @@ fn render_diag_toggle(
     div()
         .flex()
         .items_center()
-        .gap_2()
+        .gap(d.gap)
         .child(
             div()
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
                 .child(label.to_string()),
         )

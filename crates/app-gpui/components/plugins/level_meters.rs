@@ -18,6 +18,7 @@ use std::panic;
 use super::{MeterTheme, TickConfig, render_tick_row};
 use crate::app::types::PluginUpdateType;
 use crate::app::{App as AppState, ChannelGroup, ChannelInfo};
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 
@@ -65,18 +66,22 @@ pub struct MeterColors {
     pub text: Rgba,
 }
 
+impl MeterColors {
+    pub fn from_theme(theme: &Theme) -> Self {
+        Self {
+            background: theme.surface,
+            green: theme.meter_colors.normal,
+            yellow: theme.meter_colors.warning,
+            red: theme.meter_colors.clip,
+            peak: theme.meter_colors.peak,
+            text: theme.meter_colors.text,
+        }
+    }
+}
+
 impl Default for MeterColors {
     fn default() -> Self {
-        // These defaults match the dark theme meter colors.
-        // When rendering, use Theme::meter_colors for theme-aware colors.
-        Self {
-            background: rgb(0x1a1a1a), // theme.surface
-            green: rgb(0x22c55e),      // theme.meter_normal
-            yellow: rgb(0xf59e0b),     // theme.meter_warning
-            red: rgb(0xdc2626),        // theme.meter_clip
-            peak: rgb(0xffffff),       // White peak indicator
-            text: rgb(0x999999),       // theme.text_secondary
-        }
+        Self::from_theme(&Theme::from_id(crate::theme::ThemeId::default()))
     }
 }
 
@@ -337,6 +342,7 @@ impl Element for LevelMeterElement {
 /// Render a horizontal gain reduction meter
 /// Uses render_gradient_meter for consistent styling
 pub fn render_gr_meter(
+    d: &Ds,
     gain_reduction_db: f64, // Should be negative or 0
     max_db: f64,            // e.g., -30.0 (max gain reduction to display)
     theme: &Theme,
@@ -361,7 +367,7 @@ pub fn render_gr_meter(
     div()
         .flex()
         .flex_col()
-        .gap_1()
+        .gap(d.grid)
         .w_full()
         // Header row with label and value
         .child(
@@ -371,7 +377,7 @@ pub fn render_gr_meter(
                 .items_center()
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_secondary)
                         .child("Gain Reduction"),
@@ -379,11 +385,11 @@ pub fn render_gr_meter(
                 .child(
                     div()
                         .min_w(rems(4.375))
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
+                        .px(d.pad_y)
+                        .py(d.pad_y_half)
+                        .rounded(d.r_md)
                         .bg(theme.surface)
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .font_weight(FontWeight::BOLD)
                         .text_color(color)
                         .text_align(TextAlign::Right)
@@ -396,7 +402,7 @@ pub fn render_gr_meter(
                 .h(rems(0.75))
                 .w_full()
                 .bg(theme.background)
-                .rounded_md()
+                .rounded(d.r_md)
                 .border_1()
                 .border_color(theme.border)
                 .overflow_hidden()
@@ -415,7 +421,7 @@ pub fn render_gr_meter(
             div()
                 .flex()
                 .justify_between()
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_muted)
                 .children(tick_config.major_values.iter().map(|v| {
                     let label = if *v == 0.0 {
@@ -429,7 +435,7 @@ pub fn render_gr_meter(
 }
 
 /// Render a vertical peak meter with ceiling indicator
-pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl IntoElement {
+pub fn render_peak_meter(d: &Ds, peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl IntoElement {
     let min_db = -60.0;
     let normalized = ((peak_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
     let ceiling_normalized = ((ceiling_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
@@ -447,11 +453,11 @@ pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl I
         .flex()
         .flex_col()
         .items_center()
-        .gap_1()
+        .gap(d.grid)
         // Label
         .child(
             div()
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_secondary)
                 .child("Peak"),
@@ -462,7 +468,7 @@ pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl I
                 .w(rems(1.25))
                 .h(rems(5.0))
                 .bg(theme.background)
-                .rounded_md()
+                .rounded(d.r_md)
                 .border_1()
                 .border_color(theme.border)
                 .relative()
@@ -491,7 +497,7 @@ pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl I
         // Value
         .child(
             div()
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::BOLD)
                 .text_color(color)
                 .child(if peak_db <= min_db {
@@ -505,6 +511,7 @@ pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl I
 /// Render a meter with gradient coloring (green, yellow at top, red at clip)
 /// Optional peak_ratio shows a peak hold indicator line
 pub fn render_gradient_meter(
+    d: &Ds,
     fill_ratio: f32,
     yellow_threshold: f32,
     red_threshold: f32,
@@ -539,7 +546,7 @@ pub fn render_gradient_meter(
                 .flex_1()
                 .min_h(rems(11.25))
                 .bg(theme_c.background)
-                .rounded_sm()
+                .rounded(d.r_sm)
                 .overflow_hidden()
                 .relative()
                 // Green segment (base)
@@ -605,9 +612,9 @@ pub fn render_gradient_meter(
         // Channel name
         .child(
             div()
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_muted)
-                .mt_1()
+                .mt(d.grid)
                 .child(channel_name),
         )
 }
@@ -618,6 +625,7 @@ pub fn render_gradient_meter(
 
 /// Render LUFS display with True Peak bars at top (standalone function)
 pub fn render_lufs_with_true_peak(
+    d: &Ds,
     loudness: Option<&sotf_audio_player::LoudnessData>,
     theme: &Theme,
 ) -> impl IntoElement {
@@ -653,8 +661,8 @@ pub fn render_lufs_with_true_peak(
     div()
         .flex()
         .flex_col()
-        .gap_4()
-        .p_3()
+        .gap(d.section)
+        .p(d.pad_x)
         // True Peak section (on top)
         .child({
             // Use TickConfig preset for True Peak (quadratic scale from -60 to +6)
@@ -663,17 +671,18 @@ pub fn render_lufs_with_true_peak(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
+                .gap(d.gap)
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
-                        .mb_1()
+                        .mb(d.grid)
                         .child("True Peak"),
                 )
                 // Left channel bar (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
+                    d,
                     "L",
                     true_peak_left,
                     &tick_config,
@@ -681,6 +690,7 @@ pub fn render_lufs_with_true_peak(
                 ))
                 // Right channel bar (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
+                    d,
                     "R",
                     true_peak_right,
                     &tick_config,
@@ -705,7 +715,7 @@ pub fn render_lufs_with_true_peak(
                                 .flex_1()
                                 .flex()
                                 .justify_between()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(meter_theme.color_text_muted)
                                 .children(tick_config.major_values.iter().map(|db| {
                                     let label = if *db > 0.0 {
@@ -728,17 +738,18 @@ pub fn render_lufs_with_true_peak(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
+                .gap(d.gap)
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
-                        .mb_1()
+                        .mb(d.grid)
                         .child("LUFS"),
                 )
                 // Integrated LUFS (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
+                    d,
                     "I",
                     integrated_lufs,
                     &tick_config,
@@ -746,6 +757,7 @@ pub fn render_lufs_with_true_peak(
                 ))
                 // Short-term LUFS (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
+                    d,
                     "S",
                     shortterm_lufs,
                     &tick_config,
@@ -753,6 +765,7 @@ pub fn render_lufs_with_true_peak(
                 ))
                 // Momentary LUFS (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
+                    d,
                     "M",
                     momentary_lufs,
                     &tick_config,
@@ -777,7 +790,7 @@ pub fn render_lufs_with_true_peak(
                                 .flex_1()
                                 .flex()
                                 .justify_between()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(meter_theme.color_text_muted)
                                 .child(div().child("-60"))
                                 .child(div().child("-30"))
@@ -796,17 +809,18 @@ pub fn render_lufs_with_true_peak(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
+                .gap(d.gap)
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
-                        .mb_1()
+                        .mb(d.grid)
                         .child("Stereo Width"),
                 )
                 // Width bar (uses same scale as ticks)
                 .child(PlayerView::render_width_bar(
+                    d,
                     stereo_width,
                     &tick_config,
                     &meter_theme,
@@ -830,7 +844,7 @@ pub fn render_lufs_with_true_peak(
                                 .flex_1()
                                 .flex()
                                 .justify_between()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(meter_theme.color_text_muted)
                                 .child(div().child("Mono"))
                                 .child(div().child("50%"))
@@ -848,9 +862,11 @@ pub fn render_lufs_with_true_peak(
 
 impl PlayerView {
     /// Render vertical dB legend
-    pub fn render_vertical_legend(&self, theme: &Theme, align_right: bool) -> impl IntoElement {
+    pub fn render_vertical_legend(&self, d: &Ds, theme: &Theme, align_right: bool) -> impl IntoElement {
         let ticks = [0, -6, -12, -18, -24, -30, -40, -50, -60];
         let theme = theme.clone();
+        let text_xs = d.text_xs;
+        let grid = d.grid;
 
         div()
             .flex()
@@ -922,7 +938,7 @@ impl PlayerView {
                     )
                     // Spacer for Channel Name (matches render_gradient_meter channel name)
                     .child(
-                        div().text_xs().mt_1().opacity(0.0).child("X"), // Dummy text to match height
+                        div().text_size(text_xs).mt(grid).opacity(0.0).child("X"), // Dummy text to match height
                     ),
             )
             // Spacer (matches MSD buttons height and margin)
@@ -931,13 +947,13 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(px(1.0))
-                    .mt_1()
+                    .mt(grid)
                     .items_center()
                     .justify_center()
                     .opacity(0.0) // Invisible, just for spacing
-                    .child(div().px(px(2.0)).py(px(2.0)).text_xs().child("M"))
-                    .child(div().px(px(2.0)).py(px(2.0)).text_xs().child("S"))
-                    .child(div().px(px(2.0)).py(px(2.0)).text_xs().child("D")),
+                    .child(div().px(px(2.0)).py(px(2.0)).text_size(text_xs).child("M"))
+                    .child(div().px(px(2.0)).py(px(2.0)).text_size(text_xs).child("S"))
+                    .child(div().px(px(2.0)).py(px(2.0)).text_size(text_xs).child("D")),
             )
     }
 
@@ -952,6 +968,7 @@ impl PlayerView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let muted = group.muted;
         let soloed = group.soloed;
         let dimmed = group.dimmed;
@@ -1013,6 +1030,7 @@ impl PlayerView {
                 channel_data.into_iter().map(
                     |(fill_ratio, yellow_threshold, red_threshold, peak_hold_ratio, name)| {
                         render_gradient_meter(
+                            &d,
                             fill_ratio,
                             yellow_threshold,
                             red_threshold,
@@ -1029,7 +1047,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(px(1.0))
-                    .mt_1()
+                    .mt(d.grid)
                     .items_center()
                     .justify_center()
                     .child(self.render_msd_button(
@@ -1073,13 +1091,14 @@ impl PlayerView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let theme_c = theme.clone();
         div()
             .id((button_type, group_idx))
             .px(px(2.0))
             .py(px(2.0))
             .rounded(px(2.0))
-            .text_xs()
+            .text_size(d.text_xs)
             .cursor_pointer()
             .when(active, |d| {
                 d.bg(active_color).text_color(theme_c.text_primary)
@@ -1119,6 +1138,7 @@ impl PlayerView {
 
     /// Render separate Meters panel (for queue screen)
     pub fn render_meters_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         // Extract all data from state first to avoid borrow issues
         let (theme, loudness, groups, selected_group, peak_hold) = {
             let state = self.state.read(cx);
@@ -1135,12 +1155,12 @@ impl PlayerView {
             .flex_col()
             .items_center()
             .size_full()
-            .p_3()
+            .p(d.pad_x)
             .bg(theme.background)
             .child(
-                div().w_full().mb_2().child(
+                div().w_full().mb(d.gap).child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_align(TextAlign::Center)
                         .child("Level Meters"),
@@ -1152,7 +1172,7 @@ impl PlayerView {
 
                 // Left Legend
                 meter_elements.push(
-                    self.render_vertical_legend(&theme, false)
+                    self.render_vertical_legend(&d, &theme, false)
                         .into_any_element(),
                 );
 
@@ -1173,7 +1193,7 @@ impl PlayerView {
                 }
 
                 // Right Legend
-                meter_elements.push(self.render_vertical_legend(&theme, true).into_any_element());
+                meter_elements.push(self.render_vertical_legend(&d, &theme, true).into_any_element());
 
                 div()
                     .id("meter-groups-scroll")
@@ -1190,6 +1210,7 @@ impl PlayerView {
     /// Render unified meter bar with consistent styling
     /// Uses the TickConfig's scale for bar fill to match tick mark positions
     pub fn render_meter_bar(
+        d: &Ds,
         label: &str,
         value: f64,
         tick_config: &TickConfig,
@@ -1207,7 +1228,7 @@ impl PlayerView {
             .child(
                 div()
                     .w(px(meter_theme.label_width))
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .text_color(meter_theme.color_text)
                     .child(label.to_string()),
             )
@@ -1227,7 +1248,7 @@ impl PlayerView {
             .child(
                 div()
                     .w(px(meter_theme.value_width))
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(meter_theme.color_text)
                     .text_align(TextAlign::Right)
@@ -1238,6 +1259,7 @@ impl PlayerView {
     /// Render stereo width bar (0 = mono, 1 = wide)
     /// Uses the TickConfig's scale for bar fill to match tick mark positions
     pub fn render_width_bar(
+        d: &Ds,
         width: f64,
         tick_config: &TickConfig,
         meter_theme: &MeterTheme,
@@ -1255,7 +1277,7 @@ impl PlayerView {
             .child(
                 div()
                     .w(px(meter_theme.label_width))
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .text_color(meter_theme.color_text)
                     .child("W"),
             )
@@ -1275,7 +1297,7 @@ impl PlayerView {
             .child(
                 div()
                     .w(px(meter_theme.value_width))
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(meter_theme.color_text)
                     .text_align(TextAlign::Right)
@@ -1286,15 +1308,17 @@ impl PlayerView {
     /// Render LUFS display with True Peak bars at top (wrapper method)
     pub fn render_lufs_with_true_peak(
         &self,
+        d: &Ds,
         loudness: Option<&sotf_audio_player::LoudnessData>,
         theme: &Theme,
     ) -> impl IntoElement {
         // Call the standalone function
-        render_lufs_with_true_peak(loudness, theme)
+        render_lufs_with_true_peak(d, loudness, theme)
     }
 
     /// Render separate LUFS panel
     pub fn render_lufs_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let (theme, loudness) = {
             let state = self.state.read(cx);
             (
@@ -1307,12 +1331,12 @@ impl PlayerView {
             .flex_col()
             .items_center()
             .w_full()
-            .p_4()
+            .p(d.card)
             .bg(theme.background)
             .child(
                 div()
                     .w(rems(25.0))
-                    .child(self.render_lufs_with_true_peak(loudness.as_ref(), &theme)),
+                    .child(self.render_lufs_with_true_peak(&d, loudness.as_ref(), &theme)),
             )
     }
 }

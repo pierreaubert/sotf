@@ -1,4 +1,5 @@
 use crate::app::types::Screen;
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -16,6 +17,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let current_channel = state.app.ui_state.release_channel;
         let theme = state.app.ui_state.theme.clone();
@@ -24,27 +26,27 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(d.section_lg)
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_3()
+                    .gap(d.gap_md)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .child(translations.settings_release_channel_title),
                     )
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
                             .child(translations.settings_release_channel_description),
                     )
                     .child({
-                        let mut container = div().flex().flex_wrap().gap_4();
+                        let mut container = div().flex().flex_wrap().gap(d.section);
 
                         for channel in ReleaseChannel::all() {
                             let is_selected = current_channel == *channel;
@@ -65,8 +67,8 @@ impl PlayerView {
                                     .flex()
                                     .flex_col()
                                     .w(rems(13.75))
-                                    .p_4()
-                                    .rounded_md()
+                                    .p(d.card)
+                                    .rounded(d.r_md)
                                     .border_2()
                                     .border_color(if is_selected { accent } else { border })
                                     .bg(if is_selected {
@@ -78,7 +80,7 @@ impl PlayerView {
                                     .hover(move |s| s.border_color(accent))
                                     .child(
                                         div()
-                                            .text_sm()
+                                            .text_size(d.text_sm)
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(if is_selected {
                                                 accent
@@ -89,13 +91,13 @@ impl PlayerView {
                                     )
                                     .child(
                                         div()
-                                            .text_xs()
+                                            .text_size(d.text_xs)
                                             .text_color(text_secondary)
-                                            .mt_1()
+                                            .mt(d.grid)
                                             .child(channel.description()),
                                     )
                                     .child(
-                                        div().mt_3().child(
+                                        div().mt(d.gap_md).child(
                                             Button::new(
                                                 SharedString::from(format!(
                                                     "select-channel-{}",
@@ -133,11 +135,11 @@ impl PlayerView {
                         container
                     }),
             )
-            .child(self.render_feature_table(&theme))
+            .child(self.render_feature_table(&theme, d))
     }
 
     /// Render the feature availability table grouped by Features and Plugins.
-    fn render_feature_table(&self, theme: &crate::theme::Theme) -> impl IntoElement {
+    fn render_feature_table(&self, theme: &crate::theme::Theme, d: Ds) -> impl IntoElement {
         // --- Features (screens) ---
         let features: Vec<FeatureRow> = vec![
             FeatureRow {
@@ -204,19 +206,19 @@ impl PlayerView {
             .flex()
             .border_b_1()
             .border_color(border)
-            .pb_1()
-            .mb_1()
+            .pb(d.pad_y_half)
+            .mb(d.grid)
             .child(
                 div()
                     .w(name_w)
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::BOLD)
                     .text_color(text_secondary),
             )
             .child(
                 div()
                     .w(col_w)
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::BOLD)
                     .text_color(text_secondary)
                     .text_center()
@@ -225,7 +227,7 @@ impl PlayerView {
             .child(
                 div()
                     .w(col_w)
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::BOLD)
                     .text_color(text_secondary)
                     .text_center()
@@ -234,7 +236,7 @@ impl PlayerView {
             .child(
                 div()
                     .w(col_w)
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::BOLD)
                     .text_color(text_secondary)
                     .text_center()
@@ -247,10 +249,10 @@ impl PlayerView {
 
             // Section header
             section = section.child(
-                div().flex().mt_3().mb_1().child(
+                div().flex().mt(d.gap_md).mb(d.grid).child(
                     div()
                         .w(name_w)
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .font_weight(FontWeight::BOLD)
                         .text_color(accent)
                         .child(label),
@@ -261,7 +263,7 @@ impl PlayerView {
                 let mark = |channel: ReleaseChannel| -> Div {
                     div()
                         .w(col_w)
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .text_center()
                         .child(if row.maturity == channel {
                             SharedString::from("\u{2714}") // checkmark
@@ -279,12 +281,12 @@ impl PlayerView {
                     div()
                         .flex()
                         .py_0p5()
-                        .rounded_sm()
+                        .rounded(d.r_sm)
                         .hover(move |s| s.bg(surface))
                         .child(
                             div()
                                 .w(name_w)
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(text_primary)
                                 .child(row.name),
                         )

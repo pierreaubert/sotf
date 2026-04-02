@@ -1,5 +1,6 @@
 //! Library screen rendering functions
 
+use crate::components::design::Ds;
 use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
@@ -23,6 +24,7 @@ enum SelectionAction {
 
 impl PlayerView {
     pub(crate) fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         // Ensure library stats are computed (cached - only recomputes when invalidated)
         self.state.update(cx, |state, _| {
             let _ = state.app.get_library_stats();
@@ -211,7 +213,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
-            .p_2()
+            .p(d.pad_y)
             .when(state.app.is_loading_initial_data, |el| {
                 el.justify_center()
                     .items_center()
@@ -228,8 +230,8 @@ impl PlayerView {
                         })
                         .items_center()
                         .justify_center()
-                        .gap_2()
-                        .mb_2()
+                        .gap(d.gap)
+                        .mb(d.gap)
                         .child(
                             Tabs::new("library-sort-tabs")
                                 .tabs(sort_tabs)
@@ -300,12 +302,12 @@ impl PlayerView {
                             .flex()
                             .flex_wrap()
                             .justify_center()
-                            .gap_2()
-                            .mb_2()
-                            .py_2()
-                            .px_4()
+                            .gap(d.gap)
+                            .mb(d.gap)
+                            .py(d.pad_y)
+                            .px(d.card)
                             .bg(theme.surface)
-                            .rounded_lg()
+                            .rounded(d.r_lg)
                             .child(self.render_filter_button(
                                 "All",
                                 crate::app::state::library::ChannelFilter::All,
@@ -354,7 +356,7 @@ impl PlayerView {
                 // Uses Input component's native text handling via on_text_change
                 .when(is_search_mode, |el| {
                     el.child(
-                        div().flex().justify_center().mb_2().child(
+                        div().flex().justify_center().mb(d.gap).child(
                             div().w_96().child(
                                 Input::new("search-input")
                                     .value(SharedString::from(search_query.clone()))
@@ -581,18 +583,19 @@ impl PlayerView {
         theme: crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         div()
             .flex()
             .flex_col()
             .items_center()
-            .gap_1()
-            .p_2()
+            .gap(d.grid)
+            .p(d.pad_y)
             .bg(theme.surface)
             .border_b_1()
             .border_color(theme.border)
             .child(
                 // Decade buttons row
-                div().flex().flex_wrap().justify_center().gap_1().children(
+                div().flex().flex_wrap().justify_center().gap(d.grid).children(
                     decade_counts.into_iter().map(|(start, end, count)| {
                         let is_selected = selected_decade == Some((start, end));
                         let label = format!("{}s ({})", start, count);
@@ -645,8 +648,8 @@ impl PlayerView {
                         .flex()
                         .flex_wrap()
                         .justify_center()
-                        .gap_1()
-                        .mt_1()
+                        .gap(d.grid)
+                        .mt(d.grid)
                         .children(years_in_decade.into_iter().map(|(year, count)| {
                             let is_selected = selected_year == Some(year);
                             let label = format!("{} ({})", year, count);
@@ -721,6 +724,7 @@ impl PlayerView {
         theme: crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         // Sort alphabetically, # at the end
         let mut letters: Vec<char> = letter_counts.keys().copied().collect();
         letters.sort_by(|a, b| {
@@ -737,8 +741,8 @@ impl PlayerView {
             .flex()
             .flex_wrap()
             .justify_center()
-            .gap_1()
-            .p_2()
+            .gap(d.grid)
+            .p(d.pad_y)
             .bg(theme.surface)
             .border_b_1()
             .border_color(theme.border)
@@ -819,6 +823,7 @@ impl PlayerView {
         theme: crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         // Sort letters alphabetically, # at the end
         let mut letters: Vec<char> = letter_counts.keys().copied().collect();
         letters.sort_by(|a, b| {
@@ -857,14 +862,14 @@ impl PlayerView {
             .flex()
             .flex_col()
             .items_center()
-            .gap_1()
-            .p_2()
+            .gap(d.grid)
+            .p(d.pad_y)
             .bg(theme.surface)
             .border_b_1()
             .border_color(theme.border)
             .child(
                 // Letter buttons row
-                div().flex().flex_wrap().justify_center().gap_1().children(
+                div().flex().flex_wrap().justify_center().gap(d.grid).children(
                     letters.into_iter().map(|letter| {
                         let is_selected = selected_letter == Some(letter);
 
@@ -910,8 +915,8 @@ impl PlayerView {
                         .flex()
                         .flex_wrap()
                         .justify_center()
-                        .gap_1()
-                        .pt_1()
+                        .gap(d.grid)
+                        .pt(d.pad_y_half)
                         .children(artists.into_iter().map(|(artist, count)| {
                             let is_selected = selected_artist.as_ref() == Some(&artist);
                             let artist_clone = artist.clone();
@@ -996,6 +1001,7 @@ impl PlayerView {
         theme: crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         // Sort letters alphabetically, # at the end
         let mut letters: Vec<char> = letter_counts.keys().copied().collect();
         letters.sort_by(|a, b| {
@@ -1034,14 +1040,14 @@ impl PlayerView {
             .flex()
             .flex_col()
             .items_center()
-            .gap_1()
-            .p_2()
+            .gap(d.grid)
+            .p(d.pad_y)
             .bg(theme.surface)
             .border_b_1()
             .border_color(theme.border)
             .child(
                 // Letter buttons row
-                div().flex().flex_wrap().justify_center().gap_1().children(
+                div().flex().flex_wrap().justify_center().gap(d.grid).children(
                     letters.into_iter().map(|letter| {
                         let is_selected = selected_letter == Some(letter);
 
@@ -1087,8 +1093,8 @@ impl PlayerView {
                         .flex()
                         .flex_wrap()
                         .justify_center()
-                        .gap_1()
-                        .pt_1()
+                        .gap(d.grid)
+                        .pt(d.pad_y_half)
                         .children(composers.into_iter().map(|(composer, count)| {
                             let is_selected = selected_composer.as_ref() == Some(&composer);
                             let composer_clone = composer.clone();
@@ -1167,13 +1173,14 @@ impl PlayerView {
         theme: crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         div()
             .flex()
             .flex_wrap()
             .justify_center()
             .items_center()
-            .gap_1()
-            .p_2()
+            .gap(d.grid)
+            .p(d.pad_y)
             .bg(theme.surface)
             .border_b_1()
             .border_color(theme.border)
@@ -1225,6 +1232,7 @@ impl PlayerView {
         genre_counts: std::collections::HashMap<String, usize>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         // Check if we need to show selection UI
         let needs_selection = selected_genre.is_none();
 
@@ -1240,8 +1248,8 @@ impl PlayerView {
                     div()
                         .flex()
                         .items_center()
-                        .gap_2()
-                        .p_2()
+                        .gap(d.gap)
+                        .p(d.pad_y)
                         .bg(theme.surface)
                         .border_b_1()
                         .border_color(theme.border)
@@ -1264,7 +1272,7 @@ impl PlayerView {
                         )
                         .child(
                             div()
-                                .text_lg()
+                                .text_size(d.text_lg)
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(theme.text_primary)
                                 .child(label),
@@ -1347,6 +1355,7 @@ impl PlayerView {
         theme: crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let d = Ds::from_cx(cx);
         div()
             .id("selection-scroll")
             .size_full()
@@ -1354,20 +1363,20 @@ impl PlayerView {
             .flex_col()
             .items_center()
             .overflow_y_scroll()
-            .p_4()
+            .p(d.card)
             .child(
                 div()
-                    .text_xl()
+                    .text_size(d.text_lg)
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.text_primary)
-                    .mb_4()
+                    .mb(d.section)
                     .child(title.to_string()),
             )
             .child(
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap_3()
+                    .gap(d.gap_md)
                     .max_w(rems(62.5))
                     .justify_center()
                     .children(items.into_iter().map(|(id, label, size, action)| {
@@ -1399,6 +1408,7 @@ impl PlayerView {
 
     /// Render album grid view with thumbnails
     pub(crate) fn render_library_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let (albums, selected_album_index, theme, sort_order) = {
             let state = self.state.read(cx);
             (
@@ -1461,7 +1471,7 @@ impl PlayerView {
 
             // Add divider when group changes (only for sort orders that use grouping)
             if !group_key.is_empty() && previous_group.as_ref() != Some(&group_key) {
-                elements.push(self.render_section_divider(&group_key, idx, &theme));
+                elements.push(self.render_section_divider(&group_key, idx, &theme, &d));
                 previous_group = Some(group_key);
             }
 
@@ -1515,8 +1525,8 @@ impl PlayerView {
             .flex()
             .flex_wrap()
             .content_start()
-            .gap_4()
-            .p_2()
+            .gap(d.section)
+            .p(d.pad_y)
             .size_full()
             .overflow_y_scroll()
             .track_scroll(&self.grid_scroll_handle)
@@ -1529,18 +1539,19 @@ impl PlayerView {
         label: &str,
         index: usize,
         theme: &crate::theme::Theme,
+        d: &Ds,
     ) -> AnyElement {
         div()
             .id(("section-divider", index))
             .flex_basis(relative(1.0)) // Full width to force new row
-            .pt_4()
-            .pb_2()
+            .pt(d.section)
+            .pb(d.pad_y)
             .flex()
             .items_center()
-            .gap_3()
+            .gap(d.gap_md)
             .child(
                 div()
-                    .text_lg()
+                    .text_size(d.text_lg)
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.text_primary)
                     .child(label.to_string()),

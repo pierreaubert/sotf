@@ -458,6 +458,7 @@ impl PlayerView {
 
     /// Render mini rack with output level meters only
     fn render_mini_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = crate::components::design::Ds::from_cx(cx);
         let (theme, output_channels) = {
             let state = self.state.read(cx);
             let channels = state.app.plugin_state.chain.output_channels();
@@ -472,11 +473,11 @@ impl PlayerView {
             // Header
             .child(
                 div()
-                    .px_2()
-                    .py_1()
+                    .px(d.pad_y)
+                    .py(d.pad_y_half)
                     .border_b_1()
                     .border_color(theme.border)
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .text_color(theme.text_muted)
                     .child("OUTPUT"),
             )
@@ -484,7 +485,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex_1()
-                    .p_2()
+                    .p(d.pad_y)
                     .child(self.render_side_meter(cx, output_channels, "", true, false)),
             )
     }

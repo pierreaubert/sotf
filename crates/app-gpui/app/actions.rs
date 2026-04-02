@@ -151,5 +151,10 @@ actions!(
         SelectBand3,
         SelectBand4,
         SelectBand5,
+        // Design system switching
+        SetDesignNeutral,
+        SetDesignAppleHig,
+        SetDesignMaterial3,
+        SetDesignFluent,
     ]
 );

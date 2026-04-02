@@ -5,6 +5,7 @@
 
 use crate::app::AppState;
 use crate::app::types::{CustomTargetCurve, TargetCurveControlPoint};
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -12,6 +13,7 @@ use gpui_px::{ChartTheme, ScaleType, line};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize, TextWeight,
+    theme::ThemeExt,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -242,6 +244,7 @@ impl PlayerView {
 
     /// Render the custom target curve editor modal
     pub(crate) fn render_custom_target_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let is_open = state
@@ -304,7 +307,7 @@ impl PlayerView {
                     })
                     .flex()
                     .flex_col()
-                    .gap_4()
+                    .gap(d.section)
                     // Header row with title and presets on right
                     .child(
                         div()
@@ -352,17 +355,17 @@ impl PlayerView {
                                                 .absolute()
                                                 .top_full()
                                                 .right_0()
-                                                .mt_1()
+                                                .mt(d.grid)
                                                 .w_40()
                                                 .bg(theme.surface)
                                                 .border_1()
                                                 .border_color(theme.border)
                                                 .shadow_lg()
-                                                .rounded_md()
-                                                .p_1()
+                                                .rounded(d.r_md)
+                                                .p(d.grid)
                                                 .flex()
                                                 .flex_col()
-                                                .gap_1()
+                                                .gap(d.grid)
                                                 .on_mouse_down(MouseButton::Left, |_, _, cx| {
                                                     cx.stop_propagation();
                                                 })
@@ -371,24 +374,28 @@ impl PlayerView {
                                                     CustomTargetCurve::new_flat(),
                                                     &state_entity,
                                                     &theme,
+                                                    d,
                                                 ))
                                                 .child(render_preset_option(
                                                     "Near-field",
                                                     CustomTargetCurve::new_near_field(),
                                                     &state_entity,
                                                     &theme,
+                                                    d,
                                                 ))
                                                 .child(render_preset_option(
                                                     "Mid-field",
                                                     CustomTargetCurve::new_mid_field(),
                                                     &state_entity,
                                                     &theme,
+                                                    d,
                                                 ))
                                                 .child(render_preset_option(
                                                     "Far-field",
                                                     CustomTargetCurve::new_far_field(),
                                                     &state_entity,
                                                     &theme,
+                                                    d,
                                                 )),
                                         )
                                     }),
@@ -407,7 +414,7 @@ impl PlayerView {
                     .child(
                         div()
                             .flex()
-                            .gap_2()
+                            .gap(d.gap)
                             .justify_end()
                             .child(
                                 Button::new("load-curve", "Import...")
@@ -468,11 +475,12 @@ fn render_preset_option(
     curve: CustomTargetCurve,
     state_entity: &Entity<AppState>,
     theme: &crate::theme::Theme,
+    d: Ds,
 ) -> impl IntoElement {
     let state = state_entity.clone();
     div()
-        .p_2()
-        .rounded_sm()
+        .p(d.pad_y)
+        .rounded(d.r_sm)
         .hover(|s| s.bg(theme.surface_hover))
         .cursor_pointer()
         .child(

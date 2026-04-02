@@ -9,6 +9,7 @@
 
 use super::common::{render_section_title, render_toggle};
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -26,6 +27,7 @@ pub struct ChannelMuteSoloRenderState<'a> {
 
 /// Render the Channel Mute/Solo plugin
 pub fn render_mute_solo_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: ChannelMuteSoloRenderState,
@@ -46,8 +48,8 @@ pub fn render_mute_solo_plugin(
         .flex()
         .flex_col()
         .flex_shrink_0()
-        .gap_3()
-        .child(render_section_title("SETUP", theme))
+        .gap(d.gap_md)
+        .child(render_section_title(d, "SETUP", theme))
         .child(render_toggle(
             entity.clone(),
             plugin_idx,
@@ -60,7 +62,7 @@ pub fn render_mute_solo_plugin(
         ))
         .child(
             div()
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_muted)
                 .child(format!("{} channels", channel_count)),
         );
@@ -70,9 +72,9 @@ pub fn render_mute_solo_plugin(
         .flex()
         .flex_col()
         .flex_1()
-        .gap_3()
-        .child(render_section_title("CHANNELS", theme))
-        .child(div().flex().gap_3().flex_wrap().children(
+        .gap(d.gap_md)
+        .child(render_section_title(d, "CHANNELS", theme))
+        .child(div().flex().gap(d.gap_md).flex_wrap().children(
             state.channel_states.iter().enumerate().map(|(i, s)| {
                 let name = channel_names.get(i).copied().unwrap_or("Ch");
                 let is_muted = s.muted;
@@ -84,9 +86,9 @@ pub fn render_mute_solo_plugin(
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap_2()
-                    .p_2()
-                    .rounded_lg()
+                    .gap(d.gap)
+                    .p(d.pad_y)
+                    .rounded(d.r_lg)
                     .bg(theme.surface)
                     .border_1()
                     .border_color(if is_soloed {
@@ -99,7 +101,7 @@ pub fn render_mute_solo_plugin(
                     // Channel label
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
                             .child(name.to_string()),
@@ -110,7 +112,7 @@ pub fn render_mute_solo_plugin(
                             .w(px(16.0))
                             .h(px(60.0))
                             .bg(theme.background)
-                            .rounded_sm()
+                            .rounded(d.r_sm)
                             .flex()
                             .flex_col()
                             .justify_end()
@@ -131,7 +133,7 @@ pub fn render_mute_solo_plugin(
                         div()
                             .w(px(24.0))
                             .h(px(20.0))
-                            .rounded_sm()
+                            .rounded(d.r_sm)
                             .bg(if is_muted {
                                 theme.error
                             } else {
@@ -142,7 +144,7 @@ pub fn render_mute_solo_plugin(
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .font_weight(FontWeight::BOLD)
                             .text_color(if is_muted {
                                 theme.text_on_accent
@@ -156,7 +158,7 @@ pub fn render_mute_solo_plugin(
                         div()
                             .w(px(24.0))
                             .h(px(20.0))
-                            .rounded_sm()
+                            .rounded(d.r_sm)
                             .bg(if is_soloed {
                                 theme.warning
                             } else {
@@ -171,7 +173,7 @@ pub fn render_mute_solo_plugin(
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .font_weight(FontWeight::BOLD)
                             .text_color(if is_soloed {
                                 theme.background
@@ -188,6 +190,6 @@ pub fn render_mute_solo_plugin(
         .w_full()
         .flex()
         .justify_center()
-        .p_3()
-        .child(div().flex().gap_4().child(setup_col).child(center_col))
+        .p(d.pad_x)
+        .child(div().flex().gap(d.section).child(setup_col).child(center_col))
 }

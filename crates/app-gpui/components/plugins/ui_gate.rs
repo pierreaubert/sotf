@@ -17,6 +17,7 @@ use super::common::{
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -47,6 +48,7 @@ const SIDECHAIN_HPF_UI_MAX: f64 = 160.0;
 
 /// Render the Gate plugin
 pub fn render_gate_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: GateRenderState,
@@ -82,8 +84,8 @@ pub fn render_gate_plugin(
         .flex()
         .flex_col()
         .flex_shrink_0()
-        .gap_3()
-        .child(render_section_title("SETUP", theme))
+        .gap(d.gap_md)
+        .child(render_section_title(d, "SETUP", theme))
         .child(render_toggle(
             entity.clone(),
             plugin_idx,
@@ -112,18 +114,18 @@ pub fn render_gate_plugin(
     // === CENTER COLUMN: Sliders (top) + Gate status (bottom) ===
     let sliders = div()
         .flex()
-        .gap_4()
+        .gap(d.section)
         // Dynamics: Threshold, Ratio
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
-                .child(render_section_title("DYNAMICS", theme))
+                .gap(d.grid)
+                .child(render_section_title(d, "DYNAMICS", theme))
                 .child(
                     div()
                         .flex()
-                        .gap_2()
+                        .gap(d.gap)
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
@@ -161,12 +163,12 @@ pub fn render_gate_plugin(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
-                .child(render_section_title("TIMING", theme))
+                .gap(d.grid)
+                .child(render_section_title(d, "TIMING", theme))
                 .child(
                     div()
                         .flex()
-                        .gap_2()
+                        .gap(d.gap)
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
                             plugin_idx,
@@ -216,10 +218,10 @@ pub fn render_gate_plugin(
         );
 
     // Gate status indicator
-    let gate_status = div().flex().flex_col().gap_2().items_center().child(
+    let gate_status = div().flex().flex_col().gap(d.gap).items_center().child(
         div()
             .flex()
-            .gap_4()
+            .gap(d.section)
             .items_center()
             // Gate status circle
             .child(
@@ -235,7 +237,7 @@ pub fn render_gate_plugin(
                     .border_color(gate_color)
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .font_weight(FontWeight::BOLD)
                             .text_color(gate_color)
                             .child(if is_open { "OPEN" } else { "CLOSED" }),
@@ -246,11 +248,11 @@ pub fn render_gate_plugin(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
+                    .gap(d.grid)
                     .flex_1()
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .child("Input Level"),
                     )
@@ -259,7 +261,7 @@ pub fn render_gate_plugin(
                             .h(px(12.0))
                             .w_full()
                             .bg(theme.background)
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .border_1()
                             .border_color(theme.border)
                             .relative()
@@ -279,7 +281,7 @@ pub fn render_gate_plugin(
                         div()
                             .flex()
                             .justify_between()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .child("-80")
                             .child("0 dB"),
@@ -291,7 +293,7 @@ pub fn render_gate_plugin(
         .flex()
         .flex_col()
         .flex_shrink_0()
-        .gap_3()
+        .gap(d.gap_md)
         .child(sliders)
         .child(gate_status);
 
@@ -300,9 +302,9 @@ pub fn render_gate_plugin(
         .flex()
         .flex_col()
         .flex_shrink_0()
-        .gap_3()
-        .child(render_section_title("OUTPUT", theme))
-        .child(render_gr_meter(-attenuation_db, -40.0, theme))
+        .gap(d.gap_md)
+        .child(render_section_title(d, "OUTPUT", theme))
+        .child(render_gr_meter(d, -attenuation_db, -40.0, theme))
         .child(render_knob(
             entity.clone(),
             plugin_idx,
@@ -319,10 +321,10 @@ pub fn render_gate_plugin(
         ));
 
     // === Main layout: 3 columns, centered ===
-    div().w_full().flex().justify_center().p_3().child(
+    div().w_full().flex().justify_center().p(d.pad_x).child(
         div()
             .flex()
-            .gap_4()
+            .gap(d.section)
             .child(setup_col)
             .child(center_col)
             .child(right_col),

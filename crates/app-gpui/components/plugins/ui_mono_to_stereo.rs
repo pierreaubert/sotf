@@ -8,6 +8,7 @@
 
 use super::common::{render_knob, render_section_title, render_toggle};
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -27,6 +28,7 @@ pub struct MonoToStereoRenderState {
 
 /// Render the MonoToStereo plugin
 pub fn render_mono_to_stereo_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: MonoToStereoRenderState,
@@ -35,17 +37,17 @@ pub fn render_mono_to_stereo_plugin(
     div()
         .flex()
         .flex_col()
-        .gap_4()
+        .gap(d.section)
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(render_section_title("STEREO WIDENING", theme))
+                .gap(d.gap)
+                .child(render_section_title(d, "STEREO WIDENING", theme))
                 .child(
                     div()
                         .flex()
-                        .gap_4()
+                        .gap(d.section)
                         .justify_around()
                         .child(render_knob(
                             entity.clone(),
@@ -81,13 +83,13 @@ pub fn render_mono_to_stereo_plugin(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(render_section_title("COMPLEMENTARY EQ", theme))
+                .gap(d.gap)
+                .child(render_section_title(d, "COMPLEMENTARY EQ", theme))
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap_4()
+                        .gap(d.section)
                         .child(render_toggle(
                             entity.clone(),
                             plugin_idx,
@@ -98,8 +100,8 @@ pub fn render_mono_to_stereo_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        .when(state.enable_comp_eq, |d| {
-                            d.child(render_knob(
+                        .when(state.enable_comp_eq, |el| {
+                            el.child(render_knob(
                                 entity.clone(),
                                 plugin_idx,
                                 "EQ Depth",
@@ -120,12 +122,12 @@ pub fn render_mono_to_stereo_plugin(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(render_section_title("DECORRELATION", theme))
+                .gap(d.gap)
+                .child(render_section_title(d, "DECORRELATION", theme))
                 .child(
                     div()
                         .flex()
-                        .gap_4()
+                        .gap(d.section)
                         .justify_around()
                         .child(render_knob(
                             entity.clone(),

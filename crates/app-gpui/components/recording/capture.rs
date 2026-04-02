@@ -3,6 +3,7 @@
 //! Run test signals per channel, display state, and plot results.
 
 use crate::app::types::{ChannelRecordingState, RecordingResult, RecordingSignalType};
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -552,6 +553,7 @@ impl PlayerView {
 
     /// Render channel status section with recording controls
     fn render_channel_status_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let is_recording = state.app.measurement_state.recording_state.is_recording();
@@ -640,8 +642,8 @@ impl PlayerView {
                     let warning_bg = theme.warning_background;
                     stack.child(
                         div()
-                            .p_3()
-                            .rounded_md()
+                            .p(d.pad_x)
+                            .rounded(d.r_md)
                             .bg(warning_bg)
                             .border_1()
                             .border_color(theme.warning)
@@ -673,6 +675,7 @@ impl PlayerView {
     /// Groups by speaker (channel_index). With multi-mic, shows mic sub-statuses
     /// within each speaker row.
     fn render_channel_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = crate::components::design::Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
@@ -688,7 +691,7 @@ impl PlayerView {
             return VStack::new()
                 .spacing(StackSpacing::Sm)
                 .child(
-                    div().p_4().rounded_md().bg(theme.surface).child(
+                    div().p(d.card).rounded(d.r_md).bg(theme.surface).child(
                         Text::new(
                             "No channels configured. Please go back and configure your devices.",
                         )
@@ -756,16 +759,16 @@ impl PlayerView {
                     let mut row = div()
                         .flex()
                         .flex_col()
-                        .gap_1()
-                        .p_2()
-                        .rounded_md()
+                        .gap(d.grid)
+                        .p(d.pad_y)
+                        .rounded(d.r_md)
                         .bg(theme.surface)
                         .child(
                             // Main speaker row
                             div()
                                 .flex()
                                 .items_center()
-                                .gap_3()
+                                .gap(d.gap_md)
                                 .child(
                                     div().w(px(100.0)).child(
                                         Text::new(format!("{}:", speaker_name))
@@ -2127,6 +2130,7 @@ impl PlayerView {
     /// Render the migration confirmation modal
     /// Using a simple manual modal instead of Dialog component to debug click issues
     pub(crate) fn render_migration_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let rec_state = &state.app.measurement_state.recording_state;
@@ -2184,7 +2188,7 @@ impl PlayerView {
                     .bg(theme.surface)
                     .border_1()
                     .border_color(theme.accent)
-                    .rounded_lg()
+                    .rounded(d.r_lg)
                     .shadow_lg()
                     .overflow_hidden()
                     // Header
@@ -2193,13 +2197,13 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .px_4()
-                            .py_3()
+                            .px(d.card)
+                            .py(d.pad_x)
                             .border_b_1()
                             .border_color(theme.border)
                             .child(
                                 div()
-                                    .text_lg()
+                                    .text_size(d.text_lg)
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(theme.text_primary)
                                     .child("Convert Recording Format"),
@@ -2207,7 +2211,7 @@ impl PlayerView {
                     )
                     // Content
                     .child(
-                        div().px_4().py_4().child(
+                        div().px(d.card).py(d.card).child(
                             VStack::new()
                                 .spacing(StackSpacing::Md)
                                 .child(
@@ -2268,18 +2272,18 @@ impl PlayerView {
                         div()
                             .flex()
                             .justify_end()
-                            .gap_3()
-                            .px_4()
-                            .py_3()
+                            .gap(d.gap_md)
+                            .px(d.card)
+                            .py(d.pad_x)
                             .border_t_1()
                             .border_color(theme.border)
                             // Cancel button - simple div
                             .child(
                                 div()
                                     .id("migration-cancel-btn")
-                                    .px_3()
-                                    .py_2()
-                                    .rounded_md()
+                                    .px(d.pad_x)
+                                    .py(d.pad_y)
+                                    .rounded(d.r_md)
                                     .bg(theme.surface_hover)
                                     .text_color(theme.text_secondary)
                                     .cursor_pointer()
@@ -2307,9 +2311,9 @@ impl PlayerView {
                             .child(
                                 div()
                                     .id("migration-convert-btn")
-                                    .px_3()
-                                    .py_2()
-                                    .rounded_md()
+                                    .px(d.pad_x)
+                                    .py(d.pad_y)
+                                    .rounded(d.r_md)
                                     .bg(theme.accent)
                                     .text_color(theme.text_on_accent)
                                     .cursor_pointer()

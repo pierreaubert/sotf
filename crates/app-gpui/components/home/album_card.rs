@@ -4,6 +4,7 @@
 //! Used in both grid and list views.
 
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
 use crate::ui::ALBUM_CARD_WIDTH_REMS;
@@ -98,11 +99,12 @@ impl AlbumCard {
 }
 
 impl RenderOnce for AlbumCard {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         match self.mode {
-            AlbumCardMode::Grid => self.render_grid(),
-            AlbumCardMode::List => self.render_list(),
-            AlbumCardMode::Compact => self.render_compact(),
+            AlbumCardMode::Grid => self.render_grid(d),
+            AlbumCardMode::List => self.render_list(d),
+            AlbumCardMode::Compact => self.render_compact(d),
         }
     }
 }
@@ -192,6 +194,7 @@ impl AlbumCard {
         index: usize,
         theme: &Theme,
         state: &Option<Entity<AppState>>,
+        d: &Ds,
     ) -> impl IntoElement {
         let format = Self::get_format(album);
         let sample_info = Self::format_sample_info(album);
@@ -201,16 +204,16 @@ impl AlbumCard {
         div()
             .flex()
             .items_center()
-            .gap_1()
-            .text_xs()
+            .gap(d.grid)
+            .text_size(d.text_xs)
             .text_color(theme.text_muted)
             // Format (e.g., FLAC) - no wrapper div needed
-            .when_some(format, |d, fmt| d.child(fmt))
+            .when_some(format, |el, fmt| el.child(fmt))
             // Sample rate info (e.g., 24/44.1k)
-            .when_some(sample_info, |d, info| d.child(info))
+            .when_some(sample_info, |el, info| el.child(info))
             // Dynamic range with icon
-            .when_some(dr, |d, dr_val| {
-                d.child(
+            .when_some(dr, |el, dr_val| {
+                el.child(
                     div()
                         .flex()
                         .items_center()
@@ -230,7 +233,7 @@ impl AlbumCard {
             .child(Self::build_heart_icon(album, index, theme, state))
     }
 
-    fn render_grid(self) -> AnyElement {
+    fn render_grid(self, d: Ds) -> AnyElement {
         // Card and thumbnail share the same width (card is sized by its thumbnail)
         let size_rems = ALBUM_CARD_WIDTH_REMS;
         let theme = self.theme;
@@ -247,13 +250,13 @@ impl AlbumCard {
         div()
             .id(("album-card", index))
             .w(rems(size_rems))
-            .rounded_lg()
+            .rounded(d.r_lg)
             .cursor_pointer()
-            .when(self.is_selected, |d| {
+            .when(self.is_selected, |el| {
                 // Glow effect for selected state
                 let mut bg = theme.accent;
                 bg.a = 0.1;
-                d.shadow_md().border_1().border_color(theme.accent).bg(bg)
+                el.shadow_md().border_1().border_color(theme.accent).bg(bg)
             })
             // No background for unselected cards (transparent)
             .hover(|style| style.bg(theme.surface_hover))
@@ -267,7 +270,7 @@ impl AlbumCard {
                         div()
                             .w(rems(size_rems))
                             .h(rems(size_rems))
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .overflow_hidden()
                             .flex()
                             .items_center()
@@ -292,8 +295,8 @@ impl AlbumCard {
                     .child(
                         div()
                             .w_full()
-                            .mt_1()
-                            .text_xs()
+                            .mt(d.grid)
+                            .text_size(d.text_xs)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .overflow_hidden()
@@ -317,16 +320,16 @@ impl AlbumCard {
                         div()
                             .flex()
                             .items_center()
-                            .gap_1()
+                            .gap(d.grid)
                             .text_size(rems(0.5625))
                             .text_color(theme.text_muted)
                             // Format (e.g., FLAC) - pass string directly, no wrapper div
-                            .when_some(format, |d, fmt| d.child(fmt))
+                            .when_some(format, |el, fmt| el.child(fmt))
                             // Sample rate info (e.g., 24/44.1k)
-                            .when_some(sample_info, |d, info| d.child(info))
+                            .when_some(sample_info, |el, info| el.child(info))
                             // Dynamic range with icon - keep wrapper for flex layout
-                            .when_some(dr, |d, dr_val| {
-                                d.child(
+                            .when_some(dr, |el, dr_val| {
+                                el.child(
                                     div()
                                         .flex()
                                         .items_center()
@@ -349,7 +352,7 @@ impl AlbumCard {
             .into_any_element()
     }
 
-    fn render_list(self) -> AnyElement {
+    fn render_list(self, d: Ds) -> AnyElement {
         let theme = self.theme;
         let album = self.album;
         let index = self.index;
@@ -358,13 +361,13 @@ impl AlbumCard {
         div()
             .id(("album-row", index))
             .w_full()
-            .p_3()
-            .rounded_md()
-            .when(self.is_selected, |d| {
+            .p(d.pad_x)
+            .rounded(d.r_md)
+            .when(self.is_selected, |el| {
                 // Glow effect for selected state
                 let mut bg = theme.accent;
                 bg.a = 0.1;
-                d.shadow_md().border_1().border_color(theme.accent).bg(bg)
+                el.shadow_md().border_1().border_color(theme.accent).bg(bg)
             })
             // No background for unselected cards (transparent)
             .hover(|style| style.bg(theme.surface_hover))
@@ -380,17 +383,17 @@ impl AlbumCard {
                     )
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .text_color(theme.text_secondary)
                             .child(album.artist()),
                     )
                     // Metadata line: FORMAT [DR icon]DR #count [heart]
-                    .child(Self::build_metadata_line(&album, index, &theme, &state)),
+                    .child(Self::build_metadata_line(&album, index, &theme, &state, &d)),
             )
             .into_any_element()
     }
 
-    fn render_compact(self) -> AnyElement {
+    fn render_compact(self, d: Ds) -> AnyElement {
         let theme = self.theme;
         let album = self.album;
         let index = self.index;
@@ -400,13 +403,13 @@ impl AlbumCard {
             .id(("album-compact", index))
             .w_full()
             .pl_8()
-            .p_2()
-            .rounded_md()
-            .when(self.is_selected, |d| {
+            .p(d.pad_y)
+            .rounded(d.r_md)
+            .when(self.is_selected, |el| {
                 // Glow effect for selected state
                 let mut bg = theme.accent;
                 bg.a = 0.1;
-                d.shadow_md().border_1().border_color(theme.accent).bg(bg)
+                el.shadow_md().border_1().border_color(theme.accent).bg(bg)
             })
             // No background for unselected cards (transparent)
             .hover(|style| style.bg(theme.surface_hover))
@@ -419,7 +422,7 @@ impl AlbumCard {
                     .child(
                         div().flex().flex_col().child(album.title.clone()).child(
                             div()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(theme.text_muted)
                                 .child(album.artist()),
                         ),
@@ -428,8 +431,8 @@ impl AlbumCard {
                         div()
                             .flex()
                             .items_center()
-                            .gap_1()
-                            .text_xs()
+                            .gap(d.grid)
+                            .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
                             .child("#")
                             .child(album.tracks.len().to_string())

@@ -1,4 +1,5 @@
 use crate::app::types::RoomEqOptimizationMode;
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -1695,6 +1696,7 @@ impl PlayerView {
 
     /// Render the list of channel configurations
     fn render_channel_config_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let speaker_configs = state
@@ -1721,7 +1723,7 @@ impl PlayerView {
         let rows: Vec<_> = speaker_configs
             .iter()
             .enumerate()
-            .map(|(idx, config)| render_channel_config_row(idx, config, &theme, &view))
+            .map(|(idx, config)| render_channel_config_row(idx, config, &theme, &view, d))
             .collect();
 
         VStack::new()

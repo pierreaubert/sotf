@@ -1,4 +1,5 @@
 use crate::app::types::room_eq::InteractiveChartStateWrapper;
+use crate::components::design::Ds;
 use crate::components::graphs::common::theme_to_chart_theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -12,6 +13,7 @@ use gpui_ui_kit::{
 
 impl PlayerView {
     pub(crate) fn render_room_eq_optimize(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
@@ -181,7 +183,7 @@ impl PlayerView {
                                             .flex()
                                             .flex_row()
                                             .items_center()
-                                            .gap_2()
+                                            .gap(d.gap)
                                             .child(
                                                 Text::new(if is_running {
                                                     format!(

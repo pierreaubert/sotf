@@ -7,6 +7,7 @@
 
 use super::common::{render_knob, render_section_title};
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -21,6 +22,7 @@ pub struct GainRenderState {
 
 /// Render the Gain plugin
 pub fn render_gain_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: GainRenderState,
@@ -29,8 +31,8 @@ pub fn render_gain_plugin(
     div()
         .flex()
         .flex_col()
-        .gap_2()
-        .child(render_section_title("GAIN CONTROL", theme))
+        .gap(d.gap)
+        .child(render_section_title(d, "GAIN CONTROL", theme))
         .child(
             div()
                 .flex()
