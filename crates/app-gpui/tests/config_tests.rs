@@ -126,6 +126,7 @@ fn test_config_serialization() {
         tutorial_completed: false,
         seen_hints: Vec::new(),
         max_cpu_cores: None,
+        design_language: None,
     };
     let json = serde_json::to_string(&config).unwrap();
     let deserialized: Config = serde_json::from_str(&json).unwrap();

@@ -879,7 +879,11 @@ impl Default for MultiMeasurementUiConfig {
 }
 
 fn default_room_smooth_n() -> usize {
-    2 // 1/2 octave loss smoothing
+    6 // 1/6 octave smoothing
+}
+
+fn default_room_strategy() -> String {
+    "lshade".to_string()
 }
 fn default_room_tolerance() -> f64 {
     1e-5
@@ -897,6 +901,8 @@ pub struct RoomEqOptimizerConfig {
     pub fir: RoomEqFirConfig,
     pub multi_speaker_mode: MultiSpeakerMode,
     pub algorithm: String,
+    #[serde(default = "default_room_strategy")]
+    pub strategy: String,
     pub num_filters: usize,
     pub min_q: f64,
     pub max_q: f64,
@@ -912,6 +918,8 @@ pub struct RoomEqOptimizerConfig {
     pub loss_type: String,
     pub psychoacoustic: bool,
     pub asymmetric_loss: bool,
+    #[serde(default)]
+    pub smooth: bool,
     #[serde(default = "default_room_smooth_n")]
     pub smooth_n: usize,
     #[serde(default = "default_room_tolerance")]
@@ -950,6 +958,10 @@ pub struct RoomEqOptimizerConfig {
     pub sub_config: SubOptimizerUiConfig,
     #[serde(default)]
     pub channel_matching: ChannelMatchingUiConfig,
+    /// True when settings were imported from a backend config file (recordings.json).
+    /// When set, `apply_smart_defaults()` skips overriding feature toggles.
+    #[serde(default)]
+    pub imported_from_file: bool,
 }
 
 impl Default for RoomEqOptimizerConfig {
@@ -959,6 +971,7 @@ impl Default for RoomEqOptimizerConfig {
             fir: RoomEqFirConfig::default(),
             multi_speaker_mode: MultiSpeakerMode::Combined,
             algorithm: "autoeq:de".to_string(),
+            strategy: "lshade".to_string(),
             num_filters: 7,
             min_q: 0.5,
             max_q: 6.0,
@@ -974,6 +987,7 @@ impl Default for RoomEqOptimizerConfig {
             loss_type: "flat".to_string(),
             psychoacoustic: true,
             asymmetric_loss: true,
+            smooth: false,
             smooth_n: default_room_smooth_n(),
             tolerance: 1e-5,
             atolerance: 1e-5,
@@ -994,8 +1008,255 @@ impl Default for RoomEqOptimizerConfig {
             multi_measurement: MultiMeasurementUiConfig::default(),
             sub_config: SubOptimizerUiConfig::default(),
             channel_matching: ChannelMatchingUiConfig::default(),
+            imported_from_file: false,
         }
     }
+}
+
+impl RoomEqOptimizerConfig {
+    /// Import optimizer parameters and feature toggles from a backend `OptimizerConfig`.
+    ///
+    /// This is used when loading a RoomConfig JSON file so that the UI
+    /// uses the same optimizer settings as the roomeq CLI.
+    /// Sets `imported_from_file = true` so that `apply_smart_defaults()` will
+    /// not override the imported feature toggle state.
+    pub fn import_from_backend(&mut self, backend: &autoeq::roomeq::OptimizerConfig) {
+        // Core optimizer parameters
+        self.algorithm = backend.algorithm.clone();
+        self.strategy = backend.strategy.clone();
+        self.num_filters = backend.num_filters;
+        self.min_q = backend.min_q;
+        self.max_q = backend.max_q;
+        self.min_db = backend.min_db;
+        self.max_db = backend.max_db;
+        self.min_freq = backend.min_freq;
+        self.max_freq = backend.max_freq;
+        self.max_iter = backend.max_iter;
+        self.population = backend.population;
+        self.peq_model = backend.peq_model.clone();
+        self.loss_type = backend.loss_type.clone();
+        self.psychoacoustic = backend.psychoacoustic;
+        self.asymmetric_loss = backend.asymmetric_loss;
+        self.tolerance = backend.tolerance;
+        self.atolerance = backend.atolerance;
+        self.refine = backend.refine;
+        self.local_algo = backend.local_algo.clone();
+        self.seed = backend.seed;
+
+        // FIR configuration
+        if let Some(ref fir) = backend.fir {
+            self.fir.taps = fir.taps;
+            self.fir.phase = fir.phase.clone();
+            self.fir.correct_excess_phase = fir.correct_excess_phase;
+            self.fir.phase_smoothing = fir.phase_smoothing;
+            self.fir.pre_ringing = fir.pre_ringing.as_ref().map(|pr| PreRingingConfig {
+                threshold_db: pr.threshold_db,
+                max_time_s: pr.max_time_s,
+            });
+        }
+
+        // Mixed-phase configuration
+        if let Some(ref mp) = backend.mixed_phase {
+            self.mixed_phase = MixedPhaseUiConfig {
+                max_fir_length_ms: mp.max_fir_length_ms,
+                pre_ringing_threshold_db: mp.pre_ringing_threshold_db,
+                min_spatial_depth: mp.min_spatial_depth,
+                phase_smoothing_octaves: mp.phase_smoothing_octaves,
+            };
+        }
+
+        // Processing mode → optimization mode
+        self.mode = match backend.processing_mode {
+            autoeq::roomeq::ProcessingMode::LowLatency => RoomEqOptimizationMode::Iir,
+            autoeq::roomeq::ProcessingMode::PhaseLinear => RoomEqOptimizationMode::Fir,
+            autoeq::roomeq::ProcessingMode::Hybrid => RoomEqOptimizationMode::Mixed,
+            autoeq::roomeq::ProcessingMode::MixedPhase => RoomEqOptimizationMode::MixedPhase,
+        };
+
+        // Feature toggles: only override from backend when explicitly present.
+        if let Some(ref tilt) = backend.target_tilt {
+            self.target_tilt.enabled = true;
+            self.target_tilt.tilt_type = match tilt.tilt_type {
+                autoeq::roomeq::TiltType::Harman => "harman".to_string(),
+                autoeq::roomeq::TiltType::Custom => "custom".to_string(),
+                autoeq::roomeq::TiltType::Flat => "flat".to_string(),
+            };
+            self.target_tilt.slope = tilt.slope_db_per_octave;
+            self.target_tilt.reference_freq = tilt.reference_freq;
+            self.target_tilt.bass_shelf_db = tilt.bass_shelf_db;
+            self.target_tilt.bass_shelf_freq = tilt.bass_shelf_freq;
+        } else {
+            self.target_tilt.enabled = false;
+        }
+
+        self.excursion_protection.enabled = backend
+            .excursion_protection
+            .as_ref()
+            .is_some_and(|e| e.enabled);
+        if let Some(ref ep) = backend.excursion_protection {
+            self.excursion_protection.auto_detect_f3 = ep.auto_detect_f3;
+            self.excursion_protection.manual_f3_hz = ep.manual_f3_hz.unwrap_or(40.0);
+            self.excursion_protection.filter_order = ep.filter_order;
+            self.excursion_protection.filter_type = match ep.filter_type {
+                autoeq::roomeq::HighpassType::Butterworth => "bw".to_string(),
+                autoeq::roomeq::HighpassType::LinkwitzRiley => "lr".to_string(),
+            };
+            self.excursion_protection.margin_octaves = ep.margin_octaves;
+        }
+
+        self.schroeder_split.enabled = backend.schroeder_split.as_ref().is_some_and(|s| s.enabled);
+        if let Some(ref ss) = backend.schroeder_split {
+            self.schroeder_split.schroeder_freq = ss.schroeder_freq;
+            self.schroeder_split.low_freq_max_q = ss.low_freq_config.max_q;
+            self.schroeder_split.low_freq_allow_boost = ss.low_freq_config.allow_boost;
+            self.schroeder_split.low_freq_max_db = ss.low_freq_config.max_db;
+            self.schroeder_split.high_freq_max_q = ss.high_freq_config.max_q;
+            self.schroeder_split.high_freq_shelving_only = ss.high_freq_config.shelving_only;
+        }
+
+        self.broadband_target_matching.enabled = backend
+            .broadband_target_matching
+            .as_ref()
+            .is_some_and(|b| b.enabled);
+
+        self.allow_delay = backend.allow_delay.unwrap_or(false);
+
+        self.gd_opt.enabled = backend.gd_opt.as_ref().is_some_and(|g| g.enabled);
+        if let Some(ref gd) = backend.gd_opt {
+            self.gd_opt.target_ms = gd.target_ms;
+        }
+
+        self.vog.enabled = backend.vog.as_ref().is_some_and(|v| v.enabled);
+        if let Some(ref vog) = backend.vog {
+            self.vog.reference_channel = vog.reference_channel.clone();
+        }
+
+        self.phase_alignment.enabled = backend.phase_alignment.as_ref().is_some_and(|p| p.enabled);
+        if let Some(ref pa) = backend.phase_alignment {
+            self.phase_alignment.min_freq = pa.min_freq;
+            self.phase_alignment.max_freq = pa.max_freq;
+            self.phase_alignment.optimize_polarity = pa.optimize_polarity;
+            self.phase_alignment.max_delay_ms = pa.max_delay_ms;
+        }
+
+        self.multi_seat.enabled = backend.multi_seat.as_ref().is_some_and(|m| m.enabled);
+        if let Some(ref ms) = backend.multi_seat {
+            self.multi_seat.strategy = match ms.strategy {
+                autoeq::roomeq::MultiSeatStrategy::MinimizeVariance => "variance".to_string(),
+                autoeq::roomeq::MultiSeatStrategy::PrimaryWithConstraints => {
+                    "primary".to_string()
+                }
+                autoeq::roomeq::MultiSeatStrategy::Average => "average".to_string(),
+            };
+            self.multi_seat.primary_seat = ms.primary_seat;
+            self.multi_seat.max_deviation_db = ms.max_deviation_db;
+        }
+
+        if let Some(ref mm) = backend.multi_measurement {
+            self.multi_measurement.enabled = true;
+            self.multi_measurement.strategy = match mm.strategy {
+                autoeq::roomeq::MultiMeasurementStrategy::Average => "average".to_string(),
+                autoeq::roomeq::MultiMeasurementStrategy::WeightedSum => {
+                    "weighted_sum".to_string()
+                }
+                autoeq::roomeq::MultiMeasurementStrategy::Minimax => "minimax".to_string(),
+                autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized => {
+                    "variance_penalized".to_string()
+                }
+                autoeq::roomeq::MultiMeasurementStrategy::SpatialRobustness => {
+                    "spatial_robustness".to_string()
+                }
+            };
+            self.multi_measurement.variance_lambda = mm.variance_lambda;
+            self.multi_measurement.weights = mm.weights.clone().unwrap_or_default();
+        } else {
+            self.multi_measurement.enabled = false;
+        }
+
+        // Sub-specific optimizer overrides
+        self.sub_config.enabled = backend.sub_config.is_some();
+        if let Some(ref sc) = backend.sub_config {
+            self.sub_config.num_filters = sc.num_filters;
+            self.sub_config.max_db = sc.max_db;
+            self.sub_config.min_db = sc.min_db;
+            self.sub_config.min_q = sc.min_q;
+            self.sub_config.max_q = sc.max_q;
+        }
+
+        // Channel matching correction
+        self.channel_matching.enabled =
+            backend.channel_matching.as_ref().is_some_and(|c| c.enabled);
+        if let Some(ref cm) = backend.channel_matching {
+            self.channel_matching.threshold_db = cm.threshold_db;
+            self.channel_matching.max_filters = cm.max_filters;
+        }
+
+        self.imported_from_file = true;
+    }
+}
+
+/// Compute the average slope for L and R channels in dB/octave.
+///
+/// Uses linear regression on the 200 Hz – 20 kHz range.
+/// Returns `(slope, recommendation_min, recommendation_max)`.
+pub fn compute_lr_slope(measurements: &[ChannelMeasurement]) -> Option<(f64, f64, f64)> {
+    let lr_names = ["L", "R"];
+    let mut slopes = Vec::new();
+
+    for meas in measurements {
+        let name_upper = meas.channel_name.to_uppercase();
+        if !lr_names.iter().any(|&n| name_upper == n) {
+            continue;
+        }
+
+        let freqs = &meas.measurement.frequencies;
+        let spl = &meas.measurement.magnitude_db;
+
+        let mut log_freqs = Vec::new();
+        let mut dbs = Vec::new();
+
+        for (i, &f) in freqs.iter().enumerate() {
+            if (200.0..=20000.0).contains(&f)
+                && let Some(&db) = spl.get(i)
+            {
+                log_freqs.push(f64::from(f).log10());
+                dbs.push(f64::from(db));
+            }
+        }
+
+        if log_freqs.len() < 2 {
+            continue;
+        }
+
+        // Linear regression: db = slope * log_freq + intercept
+        let n = log_freqs.len() as f64;
+        let sum_x: f64 = log_freqs.iter().sum();
+        let sum_y: f64 = dbs.iter().sum();
+        let sum_xy: f64 = log_freqs.iter().zip(dbs.iter()).map(|(x, y)| x * y).sum();
+        let sum_xx: f64 = log_freqs.iter().map(|x| x * x).sum();
+
+        let denom = n * sum_xx - sum_x * sum_x;
+        if denom.abs() < 1e-10 {
+            continue;
+        }
+
+        // slope in dB per log10(Hz) = dB/decade
+        // Convert to dB/octave: 1 octave = log10(2) ≈ 0.301 in log10 space
+        let slope_log10 = (n * sum_xy - sum_x * sum_y) / denom;
+        let slope_db_per_octave = slope_log10 * std::f64::consts::LOG10_2;
+
+        slopes.push(slope_db_per_octave);
+    }
+
+    if slopes.is_empty() {
+        return None;
+    }
+
+    let avg_slope: f64 = slopes.iter().sum::<f64>() / slopes.len() as f64;
+    let recommendation_min = avg_slope * 0.8;
+    let recommendation_max = avg_slope * 1.1;
+
+    Some((avg_slope, recommendation_min, recommendation_max))
 }
 
 /// Optimization status

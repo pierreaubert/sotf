@@ -10,7 +10,6 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
-use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize, TextWeight,
     theme::ThemeExt,

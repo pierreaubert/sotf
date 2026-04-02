@@ -89,10 +89,24 @@ impl Default for EngineConfig {
 }
 
 impl EngineConfig {
+    /// Sanitize values that could cause panics or undefined behaviour.
+    /// Called after deserialization to guard against corrupt config files.
+    pub fn sanitize(&mut self) {
+        if self.frame_size == 0 {
+            log::warn!("EngineConfig: frame_size was 0, resetting to 1024");
+            self.frame_size = 1024;
+        }
+        if self.output_sample_rate == 0 {
+            log::warn!("EngineConfig: output_sample_rate was 0, resetting to 48000");
+            self.output_sample_rate = 48000;
+        }
+    }
+
     /// Calculate queue capacity in frames
     pub fn queue_capacity_frames(&self) -> usize {
+        let fs = self.frame_size.max(1);
         let total_frames = (self.output_sample_rate as u64 * self.buffer_ms as u64) / 1000;
-        (total_frames as usize).div_ceil(self.frame_size)
+        (total_frames as usize).div_ceil(fs)
     }
 
     /// Calculate total buffer size in frames
@@ -104,6 +118,7 @@ impl EngineConfig {
     pub fn load_from_file(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         let json = std::fs::read_to_string(path)?;
         let mut config: EngineConfig = serde_json::from_str(&json)?;
+        config.sanitize();
 
         // Check if migration is needed
         const LATEST_VERSION: u32 = 1;
@@ -187,5 +202,30 @@ mod tests {
         // 4410 / 512 = ~8.6, rounds up to 9 chunks
         let capacity = config.queue_capacity_frames();
         assert_eq!(capacity, 9);
+    }
+
+    #[test]
+    fn test_frame_size_zero_does_not_panic() {
+        let config = EngineConfig {
+            frame_size: 0,
+            buffer_ms: 200,
+            output_sample_rate: 48000,
+            ..Default::default()
+        };
+        // Should not panic — treats frame_size 0 as 1
+        let capacity = config.queue_capacity_frames();
+        assert_eq!(capacity, 9600);
+    }
+
+    #[test]
+    fn test_sanitize_fixes_zero_frame_size() {
+        let mut config = EngineConfig {
+            frame_size: 0,
+            output_sample_rate: 0,
+            ..Default::default()
+        };
+        config.sanitize();
+        assert_eq!(config.frame_size, 1024);
+        assert_eq!(config.output_sample_rate, 48000);
     }
 }

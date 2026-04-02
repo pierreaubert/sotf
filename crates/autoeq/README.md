@@ -4,7 +4,10 @@
 
 ## Introduction
 
-AutoEQ is a Rust CLI toolkit for computing parametric EQ corrections. It uses global optimization algorithms to find optimal IIR filter parameters that minimize deviation from a target response or maximize perceptual preference scores.
+AutoEQ and RoomEQ are rust CLIs for computing corrections.
+
+- AutoEQ does parametric EQ corrections for Headphone and anechoic measurements of speakers (Spinorama or CEA2034).
+- RoomEQ does room correction for stereo systems up to multi-channel systems and multi-subwoofer systems. It can generate IIR, FIR and Hybrid filters and optimise for single or multiple positions.
 
 **Note:** A graphical desktop application is available in a separate repository: [SotF](https://github.com/pierreaubert/sotf)
 
