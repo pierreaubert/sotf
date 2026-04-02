@@ -1,5 +1,6 @@
 //! Misc settings content (CPU cores, etc.)
 
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -11,6 +12,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let max_cores = state.app.ui_state.max_cpu_cores;
@@ -24,10 +26,10 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(d.section_lg)
             .child(
                 div()
-                    .text_sm()
+                    .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
                     .child("Miscellaneous"),
@@ -36,10 +38,10 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_4()
-                    .p_4()
+                    .gap(d.section)
+                    .p(d.card)
                     .bg(theme.background_secondary)
-                    .rounded_md()
+                    .rounded(d.r_md)
                     .border_1()
                     .border_color(theme.border)
                     // CPU cores row

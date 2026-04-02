@@ -67,6 +67,7 @@ pub use ui_spectrum::{
 pub use ui_upmixer::render_upmixer_plugin;
 
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use custom_view_registry::{CustomViewRenderContext, GpuiViewRegistry};
@@ -149,7 +150,9 @@ pub fn render_plugin_content(
     }
 
     // Fallback: generic layout renderer for plugins with PluginLayout definitions
+    let d = Ds::from_cx(cx);
     ui_layout_renderer::render_from_layout(
+        &d,
         entity.clone(),
         plugin_idx,
         settings,

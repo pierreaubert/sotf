@@ -7,6 +7,7 @@
 //! 4. Review - View results, apply to playback, export
 
 use crate::app::types::{PluginUpdateType, Screen, SpinoramaStep};
+use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -341,6 +342,7 @@ impl PlayerView {
             .detach();
         }
 
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let current_step = state.app.measurement_state.spinorama_eq_state.step;
@@ -366,13 +368,14 @@ impl PlayerView {
                     .id("spinorama-eq-content")
                     .flex_1()
                     .overflow_y_scroll()
-                    .p_4()
+                    .p(d.card)
                     .child(content),
             )
     }
 
     /// Render the spinorama EQ screen header with step indicators
     fn render_spinorama_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
@@ -507,8 +510,8 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_between()
-            .px_4()
-            .py_4()
+            .px(d.card)
+            .py(d.card)
             .bg(theme.background_secondary)
             .border_b_1()
             .border_color(theme.border)
@@ -522,7 +525,7 @@ impl PlayerView {
                     .w(rems(2.5))
                     .h(rems(2.0))
                     .cursor_pointer()
-                    .rounded_md()
+                    .rounded(d.r_md)
                     .hover(move |s| s.bg(surface_hover))
                     .child(Icon::new(IconName::Home).color(text_muted))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {

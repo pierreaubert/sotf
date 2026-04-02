@@ -1,5 +1,6 @@
 //! Appearance settings content (Theme and Language)
 
+use crate::components::design::Ds;
 use crate::i18n::Language;
 use crate::theme::ThemeId;
 use crate::ui::PlayerView;
@@ -12,25 +13,26 @@ use gpui_ui_kit::{
 impl PlayerView {
     /// Render theme settings content
     pub(crate) fn render_theme_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme_id = state.app.ui_state.theme_id;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
 
-        div().flex().flex_col().gap_6().child(
+        div().flex().flex_col().gap(d.section_lg).child(
             div()
                 .flex()
                 .flex_col()
-                .gap_3()
+                .gap(d.gap_md)
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child(translations.settings_theme),
                 )
                 .child({
-                    let mut container = div().flex().flex_wrap().gap_4();
+                    let mut container = div().flex().flex_wrap().gap(d.section);
 
                     for id in ThemeId::all().iter() {
                         let is_selected = theme_id == *id;
@@ -56,19 +58,20 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
 
-        div().flex().flex_col().gap_6().child(
+        div().flex().flex_col().gap(d.section_lg).child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
+                .gap(d.gap)
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(translations.settings_language),
                 )
@@ -108,11 +111,12 @@ impl PlayerView {
         active_label: &'static str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         div()
             .flex()
             .flex_col()
             .w(rems(12.5))
-            .rounded_md()
+            .rounded(d.r_md)
             .overflow_hidden()
             .cursor_pointer()
             .border_2()
@@ -151,7 +155,7 @@ impl PlayerView {
                     .border_color(preview_theme.border)
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(preview_theme.text_primary)
                             .child(theme_id.name()),
@@ -162,24 +166,24 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_col()
-                    .p_3()
-                    .gap_2()
+                    .p(d.pad_x)
+                    .gap(d.gap)
                     .child(
                         // Background colors row
                         div()
                             .flex()
-                            .gap_1()
-                            .child(self.render_color_swatch(
+                            .gap(d.grid)
+                            .child(self.render_color_swatch(&d, 
                                 "BG",
                                 preview_theme.background,
                                 preview_theme.text_primary,
                             ))
-                            .child(self.render_color_swatch(
+                            .child(self.render_color_swatch(&d, 
                                 "Surf",
                                 preview_theme.surface,
                                 preview_theme.text_primary,
                             ))
-                            .child(self.render_color_swatch(
+                            .child(self.render_color_swatch(&d, 
                                 "Hover",
                                 preview_theme.surface_hover,
                                 preview_theme.text_primary,
@@ -189,18 +193,18 @@ impl PlayerView {
                         // Accent and text colors row
                         div()
                             .flex()
-                            .gap_1()
-                            .child(self.render_color_swatch(
+                            .gap(d.grid)
+                            .child(self.render_color_swatch(&d, 
                                 "Accent",
                                 preview_theme.accent,
                                 preview_theme.text_on_accent,
                             ))
-                            .child(self.render_color_swatch(
+                            .child(self.render_color_swatch(&d, 
                                 "Text",
                                 preview_theme.background,
                                 preview_theme.text_primary,
                             ))
-                            .child(self.render_color_swatch(
+                            .child(self.render_color_swatch(&d, 
                                 "Muted",
                                 preview_theme.background,
                                 preview_theme.text_muted,
@@ -210,18 +214,18 @@ impl PlayerView {
                         // Semantic colors row
                         div()
                             .flex()
-                            .gap_1()
-                            .child(self.render_color_swatch(
+                            .gap(d.grid)
+                            .child(self.render_color_swatch(&d, 
                                 "✓",
                                 preview_theme.success,
                                 preview_theme.text_on_accent,
                             ))
-                            .child(self.render_color_swatch(
+                            .child(self.render_color_swatch(&d, 
                                 "⚠",
                                 preview_theme.warning,
                                 preview_theme.text_on_accent,
                             ))
-                            .child(self.render_color_swatch(
+                            .child(self.render_color_swatch(&d, 
                                 "✗",
                                 preview_theme.error,
                                 preview_theme.text_on_accent,
@@ -232,13 +236,13 @@ impl PlayerView {
                         div()
                             .flex()
                             .flex_col()
-                            .gap_1()
-                            .pt_2()
+                            .gap(d.grid)
+                            .pt(d.pad_y)
                             .border_t_1()
                             .border_color(preview_theme.border)
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(preview_theme.text_muted)
                                     .child("Buttons"),
                             )
@@ -246,7 +250,7 @@ impl PlayerView {
                                 div()
                                     .flex()
                                     .flex_wrap()
-                                    .gap_1()
+                                    .gap(d.grid)
                                     .child(
                                         Button::new("preview-primary", "Pri")
                                             .variant(ButtonVariant::Primary)
@@ -286,7 +290,7 @@ impl PlayerView {
                             .child(
                                 div()
                                     .flex()
-                                    .gap_1()
+                                    .gap(d.grid)
                                     .child(
                                         Toggle::new("preview-toggle-off")
                                             .checked(false)
@@ -315,7 +319,7 @@ impl PlayerView {
                         .bg(current_theme.accent)
                         .child(
                             div()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(current_theme.text_on_accent)
                                 .child(format!("✓ {}", active_label)),
@@ -327,6 +331,7 @@ impl PlayerView {
     /// Render a small color swatch with label
     fn render_color_swatch(
         &self,
+        d: &Ds,
         label: &'static str,
         bg_color: gpui::Rgba,
         text_color: gpui::Rgba,
@@ -337,7 +342,7 @@ impl PlayerView {
             .items_center()
             .justify_center()
             .h(rems(2.0))
-            .rounded_sm()
+            .rounded(d.r_sm)
             .bg(bg_color)
             .border_1()
             .border_color(gpui::Rgba {
@@ -348,7 +353,7 @@ impl PlayerView {
             })
             .child(
                 div()
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(text_color)
                     .child(label),

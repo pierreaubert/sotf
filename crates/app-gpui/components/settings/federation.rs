@@ -1,6 +1,7 @@
 //! Federation Sources settings content
 
 use crate::app::federation::test_federation_connection;
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -16,6 +17,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -24,17 +26,17 @@ impl PlayerView {
         let mut content = div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap(d.section_lg)
             .child(
                 div()
-                    .text_sm()
+                    .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
                     .child("Library Sources"),
             )
             .child(
                 div()
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .text_color(theme.text_secondary)
                     .child("Configure remote libraries, streaming services, and radio stations."),
             )
@@ -46,7 +48,7 @@ impl PlayerView {
                     .items_center()
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
                             .child(format!("Sources ({})", sources.len())),
@@ -67,9 +69,9 @@ impl PlayerView {
         if sources.is_empty() {
             content = content.child(
                 div()
-                    .p_4()
+                    .p(d.card)
                     .bg(theme.background_secondary)
-                    .rounded_md()
+                    .rounded(d.r_md)
                     .border_1()
                     .border_color(theme.border)
                     .child(
@@ -126,6 +128,7 @@ impl PlayerView {
         translations: &crate::app::i18n::Translations,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let type_name = source.connection.type_name();
         let is_enabled = source.is_enabled;
         let display_name = source.display_name.clone();
@@ -165,10 +168,10 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap_2()
-            .p_4()
+            .gap(d.gap)
+            .p(d.card)
             .bg(theme.background_secondary)
-            .rounded_md()
+            .rounded(d.r_md)
             .border_1()
             .border_color(if is_enabled {
                 theme.accent
@@ -180,7 +183,7 @@ impl PlayerView {
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .gap(d.gap_md)
                     // Editable display name
                     .child(
                         Input::new(SharedString::from(format!("source-name-{source_idx}")))
@@ -199,11 +202,11 @@ impl PlayerView {
                     // Type badge
                     .child(
                         div()
-                            .px_2()
+                            .px(d.pad_y)
                             .py(px(2.0))
                             .bg(theme.background)
-                            .rounded_sm()
-                            .text_xs()
+                            .rounded(d.r_sm)
+                            .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
                             .child(type_name),
                     )
@@ -308,16 +311,16 @@ impl PlayerView {
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap(d.gap)
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
                             .child("Status:"),
                     )
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(d.text_xs)
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(status_color)
                             .child(status_label),
@@ -331,13 +334,13 @@ impl PlayerView {
                     let mut steps_col = div()
                         .flex()
                         .flex_col()
-                        .gap_1()
-                        .p_2()
+                        .gap(d.grid)
+                        .p(d.pad_y)
                         .bg(theme.background)
-                        .rounded_sm()
+                        .rounded(d.r_sm)
                         .child(
                             div()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_secondary)
                                 .child(format!("Connection diagnostic: {}:{}", diag.host, diag.port)),
@@ -354,10 +357,10 @@ impl PlayerView {
                             div()
                                 .flex()
                                 .items_center()
-                                .gap_2()
+                                .gap(d.gap)
                                 .child(
                                     div()
-                                        .text_xs()
+                                        .text_size(d.text_xs)
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(color)
                                         .w(px(36.0))
@@ -365,14 +368,14 @@ impl PlayerView {
                                 )
                                 .child(
                                     div()
-                                        .text_xs()
+                                        .text_size(d.text_xs)
                                         .text_color(theme.text_secondary)
                                         .w(px(100.0))
                                         .child(label),
                                 )
                                 .child(
                                     div()
-                                        .text_xs()
+                                        .text_size(d.text_xs)
                                         .text_color(color)
                                         .child(result.message().to_string()),
                                 ),
@@ -400,11 +403,11 @@ impl PlayerView {
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap_2()
+                                        .gap(d.gap)
                                         .child(
                                             div()
                                                 .w(px(120.0))
-                                                .text_xs()
+                                                .text_size(d.text_xs)
                                                 .text_color(theme.text_secondary)
                                                 .child(field_name),
                                         )
@@ -446,11 +449,11 @@ impl PlayerView {
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap_2()
+                                        .gap(d.gap)
                                         .child(
                                             div()
                                                 .w(px(120.0))
-                                                .text_xs()
+                                                .text_size(d.text_xs)
                                                 .text_color(theme.text_secondary)
                                                 .child(field_name),
                                         )
@@ -489,6 +492,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let progress = state.app.federation_scan_progress.clone();
@@ -516,8 +520,8 @@ impl PlayerView {
         div()
             .flex()
             .items_center()
-            .gap_2()
-            .px_4()
+            .gap(d.gap)
+            .px(d.card)
             .h(px(28.0))
             .bg(theme.background_secondary)
             .border_t_1()
@@ -528,24 +532,24 @@ impl PlayerView {
                     .flex_1()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap(d.gap)
                     // Thin progress bar
                     .child(
                         div()
                             .w(px(120.0))
                             .h(px(4.0))
                             .bg(theme.background)
-                            .rounded_sm()
+                            .rounded(d.r_sm)
                             .child(
                                 div()
                                     .h_full()
-                                    .rounded_sm()
+                                    .rounded(d.r_sm)
                                     .bg(theme.accent)
                                     .w(relative(bar_width_pct as f32 / 100.0)),
                             ),
                     )
                     // Status text
-                    .child(div().text_xs().text_color(theme.text_secondary).child(text)),
+                    .child(div().text_size(d.text_xs).text_color(theme.text_secondary).child(text)),
             )
             // Cancel button
             .child(

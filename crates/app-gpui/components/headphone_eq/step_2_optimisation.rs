@@ -1,4 +1,5 @@
 use crate::app::types::OptimizationStatus;
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -17,6 +18,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
@@ -591,11 +593,11 @@ impl PlayerView {
                                         .child(
                                             div()
                                                 .flex_1()
-                                                .px_3()
-                                                .py_2()
-                                                .rounded_md()
+                                                .px(d.pad_x)
+                                                .py(d.pad_y)
+                                                .rounded(d.r_md)
                                                 .bg(theme.background_secondary)
-                                                .text_sm()
+                                                .text_size(d.text_sm)
                                                 .text_color(
                                                     if headphone_eq.has_custom_target_path() {
                                                         theme.text_primary
@@ -685,7 +687,7 @@ impl PlayerView {
                                             .flex()
                                             .flex_row()
                                             .items_center()
-                                            .gap_2()
+                                            .gap(d.gap)
                                             .child(
                                                 Text::new(if is_optimizing {
                                                     "Optimizing...".to_string()

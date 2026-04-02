@@ -234,6 +234,9 @@ pub struct Config {
     /// Contextual hints that have been seen and dismissed
     #[serde(default)]
     pub seen_hints: Vec<String>,
+    /// Selected design system language ("neutral", "apple_hig", "material3", "fluent")
+    #[serde(default)]
+    pub design_language: Option<String>,
 }
 
 fn default_font_scale() -> f32 {
@@ -267,6 +270,7 @@ impl Config {
                 max_cpu_cores: None,
                 tutorial_completed: false,
                 seen_hints: Vec::new(),
+                design_language: None,
             });
         }
 

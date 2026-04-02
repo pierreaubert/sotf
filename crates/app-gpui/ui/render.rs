@@ -197,6 +197,11 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quit_app))
             .on_action(cx.listener(Self::cycle_theme))
             .on_action(cx.listener(Self::cycle_language))
+            // Design system actions
+            .on_action(cx.listener(Self::set_design_neutral))
+            .on_action(cx.listener(Self::set_design_apple_hig))
+            .on_action(cx.listener(Self::set_design_material3))
+            .on_action(cx.listener(Self::set_design_fluent))
             // Font size actions
             .on_action(cx.listener(Self::increase_font_size))
             .on_action(cx.listener(Self::decrease_font_size))

@@ -3,6 +3,7 @@
 //! Device selection, channel routing, and microphone calibration.
 
 use crate::app::types::{CalibrationData, ChannelMapping, RecordingState, SpeakerConfiguration};
+use crate::components::design::Ds;
 use crate::components::graphs::common::theme_to_chart_theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -235,6 +236,7 @@ impl PlayerView {
 
     /// Render microphone calibration content for accordion
     fn render_mic_calibration_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
@@ -367,7 +369,7 @@ impl PlayerView {
             .filter_map(|(i, d)| d.map(|data| (i, data)))
             .collect();
         if !cal_entries.is_empty() {
-            container = container.child(Self::render_calibration_graph_multi(&cal_entries, &theme));
+            container = container.child(Self::render_calibration_graph_multi(&cal_entries, &theme, &d));
         }
 
         container
@@ -1723,6 +1725,7 @@ impl PlayerView {
     fn render_calibration_graph_multi(
         entries: &[(usize, CalibrationData)],
         theme: &crate::theme::Theme,
+        d: &Ds,
     ) -> impl IntoElement {
         use crate::components::graphs::response_graphs::CHANNEL_COLORS;
 
@@ -1790,10 +1793,10 @@ impl PlayerView {
         let chart_element = builder.build();
 
         div()
-            .mt_4()
-            .p_2()
+            .mt(d.section)
+            .p(d.pad_y)
             .bg(theme.surface)
-            .rounded_md()
+            .rounded(d.r_md)
             .border_1()
             .border_color(theme.border)
             .child(match chart_element {

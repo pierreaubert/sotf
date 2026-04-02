@@ -7,6 +7,7 @@ use crate::app::state::plugin::ABPathTarget;
 use crate::components::plugins::actions::{
     ABPathAddPlugin, ABPathMovePlugin, ABPathRemovePlugin, ABPathToggleAddMenu,
 };
+use crate::components::design::Ds;
 use crate::components::plugins::custom_view_registry::CustomViewRenderContext;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -20,6 +21,7 @@ pub fn render_ab_compare(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
+    let d = Ds::from_cx(cx);
     let state = ctx.entity.read(cx);
     let plugin_idx = ctx.plugin_idx;
     let path_a = state.app.plugin_state.ab_path_a.clone();
@@ -29,12 +31,12 @@ pub fn render_ab_compare(
     div()
         .flex()
         .flex_col()
-        .gap_4()
+        .gap(d.section)
         .w_full()
         .child(
             div()
                 .flex()
-                .gap_4()
+                .gap(d.section)
                 .w_full()
                 .child(render_path_section(
                     "PATH A",
@@ -67,14 +69,15 @@ fn render_path_section(
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> Div {
+    let d = Ds::from_cx(cx);
     let mut section = div()
         .flex_1()
         .flex()
         .flex_col()
-        .gap_2()
-        .p_3()
+        .gap(d.gap)
+        .p(d.pad_x)
         .bg(theme.background_secondary)
-        .rounded_md()
+        .rounded(d.r_md)
         .border_1()
         .border_color(theme.border);
 
@@ -128,7 +131,7 @@ fn render_path_section(
     // Plugin list
     if plugins.is_empty() {
         section = section.child(
-            div().py_2().child(
+            div().py(d.pad_y).child(
                 Text::new("Empty (pass-through)")
                     .size(TextSize::Xs)
                     .color(theme.text_muted),
@@ -152,13 +155,14 @@ fn render_add_menu(
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> Div {
+    let d = Ds::from_cx(cx);
     let mut menu = div()
         .flex()
         .flex_wrap()
-        .gap_1()
-        .p_2()
+        .gap(d.grid)
+        .p(d.pad_y)
         .bg(theme.background)
-        .rounded_sm()
+        .rounded(d.r_sm)
         .border_1()
         .border_color(theme.accent);
 
@@ -200,13 +204,14 @@ fn render_sub_plugin_card(
 ) -> Div {
     let display_name = plugin_display_name(&plugin.plugin_type);
 
+    let d = Ds::from_cx(cx);
     let mut card = div()
         .flex()
         .items_center()
-        .gap_2()
-        .px_2()
-        .py_1()
-        .rounded_sm()
+        .gap(d.gap)
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .rounded(d.r_sm)
         .bg(theme.surface)
         .border_1()
         .border_color(theme.border)

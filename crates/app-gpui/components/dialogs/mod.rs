@@ -3,6 +3,7 @@
 pub mod tutorial;
 
 use crate::app::Screen;
+use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
@@ -78,6 +79,7 @@ impl PlayerView {
     }
 
     pub(crate) fn render_about_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -104,7 +106,7 @@ impl PlayerView {
                         div()
                             .w(rems(8.0))
                             .h(rems(8.0))
-                            .rounded_xl()
+                            .rounded(d.r_xl)
                             .overflow_hidden()
                             .child(
                                 img("sotf.jpg")
@@ -145,6 +147,7 @@ impl PlayerView {
                                 "Source code and documentation",
                                 "https://github.com/pierreaubert/sotf",
                                 &theme,
+                                d,
                             ))
                             .child(self.render_external_link(
                                 "🐛",
@@ -152,6 +155,7 @@ impl PlayerView {
                                 "Bug tracker",
                                 "https://github.com/pierreaubert/sotf/discussions/116",
                                 &theme,
+                                d,
                             ))
                             .child(self.render_external_link(
                                 "💬",
@@ -159,6 +163,7 @@ impl PlayerView {
                                 "GitHub Discussions",
                                 "https://github.com/pierreaubert/sotf/discussions/117",
                                 &theme,
+                                d,
                             ))
                             .child(self.render_external_link(
                                 "🔊",
@@ -166,6 +171,7 @@ impl PlayerView {
                                 "Audio Science Review",
                                 "https://www.audiosciencereview.com/forum/index.php?threads/autoeq-for-speaker-and-headphone.66460/",
                                 &theme,
+                                d,
                             ))
                             .child(self.render_external_link(
                                 "⚖️",
@@ -173,6 +179,7 @@ impl PlayerView {
                                 "Open Source License",
                                 "https://github.com/pierreaubert/sotf/blob/main/LICENCE.md",
                                 &theme,
+                                d,
                             )),
                     ),
             )
@@ -211,6 +218,7 @@ impl PlayerView {
         subtitle: &str,
         url: &str,
         theme: &crate::theme::Theme,
+        d: Ds,
     ) -> impl IntoElement {
         let url = url.to_string();
         let theme = theme.clone();
@@ -222,10 +230,10 @@ impl PlayerView {
             .id(id)
             .flex()
             .items_center()
-            .gap_3()
-            .p_2()
+            .gap(d.gap_md)
+            .p(d.pad_y)
             .w_full()
-            .rounded_md()
+            .rounded(d.r_md)
             .bg(theme.surface_hover)
             .cursor_pointer()
             .hover(move |s| s.bg(theme.accent_muted))
@@ -251,6 +259,7 @@ impl PlayerView {
     }
 
     pub(crate) fn render_help_support_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -272,6 +281,7 @@ impl PlayerView {
                                 "Share your ideas for new features",
                                 "https://github.com/pierreaubert/sotf/discussions/117",
                                 &theme,
+                                d,
                             ))
                             .child(self.render_external_link(
                                 "🐛",
@@ -279,6 +289,7 @@ impl PlayerView {
                                 "Help us fix issues you encounter",
                                 "https://github.com/pierreaubert/sotf/discussions/116",
                                 &theme,
+                                d,
                             ))
                             .child(self.render_external_link(
                                 "📦",
@@ -286,6 +297,7 @@ impl PlayerView {
                                 "View source code and documentation",
                                 "https://github.com/pierreaubert/sotf",
                                 &theme,
+                                d,
                             )),
                     ),
             )
@@ -298,6 +310,7 @@ impl PlayerView {
 
     /// Render modal for empty library prompt shown on startup
     pub(crate) fn render_empty_library_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -312,7 +325,7 @@ impl PlayerView {
                         div()
                             .w(rems(5.0))
                             .h(rems(5.0))
-                            .rounded_xl()
+                            .rounded(d.r_xl)
                             .overflow_hidden()
                             .child(
                                 img("sotf.jpg")
@@ -344,9 +357,9 @@ impl PlayerView {
                             .child(
                                 div()
                                     .id("empty-library-no")
-                                    .px_4()
-                                    .py_2()
-                                    .rounded_md()
+                                    .px(d.card)
+                                    .py(d.pad_y)
+                                    .rounded(d.r_md)
                                     .bg(theme.surface_hover)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.border))
@@ -368,9 +381,9 @@ impl PlayerView {
                             .child(
                                 div()
                                     .id("empty-library-yes")
-                                    .px_4()
-                                    .py_2()
-                                    .rounded_md()
+                                    .px(d.card)
+                                    .py(d.pad_y)
+                                    .rounded(d.r_md)
                                     .bg(theme.accent)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
@@ -398,9 +411,9 @@ impl PlayerView {
                             .child(
                                 div()
                                     .id("empty-library-remote")
-                                    .px_4()
-                                    .py_2()
-                                    .rounded_md()
+                                    .px(d.card)
+                                    .py(d.pad_y)
+                                    .rounded(d.r_md)
                                     .bg(theme.surface_hover)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.border))
@@ -459,28 +472,30 @@ impl PlayerView {
         key: &str,
         description: &str,
         theme: &crate::theme::Theme,
+        d: Ds,
     ) -> impl IntoElement {
         div()
             .flex()
-            .gap_4()
-            .mb_1()
+            .gap(d.section)
+            .mb(d.grid)
             .child(
                 div()
                     .w(Rems(12.0))
-                    .text_sm()
+                    .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.info)
                     .child(format!("  {}", key)),
             )
             .child(
                 div()
-                    .text_sm()
+                    .text_size(d.text_sm)
                     .text_color(theme.text_secondary)
                     .child(description.to_string()),
             )
     }
 
     pub(crate) fn render_toast(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -514,18 +529,18 @@ impl PlayerView {
                 .flex()
                 .flex_col()
                 .items_center()
-                .p_4()
+                .p(d.card)
                 .child(
                     div()
                         .max_w_96()
-                        .rounded_lg()
+                        .rounded(d.r_lg)
                         .bg(bg_color)
                         .border_1()
                         .border_color(border_color)
-                        .p_3()
+                        .p(d.pad_x)
                         .flex()
                         .items_start()
-                        .gap_2()
+                        .gap(d.gap)
                         .child(
                             div().flex_1().child(
                                 Text::new(message.clone())
@@ -533,15 +548,15 @@ impl PlayerView {
                                     .color(text_color),
                             ),
                         )
-                        .when_some(action_label, |d, label| {
-                            d.child(
+                        .when_some(action_label, |el, label| {
+                            el.child(
                                 div()
                                     .id("toast-action")
                                     .cursor_pointer()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_md()
-                                    .text_xs()
+                                    .px(d.pad_y)
+                                    .py(d.pad_y_half)
+                                    .rounded(d.r_md)
+                                    .text_size(d.text_xs)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(text_color)
                                     .border_1()
@@ -580,7 +595,7 @@ impl PlayerView {
                                 .justify_center()
                                 .w(px(24.0))
                                 .h(px(24.0))
-                                .rounded_md()
+                                .rounded(d.r_md)
                                 .hover(move |s| s.bg(Theme::with_opacity(text_color, 0.15)))
                                 .on_mouse_up(
                                     MouseButton::Left,
@@ -697,6 +712,7 @@ impl PlayerView {
     }
 
     pub(crate) fn render_apo_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -713,8 +729,8 @@ impl PlayerView {
                     )
                     .child(
                         div()
-                            .p_2()
-                            .rounded_md()
+                            .p(d.pad_y)
+                            .rounded(d.r_md)
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.accent)
@@ -732,6 +748,7 @@ impl PlayerView {
     }
 
     pub(crate) fn render_sofa_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -748,8 +765,8 @@ impl PlayerView {
                     )
                     .child(
                         div()
-                            .p_2()
-                            .rounded_md()
+                            .p(d.pad_y)
+                            .rounded(d.r_md)
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.accent)
@@ -767,6 +784,7 @@ impl PlayerView {
     }
 
     pub(crate) fn render_save_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let presets = state.app.plugin_state.available_presets.clone();
@@ -786,8 +804,8 @@ impl PlayerView {
                     )
                     .child(
                         div()
-                            .p_2()
-                            .rounded_md()
+                            .p(d.pad_y)
+                            .rounded(d.r_md)
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.accent)
@@ -806,8 +824,8 @@ impl PlayerView {
                                 .max_h(Rems(12.0))
                                 .overflow_y_scroll()
                                 .bg(theme.surface)
-                                .rounded_md()
-                                .p_2()
+                                .rounded(d.r_md)
+                                .p(d.pad_y)
                                 .children(presets.iter().enumerate().map(|(idx, preset)| {
                                     let is_selected = idx == selected_preset;
                                     let theme = theme.clone();
@@ -815,15 +833,15 @@ impl PlayerView {
                                     let hover_bg = theme.surface_hover;
                                     div()
                                         .id(("save-preset-item", idx))
-                                        .p_1()
-                                        .rounded_md()
-                                        .text_sm()
+                                        .p(d.grid)
+                                        .rounded(d.r_md)
+                                        .text_size(d.text_sm)
                                         .cursor_pointer()
-                                        .when(is_selected, |d| {
-                                            d.bg(theme.accent_muted).text_color(theme.text_primary)
+                                        .when(is_selected, |el| {
+                                            el.bg(theme.accent_muted).text_color(theme.text_primary)
                                         })
-                                        .when(!is_selected, |d| {
-                                            d.text_color(theme.text_secondary)
+                                        .when(!is_selected, |el| {
+                                            el.text_color(theme.text_secondary)
                                                 .hover(move |s| s.bg(hover_bg))
                                         })
                                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
@@ -847,6 +865,7 @@ impl PlayerView {
     }
 
     pub(crate) fn render_load_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let presets = state.app.plugin_state.available_presets.clone();
@@ -866,8 +885,8 @@ impl PlayerView {
                     )
                     .child(
                         div()
-                            .p_2()
-                            .rounded_md()
+                            .p(d.pad_y)
+                            .rounded(d.r_md)
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.success)
@@ -886,8 +905,8 @@ impl PlayerView {
                                 .max_h(Rems(12.0))
                                 .overflow_y_scroll()
                                 .bg(theme.surface)
-                                .rounded_md()
-                                .p_2()
+                                .rounded(d.r_md)
+                                .p(d.pad_y)
                                 .children(presets.iter().enumerate().map(|(idx, preset)| {
                                     let is_selected = idx == selected_preset;
                                     let theme = theme.clone();
@@ -895,15 +914,15 @@ impl PlayerView {
                                     let hover_bg = theme.surface_hover;
                                     div()
                                         .id(("load-preset-item", idx))
-                                        .p_1()
-                                        .rounded_md()
-                                        .text_sm()
+                                        .p(d.grid)
+                                        .rounded(d.r_md)
+                                        .text_size(d.text_sm)
                                         .cursor_pointer()
-                                        .when(is_selected, |d| {
-                                            d.bg(theme.accent_muted).text_color(theme.text_primary)
+                                        .when(is_selected, |el| {
+                                            el.bg(theme.accent_muted).text_color(theme.text_primary)
                                         })
-                                        .when(!is_selected, |d| {
-                                            d.text_color(theme.text_secondary)
+                                        .when(!is_selected, |el| {
+                                            el.text_color(theme.text_secondary)
                                                 .hover(move |s| s.bg(hover_bg))
                                         })
                                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
@@ -922,7 +941,7 @@ impl PlayerView {
                     })
                     .when(presets.is_empty(), |el| {
                         el.child(
-                            div().p_4().text_center().child(
+                            div().p(d.card).text_center().child(
                                 Text::new("No presets found. Save a preset first with 's'.")
                                     .size(TextSize::Xs)
                                     .muted(true),
@@ -1007,6 +1026,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
 
         let global_shortcuts = vec![
@@ -1067,7 +1087,7 @@ impl PlayerView {
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap_6()
+                    .gap(d.section_lg)
                     .child(self.render_shortcut_section("Global", &global_shortcuts, &theme))
                     .child(self.render_shortcut_section("Library", &library_shortcuts, &theme))
                     .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
@@ -1133,6 +1153,7 @@ impl PlayerView {
 
     /// Render the scan progress modal
     pub(crate) fn render_scan_progress_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
 
@@ -1238,12 +1259,12 @@ impl PlayerView {
                     .bg(theme.surface)
                     .border_1()
                     .border_color(theme.border)
-                    .rounded_lg()
+                    .rounded(d.r_lg)
                     .shadow_lg()
-                    .p_6()
+                    .p(d.section_lg)
                     .flex()
                     .flex_col()
-                    .gap_4()
+                    .gap(d.section)
                     // Title
                     .child(
                         Text::new(scan_type.title())

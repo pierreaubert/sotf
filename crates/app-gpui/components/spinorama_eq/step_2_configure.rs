@@ -1,4 +1,5 @@
 use crate::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
+use crate::components::design::Ds;
 use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -16,6 +17,7 @@ impl PlayerView {
     // ========================================================================
 
     pub(crate) fn render_spinorama_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
@@ -871,7 +873,7 @@ impl PlayerView {
                                             .flex()
                                             .flex_row()
                                             .items_center()
-                                            .gap_2()
+                                            .gap(d.gap)
                                             .child(
                                                 Text::new(if is_optimizing {
                                                     "Optimizing...".to_string()

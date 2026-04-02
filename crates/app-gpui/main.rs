@@ -170,6 +170,9 @@ fn main() {
     gpui::Application::with_platform(platform)
         .with_assets(Assets)
         .run(move |cx| {
+            // Register design system global (platform default initially)
+            cx.set_global(gpui_design::DesignSystemState::new());
+
             // Load custom fonts
             let fonts = vec![
                 "fonts/B612-Regular.ttf",
@@ -203,6 +206,19 @@ fn main() {
                         ReleaseChannel::default(),
                     )
                 });
+
+            // Apply saved design language if present
+            if let Some(ref dl) = config.as_ref().and_then(|c| c.design_language.as_ref()) {
+                use gpui_design::{DesignSystem, DesignSystemState};
+                let system = match dl.as_str() {
+                    "neutral" => DesignSystem::neutral(),
+                    "apple_hig" => DesignSystem::apple_hig(),
+                    "material3" => DesignSystem::material3(),
+                    "fluent" => DesignSystem::fluent(),
+                    _ => DesignSystem::platform_default(),
+                };
+                cx.set_global(DesignSystemState::with_system(system));
+            }
 
             let translations = Translations::for_language(language);
 
@@ -254,6 +270,16 @@ fn main() {
                 Menu {
                     name: translations.menu_view.into(),
                     items: view_menu_items,
+                    disabled: false,
+                },
+                Menu {
+                    name: "Design".into(),
+                    items: vec![
+                        MenuItem::action("Neutral", SetDesignNeutral),
+                        MenuItem::action("Apple HIG", SetDesignAppleHig),
+                        MenuItem::action("Material 3", SetDesignMaterial3),
+                        MenuItem::action("Fluent", SetDesignFluent),
+                    ],
                     disabled: false,
                 },
                 Menu {

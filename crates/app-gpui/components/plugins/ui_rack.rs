@@ -6,6 +6,7 @@ use super::render_plugin_content;
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
+use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::level_meters::LevelMeterManager;
@@ -35,14 +36,15 @@ pub struct PluginDragInfo {
 }
 
 impl Render for PluginDragInfo {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         // Drag preview — matches the Ozone-style card
         div()
             .w(rems(7.0))
             .h(rems(4.0))
             .flex()
             .flex_row()
-            .rounded_md()
+            .rounded(d.r_md)
             .border_1()
             .border_color(self.color)
             .bg(Theme::opacity_20pct(self.surface))
@@ -59,9 +61,9 @@ impl Render for PluginDragInfo {
                     .overflow_hidden()
                     .child(
                         div()
-                            .px_2()
-                            .pt_1()
-                            .text_xs()
+                            .px(d.pad_y)
+                            .pt(d.pad_y_half)
+                            .text_size(d.text_xs)
                             .text_color(self.color)
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(self.name.clone()),
@@ -72,7 +74,7 @@ impl Render for PluginDragInfo {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_xl()
+                            .text_size(d.text_lg)
                             .text_color(self.color)
                             .child(self.icon),
                     ),
@@ -160,6 +162,7 @@ fn speaker_config_to_channels(config: &str) -> usize {
 
 impl PlayerView {
     pub(crate) fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let current_hint = self.state.read(cx).app.current_hint.clone();
 
@@ -257,8 +260,8 @@ impl PlayerView {
                             | crate::components::dialogs::tutorial::HintId::FirstPluginAdded
                     )
                 }),
-                |d, hint| {
-                    d.child(
+                |el, hint| {
+                    el.child(
                         div()
                             .id("hint-banner")
                             .cursor_pointer()
@@ -272,7 +275,7 @@ impl PlayerView {
                                 }),
                             )
                             .child(crate::components::dialogs::tutorial::render_hint_banner(
-                                &hint, &theme,
+                                &hint, &theme, d,
                             )),
                     )
                 },
@@ -375,6 +378,7 @@ impl PlayerView {
 
         let is_empty = plugins_data.is_empty();
         let plugin_count = plugins_data.len();
+        let d = Ds::from_cx(cx);
 
         // Split: main plugins, then "+", then Matrix + output monitor
         // The "+" always appears just before the Matrix plugin.
@@ -404,8 +408,8 @@ impl PlayerView {
                     .flex()
                     .justify_between()
                     .items_center()
-                    .px_4()
-                    .py_2()
+                    .px(d.card)
+                    .py(d.pad_y)
                     // Home button on the left
                     .child(
                         div()
@@ -416,7 +420,7 @@ impl PlayerView {
                             .w(rems(2.5))
                             .h(rems(2.0))
                             .cursor_pointer()
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .hover(move |s| s.bg(surface_hover))
                             .child(Icon::new(IconName::Home).color(text_muted))
                             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
@@ -430,24 +434,24 @@ impl PlayerView {
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
+                            .gap(d.gap)
                             .child(
                                 div()
-                                    .text_sm()
+                                    .text_size(d.text_sm)
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(theme.text_primary)
                                     .child("SIGNAL CHAIN"),
                             )
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(theme.text_muted)
                                     .child(format!("{} plugins", plugin_count)),
                             )
-                            .when(has_pending_update, |d| {
-                                d.child(
+                            .when(has_pending_update, |el| {
+                                el.child(
                                     div()
-                                        .text_xs()
+                                        .text_size(d.text_xs)
                                         .text_color(theme.accent)
                                         .font_weight(FontWeight::MEDIUM)
                                         .child("Applying..."),
@@ -464,12 +468,12 @@ impl PlayerView {
                         div()
                             .flex()
                             .items_center()
-                            .gap_1()
+                            .gap(d.grid)
                             // Show current preset name if one is loaded
-                            .when_some(last_loaded_preset.clone(), |d, name| {
-                                d.child(
+                            .when_some(last_loaded_preset.clone(), |el, name| {
+                                el.child(
                                     div()
-                                        .text_xs()
+                                        .text_size(d.text_xs)
                                         .text_color(btn_text_muted)
                                         .child(name),
                                 )
@@ -481,11 +485,11 @@ impl PlayerView {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .px_2()
+                                    .px(d.pad_y)
                                     .h(rems(1.75))
                                     .cursor_pointer()
-                                    .rounded_md()
-                                    .text_xs()
+                                    .rounded(d.r_md)
+                                    .text_size(d.text_xs)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(btn_text_muted)
                                     .hover(move |s| s.bg(btn_surface_hover))
@@ -509,11 +513,11 @@ impl PlayerView {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .px_2()
+                                    .px(d.pad_y)
                                     .h(rems(1.75))
                                     .cursor_pointer()
-                                    .rounded_md()
-                                    .text_xs()
+                                    .rounded(d.r_md)
+                                    .text_size(d.text_xs)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(btn_text_muted)
                                     .hover(move |s| s.bg(btn_surface_hover))
@@ -539,8 +543,8 @@ impl PlayerView {
                     .flex()
                     .items_center()
                     .gap(px(20.0))
-                    .px_4()
-                    .py_3()
+                    .px(d.card)
+                    .py(d.pad_x)
                     .overflow_x_scroll()
                     .min_h(rems(7.0))
                     // Plugin modules - Ozone-style cards with left button column
@@ -567,7 +571,7 @@ impl PlayerView {
                                 .h(rems(6.5))
                                 .flex()
                                 .flex_row()
-                                .rounded_md()
+                                .rounded(d.r_md)
                                 .border_1()
                                 .border_color(if is_selected {
                                     color
@@ -652,9 +656,9 @@ impl PlayerView {
                                         .flex_col()
                                         .items_center()
                                         .justify_between()
-                                        .py_1()
+                                        .py(d.pad_y_half)
                                         .px(px(4.0))
-                                        .gap_1()
+                                        .gap(d.grid)
                                         .h_full()
                                         .border_r_1()
                                         .border_color(theme_c.border)
@@ -860,7 +864,7 @@ impl PlayerView {
                                         let theme_p = theme_c.clone();
                                         right_panel
                                             .bg(theme_p.surface)
-                                            .px_1()
+                                            .px(d.grid)
                                             .py(px(2.0))
                                             .gap(px(1.0))
                                             .children(preset_list.iter().enumerate().map(
@@ -873,11 +877,11 @@ impl PlayerView {
                                                         .flex()
                                                         .items_center()
                                                         .gap(px(2.0))
-                                                        .px_1()
+                                                        .px(d.grid)
                                                         .py(px(1.0))
-                                                        .rounded_sm()
+                                                        .rounded(d.r_sm)
                                                         .cursor_pointer()
-                                                        .text_xs()
+                                                        .text_size(d.text_xs)
                                                         .text_color(theme_i.text_primary)
                                                         .hover(|s| s.bg(theme_i.background_secondary))
                                                         .on_mouse_up(
@@ -979,11 +983,11 @@ impl PlayerView {
                                                         .child(
                                                             div()
                                                                 .id(("preset-confirm", idx))
-                                                                .px_1()
+                                                                .px(d.grid)
                                                                 .py(px(2.0))
-                                                                .rounded_sm()
+                                                                .rounded(d.r_sm)
                                                                 .cursor_pointer()
-                                                                .text_xs()
+                                                                .text_size(d.text_xs)
                                                                 .text_color(accent_color)
                                                                 .border_1()
                                                                 .border_color(accent_color)
@@ -1024,12 +1028,12 @@ impl PlayerView {
                                                         .flex()
                                                         .items_center()
                                                         .justify_center()
-                                                        .px_1()
+                                                        .px(d.grid)
                                                         .py(px(2.0))
                                                         .mt(px(2.0))
-                                                        .rounded_sm()
+                                                        .rounded(d.r_sm)
                                                         .cursor_pointer()
-                                                        .text_xs()
+                                                        .text_size(d.text_xs)
                                                         .text_color(accent_color)
                                                         .border_1()
                                                         .border_color(accent_color)
@@ -1056,9 +1060,9 @@ impl PlayerView {
                                         right_panel
                                             .child(
                                                 div()
-                                                    .px_2()
-                                                    .pt_1()
-                                                    .text_xs()
+                                                    .px(d.pad_y)
+                                                    .pt(d.pad_y_half)
+                                                    .text_size(d.text_xs)
                                                     .text_color(if is_selected { color } else { theme_c.text_primary })
                                                     .font_weight(FontWeight::SEMIBOLD)
                                                     .overflow_hidden()
@@ -1075,12 +1079,12 @@ impl PlayerView {
                                                     .text_color(color)
                                                     .child(icon),
                                             )
-                                            .when(!is_permanent, |d| {
-                                                d.child(
+                                            .when(!is_permanent, |el| {
+                                                el.child(
                                                     div()
                                                         .flex()
                                                         .justify_end()
-                                                        .px_1()
+                                                        .px(d.grid)
                                                         .pb(px(2.0))
                                                         .text_size(rems(0.5))
                                                         .text_color(theme_c.text_muted)
@@ -1104,12 +1108,12 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .border_1()
                             .border_dashed()
                             .border_color(Theme::opacity_8pct(theme_add.text_muted))
                             .cursor_pointer()
-                            .text_2xl()
+                            .text_size(d.text_lg)
                             .text_color(theme_add.text_muted)
                             .hover(|s| s.border_color(theme_add.accent).text_color(theme_add.accent))
                             .on_mouse_up(
@@ -1176,7 +1180,7 @@ impl PlayerView {
                                 .h(rems(6.5))
                                 .flex()
                                 .flex_row()
-                                .rounded_md()
+                                .rounded(d.r_md)
                                 .border_1()
                                 .border_color(if is_selected { color } else { theme_c.border })
                                 .bg(if is_selected {
@@ -1335,9 +1339,9 @@ impl PlayerView {
                                         .h_full()
                                         .child(
                                             div()
-                                                .px_2()
-                                                .pt_1()
-                                                .text_xs()
+                                                .px(d.pad_y)
+                                                .pt(d.pad_y_half)
+                                                .text_size(d.text_xs)
                                                 .text_color(if is_selected { color } else { theme_c.text_primary })
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .overflow_hidden()
@@ -1371,12 +1375,12 @@ impl PlayerView {
                     }),
             )
             // Add plugin menu (shown when "+" is clicked)
-            .when(self.state.read(cx).app.show_add_plugin_menu, |d| {
-                d.child(
+            .when(self.state.read(cx).app.show_add_plugin_menu, |el| {
+                el.child(
                     div()
                         .id("add-plugin-menu")
-                        .px_4()
-                        .py_4()
+                        .px(d.card)
+                        .py(d.card)
                         .max_h(px(400.0))
                         .overflow_y_scroll()
                         .bg(theme.surface)
@@ -1409,6 +1413,7 @@ impl PlayerView {
 
         let theme_c = theme.clone();
         let label = label.to_string();
+        let d = Ds::from_cx(cx);
 
         // Pre-compute channel data
         let channel_data: Vec<_> = (0..channels)
@@ -1459,18 +1464,18 @@ impl PlayerView {
             .flex()
             .flex_col()
             .h_full()
-            .py_4()
-            .px_2()
+            .py(d.card)
+            .px(d.pad_y)
             .bg(theme.background_secondary)
             .border_x_1()
             .border_color(theme.border)
             // Label at top
             .child(
                 div()
-                    .text_xs()
+                    .text_size(d.text_xs)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_secondary)
-                    .mb_2()
+                    .mb(d.gap)
                     .text_align(TextAlign::Center)
                     .child(label),
             )
@@ -1481,8 +1486,8 @@ impl PlayerView {
                     .gap(px(0.0))
                     .flex_1()
                     // Legend on left side if requested
-                    .when(legend_on_left, |d| {
-                        d.child(Self::render_side_meter_legend(&theme, false))
+                    .when(legend_on_left, |el| {
+                        el.child(Self::render_side_meter_legend(&theme, false, d))
                     })
                     // Channel meters
                     .child(
@@ -1495,6 +1500,7 @@ impl PlayerView {
                             .children(channel_data.into_iter().map(
                                 |(fill_ratio, yellow_threshold, red_threshold, name)| {
                                     render_gradient_meter(
+                                        &d,
                                         fill_ratio,
                                         yellow_threshold,
                                         red_threshold,
@@ -1506,8 +1512,8 @@ impl PlayerView {
                             )),
                     )
                     // Legend on right side if not on left
-                    .when(!legend_on_left, |d| {
-                        d.child(Self::render_side_meter_legend(&theme, true))
+                    .when(!legend_on_left, |el| {
+                        el.child(Self::render_side_meter_legend(&theme, true, d))
                     }),
             )
     }
@@ -1516,6 +1522,7 @@ impl PlayerView {
     fn render_side_meter_legend(
         theme: &crate::theme::Theme,
         align_right: bool,
+        d: Ds,
     ) -> impl IntoElement {
         let ticks = [0, -6, -12, -18, -24, -30, -40, -50, -60];
         let theme = theme.clone();
@@ -1582,7 +1589,7 @@ impl PlayerView {
             )
             // Spacer for channel name (to align with render_gradient_meter)
             .child(
-                div().text_xs().mt_1().opacity(0.0).child("X"), // Invisible spacer
+                div().text_size(d.text_xs).mt(d.grid).opacity(0.0).child("X"), // Invisible spacer
             )
     }
 
@@ -1591,6 +1598,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let release_channel = state.app.ui_state.release_channel;
+        let d = Ds::from_cx(cx);
 
         // Get list of plugins already in chain
         let present_plugins: Vec<_> = state
@@ -1706,14 +1714,14 @@ impl PlayerView {
                         .id(("add-plugin", btn_id))
                         .flex()
                         .items_center()
-                        .gap_1()
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
+                        .gap(d.grid)
+                        .px(d.pad_y)
+                        .py(d.pad_y_half)
+                        .rounded(d.r_md)
                         .bg(theme_c.surface)
                         .border_1()
                         .border_color(color)
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .text_color(color)
                         .cursor_pointer()
                         .hover(move |s| s.bg(color).text_color(text_on_accent))
@@ -1744,7 +1752,7 @@ impl PlayerView {
                     div()
                         .flex()
                         .items_start()
-                        .gap_2()
+                        .gap(d.gap)
                         // Category label
                         .child(
                             div()
@@ -1764,7 +1772,7 @@ impl PlayerView {
                                 .flex_1()
                                 .min_w_0()
                                 .items_center()
-                                .gap_2()
+                                .gap(d.gap)
                                 .children(buttons),
                         )
                         .into_any_element(),
@@ -1772,7 +1780,7 @@ impl PlayerView {
             }
         }
 
-        div().flex().flex_col().gap_4().children(category_rows)
+        div().flex().flex_col().gap(d.section).children(category_rows)
     }
 
     /// Render the plugin detail/settings panel
@@ -1795,13 +1803,14 @@ impl PlayerView {
         };
 
         let has_plugin = plugin_data.is_some();
+        let d = Ds::from_cx(cx);
 
         div()
             .flex_1()
             .flex()
             .flex_col()
             .min_h(rems(21.875))
-            .when(has_plugin, |d| {
+            .when(has_plugin, |el| {
                 let plugin = plugin_data.clone().unwrap();
                 let plugin_type = plugin.plugin_type().clone();
                 let _plugin_name = plugin_type.name().to_string();
@@ -1813,15 +1822,15 @@ impl PlayerView {
                 let controller_picker_open = self.state.read(cx).app.plugin_state.controller_picker_open;
                 let state_for_toggle = self.state.clone();
 
-                d.child(
+                el.child(
                     // Plugin header bar
                     {
                         div()
                             .flex()
                             .items_center()
-                            .gap_4()
-                            .px_4()
-                            .py_3()
+                            .gap(d.section)
+                            .px(d.card)
+                            .py(d.pad_x)
                             .bg(theme.background_secondary)
                             .border_b_1()
                             .border_color(theme.border)
@@ -1847,9 +1856,9 @@ impl PlayerView {
                                     PluginUiView::Controller(name) => format!("ctrl:{name}"),
                                 };
 
-                                div().flex().items_center().gap_2()
+                                div().flex().items_center().gap(d.gap)
                                     .child(
-                                        div().text_xs().font_weight(FontWeight::SEMIBOLD)
+                                        div().text_size(d.text_xs).font_weight(FontWeight::SEMIBOLD)
                                             .text_color(theme.text_secondary).child("View"),
                                     )
                                     .child(
@@ -1891,7 +1900,7 @@ impl PlayerView {
                             })
                     }
                     // Output config dropdown (only for Upmixer) — next to View, left-aligned
-                    .when(matches!(plugin_type, PluginType::Upmixer), |d| {
+                    .when(matches!(plugin_type, PluginType::Upmixer), |el| {
                         let state_c = state_for_toggle.clone();
                         let upmixer_speaker_config = {
                             let st = state_c.read(cx);
@@ -1903,10 +1912,10 @@ impl PlayerView {
                         };
                         let upmixer_config_open = state_c.read(cx).app.upmixer_config_open;
                         let theme2 = theme.clone();
-                        d.child(
-                            div().flex().items_center().gap_2()
+                        el.child(
+                            div().flex().items_center().gap(d.gap)
                                 .child(
-                                    div().text_xs().font_weight(FontWeight::SEMIBOLD)
+                                    div().text_size(d.text_xs).font_weight(FontWeight::SEMIBOLD)
                                         .text_color(theme2.text_secondary).child("Output"),
                                 )
                                 .child(
@@ -2051,7 +2060,7 @@ impl PlayerView {
                                 .id("params-scroll")
                                 .flex_1()
                                 .overflow_y_scroll()
-                                .p_4()
+                                .p(d.card)
                                 .child({
                                     // Get plugin-specific real-time data based on plugin type
                                     let plugin_data: Option<
@@ -2140,9 +2149,12 @@ impl PlayerView {
                                         None
                                     };
 
+                                    let d = Ds::from_cx(cx);
+
                                     match &plugin_ui_view {
                                         PluginUiView::Simple => {
                                             super::ui_simple::render_simple_plugin_view(
+                                                &d,
                                                 self.state.clone(),
                                                 selected_idx,
                                                 &plugin.settings,
@@ -2236,18 +2248,18 @@ impl PlayerView {
                         })
                 })
             })
-            .when(!has_plugin, |d| {
-                d.child(
+            .when(!has_plugin, |el| {
+                el.child(
                     div()
                         .flex_1()
                         .flex()
                         .items_center()
                         .justify_center()
                         .flex_col()
-                        .gap_2()
+                        .gap(d.gap)
                         .text_color(theme.text_muted)
                         .child("No plugin selected")
-                        .child(div().text_sm().child("Add a plugin to get started")),
+                        .child(div().text_size(d.text_sm).child("Add a plugin to get started")),
                 )
             })
     }
@@ -2263,6 +2275,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         use sotf_audio_player::{ChannelGroup, ChannelInfo};
 
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let input_loudness = state.app.playback.input_loudness_info.clone();
@@ -2321,7 +2334,7 @@ impl PlayerView {
                         )
                         .into_any_element()
                     }))
-                    .child(self.render_vertical_legend(&theme, true).into_any_element())
+                    .child(self.render_vertical_legend(&d, &theme, true).into_any_element())
                     // Output groups (real indices → M/S/D connected to matrix plugin)
                     .children(out_groups.iter().enumerate().map(|(i, group)| {
                         self.render_meter_group(
@@ -2344,6 +2357,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let chain_bypass = state.app.plugin_state.chain_bypass;
         let chain_autogain = state.app.plugin_state.chain_autogain;
+        let d = Ds::from_cx(cx);
 
         // Detect current matrix preset for Mono/M/S button states
         let (is_mono, is_ms) = {
@@ -2396,12 +2410,12 @@ impl PlayerView {
                 .justify_center()
                 .py(px(4.0))
                 .cursor_pointer()
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
-                .rounded_sm()
-                .when(is_active, |d| d.bg(active_bg).text_color(active_text))
-                .when(!is_active, |d| {
-                    d.bg(inactive_bg)
+                .rounded(d.r_sm)
+                .when(is_active, |el| el.bg(active_bg).text_color(active_text))
+                .when(!is_active, |el| {
+                    el.bg(inactive_bg)
                         .text_color(inactive_text)
                         .hover(move |s| s.bg(hover_bg))
                 })
@@ -2412,7 +2426,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .gap(px(2.0))
-            .p_2()
+            .p(d.pad_y)
             .bg(theme.background_secondary)
             .border_l_1()
             .border_t_1()

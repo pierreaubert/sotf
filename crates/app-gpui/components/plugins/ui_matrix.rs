@@ -9,6 +9,7 @@
 use super::common::ParamSectionStyle;
 use crate::app::AppState;
 use crate::app::types::PluginUpdateType;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -63,6 +64,7 @@ fn cell_index(input_idx: usize, output_idx: usize, input_count: usize) -> usize 
 
 /// Render the Matrix plugin
 pub fn render_matrix_plugin(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: MatrixRenderState,
@@ -74,7 +76,7 @@ pub fn render_matrix_plugin(
     div()
         .flex()
         .flex_col()
-        .gap_4()
+        .gap(d.section)
         // Preset buttons
         .child(render_preset_buttons(
             entity.clone(),
@@ -86,6 +88,7 @@ pub fn render_matrix_plugin(
         ))
         // Matrix grid
         .child(render_matrix_grid(
+            d,
             entity.clone(),
             plugin_idx,
             &state,
@@ -170,6 +173,7 @@ const MSD_COL_WIDTH: f32 = 80.0;
 
 /// Render the matrix grid with input columns and output rows, plus M/S/D sidebar
 fn render_matrix_grid(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &MatrixRenderState,
@@ -180,8 +184,8 @@ fn render_matrix_grid(
 
     div()
         .flex()
-        .gap_2()
-        .param_section_style_lg(theme)
+        .gap(d.gap)
+        .param_section_style_lg(d, theme)
         // Left: the matrix grid
         .child(
             div()
@@ -199,7 +203,7 @@ fn render_matrix_grid(
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(theme.text_muted)
                                 .child("OUT\\IN"),
                         )
@@ -215,7 +219,7 @@ fn render_matrix_grid(
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(theme.text_secondary)
                                 .child(label)
@@ -223,11 +227,12 @@ fn render_matrix_grid(
                 )
                 // Grid rows
                 .children((0..state.output_channels).map(|out_idx| {
-                    render_matrix_row(entity.clone(), plugin_idx, out_idx, state, theme)
+                    render_matrix_row(d, entity.clone(), plugin_idx, out_idx, state, theme)
                 })),
         )
         // Right: M/S/D sidebar
         .child(render_msd_sidebar(
+            d,
             entity.clone(),
             plugin_idx,
             state,
@@ -238,6 +243,7 @@ fn render_matrix_grid(
 
 /// Render the M/S/D sidebar column
 fn render_msd_sidebar(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &MatrixRenderState,
@@ -258,7 +264,7 @@ fn render_msd_sidebar(
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme.text_muted)
                 .child("M S D"),
@@ -284,8 +290,9 @@ fn render_msd_sidebar(
             // Build the button row
             let buttons = div()
                 .flex()
-                .gap_1()
+                .gap(d.grid)
                 .child(render_msd_button(
+                    d,
                     "M",
                     any_muted,
                     theme.error,
@@ -297,6 +304,7 @@ fn render_msd_sidebar(
                     MsdAction::Mute,
                 ))
                 .child(render_msd_button(
+                    d,
                     "S",
                     any_soloed,
                     theme.warning,
@@ -308,6 +316,7 @@ fn render_msd_sidebar(
                     MsdAction::Solo,
                 ))
                 .child(render_msd_button(
+                    d,
                     "D",
                     any_dimmed,
                     theme.info,
@@ -325,15 +334,15 @@ fn render_msd_sidebar(
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .gap_1()
+                .gap(d.grid)
                 .border_l_1()
                 .border_color(theme.border)
-                .pl_2();
+                .pl(d.pad_y);
 
             if has_label {
                 container = container.child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .text_color(theme.text_muted)
                         .child(group_name.clone()),
                 );
@@ -352,6 +361,7 @@ enum MsdAction {
 
 /// Render a single M, S, or D button
 fn render_msd_button(
+    d: &Ds,
     label: &'static str,
     is_active: bool,
     active_color: Rgba,
@@ -374,7 +384,7 @@ fn render_msd_button(
         ))
         .w(px(MSD_BTN_SIZE))
         .h(px(18.0))
-        .rounded_sm()
+        .rounded(d.r_sm)
         .cursor_pointer()
         .bg(if is_active {
             active_color
@@ -397,7 +407,7 @@ fn render_msd_button(
         .flex()
         .items_center()
         .justify_center()
-        .text_xs()
+        .text_size(d.text_xs)
         .font_weight(FontWeight::BOLD)
         .text_color(if is_active {
             theme.text_on_accent
@@ -439,6 +449,7 @@ fn render_msd_button(
 
 /// Render a single row of the matrix grid
 fn render_matrix_row(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     output_idx: usize,
@@ -461,7 +472,7 @@ fn render_matrix_row(
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_xs()
+                .text_size(d.text_xs)
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme.text_secondary)
                 .child(output_label),
@@ -475,6 +486,7 @@ fn render_matrix_row(
                 .is_some_and(|(sel_in, sel_out)| sel_in == in_idx && sel_out == output_idx);
 
             render_matrix_cell(
+                d,
                 entity.clone(),
                 plugin_idx,
                 in_idx,
@@ -489,6 +501,7 @@ fn render_matrix_row(
 
 /// Render a single matrix cell
 fn render_matrix_cell(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     input_idx: usize,
@@ -540,7 +553,7 @@ fn render_matrix_cell(
         .items_center()
         .justify_center()
         .m_px()
-        .rounded_md()
+        .rounded(d.r_md)
         .cursor_pointer()
         .bg(bg_color)
         .border_1()
@@ -552,7 +565,7 @@ fn render_matrix_cell(
             theme.background_secondary
         })
         .hover(|s| s.border_color(theme.accent))
-        .text_xs()
+        .text_size(d.text_xs)
         .font_weight(if is_active {
             FontWeight::SEMIBOLD
         } else {

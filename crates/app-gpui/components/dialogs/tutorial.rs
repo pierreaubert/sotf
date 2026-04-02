@@ -2,6 +2,7 @@
 //!
 //! Also provides a contextual hint system for first-time feature encounters.
 
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -147,25 +148,29 @@ pub struct ContextualHint {
 }
 
 /// Render a contextual hint banner (dismissible callout).
-pub fn render_hint_banner(hint: &ContextualHint, theme: &crate::theme::Theme) -> impl IntoElement {
+pub fn render_hint_banner(
+    hint: &ContextualHint,
+    theme: &crate::theme::Theme,
+    d: Ds,
+) -> impl IntoElement {
     let title = hint.hint_id.title();
     let message = hint.hint_id.message();
 
     div()
         .flex()
         .items_start()
-        .gap_3()
-        .px_4()
-        .py_3()
-        .mx_4()
-        .mt_2()
-        .rounded_lg()
+        .gap(d.gap_md)
+        .px(d.card)
+        .py(d.pad_x)
+        .mx(d.card)
+        .mt(d.gap)
+        .rounded(d.r_lg)
         .bg(theme.toast_info_bg)
         .border_1()
         .border_color(theme.info)
         .child(
             div()
-                .text_sm()
+                .text_size(d.text_sm)
                 .text_color(theme.info)
                 .font_weight(FontWeight::BOLD)
                 .child("\u{1f4a1}"),
@@ -175,17 +180,17 @@ pub fn render_hint_banner(hint: &ContextualHint, theme: &crate::theme::Theme) ->
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(d.grid)
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child(title),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .text_color(theme.text_secondary)
                         .child(message),
                 ),
@@ -198,6 +203,7 @@ pub fn render_hint_banner(hint: &ContextualHint, theme: &crate::theme::Theme) ->
 
 impl PlayerView {
     pub(crate) fn render_tutorial_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let screen_idx = state
@@ -232,7 +238,7 @@ impl PlayerView {
                     .child(
                         div()
                             .w_full()
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .overflow_hidden()
                             .border_1()
                             .border_color(theme.border)

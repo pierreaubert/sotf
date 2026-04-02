@@ -13,6 +13,7 @@ use gpui_ui_kit::{
 };
 
 use crate::app::types::{MeterDisplayMode, Screen};
+use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::level_meters::LevelMeterManager;
 use sotf_audio_player::Track;
@@ -21,6 +22,7 @@ use crate::ui::PlayerView;
 
 impl PlayerView {
     pub(crate) fn render_queue_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let layout = state.layout.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -69,8 +71,8 @@ impl PlayerView {
                 div()
                     .flex()
                     .items_center()
-                    .px_4()
-                    .py_2()
+                    .px(d.card)
+                    .py(d.pad_y)
                     .bg(theme.background_secondary)
                     .border_b_1()
                     .border_color(theme.border)
@@ -84,7 +86,7 @@ impl PlayerView {
                             .w(rems(2.5))
                             .h(rems(2.0))
                             .cursor_pointer()
-                            .rounded_md()
+                            .rounded(d.r_md)
                             .hover(move |s| s.bg(surface_hover))
                             .child(Icon::new(IconName::Home).color(text_muted))
                             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
@@ -96,8 +98,8 @@ impl PlayerView {
                     // Title
                     .child(
                         div()
-                            .ml_2()
-                            .text_sm()
+                            .ml(d.gap)
+                            .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
                             .child(translations.queue_title.to_string()),
@@ -110,14 +112,14 @@ impl PlayerView {
                     .flex_1()
                     .overflow_hidden()
                     // Left panel: Queue list
-                    .when(!queue_collapsed, |d| {
-                d.child(
+                    .when(!queue_collapsed, |el| {
+                el.child(
                     div()
                         .flex()
                         .flex_col()
                         .w(relative(queue_list_ratio))
-                        .px_2()
-                        .pt_2()
+                        .px(d.pad_y)
+                        .pt(d.pad_y)
                         .border_r_1()
                         .border_color(theme.border)
                         .child(
@@ -131,14 +133,14 @@ impl PlayerView {
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary)
                             .build()
-                            .mb_2(),
+                            .mb(d.gap),
                         )
                         .child(
                             div()
                                 .id("queue-list")
                                 .flex()
                                 .flex_col()
-                                .gap_2()
+                                .gap(d.gap)
                                 .flex_1()
                                 .overflow_y_scroll()
                                 .children(state.app.queue.iter().enumerate().map(|(idx, item)| {
@@ -146,17 +148,17 @@ impl PlayerView {
                                     let theme = theme.clone();
                                     let theme_hover = theme.clone();
                                     div()
-                                        .p_2()
-                                        .rounded_md()
-                                        .when(is_current, |d| {
+                                        .p(d.pad_y)
+                                        .rounded(d.r_md)
+                                        .when(is_current, |el| {
                                             // Current item: accent background, subtle hover
                                             let mut hover_bg = theme.accent;
                                             hover_bg.a = 0.8;
-                                            d.bg(theme.accent)
+                                            el.bg(theme.accent)
                                              .hover(move |style| style.bg(hover_bg))
                                         })
-                                        .when(!is_current, |d| {
-                                            d.bg(theme_hover.surface)
+                                        .when(!is_current, |el| {
+                                            el.bg(theme_hover.surface)
                                              .hover(|style| style.bg(theme_hover.surface_hover))
                                         })
                                         .cursor_pointer()
@@ -219,19 +221,19 @@ impl PlayerView {
                                                 .child(
                                                     div()
                                                         .font_weight(FontWeight::SEMIBOLD)
-                                                        .text_sm()
+                                                        .text_size(d.text_sm)
                                                         .text_color(if is_current { theme.text_on_accent } else { theme.text_primary })
                                                         .child(album_title_truncated),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_xs()
+                                                        .text_size(d.text_xs)
                                                         .text_color(if is_current { theme.text_on_accent_muted } else { theme.text_muted })
                                                         .child(artist_truncated),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_xs()
+                                                        .text_size(d.text_xs)
                                                         .text_color(if is_current { theme.text_on_accent_muted } else { theme.text_secondary })
                                                         .child(format!(
                                                             "Track {}/{}",
@@ -244,7 +246,7 @@ impl PlayerView {
                         )
                         .child(
                             div()
-                                .p_2()
+                                .p(d.pad_y)
                                 .child(
                                     Button::new("magic-radio-btn", "Magic Radio")
                                         .full_width(true)
@@ -349,13 +351,13 @@ impl PlayerView {
                     })
             })
             // Right panel: LUFS and/or Level meters
-            .when(!meters_collapsed, |d| {
+            .when(!meters_collapsed, |el| {
                 let state_entity = self.state.clone();
 
                 // Use meters_panel_ratio to control width (resizable via divider drag)
                 let panel_width = (meters_ratio * available_queue_width).clamp(120.0, available_queue_width * 0.6);
 
-                d.child(
+                el.child(
                     div()
                         .w(px(panel_width))
                         .flex_shrink_0()
@@ -363,18 +365,18 @@ impl PlayerView {
                         .flex_col()
                         .h_full()
                         // Toggle header: only show when not tall enough to display both
-                        .when(!meters_panel_tall, |d| {
-                            d.child(
+                        .when(!meters_panel_tall, |el| {
+                            el.child(
                                 div()
                                     .flex()
                                     .justify_center()
-                                    .p_2()
+                                    .p(d.pad_y)
                                     .border_b_1()
                                     .border_color(theme.border)
                                     .child(
                                         div()
                                             .flex()
-                                            .rounded_md()
+                                            .rounded(d.r_md)
                                             .bg(theme.background)
                                             .border_1()
                                             .border_color(theme.border)
@@ -383,16 +385,16 @@ impl PlayerView {
                                             .child(
                                                 div()
                                                     .id("meter-toggle-lufs")
-                                                    .px_3()
-                                                    .py_1()
-                                                    .text_xs()
+                                                    .px(d.pad_x)
+                                                    .py(d.pad_y_half)
+                                                    .text_size(d.text_xs)
                                                     .font_weight(FontWeight::MEDIUM)
                                                     .cursor_pointer()
-                                                    .when(meter_display_mode == MeterDisplayMode::Lufs, |d| {
-                                                        d.bg(theme.accent).text_color(theme.text_on_accent)
+                                                    .when(meter_display_mode == MeterDisplayMode::Lufs, |el| {
+                                                        el.bg(theme.accent).text_color(theme.text_on_accent)
                                                     })
-                                                    .when(meter_display_mode != MeterDisplayMode::Lufs, |d| {
-                                                        d.text_color(theme.text_secondary)
+                                                    .when(meter_display_mode != MeterDisplayMode::Lufs, |el| {
+                                                        el.text_color(theme.text_secondary)
                                                             .hover(|s| s.bg(theme.surface_hover))
                                                     })
                                                     .on_mouse_up(
@@ -414,16 +416,16 @@ impl PlayerView {
                                             .child(
                                                 div()
                                                     .id("meter-toggle-levels")
-                                                    .px_3()
-                                                    .py_1()
-                                                    .text_xs()
+                                                    .px(d.pad_x)
+                                                    .py(d.pad_y_half)
+                                                    .text_size(d.text_xs)
                                                     .font_weight(FontWeight::MEDIUM)
                                                     .cursor_pointer()
-                                                    .when(meter_display_mode == MeterDisplayMode::Levels, |d| {
-                                                        d.bg(theme.accent).text_color(theme.text_on_accent)
+                                                    .when(meter_display_mode == MeterDisplayMode::Levels, |el| {
+                                                        el.bg(theme.accent).text_color(theme.text_on_accent)
                                                     })
-                                                    .when(meter_display_mode != MeterDisplayMode::Levels, |d| {
-                                                        d.text_color(theme.text_secondary)
+                                                    .when(meter_display_mode != MeterDisplayMode::Levels, |el| {
+                                                        el.text_color(theme.text_secondary)
                                                             .hover(|s| s.bg(theme.surface_hover))
                                                     })
                                                     .on_mouse_up(
@@ -447,8 +449,8 @@ impl PlayerView {
                             )
                         })
                         // Content: show both stacked when tall, or toggled when short
-                        .when(meters_panel_tall, |d| {
-                            d.child(
+                        .when(meters_panel_tall, |el| {
+                            el.child(
                                 div()
                                     .flex()
                                     .flex_col()
@@ -465,16 +467,16 @@ impl PlayerView {
                                     ),
                             )
                         })
-                        .when(!meters_panel_tall, |d| {
-                            d.child(
+                        .when(!meters_panel_tall, |el| {
+                            el.child(
                                 div()
                                     .flex_1()
                                     .overflow_hidden()
-                                    .when(meter_display_mode == MeterDisplayMode::Lufs, |d| {
-                                        d.child(self.render_lufs_panel(cx))
+                                    .when(meter_display_mode == MeterDisplayMode::Lufs, |el| {
+                                        el.child(self.render_lufs_panel(cx))
                                     })
-                                    .when(meter_display_mode == MeterDisplayMode::Levels, |d| {
-                                        d.child(self.render_meters_panel(cx))
+                                    .when(meter_display_mode == MeterDisplayMode::Levels, |el| {
+                                        el.child(self.render_meters_panel(cx))
                                     }),
                             )
                         }),
@@ -492,6 +494,7 @@ impl PlayerView {
         translations: &crate::i18n::Translations,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let layout = state.layout.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -593,7 +596,7 @@ impl PlayerView {
                 .flex_col()
                 .flex_1()
                 .child(
-                    div().mb_3().child(
+                    div().mb(d.gap_md).child(
                         Text::new(translations.queue_now_playing)
                             .size(TextSize::Md)
                             .weight(TextWeight::Bold)
@@ -604,15 +607,15 @@ impl PlayerView {
                 .child(
                     div()
                         .flex()
-                        .gap_4()
-                        .mb_4()
+                        .gap(d.section)
+                        .mb(d.section)
                         // Album art (smaller, top-left)
                         .child({
                             let art_div = div()
                                 .w(rems(7.5))
                                 .h(rems(7.5))
                                 .bg(theme.surface)
-                                .rounded_lg()
+                                .rounded(d.r_lg)
                                 .overflow_hidden()
                                 .flex_shrink_0();
 
@@ -629,7 +632,7 @@ impl PlayerView {
                                     .items_center()
                                     .justify_center()
                                     .text_color(theme.text_muted)
-                                    .text_2xl()
+                                    .text_size(d.text_lg)
                                     .child("♪")
                             }
                         })
@@ -638,12 +641,12 @@ impl PlayerView {
                             div()
                                 .flex()
                                 .flex_col()
-                                .gap_1()
+                                .gap(d.grid)
                                 .flex_1()
                                 // Album title
                                 .child(
                                     div()
-                                        .text_lg()
+                                        .text_size(d.text_lg)
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(theme.text_primary)
                                         .overflow_hidden()
@@ -653,7 +656,7 @@ impl PlayerView {
                                 // Artist
                                 .child(
                                     div()
-                                        .text_sm()
+                                        .text_size(d.text_sm)
                                         .text_color(theme.text_secondary)
                                         .overflow_hidden()
                                         .text_ellipsis()
@@ -664,30 +667,30 @@ impl PlayerView {
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap_2()
-                                        .mt_2()
+                                        .gap(d.gap)
+                                        .mt(d.gap)
                                         .child(
                                             div()
-                                                .text_xs()
+                                                .text_size(d.text_xs)
                                                 .font_weight(FontWeight::BOLD)
                                                 .text_color(theme.text_secondary)
                                                 .child(format!("{} {}/{}", file_type, bit_depth, sample_rate_str)),
                                         )
                                         .child(
                                             div()
-                                                .text_xs()
+                                                .text_size(d.text_xs)
                                                 .text_color(theme.text_muted)
                                                 .child(format!("#{}", track_count)),
                                         )
                                         .child(
                                             div()
-                                                .text_xs()
+                                                .text_size(d.text_xs)
                                                 .text_color(theme.text_muted)
                                                 .child(translations.queue_replay_gain),
                                         )
                                         .child(
                                             div()
-                                                .text_xs()
+                                                .text_size(d.text_xs)
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(if replay_gain.is_some() {
                                                     theme.text_secondary
@@ -702,24 +705,24 @@ impl PlayerView {
                                         )
                                         .child(
                                             div()
-                                                .text_xs()
+                                                .text_size(d.text_xs)
                                                 .text_color(theme.text_muted)
                                                 .child(translations.queue_channels),
                                         )
                                         .child(
                                             div()
-                                                .text_xs()
+                                                .text_size(d.text_xs)
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(theme.text_secondary)
                                                 .child(format!("{}", channels)),
                                         )
                                         // Album favorite heart
-                                        .when_some(album_id, |d, aid| {
-                                            d.child(
+                                        .when_some(album_id, |el, aid| {
+                                            el.child(
                                                 div()
                                                     .id("album-heart")
                                                     .cursor_pointer()
-                                                    .ml_2()
+                                                    .ml(d.gap)
                                                     .on_mouse_up(
                                                         MouseButton::Left,
                                                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -782,7 +785,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
-            .p_2()
+            .p(d.pad_y)
             .border_r_1()
             .border_color(theme.border)
             .bg(theme.background_secondary)
@@ -805,6 +808,7 @@ impl PlayerView {
         theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         // Get dynamic max chars for track titles based on window size
         let state = self.state.read(cx);
         let layout = state.layout.read(cx);
@@ -823,10 +827,10 @@ impl PlayerView {
             if show_header {
                 all_elements.push(
                     div()
-                        .py_1()
-                        .mt_2()
-                        .mb_1()
-                        .text_xs()
+                        .py(d.pad_y_half)
+                        .mt(d.gap)
+                        .mb(d.grid)
+                        .text_size(d.text_xs)
                         .font_weight(FontWeight::BOLD)
                         .text_color(theme.text_secondary)
                         .child(format!("{} {}", translations.queue_disc, disc_num))
@@ -876,15 +880,15 @@ impl PlayerView {
                         .id(SharedString::from(format!("track-{}", idx)))
                         .flex()
                         .items_center()
-                        .gap_2()
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
+                        .gap(d.gap)
+                        .px(d.pad_y)
+                        .py(d.pad_y_half)
+                        .rounded(d.r_md)
                         .cursor_pointer()
-                        .when(is_current, |d| {
-                            d.bg(theme_c.accent).text_color(theme_c.text_on_accent)
+                        .when(is_current, |el| {
+                            el.bg(theme_c.accent).text_color(theme_c.text_on_accent)
                         })
-                        .when(!is_current, |d| d.hover(|s| s.bg(theme_c.surface_hover)))
+                        .when(!is_current, |el| el.hover(|s| s.bg(theme_c.surface_hover)))
                         .on_mouse_up(
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -904,7 +908,7 @@ impl PlayerView {
                         .child(
                             div()
                                 .w(rems(1.5))
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(if is_current {
                                     theme_c.text_on_accent
                                 } else {
@@ -918,7 +922,7 @@ impl PlayerView {
                         .child(
                             div()
                                 .flex_1()
-                                .text_sm()
+                                .text_size(d.text_sm)
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .whitespace_nowrap()
@@ -926,10 +930,10 @@ impl PlayerView {
                                 .child(title),
                         )
                         // Play count (only if > 0)
-                        .when(track_play_count > 0, |d| {
-                            d.child(
+                        .when(track_play_count > 0, |el| {
+                            el.child(
                                 div()
-                                    .text_xs()
+                                    .text_size(d.text_xs)
                                     .text_color(if is_current {
                                         theme_c.text_on_accent
                                     } else {
@@ -977,7 +981,7 @@ impl PlayerView {
                         )
                         .child(
                             div()
-                                .text_xs()
+                                .text_size(d.text_xs)
                                 .text_color(if is_current {
                                     theme_c.text_on_accent
                                 } else {

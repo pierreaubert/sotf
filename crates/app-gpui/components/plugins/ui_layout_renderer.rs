@@ -20,6 +20,7 @@ use super::common::{
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
+use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -40,6 +41,7 @@ use std::collections::HashMap;
 /// This replaces individual `render_*_plugin()` functions. Call this for any
 /// plugin that has a `PluginLayout` definition (i.e., `settings.layout().is_some()`).
 pub fn render_from_layout(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     settings: &PluginSettings,
@@ -65,6 +67,7 @@ pub fn render_from_layout(
     let solved = solve_layout(layout.column_constraints, available_width);
 
     render_solved_layout(
+        d,
         entity,
         plugin_idx,
         layout,
@@ -85,6 +88,7 @@ pub fn render_from_layout(
 // ============================================================================
 
 fn render_solved_layout(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     layout: &'static PluginLayout,
@@ -98,15 +102,16 @@ fn render_solved_layout(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
 ) -> AnyElement {
-    let mut root = div().flex().flex_col().gap_4();
+    let mut root = div().flex().flex_col().gap(d.section);
 
     // Build the main row (columns side-by-side, centered)
-    let mut row = div().flex().gap_6().items_start().justify_center();
+    let mut row = div().flex().gap(d.section_lg).items_start().justify_center();
 
     for col in &solved.columns {
         match col.role {
             ColumnRole::Config if layout.has_config() => {
                 row = row.child(render_config_column(
+                    d,
                     entity.clone(),
                     plugin_idx,
                     layout.config,
@@ -122,6 +127,7 @@ fn render_solved_layout(
             }
             ColumnRole::Main => {
                 row = row.child(render_main_column(
+                    d,
                     entity.clone(),
                     plugin_idx,
                     layout,
@@ -138,6 +144,7 @@ fn render_solved_layout(
             }
             ColumnRole::Output if layout.has_output() => {
                 row = row.child(render_output_column(
+                    d,
                     entity.clone(),
                     plugin_idx,
                     layout.output,
@@ -162,6 +169,7 @@ fn render_solved_layout(
 
 /// Render the config (left) column.
 fn render_config_column(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     controls: &[ControlSpec],
@@ -174,10 +182,11 @@ fn render_config_column(
     knob_size: KnobSize,
     theme: &Theme,
 ) -> impl IntoElement {
-    let mut col = div().flex().flex_col().gap_2().w(px(width));
-    col = col.child(render_section_title("CONFIG", theme));
+    let mut col = div().flex().flex_col().gap(d.gap).w(px(width));
+    col = col.child(render_section_title(d, "CONFIG", theme));
     for spec in controls {
         col = col.child(render_control(
+            d,
             entity.clone(),
             plugin_idx,
             spec,
@@ -196,6 +205,7 @@ fn render_config_column(
 
 /// Render the main (center) column with groups and tabs.
 fn render_main_column(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     layout: &'static PluginLayout,
@@ -209,20 +219,21 @@ fn render_main_column(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
 ) -> impl IntoElement {
-    let mut center = div().flex().flex_col().gap_4().flex_1();
+    let mut center = div().flex().flex_col().gap(d.section).flex_1();
 
     // Render control groups
     if !layout.main.is_empty() {
         let groups_container =
             if solved.group_direction == sotf_plugins::layout_solver::Direction::Row {
-                div().flex().gap_6().items_start()
+                div().flex().gap(d.section_lg).items_start()
             } else {
-                div().flex().flex_col().gap_4()
+                div().flex().flex_col().gap(d.section)
             };
 
         let mut container = groups_container;
         for group in layout.main {
             container = container.child(render_group(
+                d,
                 entity.clone(),
                 plugin_idx,
                 group,
@@ -255,8 +266,8 @@ fn render_main_column(
             let tab_idx = i;
             tab_bar = tab_bar.child(
                 div()
-                    .text_xs()
-                    .px_4()
+                    .text_size(d.text_xs)
+                    .px(d.card)
                     .pb(px(6.0))
                     .pt(px(4.0))
                     .cursor_pointer()
@@ -275,7 +286,7 @@ fn render_main_column(
                     .border_color(if is_active {
                         theme.accent
                     } else {
-                        gpui::rgba(0x00000000)
+                        gpui::Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }
                     })
                     .hover(|s| {
                         s.text_color(theme.text_primary).border_color(if is_active {
@@ -296,9 +307,10 @@ fn render_main_column(
 
         // Active tab content
         if let Some((_, tab_content)) = all_tabs.get(clamped_tab) {
-            let mut tab_div = div().flex().flex_wrap().gap_4();
+            let mut tab_div = div().flex().flex_wrap().gap(d.section);
             for spec in *tab_content {
                 tab_div = tab_div.child(render_control(
+                    d,
                     entity.clone(),
                     plugin_idx,
                     spec,
@@ -321,6 +333,7 @@ fn render_main_column(
 
 /// Render the output (right) column.
 fn render_output_column(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     controls: &[ControlSpec],
@@ -334,10 +347,11 @@ fn render_output_column(
     knob_size: KnobSize,
     theme: &Theme,
 ) -> impl IntoElement {
-    let mut col = div().flex().flex_col().gap_2().w(px(width));
-    col = col.child(render_section_title("OUTPUT", theme));
+    let mut col = div().flex().flex_col().gap(d.gap).w(px(width));
+    col = col.child(render_section_title(d, "OUTPUT", theme));
     for spec in controls {
         col = col.child(render_control(
+            d,
             entity.clone(),
             plugin_idx,
             spec,
@@ -356,6 +370,7 @@ fn render_output_column(
 
 /// Render a control group (titled section with controls).
 fn render_group(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     group: &ControlGroup,
@@ -373,16 +388,16 @@ fn render_group(
     let mut col = div()
         .flex()
         .flex_col()
-        .gap_2()
-        .when(!group.title.is_empty(), |d| {
-            d.rounded_xl()
+        .gap(d.gap)
+        .when(!group.title.is_empty(), |el| {
+            el.rounded(d.r_xl)
                 .bg(theme.background_secondary)
                 .border_1()
                 .border_color(theme.border)
-                .p_3()
+                .p(d.pad_x)
         });
     if !group.title.is_empty() {
-        col = col.child(render_section_title(group.title, theme));
+        col = col.child(render_section_title(d, group.title, theme));
     }
 
     // Check if this group has sliders — if so, arrange horizontally
@@ -392,9 +407,10 @@ fn render_group(
         .any(|c| matches!(c.control_type, ControlType::VerticalSlider));
 
     if has_sliders {
-        let mut slider_row = div().flex().gap_2().items_end();
+        let mut slider_row = div().flex().gap(d.gap).items_end();
         for spec in group.controls {
             slider_row = slider_row.child(render_control(
+                d,
                 entity.clone(),
                 plugin_idx,
                 spec,
@@ -411,9 +427,10 @@ fn render_group(
         col = col.child(slider_row);
     } else {
         // Knobs/toggles: wrap in a flex-wrap container
-        let mut knob_row = div().flex().flex_wrap().gap_2();
+        let mut knob_row = div().flex().flex_wrap().gap(d.gap);
         for spec in group.controls {
             knob_row = knob_row.child(render_control(
+                d,
                 entity.clone(),
                 plugin_idx,
                 spec,
@@ -438,6 +455,7 @@ fn render_group(
                     position: VizPosition::BelowGroup(target),
                 } if *target == group.title => {
                     col = col.child(render_transfer_curve_for_layout(
+                        d,
                         params,
                         values,
                         plugin_data,
@@ -476,6 +494,7 @@ fn pot_size_large(knob_size: KnobSize) -> PotentiometerSize {
 
 /// Render a single control based on its ControlType.
 fn render_control(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     spec: &ControlSpec,
@@ -567,6 +586,7 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_button_set(
+                    d,
                     entity,
                     plugin_idx,
                     idx,
@@ -585,6 +605,7 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_selector(
+                    d,
                     entity,
                     plugin_idx,
                     idx,
@@ -599,12 +620,12 @@ fn render_control(
             }
         }
         ControlType::BarMeter { min_db, max_db } => {
-            render_bar_meter(plugin_data, min_db, max_db, theme)
+            render_bar_meter(d, plugin_data, min_db, max_db, theme)
         }
         ControlType::Label => {
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
-                render_param_as_label(param, value, theme)
+                render_param_as_label(d, param, value, theme)
             } else {
                 div().into_any_element()
             }
@@ -612,7 +633,7 @@ fn render_control(
         ControlType::FilePicker => {
             if let Some(param) = params.get(idx) {
                 let path = file_paths.get(&idx).map(|s| s.as_str());
-                render_file_picker(plugin_idx, idx, param, path, theme)
+                render_file_picker(d, plugin_idx, idx, param, path, theme)
             } else {
                 div().into_any_element()
             }
@@ -823,6 +844,7 @@ fn render_param_as_toggle(
 ///
 /// Displays the current label; clicking advances to the next option.
 fn render_param_as_selector(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     idx: usize,
@@ -843,22 +865,22 @@ fn render_param_as_selector(
             div()
                 .flex()
                 .items_center()
-                .gap_2()
-                .px_2()
-                .py_1()
-                .rounded_md()
+                .gap(d.gap)
+                .px(d.pad_y)
+                .py(d.pad_y_half)
+                .rounded(d.r_md)
                 .cursor_pointer()
                 .id(SharedString::from(format!("selector-{plugin_idx}-{idx}")))
-                .when(is_sel, |d| d.border_1().border_color(theme.accent))
+                .when(is_sel, |el| el.border_1().border_color(theme.accent))
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .text_color(theme.text_muted)
                         .child(param.name),
                 )
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .child(label.to_string()),
@@ -888,6 +910,7 @@ fn render_param_as_selector(
 
 /// Render a param as a horizontal button set (mutually exclusive buttons).
 fn render_param_as_button_set(
+    d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     idx: usize,
@@ -903,9 +926,9 @@ fn render_param_as_button_set(
 
     let mut row = div()
         .flex()
-        .gap_1()
-        .rounded_md()
-        .when(is_sel, |d| d.border_1().border_color(theme.accent));
+        .gap(d.grid)
+        .rounded(d.r_md)
+        .when(is_sel, |el| el.border_1().border_color(theme.accent));
 
     for (i, label) in labels.iter().enumerate() {
         let is_active = i == current;
@@ -915,10 +938,10 @@ fn render_param_as_button_set(
         let btn_val = i;
         row = row.child(
             div()
-                .text_xs()
-                .px_2()
-                .py_1()
-                .rounded_sm()
+                .text_size(d.text_xs)
+                .px(d.pad_y)
+                .py(d.pad_y_half)
+                .rounded(d.r_sm)
                 .cursor_pointer()
                 .id(SharedString::from(format!(
                     "btn-set-{plugin_idx}-{idx}-{i}"
@@ -947,6 +970,7 @@ fn render_param_as_button_set(
 
 /// Render a gain reduction meter.
 fn render_bar_meter(
+    d: &Ds,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     _min_db: f64,
     max_db: f64,
@@ -977,11 +1001,11 @@ fn render_bar_meter(
         })
         .unwrap_or(0.0);
 
-    render_gr_meter(gr_db, max_db, theme).into_any_element()
+    render_gr_meter(d, gr_db, max_db, theme).into_any_element()
 }
 
 /// Render a read-only label for a param value.
-fn render_param_as_label(param: &ParamSpec, value: f64, theme: &Theme) -> AnyElement {
+fn render_param_as_label(d: &Ds, param: &ParamSpec, value: f64, theme: &Theme) -> AnyElement {
     let display_val = value * param.display_scale;
     let formatted = if param.unit.is_empty() {
         format!("{:.1}", display_val)
@@ -993,19 +1017,19 @@ fn render_param_as_label(param: &ParamSpec, value: f64, theme: &Theme) -> AnyEle
         .flex()
         .items_center()
         .justify_between()
-        .px_3()
-        .py_2()
-        .rounded_lg()
+        .px(d.pad_x)
+        .py(d.pad_y)
+        .rounded(d.r_lg)
         .bg(theme.background_secondary)
         .child(
             div()
-                .text_xs()
+                .text_size(d.text_xs)
                 .text_color(theme.text_muted)
                 .child(param.name),
         )
         .child(
             div()
-                .text_sm()
+                .text_size(d.text_sm)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_primary)
                 .child(formatted),
@@ -1015,6 +1039,7 @@ fn render_param_as_label(param: &ParamSpec, value: f64, theme: &Theme) -> AnyEle
 
 /// Render a file picker with load button.
 fn render_file_picker(
+    d: &Ds,
     plugin_idx: usize,
     idx: usize,
     param: &ParamSpec,
@@ -1037,9 +1062,9 @@ fn render_file_picker(
         .flex()
         .items_center()
         .justify_between()
-        .px_3()
-        .py_2()
-        .rounded_lg()
+        .px(d.pad_x)
+        .py(d.pad_y)
+        .rounded(d.r_lg)
         .bg(theme.background_secondary)
         .child(
             div()
@@ -1047,13 +1072,13 @@ fn render_file_picker(
                 .flex_col()
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(d.text_xs)
                         .text_color(theme.text_muted)
                         .child(param.name),
                 )
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(text_color)
                         .overflow_hidden()
@@ -1064,13 +1089,13 @@ fn render_file_picker(
         )
         .child(
             div()
-                .px_2()
-                .py_1()
-                .rounded_md()
+                .px(d.pad_y)
+                .py(d.pad_y_half)
+                .rounded(d.r_md)
                 .bg(theme.surface)
                 .border_1()
                 .border_color(theme.border)
-                .text_xs()
+                .text_size(d.text_xs)
                 .id(SharedString::from(format!(
                     "load-file-btn-{plugin_idx}-{idx}"
                 )))
@@ -1101,6 +1126,7 @@ fn render_file_picker(
 /// Looks up threshold, ratio, and knee by engine_key. For limiters (no ratio param),
 /// uses ratio=∞ and is_limiter=true for proper brickwall rendering.
 fn render_transfer_curve_for_layout(
+    d: &Ds,
     params: &[ParamSpec],
     values: &[f64],
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
@@ -1150,6 +1176,7 @@ fn render_transfer_curve_for_layout(
     });
 
     render_transfer_curve_with_level(
+        d,
         threshold_db,
         ratio,
         knee_db,

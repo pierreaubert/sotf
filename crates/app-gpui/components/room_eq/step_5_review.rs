@@ -1,3 +1,4 @@
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -239,6 +240,7 @@ impl PlayerView {
 
     /// Render the selected channel's optimization result
     fn render_selected_channel_result(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         use crate::app::types::room_eq::{CustomTargetCurve, InteractiveChartStateWrapper};
 
         // Initialize interactive chart state if needed
@@ -314,6 +316,7 @@ impl PlayerView {
         };
 
         render_channel_result_card(
+            d,
             result,
             &theme,
             smoothing_octaves,

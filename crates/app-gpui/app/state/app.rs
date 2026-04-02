@@ -985,6 +985,9 @@ impl App {
         // Restore release channel
         self.ui_state.release_channel = config.release_channel;
 
+        // Restore design language
+        self.ui_state.design_language = config.design_language;
+
         // Build LayoutState from config
         let layout_state = LayoutState {
             queue_panel_ratio: config.panel_layout.queue_ratio,
@@ -1198,6 +1201,7 @@ impl App {
             max_cpu_cores: self.ui_state.max_cpu_cores,
             tutorial_completed: self.tutorial_completed,
             seen_hints: self.seen_hints.clone(),
+            design_language: self.ui_state.design_language.clone(),
         };
         config.save()?;
         Ok(())

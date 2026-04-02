@@ -2,6 +2,7 @@
 //!
 //! Visualizations for spectrum data using Heatmaps / Surface plots.
 
+use crate::components::design::Ds;
 use crate::theme::Theme;
 
 use gpui::prelude::*;
@@ -53,9 +54,10 @@ impl Default for SpectrumConfig {
 
 /// Render a spectrum heatmap
 pub fn render_spectrum_heatmap(
+    d: Ds,
     data: SpectrumGrid,
     config: SpectrumConfig,
-    _theme: &Theme,
+    theme: &Theme,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
 ) -> impl IntoElement {
     if data.x_values.is_empty() || data.y_values.is_empty() || data.z_values.is_empty() {
@@ -67,8 +69,8 @@ pub fn render_spectrum_heatmap(
             .h(px(config.height))
             .child(
                 div()
-                    .text_base()
-                    .text_color(gpui::rgb(0x666666))
+                    .text_size(d.text_base)
+                    .text_color(theme.text_muted)
                     .child("No spectrum data available."),
             )
             .into_any_element();
@@ -86,7 +88,7 @@ pub fn render_spectrum_heatmap(
             .justify_center()
             .w(px(config.width))
             .h(px(config.height))
-            .text_color(gpui::rgb(0xFF0000))
+            .text_color(theme.error)
             .child("Data dimension mismatch")
             .into_any_element();
     }
@@ -138,7 +140,7 @@ pub fn render_spectrum_heatmap(
             .justify_center()
             .w(px(config.width))
             .h(px(config.height))
-            .text_color(gpui::rgb(0xFF0000))
+            .text_color(theme.error)
             .child(format!("Error building chart: {}", e))
             .into_any_element(),
     }

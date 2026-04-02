@@ -1,3 +1,4 @@
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -14,6 +15,7 @@ pub(crate) fn render_channel_config_row(
     config: &crate::app::types::RoomEqSpeakerConfig,
     theme: &crate::theme::Theme,
     view: &Entity<PlayerView>,
+    d: Ds,
 ) -> impl IntoElement {
     use crate::app::types::SpeakerConfigType;
 
@@ -23,12 +25,12 @@ pub(crate) fn render_channel_config_row(
 
     div()
         .flex()
-        .gap_4()
+        .gap(d.section)
         .items_center()
         .w_full()
-        .p_3()
+        .p(d.pad_x)
         .bg(theme.surface)
-        .rounded_lg()
+        .rounded(d.r_lg)
         .border_1()
         .border_color(theme.border)
         // Channel name
@@ -43,7 +45,7 @@ pub(crate) fn render_channel_config_row(
         .child(
             div()
                 .flex()
-                .gap_2()
+                .gap(d.gap)
                 .items_center()
                 .child(
                     Text::new("Type:")
@@ -114,7 +116,7 @@ pub(crate) fn render_channel_config_row(
             el.child(
                 div()
                     .flex()
-                    .gap_2()
+                    .gap(d.gap)
                     .items_center()
                     .child(
                         Text::new("Crossover:")
@@ -178,6 +180,7 @@ fn render_crossover_dropdown(
 /// Render a single channel result card with plots and filter details
 /// If interactive_state is provided, the chart will support pan/zoom interactions
 pub(crate) fn render_channel_result_card(
+    d: Ds,
     result: &crate::app::types::ChannelOptResult,
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
@@ -196,11 +199,11 @@ pub(crate) fn render_channel_result_card(
     div()
         .flex()
         .flex_col()
-        .gap_3()
-        .p_4()
+        .gap(d.gap_md)
+        .p(d.card)
         .w_full()
         .bg(theme.surface)
-        .rounded_lg()
+        .rounded(d.r_lg)
         .border_1()
         .border_color(theme.border)
         // Header with channel name and scores
@@ -218,7 +221,7 @@ pub(crate) fn render_channel_result_card(
                 .child(
                     div()
                         .flex()
-                        .gap_4()
+                        .gap(d.section)
                         .child(
                             Text::new(format!("Before: {:.2}", result.pre_score))
                                 .size(TextSize::Xs)
@@ -321,7 +324,7 @@ pub(crate) fn render_channel_result_card(
                         .size(TextSize::Xs)
                         .color(theme.text_primary),
                 )
-                .child(render_filter_table(&result.eq_filters, theme)),
+                .child(render_filter_table(d, &result.eq_filters, theme)),
         )
         // Crossover info (if multi-driver)
         .when(result.crossover_freqs.is_some(), |el| {
@@ -338,13 +341,13 @@ pub(crate) fn render_channel_result_card(
                     .child(
                         gpui::div()
                             .flex()
-                            .gap_2()
+                            .gap(d.gap)
                             .children(xover_freqs.iter().map(|f| {
                                 gpui::div()
-                                    .px_2()
-                                    .py_1()
+                                    .px(d.pad_y)
+                                    .py(d.pad_y_half)
                                     .bg(theme.background_secondary)
-                                    .rounded_md()
+                                    .rounded(d.r_md)
                                     .child(
                                         Text::new(format_frequency(*f))
                                             .size(TextSize::Xs)
@@ -1165,6 +1168,7 @@ fn render_impulse_response_graph(
 
 /// Render the EQ filter table
 fn render_filter_table(
+    d: Ds,
     filters: &[crate::app::types::EqFilterConfig],
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
@@ -1184,7 +1188,7 @@ fn render_filter_table(
         .flex()
         .flex_wrap()
         .justify_center()
-        .gap_2()
+        .gap(d.gap)
         .children(filters.iter().enumerate().map(|(i, f)| {
             let gain_color = if f.gain_db > 0.5 {
                 theme.success
@@ -1195,21 +1199,21 @@ fn render_filter_table(
             };
 
             div()
-                .px_3()
-                .py_2()
+                .px(d.pad_x)
+                .py(d.pad_y)
                 .bg(theme.background_secondary)
-                .rounded_md()
+                .rounded(d.r_md)
                 .border_1()
                 .border_color(theme.border)
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(d.grid)
                 .min_w(rems(5.0))
                 // Filter number and type
                 .child(
                     div()
                         .flex()
-                        .gap_1()
+                        .gap(d.grid)
                         .items_center()
                         .child(
                             Text::new(format!("{}", i + 1))
@@ -1234,7 +1238,7 @@ fn render_filter_table(
                 .child(
                     div()
                         .flex()
-                        .gap_2()
+                        .gap(d.gap)
                         .child(
                             Text::new(format!("{:+.1}dB", f.gain_db))
                                 .weight(TextWeight::Bold)

@@ -4,6 +4,7 @@
 use crate::app::state::audio_device::{HalConfig, format_buffer_size, format_sample_rate};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -18,6 +19,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
@@ -241,7 +243,7 @@ impl PlayerView {
 
         content.child(
             // Grid layout with 2 equal-width columns
-            div().grid().grid_cols(2).gap_3().w_full().children(
+            div().grid().grid_cols(2).gap(d.gap_md).w_full().children(
                 state
                     .app
                     .audio_device_state
@@ -270,15 +272,15 @@ impl PlayerView {
 
                         div()
                             .w_full()
-                            .p_3()
-                            .rounded_md()
+                            .p(d.pad_x)
+                            .rounded(d.r_md)
                             .cursor_pointer()
                             .border_1()
-                            .when(is_selected, |d| {
-                                d.bg(theme.accent).border_color(theme.accent)
+                            .when(is_selected, |el| {
+                                el.bg(theme.accent).border_color(theme.accent)
                             })
-                            .when(!is_selected, |d| {
-                                d.bg(theme.surface)
+                            .when(!is_selected, |el| {
+                                el.bg(theme.surface)
                                     .border_color(theme.border)
                                     .hover(|s| s.bg(theme.surface_hover))
                             })
@@ -291,7 +293,7 @@ impl PlayerView {
                                             div()
                                                 .w(px(60.0))
                                                 .h(px(60.0))
-                                                .rounded_md()
+                                                .rounded(d.r_md)
                                                 .bg(theme.background)
                                                 .overflow_hidden()
                                                 .child(

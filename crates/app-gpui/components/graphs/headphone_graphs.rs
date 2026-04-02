@@ -1,3 +1,4 @@
+use crate::components::design::Ds;
 use crate::components::graphs::common::{colors, rgba_to_u32, theme_to_chart_theme};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -9,6 +10,7 @@ impl PlayerView {
     /// Render the optimization result graphs in a 2x2 grid
     pub fn render_optimization_result_graphs(
         &self,
+        d: &Ds,
         result: &crate::app::types::HeadphoneEqResult,
         theme: &Theme,
         available_width: f32,
@@ -25,29 +27,26 @@ impl PlayerView {
             .items_center()
             .justify_between()
             .w_full()
+            .gap(d.section_xl)
             .child(render_response_comparison_plot(
                 result,
                 theme,
                 graph_width,
                 graph_height,
             ))
-            .gap_8()
             .child(render_filter_response_plot(
                 result,
                 theme,
                 graph_width,
                 graph_height,
             ))
-            .gap_8()
             .child(render_filter_vs_deviation_plot(
                 result,
                 theme,
                 graph_width,
                 graph_height,
             ))
-            .gap_8()
             .child(render_error_plot(result, theme, graph_width, graph_height))
-            .gap_8()
     }
 }
 
