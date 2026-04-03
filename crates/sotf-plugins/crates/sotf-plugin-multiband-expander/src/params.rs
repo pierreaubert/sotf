@@ -125,8 +125,9 @@ pub const PARAMS: &[ParamSpec] = &[
 /// Single-band expander UI layout (backward compat, referencing PARAMS indices).
 pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::toggle(10), // link_channels
-        ControlSpec::knob(11),   // sidechain_hpf_hz
+        ControlSpec::toggle(10),  // link_channels
+        ControlSpec::knob(11),    // sidechain_hpf_hz
+        ControlSpec::selector(13), // detection_mode
     ],
     main: &[
         ControlGroup {
@@ -144,12 +145,14 @@ pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::slider(2),
                 ControlSpec::slider(3),
                 ControlSpec::slider(7),
+                ControlSpec::knob(12), // lookahead_ms
             ],
         },
     ],
     output: &[
         ControlSpec::meter(-30.0, 0.0),
         ControlSpec::toggle(9),
+        ControlSpec::toggle(14), // measured_auto_makeup
         ControlSpec::knob(8),
     ],
     tabs: &[TabSpec {
@@ -290,9 +293,10 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
 /// 12=hysteresis, 13=hold, 14=mix, 15=link_channels
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::selector(0), // num_bands
-        ControlSpec::selector(1), // crossover_preset
-        ControlSpec::toggle(15),  // link_channels
+        ControlSpec::selector(0),  // num_bands
+        ControlSpec::selector(1),  // crossover_preset
+        ControlSpec::toggle(15),   // link_channels
+        ControlSpec::selector(16), // detection_mode
     ],
     main: &[
         ControlGroup {

@@ -195,7 +195,10 @@ pub const PARAMS: &[ParamSpec] = &[
 /// 12=itd_delay_ms,
 /// 13=autogain_enabled, 14=target_lufs, 15=max_gain, 16=smoothing
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[],
+    config: &[
+        ControlSpec::selector(1), // crossfeed_preset
+        ControlSpec::toggle(2),   // enabled
+    ],
     main: &[
         ControlGroup {
             title: "",

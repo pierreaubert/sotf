@@ -536,10 +536,11 @@ pub const PARAMS: &[ParamSpec] = &[
 /// Upmixer: 0=speaker_config, 1-4=gains, 5-11=LFE, 12-14=spatial,
 /// 15-17=hr_direct, 18-21=decorrelation, 22-24=height, 25-27=surround,
 /// 28-33=dialogue, 34=safety_cap, 35-36=analysis, 37-40=diagnostics,
-/// 41-42=source_extraction
+/// 41-42=source_extraction, 43=binaural_preview
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::selector(0), // speaker_config
+        ControlSpec::toggle(43),  // binaural_preview
     ],
     main: &[
         ControlGroup {
@@ -613,6 +614,20 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::knob(19),     // decor_lfo_rate
                 ControlSpec::knob(20),     // velvet_duration
                 ControlSpec::knob(21),     // velvet_density
+            ],
+        },
+        TabSpec {
+            name: "Analysis",
+            controls: &[
+                ControlSpec::toggle(35),   // low_latency
+                ControlSpec::selector(36), // frequency_resolution
+            ],
+        },
+        TabSpec {
+            name: "Source",
+            controls: &[
+                ControlSpec::toggle(41), // multi_source_extraction
+                ControlSpec::knob(42),   // multi_source_threshold
             ],
         },
         TabSpec {

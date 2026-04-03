@@ -68,10 +68,17 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         controls: &[
             ControlSpec::slider(0), // delay_ms
             ControlSpec::slider(1), // feedback
+            ControlSpec::toggle(5), // allpass_feedback
         ],
     }],
     output: &[ControlSpec::knob(2)], // mix
-    tabs: &[],
+    tabs: &[TabSpec {
+        name: "Modulation",
+        controls: &[
+            ControlSpec::knob(3), // lfo_rate_hz
+            ControlSpec::knob(4), // lfo_depth_ms
+        ],
+    }],
     visualizations: &[],
     column_constraints: &[
         ColumnConstraint::main(200.0),

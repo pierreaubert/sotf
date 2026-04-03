@@ -103,7 +103,23 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ],
     }],
     output: &[],
-    tabs: &[],
+    tabs: &[
+        TabSpec {
+            name: "Reverb",
+            controls: &[
+                ControlSpec::toggle(6), // late_reverb_enabled
+                ControlSpec::knob(7),   // late_reverb_mix
+                ControlSpec::knob(8),   // late_reverb_rt60
+                ControlSpec::knob(9),   // late_reverb_damping
+            ],
+        },
+        TabSpec {
+            name: "Headphone",
+            controls: &[
+                ControlSpec::toggle(10), // headphone_eq_enabled
+            ],
+        },
+    ],
     visualizations: &[],
     column_constraints: &[
         ColumnConstraint::config(180.0, 0.5),

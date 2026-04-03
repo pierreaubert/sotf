@@ -51,7 +51,14 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::knob(1), // mix
         ControlSpec::knob(2), // gain_db
     ],
-    tabs: &[],
+    tabs: &[TabSpec {
+        name: "Advanced",
+        controls: &[
+            ControlSpec::toggle(3), // use_nupc
+            ControlSpec::toggle(4), // zero_latency_head
+            ControlSpec::knob(5),   // head_taps
+        ],
+    }],
     visualizations: &[],
     column_constraints: &[
         ColumnConstraint::config(180.0, 0.5),

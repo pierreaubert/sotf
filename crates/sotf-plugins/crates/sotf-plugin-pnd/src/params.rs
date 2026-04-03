@@ -81,8 +81,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlGroup {
             title: "CORRECTION",
             controls: &[
-                ControlSpec::knob(0), // correction_strength
-                ControlSpec::knob(4), // confidence_threshold
+                ControlSpec::knob(0),   // correction_strength
+                ControlSpec::knob(4),   // confidence_threshold
+                ControlSpec::toggle(5), // phase_vocoder
             ],
         },
         ControlGroup {

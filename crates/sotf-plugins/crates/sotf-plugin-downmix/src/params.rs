@@ -96,7 +96,10 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::toggle(4)], // phase_coherence
+    config: &[
+        ControlSpec::toggle(4), // phase_coherence
+        ControlSpec::toggle(7), // itu_mode
+    ],
     main: &[ControlGroup {
         title: "CHANNEL GAINS",
         controls: &[

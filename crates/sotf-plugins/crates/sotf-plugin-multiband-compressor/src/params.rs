@@ -150,6 +150,7 @@ pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::knob(9),      // sidechain_hpf_hz
         ControlSpec::selector(10), // sidechain_hpf_order
         ControlSpec::selector(11), // detection_mode
+        ControlSpec::toggle(15),   // sidechain_external
     ],
     main: &[
         ControlGroup {
@@ -347,8 +348,10 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlGroup {
             title: "TIMING",
             controls: &[
-                ControlSpec::slider(8), // attack
-                ControlSpec::slider(9), // release
+                ControlSpec::slider(8),  // attack
+                ControlSpec::slider(9),  // release
+                ControlSpec::knob(13),   // lookahead
+                ControlSpec::toggle(14), // ms_mode
             ],
         },
     ],

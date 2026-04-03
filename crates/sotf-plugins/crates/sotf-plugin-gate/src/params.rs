@@ -142,13 +142,17 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::knob(7),     // sidechain_hpf_hz
         ControlSpec::selector(8), // sidechain_hpf_order
         ControlSpec::selector(9), // detection_mode
+        ControlSpec::toggle(10),  // sidechain_external
     ],
     main: &[
         ControlGroup {
             title: "DYNAMICS",
             controls: &[
-                ControlSpec::slider(0), // threshold
-                ControlSpec::slider(1), // ratio
+                ControlSpec::slider(0),  // threshold
+                ControlSpec::slider(1),  // ratio
+                ControlSpec::slider(11), // range_db
+                ControlSpec::slider(12), // hysteresis_db
+                ControlSpec::slider(13), // knee_db
             ],
         },
         ControlGroup {
@@ -157,6 +161,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::slider(2), // attack
                 ControlSpec::slider(3), // hold
                 ControlSpec::slider(4), // release
+                ControlSpec::knob(14),  // lookahead_ms
             ],
         },
     ],

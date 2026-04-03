@@ -42,7 +42,10 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
     main: &[ControlGroup {
         title: "",
-        controls: &[ControlSpec::knob_large(0)], // gain_db
+        controls: &[
+            ControlSpec::knob_large(0), // gain_db
+            ControlSpec::knob(1),       // smoothing_ms
+        ],
     }],
     output: &[],
     tabs: &[],

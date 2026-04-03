@@ -100,10 +100,12 @@ pub const PARAMS: &[ParamSpec] = &[
 /// 4=release, 5=knee, 6=spectral_smoothing, 7=mix, 8=target_mode, 9=delta_listen
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::selector(0), // fft_size
-        ControlSpec::knob(6),     // spectral_smoothing
-        ControlSpec::selector(8), // target_mode
-        ControlSpec::toggle(9),   // delta_listen
+        ControlSpec::selector(0),  // fft_size
+        ControlSpec::knob(6),      // spectral_smoothing
+        ControlSpec::selector(8),  // target_mode
+        ControlSpec::toggle(9),    // delta_listen
+        ControlSpec::toggle(10),   // adaptive_threshold
+        ControlSpec::knob(11),     // adaptive_offset_db
     ],
     main: &[
         ControlGroup {

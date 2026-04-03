@@ -301,9 +301,10 @@ pub const HEAD_MODELS: &[&str] = &["Woodworth", "Brown-Duda"];
 /// 23=auto_gain, 24=ag_max, 25=ag_smoothing
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::knob(0), // distance_m
-        ControlSpec::knob(1), // speaker_angle_deg
-        ControlSpec::knob(2), // head_radius_m
+        ControlSpec::knob(0),      // distance_m
+        ControlSpec::knob(1),      // speaker_angle_deg
+        ControlSpec::knob(2),      // head_radius_m
+        ControlSpec::selector(26), // head_model
     ],
     main: &[
         ControlGroup {

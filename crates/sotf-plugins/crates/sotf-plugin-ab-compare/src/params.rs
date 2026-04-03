@@ -119,7 +119,15 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::button_set(1, &["Pot", "Binary"]), // mix_mode
                 ControlSpec::button_set(2, &["A", "B"]),        // selected_path
                 ControlSpec::toggle(3),                         // bypass
+                ControlSpec::toggle(13),                        // difference_mode
                 ControlSpec::knob(8),                           // mix_transition_ms
+            ],
+        },
+        ControlGroup {
+            title: "PHASE",
+            controls: &[
+                ControlSpec::toggle(11), // phase_invert_a
+                ControlSpec::toggle(12), // phase_invert_b
             ],
         },
         ControlGroup {

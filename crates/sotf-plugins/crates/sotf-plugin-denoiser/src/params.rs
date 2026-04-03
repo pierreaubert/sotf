@@ -361,7 +361,8 @@ pub const PARAMS: &[ParamSpec] = &[
 /// Denoiser: 0=reduction, 1=floor, 2=smoothing, 3=attack, 4=release,
 /// 5=low_latency, 6=polyphonic, 7=crack_sens, 8-11=MCRA, 12=transparency,
 /// 13-18=analysis toggles, 19-22=hiss, 23-25=spectral_sub, 26-28=noise_profile,
-/// 29=algorithm, 30=formant_preservation, 31=formant_strength, 32=multi_resolution
+/// 29=algorithm, 30=formant_preservation, 31=formant_strength, 32=multi_resolution,
+/// 33=harmonic_percussive, 34=spatial_denoise, 35=spatial_strength
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::toggle(5), // low_latency
@@ -438,6 +439,16 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             controls: &[
                 ControlSpec::toggle(30), // formant_preservation
                 ControlSpec::knob(31),   // formant_strength
+            ],
+        },
+        TabSpec {
+            name: "Advanced",
+            controls: &[
+                ControlSpec::selector(29), // algorithm
+                ControlSpec::toggle(32),   // multi_resolution
+                ControlSpec::toggle(33),   // harmonic_percussive
+                ControlSpec::toggle(34),   // spatial_denoise
+                ControlSpec::knob(35),     // spatial_strength
             ],
         },
     ],
