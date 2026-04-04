@@ -27,6 +27,8 @@ Harmonic saturation and soft clipping for adding warmth and character.
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Oversampling | Choice (Off, 2x, 4x) | 3 options | 2x | - | Oversampling factor for alias suppression |
+| DC Block | Bool | On / Off | On | - | Remove DC offset from asymmetric saturation |
+| ADAA | Bool | On / Off | On | - | Antiderivative anti-aliasing when oversampling is off |
 
 ### Output
 
@@ -34,4 +36,12 @@ Harmonic saturation and soft clipping for adding warmth and character.
 |-----------|------|-------|---------|------|-------------|
 | Output | Float | -12 .. 12 | 0 | dB | Output gain compensation |
 | Mix | Float | 0 .. 1 | 0.5 | % | Dry/wet blend |
+
+### Dynamic
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| Dynamic | Float | 0 .. 1 | 0 | % | Envelope-followed drive modulation depth |
+| Dyn Attack | Float | 0.1 .. 100 | 5 | ms | Dynamic saturation envelope attack time |
+| Dyn Release | Float | 1 .. 500 | 50 | ms | Dynamic saturation envelope release time |
 

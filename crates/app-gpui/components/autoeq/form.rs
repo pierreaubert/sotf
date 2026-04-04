@@ -2,10 +2,10 @@
 
 use gpui::*;
 
-use crate::config::AutoEqConfig;
-use crate::constants::OptimizationType;
-use crate::theme::AutoEqFormTheme;
-use crate::ui_state::AutoEqFormUiState;
+use super::config::AutoEqConfig;
+use super::constants::OptimizationType;
+use super::theme::AutoEqFormTheme;
+use super::ui_state::AutoEqFormUiState;
 
 /// Callback type for string parameter changes
 pub(crate) type StringCallback = Box<dyn Fn(&str, &mut Window, &mut App) + 'static>;

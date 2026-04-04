@@ -15,6 +15,7 @@ Crosstalk cancellation for speaker playback. Creates a wider stereo image by can
 | Distance | Float | 0.5 .. 10 | 2 | m | Listener-to-speaker distance |
 | Speaker Angle | Float | 10 .. 90 | 30 | ° | Half-angle between speakers |
 | Head Radius | Float | 0.05 .. 0.12 | 0.0875 | m | Acoustic head radius |
+| Head Model | Choice (Woodworth, Brown-Duda) | 2 options | Woodworth | - | Head diffraction model: Woodworth (classic) or Brown-Duda (rigid sphere, more accurate above 1.5kHz) |
 
 ### Head Tracking
 

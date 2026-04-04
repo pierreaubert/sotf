@@ -13,6 +13,9 @@ Frequency-dependent compression operating in the spectral domain for transparent
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | FFT Size | Choice (1024, 2048, 4096) | 3 options | 2048 | - | FFT window size (higher = better frequency resolution, more latency) |
+| Target | Choice (All, Tonal, Transient) | 3 options | All | - | Compress all bins, tonal only, or transient only |
+| Adaptive Threshold | Bool | On / Off | Off | - | Auto-set threshold relative to long-term spectral average per bin |
+| Adaptive Offset | Float | -20 .. 20 | 0 | dB | Offset from adaptive threshold (positive = less compression) |
 
 ### Dynamics
 
@@ -35,4 +38,5 @@ Frequency-dependent compression operating in the spectral domain for transparent
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Mix | Float | 0 .. 1 | 1 | % | Dry/wet blend |
+| Delta Listen | Bool | On / Off | Off | - | Solo the compression delta (hear what's being removed) |
 

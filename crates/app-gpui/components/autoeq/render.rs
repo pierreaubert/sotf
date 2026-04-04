@@ -3,9 +3,6 @@
 //! Renders a two-panel layout: form parameters on the left, contextual
 //! documentation on the right. The docs panel collapses on narrow screens.
 
-// Allow large render function - UI layout code is inherently verbose
-#![allow(clippy::too_many_lines)]
-
 use gpui::prelude::*;
 use gpui::*;
 
@@ -18,15 +15,15 @@ use gpui_ui_kit::text::{Text, TextSize, TextWeight};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::toggle::{Toggle, ToggleSize, ToggleTheme};
 
-use crate::config::ParamLimits;
-use crate::constants::*;
-use crate::docs;
-use crate::form::{
+use super::config::ParamLimits;
+use super::constants::*;
+use super::docs;
+use super::form::{
     AutoEqForm, AutoEqLayoutMode, is_narrow_default_layout, is_narrow_room_eq_layout,
     is_single_column_default_grid,
 };
-use crate::layout_tree::solve_autoeq_layout;
-use crate::theme::AutoEqFormTheme;
+use super::layout_tree::solve_autoeq_layout;
+use super::theme::AutoEqFormTheme;
 
 /// Render the documentation panel for the given focused block.
 fn render_docs_panel(
@@ -108,6 +105,7 @@ fn render_docs_panel(
     div().size_full().px(px(12.0)).py(px(8.0)).child(panel)
 }
 
+#[allow(clippy::too_many_lines)]
 impl RenderOnce for AutoEqForm {
     #[allow(clippy::cognitive_complexity)]
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {

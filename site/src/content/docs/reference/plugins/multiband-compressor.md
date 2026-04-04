@@ -26,6 +26,8 @@ Per-band dynamic range compression with 2-5 frequency bands and independent comp
 | Link Channels | Bool | On / Off | Linked | - | Stereo-link detector for L/R |
 | Lookahead | Float | 0 .. 20 | 0 | ms | Per-band pre-delay |
 | M/S Mode | Bool | On / Off | Off | - | Mid/Side processing mode |
+| Sidechain Tilt | Float | -6 .. 6 | 0 | dB | Detection tilt: +dB = more HF sensitive, -dB = more LF sensitive |
+| Link Amount | Float | 0 .. 1 | 1 | % | Channel linking: 0%=independent, 100%=linked |
 
 ### Single-Band Parameters
 

@@ -5,7 +5,7 @@ In general,
 ```
 just
 ```
-is your friend, it will list a long list of command to get stuff done.
+is your friend, it will list a long list of commands to get stuff done.
 
 ## Testing
 

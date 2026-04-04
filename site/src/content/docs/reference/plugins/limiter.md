@@ -29,6 +29,8 @@ Peak limiter to prevent clipping. Ensures output never exceeds the ceiling level
 |-----------|------|-------|---------|------|-------------|
 | True Peak | Bool | On / Off | Off | - | Detect inter-sample peaks |
 | ISP Limit | Bool | On / Off | Off | - | Guarantee output has no inter-sample peaks above ceiling |
+| Link | Float | 0 .. 1 | 1 | % | Channel linking: 0%=independent, 100%=linked (all channels see max peak) |
+| Feed Forward | Bool | On / Off | Off | - | Scan lookahead buffer for anticipatory gain reduction |
 
 ### Output
 

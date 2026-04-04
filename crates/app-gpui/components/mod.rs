@@ -1,6 +1,7 @@
 // Screen rendering modules
 //
 
+pub mod autoeq;
 pub mod design;
 pub mod dialogs;
 pub mod graphs;

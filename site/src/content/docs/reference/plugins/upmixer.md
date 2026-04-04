@@ -14,6 +14,7 @@ Stereo to surround upmixing (2ch to 5.0/5.1/7.1) using FFT-based spatial decompo
 |-----------|------|-------|---------|------|-------------|
 | Speaker Config | Choice (2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6) | 10 options | 5.1 | - | Target surround speaker layout |
 | Safety Cap | Float | 0 .. 3 | 3 | dB | Max output headroom limit |
+| Binaural Preview | Bool | On / Off | Off | - | Preview surround output binaurally (headphone monitoring, changes output to 2ch) |
 
 ### Gains
 
@@ -107,5 +108,5 @@ Stereo to surround upmixing (2ch to 5.0/5.1/7.1) using FFT-based spatial decompo
 | ML Detection | Bool | On / Off | Off | - | Use ML model for source detect |
 
 :::note
-**Structural parameters** (Speaker Config, Freq Resolution) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+**Structural parameters** (Speaker Config, Freq Resolution, Binaural Preview) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

@@ -3,7 +3,7 @@ use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, OptimizationType};
+use crate::components::autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, OptimizationType};
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Progress,
     ProgressSize, ProgressVariant, StackSpacing, Text, TextSize, TextWeight, VStack,

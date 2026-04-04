@@ -9,7 +9,6 @@ The `gpui-toolkit` workspace contains several related crates for building GPUI a
 | Crate | Purpose | Documentation |
 |-------|---------|---------------|
 | `gpui-au` | macOS Audio Unit platform backend — embeds GPUI inside AUv3 ViewControllers via Metal/wgpu | [lib.rs](gpui-au/src/lib.rs) |
-| `gpui-autoeq` | Reusable GPUI form component for EQ optimization parameters | [AGENTS.md](gpui-autoeq/AGENTS.md) |
 | `gpui-builder` | Generic constraint-based layout solver — priority collapse, auto-axis, display tiers, dividers | [README](gpui-builder/README.md) |
 | `gpui-d3rs` | Low-level D3.js-inspired visualization primitives | [README](gpui-d3rs/README.md) |
 | `gpui-design` | Platform-adaptive design system (Apple HIG, Material 3, Fluent, Neutral) — spacing, corners, typography, animation | [README](gpui-design/README.md) |

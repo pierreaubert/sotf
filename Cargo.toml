@@ -179,8 +179,7 @@ autoeq = { version = "0.4", path = "crates/autoeq" }
 # using git version
 gpui-d3rs = { version = "0.6", path = "crates/gpui-toolkit/gpui-d3rs" }
 gpui-px = { version = "0.6", path = "crates/gpui-toolkit/gpui-px", default-features = false }
-gpui-autoeq = { version = "0.6", path = "crates/gpui-toolkit/gpui-autoeq" }
-gpui-ui-kit = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
+gpui-ui-kit ={ version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
 gpui-ios = { version = "0.6", path = "crates/gpui-toolkit/gpui-ios" }
 gpui-au = { version = "0.6", path = "crates/gpui-toolkit/gpui-au" }

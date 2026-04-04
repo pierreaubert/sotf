@@ -24,6 +24,21 @@ HRTF-based 3D spatial audio rendering. Converts multichannel audio to binaural h
 |-----------|------|-------|---------|------|-------------|
 | Crossfade Mode | Choice (Linear, Spectral) | 2 options | Linear | - | Linear: simple blend (may cause tonal shift). Spectral: magnitude interpolation + phase reconstruction (smoother) |
 
+### Room
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| Late Reverb | Bool | On / Off | Off | - | Add FDN-based late reverb tail after early reflections |
+| Reverb Mix | Float | 0 .. 1 | 0.3 | - | Late reverb wet/dry mix |
+| Reverb Time | Float | 0.1 .. 5 | 1 | s | RT60 decay time for late reverb |
+| Reverb Damping | Float | 0 .. 1 | 0.3 | - | High-frequency damping (0=bright, 1=dark) |
+
+### Headphone
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| Headphone EQ | Bool | On / Off | Off | - | Apply headphone compensation EQ |
+
 :::note
 **Structural parameters** (SOFA File, Input Channels, Optimization, Near-field) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

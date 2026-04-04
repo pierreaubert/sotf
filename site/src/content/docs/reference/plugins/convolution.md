@@ -7,6 +7,9 @@ FFT-based convolution engine for applying impulse responses (room correction, ca
 
 ## Parameters
 
+
+### General
+
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | IR File | File Path | - | - | - | Impulse response WAV file path |
@@ -14,6 +17,13 @@ FFT-based convolution engine for applying impulse responses (room correction, ca
 | Gain | Float | -20 .. 20 | 0 | dB | Output level trim |
 | Use NUPC | Bool | On / Off | On | - | Non-uniform partitioned convolution |
 
+### Quality
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| Zero-Latency Head | Bool | On / Off | Off | - | Time-domain processing of first IR taps for zero additional latency |
+| Head Taps | Int | 32 .. 512 | 128 | - | Number of IR taps processed in time domain (32-512) |
+
 :::note
-**Structural parameters** (IR File, Use NUPC) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+**Structural parameters** (IR File, Use NUPC, Zero-Latency Head, Head Taps) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

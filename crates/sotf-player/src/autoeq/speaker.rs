@@ -3,7 +3,8 @@
 //! Provides thin wrappers around the autoeq library for speaker equalization.
 //! Most functionality is delegated to the library.
 
-use super::types::{CrossoverType, SpeakerConfigType};
+use super::types::SpeakerConfigType;
+pub use autoeq::CrossoverType;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -593,16 +594,6 @@ fn optimize_from_curve(
     })
 }
 
-/// Convert our CrossoverType to autoeq's CrossoverType
-fn to_autoeq_crossover_type(ct: Option<CrossoverType>) -> autoeq::CrossoverType {
-    match ct {
-        Some(CrossoverType::Butterworth12) => autoeq::CrossoverType::Butterworth2,
-        Some(CrossoverType::LR12) => autoeq::CrossoverType::LinkwitzRiley2,
-        Some(CrossoverType::LR24) => autoeq::CrossoverType::LinkwitzRiley4,
-        Some(CrossoverType::LR48) => autoeq::CrossoverType::LinkwitzRiley4, // LR48 not in autoeq, use LR4
-        None => autoeq::CrossoverType::LinkwitzRiley4,                      // Default
-    }
-}
 
 /// Load a MeasurementInput into an autoeq DriverMeasurement
 fn load_measurement_as_driver(
@@ -651,7 +642,7 @@ fn optimize_multidriver(
     }
 
     // Create DriversLossData
-    let crossover_type = to_autoeq_crossover_type(config.crossover_type);
+    let crossover_type = config.crossover_type.unwrap_or_default();
     let drivers_data = autoeq::loss::DriversLossData::new(driver_measurements, crossover_type);
 
     // Extract optimization parameters from config
@@ -1008,42 +999,6 @@ fn generate_dummy_result() -> SpeakerOptimizationResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ============================================================================
-    // CrossoverType Conversion Tests
-    // ============================================================================
-
-    #[test]
-    fn test_crossover_type_conversion_butterworth12() {
-        let result = to_autoeq_crossover_type(Some(CrossoverType::Butterworth12));
-        assert!(matches!(result, autoeq::CrossoverType::Butterworth2));
-    }
-
-    #[test]
-    fn test_crossover_type_conversion_lr12() {
-        let result = to_autoeq_crossover_type(Some(CrossoverType::LR12));
-        assert!(matches!(result, autoeq::CrossoverType::LinkwitzRiley2));
-    }
-
-    #[test]
-    fn test_crossover_type_conversion_lr24() {
-        let result = to_autoeq_crossover_type(Some(CrossoverType::LR24));
-        assert!(matches!(result, autoeq::CrossoverType::LinkwitzRiley4));
-    }
-
-    #[test]
-    fn test_crossover_type_conversion_lr48() {
-        // LR48 falls back to LR4 since autoeq doesn't have LR48
-        let result = to_autoeq_crossover_type(Some(CrossoverType::LR48));
-        assert!(matches!(result, autoeq::CrossoverType::LinkwitzRiley4));
-    }
-
-    #[test]
-    fn test_crossover_type_conversion_none() {
-        // None defaults to LR24
-        let result = to_autoeq_crossover_type(None);
-        assert!(matches!(result, autoeq::CrossoverType::LinkwitzRiley4));
-    }
 
     // ============================================================================
     // Configuration Type Tests

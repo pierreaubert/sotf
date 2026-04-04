@@ -21,6 +21,7 @@ Biquad-based parametric equalizer with peak, shelf, and pass filters. Supports m
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | TDF-II | Bool | On / Off | Off | - | Use Transposed Direct Form II |
+| Topology | Choice (Biquad, SVF) | 2 options | Biquad | - | Filter topology: Biquad (classic) or SVF (zero-delay feedback, modulation-stable) |
 
 ### Per-Band Parameters
 
@@ -34,5 +35,5 @@ These parameters are repeated for each filter band.
 | Type | Choice (Peak, Lowshelf, Highshelf, Lowpass, Highpass, Bandpass, Notch) | 7 options | Peak | - | Biquad filter shape |
 
 :::note
-**Structural parameters** (Max Filters) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+**Structural parameters** (Max Filters, Topology) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

@@ -48,6 +48,9 @@ Audio denoising using MCRA (Minima Controlled Recursive Averaging) and Wiener fi
 | MCRA Alpha P | Float | 0.1 .. 0.99 | 0.7 | - | Speech presence probability smooth |
 | MCRA Window | Int | 10 .. 200 | 50 | fr | Min statistics window length |
 | MCRA Delta | Float | 1 .. 20 | 5 | - | Speech/noise discrimination bias |
+| Harmonic/Percussive | Bool | On / Off | Off | - | Separate tonal and transient components for differential denoising |
+| Spatial Denoise | Bool | On / Off | Off | - | Use inter-channel coherence for noise detection (stereo+ only) |
+| Spatial Strength | Float | 0 .. 1 | 0.5 | - | Weight of inter-channel coherence in noise estimation |
 
 ### Hiss
 
