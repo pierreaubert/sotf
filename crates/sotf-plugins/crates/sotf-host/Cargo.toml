@@ -12,6 +12,11 @@ categories.workspace = true
 name = "sotf_host"
 path = "src/lib.rs"
 
+[[bin]]
+name = "qa-host"
+path = "bin/qa_host.rs"
+required-features = ["qa"]
+
 [features]
 default = []
 qa = ["dep:criterion"]
