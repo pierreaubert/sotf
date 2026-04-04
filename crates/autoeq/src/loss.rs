@@ -144,18 +144,71 @@ impl HeadphoneLossData {
 }
 
 /// Crossover filter type for multi-driver optimization
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CrossoverType {
     /// 2nd order Butterworth (12 dB/octave)
     Butterworth2,
     /// 2nd order Linkwitz-Riley (12 dB/octave)
     LinkwitzRiley2,
-    /// 4th order Linkwitz-Riley (24 dB/octave)
+    /// 4th order Linkwitz-Riley (24 dB/octave) — most common
+    #[serde(alias = "LR24")]
     LinkwitzRiley4,
     /// 8th order Linkwitz-Riley (48 dB/octave)
+    #[serde(alias = "LR48")]
     LinkwitzRiley8,
     /// No crossover filter (for multi-sub optimization)
     None,
+}
+
+impl Default for CrossoverType {
+    fn default() -> Self {
+        CrossoverType::LinkwitzRiley4
+    }
+}
+
+impl CrossoverType {
+    /// Convert to a short plugin-compatible string.
+    pub fn to_plugin_string(&self) -> &'static str {
+        match self {
+            CrossoverType::Butterworth2 => "Butterworth12",
+            CrossoverType::LinkwitzRiley2 => "LR12",
+            CrossoverType::LinkwitzRiley4 => "LR24",
+            CrossoverType::LinkwitzRiley8 => "LR48",
+            CrossoverType::None => "None",
+        }
+    }
+
+    /// Human-readable display name.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            CrossoverType::Butterworth2 => "2nd order Butterworth",
+            CrossoverType::LinkwitzRiley2 => "2nd order Linkwitz-Riley",
+            CrossoverType::LinkwitzRiley4 => "4th order Linkwitz-Riley",
+            CrossoverType::LinkwitzRiley8 => "8th order Linkwitz-Riley",
+            CrossoverType::None => "No Crossover (Multi-Sub)",
+        }
+    }
+}
+
+impl std::str::FromStr for CrossoverType {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "butterworth2" | "bw2" | "butterworth12" | "bw12" => Ok(CrossoverType::Butterworth2),
+            "lr2" | "lr12" | "linkwitzriley2" | "linkwitzriley12" => Ok(CrossoverType::LinkwitzRiley2),
+            "lr4" | "lr24" | "linkwitzriley4" | "linkwitzriley24" => Ok(CrossoverType::LinkwitzRiley4),
+            "lr8" | "lr48" | "linkwitzriley8" | "linkwitzriley48" => Ok(CrossoverType::LinkwitzRiley8),
+            "none" => Ok(CrossoverType::None),
+            _ => Err(format!("Unknown crossover type: {}", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for CrossoverType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.to_plugin_string())
+    }
 }
 
 /// Measurement data for a single driver

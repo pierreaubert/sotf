@@ -243,12 +243,10 @@ fn generate_plots_for_multi_drivers(
         }
 
         // Parse crossover type
-        let crossover_type = match group.crossover_type.as_str() {
-            "LR24" => autoeq::loss::CrossoverType::LinkwitzRiley4,
-            "LR12" => autoeq::loss::CrossoverType::LinkwitzRiley2,
-            "Butterworth12" => autoeq::loss::CrossoverType::Butterworth2,
-            _ => autoeq::loss::CrossoverType::LinkwitzRiley4, // default
-        };
+        let crossover_type: autoeq::loss::CrossoverType = group
+            .crossover_type
+            .parse()
+            .unwrap_or_default();
 
         // Create DriversLossData
         let drivers_data = autoeq::loss::DriversLossData::new(driver_measurements, crossover_type);

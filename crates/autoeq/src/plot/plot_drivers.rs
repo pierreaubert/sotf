@@ -199,13 +199,7 @@ pub fn plot_drivers(
     }
 
     // Create layout
-    let crossover_type_str = match drivers_data.crossover_type {
-        crate::loss::CrossoverType::Butterworth2 => "2nd order Butterworth",
-        crate::loss::CrossoverType::LinkwitzRiley2 => "2nd order Linkwitz-Riley",
-        crate::loss::CrossoverType::LinkwitzRiley4 => "4th order Linkwitz-Riley",
-        crate::loss::CrossoverType::LinkwitzRiley8 => "8th order Linkwitz-Riley",
-        crate::loss::CrossoverType::None => "No Crossover (Multi-Sub)",
-    };
+    let crossover_type_str = drivers_data.crossover_type.display_name();
 
     let layout = Layout::new()
         .title(format!(

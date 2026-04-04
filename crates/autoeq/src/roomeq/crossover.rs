@@ -13,26 +13,20 @@ use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use log::warn;
 use std::error::Error;
 
-/// Parse crossover type from string
+/// Parse crossover type from string.
+///
+/// Delegates to [`CrossoverType::from_str`]. Kept for backward compatibility.
 pub fn parse_crossover_type(type_str: &str) -> Result<CrossoverType, Box<dyn Error>> {
-    match type_str.to_lowercase().as_str() {
-        "butterworth2" | "bw2" | "butterworth12" => Ok(CrossoverType::Butterworth2),
-        "lr2" | "linkwitzriley2" | "linkwitzriley12" => Ok(CrossoverType::LinkwitzRiley2),
-        "lr4" | "lr24" | "linkwitzriley4" | "linkwitzriley24" => Ok(CrossoverType::LinkwitzRiley4),
-        "lr8" | "lr48" | "linkwitzriley8" | "linkwitzriley48" => Ok(CrossoverType::LinkwitzRiley8),
-        _ => Err(format!("Unknown crossover type: {}", type_str).into()),
-    }
+    type_str
+        .parse::<CrossoverType>()
+        .map_err(|e| e.into())
 }
 
-/// Convert CrossoverType enum to plugin string format
+/// Convert CrossoverType enum to plugin string format.
+///
+/// Delegates to [`CrossoverType::to_plugin_string`]. Kept for backward compatibility.
 pub fn crossover_type_to_string(ct: &CrossoverType) -> &'static str {
-    match ct {
-        CrossoverType::Butterworth2 => "Butterworth12",
-        CrossoverType::LinkwitzRiley2 => "LR12",
-        CrossoverType::LinkwitzRiley4 => "LR24",
-        CrossoverType::LinkwitzRiley8 => "LR48",
-        CrossoverType::None => "None",
-    }
+    ct.to_plugin_string()
 }
 
 use super::types::OptimizerConfig;

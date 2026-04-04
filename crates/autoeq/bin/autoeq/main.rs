@@ -273,17 +273,10 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()> {
         .context("Failed to load driver measurements")?;
 
     // Parse crossover type
-    let crossover_type = match args.crossover_type.as_str() {
-        "butterworth2" => autoeq::loss::CrossoverType::Butterworth2,
-        "linkwitzriley2" => autoeq::loss::CrossoverType::LinkwitzRiley2,
-        "linkwitzriley4" => autoeq::loss::CrossoverType::LinkwitzRiley4,
-        other => {
-            return Err(anyhow!(
-                "Unknown crossover type '{}'. Valid types: butterworth2, linkwitzriley2, linkwitzriley4",
-                other
-            ));
-        }
-    };
+    let crossover_type: autoeq::loss::CrossoverType = args
+        .crossover_type
+        .parse()
+        .map_err(|e: String| anyhow!("{}", e))?;
 
     // Create DriversLossData
     let drivers_data = autoeq::loss::DriversLossData::new(measurements, crossover_type);
