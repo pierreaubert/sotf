@@ -3,7 +3,7 @@ title: Plugin Reference
 description: Complete reference for all SotF audio plugins.
 ---
 
-SotF includes 34 audio processing plugins. Click any plugin for its full parameter reference.
+SotF includes 36 audio processing plugins. Click any plugin for its full parameter reference.
 
 ## Processing Plugins
 
@@ -12,6 +12,7 @@ SotF includes 34 audio processing plugins. Click any plugin for its full paramet
 | [Parametric EQ](/reference/plugins/eq/) | Biquad-based parametric equalizer with peak, shelf, and pass filters. Supports multiple filter bands for precise frequency response shaping. |
 | [Gain](/reference/plugins/gain/) | Simple volume control with smooth gain ramping to prevent clicks. |
 | [Compressor](/reference/plugins/compressor/) | Dynamic range compression with configurable threshold, ratio, attack, release, and makeup gain. |
+| [Expander](/reference/plugins/expander/) | Dynamic range expansion with configurable threshold, ratio, attack, release, and range. Opens up dynamics below the threshold. |
 | [Multiband Compressor](/reference/plugins/multiband-compressor/) | Per-band dynamic range compression with 2-5 frequency bands and independent compressor settings per band. |
 | [Multiband Expander](/reference/plugins/multiband-expander/) | Per-band dynamic range expansion with 2-5 frequency bands and independent expander settings per band. |
 | [Gate](/reference/plugins/gate/) | Noise gate that silences audio below a configurable threshold. |
@@ -43,4 +44,5 @@ SotF includes 34 audio processing plugins. Click any plugin for its full paramet
 | [Stereo Imager](/reference/plugins/stereo-imager/) | Controls stereo width from mono to extra-wide, using mid/side processing. |
 | [Transient Shaper](/reference/plugins/transient-shaper/) | Shapes attack and sustain characteristics of audio transients. |
 | [Ambisonics](/reference/plugins/ambisonics/) | Ambisonics encoding and decoding for immersive spatial audio. |
+| [Spectrum Analyzer](/reference/plugins/spectrum-analyzer/) | FFT-based spectrum analysis with configurable bin count, frequency range, smoothing, and tilt correction. |
 
