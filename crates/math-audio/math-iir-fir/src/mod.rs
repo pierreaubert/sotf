@@ -53,6 +53,8 @@ mod fir_design;
 mod iir;
 /// Linkwitz-Riley 4th-order IIR crossover.
 pub mod lr4_crossover;
+/// Linkwitz-Riley 8th-order IIR crossover (48 dB/octave).
+pub mod lr8_crossover;
 mod phase_smooth;
 /// Zero-Delay Feedback State Variable Filter (Zavalishin TPT topology).
 pub mod svf;
@@ -91,6 +93,7 @@ pub use svf::{SvfFilter, SvfFilterType};
 // Re-export crossover types
 pub use fir_crossover::{FirCrossover, MultibandFirCrossover};
 pub use lr4_crossover::{CROSSOVER_PRESETS, Lr4Crossover, MultibandLr4Crossover};
+pub use lr8_crossover::{Lr8Crossover, MultibandLr8Crossover};
 
 // ============================================================================
 // Common Helper Functions and Constants
@@ -141,6 +144,10 @@ pub type FirBankF32 = FirBank<f32>;
 pub type Lr4CrossoverF32 = Lr4Crossover<f32>;
 /// 32-bit multiband LR4 crossover.
 pub type MultibandLr4CrossoverF32 = MultibandLr4Crossover<f32>;
+/// 32-bit LR8 crossover.
+pub type Lr8CrossoverF32 = Lr8Crossover<f32>;
+/// 32-bit multiband LR8 crossover.
+pub type MultibandLr8CrossoverF32 = MultibandLr8Crossover<f32>;
 /// 32-bit FIR crossover.
 pub type FirCrossoverF32 = FirCrossover<f32>;
 /// 32-bit multiband FIR crossover.
