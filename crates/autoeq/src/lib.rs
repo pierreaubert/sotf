@@ -44,8 +44,6 @@ pub mod cli;
 pub mod constraints;
 /// FIR filter design and optimization
 pub mod fir;
-/// Sobol initialisation
-pub mod init_sobol;
 /// Smart initial guess generation
 pub mod initial_guess;
 /// Loss functions for optimization

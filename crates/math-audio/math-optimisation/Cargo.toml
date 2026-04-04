@@ -1,6 +1,6 @@
 [package]
 name = "math-optimisation"
-version = "0.5.1"
+version = "0.5.2"
 description = "Non linear optimisation library with own DE solvers and interface to NLOpt and MetaHeuristics"
 edition = { workspace = true }
 keywords.workspace = true

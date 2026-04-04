@@ -106,6 +106,8 @@ pub mod external_archive;
 pub mod init_latin_hypercube;
 /// Random uniform initialization strategy.
 pub mod init_random;
+/// Sobol quasi-random initialization strategy.
+pub mod init_sobol;
 /// L-SHADE configuration.
 pub mod lshade;
 

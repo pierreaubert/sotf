@@ -7,7 +7,7 @@ use super::constraints::{
     CeilingConstraintData, MinGainConstraintData, SpacingConstraintData, constraint_ceiling,
     constraint_min_gain, constraint_spacing,
 };
-use super::init_sobol::init_sobol;
+use crate::de::init_sobol::init_sobol;
 use super::initial_guess::{SmartInitConfig, create_smart_initial_guesses};
 use super::optim::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
 use super::optim_callback::{ProgressTracker, format_param_summary};
