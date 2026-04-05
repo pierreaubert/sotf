@@ -420,17 +420,26 @@ fn weighted_mse_with_split(
 ///   with EQ boosts (boosting into a null just wastes amplifier power)
 #[derive(Debug, Clone, Copy)]
 pub struct AsymmetricLossConfig {
-    /// Weight for positive errors (peaks) - default: 2.0
+    /// Weight for positive errors (peaks above transition_freq) - default: 2.0
     pub peak_weight: f64,
-    /// Weight for negative errors (dips) - default: 1.0
+    /// Weight for negative errors (dips above transition_freq) - default: 1.0
     pub dip_weight: f64,
+    /// Weight for bass peaks (below transition_freq) - default: 5.0
+    pub bass_peak_weight: f64,
+    /// Weight for bass dips (below transition_freq) - default: 0.2
+    pub bass_dip_weight: f64,
+    /// Transition frequency between bass and mid/treble weighting - default: 300.0 Hz
+    pub transition_freq: f64,
 }
 
 impl Default for AsymmetricLossConfig {
     fn default() -> Self {
         Self {
-            peak_weight: 2.0, // Penalize peaks 2x more than dips
+            peak_weight: 2.0,
             dip_weight: 1.0,
+            bass_peak_weight: 5.0,
+            bass_dip_weight: 0.2,
+            transition_freq: 300.0,
         }
     }
 }
@@ -496,15 +505,22 @@ pub fn weighted_mse_asymmetric_with_split(
         return f64::INFINITY;
     }
 
-    // Compute asymmetrically weighted squared errors
-    // Peak (e > 0): weight * e²
-    // Dip (e < 0): weight * e²
-    let weighted_squared_errors = error.mapv(|e| {
-        let weight = if e > 0.0 {
-            config.peak_weight
-        } else {
-            config.dip_weight
-        };
+    // Compute asymmetrically weighted squared errors with frequency-dependent weights.
+    // Below transition_freq: bass_peak_weight / bass_dip_weight
+    // Above transition_freq: peak_weight / dip_weight
+    // Smooth sigmoid crossfade over ~1 octave centered at transition_freq.
+    let log_transition = config.transition_freq.ln();
+    // Steepness: ~90% transition within +/-0.5 octave => k = 2*ln(9)/ln(2) ~ 6.34
+    let sigmoid_k = 2.0 * 9.0_f64.ln() / 2.0_f64.ln();
+
+    let weighted_squared_errors = Zip::from(freqs).and(error).map_collect(|&f, &e| {
+        // sigmoid blend: 0 = full bass weights, 1 = full mid/treble weights
+        let blend = 1.0 / (1.0 + (-(f.ln() - log_transition) * sigmoid_k).exp());
+        let peak_w =
+            config.bass_peak_weight + blend * (config.peak_weight - config.bass_peak_weight);
+        let dip_w =
+            config.bass_dip_weight + blend * (config.dip_weight - config.bass_dip_weight);
+        let weight = if e > 0.0 { peak_w } else { dip_w };
         weight * e * e
     });
 
@@ -1706,6 +1722,90 @@ mod tests {
             result.is_none(),
             "identical frequencies should return None, got {:?}",
             result
+        );
+    }
+
+    #[test]
+    fn test_bass_asymmetry_penalizes_peaks_heavily() {
+        // A 10dB peak at 80Hz should produce ~5x the penalty of same peak at 2kHz
+        // because bass_peak_weight=5.0 vs peak_weight=2.0
+        let config = AsymmetricLossConfig::default();
+
+        // Single-frequency test at 80Hz (deep bass)
+        let freqs_bass = Array1::from_vec(vec![80.0]);
+        let error_bass = Array1::from_vec(vec![10.0]); // 10dB peak
+
+        let loss_bass = weighted_mse_asymmetric_with_split(
+            &freqs_bass,
+            &error_bass,
+            20.0,
+            20000.0,
+            &config,
+            3000.0,
+        );
+
+        // Single-frequency test at 2kHz (mid range)
+        let freqs_mid = Array1::from_vec(vec![2000.0]);
+        let error_mid = Array1::from_vec(vec![10.0]); // 10dB peak
+
+        let loss_mid = weighted_mse_asymmetric_with_split(
+            &freqs_mid,
+            &error_mid,
+            20.0,
+            20000.0,
+            &config,
+            3000.0,
+        );
+
+        // 80Hz is well below 300Hz transition, so weight ~ bass_peak_weight = 5.0
+        // 2kHz is well above 300Hz transition, so weight ~ peak_weight = 2.0
+        // The loss returns sqrt(weight * e^2) = e * sqrt(weight)
+        // So ratio = sqrt(5.0) / sqrt(2.0) = sqrt(2.5) ~ 1.58
+        let ratio = loss_bass / loss_mid;
+        let expected_ratio = (5.0_f64 / 2.0).sqrt();
+        assert!(
+            (ratio - expected_ratio).abs() < 0.1,
+            "bass peak penalty ratio should be ~{:.2}x (sqrt(5/2)), got {:.2}",
+            expected_ratio,
+            ratio
+        );
+    }
+
+    #[test]
+    fn test_bass_dips_nearly_ignored() {
+        // 10dB dip at 80Hz should produce near-zero penalty (bass_dip_weight=0.2)
+        let config = AsymmetricLossConfig::default();
+
+        // 10dB dip at 80Hz
+        let freqs = Array1::from_vec(vec![80.0]);
+        let error_dip = Array1::from_vec(vec![-10.0]);
+
+        let loss_dip = weighted_mse_asymmetric_with_split(
+            &freqs,
+            &error_dip,
+            20.0,
+            20000.0,
+            &config,
+            3000.0,
+        );
+
+        // 10dB peak at 80Hz for comparison
+        let error_peak = Array1::from_vec(vec![10.0]);
+        let loss_peak = weighted_mse_asymmetric_with_split(
+            &freqs,
+            &error_peak,
+            20.0,
+            20000.0,
+            &config,
+            3000.0,
+        );
+
+        // dip weight 0.2 vs peak weight 5.0, so dip loss / peak loss ~ 0.2/5.0 = 0.04
+        let ratio = loss_dip / loss_peak;
+        assert!(
+            ratio < 0.25,
+            "bass dip penalty should be much smaller than bass peak, ratio={:.4}",
+            ratio
         );
     }
 }

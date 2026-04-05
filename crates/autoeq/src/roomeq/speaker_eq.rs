@@ -126,6 +126,10 @@ pub(super) fn optimize_eq_maybe_multi(
 /// Process a simple speaker with a single measurement
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
+///
+/// `shared_mean_spl` — when `Some`, the target level is this shared average
+/// instead of the channel's own mean. Reduces inter-channel deviation at the
+/// source by making all channels optimize toward the same reference level.
 pub(super) fn process_single_speaker(
     channel_name: &str,
     source: &MeasurementSource,
@@ -134,6 +138,7 @@ pub(super) fn process_single_speaker(
     output_dir: &Path,
     mut callback: Option<crate::optim::OptimProgressCallback>,
     probe_arrival_ms: Option<f64>,
+    shared_mean_spl: Option<f64>,
 ) -> Result<MixedModeResult> {
     // Load measurement
     let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
@@ -455,11 +460,26 @@ pub(super) fn process_single_speaker(
     // The optimizer range gives a consistent reference across channel types.
     let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
     let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
-    let mean_spl = compute_average_response(
+    let channel_mean_spl = compute_average_response(
         &freqs_f32,
         &spl_f32,
         Some((min_freq as f32, max_freq as f32)),
     ) as f64;
+
+    // When a shared average level is provided (multi-channel pre-pass), use it
+    // as the target level instead of this channel's own mean. This makes all
+    // channels optimize toward the same reference, reducing ICD at the source.
+    let mean_spl = if let Some(shared) = shared_mean_spl {
+        debug!(
+            "  Using shared target level {:.1} dB (channel mean was {:.1} dB, delta {:.1} dB)",
+            shared,
+            channel_mean_spl,
+            shared - channel_mean_spl
+        );
+        shared
+    } else {
+        channel_mean_spl
+    };
 
     // ========================================================================
     // Broadband Pre-Correction

@@ -104,7 +104,7 @@ fn prepare_single_channel_eq(
     };
 
     // Compute decomposed correction weights BEFORE psychoacoustic smoothing.
-    let decomposed_weights = config.decomposed_correction.as_ref().map(|dc_config| {
+    let decomposed_weights = config.decomposed_correction.as_ref().filter(|dc| dc.enabled).map(|dc_config| {
         let dc_analysis_config = impulse_analysis::DecomposedCorrectionConfig {
             schroeder_freq: dc_config.schroeder_freq,
             min_mode_q: dc_config.min_mode_q,
@@ -246,7 +246,7 @@ fn prepare_single_channel_eq(
     };
 
     // Setup objective data
-    let (objective_data, _use_cea) = setup_objective_data(
+    let (mut objective_data, _use_cea) = setup_objective_data(
         &args_template,
         &normalized_curve,
         &target_curve,
@@ -254,6 +254,9 @@ fn prepare_single_channel_eq(
         &None,
     )
     .expect("setup_objective_data should not fail without spin data");
+
+    // Propagate frequency-dependent boost envelope for per-filter gain clamping
+    objective_data.max_boost_envelope = config.max_boost_envelope.clone();
 
     Ok(PreparedSingleChannelEq {
         objective_data,

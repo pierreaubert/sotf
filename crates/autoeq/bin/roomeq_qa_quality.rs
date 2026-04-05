@@ -561,6 +561,7 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
         }
         OptionOverride::DecomposedCorrection => {
             config.optimizer.decomposed_correction = Some(DecomposedCorrectionSerdeConfig {
+                enabled: true,
                 schroeder_freq: 200.0,
                 min_mode_q: 3.0,
                 min_mode_prominence_db: 3.0,

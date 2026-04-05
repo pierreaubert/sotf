@@ -887,10 +887,10 @@ pub struct ChannelMatchingConfig {
 }
 
 fn default_channel_matching_threshold() -> f64 {
-    1.5
+    0.75
 }
 fn default_channel_matching_max_filters() -> usize {
-    3
+    5
 }
 
 impl Default for ChannelMatchingConfig {
@@ -1050,6 +1050,9 @@ impl Default for MultiMeasurementConfig {
 /// Serializable decomposed correction configuration for JSON config files
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DecomposedCorrectionSerdeConfig {
+    /// Whether decomposed correction is enabled. Default: true
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// Schroeder frequency (Hz). Below: modal, above: statistical.
     #[serde(default = "default_decomposed_schroeder")]
     pub schroeder_freq: f64,
@@ -1065,13 +1068,13 @@ pub struct DecomposedCorrectionSerdeConfig {
     /// Correction weight for early reflections (0.0-1.0). Default: 0.3
     #[serde(default = "default_decomposed_reflection_weight")]
     pub early_reflection_weight: f64,
-    /// Correction weight for steady-state above Schroeder (0.0-1.0). Default: 0.5
+    /// Correction weight for steady-state above Schroeder (0.0-1.0). Default: 0.4
     #[serde(default = "default_decomposed_steady_weight")]
     pub steady_state_weight: f64,
 }
 
 fn default_decomposed_schroeder() -> f64 {
-    200.0
+    250.0
 }
 fn default_decomposed_min_q() -> f64 {
     3.0
@@ -1086,7 +1089,21 @@ fn default_decomposed_reflection_weight() -> f64 {
     0.3
 }
 fn default_decomposed_steady_weight() -> f64 {
-    0.5
+    0.4
+}
+
+impl Default for DecomposedCorrectionSerdeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            schroeder_freq: default_decomposed_schroeder(),
+            min_mode_q: default_decomposed_min_q(),
+            min_mode_prominence_db: default_decomposed_prominence(),
+            mode_correction_weight: default_decomposed_mode_weight(),
+            early_reflection_weight: default_decomposed_reflection_weight(),
+            steady_state_weight: default_decomposed_steady_weight(),
+        }
+    }
 }
 
 /// CEA2034 speaker pre-correction configuration
@@ -1348,6 +1365,13 @@ pub struct OptimizerConfig {
     /// Runtime-only: path to a measured room impulse response WAV file
     #[serde(skip)]
     pub ssir_wav_path: Option<std::path::PathBuf>,
+    /// Frequency-dependent maximum boost envelope.
+    /// Each entry is (frequency_hz, max_boost_db).
+    /// Between points, linear interpolation in log-frequency.
+    /// Default: None (use the existing flat `max_db` limit).
+    /// When set, overrides `max_db` on a per-frequency basis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_boost_envelope: Option<Vec<(f64, f64)>>,
 }
 
 // Default values for OptimizerConfig
@@ -1464,11 +1488,15 @@ impl Default for OptimizerConfig {
             vog: None,
             broadband_target_matching: None,
             multi_measurement: None,
-            decomposed_correction: None,
+            decomposed_correction: Some(DecomposedCorrectionSerdeConfig {
+                enabled: true,
+                ..Default::default()
+            }),
             cea2034_correction: None,
             sub_config: None,
             channel_matching: None,
             ssir_wav_path: None,
+            max_boost_envelope: None,
         }
     }
 }
@@ -1477,6 +1505,35 @@ impl OptimizerConfig {
     /// Resolve the effective `allow_delay` value based on the mode
     pub fn allow_delay(&self) -> bool {
         self.allow_delay.unwrap_or(self.mode != "iir")
+    }
+
+    /// Get the maximum allowed boost at a given frequency.
+    /// If `max_boost_envelope` is set, interpolate it in log-frequency space.
+    /// Otherwise fall back to `self.max_db`.
+    pub fn max_boost_at_freq(&self, freq_hz: f64) -> f64 {
+        let envelope = match &self.max_boost_envelope {
+            Some(env) if !env.is_empty() => env,
+            _ => return self.max_db,
+        };
+
+        if freq_hz <= envelope[0].0 {
+            return envelope[0].1;
+        }
+        let last = envelope.len() - 1;
+        if freq_hz >= envelope[last].0 {
+            return envelope[last].1;
+        }
+
+        for i in 0..last {
+            let (f0, db0) = envelope[i];
+            let (f1, db1) = envelope[i + 1];
+            if freq_hz >= f0 && freq_hz <= f1 {
+                let t = (freq_hz.ln() - f0.ln()) / (f1.ln() - f0.ln());
+                return db0 + t * (db1 - db0);
+            }
+        }
+
+        self.max_db
     }
 
     /// Migrate legacy `target_tilt` + `broadband_target_matching` into `target_response`
@@ -1582,5 +1639,80 @@ impl RoomConfig {
         {
             *path = base_dir.join(&*path);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_optimizer_config_default_has_decomposed_correction_enabled() {
+        let config = OptimizerConfig::default();
+        let dc = config
+            .decomposed_correction
+            .expect("decomposed_correction should be Some by default");
+        assert!(dc.enabled, "decomposed_correction should be enabled by default");
+        assert_eq!(dc.schroeder_freq, 250.0);
+        assert_eq!(dc.steady_state_weight, 0.4);
+    }
+
+    #[test]
+    fn test_decomposed_correction_serde_config_default() {
+        let dc = DecomposedCorrectionSerdeConfig::default();
+        assert!(dc.enabled);
+        assert_eq!(dc.schroeder_freq, 250.0);
+        assert_eq!(dc.steady_state_weight, 0.4);
+        assert_eq!(dc.min_mode_q, 3.0);
+        assert_eq!(dc.min_mode_prominence_db, 3.0);
+        assert_eq!(dc.mode_correction_weight, 1.0);
+        assert_eq!(dc.early_reflection_weight, 0.3);
+    }
+
+    #[test]
+    fn test_channel_matching_config_defaults() {
+        let cfg = ChannelMatchingConfig::default();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.threshold_db, 0.75);
+        assert_eq!(cfg.max_filters, 5);
+    }
+
+    #[test]
+    fn test_max_boost_envelope_interpolation() {
+        let mut config = OptimizerConfig::default();
+
+        // Without envelope, falls back to max_db
+        assert_eq!(config.max_boost_at_freq(100.0), config.max_db);
+
+        // Set an envelope: generous bass boost tapering to zero
+        config.max_boost_envelope = Some(vec![
+            (20.0, 6.0),
+            (200.0, 4.0),
+            (1000.0, 2.0),
+            (8000.0, 0.0),
+        ]);
+
+        // At exact envelope points
+        assert!((config.max_boost_at_freq(20.0) - 6.0).abs() < 1e-10);
+        assert!((config.max_boost_at_freq(200.0) - 4.0).abs() < 1e-10);
+        assert!((config.max_boost_at_freq(1000.0) - 2.0).abs() < 1e-10);
+        assert!((config.max_boost_at_freq(8000.0) - 0.0).abs() < 1e-10);
+
+        // Below first point: clamp to first value
+        assert!((config.max_boost_at_freq(10.0) - 6.0).abs() < 1e-10);
+
+        // Above last point: clamp to last value
+        assert!((config.max_boost_at_freq(16000.0) - 0.0).abs() < 1e-10);
+
+        // Between 200Hz and 1000Hz: log-frequency interpolation
+        // Geometric midpoint of 200 and 1000 is sqrt(200*1000) ~ 447Hz
+        let mid_freq = (200.0_f64 * 1000.0).sqrt();
+        let mid_boost = config.max_boost_at_freq(mid_freq);
+        // At geometric midpoint, t = 0.5, so interpolated value = 4.0 + 0.5*(2.0-4.0) = 3.0
+        assert!(
+            (mid_boost - 3.0).abs() < 1e-6,
+            "geometric midpoint should give 3.0 dB, got {:.6}",
+            mid_boost
+        );
     }
 }

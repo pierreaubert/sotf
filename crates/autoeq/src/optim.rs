@@ -313,6 +313,10 @@ pub struct ObjectiveData {
     pub smooth: bool,
     /// Smoothing resolution as 1/N octave
     pub smooth_n: usize,
+    /// Frequency-dependent maximum boost envelope for per-filter gain clamping.
+    /// Each entry is (frequency_hz, max_boost_db). Interpolated in log-frequency.
+    /// When Some, positive filter gains are clamped before loss evaluation.
+    pub max_boost_envelope: Option<Vec<(f64, f64)>>,
 }
 
 /// Data for multi-objective optimization across multiple measurements
@@ -483,9 +487,72 @@ fn compute_multi_objective_fitness(x: &[f64], mo: &MultiObjectiveData) -> f64 {
     }
 }
 
+/// Clamp positive filter gains in the parameter vector using a frequency-dependent envelope.
+///
+/// For each filter, if its gain is positive (boost), clamp it to the envelope's
+/// max boost at that filter's center frequency. Returns a new owned vector.
+fn clamp_gains_to_envelope(x: &[f64], envelope: &[(f64, f64)], peq_model: PeqModel) -> Vec<f64> {
+    use crate::param_utils;
+    let mut clamped = x.to_vec();
+    let num_filters = param_utils::num_filters(x, peq_model);
+    for i in 0..num_filters {
+        let params = param_utils::get_filter_params(x, i, peq_model);
+        let freq_hz = 10f64.powf(params.freq);
+        if params.gain > 0.0 {
+            let max_boost = interpolate_boost_envelope(envelope, freq_hz);
+            if params.gain > max_boost {
+                let ppf = param_utils::params_per_filter(peq_model);
+                // gain is the last parameter in each filter's group
+                let gain_idx = i * ppf + (ppf - 1);
+                clamped[gain_idx] = max_boost;
+            }
+        }
+    }
+    clamped
+}
+
+/// Interpolate a frequency-dependent envelope in log-frequency space.
+fn interpolate_boost_envelope(envelope: &[(f64, f64)], freq_hz: f64) -> f64 {
+    if envelope.is_empty() {
+        return f64::INFINITY;
+    }
+    if freq_hz <= envelope[0].0 {
+        return envelope[0].1;
+    }
+    let last = envelope.len() - 1;
+    if freq_hz >= envelope[last].0 {
+        return envelope[last].1;
+    }
+    for i in 0..last {
+        let (f0, db0) = envelope[i];
+        let (f1, db1) = envelope[i + 1];
+        if freq_hz >= f0 && freq_hz <= f1 {
+            let t = (freq_hz.ln() - f0.ln()) / (f1.ln() - f0.ln());
+            return db0 + t * (db1 - db0);
+        }
+    }
+    envelope[last].1
+}
+
 /// Compute the base fitness for a single ObjectiveData (no multi-objective delegation).
 /// This is the inner implementation that does not check `multi_objective`.
 fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
+    // If a max boost envelope is set, clamp positive gains before evaluation.
+    let clamped;
+    let x = if let Some(ref env) = data.max_boost_envelope {
+        if !matches!(
+            data.loss_type,
+            LossType::DriversFlat | LossType::MultiSubFlat
+        ) {
+            clamped = clamp_gains_to_envelope(x, env, data.peq_model);
+            &clamped
+        } else {
+            x
+        }
+    } else {
+        x
+    };
+
     match data.loss_type {
         LossType::DriversFlat => {
             if let Some(ref drivers_data) = data.drivers_data {

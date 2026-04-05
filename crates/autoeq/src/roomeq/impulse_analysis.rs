@@ -22,7 +22,7 @@ use ndarray::Array1;
 pub struct DecomposedCorrectionConfig {
     /// Schroeder frequency (Hz) separating modal and statistical regions.
     /// Below this: room modes dominate. Above: diffuse field.
-    /// Default: 200.0 Hz (typical for medium rooms)
+    /// Default: 250.0 Hz (typical for medium rooms)
     pub schroeder_freq: f64,
 
     /// Minimum Q factor to consider a peak as a room mode.
@@ -43,7 +43,7 @@ pub struct DecomposedCorrectionConfig {
     pub early_reflection_weight: f64,
 
     /// Correction weight for steady-state response above Schroeder (0.0 - 1.0).
-    /// Default: 0.5 (moderate correction — preserve speaker character)
+    /// Default: 0.4 (moderate correction — preserve speaker character)
     pub steady_state_weight: f64,
 
     /// Transition width around Schroeder frequency in octaves.
@@ -54,12 +54,12 @@ pub struct DecomposedCorrectionConfig {
 impl Default for DecomposedCorrectionConfig {
     fn default() -> Self {
         Self {
-            schroeder_freq: 200.0,
+            schroeder_freq: 250.0,
             min_mode_q: 3.0,
             min_mode_prominence_db: 3.0,
             mode_correction_weight: 1.0,
             early_reflection_weight: 0.3,
-            steady_state_weight: 0.5,
+            steady_state_weight: 0.4,
             transition_width_oct: 0.5,
         }
     }
@@ -571,7 +571,7 @@ mod tests {
         let config = DecomposedCorrectionConfig::default();
         let result = analyze_decomposed_correction(&freq, &spl, &config);
 
-        assert_eq!(result.schroeder_freq, 200.0);
+        assert_eq!(result.schroeder_freq, 250.0);
         assert!(!result.correction_weights.iter().any(|w| w.is_nan()));
         assert!(
             result
@@ -751,5 +751,17 @@ mod tests {
             "Q should be finite positive, got {:.1}",
             q
         );
+    }
+
+    #[test]
+    fn test_decomposed_correction_config_defaults() {
+        let config = DecomposedCorrectionConfig::default();
+        assert_eq!(config.schroeder_freq, 250.0);
+        assert_eq!(config.steady_state_weight, 0.4);
+        assert_eq!(config.min_mode_q, 3.0);
+        assert_eq!(config.min_mode_prominence_db, 3.0);
+        assert_eq!(config.mode_correction_weight, 1.0);
+        assert_eq!(config.early_reflection_weight, 0.3);
+        assert_eq!(config.transition_width_oct, 0.5);
     }
 }

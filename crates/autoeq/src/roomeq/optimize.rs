@@ -788,6 +788,48 @@ pub fn optimize_room(
     let total_speakers = channels_to_process.len();
     info!("Processing {} channels", total_speakers);
 
+    // ========================================================================
+    // Pre-pass: compute shared average response level across all channels
+    // ========================================================================
+    // When multiple channels are present, load each Single-channel measurement
+    // and compute its mean SPL. The cross-channel average becomes a shared
+    // target reference level so every channel optimizes toward the SAME level,
+    // naturally reducing inter-channel deviation at the source.
+    let shared_mean_spl: Option<f64> = if total_speakers > 1 {
+        let min_freq = config.optimizer.min_freq;
+        let max_freq = config.optimizer.max_freq;
+        let mut channel_means: Vec<f64> = Vec::new();
+
+        for (_name, speaker_config) in &channels_to_process {
+            if let SpeakerConfig::Single(source) = speaker_config {
+                if let Ok(curve) = crate::read::load_source(source) {
+                    let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+                    let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+                    let mean = compute_average_response(
+                        &freqs_f32,
+                        &spl_f32,
+                        Some((min_freq as f32, max_freq as f32)),
+                    ) as f64;
+                    channel_means.push(mean);
+                }
+            }
+        }
+
+        if channel_means.len() > 1 {
+            let avg = channel_means.iter().sum::<f64>() / channel_means.len() as f64;
+            info!(
+                "Shared target level: {:.1} dB (average of {} channels)",
+                avg,
+                channel_means.len()
+            );
+            Some(avg)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     send_progress(
         &mut callback,
         &RoomOptimizationProgress {
@@ -899,6 +941,7 @@ pub fn optimize_room(
             sample_rate,
             output_dir,
             eq_callback,
+            shared_mean_spl,
         );
 
         match result {
@@ -1697,6 +1740,7 @@ pub fn optimize_speaker(
         sample_rate,
         None,
         None,
+        None, // no shared mean for standalone single-channel optimization
     )?;
 
     Ok(SpeakerOptimizationResult {
@@ -1724,6 +1768,7 @@ fn process_speaker_internal(
     sample_rate: f64,
     output_dir: Option<&Path>,
     callback: Option<crate::optim::OptimProgressCallback>,
+    shared_mean_spl: Option<f64>,
 ) -> Result<MixedModeResult> {
     let output_dir = output_dir.unwrap_or(Path::new("."));
 
@@ -1736,6 +1781,7 @@ fn process_speaker_internal(
             output_dir,
             callback,
             None, // probe_arrival_ms: use WAV-based detection
+            shared_mean_spl,
         ),
         SpeakerConfig::Group(group) => {
             process_speaker_group(channel_name, group, room_config, sample_rate, output_dir)
