@@ -357,8 +357,16 @@ fn run_optimization_pass(
         global_loss
     };
 
+    // Apply max_boost_envelope clamp to the final result so deployed filters
+    // respect the same gain limits used during fitness evaluation.
+    let x_final = if let Some(ref env) = prep.objective_data.max_boost_envelope {
+        crate::optim::clamp_gains_to_envelope(&x, env, prep.peq_model)
+    } else {
+        x.to_vec()
+    };
+
     // Convert to Biquad filters, pruning near-zero gain
-    let peq = crate::x2peq::x2peq(&x, prep.sample_rate, prep.peq_model);
+    let peq = crate::x2peq::x2peq(&x_final, prep.sample_rate, prep.peq_model);
     let filters: Vec<Biquad> = peq
         .into_iter()
         .map(|(_weight, biquad)| biquad)

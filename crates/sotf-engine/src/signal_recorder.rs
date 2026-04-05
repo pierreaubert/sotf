@@ -1310,7 +1310,56 @@ pub fn probe_channel_delays(
         recorded.len() as f64 / input_sr as f64
     );
 
+    // --- Estimate system latency from the first channel ---
+    // The recording starts before playback (100ms head start). The first probe's
+    // detected arrival in the full recording includes system latency (DAC + ADC +
+    // driver buffering). We estimate this offset once, then use it to align the
+    // segment slicing to the actual recording timeline.
+    let system_latency_samples = {
+        // Search a generous window around where we expect the first probe
+        let search_start = 0;
+        let search_end = (playback_offsets[0] + segment_len * 2).min(recorded.len());
+        if search_end > search_start {
+            let search_segment = &recorded[search_start..search_end];
+            match math_audio_dsp::analysis::cross_correlate_envelope(
+                &probe,
+                search_segment,
+                input_sr,
+            ) {
+                Ok(result) => {
+                    // The probe was placed at playback_offsets[0] in the playback timeline.
+                    // Its arrival in the recording is at result.peak_sample.
+                    // System latency = detected_position - expected_position
+                    let expected = playback_offsets[0];
+                    let detected = result.peak_sample;
+                    let latency = detected.saturating_sub(expected);
+                    let latency_ms = latency as f64 / input_sr as f64 * 1000.0;
+                    log::info!(
+                        "[probe_channel_delays] System latency estimate: {} samples ({:.1}ms)",
+                        latency,
+                        latency_ms
+                    );
+                    latency
+                }
+                Err(_) => {
+                    log::warn!(
+                        "[probe_channel_delays] Could not estimate system latency, assuming 0"
+                    );
+                    0
+                }
+            }
+        } else {
+            0
+        }
+    };
+
     // --- Analyze each channel's segment ---
+    // Adjust offsets by system latency so segments align with actual recording
+    let adjusted_offsets: Vec<usize> = playback_offsets
+        .iter()
+        .map(|&o| o + system_latency_samples)
+        .collect();
+
     // Compute probe autocorrelation peak once (for gain normalization)
     let auto_result =
         math_audio_dsp::analysis::cross_correlate_envelope(&probe, &probe, input_sr)?;
@@ -1319,11 +1368,11 @@ pub fn probe_channel_delays(
     let mut arrivals_ms = Vec::with_capacity(num_channels);
     let mut channel_results = Vec::with_capacity(num_channels);
 
-    for (i, &offset) in playback_offsets.iter().enumerate() {
-        let end = (offset + segment_len).min(recorded.len());
+    for (i, &offset) in adjusted_offsets.iter().enumerate() {
+        let end = (offset.saturating_add(segment_len)).min(recorded.len());
         if offset >= recorded.len() {
             return Err(format!(
-                "Channel {} offset {} exceeds recording length {}",
+                "Channel {} adjusted offset {} exceeds recording length {}",
                 i, offset, recorded.len()
             ));
         }

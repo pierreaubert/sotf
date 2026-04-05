@@ -799,6 +799,7 @@ pub fn optimize_room(
         let min_freq = config.optimizer.min_freq;
         let max_freq = config.optimizer.max_freq;
         let mut channel_means: Vec<f64> = Vec::new();
+        let mut excluded_group_count = 0_usize;
 
         for (_name, speaker_config) in &channels_to_process {
             if let SpeakerConfig::Single(source) = speaker_config
@@ -812,7 +813,16 @@ pub fn optimize_room(
                     Some((min_freq as f32, max_freq as f32)),
                 ) as f64;
                 channel_means.push(mean);
+            } else if !matches!(speaker_config, SpeakerConfig::Single(_)) {
+                excluded_group_count += 1;
             }
+        }
+
+        if excluded_group_count > 0 {
+            info!(
+                "Shared mean pre-pass: {} non-Single speaker(s) excluded (Group/MultiSub/DBA/Cardioid)",
+                excluded_group_count
+            );
         }
 
         if channel_means.len() > 1 {

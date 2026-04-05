@@ -491,7 +491,7 @@ fn compute_multi_objective_fitness(x: &[f64], mo: &MultiObjectiveData) -> f64 {
 ///
 /// For each filter, if its gain is positive (boost), clamp it to the envelope's
 /// max boost at that filter's center frequency. Returns a new owned vector.
-fn clamp_gains_to_envelope(x: &[f64], envelope: &[(f64, f64)], peq_model: PeqModel) -> Vec<f64> {
+pub fn clamp_gains_to_envelope(x: &[f64], envelope: &[(f64, f64)], peq_model: PeqModel) -> Vec<f64> {
     use crate::param_utils;
     let mut clamped = x.to_vec();
     let num_filters = param_utils::num_filters(x, peq_model);
