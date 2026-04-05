@@ -801,17 +801,17 @@ pub fn optimize_room(
         let mut channel_means: Vec<f64> = Vec::new();
 
         for (_name, speaker_config) in &channels_to_process {
-            if let SpeakerConfig::Single(source) = speaker_config {
-                if let Ok(curve) = crate::read::load_source(source) {
-                    let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
-                    let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
-                    let mean = compute_average_response(
-                        &freqs_f32,
-                        &spl_f32,
-                        Some((min_freq as f32, max_freq as f32)),
-                    ) as f64;
-                    channel_means.push(mean);
-                }
+            if let SpeakerConfig::Single(source) = speaker_config
+                && let Ok(curve) = crate::read::load_source(source)
+            {
+                let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+                let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+                let mean = compute_average_response(
+                    &freqs_f32,
+                    &spl_f32,
+                    Some((min_freq as f32, max_freq as f32)),
+                ) as f64;
+                channel_means.push(mean);
             }
         }
 

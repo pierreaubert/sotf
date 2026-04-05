@@ -588,17 +588,18 @@ pub fn gen_narrowband_probe(
             // Inside passband: apply spectrum with optional taper at edges
             let mut gain = 1.0_f32;
 
-            // Lower edge taper
+            // Lower edge taper (Hann half-window, rising from near-zero to 1.0)
             let lo_bin = (lo_hz / freq_resolution).ceil() as usize;
             if k < lo_bin + taper_bins && k >= lo_bin {
-                let t = (k - lo_bin) as f32 / taper_bins as f32;
-                gain = 0.5 * (1.0 - (PI * t).cos()); // Hann taper
+                // Use (taper_bins + 1) so edge bins get nonzero gain
+                let t = (k - lo_bin + 1) as f32 / (taper_bins + 1) as f32;
+                gain = 0.5 * (1.0 - (PI * t).cos());
             }
 
-            // Upper edge taper
+            // Upper edge taper (Hann half-window, falling from 1.0 to near-zero)
             let hi_bin = (hi_hz / freq_resolution).floor() as usize;
             if hi_bin >= taper_bins && k > hi_bin - taper_bins && k <= hi_bin {
-                let t = (hi_bin - k) as f32 / taper_bins as f32;
+                let t = (hi_bin - k + 1) as f32 / (taper_bins + 1) as f32;
                 gain = 0.5 * (1.0 - (PI * t).cos());
             }
 
