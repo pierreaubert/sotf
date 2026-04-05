@@ -509,13 +509,13 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                             app.headphone_eq.update_existing_eq_info = Some((slot, count));
                             app.headphone_eq.update_substep = SpinUpdateSubStep::ConfirmOverwrite;
                         } else {
-                            match app.apply_headphone_to_plugin_chain() {
+                            match app.apply_headphone_to_plugins() {
                                 Ok(msg) => app.status_message = Some(msg),
                                 Err(e) => app.status_message = Some(format!("Error: {}", e)),
                             }
                         }
                     } else {
-                        match app.apply_headphone_to_plugin_chain() {
+                        match app.apply_headphone_to_plugins() {
                             Ok(msg) => app.status_message = Some(msg),
                             Err(e) => app.status_message = Some(format!("Error: {}", e)),
                         }
@@ -529,7 +529,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
                         let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
                         let filename = format!("pre-headphone-eq-{}.json", timestamp);
-                        match app.plugin_chain.save_to_file(&presets_dir, &filename) {
+                        match app.plugin_graph.save_to_file(&presets_dir, &filename) {
                             Ok(_) => {
                                 app.status_message = Some(format!("Saved backup: {}", filename));
                                 log::info!(
@@ -546,7 +546,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                             }
                         }
                     }
-                    match app.apply_headphone_to_plugin_chain() {
+                    match app.apply_headphone_to_plugins() {
                         Ok(msg) => app.status_message = Some(msg),
                         Err(e) => app.status_message = Some(format!("Error: {}", e)),
                     }
@@ -555,7 +555,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     None
                 }
                 KeyCode::Char('n') => {
-                    match app.apply_headphone_to_plugin_chain() {
+                    match app.apply_headphone_to_plugins() {
                         Ok(msg) => app.status_message = Some(msg),
                         Err(e) => app.status_message = Some(format!("Error: {}", e)),
                     }

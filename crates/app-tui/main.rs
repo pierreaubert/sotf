@@ -437,7 +437,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     app.position_secs = state.position_secs;
                     // Read loudness from cache using plugin chain's engine index
                     app.loudness_info = app
-                        .plugin_chain
+                        .plugin_graph
                         .output_monitor_engine_index()
                         .and_then(|idx| player.get_cached_plugin_data(idx))
                         .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
@@ -499,10 +499,10 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
 
                             // Clear suspensions from previous track and check for conflicts
-                            app.plugin_chain.clear_suspensions();
-                            app.plugin_chain.update_channel_dependent_plugins();
+                            app.plugin_graph.clear_suspensions();
+                            app.plugin_graph.update_channel_dependent_plugins();
 
-                            let conflicts = app.plugin_chain.find_channel_conflicts(track_channels);
+                            let conflicts = app.plugin_graph.find_channel_conflicts(track_channels);
                             if !conflicts.is_empty() {
                                 log::info!(
                                     "[TUI] Auto-advance channel conflict: {}ch file with {} incompatible plugin(s)",
@@ -512,8 +512,8 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 // Auto-suspend without modal (user already consented by continuing playback)
                                 let indices: Vec<usize> =
                                     conflicts.iter().map(|c| c.index).collect();
-                                app.plugin_chain.suspend_plugins(&indices);
-                                app.plugin_chain.update_channel_dependent_plugins();
+                                app.plugin_graph.suspend_plugins(&indices);
+                                app.plugin_graph.update_channel_dependent_plugins();
                             }
 
                             if let Err(e) = start_playback(player, app, path, track_channels) {
@@ -592,13 +592,13 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
                                 // Recompute replay gain before building plugin configs
                                 let rg_gain = app.get_replay_gain_for_current_track();
-                                app.plugin_chain.set_replay_gain(rg_gain);
+                                app.plugin_graph.set_replay_gain(rg_gain);
 
                                 let sample_rate = app
                                     .current_sample_rate
                                     .map(|r| r as f64)
                                     .unwrap_or_else(|| app.get_current_sample_rate());
-                                let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
+                                let plugins = app.plugin_graph.to_plugin_configs(sample_rate);
 
                                 match player.update_plugins(plugins) {
                                     Ok(()) => {
@@ -716,14 +716,14 @@ fn start_playback(
         app.get_current_sample_rate()
     );
 
-    app.plugin_chain.adapt_matrix_to_input(track_channels);
+    app.plugin_graph.adapt_matrix_to_input(track_channels);
 
     // Apply ReplayGain correction to the permanent Gain plugin
     let rg_gain = app.get_replay_gain_for_current_track();
-    app.plugin_chain.set_replay_gain(rg_gain);
+    app.plugin_graph.set_replay_gain(rg_gain);
 
-    let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
-    let mut output_channels = app.plugin_chain.output_channels_for_input(track_channels);
+    let plugins = app.plugin_graph.to_plugin_configs(sample_rate);
+    let mut output_channels = app.plugin_graph.output_channels_for_input(track_channels);
 
     let device_max = app.get_device_max_channels();
     log::info!(
@@ -782,11 +782,11 @@ fn handle_player_command(
             let track_channels = app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
 
             // Clear suspensions from previous track
-            app.plugin_chain.clear_suspensions();
-            app.plugin_chain.update_channel_dependent_plugins();
+            app.plugin_graph.clear_suspensions();
+            app.plugin_graph.update_channel_dependent_plugins();
 
             // Check for channel conflicts with all fixed-channel plugins
-            let conflicts = app.plugin_chain.find_channel_conflicts(track_channels);
+            let conflicts = app.plugin_graph.find_channel_conflicts(track_channels);
             if !conflicts.is_empty() {
                 log::info!(
                     "[TUI] Channel conflict: {}ch file with {} incompatible plugin(s)",

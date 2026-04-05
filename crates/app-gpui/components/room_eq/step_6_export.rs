@@ -10,7 +10,7 @@ impl PlayerView {
         let has_eq_in_rack = state
             .app
             .plugin_state
-            .chain
+            .graph
             .find_plugin_index(&sotf_audio_player::PluginType::EQ)
             .is_some();
         let is_rack_compatible = state
@@ -227,10 +227,10 @@ impl PlayerView {
     fn save_rack_backup(&mut self, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
-            // Get the current plugin chain
-            let plugin_chain = {
+            // Get the current plugin graph
+            let plugin_graph = {
                 let state = self.state.read(cx);
-                state.app.plugin_state.chain.clone()
+                state.app.plugin_state.graph.clone()
             };
 
             let state_entity = self.state.clone();
@@ -256,7 +256,7 @@ impl PlayerView {
                         .and_then(|n| n.to_str())
                         .unwrap_or("backup.json");
 
-                    match plugin_chain.save_to_file(parent_dir, filename) {
+                    match plugin_graph.save_to_file(parent_dir, filename) {
                         Ok(()) => {
                             log::info!("Saved rack backup to {:?}", file_path);
                             state_entity.update(cx, |state, _| {
@@ -399,12 +399,12 @@ impl PlayerView {
 
         // Update the plugin chain
         self.state.update(cx, |state, _| {
-            let plugin_chain = &mut state.app.plugin_state.chain;
+            let plugin_graph = &mut state.app.plugin_state.graph;
 
             // Check if there's an existing EQ plugin
-            if let Some(eq_idx) = plugin_chain.find_plugin_index(&PluginType::EQ) {
+            if let Some(eq_idx) = plugin_graph.find_plugin_index(&PluginType::EQ) {
                 // Update existing EQ plugin
-                if let Some(eq_plugin) = plugin_chain.get_plugin_mut(eq_idx) {
+                if let Some(eq_plugin) = plugin_graph.get_plugin_mut(eq_idx) {
                     eq_plugin.settings = PluginSettings::EQ {
                         channels: num_channels,
                         filters: global_filters.clone(),
@@ -421,11 +421,11 @@ impl PlayerView {
                 }
             } else {
                 // No EQ plugin exists, add one at the end before Matrix and Output Monitor
-                let insert_idx = plugin_chain.user_plugin_insert_index();
-                plugin_chain.insert_plugin(insert_idx, &PluginType::EQ);
+                let insert_idx = plugin_graph.user_plugin_insert_index();
+                let _ = plugin_graph.insert_plugin(insert_idx, &PluginType::EQ);
 
                 // Configure the newly inserted plugin with per-channel room EQ
-                if let Some(eq_plugin) = plugin_chain.get_plugin_mut(insert_idx) {
+                if let Some(eq_plugin) = plugin_graph.get_plugin_mut(insert_idx) {
                     eq_plugin.settings = PluginSettings::EQ {
                         channels: num_channels,
                         filters: global_filters.clone(),
@@ -443,7 +443,7 @@ impl PlayerView {
             }
 
             // Mark that plugin chain was modified and needs sync
-            state.app.plugin_state.plugin_chain_modified = true;
+            state.app.plugin_state.plugin_graph_modified = true;
             state.app.plugin_state.pending_plugin_update =
                 Some(crate::app::types::PluginUpdateType::Structural);
             state.app.measurement_state.room_eq_state.status_message =

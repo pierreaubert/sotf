@@ -75,7 +75,7 @@ impl TestScenario for DefaultGraphStructureScenario {
         }
 
         // Verify the default chain has plugins (at least EQ by default)
-        let chain_len = driver.read_app(|app| app.plugin_state.chain.len());
+        let chain_len = driver.read_app(|app| app.plugin_state.graph.len());
         if chain_len == 0 {
             return Err("Default chain should have at least one plugin (EQ)".into());
         }
@@ -113,7 +113,7 @@ impl TestScenario for GraphHeaderStatsScenario {
 
         // The graph should have a valid plugin graph or default created
         let plugin_graph_exists = driver.read_app(|app| {
-            app.plugin_state.plugin_graph.is_some() || !app.plugin_state.chain.is_empty()
+            !app.plugin_state.graph.is_empty() || !app.plugin_state.graph.is_empty()
         });
 
         if !plugin_graph_exists {
@@ -161,7 +161,7 @@ impl TestScenario for PaletteElementsScenario {
 
         // The plugin_state should have plugin types available for the palette
         // We can verify this by checking the chain contains expected plugin types
-        let chain_len = driver.read_app(|app| app.plugin_state.chain.len());
+        let chain_len = driver.read_app(|app| app.plugin_state.graph.len());
 
         // The default setup should have at least one plugin (EQ)
         if chain_len == 0 {

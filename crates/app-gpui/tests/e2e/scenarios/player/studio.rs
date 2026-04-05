@@ -31,7 +31,7 @@ impl TestScenario for StudioScreenScenario {
 
         // Verify Studio screen shows the plugin rack
         // The Studio screen is essentially the Plugin Rack in a different view
-        let has_plugins = driver.read_app(|app| app.plugin_state.chain.plugins().len());
+        let has_plugins = driver.read_app(|app| app.plugin_state.graph.plugins().len());
 
         // Log the number of plugins for debugging
         println!("Studio screen loaded with {} plugins", has_plugins);

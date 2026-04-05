@@ -7,6 +7,41 @@ use gpui_ui_kit::{
 };
 use sotf_audio::signal_analysis as dsp;
 
+/// Interpolate a target curve (control points) at the given frequency values using log-frequency interpolation
+fn interpolate_target_at_frequencies(frequencies: &[f64], target: &[(f64, f64)]) -> Vec<f64> {
+    frequencies
+        .iter()
+        .map(|&f| {
+            let mut lower = (20.0, 0.0);
+            let mut upper = (20000.0, 0.0);
+            if let Some(first) = target.first()
+                && f < first.0
+            {
+                return first.1;
+            }
+            if let Some(last) = target.last()
+                && f > last.0
+            {
+                return last.1;
+            }
+            for win in target.windows(2) {
+                if f >= win[0].0 && f <= win[1].0 {
+                    lower = win[0];
+                    upper = win[1];
+                    break;
+                }
+            }
+            let denom = upper.0.ln() - lower.0.ln();
+            if denom.abs() < 1e-12 {
+                return lower.1;
+            }
+            let t = (f.ln() - lower.0.ln()) / denom;
+            let result = lower.1 + t * (upper.1 - lower.1);
+            if result.is_finite() { result } else { 0.0 }
+        })
+        .collect()
+}
+
 // === Free functions for channel configuration UI ===
 
 /// Render a single channel configuration row
@@ -185,6 +220,7 @@ pub(crate) fn render_channel_result_card(
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
     y_axis_auto: bool,
+    normalize_to_target: bool,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
     target_curve: Option<&[(f64, f64)]>,
 ) -> impl IntoElement {
@@ -267,6 +303,7 @@ pub(crate) fn render_channel_result_card(
                 theme,
                 smoothing_octaves,
                 y_axis_auto,
+                normalize_to_target,
                 interactive_state,
                 target_curve,
             ))
@@ -367,6 +404,7 @@ fn render_response_comparison_graph(
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
     y_axis_auto: bool,
+    normalize_to_target: bool,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
     target_curve: Option<&[(f64, f64)]>,
 ) -> impl IntoElement {
@@ -388,8 +426,33 @@ fn render_response_comparison_graph(
         &frequencies,
         &original_values_raw,
     );
-    let original_values: Vec<f64> = original_values_raw.iter().map(|&db| db - offset).collect();
-    let corrected_values: Vec<f64> = corrected_values_raw.iter().map(|&db| db - offset).collect();
+    let mut original_values: Vec<f64> =
+        original_values_raw.iter().map(|&db| db - offset).collect();
+    let mut corrected_values: Vec<f64> =
+        corrected_values_raw.iter().map(|&db| db - offset).collect();
+
+    // When normalizing to target, subtract the interpolated target curve from all series
+    // so the target becomes a flat 0dB reference line and deviations are clearly visible
+    let target_interpolated =
+        target_curve.map(|target| interpolate_target_at_frequencies(&frequencies, target));
+
+    if normalize_to_target {
+        if let Some(ref target_vals) = target_interpolated {
+            // Normalize target with same 1-2kHz method, then subtract from
+            // original/corrected (which already had their own offset subtracted)
+            let target_offset =
+                crate::app::types::RoomEqState::calculate_normalization_offset(
+                    &frequencies,
+                    target_vals,
+                );
+            for (i, v) in original_values.iter_mut().enumerate() {
+                *v -= target_vals[i] - target_offset;
+            }
+            for (i, v) in corrected_values.iter_mut().enumerate() {
+                *v -= target_vals[i] - target_offset;
+            }
+        }
+    }
 
     let original_smooth =
         dsp::smooth_response_f64(&frequencies, &original_values, smoothing_octaves);
@@ -525,7 +588,11 @@ fn render_response_comparison_graph(
         .x_scale(ScaleType::Log)
         .x_range(x_min, x_max)
         .y_range(y_min_domain, y_max_domain)
-        .y_label("SPL (dB)")
+        .y_label(if normalize_to_target && target_interpolated.is_some() {
+            "Deviation from Target (dB)"
+        } else {
+            "SPL (dB)"
+        })
         .label("Original")
         .legend_position(LegendPosition::Bottom)
         .color(BLUE)
@@ -535,46 +602,25 @@ fn render_response_comparison_graph(
         .size(GRAPH_WIDTH, GRAPH_HEIGHT)
         .add_series(&corrected_smooth, Some("Corrected"), ORANGE, 2.0, 1.0);
 
-    if let Some(target) = target_curve {
-        let target_values: Vec<f64> = frequencies
-            .iter()
-            .map(|&f| {
-                let mut lower = (20.0, 0.0);
-                let mut upper = (20000.0, 0.0);
-                if let Some(first) = target.first()
-                    && f < first.0
-                {
-                    return first.1;
-                }
-                if let Some(last) = target.last()
-                    && f > last.0
-                {
-                    return last.1;
-                }
-                for win in target.windows(2) {
-                    if f >= win[0].0 && f <= win[1].0 {
-                        lower = win[0];
-                        upper = win[1];
-                        break;
-                    }
-                }
-                let denom = upper.0.ln() - lower.0.ln();
-                if denom.abs() < 1e-12 {
-                    return lower.1;
-                }
-                let t = (f.ln() - lower.0.ln()) / denom;
-                let result = lower.1 + t * (upper.1 - lower.1);
-                if result.is_finite() { result } else { 0.0 }
-            })
-            .collect();
-
-        let mean_target = if !target_values.is_empty() {
-            target_values.iter().sum::<f64>() / target_values.len() as f64
-        } else {
-            0.0
-        };
-        let relative_target: Vec<f64> = target_values.iter().map(|v| v - mean_target).collect();
-        chart_builder = chart_builder.add_series(&relative_target, Some("Target"), RED, 2.0, 0.8);
+    if target_curve.is_some() {
+        if normalize_to_target {
+            // Target is now 0dB — draw a flat reference line
+            let flat_target: Vec<f64> = vec![0.0; frequencies.len()];
+            chart_builder =
+                chart_builder.add_series(&flat_target, Some("Target (0 dB)"), RED, 1.5, 0.6);
+        } else if let Some(ref target_vals) = target_interpolated {
+            // Normalize target using same method (1-2kHz band mean) so it aligns
+            // with original/corrected at the reference frequency range
+            let target_offset =
+                crate::app::types::RoomEqState::calculate_normalization_offset(
+                    &frequencies,
+                    target_vals,
+                );
+            let relative_target: Vec<f64> =
+                target_vals.iter().map(|v| v - target_offset).collect();
+            chart_builder =
+                chart_builder.add_series(&relative_target, Some("Target"), RED, 2.0, 0.8);
+        }
     }
 
     if let Some((slope, intercept)) = orig_trend {
@@ -620,10 +666,14 @@ fn render_response_comparison_graph(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new("Original vs Corrected")
-                .weight(TextWeight::Semibold)
-                .size(TextSize::Xs)
-                .color(theme.text_primary),
+            Text::new(if normalize_to_target && target_interpolated.is_some() {
+                "Original vs Corrected (Normalized to Target)"
+            } else {
+                "Original vs Corrected"
+            })
+            .weight(TextWeight::Semibold)
+            .size(TextSize::Xs)
+            .color(theme.text_primary),
         )
         .when_some(chart_element, |el, c| el.child(c))
         .into_any_element()

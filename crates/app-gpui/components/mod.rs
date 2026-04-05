@@ -267,7 +267,7 @@ impl PlayerView {
     /// Shared by spinorama_eq and headphone_eq workflows.
     pub fn clear_eq_from_playback(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            let plugins = state.app.plugin_state.chain.plugins();
+            let plugins = state.app.plugin_state.graph.plugins();
             let eq_indices: Vec<_> = plugins
                 .iter()
                 .enumerate()
@@ -281,7 +281,7 @@ impl PlayerView {
                 .collect();
 
             for idx in eq_indices.into_iter().rev() {
-                state.app.plugin_state.chain.remove_plugin(idx);
+                state.app.plugin_state.graph.remove_plugin_by_index(idx).ok();
             }
 
             state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);

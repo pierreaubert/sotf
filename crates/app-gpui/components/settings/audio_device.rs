@@ -403,7 +403,7 @@ impl PlayerView {
             for plugin_config in state
                 .app
                 .plugin_state
-                .chain
+                .graph
                 .to_plugin_configs(sample_rate as f64)
             {
                 plugins.push(plugin_config);
@@ -417,7 +417,7 @@ impl PlayerView {
                 .clone();
 
             // Determine output channels from plugin chain
-            let output_channels = state.app.plugin_state.chain.output_channels();
+            let output_channels = state.app.plugin_state.graph.output_channels();
 
             // Update driver-hal with the new configuration
             Self::apply_hal_config_to_driver(hal_config);

@@ -112,7 +112,7 @@ pub(super) fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<Player
 pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     // Check if we're editing a Matrix plugin
     let is_matrix = app
-        .plugin_chain
+        .plugin_graph
         .get_plugin(app.selected_plugin_index)
         .is_some_and(|p| matches!(p.settings, PluginSettings::Matrix { .. }));
 
@@ -128,7 +128,7 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
         }
         KeyCode::Enter | KeyCode::Char('e') => {
             // Open file explorer for FilePath parameters
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index)
                 && let Some(spec) = plugin
                     .settings
                     .param_specs()
@@ -188,7 +188,7 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
         }
         KeyCode::Char('a') => {
             // Load APO file (for EQ plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
+            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::EQ { .. }) {
                     app.input_mode = InputMode::LoadApoFile;
                     app.status_message = Some("Enter path to APO file:".to_string());
@@ -201,7 +201,7 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
         }
         KeyCode::Char('o') => {
             // Open SOFA file browser (for Binaural Decoder plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
+            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
                     app.open_file_explorer(
                         FilePickerOrigin::SofaFile,
@@ -220,7 +220,7 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
         }
         KeyCode::Char('f') => {
             // Open IR file browser (for Convolution plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
+            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index) {
                 if let PluginSettings::Convolution { ref ir_file, .. } = plugin.settings {
                     let current_path = ir_file.clone();
                     app.open_file_explorer(
@@ -239,7 +239,7 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
         }
         KeyCode::Char('A') => {
             // Load Path A config from preset file (for A/B Compare plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index)
                 && matches!(plugin.settings, PluginSettings::ABCompare { .. })
             {
                 let start = sotf_audio_player::config::get_plugin_presets_dir()
@@ -256,7 +256,7 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
         }
         KeyCode::Char('B') => {
             // Load Path B config from preset file (for A/B Compare plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index)
                 && matches!(plugin.settings, PluginSettings::ABCompare { .. })
             {
                 let start = sotf_audio_player::config::get_plugin_presets_dir()
@@ -301,7 +301,7 @@ fn open_file_path_param(app: &mut App, engine_key: &str) {
             );
         }
         "ir_file" => {
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_graph.get_plugin(app.selected_plugin_index)
                 && let PluginSettings::Convolution { ref ir_file, .. } = plugin.settings
             {
                 let current_path = ir_file.clone();
@@ -458,7 +458,7 @@ pub(super) fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<P
             if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
                 app.save_selected_preset();
             } else if !app.plugin_file_input.is_empty() {
-                app.save_plugin_chain();
+                app.save_plugins();
             }
             app.input_mode = InputMode::Normal;
             app.clear_autocomplete();
@@ -533,7 +533,7 @@ pub(super) fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<P
             if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
                 app.load_selected_preset();
             } else if !app.plugin_file_input.is_empty() {
-                app.load_plugin_chain();
+                app.load_plugins();
             }
             app.input_mode = InputMode::Normal;
             app.clear_autocomplete();

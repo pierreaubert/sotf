@@ -13,7 +13,7 @@ pub(crate) fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
     // Draw help box with contextual text
     if app.input_mode == InputMode::AddPlugin {
         draw_help_box_with_text(f, vchunks[0], app, "↑/↓=navigate  Enter=add  Esc=cancel");
-    } else if app.plugin_chain.is_empty() {
+    } else if app.plugin_graph.len() == 0 {
         draw_help_box_with_text(f, vchunks[0], app, "'a'=add plugins  's'=save  'l'=load");
     } else {
         draw_help_box(f, vchunks[0], app, Screen::Plugins);
@@ -28,23 +28,23 @@ pub(crate) fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
         .split(vchunks[1]);
 
     // Plugin chain list
-    draw_plugin_chain(f, chunks[0], app);
+    draw_plugin_list(f, chunks[0], app);
 
     // Available plugins list
     draw_available_plugins(f, chunks[1], app);
 }
 
-pub(crate) fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
+pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = app
-        .plugin_chain
+        .plugin_graph
         .plugins()
         .iter()
         .enumerate()
         .map(|(i, plugin)| {
             let enabled_marker = if plugin.enabled { "●" } else { "○" };
-            let display_name = if app.plugin_chain.is_input_monitor(i) {
+            let display_name = if app.plugin_graph.is_input_monitor(i) {
                 "Loudness Monitor Input"
-            } else if app.plugin_chain.is_output_monitor(i) {
+            } else if app.plugin_graph.is_output_monitor(i) {
                 "Loudness Monitor Output"
             } else if plugin.permanent && matches!(plugin.plugin_type(), PluginType::Gain) {
                 "Replay Gain"
@@ -63,13 +63,13 @@ pub(crate) fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let title = if app.plugin_chain.is_empty() {
+    let title = if app.plugin_graph.len() == 0 {
         "0 plugins".to_string()
     } else {
         format!(
             "{} plugins ({} ch)",
-            app.plugin_chain.len(),
-            app.plugin_chain.output_channels()
+            app.plugin_graph.len(),
+            app.plugin_graph.output_channels()
         )
     };
 
@@ -83,7 +83,7 @@ pub(crate) fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
         );
 
     let mut state = ListState::default();
-    if !app.plugin_chain.is_empty() {
+    if app.plugin_graph.len() > 0 {
         state.select(Some(app.selected_plugin_index));
     }
 

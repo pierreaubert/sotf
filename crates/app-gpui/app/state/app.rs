@@ -1073,7 +1073,7 @@ impl App {
             };
             match self
                 .plugin_state
-                .chain
+                .graph
                 .load_from_file(&presets_dir, &preset_name)
             {
                 Ok(warnings) => {

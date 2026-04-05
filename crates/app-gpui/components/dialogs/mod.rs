@@ -1473,12 +1473,12 @@ impl PlayerView {
                                                 state
                                                     .app
                                                     .plugin_state
-                                                    .chain
+                                                    .graph
                                                     .suspend_plugins(&indices);
                                                 state
                                                     .app
                                                     .plugin_state
-                                                    .chain
+                                                    .graph
                                                     .update_channel_dependent_plugins();
                                                 state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Normal;
@@ -1520,8 +1520,8 @@ impl PlayerView {
                                                     state
                                                         .app
                                                         .plugin_state
-                                                        .chain
-                                                        .remove_plugin(*idx);
+                                                        .graph
+                                                        .remove_plugin_by_index(*idx).ok();
                                                 }
                                                 state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Normal;

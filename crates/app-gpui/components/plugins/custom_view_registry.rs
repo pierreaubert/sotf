@@ -9,7 +9,7 @@ use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::*;
-use sotf_audio_player::{PluginChain, PluginSettings};
+use sotf_audio_player::{PluginGraph, PluginSettings};
 use sotf_audio_player_midi::mapping::MidiOverlay;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,7 +27,7 @@ pub struct CustomViewRenderContext<'a> {
     pub plugin_data: Option<Arc<dyn std::any::Any + Send + Sync>>,
     pub spectrum_tilt_select_open: bool,
     pub spectrum_reference_select_open: bool,
-    pub plugin_chain: &'a PluginChain,
+    pub plugin_graph: &'a PluginGraph,
     pub midi_overlay: Option<&'a MidiOverlay>,
 }
 
@@ -225,7 +225,7 @@ fn render_matrix(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) ->
         channel_states,
     } = ctx.settings
     {
-        let speaker_config = ctx.plugin_chain.speaker_config_at_index(ctx.plugin_idx);
+        let speaker_config = ctx.plugin_graph.speaker_config_at_index(ctx.plugin_idx);
         super::render_matrix_plugin(
             &d,
             ctx.entity.clone(),

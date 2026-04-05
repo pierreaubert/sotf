@@ -6,6 +6,7 @@
 use gpui::prelude::*;
 use gpui::*;
 
+use gpui_ui_kit::button::{Button, ButtonSize, ButtonVariant};
 use gpui_ui_kit::card::Card;
 use gpui_ui_kit::number_input::{NumberInput, NumberInputSize};
 use gpui_ui_kit::select::SelectSize;
@@ -181,6 +182,7 @@ impl RenderOnce for AutoEqForm {
         let on_loss_type_toggle_rc = self.on_loss_type_toggle.map(std::rc::Rc::new);
         let on_target_curve_change_rc = self.on_target_curve_change.map(std::rc::Rc::new);
         let on_target_curve_toggle_rc = self.on_target_curve_toggle.map(std::rc::Rc::new);
+        let on_edit_custom_target_rc = self.on_edit_custom_target.map(std::rc::Rc::new);
         let on_system_type_change_rc = self.on_system_type_change.map(std::rc::Rc::new);
         let on_system_type_toggle_rc = self.on_system_type_toggle.map(std::rc::Rc::new);
 

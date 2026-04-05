@@ -8,7 +8,7 @@ use std::ops::{Deref, DerefMut};
 use crate::app::types::PluginUpdateType;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
-use sotf_audio_player::{ConnectionDrag, GraphSelection, NodeDrag, PluginController, PluginGraph};
+use sotf_audio_player::{ConnectionDrag, GraphSelection, NodeDrag, PluginController};
 use sotf_audio_player_midi::MidiMappingEngine;
 use std::collections::HashMap;
 
@@ -17,13 +17,12 @@ pub struct PluginState {
     ctrl: PluginController,
 
     // GPUI-specific: tracks whether chain has been modified since last save
-    pub plugin_chain_modified: bool,
+    pub plugin_graph_modified: bool,
     pub pending_plugin_update: Option<PluginUpdateType>,
 
     // GPUI-specific: UI state
     pub matrix_selected_cell: Option<(usize, usize)>,
     pub plugin_view_mode: PluginViewMode,
-    pub plugin_graph: Option<PluginGraph>,
     pub graph_selection: GraphSelection,
     pub graph_connection_drag: Option<ConnectionDrag>,
     pub graph_node_drag: Option<NodeDrag>,
@@ -80,6 +79,23 @@ impl Deref for PluginState {
 impl DerefMut for PluginState {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.ctrl
+    }
+}
+
+impl PluginState {
+    /// The effective view mode: returns `Graph` when the graph topology is
+    /// non-linear (rack can't represent it), otherwise returns the user's choice.
+    pub fn effective_view_mode(&self) -> PluginViewMode {
+        if !self.ctrl.is_linear() {
+            PluginViewMode::Graph
+        } else {
+            self.plugin_view_mode
+        }
+    }
+
+    /// Whether the rack view is available (graph must be linear).
+    pub fn is_rack_available(&self) -> bool {
+        self.ctrl.is_linear()
     }
 }
 
@@ -147,11 +163,10 @@ impl Default for PluginState {
     fn default() -> Self {
         Self {
             ctrl: PluginController::new(),
-            plugin_chain_modified: false,
+            plugin_graph_modified: false,
             pending_plugin_update: None,
             matrix_selected_cell: None,
             plugin_view_mode: PluginViewMode::Rack,
-            plugin_graph: None,
             graph_selection: GraphSelection::default(),
             graph_connection_drag: None,
             graph_node_drag: None,

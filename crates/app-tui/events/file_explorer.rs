@@ -72,7 +72,7 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
             }
         }
         FilePickerOrigin::IrFile => {
-            if let Some(plugin) = app.plugin_chain.get_plugin_mut(app.selected_plugin_index)
+            if let Some(plugin) = app.plugin_graph.get_plugin_mut(app.selected_plugin_index)
                 && let PluginSettings::Convolution {
                     ref mut ir_file, ..
                 } = plugin.settings
@@ -128,7 +128,7 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                     match preset_file_to_path_config_json(&json_content, sample_rate) {
                         Ok(path_config_json) => {
                             if let Some(plugin) =
-                                app.plugin_chain.get_plugin_mut(app.selected_plugin_index)
+                                app.plugin_graph.get_plugin_mut(app.selected_plugin_index)
                                 && let PluginSettings::ABCompare {
                                     ref mut path_a_config,
                                     ref mut path_b_config,

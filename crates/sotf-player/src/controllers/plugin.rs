@@ -7,8 +7,9 @@
 use std::path::Path;
 
 use crate::{
-    BiquadFilterType, ChannelConflict, EQFilter, Plugin, PluginChain, PluginSettings, PluginType,
+    BiquadFilterType, ChannelConflict, EQFilter, Plugin, PluginSettings, PluginType,
 };
+use crate::plugin_graph::PluginGraph;
 
 // Re-export param_index_to_engine_param as a free function (used by GPUI apply_plugin_update)
 pub use super::plugin_param_map::param_index_to_engine_param;
@@ -27,10 +28,12 @@ pub enum PluginUpdateEffect {
     Structural,
 }
 
-/// Plugin chain controller owning shared state for plugin editing.
+/// Plugin controller owning shared state for plugin editing.
+///
+/// Uses `PluginGraph` as the sole source of truth for plugin topology.
 #[derive(Debug, Clone)]
 pub struct PluginController {
-    pub chain: PluginChain,
+    pub graph: PluginGraph,
     pub editing_plugin_index: Option<usize>,
     pub plugin_param_selection: usize,
     pub selected_plugin_index: usize,
@@ -44,7 +47,7 @@ pub struct PluginController {
 impl Default for PluginController {
     fn default() -> Self {
         Self {
-            chain: PluginChain::with_default_rack(),
+            graph: PluginGraph::with_default_rack(),
             editing_plugin_index: None,
             plugin_param_selection: 0,
             selected_plugin_index: 0,
@@ -62,32 +65,40 @@ impl PluginController {
         Self::default()
     }
 
+    /// Whether the plugin graph is a simple linear chain (rack view compatible).
+    pub fn is_linear(&self) -> bool {
+        self.graph.is_linear()
+    }
+
     // ========================================================================
     // Chain management
     // ========================================================================
 
     /// Add a plugin to the chain. Returns `Structural` effect.
     pub fn add_plugin(&mut self, plugin_type: &PluginType) -> PluginUpdateEffect {
-        let insert_idx = self.chain.user_plugin_insert_index();
-        self.chain.insert_plugin(insert_idx, plugin_type);
-        self.selected_plugin_index = insert_idx;
-        self.chain.update_channel_dependent_plugins();
-        PluginUpdateEffect::Structural
+        let insert_idx = self.graph.user_plugin_insert_index();
+        if self.graph.insert_plugin(insert_idx, plugin_type).is_ok() {
+            self.selected_plugin_index = insert_idx;
+            self.graph.update_channel_dependent_plugins();
+            PluginUpdateEffect::Structural
+        } else {
+            PluginUpdateEffect::None
+        }
     }
 
     /// Toggle a plugin's enabled state. Returns `Structural` effect.
     pub fn toggle_plugin(&mut self, index: usize) -> PluginUpdateEffect {
-        self.chain.toggle_plugin(index);
-        self.chain.update_channel_dependent_plugins();
+        let _ = self.graph.toggle_plugin_by_index(index);
+        self.graph.update_channel_dependent_plugins();
         PluginUpdateEffect::Structural
     }
 
     /// Move a plugin up in the chain. Returns `Structural` if moved, `None` otherwise.
     pub fn move_plugin_up(&mut self, index: usize) -> PluginUpdateEffect {
-        if self.chain.can_move_plugin_up(index) {
-            self.chain.move_plugin(index, index - 1);
+        if self.graph.can_move_up_by_index(index) {
+            self.graph.move_plugin(index, index - 1);
             self.selected_plugin_index = index - 1;
-            self.chain.update_channel_dependent_plugins();
+            self.graph.update_channel_dependent_plugins();
             PluginUpdateEffect::Structural
         } else {
             PluginUpdateEffect::None
@@ -96,10 +107,10 @@ impl PluginController {
 
     /// Move a plugin down in the chain. Returns `Structural` if moved, `None` otherwise.
     pub fn move_plugin_down(&mut self, index: usize) -> PluginUpdateEffect {
-        if self.chain.can_move_plugin_down(index) {
-            self.chain.move_plugin(index, index + 1);
+        if self.graph.can_move_down_by_index(index) {
+            self.graph.move_plugin(index, index + 1);
             self.selected_plugin_index = index + 1;
-            self.chain.update_channel_dependent_plugins();
+            self.graph.update_channel_dependent_plugins();
             PluginUpdateEffect::Structural
         } else {
             PluginUpdateEffect::None
@@ -108,11 +119,10 @@ impl PluginController {
 
     /// Remove a plugin from the chain. Returns `Structural` if removed, `None` otherwise.
     pub fn remove_plugin(&mut self, index: usize) -> PluginUpdateEffect {
-        if index < self.chain.len() {
-            self.chain.remove_plugin(index);
-            self.chain.update_channel_dependent_plugins();
-            if self.selected_plugin_index >= self.chain.len() && self.selected_plugin_index > 0 {
-                self.selected_plugin_index = self.chain.len() - 1;
+        if self.graph.remove_plugin_by_index(index).is_ok() {
+            self.graph.update_channel_dependent_plugins();
+            if self.selected_plugin_index >= self.graph.len() && self.selected_plugin_index > 0 {
+                self.selected_plugin_index = self.graph.len() - 1;
             }
             PluginUpdateEffect::Structural
         } else {
@@ -122,16 +132,16 @@ impl PluginController {
 
     /// Select the next plugin in the chain.
     pub fn select_next_plugin(&mut self) {
-        if !self.chain.is_empty() {
-            self.selected_plugin_index = (self.selected_plugin_index + 1) % self.chain.len();
+        if self.graph.len() > 0 {
+            self.selected_plugin_index = (self.selected_plugin_index + 1) % self.graph.len();
         }
     }
 
     /// Select the previous plugin in the chain.
     pub fn select_previous_plugin(&mut self) {
-        if !self.chain.is_empty() {
+        if self.graph.len() > 0 {
             if self.selected_plugin_index == 0 {
-                self.selected_plugin_index = self.chain.len() - 1;
+                self.selected_plugin_index = self.graph.len() - 1;
             } else {
                 self.selected_plugin_index -= 1;
             }
@@ -145,18 +155,18 @@ impl PluginController {
     /// Get the currently editing plugin (immutable).
     pub fn get_editing_plugin(&self) -> Option<&Plugin> {
         self.editing_plugin_index
-            .and_then(|idx| self.chain.get_plugin(idx))
+            .and_then(|idx| self.graph.get_plugin(idx))
     }
 
     /// Get the currently editing plugin (mutable).
     pub fn get_editing_plugin_mut(&mut self) -> Option<&mut Plugin> {
         self.editing_plugin_index
-            .and_then(|idx| self.chain.get_plugin_mut(idx))
+            .and_then(|idx| self.graph.get_plugin_mut(idx))
     }
 
     /// Whether the chain has an enabled spectrum analyzer.
     pub fn has_enabled_spectrum_analyzer(&self) -> bool {
-        self.chain.has_enabled_spectrum_analyzer()
+        self.graph.has_enabled_spectrum_analyzer()
     }
 
     // ========================================================================
@@ -209,7 +219,7 @@ impl PluginController {
         };
 
         if result && channel_count_changed {
-            self.chain.update_channel_dependent_plugins();
+            self.graph.update_channel_dependent_plugins();
         }
 
         if result {
@@ -234,7 +244,7 @@ impl PluginController {
         let mut channel_count_changed = false;
         let mut update_needed = false;
 
-        if let Some(plugin) = self.chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
             update_needed = set_plugin_param_value(
                 &mut plugin.settings,
                 param_idx,
@@ -244,7 +254,7 @@ impl PluginController {
         }
 
         if channel_count_changed {
-            self.chain.update_channel_dependent_plugins();
+            self.graph.update_channel_dependent_plugins();
         }
 
         if update_needed {
@@ -263,7 +273,7 @@ impl PluginController {
     ) -> PluginUpdateEffect {
         let mut update_needed = false;
 
-        if let Some(plugin) = self.chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
             match &mut plugin.settings {
                 PluginSettings::ABCompare {
                     path_a_config,
@@ -309,7 +319,7 @@ impl PluginController {
         plugin_idx: usize,
         tilt: sotf_plugins::SpectralTiltCorrection,
     ) -> PluginUpdateEffect {
-        if let Some(plugin) = self.chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
             if let PluginSettings::SpectrumAnalyzer {
                 tilt_correction, ..
             } = &mut plugin.settings
@@ -327,7 +337,7 @@ impl PluginController {
         plugin_idx: usize,
         reference: sotf_plugins::TiltReferenceFreq,
     ) -> PluginUpdateEffect {
-        if let Some(plugin) = self.chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
             if let PluginSettings::SpectrumAnalyzer { tilt_reference, .. } = &mut plugin.settings {
                 *tilt_reference = reference;
                 return PluginUpdateEffect::Structural;
@@ -342,7 +352,7 @@ impl PluginController {
         plugin_idx: usize,
         param_idx: usize,
     ) -> PluginUpdateEffect {
-        let plugin_type = if let Some(plugin) = self.chain.get_plugin(plugin_idx) {
+        let plugin_type = if let Some(plugin) = self.graph.get_plugin(plugin_idx) {
             plugin.plugin_type()
         } else {
             return PluginUpdateEffect::None;
@@ -356,7 +366,7 @@ impl PluginController {
 
         let mut channel_count_changed = false;
 
-        if let Some(plugin) = self.chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
             plugin.settings.set_param_value(param_idx, default_value);
 
             match &mut plugin.settings {
@@ -395,7 +405,7 @@ impl PluginController {
         }
 
         if channel_count_changed {
-            self.chain.update_channel_dependent_plugins();
+            self.graph.update_channel_dependent_plugins();
         }
 
         self.determine_update_effect(Some(plugin_idx), param_idx, channel_count_changed)
@@ -666,7 +676,7 @@ impl PluginController {
         plugin_idx: usize,
         per_channel: bool,
     ) -> PluginUpdateEffect {
-        if let Some(plugin) = self.chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
             if let PluginSettings::EQ {
                 channels,
                 filters,
@@ -728,7 +738,7 @@ impl PluginController {
             format!("{}.json", filename)
         };
 
-        self.chain
+        self.graph
             .save_to_file(presets_dir, filename)
             .map_err(|e| format!("Error saving: {}", e))?;
 
@@ -744,11 +754,11 @@ impl PluginController {
         filename: &str,
     ) -> Result<(PluginUpdateEffect, String, Vec<String>), String> {
         let warnings = self
-            .chain
+            .graph
             .load_from_file(presets_dir, filename)
             .map_err(|e| format!("Error loading: {}", e))?;
 
-        self.chain.update_channel_dependent_plugins();
+        self.graph.update_channel_dependent_plugins();
 
         let filename_with_ext = if filename.ends_with(".json") {
             filename.to_string()
@@ -772,7 +782,7 @@ impl PluginController {
             .cloned()
             .ok_or_else(|| "Invalid preset index".to_string())?;
 
-        self.chain
+        self.graph
             .save_to_file(presets_dir, &preset_filename)
             .map_err(|e| format!("Error saving: {}", e))?;
 
@@ -798,13 +808,13 @@ impl PluginController {
             .ok_or_else(|| "Invalid preset index".to_string())?;
 
         let warnings = self
-            .chain
+            .graph
             .load_from_file(presets_dir, &preset_filename)
             .map_err(|e| format!("Error loading preset: {}", e))?;
 
-        self.chain.update_channel_dependent_plugins();
+        self.graph.update_channel_dependent_plugins();
         self.last_loaded_preset = Some(preset_filename.clone());
-        let plugin_count = self.chain.len();
+        let plugin_count = self.graph.len();
 
         Ok((
             PluginUpdateEffect::Structural,
@@ -881,9 +891,8 @@ impl PluginController {
         preset_name: &str,
     ) -> Result<String, String> {
         let plugin = self
-            .chain
-            .plugins()
-            .get(plugin_idx)
+            .graph
+            .get_plugin(plugin_idx)
             .ok_or_else(|| format!("Plugin index {} out of range", plugin_idx))?;
 
         let dir = Self::plugin_preset_dir(&plugin.plugin_type())
@@ -916,9 +925,8 @@ impl PluginController {
         preset_name: &str,
     ) -> Result<PluginUpdateEffect, String> {
         let plugin = self
-            .chain
-            .plugins()
-            .get(plugin_idx)
+            .graph
+            .get_plugin(plugin_idx)
             .ok_or_else(|| format!("Plugin index {} out of range", plugin_idx))?;
 
         let dir = Self::plugin_preset_dir(&plugin.plugin_type())
@@ -957,8 +965,10 @@ impl PluginController {
         }
 
         // Apply the settings
-        self.chain.plugins_mut()[plugin_idx].settings = settings;
-        self.chain.update_channel_dependent_plugins();
+        if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
+            plugin.settings = settings;
+        }
+        self.graph.update_channel_dependent_plugins();
 
         log::info!(
             "Loaded plugin preset '{}' into slot {}",
@@ -1002,7 +1012,7 @@ impl PluginController {
         }
 
         if let Some(idx) = plugin_idx {
-            if let Some(plugin) = self.chain.get_plugin(idx) {
+            if let Some(plugin) = self.graph.get_plugin(idx) {
                 if param_index_to_engine_param(&plugin.settings, param_idx).is_some() {
                     return PluginUpdateEffect::Parameter {
                         plugin_index: idx,
@@ -1018,25 +1028,25 @@ impl PluginController {
     // -- Channel conflict detection & suspension --
 
     pub fn find_channel_conflicts(&self, input_channels: usize) -> Vec<ChannelConflict> {
-        self.chain.find_channel_conflicts(input_channels)
+        self.graph.find_channel_conflicts(input_channels)
     }
 
     /// Find and suspend all incompatible plugins, then update channel-dependent plugins.
     pub fn suspend_incompatible(&mut self, input_channels: usize) {
-        let conflicts = self.chain.find_channel_conflicts(input_channels);
+        let conflicts = self.graph.find_channel_conflicts(input_channels);
         let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
-        self.chain.suspend_plugins(&indices);
-        self.chain.update_channel_dependent_plugins();
+        self.graph.suspend_plugins(&indices);
+        self.graph.update_channel_dependent_plugins();
     }
 
     /// Clear all suspensions and update channel-dependent plugins.
     pub fn clear_suspensions(&mut self) {
-        self.chain.clear_suspensions();
-        self.chain.update_channel_dependent_plugins();
+        self.graph.clear_suspensions();
+        self.graph.update_channel_dependent_plugins();
     }
 
     pub fn has_suspensions(&self) -> bool {
-        self.chain.has_suspensions()
+        self.graph.has_suspensions()
     }
 }
 

@@ -405,11 +405,11 @@ impl Render for PlayerView {
                                         std::mem::take(&mut state.app.channel_conflicts);
                                     let indices: Vec<usize> =
                                         conflicts.iter().map(|c| c.index).collect();
-                                    state.app.plugin_state.chain.suspend_plugins(&indices);
+                                    state.app.plugin_state.graph.suspend_plugins(&indices);
                                     state
                                         .app
                                         .plugin_state
-                                        .chain
+                                        .graph
                                         .update_channel_dependent_plugins();
                                     state.app.ui_state.input_mode =
                                         crate::app::InputMode::Normal;

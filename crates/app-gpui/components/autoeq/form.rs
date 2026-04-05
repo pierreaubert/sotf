@@ -18,6 +18,8 @@ pub(crate) type BoolCallback = Box<dyn Fn(bool, &mut Window, &mut App) + 'static
 /// Callback type for dropdown toggle
 pub(crate) type ToggleCallback = Box<dyn Fn(bool, &mut Window, &mut App) + 'static>;
 
+pub(crate) type ActionCallback = Box<dyn Fn(&mut Window, &mut App) + 'static>;
+
 /// Layout mode for the AutoEQ form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AutoEqLayoutMode {
@@ -136,6 +138,7 @@ pub struct AutoEqForm {
     pub(crate) on_loss_type_toggle: Option<ToggleCallback>,
     pub(crate) on_target_curve_change: Option<StringCallback>,
     pub(crate) on_target_curve_toggle: Option<ToggleCallback>,
+    pub(crate) on_edit_custom_target: Option<ActionCallback>,
     pub(crate) on_system_type_change: Option<StringCallback>,
     pub(crate) on_system_type_toggle: Option<ToggleCallback>,
 
@@ -268,6 +271,7 @@ impl AutoEqForm {
             on_loss_type_toggle: None,
             on_target_curve_change: None,
             on_target_curve_toggle: None,
+            on_edit_custom_target: None,
             on_system_type_change: None,
             on_system_type_toggle: None,
             on_psychoacoustic_change: None,
@@ -813,6 +817,15 @@ impl AutoEqForm {
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_target_curve_toggle = Some(Box::new(handler));
+        self
+    }
+
+    /// Set edit custom target curve handler (opens the custom target modal)
+    pub fn on_edit_custom_target(
+        mut self,
+        handler: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_edit_custom_target = Some(Box::new(handler));
         self
     }
 

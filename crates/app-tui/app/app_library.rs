@@ -654,10 +654,10 @@ impl App {
         if let Some(preset_name) = &config.plugin_preset {
             // Use the plugin chain's own load method
             if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
-                match self.plugin_chain.load_from_file(&presets_dir, preset_name) {
+                match self.plugin_graph.load_from_file(&presets_dir, preset_name) {
                     Ok(warnings) => {
                         // Update BinauralDecoder input channels after loading
-                        self.plugin_chain.update_channel_dependent_plugins();
+                        self.plugin_graph.update_channel_dependent_plugins();
 
                         self.last_loaded_preset = Some(preset_name.clone());
                         self.request_plugin_update();

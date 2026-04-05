@@ -1,7 +1,8 @@
 use crate::theme::Theme;
 use sotf_audio::LoudnessData;
 use sotf_audio::devices::AudioDevice;
-use sotf_audio_player::{Album, ChannelConflict, MusicLibrary, PluginChain, Track};
+use sotf_audio_player::{Album, ChannelConflict, MusicLibrary, Track};
+use sotf_audio_player::plugin_graph::PluginGraph;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -73,7 +74,7 @@ pub struct App {
     pub playlist_name_input: String,
 
     // Plugin system
-    pub plugin_chain: PluginChain,
+    pub plugin_graph: PluginGraph,
     pub needs_plugin_update: bool,
     pub pending_param_update: Option<PendingParameterUpdate>,
     pub editing_plugin_index: Option<usize>,
@@ -282,7 +283,7 @@ impl App {
             playlist_controller: sotf_audio_player::PlaylistController::new(),
             playlist_mode: super::types::PlaylistMode::List,
             playlist_name_input: String::new(),
-            plugin_chain: PluginChain::with_default_rack(),
+            plugin_graph: PluginGraph::with_default_rack(),
             needs_plugin_update: false,
             pending_param_update: None,
             editing_plugin_index: None,
@@ -516,7 +517,7 @@ impl App {
         let filters = EQFilter::from_apo_file(path)?;
 
         // Update the currently selected plugin if it's an EQ
-        if let Some(plugin) = self.plugin_chain.get_plugin_mut(self.selected_plugin_index) {
+        if let Some(plugin) = self.plugin_graph.get_plugin_mut(self.selected_plugin_index) {
             if let PluginSettings::EQ { channels, .. } = &plugin.settings {
                 let channels = *channels;
                 let filter_count = filters.len();
@@ -543,7 +544,7 @@ impl App {
         use sotf_audio_player::PluginSettings;
 
         // Update the currently selected plugin if it's a binaural decoder
-        if let Some(plugin) = self.plugin_chain.get_plugin_mut(self.selected_plugin_index) {
+        if let Some(plugin) = self.plugin_graph.get_plugin_mut(self.selected_plugin_index) {
             if let PluginSettings::BinauralDecoder {
                 ref mut sofa_file, ..
             } = plugin.settings
@@ -561,8 +562,8 @@ impl App {
     /// Returns `(slot_index, filter_count)` for the last non-permanent EQ plugin, or `None`.
     pub fn find_last_eq_info(&self) -> Option<(usize, usize)> {
         use sotf_audio_player::PluginSettings;
-        (0..self.plugin_chain.len()).rev().find_map(|i| {
-            if let Some(p) = self.plugin_chain.get_plugin(i)
+        (0..self.plugin_graph.len()).rev().find_map(|i| {
+            if let Some(p) = self.plugin_graph.get_plugin(i)
                 && !p.is_permanent()
                 && let PluginSettings::EQ { filters, .. } = &p.settings
             {
@@ -608,8 +609,8 @@ impl App {
         let n = eq_filters.len();
 
         // Find the last non-permanent EQ plugin
-        let eq_idx = (0..self.plugin_chain.len()).rev().find(|&i| {
-            if let Some(p) = self.plugin_chain.get_plugin(i) {
+        let eq_idx = (0..self.plugin_graph.len()).rev().find(|&i| {
+            if let Some(p) = self.plugin_graph.get_plugin(i) {
                 !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. })
             } else {
                 false
@@ -620,13 +621,13 @@ impl App {
             idx
         } else {
             // No EQ plugin found — insert one at the user-plugin slot
-            let insert_at = self.plugin_chain.user_plugin_insert_index();
-            self.plugin_chain.insert_plugin(insert_at, &PluginType::EQ);
+            let insert_at = self.plugin_graph.user_plugin_insert_index();
+            self.plugin_graph.insert_plugin(insert_at, &PluginType::EQ).ok();
             insert_at
         };
 
         // Update the plugin settings
-        if let Some(plugin) = self.plugin_chain.get_plugin_mut(target_idx) {
+        if let Some(plugin) = self.plugin_graph.get_plugin_mut(target_idx) {
             let channels = match &plugin.settings {
                 PluginSettings::EQ { channels, .. } => *channels,
                 _ => 2,
@@ -643,7 +644,7 @@ impl App {
             plugin.enabled = true;
         }
 
-        self.plugin_chain.update_channel_dependent_plugins();
+        self.plugin_graph.update_channel_dependent_plugins();
         self.request_plugin_update();
 
         Ok(format!(
@@ -653,7 +654,7 @@ impl App {
     }
 
     /// Apply Spinorama EQ results to the plugin chain.
-    pub fn apply_spinorama_to_plugin_chain(&mut self) -> Result<String, String> {
+    pub fn apply_spinorama_to_plugins(&mut self) -> Result<String, String> {
         let filters: Vec<_> = self
             .spinorama_eq
             .filters
@@ -669,7 +670,7 @@ impl App {
     }
 
     /// Apply Headphone EQ results to the plugin chain.
-    pub fn apply_headphone_to_plugin_chain(&mut self) -> Result<String, String> {
+    pub fn apply_headphone_to_plugins(&mut self) -> Result<String, String> {
         let filters: Vec<_> = self
             .headphone_eq
             .filters

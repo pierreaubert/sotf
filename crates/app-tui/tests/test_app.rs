@@ -297,10 +297,10 @@ mod tests {
     #[test]
     fn test_adjust_eq_parameters() {
         let mut app = App::new(Theme::default(), false);
-        let plugin_idx = app.plugin_chain.add_plugin(&PluginType::EQ);
+        let plugin_idx = app.plugin_graph.add_plugin(&PluginType::EQ);
         app.editing_plugin_index = Some(plugin_idx);
 
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
             PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
@@ -315,7 +315,7 @@ mod tests {
         // Frequency
         app.plugin_param_selection = 1; // Index 0 is now 'Max Filters'
         assert!(app.adjust_selected_param(1.0));
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
             PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
@@ -325,7 +325,7 @@ mod tests {
         // Q
         app.plugin_param_selection = 2;
         assert!(app.adjust_selected_param(1.0));
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
             PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
@@ -335,7 +335,7 @@ mod tests {
         // Gain
         app.plugin_param_selection = 3;
         assert!(app.adjust_selected_param(1.0));
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
             PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
@@ -345,7 +345,7 @@ mod tests {
         // Type
         app.plugin_param_selection = 4;
         assert!(app.adjust_selected_param(1.0));
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
             PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
@@ -356,10 +356,10 @@ mod tests {
     #[test]
     fn test_adjust_upmixer_parameters() {
         let mut app = App::new(Theme::default(), false);
-        let plugin_idx = app.plugin_chain.add_plugin(&PluginType::Upmixer);
+        let plugin_idx = app.plugin_graph.add_plugin(&PluginType::Upmixer);
         app.editing_plugin_index = Some(plugin_idx);
 
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let (
             orig_speaker_config,
             orig_front_direct,
@@ -432,7 +432,7 @@ mod tests {
             assert!(app.adjust_selected_param(1.0));
         }
 
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::Upmixer {
             speaker_config,
             gain_front_direct,
@@ -476,10 +476,10 @@ mod tests {
     fn test_adjust_compressor_limiter_gate_loudness_parameters() {
         // Compressor
         let mut app = App::new(Theme::default(), false);
-        let plugin_idx = app.plugin_chain.add_plugin(&PluginType::Compressor);
+        let plugin_idx = app.plugin_graph.add_plugin(&PluginType::Compressor);
         app.editing_plugin_index = Some(plugin_idx);
 
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let (
             orig_thresh,
             orig_ratio,
@@ -525,7 +525,7 @@ mod tests {
             assert!(app.adjust_selected_param(-1.0));
         }
 
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::Compressor {
             threshold_db,
             ratio,
@@ -554,9 +554,9 @@ mod tests {
 
         // Limiter (use -1.0 since mix starts at 1.0 which is max)
         let mut app = App::new(Theme::default(), false);
-        let plugin_idx = app.plugin_chain.add_plugin(&PluginType::Limiter);
+        let plugin_idx = app.plugin_graph.add_plugin(&PluginType::Limiter);
         app.editing_plugin_index = Some(plugin_idx);
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let (orig_thresh, orig_rel, orig_look, orig_soft, orig_mix) = match &plugin.settings {
             PluginSettings::Limiter {
                 threshold_db,
@@ -573,7 +573,7 @@ mod tests {
             app.plugin_param_selection = idx;
             assert!(app.adjust_selected_param(-1.0));
         }
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::Limiter {
             threshold_db,
             release_ms,
@@ -592,9 +592,9 @@ mod tests {
 
         // Gate - test parameters individually since mix starts at max (1.0) and hpf at min (0.0)
         let mut app = App::new(Theme::default(), false);
-        let plugin_idx = app.plugin_chain.add_plugin(&PluginType::Gate);
+        let plugin_idx = app.plugin_graph.add_plugin(&PluginType::Gate);
         app.editing_plugin_index = Some(plugin_idx);
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let (
             orig_thresh,
             orig_ratio,
@@ -633,7 +633,7 @@ mod tests {
             let delta = if idx == 5 { -1.0 } else { 1.0 }; // mix starts at max, decrease it
             assert!(app.adjust_selected_param(delta));
         }
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::Gate {
             threshold_db,
             ratio,
@@ -659,10 +659,10 @@ mod tests {
         // Loudness compensation
         let mut app = App::new(Theme::default(), false);
         let plugin_idx = app
-            .plugin_chain
+            .plugin_graph
             .add_plugin(&PluginType::LoudnessCompensation);
         app.editing_plugin_index = Some(plugin_idx);
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let (orig_low_freq, orig_low_gain, orig_high_freq, orig_high_gain) = match &plugin.settings
         {
             PluginSettings::LoudnessCompensation {
@@ -678,7 +678,7 @@ mod tests {
             app.plugin_param_selection = idx;
             assert!(app.adjust_selected_param(1.0));
         }
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::LoudnessCompensation {
             low_freq,
             low_gain,
@@ -697,11 +697,11 @@ mod tests {
     #[test]
     fn test_adjust_binaural_decoder_parameters_and_set_sofa() {
         let mut app = App::new(Theme::default(), false);
-        let plugin_idx = app.plugin_chain.add_plugin(&PluginType::BinauralDecoder);
+        let plugin_idx = app.plugin_graph.add_plugin(&PluginType::BinauralDecoder);
         app.editing_plugin_index = Some(plugin_idx);
         app.selected_plugin_index = plugin_idx;
 
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         let (orig_sofa, orig_channels, orig_opt, orig_ext, orig_near) = match &plugin.settings {
             PluginSettings::BinauralDecoder {
                 sofa_file,
@@ -726,7 +726,7 @@ mod tests {
             assert!(app.adjust_selected_param(1.0));
         }
 
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::BinauralDecoder {
             sofa_file,
             input_channels,
@@ -749,7 +749,7 @@ mod tests {
         app.sofa_file_input = "/tmp/test.sofa".to_string();
         app.load_sofa_file().unwrap();
 
-        let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::BinauralDecoder { sofa_file, .. } = &plugin.settings {
             assert_eq!(sofa_file, "/tmp/test.sofa");
         } else {
@@ -1243,31 +1243,31 @@ mod tests {
     fn test_add_plugin() {
         let mut app = App::new(Theme::default(), false);
         // App starts with default permanent plugins (LoudnessMonitor, Matrix, etc.)
-        let initial_count = app.plugin_chain.len();
+        let initial_count = app.plugin_graph.len();
         assert!(initial_count >= 2, "App should start with default plugins");
 
         app.add_plugin(&PluginType::Gain);
-        assert_eq!(app.plugin_chain.len(), initial_count + 1);
+        assert_eq!(app.plugin_graph.len(), initial_count + 1);
         assert!(app.needs_plugin_update);
 
         app.add_plugin(&PluginType::EQ);
-        assert_eq!(app.plugin_chain.len(), initial_count + 2);
+        assert_eq!(app.plugin_graph.len(), initial_count + 2);
     }
 
     #[test]
     fn test_remove_plugin() {
         let mut app = App::new(Theme::default(), false);
-        let initial_count = app.plugin_chain.len();
+        let initial_count = app.plugin_graph.len();
 
         app.add_plugin(&PluginType::Gain);
         app.add_plugin(&PluginType::EQ);
         app.add_plugin(&PluginType::Limiter);
 
-        assert_eq!(app.plugin_chain.len(), initial_count + 3);
+        assert_eq!(app.plugin_graph.len(), initial_count + 3);
 
         // Remove one of our added plugins (index after the defaults)
         app.remove_plugin(initial_count);
-        assert_eq!(app.plugin_chain.len(), initial_count + 2);
+        assert_eq!(app.plugin_graph.len(), initial_count + 2);
         assert!(app.needs_plugin_update);
     }
 
@@ -1277,24 +1277,24 @@ mod tests {
         app.add_plugin(&PluginType::Gain);
 
         // Check initial state (enabled)
-        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let plugin = app.plugin_graph.get_plugin(0).unwrap();
         assert!(plugin.enabled);
 
         // Toggle off
         app.toggle_plugin(0);
-        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let plugin = app.plugin_graph.get_plugin(0).unwrap();
         assert!(!plugin.enabled);
 
         // Toggle on
         app.toggle_plugin(0);
-        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let plugin = app.plugin_graph.get_plugin(0).unwrap();
         assert!(plugin.enabled);
     }
 
     #[test]
     fn test_move_plugin_up() {
         let mut app = App::new(Theme::default(), false);
-        let base_idx = app.plugin_chain.user_plugin_insert_index();
+        let base_idx = app.plugin_graph.user_plugin_insert_index();
         app.add_plugin(&PluginType::Gain);
         app.add_plugin(&PluginType::EQ);
         app.add_plugin(&PluginType::Limiter);
@@ -1303,14 +1303,14 @@ mod tests {
         app.move_plugin_up(base_idx + 2);
 
         // Limiter should now be at base_idx + 1
-        let plugin = app.plugin_chain.get_plugin(base_idx + 1).unwrap();
+        let plugin = app.plugin_graph.get_plugin(base_idx + 1).unwrap();
         assert!(matches!(plugin.plugin_type(), PluginType::Limiter));
     }
 
     #[test]
     fn test_move_plugin_down() {
         let mut app = App::new(Theme::default(), false);
-        let base_idx = app.plugin_chain.user_plugin_insert_index();
+        let base_idx = app.plugin_graph.user_plugin_insert_index();
         app.add_plugin(&PluginType::Gain);
         app.add_plugin(&PluginType::EQ);
         app.add_plugin(&PluginType::Limiter);
@@ -1319,7 +1319,7 @@ mod tests {
         app.move_plugin_down(base_idx);
 
         // Gain should now be at base_idx + 1
-        let plugin = app.plugin_chain.get_plugin(base_idx + 1).unwrap();
+        let plugin = app.plugin_graph.get_plugin(base_idx + 1).unwrap();
         assert!(matches!(plugin.plugin_type(), PluginType::Gain));
     }
 
@@ -1330,16 +1330,16 @@ mod tests {
         app.add_plugin(&PluginType::EQ);
 
         // Try to move first plugin (index 0) up - should do nothing
-        let first_plugin_type = app.plugin_chain.get_plugin(0).unwrap().plugin_type();
+        let first_plugin_type = app.plugin_graph.get_plugin(0).unwrap().plugin_type();
         app.move_plugin_up(0);
-        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let plugin = app.plugin_graph.get_plugin(0).unwrap();
         assert_eq!(plugin.plugin_type(), first_plugin_type);
 
         // Try to move last plugin down (should do nothing)
-        let last_idx = app.plugin_chain.len() - 1;
-        let last_plugin_type = app.plugin_chain.get_plugin(last_idx).unwrap().plugin_type();
+        let last_idx = app.plugin_graph.len() - 1;
+        let last_plugin_type = app.plugin_graph.get_plugin(last_idx).unwrap().plugin_type();
         app.move_plugin_down(last_idx);
-        let plugin = app.plugin_chain.get_plugin(last_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(last_idx).unwrap();
         assert_eq!(plugin.plugin_type(), last_plugin_type);
     }
 
@@ -1349,7 +1349,7 @@ mod tests {
         app.add_plugin(&PluginType::Gain);
         app.add_plugin(&PluginType::EQ);
 
-        let total_plugins = app.plugin_chain.len();
+        let total_plugins = app.plugin_graph.len();
         app.selected_plugin_index = 0;
 
         // Navigate through all plugins
@@ -1368,7 +1368,7 @@ mod tests {
         let mut app = App::new(Theme::default(), false);
         app.add_plugin(&PluginType::Gain);
 
-        let total_plugins = app.plugin_chain.len();
+        let total_plugins = app.plugin_graph.len();
         app.selected_plugin_index = 0;
 
         // Wrap to last
@@ -1832,7 +1832,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_spinorama_to_plugin_chain_adds_eq_when_missing() {
+    fn test_apply_spinorama_to_plugins_adds_eq_when_missing() {
         use sotf_audio_player::spinorama_eq_types::SpinoramaBiquad;
         let mut app = App::new(Theme::default(), false);
         app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
@@ -1851,12 +1851,12 @@ mod tests {
             },
         ];
 
-        let result = app.apply_spinorama_to_plugin_chain();
+        let result = app.apply_spinorama_to_plugins();
         assert!(result.is_ok(), "Expected Ok, got {:?}", result);
 
         // An EQ plugin should now exist in the chain
-        let has_eq = (0..app.plugin_chain.len()).any(|i| {
-            app.plugin_chain
+        let has_eq = (0..app.plugin_graph.len()).any(|i| {
+            app.plugin_graph
                 .get_plugin(i)
                 .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
                 .unwrap_or(false)
@@ -1865,7 +1865,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_spinorama_to_plugin_chain_updates_last_eq() {
+    fn test_apply_spinorama_to_plugins_updates_last_eq() {
         use sotf_audio_player::spinorama_eq_types::SpinoramaBiquad;
         let mut app = App::new(Theme::default(), false);
         // Add two EQ plugins — spinorama should target the last one
@@ -1873,9 +1873,9 @@ mod tests {
         app.add_plugin(&PluginType::EQ);
 
         // Record indices of both EQ plugins
-        let eq_indices: Vec<usize> = (0..app.plugin_chain.len())
+        let eq_indices: Vec<usize> = (0..app.plugin_graph.len())
             .filter(|&i| {
-                app.plugin_chain
+                app.plugin_graph
                     .get_plugin(i)
                     .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
                     .unwrap_or(false)
@@ -1892,11 +1892,11 @@ mod tests {
             db_gain: 1.5,
         }];
 
-        let result = app.apply_spinorama_to_plugin_chain();
+        let result = app.apply_spinorama_to_plugins();
         assert!(result.is_ok(), "Expected Ok, got {:?}", result);
 
         // Verify the LAST EQ plugin was updated (not the first)
-        let plugin = app.plugin_chain.get_plugin(last_eq_idx).unwrap();
+        let plugin = app.plugin_graph.get_plugin(last_eq_idx).unwrap();
         if let PluginSettings::EQ { filters, .. } = &plugin.settings {
             assert_eq!(filters.len(), 1);
             assert!((filters[0].frequency - 500.0).abs() < 0.01);
@@ -1905,7 +1905,7 @@ mod tests {
         }
 
         // First EQ should still have default filters (unchanged)
-        let first_plugin = app.plugin_chain.get_plugin(eq_indices[0]).unwrap();
+        let first_plugin = app.plugin_graph.get_plugin(eq_indices[0]).unwrap();
         if let PluginSettings::EQ { filters, .. } = &first_plugin.settings {
             // Default EQ has no filters with freq 500
             assert!(
@@ -1916,10 +1916,10 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_spinorama_to_plugin_chain_empty_filters_returns_error() {
+    fn test_apply_spinorama_to_plugins_empty_filters_returns_error() {
         let mut app = App::new(Theme::default(), false);
         app.spinorama_eq.filters = vec![];
-        let result = app.apply_spinorama_to_plugin_chain();
+        let result = app.apply_spinorama_to_plugins();
         assert!(result.is_err());
     }
 }

@@ -72,7 +72,7 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use custom_view_registry::{CustomViewRenderContext, GpuiViewRegistry};
 use gpui::*;
-use sotf_audio_player::{PluginChain, PluginSettings};
+use sotf_audio_player::{PluginGraph, PluginSettings};
 
 /// Render plugin-specific content based on plugin type.
 ///
@@ -91,7 +91,7 @@ pub fn render_plugin_content(
     plugin_data: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     spectrum_tilt_select_open: bool,
     spectrum_reference_select_open: bool,
-    plugin_chain: &PluginChain,
+    plugin_graph: &PluginGraph,
     midi_overlay: Option<&MidiOverlay>,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
@@ -143,7 +143,7 @@ pub fn render_plugin_content(
             plugin_data,
             spectrum_tilt_select_open,
             spectrum_reference_select_open,
-            plugin_chain,
+            plugin_graph,
             midi_overlay,
         };
         return render_fn(&ctx, cx);

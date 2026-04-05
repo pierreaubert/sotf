@@ -56,11 +56,11 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         status_spans.push(Span::raw(" | "));
     }
 
-    if !app.plugin_chain.is_empty() {
+    if app.plugin_graph.len() > 0 {
         let plugin_status = if app.plugin_update_in_progress {
-            format!("Plugins: {} [updating...] ", app.plugin_chain.len())
+            format!("Plugins: {} [updating...] ", app.plugin_graph.len())
         } else {
-            format!("Plugins: {} ", app.plugin_chain.len())
+            format!("Plugins: {} ", app.plugin_graph.len())
         };
 
         let plugin_color = if app.plugin_update_in_progress {

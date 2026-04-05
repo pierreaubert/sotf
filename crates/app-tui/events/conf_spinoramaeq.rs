@@ -268,14 +268,14 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                                     SpinUpdateSubStep::ConfirmOverwrite;
                             } else {
                                 // Existing EQ but empty — apply directly
-                                match app.apply_spinorama_to_plugin_chain() {
+                                match app.apply_spinorama_to_plugins() {
                                     Ok(msg) => app.status_message = Some(msg),
                                     Err(e) => app.status_message = Some(format!("Error: {}", e)),
                                 }
                             }
                         } else {
                             // No existing EQ — apply directly (will insert one)
-                            match app.apply_spinorama_to_plugin_chain() {
+                            match app.apply_spinorama_to_plugins() {
                                 Ok(msg) => app.status_message = Some(msg),
                                 Err(e) => app.status_message = Some(format!("Error: {}", e)),
                             }
@@ -292,7 +292,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         {
                             let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
                             let filename = format!("pre-spinorama-{}.json", timestamp);
-                            match app.plugin_chain.save_to_file(&presets_dir, &filename) {
+                            match app.plugin_graph.save_to_file(&presets_dir, &filename) {
                                 Ok(_) => {
                                     app.status_message =
                                         Some(format!("Saved backup: {}", filename));
@@ -312,7 +312,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                             }
                         }
                         // Apply
-                        match app.apply_spinorama_to_plugin_chain() {
+                        match app.apply_spinorama_to_plugins() {
                             Ok(msg) => app.status_message = Some(msg),
                             Err(e) => app.status_message = Some(format!("Error: {}", e)),
                         }
@@ -322,7 +322,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     }
                     KeyCode::Char('n') => {
                         // Apply without saving
-                        match app.apply_spinorama_to_plugin_chain() {
+                        match app.apply_spinorama_to_plugins() {
                             Ok(msg) => app.status_message = Some(msg),
                             Err(e) => app.status_message = Some(format!("Error: {}", e)),
                         }

@@ -202,16 +202,16 @@ impl PlayerView {
                         // Read unconditionally (like TUI) — when no engine is running,
                         // get_cached_plugin_data returns None harmlessly.
                         {
-                            let chain = &state.app.plugin_state.chain;
+                            let graph = &state.app.plugin_state.graph;
 
-                            state.app.playback.input_loudness_info = chain
+                            state.app.playback.input_loudness_info = graph
                                 .input_monitor_engine_index()
                                 .and_then(|idx| player.get_cached_plugin_data(idx))
                                 .and_then(|d| {
                                     d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned()
                                 });
 
-                            state.app.playback.loudness_info = chain
+                            state.app.playback.loudness_info = graph
                                 .output_monitor_engine_index()
                                 .and_then(|idx| player.get_cached_plugin_data(idx))
                                 .and_then(|d| {
@@ -219,7 +219,7 @@ impl PlayerView {
                                 });
 
                             if include_spectrum {
-                                state.app.playback.spectrum_info = chain
+                                state.app.playback.spectrum_info = graph
                                     .spectrum_engine_index()
                                     .and_then(|idx| player.get_cached_plugin_data(idx))
                                     .and_then(|d| {
@@ -227,7 +227,7 @@ impl PlayerView {
                                     });
                             }
 
-                            state.app.playback.compressor_info = chain
+                            state.app.playback.compressor_info = graph
                                 .compressor_engine_index()
                                 .and_then(|idx| player.get_cached_plugin_data(idx))
                                 .and_then(|d| {
@@ -879,17 +879,17 @@ impl PlayerView {
             .unwrap_or(2) as usize;
 
         // Clear suspensions from previous track
-        state.app.plugin_state.chain.clear_suspensions();
+        state.app.plugin_state.graph.clear_suspensions();
         state
             .app
             .plugin_state
-            .chain
+            .graph
             .update_channel_dependent_plugins();
 
         let conflicts = state
             .app
             .plugin_state
-            .chain
+            .graph
             .find_channel_conflicts(track_channels);
         if !conflicts.is_empty() {
             log::info!(
@@ -898,11 +898,11 @@ impl PlayerView {
                 track_channels
             );
             let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
-            state.app.plugin_state.chain.suspend_plugins(&indices);
+            state.app.plugin_state.graph.suspend_plugins(&indices);
             state
                 .app
                 .plugin_state
-                .chain
+                .graph
                 .update_channel_dependent_plugins();
         }
 
@@ -924,18 +924,18 @@ impl PlayerView {
             .unwrap_or(2) as usize;
 
         // Clear suspensions from previous track
-        state.app.plugin_state.chain.clear_suspensions();
+        state.app.plugin_state.graph.clear_suspensions();
         state
             .app
             .plugin_state
-            .chain
+            .graph
             .update_channel_dependent_plugins();
 
         // Check for channel conflicts with all fixed-channel plugins
         let conflicts = state
             .app
             .plugin_state
-            .chain
+            .graph
             .find_channel_conflicts(track_channels);
         if !conflicts.is_empty() {
             log::info!(
@@ -990,12 +990,12 @@ impl PlayerView {
         state
             .app
             .plugin_state
-            .chain
+            .graph
             .adapt_matrix_to_input(track_channels);
         let mut output_channels = state
             .app
             .plugin_state
-            .chain
+            .graph
             .output_channels_for_input(track_channels);
 
         // Clamp output channels to device max — the playback thread will
@@ -1020,9 +1020,9 @@ impl PlayerView {
             .and_then(|idx| state.app.queue.get(idx))
             .and_then(|item| item.current_track())
             .and_then(|track| state.app.playback.get_replay_gain_adjustment(track));
-        state.app.plugin_state.chain.set_replay_gain(rg_gain);
+        state.app.plugin_state.graph.set_replay_gain(rg_gain);
 
-        let plugins = state.app.plugin_state.chain.to_plugin_configs(sample_rate);
+        let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
 
         if let Err(e) = state.player.lock().load_and_play_source_at(
             source,

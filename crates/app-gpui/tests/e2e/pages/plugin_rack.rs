@@ -24,7 +24,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn add_plugin(&mut self, plugin_type: PluginType) -> usize {
         let max_id_opt = self
             .driver
-            .read_app(|app| app.plugin_state.chain.plugins().iter().map(|p| p.id).max());
+            .read_app(|app| app.plugin_state.graph.plugins().iter().map(|p| p.id).max());
 
         self.driver.update_app(move |app, _cx| {
             app.add_plugin(&plugin_type);
@@ -42,7 +42,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     }
 
     pub fn get_plugin_count(&mut self) -> usize {
-        self.driver.read_app(|app| app.plugin_state.chain.len())
+        self.driver.read_app(|app| app.plugin_state.graph.len())
     }
 
     pub fn get_plugin_type(&mut self, index: usize) -> Option<PluginType> {
@@ -88,7 +88,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
 
     pub fn get_output_channels(&mut self) -> usize {
         self.driver
-            .read_app(|app| app.plugin_state.chain.output_channels())
+            .read_app(|app| app.plugin_state.graph.output_channels())
     }
 
     pub fn find_plugin_index_by_id(&mut self, id: usize) -> Option<usize> {
@@ -103,12 +103,12 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
 
     pub fn plugin_exists(&mut self, id: usize) -> bool {
         self.driver
-            .read_app(move |app| app.plugin_state.chain.plugins().iter().any(|p| p.id == id))
+            .read_app(move |app| app.plugin_state.graph.plugins().iter().any(|p| p.id == id))
     }
 
     pub fn get_eq_channels(&mut self, index: usize) -> usize {
         self.driver.read_app(move |app| {
-            if let Some(plugin) = app.plugin_state.chain.get_plugin(index) {
+            if let Some(plugin) = app.plugin_state.graph.get_plugin(index) {
                 match &plugin.settings {
                     PluginSettings::EQ { channels, .. } => *channels,
                     _ => 0,
@@ -126,7 +126,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     }
     pub fn get_matrix_channels(&mut self, index: usize) -> (usize, usize) {
         self.driver.read_app(move |app| {
-            if let Some(plugin) = app.plugin_state.chain.get_plugin(index) {
+            if let Some(plugin) = app.plugin_state.graph.get_plugin(index) {
                 match &plugin.settings {
                     PluginSettings::Matrix {
                         input_channels,
@@ -236,8 +236,8 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                     // Get the source of the track to play
                     if let Some(source) = state.app.play_selected_queue_item() {
                         let sample_rate = 48000.0;
-                        let plugins = state.app.plugin_state.chain.to_plugin_configs(sample_rate);
-                        let output_channels = state.app.plugin_state.chain.output_channels();
+                        let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
+                        let output_channels = state.app.plugin_state.graph.output_channels();
 
                         if let Err(e) = state.player.lock().load_and_play_source(
                             source,

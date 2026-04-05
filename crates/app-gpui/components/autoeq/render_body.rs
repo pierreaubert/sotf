@@ -136,6 +136,21 @@
 
             goals_content = goals_content.child(target_curve_select);
 
+            // Show "Edit" button when custom target curve is selected
+            if config.target_curve == "custom" {
+                if let Some(ref handler) = on_edit_custom_target_rc {
+                    let h = handler.clone();
+                    goals_content = goals_content.child(
+                        Button::new("edit-custom-target", "Edit Target Curve")
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Xs)
+                            .on_click(move |w, cx| {
+                                h(w, cx);
+                            }),
+                    );
+                }
+            }
+
             let goals_card = Card::new().content(goals_content);
             if let Some(ref on_block_focus) = on_block_focus_rc {
                 let on_block_focus = on_block_focus.clone();

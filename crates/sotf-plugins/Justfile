@@ -125,6 +125,7 @@ plugins-qa-diagnostics:
 	cargo run --release -p sotf-plugin-transient-shaper --bin qa-transient-shaper --features qa
 	cargo run --release -p sotf-plugin-upmixer --bin qa-upmixer --features qa
 	cargo run --release -p sotf-plugin-xtc --bin qa-xtc --features qa
+	cargo run --release -p sotf-host --bin qa-host --features qa
 
 # ----------------------------------------------------------------------
 # QA FUZZER

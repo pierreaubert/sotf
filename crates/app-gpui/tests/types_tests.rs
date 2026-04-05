@@ -214,7 +214,7 @@ fn test_toast_message_persistent_never_dismisses() {
 #[test]
 fn test_app_rollback_failed_plugin_update_restores_snapshot_and_sets_toast() {
     let mut app = App::new();
-    let original_plugin_count = app.plugin_state.chain.len();
+    let original_plugin_count = app.plugin_state.graph.len();
     let snapshot = app.plugin_state.clone();
 
     let effect = app.plugin_state.add_plugin(&PluginType::Upmixer);
@@ -222,11 +222,11 @@ fn test_app_rollback_failed_plugin_update_restores_snapshot_and_sets_toast() {
         effect,
         sotf_audio_player::PluginUpdateEffect::Structural
     ));
-    assert_eq!(app.plugin_state.chain.len(), original_plugin_count + 1);
+    assert_eq!(app.plugin_state.graph.len(), original_plugin_count + 1);
 
     app.rollback_failed_plugin_update(snapshot, "device only supports 2 channels");
 
-    assert_eq!(app.plugin_state.chain.len(), original_plugin_count);
+    assert_eq!(app.plugin_state.graph.len(), original_plugin_count);
     assert!(
         app.ui_state
             .toast_message

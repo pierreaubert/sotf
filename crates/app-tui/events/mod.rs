@@ -289,8 +289,8 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             match choice {
                 ChannelConflictChoice::SuspendIncompatible => {
                     let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
-                    app.plugin_chain.suspend_plugins(&indices);
-                    app.plugin_chain.update_channel_dependent_plugins();
+                    app.plugin_graph.suspend_plugins(&indices);
+                    app.plugin_graph.update_channel_dependent_plugins();
                     log::info!(
                         "[TUI] Suspended {} incompatible plugin(s) (channel conflict)",
                         indices.len()
@@ -302,7 +302,7 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     let mut indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
                     indices.sort_unstable_by(|a, b| b.cmp(a));
                     for idx in &indices {
-                        app.plugin_chain.remove_plugin(*idx);
+                        app.plugin_graph.remove_plugin_by_index(*idx).ok();
                     }
                     log::info!(
                         "[TUI] Removed {} incompatible plugin(s) (channel conflict)",

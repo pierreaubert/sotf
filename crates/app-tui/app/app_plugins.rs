@@ -15,60 +15,60 @@ impl App {
     }
 
     pub fn add_plugin(&mut self, plugin_type: &PluginType) {
-        let insert_idx = self.plugin_chain.user_plugin_insert_index();
-        self.plugin_chain.insert_plugin(insert_idx, plugin_type);
+        let insert_idx = self.plugin_graph.user_plugin_insert_index();
+        self.plugin_graph.insert_plugin(insert_idx, plugin_type).ok();
         // Update BinauralDecoder input channels after adding
-        self.plugin_chain.update_channel_dependent_plugins();
+        self.plugin_graph.update_channel_dependent_plugins();
         self.request_plugin_update();
     }
 
     pub fn remove_plugin(&mut self, index: usize) {
-        self.plugin_chain.remove_plugin(index);
-        if self.selected_plugin_index >= self.plugin_chain.len() && self.selected_plugin_index > 0 {
-            self.selected_plugin_index = self.plugin_chain.len() - 1;
+        self.plugin_graph.remove_plugin_by_index(index).ok();
+        if self.selected_plugin_index >= self.plugin_graph.len() && self.selected_plugin_index > 0 {
+            self.selected_plugin_index = self.plugin_graph.len() - 1;
         }
         // Update BinauralDecoder input channels after removal
-        self.plugin_chain.update_channel_dependent_plugins();
+        self.plugin_graph.update_channel_dependent_plugins();
         self.request_plugin_update();
     }
 
     pub fn toggle_plugin(&mut self, index: usize) {
-        self.plugin_chain.toggle_plugin(index);
+        self.plugin_graph.toggle_plugin_by_index(index).ok();
         // Update BinauralDecoder input channels after toggle
-        self.plugin_chain.update_channel_dependent_plugins();
+        self.plugin_graph.update_channel_dependent_plugins();
         self.request_plugin_update();
     }
 
     pub fn move_plugin_up(&mut self, index: usize) {
-        if self.plugin_chain.can_move_plugin_up(index) {
-            self.plugin_chain.move_plugin(index, index - 1);
+        if self.plugin_graph.can_move_up_by_index(index) {
+            self.plugin_graph.move_plugin(index, index - 1);
             self.selected_plugin_index = index - 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_graph.update_channel_dependent_plugins();
             self.request_plugin_update();
         }
     }
 
     pub fn move_plugin_down(&mut self, index: usize) {
-        if self.plugin_chain.can_move_plugin_down(index) {
-            self.plugin_chain.move_plugin(index, index + 1);
+        if self.plugin_graph.can_move_down_by_index(index) {
+            self.plugin_graph.move_plugin(index, index + 1);
             self.selected_plugin_index = index + 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_graph.update_channel_dependent_plugins();
             self.request_plugin_update();
         }
     }
 
     pub fn select_next_plugin(&mut self) {
-        if !self.plugin_chain.is_empty() {
-            self.selected_plugin_index = (self.selected_plugin_index + 1) % self.plugin_chain.len();
+        if self.plugin_graph.len() > 0 {
+            self.selected_plugin_index = (self.selected_plugin_index + 1) % self.plugin_graph.len();
         }
     }
 
     pub fn select_previous_plugin(&mut self) {
-        if !self.plugin_chain.is_empty() {
+        if self.plugin_graph.len() > 0 {
             if self.selected_plugin_index == 0 {
-                self.selected_plugin_index = self.plugin_chain.len() - 1;
+                self.selected_plugin_index = self.plugin_graph.len() - 1;
             } else {
                 self.selected_plugin_index -= 1;
             }
@@ -77,7 +77,7 @@ impl App {
 
     // Plugin parameter editing
     pub fn enter_plugin_edit_mode(&mut self) {
-        if self.selected_plugin_index < self.plugin_chain.len() {
+        if self.selected_plugin_index < self.plugin_graph.len() {
             self.editing_plugin_index = Some(self.selected_plugin_index);
             self.plugin_param_selection = 0;
             self.input_mode = InputMode::EditPlugin;
@@ -92,12 +92,12 @@ impl App {
 
     pub fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin> {
         self.editing_plugin_index
-            .and_then(|idx| self.plugin_chain.get_plugin(idx))
+            .and_then(|idx| self.plugin_graph.get_plugin(idx))
     }
 
     pub fn get_editing_plugin_mut(&mut self) -> Option<&mut sotf_audio_player::Plugin> {
         self.editing_plugin_index
-            .and_then(|idx| self.plugin_chain.get_plugin_mut(idx))
+            .and_then(|idx| self.plugin_graph.get_plugin_mut(idx))
     }
 
     pub fn select_next_param(&mut self) {
@@ -136,7 +136,7 @@ impl App {
         if success {
             // Always propagate channel counts — a parameter change (e.g., upmixer speaker config)
             // may change intermediate channel counts that downstream plugins depend on
-            self.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_graph.update_channel_dependent_plugins();
         }
 
         success
@@ -327,7 +327,7 @@ impl App {
     // ========================================================================
 
     /// Save plugin chain to file
-    pub fn save_plugin_chain(&mut self) {
+    pub fn save_plugins(&mut self) {
         if self.plugin_file_input.is_empty() {
             self.status_message = Some("Error: No filename specified".to_string());
             return;
@@ -357,7 +357,7 @@ impl App {
             return;
         };
         match self
-            .plugin_chain
+            .plugin_graph
             .save_to_file(&presets_dir, &self.plugin_file_input)
         {
             Ok(_) => {
@@ -392,7 +392,7 @@ impl App {
                 return;
             };
             match self
-                .plugin_chain
+                .plugin_graph
                 .save_to_file(&presets_dir, &preset_filename)
             {
                 Ok(_) => {
@@ -410,7 +410,7 @@ impl App {
     }
 
     /// Load plugin chain from file
-    pub fn load_plugin_chain(&mut self) {
+    pub fn load_plugins(&mut self) {
         if self.plugin_file_input.is_empty() {
             self.status_message = Some("Error: No filename specified".to_string());
             return;
@@ -422,12 +422,12 @@ impl App {
             return;
         };
         match self
-            .plugin_chain
+            .plugin_graph
             .load_from_file(&presets_dir, &self.plugin_file_input)
         {
             Ok(warnings) => {
                 // Update BinauralDecoder input channels after loading
-                self.plugin_chain.update_channel_dependent_plugins();
+                self.plugin_graph.update_channel_dependent_plugins();
 
                 // Get the final filename (with .json appended if needed)
                 let filename = if self.plugin_file_input.ends_with(".json") {
@@ -530,25 +530,25 @@ impl App {
                 return;
             };
             match self
-                .plugin_chain
+                .plugin_graph
                 .load_from_file(&presets_dir, &preset_filename)
             {
                 Ok(warnings) => {
                     // Update BinauralDecoder input channels after loading
-                    self.plugin_chain.update_channel_dependent_plugins();
+                    self.plugin_graph.update_channel_dependent_plugins();
 
                     if warnings.is_empty() {
                         log::info!(
                             "Successfully loaded preset: {} ({} plugins)",
                             preset_filename,
-                            self.plugin_chain.len()
+                            self.plugin_graph.len()
                         );
                         self.status_message = Some(format!("Loaded preset: {}", preset_filename));
                     } else {
                         log::warn!(
                             "Loaded preset: {} ({} plugins, {} skipped)",
                             preset_filename,
-                            self.plugin_chain.len(),
+                            self.plugin_graph.len(),
                             warnings.len()
                         );
                         for w in &warnings {

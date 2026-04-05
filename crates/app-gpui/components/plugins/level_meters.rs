@@ -1395,9 +1395,8 @@ impl LevelMeterManager for AppState {
         // Get current speaker config
         let current_speaker_config = self
             .plugin_state
-            .chain
-            .output_speaker_config()
-            .map(String::from);
+            .graph
+            .output_speaker_config();
 
         // Skip rebuilding if nothing has changed
         if num_channels == self.level_meter_last_channel_count
@@ -1699,8 +1698,8 @@ impl LevelMeterManager for AppState {
         }
 
         // Find and update the LAST Matrix plugin (closest to output)
-        for i in (0..self.plugin_state.chain.len()).rev() {
-            if let Some(plugin) = self.plugin_state.chain.get_plugin_mut(i)
+        for i in (0..self.plugin_state.graph.len()).rev() {
+            if let Some(plugin) = self.plugin_state.graph.get_plugin_mut(i)
                 && matches!(&plugin.settings, PluginSettings::Matrix { .. })
             {
                 // Update settings in memory

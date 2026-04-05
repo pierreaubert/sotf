@@ -1501,13 +1501,13 @@ impl PlayerView {
 
         // Update the plugin chain
         self.state.update(cx, |state, _| {
-            let plugin_chain = &mut state.app.plugin_state.chain;
+            let plugin_graph = &mut state.app.plugin_state.graph;
 
             // Check if there's an existing EQ plugin
-            if let Some(eq_idx) = plugin_chain.find_plugin_index(&sotf_audio_player::PluginType::EQ)
+            if let Some(eq_idx) = plugin_graph.find_plugin_index(&sotf_audio_player::PluginType::EQ)
             {
                 // Update existing EQ plugin
-                if let Some(eq_plugin) = plugin_chain.get_plugin_mut(eq_idx) {
+                if let Some(eq_plugin) = plugin_graph.get_plugin_mut(eq_idx) {
                     let channels =
                         if let sotf_audio_player::PluginSettings::EQ { channels, .. } =
                             &eq_plugin.settings
@@ -1529,11 +1529,11 @@ impl PlayerView {
                 }
             } else {
                 // No EQ plugin exists, add one before monitoring plugins
-                let insert_idx = plugin_chain.user_plugin_insert_index();
-                plugin_chain.insert_plugin(insert_idx, &sotf_audio_player::PluginType::EQ);
+                let insert_idx = plugin_graph.user_plugin_insert_index();
+                let _ = plugin_graph.insert_plugin(insert_idx, &sotf_audio_player::PluginType::EQ);
 
                 // Configure the newly inserted plugin
-                if let Some(eq_plugin) = plugin_chain.get_plugin_mut(insert_idx) {
+                if let Some(eq_plugin) = plugin_graph.get_plugin_mut(insert_idx) {
                     eq_plugin.settings = sotf_audio_player::PluginSettings::EQ {
                         channels: 2,
                         filters: eq_filters.clone(),
@@ -1548,7 +1548,7 @@ impl PlayerView {
             }
 
             // Mark that plugin chain was modified and needs sync
-            state.app.plugin_state.plugin_chain_modified = true;
+            state.app.plugin_state.plugin_graph_modified = true;
             state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(format!(
                 "Applied {} filter Spinorama EQ",

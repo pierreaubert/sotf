@@ -125,7 +125,7 @@ fn render_preset_buttons(
         .on_change(move |value, _window, cx| {
             let preset_name = value.to_string();
             entity.update(cx, |state, _| {
-                if let Some(plugin) = state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
+                if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
                     && let sotf_audio_player::PluginSettings::Matrix {
                         input_channels: in_ch,
                         output_channels: out_ch,
@@ -417,7 +417,7 @@ fn render_msd_button(
         .child(label)
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             entity.update(cx, |state, _| {
-                if let Some(plugin) = state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
+                if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
                     && let sotf_audio_player::PluginSettings::Matrix {
                         ref mut channel_states,
                         output_channels: out_ch,
@@ -582,7 +582,7 @@ fn render_matrix_cell(
             entity_click.update(cx, |state, _| {
                 if event.click_count >= 2 {
                     // Double-click to reset cell to 0 and clear M/S/D for that output channel
-                    if let Some(plugin) = state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
+                    if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
                         && let sotf_audio_player::PluginSettings::Matrix {
                             input_channels,
                             ref mut matrix,
@@ -607,7 +607,7 @@ fn render_matrix_cell(
                     state.app.plugin_state.plugin_param_selection = param_idx;
 
                     // Toggle gain
-                    if let Some(plugin) = state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
+                    if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
                         && let sotf_audio_player::PluginSettings::Matrix {
                             input_channels,
                             ref mut matrix,
@@ -628,7 +628,7 @@ fn render_matrix_cell(
         // Scroll to adjust value (preserving sign for negative gains)
         .on_scroll_wheel(move |event, _, cx| {
             entity_scroll.update(cx, |state, _| {
-                if let Some(plugin) = state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
+                if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
                     && let sotf_audio_player::PluginSettings::Matrix {
                         input_channels,
                         ref mut matrix,

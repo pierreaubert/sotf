@@ -174,7 +174,7 @@ impl PlayerView {
                     }
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                     state.app.clear_autocomplete();
-                    state.app.plugin_state.plugin_chain_modified = false;
+                    state.app.plugin_state.plugin_graph_modified = false;
 
                     if state.app.ui_state.pending_studio_close {
                         state.app.ui_state.pending_studio_close = false;

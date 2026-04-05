@@ -205,6 +205,23 @@
                     .child(broadband_toggle),
             );
 
+            // Edit Custom Target Curve button
+            if let Some(ref handler) = on_edit_custom_target_rc {
+                let h = handler.clone();
+                target_col = target_col.child(
+                    Button::new("edit-custom-target", "Edit Custom Target Curve")
+                        .variant(if config.target_curve == "custom" {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Secondary
+                        })
+                        .size(ButtonSize::Xs)
+                        .on_click(move |w, cx| {
+                            h(w, cx);
+                        }),
+                );
+            }
+
             // --- Smoothing sub-section ---
             options_col = options_col.child(
                 Text::new("SMOOTHING")

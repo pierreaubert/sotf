@@ -323,8 +323,8 @@ impl PlayerView {
             has_pending_update,
         ) = {
             let state = self.state.read(cx);
-            let chain = &state.app.plugin_state.chain;
-            let plugins: Vec<_> = chain
+            let graph = &state.app.plugin_state.graph;
+            let plugins: Vec<_> = graph
                 .plugins()
                 .iter()
                 .enumerate()
@@ -334,8 +334,8 @@ impl PlayerView {
                         p.enabled,
                         p.plugin_type().name().to_string(),
                         p.is_permanent(),
-                        chain.is_input_monitor(i),
-                        chain.is_output_monitor(i),
+                        graph.is_input_monitor(i),
+                        graph.is_output_monitor(i),
                     )
                 })
                 .collect();
@@ -603,19 +603,19 @@ impl PlayerView {
                                         if source != target {
                                             view.state.update(cx, |state, _cx| {
                                                 let chain_len =
-                                                    state.app.plugin_state.chain.plugins().len();
+                                                    state.app.plugin_state.graph.len();
                                                 let source_is_monitor = state
                                                     .app
-                                                    .plugin_state.chain
+                                                    .plugin_state.graph
                                                     .get_plugin(source)
                                                     .map(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor))
                                                     .unwrap_or(false);
                                                 if source_is_monitor && target != 0 && target != chain_len - 1 {
                                                     return;
                                                 }
-                                                state.app.plugin_state.chain.move_plugin(source, target);
+                                                state.app.plugin_state.graph.move_plugin(source, target);
                                                 state.app.plugin_state.selected_plugin_index = target;
-                                                state.app.plugin_state.chain.update_channel_dependent_plugins();
+                                                state.app.plugin_state.graph.update_channel_dependent_plugins();
                                                 state.app.plugin_state.pending_plugin_update =
                                                     Some(PluginUpdateType::Structural);
                                                 state.app.update_level_meter_groups();
@@ -767,7 +767,7 @@ impl PlayerView {
                                                                     ps.confirm_delete_preset = None;
                                                                 } else {
                                                                     // Open and populate list
-                                                                    if let Some(plugin) = ps.chain.plugins().get(idx) {
+                                                                    if let Some(plugin) = ps.graph.get_plugin(idx) {
                                                                         let pt = plugin.plugin_type();
                                                                         ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
                                                                     }
@@ -934,7 +934,7 @@ impl PlayerView {
                                                                                 if is_confirmed {
                                                                                     // Second click: confirmed
                                                                                     ps.confirm_delete_preset = None;
-                                                                                    if let Some(plugin) = ps.chain.plugins().get(idx) {
+                                                                                    if let Some(plugin) = ps.graph.get_plugin(idx) {
                                                                                         let pt = plugin.plugin_type().clone();
                                                                                         let _ = sotf_audio_player::PluginController::delete_plugin_preset(&pt, &name_del);
                                                                                         ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
@@ -1002,7 +1002,7 @@ impl PlayerView {
                                                                             if !name.is_empty() {
                                                                                 match ps.save_plugin_preset(idx, &name) {
                                                                                     Ok(_) => {
-                                                                                        if let Some(plugin) = ps.chain.plugins().get(idx) {
+                                                                                        if let Some(plugin) = ps.graph.get_plugin(idx) {
                                                                                             let pt = plugin.plugin_type().clone();
                                                                                             ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
                                                                                         }
@@ -1139,7 +1139,7 @@ impl PlayerView {
                                         let target = state
                                             .app
                                             .plugin_state
-                                            .chain
+                                            .graph
                                             .user_plugin_insert_index()
                                             .saturating_sub(1);
                                         if source == target {
@@ -1148,18 +1148,18 @@ impl PlayerView {
                                         let source_is_monitor = state
                                             .app
                                             .plugin_state
-                                            .chain
+                                            .graph
                                             .get_plugin(source)
                                             .map(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor))
                                             .unwrap_or(false);
                                         let chain_len =
-                                            state.app.plugin_state.chain.plugins().len();
+                                            state.app.plugin_state.graph.len();
                                         if source_is_monitor && target != chain_len - 1 {
                                             return;
                                         }
-                                        state.app.plugin_state.chain.move_plugin(source, target);
+                                        state.app.plugin_state.graph.move_plugin(source, target);
                                         state.app.plugin_state.selected_plugin_index = target;
-                                        state.app.plugin_state.chain.update_channel_dependent_plugins();
+                                        state.app.plugin_state.graph.update_channel_dependent_plugins();
                                         state.app.plugin_state.pending_plugin_update =
                                             Some(PluginUpdateType::Structural);
                                         state.app.update_level_meter_groups();
@@ -1206,14 +1206,14 @@ impl PlayerView {
                                             // Clamp to the last valid user-plugin position
                                             // (don't drop onto permanent tail plugins)
                                             let target = if is_permanent {
-                                                state.app.plugin_state.chain.user_plugin_insert_index().saturating_sub(1)
+                                                state.app.plugin_state.graph.user_plugin_insert_index().saturating_sub(1)
                                             } else {
                                                 idx
                                             };
                                             if source != target {
-                                                state.app.plugin_state.chain.move_plugin(source, target);
+                                                state.app.plugin_state.graph.move_plugin(source, target);
                                                 state.app.plugin_state.selected_plugin_index = target;
-                                                state.app.plugin_state.chain.update_channel_dependent_plugins();
+                                                state.app.plugin_state.graph.update_channel_dependent_plugins();
                                                 state.app.plugin_state.pending_plugin_update =
                                                     Some(PluginUpdateType::Structural);
                                                 state.app.update_level_meter_groups();
@@ -1604,7 +1604,7 @@ impl PlayerView {
         let present_plugins: Vec<_> = state
             .app
             .plugin_state
-            .chain
+            .graph
             .plugins()
             .iter()
             .map(|p| p.plugin_type().clone())
@@ -1790,7 +1790,7 @@ impl PlayerView {
             let plugin = state
                 .app
                 .plugin_state
-                .chain
+                .graph
                 .get_plugin(state.app.plugin_state.selected_plugin_index)
                 .cloned();
             (
@@ -1904,7 +1904,7 @@ impl PlayerView {
                         let state_c = state_for_toggle.clone();
                         let upmixer_speaker_config = {
                             let st = state_c.read(cx);
-                            if let Some(p) = st.app.plugin_state.chain.plugins().get(selected_idx) {
+                            if let Some(p) = st.app.plugin_state.graph.get_plugin(selected_idx) {
                                 if let sotf_audio_player::PluginSettings::Upmixer { ref speaker_config, .. } = p.settings {
                                     speaker_config.clone()
                                 } else { "5.1".to_string() }
@@ -1992,7 +1992,7 @@ impl PlayerView {
                     // Calculate output channels based on plugin chain for conditional divider
                     let state = self.state.read(cx);
                     let mut output_channels = 2;
-                    for p in state.app.plugin_state.chain.plugins() {
+                    for p in state.app.plugin_state.graph.plugins() {
                         if p.enabled {
                             match p.plugin_type() {
                                 PluginType::Upmixer => {
@@ -2100,7 +2100,7 @@ impl PlayerView {
                                             // Find all LoudnessMonitor indices in the chain
                                             let monitor_indices: Vec<usize> = state
                                                 .app
-                                                .plugin_state.chain
+                                                .plugin_state.graph
                                                 .plugins()
                                                 .iter()
                                                 .enumerate()
@@ -2139,7 +2139,7 @@ impl PlayerView {
                                     let selected_eq_band = app_st.app.plugin_state.selected_eq_band;
                                     let spectrum_tilt_open = app_st.app.spectrum_tilt_select_open;
                                     let spectrum_ref_open = app_st.app.spectrum_reference_select_open;
-                                    let plugin_chain = app_st.app.plugin_state.chain.clone();
+                                    let plugin_graph = app_st.app.plugin_state.graph.clone();
                                     let midi_overlay = app_st.app.plugin_state.midi_mapping.build_overlay(&[]);
                                     let plugin_ui_view = app_st.app.plugin_state.plugin_ui_view.clone();
 
@@ -2184,7 +2184,7 @@ impl PlayerView {
                                                 plugin_data,
                                                 spectrum_tilt_open,
                                                 spectrum_ref_open,
-                                                &plugin_chain,
+                                                &plugin_graph,
                                                 Some(&controller_overlay),
                                                 cx,
                                             )
@@ -2203,7 +2203,7 @@ impl PlayerView {
                                                 plugin_data,
                                                 spectrum_tilt_open,
                                                 spectrum_ref_open,
-                                                &plugin_chain,
+                                                &plugin_graph,
                                                 midi_ref.as_ref(),
                                                 cx,
                                             )
@@ -2363,7 +2363,7 @@ impl PlayerView {
         let (is_mono, is_ms) = {
             let mut mono = false;
             let mut ms = false;
-            for plugin in state.app.plugin_state.chain.plugins() {
+            for plugin in state.app.plugin_state.graph.plugins() {
                 if plugin.is_permanent() && matches!(plugin.plugin_type(), PluginType::Matrix) {
                     if let sotf_audio_player::PluginSettings::Matrix {
                         input_channels,

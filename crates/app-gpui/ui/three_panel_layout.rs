@@ -461,7 +461,7 @@ impl PlayerView {
         let d = crate::components::design::Ds::from_cx(cx);
         let (theme, output_channels) = {
             let state = self.state.read(cx);
-            let channels = state.app.plugin_state.chain.output_channels();
+            let channels = state.app.plugin_state.graph.output_channels();
             (state.app.ui_state.theme.clone(), channels)
         };
 

@@ -36,6 +36,7 @@ impl PlayerView {
 
         let selected_smoothing = format!("{}", smoothing_octaves);
         let y_axis_auto = room_eq.review_y_axis_auto;
+        let normalize_to_target = room_eq.review_normalize_to_target;
 
         VStack::new()
             .spacing(StackSpacing::Md)
@@ -193,6 +194,36 @@ impl PlayerView {
                                                 }
                                             }),
                                     ),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(
+                                        Text::new("Normalize to Target:")
+                                            .size(TextSize::Xs)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .child(
+                                        Toggle::new("review_normalize_to_target")
+                                            .checked(normalize_to_target)
+                                            .theme(theme.to_toggle_theme())
+                                            .on_change({
+                                                let view = view.clone();
+                                                move |checked, _window, cx| {
+                                                    view.update(cx, |this, cx| {
+                                                        this.state.update(cx, |state, _| {
+                                                            state
+                                                                .app
+                                                                .measurement_state
+                                                                .room_eq_state
+                                                                .review_normalize_to_target =
+                                                                checked;
+                                                        });
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            }),
+                                    ),
                             ),
                     ),
             )
@@ -274,6 +305,7 @@ impl PlayerView {
         let selected_idx = room_eq.review_selected_channel;
         let smoothing_octaves = room_eq.review_smoothing_octaves;
         let y_axis_auto = room_eq.review_y_axis_auto;
+        let normalize_to_target = room_eq.review_normalize_to_target;
         let chart_state = room_eq.review_chart_state.as_ref().map(|w| w.inner());
 
         if channel_results.is_empty() {
@@ -321,6 +353,7 @@ impl PlayerView {
             &theme,
             smoothing_octaves,
             y_axis_auto,
+            normalize_to_target,
             chart_state,
             target_curve_data.as_deref(),
         )

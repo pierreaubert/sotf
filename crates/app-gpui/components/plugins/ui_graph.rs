@@ -106,7 +106,7 @@ impl PlayerView {
                     .map(|c| c.channels as usize)
                     .unwrap_or(2);
                 (
-                    state.app.plugin_state.plugin_graph.clone(),
+                    Some(state.app.plugin_state.graph.clone()),
                     output_device_name,
                     output_channels,
                     state.app.ui_state.theme.clone(),
@@ -165,7 +165,7 @@ impl PlayerView {
                     (stats.0, stats.1)
                 })
                 .unwrap_or((0, 0));
-            let pc = state.app.plugin_state.chain.len();
+            let pc = state.app.plugin_state.graph.len();
             (
                 state.app.ui_state.theme.clone(),
                 state.app.plugin_state.workflow_canvas.clone(),
@@ -909,9 +909,9 @@ impl PlayerView {
                     state
                         .app
                         .plugin_state
-                        .plugin_graph
-                        .as_ref()
-                        .and_then(|graph| graph.nodes.get(&uuid))
+                        .graph
+                        .nodes
+                        .get(&uuid)
                         .map(|node| node.plugin.settings.clone())
                 })
         });

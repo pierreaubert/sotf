@@ -675,6 +675,20 @@ impl PlayerView {
                     });
                 }
             })
+            .on_edit_custom_target({
+                let state = self.state.clone();
+                move |_window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .custom_target_modal_open = true;
+                        cx.notify();
+                    });
+                }
+            })
             .on_system_type_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {

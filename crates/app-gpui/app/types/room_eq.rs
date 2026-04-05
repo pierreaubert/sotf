@@ -195,6 +195,8 @@ pub struct RoomEqState {
     pub review_chart_state: Option<InteractiveChartStateWrapper>,
     /// Whether to auto-scale Y axis for review graph (if false, uses fixed range)
     pub review_y_axis_auto: bool,
+    /// When true, normalize graphs relative to target curve (target becomes 0dB line)
+    pub review_normalize_to_target: bool,
     /// Interactive chart state for progress chart (zoom/pan) - initialized lazily
     pub progress_chart_state: Option<InteractiveChartStateWrapper>,
     /// Custom target curve for manual entry mode
@@ -234,6 +236,7 @@ impl Default for RoomEqState {
             review_selected_channel: 0,
             review_chart_state: None,
             review_y_axis_auto: true,
+            review_normalize_to_target: false,
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
             show_advanced_config: false,

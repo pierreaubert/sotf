@@ -845,7 +845,7 @@ mod tests {
 
         // 'e' or Enter enters edit mode (only if there is a plugin selected)
         // With the default plugin chain there should be plugins
-        if !app.plugin_chain.is_empty() {
+        if !app.plugin_graph.is_empty() {
             send_keys(&mut app, &[KeyCode::Char('e')]);
             assert_eq!(app.input_mode, InputMode::EditPlugin);
         }
