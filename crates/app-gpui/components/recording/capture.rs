@@ -1031,6 +1031,7 @@ impl PlayerView {
                 RecordingSignalType::Sweep => SignalType::Sweep,
                 RecordingSignalType::WhiteNoise => SignalType::WhiteNoise,
                 RecordingSignalType::PinkNoise => SignalType::PinkNoise,
+                RecordingSignalType::DelayProbe => SignalType::Sweep,
             };
 
             let output_ch = rec_state

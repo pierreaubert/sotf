@@ -1735,6 +1735,7 @@ fn process_speaker_internal(
             sample_rate,
             output_dir,
             callback,
+            None, // probe_arrival_ms: use WAV-based detection
         ),
         SpeakerConfig::Group(group) => {
             process_speaker_group(channel_name, group, room_config, sample_rate, output_dir)

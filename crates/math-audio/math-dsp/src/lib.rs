@@ -49,19 +49,20 @@ pub mod true_peak;
 
 // Re-export commonly used types
 pub use analysis::{
-    AnalysisResult, MicrophoneCompensation, WavAnalysisConfig, WavAnalysisOutput,
-    analyze_recording, analyze_wav_buffer, analyze_wav_file, compute_average_response,
-    compute_clarity_broadband, compute_clarity_spectrum, compute_group_delay,
-    compute_impulse_response_from_fr, compute_rt60_broadband, compute_rt60_spectrum,
-    compute_spectrogram, find_db_point, read_analysis_csv, smooth_response_f32,
-    smooth_response_f64, write_analysis_csv, write_wav_analysis_csv,
+    AnalysisResult, CrossCorrelationEnvelopeResult, MicrophoneCompensation, WavAnalysisConfig,
+    WavAnalysisOutput, analyze_recording, analyze_wav_buffer, analyze_wav_file,
+    compute_average_response, compute_clarity_broadband, compute_clarity_spectrum,
+    compute_group_delay, compute_impulse_response_from_fr, compute_rt60_broadband,
+    compute_rt60_spectrum, compute_spectrogram, cross_correlate_envelope, find_db_point,
+    read_analysis_csv, smooth_response_f32, smooth_response_f64, write_analysis_csv,
+    write_wav_analysis_csv,
 };
 
 pub use signals::{
-    add_silence_padding, apply_fade_in, apply_fade_out, clip, frames_for, gen_log_sweep,
-    gen_m_noise, gen_pink_noise, gen_tone, gen_two_tone, gen_white_noise, interleave_per_channel,
-    mono_to_stereo, prepare_signal_for_playback, prepare_signal_for_playback_channels,
-    replicate_mono,
+    add_silence_padding, apply_fade_in, apply_fade_out, clip, frames_for, gen_allpass_probe,
+    gen_log_sweep, gen_m_noise, gen_narrowband_probe, gen_pink_noise, gen_tone, gen_two_tone,
+    gen_white_noise, interleave_per_channel, mono_to_stereo, prepare_signal_for_playback,
+    prepare_signal_for_playback_channels, replicate_mono,
 };
 
 pub use replaygain::{ReplayGainAnalyzer, ReplayGainInfo, ReplayGainTrackData, compute_album_gain};

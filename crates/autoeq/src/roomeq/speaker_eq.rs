@@ -133,6 +133,7 @@ pub(super) fn process_single_speaker(
     sample_rate: f64,
     output_dir: &Path,
     mut callback: Option<crate::optim::OptimProgressCallback>,
+    probe_arrival_ms: Option<f64>,
 ) -> Result<MixedModeResult> {
     // Load measurement
     let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
@@ -148,31 +149,39 @@ pub(super) fn process_single_speaker(
         curve.freq[curve.freq.len() - 1]
     );
 
-    // Extract wav_path and calculate arrival time for time alignment
-    let arrival_time_ms: Option<f64> = extract_wav_path(source).and_then(|wav_path| {
-        let path = std::path::Path::new(&wav_path);
-        if path.exists() {
-            match super::time_align::find_arrival_time(path, None) {
-                Ok(result) => {
-                    debug!(
-                        "  Arrival time for '{}': {:.2} ms (peak at sample {})",
-                        channel_name, result.arrival_ms, result.arrival_samples
-                    );
-                    Some(result.arrival_ms)
+    // Use probe-based arrival time if available (more accurate), else fall back to WAV onset
+    let arrival_time_ms: Option<f64> = if let Some(probe_ms) = probe_arrival_ms {
+        debug!(
+            "  Using probe-based arrival time for '{}': {:.2} ms",
+            channel_name, probe_ms
+        );
+        Some(probe_ms)
+    } else {
+        extract_wav_path(source).and_then(|wav_path| {
+            let path = std::path::Path::new(&wav_path);
+            if path.exists() {
+                match super::time_align::find_arrival_time(path, None) {
+                    Ok(result) => {
+                        debug!(
+                            "  Arrival time for '{}': {:.2} ms (peak at sample {})",
+                            channel_name, result.arrival_ms, result.arrival_samples
+                        );
+                        Some(result.arrival_ms)
+                    }
+                    Err(e) => {
+                        debug!(
+                            "  Could not determine arrival time for '{}': {}",
+                            channel_name, e
+                        );
+                        None
+                    }
                 }
-                Err(e) => {
-                    debug!(
-                        "  Could not determine arrival time for '{}': {}",
-                        channel_name, e
-                    );
-                    None
-                }
+            } else {
+                debug!("  WAV file not found for '{}': {:?}", channel_name, path);
+                None
             }
-        } else {
-            debug!("  WAV file not found for '{}': {:?}", channel_name, path);
-            None
-        }
-    });
+        })
+    };
 
     // ========================================================================
     // Build target curve with tilt (if configured)

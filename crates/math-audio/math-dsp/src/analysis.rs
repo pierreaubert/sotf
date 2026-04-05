@@ -1552,6 +1552,123 @@ fn estimate_lag(reference: &[f32], recorded: &[f32]) -> Result<isize, String> {
     })
 }
 
+/// Result of cross-correlation with analytic envelope detection.
+///
+/// The envelope peak corresponds to the probe's arrival time, detected
+/// via Hilbert transform of the cross-correlation.
+#[derive(Debug, Clone)]
+pub struct CrossCorrelationEnvelopeResult {
+    /// Analytic envelope of the cross-correlation
+    pub envelope: Vec<f32>,
+    /// Sample index of the peak (integer arrival time)
+    pub peak_sample: usize,
+    /// Sub-sample refined peak position via parabolic interpolation
+    pub peak_sample_refined: f64,
+    /// Peak envelope value (proportional to channel gain)
+    pub peak_value: f32,
+    /// Arrival time in milliseconds (sub-sample precision)
+    pub arrival_ms: f64,
+}
+
+/// Cross-correlate a probe with a recording and compute the analytic envelope.
+///
+/// Uses FFT-based cross-correlation followed by the Hilbert transform
+/// (via `analytic_signal`) to extract a smooth envelope whose peak
+/// indicates the arrival time with sub-sample precision.
+///
+/// This is the matched-filter approach recommended by Johnston (AES):
+/// narrowband probes give excellent noise rejection, and the analytic
+/// envelope provides a clean, unambiguous peak even in reverberant rooms.
+///
+/// # Arguments
+/// * `probe` - The known probe signal that was played
+/// * `recorded` - The recorded signal from the microphone
+/// * `sample_rate` - Sample rate in Hz
+pub fn cross_correlate_envelope(
+    probe: &[f32],
+    recorded: &[f32],
+    sample_rate: u32,
+) -> Result<CrossCorrelationEnvelopeResult, String> {
+    if probe.is_empty() || recorded.is_empty() {
+        return Err("Probe and recorded signals must be non-empty".to_string());
+    }
+
+    // Zero-pad to avoid circular correlation artifacts
+    let fft_size = next_power_of_two(probe.len() + recorded.len());
+
+    // Raw FFT (no normalization) — we handle normalization once after IFFT.
+    // Using unnormalized FFT avoids the scale-dependent gain errors that
+    // occur when compute_fft_padded's 1/N normalization interacts with IFFT.
+    let fft_forward = plan_fft_forward(fft_size);
+
+    let mut probe_buf: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); fft_size];
+    for (dst, &src) in probe_buf.iter_mut().zip(probe.iter()) {
+        dst.re = src;
+    }
+    fft_forward.process(&mut probe_buf);
+
+    let mut rec_buf: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); fft_size];
+    for (dst, &src) in rec_buf.iter_mut().zip(recorded.iter()) {
+        dst.re = src;
+    }
+    fft_forward.process(&mut rec_buf);
+
+    // Cross-correlation: conj(Probe) * Recorded
+    let mut cross_fft: Vec<Complex<f32>> = probe_buf
+        .iter()
+        .zip(rec_buf.iter())
+        .map(|(p, r)| p.conj() * r)
+        .collect();
+
+    // IFFT to get cross-correlation in time domain
+    let ifft = plan_fft_inverse(fft_size);
+    ifft.process(&mut cross_fft);
+
+    // Single 1/N normalization (standard for round-trip FFT→IFFT)
+    let norm = 1.0 / fft_size as f32;
+    let xcorr: Vec<f32> = cross_fft.iter().map(|c| c.re * norm).collect();
+
+    // Compute analytic envelope via Hilbert transform
+    let analytic = crate::instantaneous_frequency::analytic_signal(&xcorr);
+    let envelope: Vec<f32> = analytic.iter().map(|c| c.norm()).collect();
+
+    // Find peak in the causal part (first half — positive lags only)
+    let search_len = fft_size / 2;
+    let mut peak_sample = 0_usize;
+    let mut peak_value = 0.0_f32;
+    for (i, &val) in envelope.iter().enumerate().take(search_len) {
+        if val > peak_value {
+            peak_value = val;
+            peak_sample = i;
+        }
+    }
+
+    // Parabolic interpolation for sub-sample precision
+    let peak_refined = if peak_sample > 0 && peak_sample < search_len - 1 {
+        let y_prev = envelope[peak_sample - 1] as f64;
+        let y_peak = envelope[peak_sample] as f64;
+        let y_next = envelope[peak_sample + 1] as f64;
+        let denom = 2.0 * (2.0 * y_peak - y_prev - y_next);
+        if denom.abs() > 1e-12 {
+            peak_sample as f64 + (y_prev - y_next) / denom
+        } else {
+            peak_sample as f64
+        }
+    } else {
+        peak_sample as f64
+    };
+
+    let arrival_ms = peak_refined / sample_rate as f64 * 1000.0;
+
+    Ok(CrossCorrelationEnvelopeResult {
+        envelope,
+        peak_sample,
+        peak_sample_refined: peak_refined,
+        peak_value,
+        arrival_ms,
+    })
+}
+
 /// Compute FFT of a signal with specified windowing
 ///
 /// # Arguments
@@ -2762,6 +2879,68 @@ mod tests {
             lfe_above_500_max <= -100.0,
             "LFE above 1 kHz should be at noise floor, got {:.1} dB",
             lfe_above_500_max
+        );
+    }
+
+    #[test]
+    fn test_cross_correlate_envelope_known_delay() {
+        // Generate a narrowband probe, delay it, and verify detection
+        let n = 4096;
+        let sr = 48000_u32;
+        let probe = crate::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
+
+        // Simulate recording: delay by 240 samples (~5ms) + attenuation
+        let delay = 240_usize;
+        let attenuation = 0.3;
+        let mut recorded = vec![0.0_f32; n + delay + 1000];
+        for (i, &s) in probe.iter().enumerate() {
+            recorded[i + delay] += s * attenuation;
+        }
+
+        let result = cross_correlate_envelope(&probe, &recorded, sr).unwrap();
+
+        // Peak should be near the known delay
+        let detected_samples = result.peak_sample;
+        assert!(
+            (detected_samples as isize - delay as isize).unsigned_abs() <= 2,
+            "Expected delay ~{} samples, got {}",
+            delay,
+            detected_samples
+        );
+
+        // Arrival time should be ~5ms
+        assert!(
+            (result.arrival_ms - 5.0).abs() < 0.1,
+            "Expected ~5.0 ms, got {:.3} ms",
+            result.arrival_ms
+        );
+    }
+
+    #[test]
+    fn test_cross_correlate_envelope_with_noise() {
+        // Probe detection should work even with additive noise
+        let n = 4096;
+        let sr = 48000_u32;
+        let probe = crate::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
+
+        let delay = 480_usize; // 10ms
+        let mut recorded = vec![0.0_f32; n + delay + 1000];
+        for (i, &s) in probe.iter().enumerate() {
+            recorded[i + delay] += s * 0.5;
+        }
+        // Add noise
+        let noise = crate::signals::gen_white_noise(0.1, sr, recorded.len() as f32 / sr as f32);
+        for (r, &n_s) in recorded.iter_mut().zip(noise.iter()) {
+            *r += n_s;
+        }
+
+        let result = cross_correlate_envelope(&probe, &recorded, sr).unwrap();
+
+        assert!(
+            (result.peak_sample as isize - delay as isize).unsigned_abs() <= 2,
+            "Expected delay ~{}, got {} (with noise)",
+            delay,
+            result.peak_sample
         );
     }
 }

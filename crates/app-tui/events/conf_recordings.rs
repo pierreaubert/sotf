@@ -580,6 +580,7 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
             SignalType::WhiteNoise
         }
         sotf_audio_player::recording_types::RecordingSignalType::PinkNoise => SignalType::PinkNoise,
+        sotf_audio_player::recording_types::RecordingSignalType::DelayProbe => SignalType::Sweep,
     };
 
     let duration_secs = app.recording.signal_duration_secs;

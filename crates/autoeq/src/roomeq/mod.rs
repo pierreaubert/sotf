@@ -120,7 +120,10 @@ pub mod synthetic;
 mod time_align;
 mod weighted_loss;
 
-pub use time_align::{ArrivalTimeResult, calculate_alignment_delays, find_arrival_time};
+pub use time_align::{
+    ArrivalTimeResult, ProbeDelayResult, calculate_alignment_delays, detect_delay_with_probe,
+    detect_delays_multi_channel, find_arrival_time,
+};
 
 // Advanced room correction features (Scenario A & B)
 pub mod excursion;

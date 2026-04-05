@@ -4,6 +4,7 @@
 //! for time-aligning multiple speakers in a room EQ setup.
 
 use hound::WavReader;
+use math_audio_dsp::analysis::cross_correlate_envelope;
 use std::path::Path;
 
 /// Result of arrival time analysis
@@ -199,6 +200,138 @@ pub fn calculate_alignment_delays(
         .collect()
 }
 
+/// Result of probe-based delay detection for one channel.
+///
+/// More accurate than threshold-based detection (`ArrivalTimeResult`) because
+/// the matched filter (cross-correlation + analytic envelope) rejects noise
+/// and provides sub-sample precision.
+#[derive(Debug, Clone)]
+pub struct ProbeDelayResult {
+    /// Arrival time in milliseconds (sub-sample precision)
+    pub arrival_ms: f64,
+    /// Arrival time in samples (integer)
+    pub arrival_samples: usize,
+    /// Relative gain (linear) derived from envelope peak
+    pub gain_linear: f64,
+    /// Gain in dB relative to the probe's self-correlation peak
+    pub gain_db: f64,
+    /// Signal-to-noise ratio of the detection (peak / median envelope, in dB)
+    pub detection_snr_db: f64,
+}
+
+/// Detect arrival time and gain for a single channel using a narrowband probe.
+///
+/// Cross-correlates the recorded signal with the known probe, computes the
+/// analytic envelope, and finds the peak. The peak position is the arrival
+/// time; the peak value (normalized against probe autocorrelation) gives gain.
+pub fn detect_delay_with_probe(
+    probe: &[f32],
+    recorded: &[f32],
+    sample_rate: u32,
+) -> Result<ProbeDelayResult, String> {
+    // Compute probe autocorrelation peak for gain normalization
+    let auto_result = cross_correlate_envelope(probe, probe, sample_rate)?;
+    let auto_peak = auto_result.peak_value as f64;
+
+    detect_delay_with_probe_inner(probe, recorded, sample_rate, auto_peak)
+}
+
+/// Inner implementation that accepts a precomputed autocorrelation peak,
+/// avoiding redundant FFT computation when called in a loop.
+fn detect_delay_with_probe_inner(
+    probe: &[f32],
+    recorded: &[f32],
+    sample_rate: u32,
+    auto_peak: f64,
+) -> Result<ProbeDelayResult, String> {
+    let result = cross_correlate_envelope(probe, recorded, sample_rate)?;
+
+    let gain_linear = if auto_peak > 1e-10 {
+        result.peak_value as f64 / auto_peak
+    } else {
+        0.0
+    };
+
+    let gain_db = if gain_linear > 1e-10 {
+        20.0 * gain_linear.log10()
+    } else {
+        -120.0
+    };
+
+    // SNR: peak / median of envelope
+    let mut sorted_env = result.envelope.to_vec();
+    sorted_env.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = if sorted_env.is_empty() {
+        1e-10
+    } else {
+        sorted_env[sorted_env.len() / 2].max(1e-10) as f64
+    };
+    let detection_snr_db = 20.0 * (result.peak_value as f64 / median).log10();
+
+    Ok(ProbeDelayResult {
+        arrival_ms: result.arrival_ms,
+        arrival_samples: result.peak_sample,
+        gain_linear,
+        gain_db,
+        detection_snr_db,
+    })
+}
+
+/// Detect delays for multiple channels from a single sequential recording.
+///
+/// The recording contains probes played one at a time on each channel,
+/// separated by silence gaps. This function extracts each channel's
+/// segment and runs probe detection on it.
+///
+/// # Arguments
+/// * `probe` - The narrowband probe used for all channels
+/// * `recorded` - Full recording containing all channels sequentially
+/// * `channel_offsets` - Start sample of each channel's probe in the playback signal
+/// * `segment_length` - Expected length of each probe+silence segment in samples
+/// * `sample_rate` - Sample rate
+pub fn detect_delays_multi_channel(
+    probe: &[f32],
+    recorded: &[f32],
+    channel_offsets: &[usize],
+    segment_length: usize,
+    sample_rate: u32,
+) -> Result<Vec<ProbeDelayResult>, String> {
+    let mut results = Vec::with_capacity(channel_offsets.len());
+
+    // Precompute autocorrelation once (same probe for all channels)
+    let auto_result = cross_correlate_envelope(probe, probe, sample_rate)?;
+    let auto_peak = auto_result.peak_value as f64;
+
+    for (i, &offset) in channel_offsets.iter().enumerate() {
+        // Bounds check before arithmetic to avoid overflow
+        if offset >= recorded.len() {
+            return Err(format!(
+                "Channel {} offset {} exceeds recording length {}",
+                i,
+                offset,
+                recorded.len()
+            ));
+        }
+        let end = (offset.saturating_add(segment_length)).min(recorded.len());
+
+        let segment = &recorded[offset..end];
+        let channel_result =
+            detect_delay_with_probe_inner(probe, segment, sample_rate, auto_peak)?;
+
+        log::debug!(
+            "[detect_delays_multi_channel] Ch {}: arrival={:.3}ms, gain={:.1}dB, SNR={:.1}dB",
+            i,
+            channel_result.arrival_ms,
+            channel_result.gain_db,
+            channel_result.detection_snr_db
+        );
+
+        results.push(channel_result);
+    }
+
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,5 +458,85 @@ mod tests {
             estimated,
             (estimated - tau_ms).abs()
         );
+    }
+
+    #[test]
+    fn test_detect_delay_with_probe() {
+        let sr = 48000_u32;
+        let n = 4096;
+        let probe = math_audio_dsp::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
+
+        // Simulate: delay 480 samples (10ms), attenuate by 0.4
+        let delay = 480_usize;
+        let atten = 0.4_f32;
+        let mut recorded = vec![0.0_f32; n + delay + 500];
+        for (i, &s) in probe.iter().enumerate() {
+            recorded[i + delay] += s * atten;
+        }
+
+        let result = detect_delay_with_probe(&probe, &recorded, sr).unwrap();
+
+        assert!(
+            (result.arrival_ms - 10.0).abs() < 0.2,
+            "Expected ~10ms arrival, got {:.3}ms",
+            result.arrival_ms
+        );
+        assert!(
+            result.detection_snr_db > 10.0,
+            "SNR should be high for clean signal, got {:.1}dB",
+            result.detection_snr_db
+        );
+        // Gain should be close to the applied attenuation
+        let expected_gain_db = 20.0 * (atten as f64).log10(); // -7.96 dB
+        assert!(
+            (result.gain_db - expected_gain_db).abs() < 3.0,
+            "Expected gain ~{:.1}dB, got {:.1}dB",
+            expected_gain_db,
+            result.gain_db
+        );
+    }
+
+    #[test]
+    fn test_detect_delays_multi_channel() {
+        let sr = 48000_u32;
+        let n = 2048;
+        let probe = math_audio_dsp::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
+
+        // Build a sequential recording with 3 channels at different delays
+        let segment_len = n + 1000; // probe + some room tail
+        let silence_len = 1000;
+        let delays = [240_usize, 480, 120]; // 5ms, 10ms, 2.5ms
+        let attens = [0.5_f32, 0.3, 0.7];
+
+        let total_len = delays.len() * (segment_len + silence_len) + silence_len;
+        let mut recorded = vec![0.0_f32; total_len];
+        let mut offsets = Vec::new();
+
+        for (ch, (&d, &a)) in delays.iter().zip(attens.iter()).enumerate() {
+            let offset = silence_len + ch * (segment_len + silence_len);
+            offsets.push(offset);
+            for (i, &s) in probe.iter().enumerate() {
+                let idx = offset + d + i;
+                if idx < recorded.len() {
+                    recorded[idx] += s * a;
+                }
+            }
+        }
+
+        let results =
+            detect_delays_multi_channel(&probe, &recorded, &offsets, segment_len, sr).unwrap();
+
+        assert_eq!(results.len(), 3);
+
+        let expected_ms = [5.0, 10.0, 2.5];
+        for (i, (result, &expected)) in results.iter().zip(expected_ms.iter()).enumerate() {
+            assert!(
+                (result.arrival_ms - expected).abs() < 0.5,
+                "Channel {}: expected ~{:.1}ms, got {:.3}ms",
+                i,
+                expected,
+                result.arrival_ms
+            );
+        }
     }
 }
