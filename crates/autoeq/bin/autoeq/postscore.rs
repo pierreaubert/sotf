@@ -91,7 +91,8 @@ pub(super) async fn compute_post_optimization_metrics(
         }
         autoeq::LossType::SpeakerFlat
         | autoeq::LossType::SpeakerFlatAsymmetric
-        | autoeq::LossType::SpeakerScore => {
+        | autoeq::LossType::SpeakerScore
+        | autoeq::LossType::Epa => {
             if use_cea {
                 let freq = &objective_data.freqs;
                 let peq_after = compute_peq_cached(
@@ -149,7 +150,7 @@ pub(super) fn print_optimization_scores(
                 log::info!("✅ Post-Optimization Headphone Score: {:.3}", after);
             }
         }
-        autoeq::LossType::SpeakerScore => {
+        autoeq::LossType::SpeakerScore | autoeq::LossType::Epa => {
             if let Some(before) = &post.pre_cea2034 {
                 log::info!(
                     "✅  Pre-Optimization CEA2034 Score: pref={:.3} | nbd_on={:.3} nbd_pir={:.3} lfx={:.0}Hz sm_pir={:.3}",

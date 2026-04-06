@@ -1008,6 +1008,429 @@ pub fn record_and_analyze_multi(
     Ok(results)
 }
 
+/// Fixed seed for allpass probe generation — ensures the same probe is used
+/// for generation and matched-filter detection.
+pub const PROBE_SEED: u64 = 0xDEAD_BEEF_CAFE_1337;
+
+/// Result of a delay probing session across all channels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbeDelayResults {
+    /// Per-channel delay detection results
+    pub channels: Vec<ProbeDelayChannelResult>,
+    /// Sample rate used for probing
+    pub sample_rate: u32,
+    /// Computed alignment delays in ms (to add to each channel)
+    pub alignment_delays_ms: Vec<f64>,
+}
+
+/// Delay probe result for a single channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbeDelayChannelResult {
+    /// Channel name (e.g. "L", "R", "C")
+    pub channel_name: String,
+    /// Channel output index
+    pub channel_index: usize,
+    /// Detected arrival time in ms
+    pub arrival_ms: f64,
+    /// Relative gain in dB
+    pub gain_db: f64,
+    /// Detection confidence (SNR in dB)
+    pub snr_db: f64,
+}
+
+/// Run delay probing across all output channels in a single recording pass.
+///
+/// Builds a playback signal with the pattern:
+///   `[silence][ch0_probe][silence][ch1_probe][silence]...[marker_probe][silence]`
+///
+/// Plays it while recording from the mic, then analyzes each segment
+/// for arrival time using cross-correlation with analytic envelope.
+///
+/// # Arguments
+/// * `channel_indices` - Output channel indices to probe (0-based)
+/// * `channel_names` - Human-readable name for each channel
+/// * `sample_rate` - Sample rate in Hz
+/// * `probe_duration_ms` - Duration of each probe signal in ms
+/// * `silence_duration_ms` - Silence gap between probes in ms
+/// * `output_device_name` - Playback device (None = default)
+/// * `input_device_name` - Recording device (None = default)
+/// * `input_channel` - Mic input channel index
+#[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)]
+pub fn probe_channel_delays(
+    channel_indices: &[u16],
+    channel_names: &[String],
+    sample_rate: u32,
+    probe_duration_ms: f32,
+    silence_duration_ms: f32,
+    output_device_name: Option<&str>,
+    input_device_name: Option<&str>,
+    input_channel: u16,
+) -> Result<ProbeDelayResults, String> {
+    use crate::AudioEngineManager;
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use std::sync::{Arc, Mutex};
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let num_channels = channel_indices.len();
+    if num_channels == 0 {
+        return Err("No channels to probe".to_string());
+    }
+    if channel_names.len() != num_channels {
+        return Err("channel_indices and channel_names must have the same length".to_string());
+    }
+
+    // Generate the narrowband probe (800-2000Hz per Johnston recommendation)
+    let probe_samples = (probe_duration_ms / 1000.0 * sample_rate as f32) as usize;
+    let silence_samples = (silence_duration_ms / 1000.0 * sample_rate as f32) as usize;
+    let probe = gen_narrowband_probe(probe_samples, sample_rate, 0.5, PROBE_SEED, 800.0, 2000.0);
+
+    log::info!(
+        "[probe_channel_delays] Generated narrowband probe: {} samples ({:.1}ms), 800-2000Hz",
+        probe_samples,
+        probe_duration_ms
+    );
+
+    // Determine hardware output channel count
+    let host = cpal::default_host();
+    let output_device = if let Some(dev_name) = output_device_name {
+        crate::devices::find_device(&host, dev_name, false)?
+    } else {
+        host.default_output_device()
+            .ok_or_else(|| "No default output device available".to_string())?
+    };
+
+    let hardware_channels = output_device
+        .supported_output_configs()
+        .map_err(|e| format!("Failed to get supported output configs: {}", e))?
+        .map(|config| config.channels() as usize)
+        .max()
+        .unwrap_or(2);
+
+    // Validate channel indices
+    for &ch in channel_indices {
+        if ch as usize >= hardware_channels {
+            return Err(format!(
+                "Channel {} exceeds hardware output count {}",
+                ch, hardware_channels
+            ));
+        }
+    }
+
+    // Build the sequential playback buffer:
+    // [silence][ch0_probe][silence][ch1_probe][silence]...[silence]
+    let segment_len = silence_samples + probe_samples;
+    let total_frames = silence_samples + num_channels * segment_len;
+
+    // Per-channel signals (all silence except active channel gets the probe)
+    let mut per_channel: Vec<Vec<f32>> = (0..hardware_channels)
+        .map(|_| vec![0.0_f32; total_frames])
+        .collect();
+
+    // Record where each probe starts in the playback timeline
+    let mut playback_offsets = Vec::with_capacity(num_channels);
+
+    for (i, &ch_idx) in channel_indices.iter().enumerate() {
+        let frame_offset = silence_samples + i * segment_len;
+        playback_offsets.push(frame_offset);
+
+        // Place the probe on the active channel
+        for (j, &s) in probe.iter().enumerate() {
+            per_channel[ch_idx as usize][frame_offset + j] = s;
+        }
+
+        log::debug!(
+            "[probe_channel_delays] Channel {} ({}) probe at frame {}, output ch {}",
+            i,
+            channel_names[i],
+            frame_offset,
+            ch_idx
+        );
+    }
+
+    // Interleave all channels
+    let interleaved = interleave_per_channel(&per_channel);
+
+    // Write to temporary WAV file
+    let temp_file = NamedTempFile::new()
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    let temp_path = temp_file.path().to_path_buf();
+
+    let spec = WavSpec {
+        channels: hardware_channels as u16,
+        sample_rate,
+        bits_per_sample: 32,
+        sample_format: SampleFormat::Float,
+    };
+    let mut writer = WavWriter::create(&temp_path, spec)
+        .map_err(|e| format!("Failed to create WAV writer: {}", e))?;
+    for &s in &interleaved {
+        writer
+            .write_sample(s)
+            .map_err(|e| format!("Failed to write sample: {}", e))?;
+    }
+    writer
+        .finalize()
+        .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
+
+    log::info!(
+        "[probe_channel_delays] Written {}-channel WAV: {} frames ({:.2}s)",
+        hardware_channels,
+        total_frames,
+        total_frames as f64 / sample_rate as f64
+    );
+
+    // --- Set up mic recording ---
+    let input_device = if let Some(dev_name) = input_device_name {
+        crate::devices::find_device(&host, dev_name, true)?
+    } else {
+        host.default_input_device()
+            .ok_or_else(|| "No default input device available".to_string())?
+    };
+
+    let min_input_ch = (input_channel as usize) + 1;
+
+    let default_input_config = input_device
+        .default_input_config()
+        .map_err(|e| format!("Failed to get default input config: {}", e))?;
+
+    let best_config = input_device
+        .supported_input_configs()
+        .ok()
+        .and_then(|configs| {
+            configs
+                .filter(|c| {
+                    let ch = c.channels() as usize;
+                    ch >= min_input_ch
+                        && c.min_sample_rate() <= sample_rate
+                        && c.max_sample_rate() >= sample_rate
+                })
+                .min_by_key(|c| c.channels())
+        });
+
+    let (hw_input_ch, input_sr) = if let Some(config) = best_config {
+        (config.channels() as usize, sample_rate)
+    } else {
+        (
+            default_input_config.channels() as usize,
+            default_input_config.sample_rate(),
+        )
+    };
+
+    let input_config = cpal::StreamConfig {
+        channels: hw_input_ch as u16,
+        sample_rate: input_sr,
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let recorded_samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+    let recorded_clone = Arc::clone(&recorded_samples);
+    let input_ch_idx = input_channel as usize;
+    let hw_ch = hw_input_ch;
+
+    let input_stream = input_device
+        .build_input_stream(
+            &input_config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                let mut recorded = recorded_clone.lock().unwrap();
+                for frame in data.chunks(hw_ch) {
+                    if input_ch_idx < frame.len() {
+                        recorded.push(frame[input_ch_idx]);
+                    }
+                }
+            },
+            |err| log::debug!("[probe_channel_delays] Input stream error: {}", err),
+            None,
+        )
+        .map_err(|e| format!("Failed to build input stream: {}", e))?;
+
+    input_stream
+        .play()
+        .map_err(|e| format!("Failed to start input stream: {}", e))?;
+    sleep(Duration::from_millis(100));
+
+    // --- Start playback ---
+    let mut manager = AudioEngineManager::new();
+    manager.set_allow_virtual_output(true);
+    manager
+        .load_file(&temp_path)
+        .map_err(|e| format!("Failed to load probe WAV: {}", e))?;
+
+    // No matrix plugin needed — the WAV already has the right channel layout
+    let plugins = vec![];
+
+    manager
+        .start_playback(
+            output_device_name.map(|s| s.to_string()),
+            plugins,
+            hardware_channels,
+        )
+        .map_err(|e| format!("Failed to start playback: {}", e))?;
+
+    // Wait for playback to finish
+    let expected_duration = total_frames as f64 / sample_rate as f64;
+    let total_wait = Duration::from_secs_f64(expected_duration + 3.0);
+    let check_interval = Duration::from_millis(50);
+    let mut elapsed = Duration::ZERO;
+    let mut last_count = 0_usize;
+    let mut stable = 0_u32;
+
+    while elapsed < total_wait {
+        sleep(check_interval);
+        elapsed += check_interval;
+
+        let count = recorded_samples.lock().unwrap().len();
+        if count == last_count && count > 0 {
+            stable += 1;
+            if stable >= 3 {
+                break;
+            }
+        } else {
+            stable = 0;
+        }
+        last_count = count;
+
+        if manager.get_state() == crate::StreamingState::Idle {
+            break;
+        }
+    }
+
+    // Extra buffer to capture tail
+    sleep(Duration::from_millis(500));
+
+    manager.stop().ok();
+    std::mem::drop(input_stream);
+    sleep(Duration::from_millis(100));
+
+    let recorded = recorded_samples.lock().unwrap().clone();
+    log::info!(
+        "[probe_channel_delays] Recorded {} samples ({:.2}s)",
+        recorded.len(),
+        recorded.len() as f64 / input_sr as f64
+    );
+
+    // --- Estimate system latency from the first channel ---
+    // The recording starts before playback (100ms head start). The first probe's
+    // detected arrival in the full recording includes system latency (DAC + ADC +
+    // driver buffering). We estimate this offset once, then use it to align the
+    // segment slicing to the actual recording timeline.
+    let system_latency_samples = {
+        // Search a generous window around where we expect the first probe
+        let search_start = 0;
+        let search_end = (playback_offsets[0] + segment_len * 2).min(recorded.len());
+        if search_end > search_start {
+            let search_segment = &recorded[search_start..search_end];
+            match math_audio_dsp::analysis::cross_correlate_envelope(
+                &probe,
+                search_segment,
+                input_sr,
+            ) {
+                Ok(result) => {
+                    // The probe was placed at playback_offsets[0] in the playback timeline.
+                    // Its arrival in the recording is at result.peak_sample.
+                    // System latency = detected_position - expected_position
+                    let expected = playback_offsets[0];
+                    let detected = result.peak_sample;
+                    let latency = detected.saturating_sub(expected);
+                    let latency_ms = latency as f64 / input_sr as f64 * 1000.0;
+                    log::info!(
+                        "[probe_channel_delays] System latency estimate: {} samples ({:.1}ms)",
+                        latency,
+                        latency_ms
+                    );
+                    latency
+                }
+                Err(_) => {
+                    log::warn!(
+                        "[probe_channel_delays] Could not estimate system latency, assuming 0"
+                    );
+                    0
+                }
+            }
+        } else {
+            0
+        }
+    };
+
+    // --- Analyze each channel's segment ---
+    // Adjust offsets by system latency so segments align with actual recording
+    let adjusted_offsets: Vec<usize> = playback_offsets
+        .iter()
+        .map(|&o| o + system_latency_samples)
+        .collect();
+
+    // Compute probe autocorrelation peak once (for gain normalization)
+    let auto_result =
+        math_audio_dsp::analysis::cross_correlate_envelope(&probe, &probe, input_sr)?;
+    let auto_peak = auto_result.peak_value as f64;
+
+    let mut arrivals_ms = Vec::with_capacity(num_channels);
+    let mut channel_results = Vec::with_capacity(num_channels);
+
+    for (i, &offset) in adjusted_offsets.iter().enumerate() {
+        let end = (offset.saturating_add(segment_len)).min(recorded.len());
+        if offset >= recorded.len() {
+            return Err(format!(
+                "Channel {} adjusted offset {} exceeds recording length {}",
+                i, offset, recorded.len()
+            ));
+        }
+        let segment = &recorded[offset..end];
+
+        let xcorr =
+            math_audio_dsp::analysis::cross_correlate_envelope(&probe, segment, input_sr)?;
+
+        let gain_linear = if auto_peak > 1e-10 {
+            xcorr.peak_value as f64 / auto_peak
+        } else {
+            0.0
+        };
+        let gain_db = if gain_linear > 1e-10 {
+            20.0 * gain_linear.log10()
+        } else {
+            -120.0
+        };
+
+        // SNR: peak / median of envelope
+        let mut sorted_env = xcorr.envelope.to_vec();
+        sorted_env.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median = sorted_env[sorted_env.len() / 2].max(1e-10) as f64;
+        let snr_db = 20.0 * (xcorr.peak_value as f64 / median).log10();
+
+        arrivals_ms.push(xcorr.arrival_ms);
+        channel_results.push(ProbeDelayChannelResult {
+            channel_name: channel_names[i].clone(),
+            channel_index: channel_indices[i] as usize,
+            arrival_ms: xcorr.arrival_ms,
+            gain_db,
+            snr_db,
+        });
+    }
+
+    // Compute alignment delays (align to the slowest channel)
+    let max_arrival = arrivals_ms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let alignment_delays_ms: Vec<f64> = arrivals_ms.iter().map(|&a| max_arrival - a).collect();
+
+    log::info!("[probe_channel_delays] Results:");
+    for (i, cr) in channel_results.iter().enumerate() {
+        log::info!(
+            "  {}: arrival={:.3}ms, gain={:.1}dB, SNR={:.1}dB, alignment_delay={:.3}ms",
+            cr.channel_name,
+            cr.arrival_ms,
+            cr.gain_db,
+            cr.snr_db,
+            alignment_delays_ms[i]
+        );
+    }
+
+    Ok(ProbeDelayResults {
+        channels: channel_results,
+        sample_rate: input_sr,
+        alignment_delays_ms,
+    })
+}
+
 /// Parse comma-separated channel list (0-based indices)
 pub fn parse_channel_list(s: &str) -> Result<Vec<u16>, String> {
     let mut channels = Vec::new();

@@ -1031,6 +1031,10 @@ impl PlayerView {
                 RecordingSignalType::Sweep => SignalType::Sweep,
                 RecordingSignalType::WhiteNoise => SignalType::WhiteNoise,
                 RecordingSignalType::PinkNoise => SignalType::PinkNoise,
+                RecordingSignalType::DelayProbe => {
+                    log::warn!("DelayProbe selected in per-channel mode; use probe_channel_delays() instead. Falling back to Sweep.");
+                    SignalType::Sweep
+                }
             };
 
             let output_ch = rec_state

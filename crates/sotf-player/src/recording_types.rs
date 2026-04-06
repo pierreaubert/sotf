@@ -336,6 +336,8 @@ pub enum RecordingSignalType {
     Sweep,
     WhiteNoise,
     PinkNoise,
+    /// Narrowband allpass probe for delay/gain detection (800-2000Hz)
+    DelayProbe,
 }
 
 impl RecordingSignalType {
@@ -344,9 +346,13 @@ impl RecordingSignalType {
             RecordingSignalType::Sweep => "Sweep",
             RecordingSignalType::WhiteNoise => "White Noise",
             RecordingSignalType::PinkNoise => "Pink Noise",
+            RecordingSignalType::DelayProbe => "Delay Probe",
         }
     }
 
+    /// Signal types available for per-channel recording.
+    /// `DelayProbe` is excluded here because it uses a separate multi-channel
+    /// workflow (`probe_channel_delays`) rather than per-channel sweep recording.
     pub fn all() -> &'static [RecordingSignalType] {
         &[
             RecordingSignalType::Sweep,
@@ -354,6 +360,32 @@ impl RecordingSignalType {
             RecordingSignalType::PinkNoise,
         ]
     }
+}
+
+/// Result of a delay probing session across all channels
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DelayProbeResults {
+    /// Per-channel delay detection results
+    pub channels: Vec<DelayProbeChannelResult>,
+    /// Sample rate used for probing
+    pub sample_rate: u32,
+    /// Computed alignment delays in ms (to add to each channel)
+    pub alignment_delays_ms: Vec<f64>,
+}
+
+/// Delay probe result for a single channel
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DelayProbeChannelResult {
+    /// Channel name (e.g. "L", "R", "C")
+    pub channel_name: String,
+    /// Channel output index
+    pub channel_index: usize,
+    /// Detected arrival time in ms (acoustic propagation delay)
+    pub arrival_ms: f64,
+    /// Relative gain in dB
+    pub gain_db: f64,
+    /// Detection confidence (SNR in dB, higher = more reliable)
+    pub snr_db: f64,
 }
 
 /// Speaker configuration presets

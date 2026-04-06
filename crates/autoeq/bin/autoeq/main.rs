@@ -153,7 +153,8 @@ async fn run(args: autoeq::cli::Args) -> Result<()> {
         }
         autoeq::LossType::SpeakerFlat
         | autoeq::LossType::SpeakerFlatAsymmetric
-        | autoeq::LossType::SpeakerScore => (
+        | autoeq::LossType::SpeakerScore
+        | autoeq::LossType::Epa => (
             post_metrics.pre_cea2034.as_ref().map(|m| m.pref_score),
             post_metrics.cea2034_metrics.as_ref().map(|m| m.pref_score),
         ),

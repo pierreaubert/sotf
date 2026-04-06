@@ -77,6 +77,9 @@ pub mod x2peq;
 /// Room EQ multi-channel optimization
 pub mod roomeq;
 
+/// Enhanced Perceptual Analysis: Bark scale, loudness, sharpness, roughness scoring
+pub mod epa;
+
 // Re-export commonly used items
 pub use cli::*;
 pub use loss::{CrossoverType, HeadphoneLossData, LossType, SpeakerLossData};

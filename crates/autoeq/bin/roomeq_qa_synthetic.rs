@@ -352,6 +352,7 @@ fn option_pre_ringing(config: &mut RoomConfig) {
 
 fn option_decomposed_correction(config: &mut RoomConfig) {
     config.optimizer.decomposed_correction = Some(DecomposedCorrectionSerdeConfig {
+        enabled: true,
         schroeder_freq: 200.0,
         min_mode_q: 3.0,
         min_mode_prominence_db: 3.0,
@@ -499,6 +500,8 @@ fn run_single_test(
         ProcessingMode::PhaseLinear => "FIR",
         ProcessingMode::Hybrid => "Mixed",
         ProcessingMode::MixedPhase => "MixedPhase",
+        ProcessingMode::WarpedIir => "WarpedIIR",
+        ProcessingMode::KautzModal => "KautzModal",
     };
     let options_str = if option_names.is_empty() {
         "baseline".to_string()

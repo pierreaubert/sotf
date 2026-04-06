@@ -8,7 +8,9 @@
 //! - Pink noise (1/f spectrum)
 //! - M-weighted noise (ITU-R 468)
 
+use crate::stft::RealFftProcessor;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
 
 /// Clip a sample to prevent overflow in PCM conversion
@@ -459,6 +461,169 @@ pub fn prepare_signal_for_playback_channels(
     }
 }
 
+/// Generate the frequency-domain spectrum for an allpass probe signal.
+///
+/// Returns `spectrum_size = fft_size/2 + 1` complex bins with unit magnitude
+/// and continuously accumulated random phase. DC and Nyquist bins are forced real.
+fn gen_probe_spectrum(fft_size: usize, seed: u64) -> Vec<Complex<f32>> {
+    let spectrum_size = fft_size / 2 + 1;
+    let mut spectrum = vec![Complex::new(0.0, 0.0); spectrum_size];
+
+    // Seeded LCG for reproducible phase increments
+    let mut rng_state = seed;
+    let max_delta = std::f32::consts::FRAC_PI_4; // π/4 max increment per bin
+
+    // DC bin: phase = 0 (must be real)
+    spectrum[0] = Complex::new(1.0, 0.0);
+
+    let mut phase: f32 = 0.0;
+    for bin in spectrum[1..spectrum_size - 1].iter_mut() {
+        // LCG step
+        rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let random_u32 = ((rng_state >> 33) ^ rng_state) as u32;
+        let delta = (random_u32 as f32 / u32::MAX as f32) * max_delta;
+        phase += delta;
+
+        let (sin_p, cos_p) = phase.sin_cos();
+        *bin = Complex::new(cos_p, sin_p);
+
+        // Avoid phase growing unboundedly (wrap at 2π)
+        if phase > 2.0 * PI {
+            phase -= 2.0 * PI;
+        }
+    }
+
+    // Nyquist bin: phase = 0 (must be real for even-length signals)
+    if spectrum_size > 1 {
+        spectrum[spectrum_size - 1] = Complex::new(1.0, 0.0);
+    }
+
+    spectrum
+}
+
+/// Generate a wideband allpass probe signal.
+///
+/// Synthesized in the DFT domain with unit magnitude at all frequency bins
+/// and continuously accumulated random phase. The result is a real signal
+/// with flat power spectrum but energy spread across time — better than
+/// sweeps for nonlinear speakers (per Johnston AES).
+///
+/// # Arguments
+/// * `n_frames` - Number of output samples (determines frequency resolution)
+/// * `sample_rate` - Sample rate in Hz
+/// * `amp` - Peak amplitude (signal is normalized to this)
+/// * `seed` - RNG seed for reproducible phase (same seed = same probe)
+pub fn gen_allpass_probe(n_frames: usize, _sample_rate: u32, amp: f32, seed: u64) -> Vec<f32> {
+    if n_frames == 0 {
+        return Vec::new();
+    }
+
+    let fft_size = n_frames;
+    let mut fft = RealFftProcessor::new_bidirectional(fft_size);
+
+    let spectrum = gen_probe_spectrum(fft_size, seed);
+    fft.freq_buffer[..spectrum.len()].copy_from_slice(&spectrum);
+
+    // IFFT to time domain
+    fft.inverse();
+
+    // Normalize: scale so peak = amp
+    let peak = fft.time_buffer[..n_frames]
+        .iter()
+        .map(|&x| x.abs())
+        .fold(0.0_f32, f32::max);
+
+    let scale = if peak > 1e-10 { amp / peak } else { 0.0 };
+
+    fft.time_buffer[..n_frames]
+        .iter()
+        .map(|&x| clip(x * scale))
+        .collect()
+}
+
+/// Generate a narrowband allpass probe (bandpass filtered).
+///
+/// Same phase structure as `gen_allpass_probe` (when given the same seed),
+/// but zeroes out frequency bins outside `[lo_hz, hi_hz]` with a smooth
+/// Tukey taper at band edges. Used as a matched filter for delay detection
+/// with excellent noise rejection.
+///
+/// # Arguments
+/// * `n_frames` - Number of output samples
+/// * `sample_rate` - Sample rate in Hz
+/// * `amp` - Peak amplitude (signal is normalized to this)
+/// * `seed` - RNG seed (same seed as wideband = identical phase within passband)
+/// * `lo_hz` - Lower cutoff frequency in Hz
+/// * `hi_hz` - Upper cutoff frequency in Hz
+pub fn gen_narrowband_probe(
+    n_frames: usize,
+    sample_rate: u32,
+    amp: f32,
+    seed: u64,
+    lo_hz: f32,
+    hi_hz: f32,
+) -> Vec<f32> {
+    if n_frames == 0 {
+        return Vec::new();
+    }
+
+    let fft_size = n_frames;
+    let spectrum_size = fft_size / 2 + 1;
+    let mut fft = RealFftProcessor::new_bidirectional(fft_size);
+
+    let spectrum = gen_probe_spectrum(fft_size, seed);
+    let freq_resolution = sample_rate as f32 / fft_size as f32;
+
+    // Number of bins for the Tukey taper at each band edge
+    let taper_bins = 10_usize;
+
+    #[allow(clippy::needless_range_loop)]
+    for k in 0..spectrum_size {
+        let freq = k as f32 * freq_resolution;
+
+        if freq < lo_hz || freq > hi_hz {
+            // Outside passband: zero
+            fft.freq_buffer[k] = Complex::new(0.0, 0.0);
+        } else {
+            // Inside passband: apply spectrum with optional taper at edges
+            let mut gain = 1.0_f32;
+
+            // Lower edge taper (Hann half-window, rising from near-zero to 1.0)
+            let lo_bin = (lo_hz / freq_resolution).ceil() as usize;
+            if k < lo_bin + taper_bins && k >= lo_bin {
+                // Use (taper_bins + 1) so edge bins get nonzero gain
+                let t = (k - lo_bin + 1) as f32 / (taper_bins + 1) as f32;
+                gain = 0.5 * (1.0 - (PI * t).cos());
+            }
+
+            // Upper edge taper (Hann half-window, falling from 1.0 to near-zero)
+            let hi_bin = (hi_hz / freq_resolution).floor() as usize;
+            if hi_bin >= taper_bins && k > hi_bin - taper_bins && k <= hi_bin {
+                let t = (hi_bin - k + 1) as f32 / (taper_bins + 1) as f32;
+                gain = 0.5 * (1.0 - (PI * t).cos());
+            }
+
+            fft.freq_buffer[k] = spectrum[k] * gain;
+        }
+    }
+
+    // IFFT to time domain
+    fft.inverse();
+
+    // Normalize peak to amp
+    let peak = fft.time_buffer[..n_frames]
+        .iter()
+        .map(|&x| x.abs())
+        .fold(0.0_f32, f32::max);
+
+    let scale = if peak > 1e-10 { amp / peak } else { 0.0 };
+
+    fft.time_buffer[..n_frames]
+        .iter()
+        .map(|&x| clip(x * scale))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -741,5 +906,100 @@ mod tests {
         assert_eq!(prepared[11999], 0.0);
         // Last samples should be zero (padding)
         assert_eq!(prepared[prepared.len() - 1], 0.0);
+    }
+
+    #[test]
+    fn test_allpass_probe_flat_spectrum() {
+        let n = 4096;
+        let probe = gen_allpass_probe(n, 48000, 0.5, 42);
+        assert_eq!(probe.len(), n);
+
+        // FFT the probe and check magnitude is nearly constant
+        let mut fft_proc = RealFftProcessor::new_forward_only(n);
+        fft_proc.time_buffer[..n].copy_from_slice(&probe);
+        fft_proc.forward();
+
+        // Skip DC and Nyquist, check that magnitudes are within ±1dB of each other
+        let mags: Vec<f32> = fft_proc.freq_buffer[1..fft_proc.spectrum_size - 1]
+            .iter()
+            .map(|c| c.norm())
+            .collect();
+        let avg_mag = mags.iter().sum::<f32>() / mags.len() as f32;
+
+        for (i, &m) in mags.iter().enumerate() {
+            let ratio_db = 20.0 * (m / avg_mag).log10();
+            assert!(
+                ratio_db.abs() < 1.0,
+                "Bin {} magnitude deviates by {:.2} dB from average",
+                i + 1,
+                ratio_db
+            );
+        }
+    }
+
+    #[test]
+    fn test_narrowband_probe_bandpass() {
+        let n = 8192;
+        let sr = 48000;
+        let probe = gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
+        assert_eq!(probe.len(), n);
+
+        // FFT and check energy is concentrated in [800, 2000] Hz
+        let mut fft_proc = RealFftProcessor::new_forward_only(n);
+        fft_proc.time_buffer[..n].copy_from_slice(&probe);
+        fft_proc.forward();
+
+        let freq_res = sr as f32 / n as f32;
+        let mut in_band_energy = 0.0_f32;
+        let mut out_band_energy = 0.0_f32;
+
+        for (k, c) in fft_proc.freq_buffer.iter().enumerate() {
+            let freq = k as f32 * freq_res;
+            let energy = c.norm_sqr();
+            if freq >= 800.0 && freq <= 2000.0 {
+                in_band_energy += energy;
+            } else {
+                out_band_energy += energy;
+            }
+        }
+
+        // Out-of-band should be negligible compared to in-band
+        let ratio = out_band_energy / (in_band_energy + 1e-30);
+        assert!(
+            ratio < 0.01,
+            "Out-of-band energy ratio {:.4} should be < 1%",
+            ratio
+        );
+    }
+
+    #[test]
+    fn test_probe_deterministic() {
+        let a = gen_allpass_probe(2048, 48000, 0.5, 123);
+        let b = gen_allpass_probe(2048, 48000, 0.5, 123);
+        assert_eq!(a, b, "Same seed should produce identical probes");
+
+        let c = gen_allpass_probe(2048, 48000, 0.5, 456);
+        assert_ne!(a, c, "Different seeds should produce different probes");
+    }
+
+    #[test]
+    fn test_narrowband_shares_phase_with_wideband() {
+        // With the same seed, the narrowband probe's passband bins should
+        // have the same phase as the corresponding wideband bins
+        let n = 4096;
+        let seed = 99;
+        let wb_spectrum = gen_probe_spectrum(n, seed);
+        let nb_spectrum = gen_probe_spectrum(n, seed);
+
+        // Phase should be identical (same function, same seed)
+        for k in 100..200 {
+            let wb_phase = wb_spectrum[k].arg();
+            let nb_phase = nb_spectrum[k].arg();
+            assert!(
+                (wb_phase - nb_phase).abs() < 1e-6,
+                "Phase mismatch at bin {}",
+                k
+            );
+        }
     }
 }

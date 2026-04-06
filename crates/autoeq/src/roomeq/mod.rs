@@ -113,6 +113,12 @@ pub use impulse_analysis::{
 // CEA2034 speaker pre-correction (3-pass pipeline)
 pub mod cea2034_correction;
 
+// First-reflection cancellation (Johnston IIR filter)
+pub mod reflection_cancel;
+pub use reflection_cancel::{
+    ReflectionCancellationConfig, ReflectionCancellationResult, compute_reflection_cancellation,
+};
+
 // Utility modules
 mod ir_waveform;
 mod phase_utils;
@@ -120,7 +126,13 @@ pub mod synthetic;
 mod time_align;
 mod weighted_loss;
 
-pub use time_align::{ArrivalTimeResult, calculate_alignment_delays, find_arrival_time};
+pub use time_align::{
+    ArrivalTimeResult, ProbeDelayResult, calculate_alignment_delays, detect_delay_with_probe,
+    detect_delays_multi_channel, find_arrival_time,
+};
+
+// Perceptual temporal decay thresholds for modal ringing
+pub mod temporal_targets;
 
 // Advanced room correction features (Scenario A & B)
 pub mod excursion;

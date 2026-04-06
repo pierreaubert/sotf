@@ -1552,6 +1552,264 @@ fn estimate_lag(reference: &[f32], recorded: &[f32]) -> Result<isize, String> {
     })
 }
 
+/// Result of cross-correlation with analytic envelope detection.
+///
+/// The envelope peak corresponds to the probe's arrival time, detected
+/// via Hilbert transform of the cross-correlation.
+#[derive(Debug, Clone)]
+pub struct CrossCorrelationEnvelopeResult {
+    /// Analytic envelope of the cross-correlation
+    pub envelope: Vec<f32>,
+    /// Sample index of the peak (integer arrival time)
+    pub peak_sample: usize,
+    /// Sub-sample refined peak position via parabolic interpolation
+    pub peak_sample_refined: f64,
+    /// Peak envelope value (proportional to channel gain)
+    pub peak_value: f32,
+    /// Arrival time in milliseconds (sub-sample precision)
+    pub arrival_ms: f64,
+}
+
+/// Cross-correlate a probe with a recording and compute the analytic envelope.
+///
+/// Uses FFT-based cross-correlation followed by the Hilbert transform
+/// (via `analytic_signal`) to extract a smooth envelope whose peak
+/// indicates the arrival time with sub-sample precision.
+///
+/// This is the matched-filter approach recommended by Johnston (AES):
+/// narrowband probes give excellent noise rejection, and the analytic
+/// envelope provides a clean, unambiguous peak even in reverberant rooms.
+///
+/// # Arguments
+/// * `probe` - The known probe signal that was played
+/// * `recorded` - The recorded signal from the microphone
+/// * `sample_rate` - Sample rate in Hz
+pub fn cross_correlate_envelope(
+    probe: &[f32],
+    recorded: &[f32],
+    sample_rate: u32,
+) -> Result<CrossCorrelationEnvelopeResult, String> {
+    if probe.is_empty() || recorded.is_empty() {
+        return Err("Probe and recorded signals must be non-empty".to_string());
+    }
+
+    // Zero-pad to avoid circular correlation artifacts
+    let fft_size = next_power_of_two(probe.len() + recorded.len());
+
+    // Raw FFT (no normalization) — we handle normalization once after IFFT.
+    // Using unnormalized FFT avoids the scale-dependent gain errors that
+    // occur when compute_fft_padded's 1/N normalization interacts with IFFT.
+    let fft_forward = plan_fft_forward(fft_size);
+
+    let mut probe_buf: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); fft_size];
+    for (dst, &src) in probe_buf.iter_mut().zip(probe.iter()) {
+        dst.re = src;
+    }
+    fft_forward.process(&mut probe_buf);
+
+    let mut rec_buf: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); fft_size];
+    for (dst, &src) in rec_buf.iter_mut().zip(recorded.iter()) {
+        dst.re = src;
+    }
+    fft_forward.process(&mut rec_buf);
+
+    // Cross-correlation: conj(Probe) * Recorded
+    let mut cross_fft: Vec<Complex<f32>> = probe_buf
+        .iter()
+        .zip(rec_buf.iter())
+        .map(|(p, r)| p.conj() * r)
+        .collect();
+
+    // IFFT to get cross-correlation in time domain
+    let ifft = plan_fft_inverse(fft_size);
+    ifft.process(&mut cross_fft);
+
+    // Single 1/N normalization (standard for round-trip FFT→IFFT)
+    let norm = 1.0 / fft_size as f32;
+    let xcorr: Vec<f32> = cross_fft.iter().map(|c| c.re * norm).collect();
+
+    // Compute analytic envelope via Hilbert transform
+    let analytic = crate::instantaneous_frequency::analytic_signal(&xcorr);
+    let envelope: Vec<f32> = analytic.iter().map(|c| c.norm()).collect();
+
+    // Find peak in the causal part (first half — positive lags only)
+    let search_len = fft_size / 2;
+    let mut peak_sample = 0_usize;
+    let mut peak_value = 0.0_f32;
+    for (i, &val) in envelope.iter().enumerate().take(search_len) {
+        if val > peak_value {
+            peak_value = val;
+            peak_sample = i;
+        }
+    }
+
+    // Parabolic interpolation for sub-sample precision
+    let peak_refined = if peak_sample > 0 && peak_sample < search_len - 1 {
+        let y_prev = envelope[peak_sample - 1] as f64;
+        let y_peak = envelope[peak_sample] as f64;
+        let y_next = envelope[peak_sample + 1] as f64;
+        let denom = 2.0 * (2.0 * y_peak - y_prev - y_next);
+        if denom.abs() > 1e-12 {
+            peak_sample as f64 + (y_prev - y_next) / denom
+        } else {
+            peak_sample as f64
+        }
+    } else {
+        peak_sample as f64
+    };
+
+    let arrival_ms = peak_refined / sample_rate as f64 * 1000.0;
+
+    Ok(CrossCorrelationEnvelopeResult {
+        envelope,
+        peak_sample,
+        peak_sample_refined: peak_refined,
+        peak_value,
+        arrival_ms,
+    })
+}
+
+/// Frequency responses computed from different time windows of an impulse response.
+///
+/// Direct sound, early reflections, and late reverb each have different
+/// perceptual roles (Toole, Johnston) and should be corrected differently.
+#[derive(Debug, Clone)]
+pub struct WindowedFrequencyResponse {
+    /// Direct sound frequency response (frequencies in Hz, SPL in dB)
+    pub direct_sound_freq: Vec<f32>,
+    pub direct_sound_spl: Vec<f32>,
+    /// Early reflections frequency response
+    pub early_reflections_freq: Vec<f32>,
+    pub early_reflections_spl: Vec<f32>,
+    /// Late/reverberant field frequency response
+    pub late_reverb_freq: Vec<f32>,
+    pub late_reverb_spl: Vec<f32>,
+    /// Time boundaries used (in ms)
+    pub direct_end_ms: f64,
+    pub early_end_ms: f64,
+}
+
+/// Compute frequency responses for different time windows of the impulse response.
+///
+/// Uses SSIR segmentation boundaries to separate:
+/// - Direct sound: \[0, first_reflection_onset)
+/// - Early reflections: \[first_reflection_onset, mixing_time)
+/// - Late reverb: \[mixing_time, end)
+///
+/// Each window gets a half-Hann fade at edges to avoid spectral leakage,
+/// then FFT -> magnitude -> 1/24 octave smoothing.
+pub fn compute_windowed_fr(
+    impulse_response: &[f32],
+    direct_end_sample: usize,
+    early_end_sample: usize,
+    sample_rate: u32,
+    num_output_points: usize,
+) -> Result<WindowedFrequencyResponse, String> {
+    if impulse_response.is_empty() {
+        return Err("Impulse response must be non-empty".to_string());
+    }
+    if num_output_points == 0 {
+        return Err("num_output_points must be > 0".to_string());
+    }
+
+    let ir_len = impulse_response.len();
+    let direct_end = direct_end_sample.min(ir_len);
+    let early_end = early_end_sample.max(direct_end).min(ir_len);
+
+    let direct_end_ms = direct_end as f64 / sample_rate as f64 * 1000.0;
+    let early_end_ms = early_end as f64 / sample_rate as f64 * 1000.0;
+
+    // Fade length: 1ms or half the window, whichever is smaller
+    let fade_1ms = (sample_rate as usize) / 1000;
+
+    let window_to_fr = |start: usize, end: usize| -> (Vec<f32>, Vec<f32>) {
+        let win_len = end.saturating_sub(start);
+        if win_len == 0 {
+            // Return silence at the output frequencies
+            let log_start = 20.0_f32.ln();
+            let log_end = 20000.0_f32.ln();
+            let freqs: Vec<f32> = (0..num_output_points)
+                .map(|i| {
+                    (log_start
+                        + (log_end - log_start) * i as f32
+                            / (num_output_points.max(2) - 1) as f32)
+                        .exp()
+                })
+                .collect();
+            let spl = vec![-200.0_f32; num_output_points];
+            return (freqs, spl);
+        }
+
+        // Extract and fade the window edges to reduce spectral leakage.
+        // Skip fade-in at the physical start of the IR (start==0) to avoid
+        // attenuating the direct sound impulse.
+        let mut window: Vec<f32> = impulse_response[start..end].to_vec();
+        let fade_len = fade_1ms.min(win_len / 2).max(1);
+        if start > 0 {
+            crate::signals::apply_fade_in(&mut window, fade_len);
+        }
+        crate::signals::apply_fade_out(&mut window, fade_len);
+
+        // Zero-pad to next power of 2
+        let fft_size = next_power_of_two(win_len);
+        let fft_forward = plan_fft_forward(fft_size);
+
+        let mut buf: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); fft_size];
+        for (dst, &src) in buf.iter_mut().zip(window.iter()) {
+            dst.re = src;
+        }
+        fft_forward.process(&mut buf);
+
+        // Normalize by FFT size
+        let norm = 1.0 / fft_size as f32;
+
+        // Generate log-spaced output frequencies and compute magnitude in dB
+        let log_start = 20.0_f32.ln();
+        let log_end = 20000.0_f32.ln();
+        let freq_resolution = sample_rate as f32 / fft_size as f32;
+        let num_bins = fft_size / 2;
+
+        let mut freqs = Vec::with_capacity(num_output_points);
+        let mut raw_db = Vec::with_capacity(num_output_points);
+
+        for i in 0..num_output_points {
+            let target_freq = (log_start
+                + (log_end - log_start) * i as f32 / (num_output_points.max(2) - 1) as f32)
+                .exp();
+            freqs.push(target_freq);
+
+            // Map to nearest FFT bin
+            let bin = ((target_freq / freq_resolution).round() as usize).clamp(1, num_bins - 1);
+            let mag = buf[bin].norm() * norm;
+            let db = if mag > 1e-20 {
+                20.0 * mag.log10()
+            } else {
+                -200.0
+            };
+            raw_db.push(db);
+        }
+
+        // Apply 1/24 octave smoothing
+        let smoothed = smooth_response_f32(&freqs, &raw_db, 1.0 / 24.0);
+        (freqs, smoothed)
+    };
+
+    let (direct_sound_freq, direct_sound_spl) = window_to_fr(0, direct_end);
+    let (early_reflections_freq, early_reflections_spl) = window_to_fr(direct_end, early_end);
+    let (late_reverb_freq, late_reverb_spl) = window_to_fr(early_end, ir_len);
+
+    Ok(WindowedFrequencyResponse {
+        direct_sound_freq,
+        direct_sound_spl,
+        early_reflections_freq,
+        early_reflections_spl,
+        late_reverb_freq,
+        late_reverb_spl,
+        direct_end_ms,
+        early_end_ms,
+    })
+}
+
 /// Compute FFT of a signal with specified windowing
 ///
 /// # Arguments
@@ -2762,6 +3020,148 @@ mod tests {
             lfe_above_500_max <= -100.0,
             "LFE above 1 kHz should be at noise floor, got {:.1} dB",
             lfe_above_500_max
+        );
+    }
+
+    #[test]
+    fn test_cross_correlate_envelope_known_delay() {
+        // Generate a narrowband probe, delay it, and verify detection
+        let n = 4096;
+        let sr = 48000_u32;
+        let probe = crate::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
+
+        // Simulate recording: delay by 240 samples (~5ms) + attenuation
+        let delay = 240_usize;
+        let attenuation = 0.3;
+        let mut recorded = vec![0.0_f32; n + delay + 1000];
+        for (i, &s) in probe.iter().enumerate() {
+            recorded[i + delay] += s * attenuation;
+        }
+
+        let result = cross_correlate_envelope(&probe, &recorded, sr).unwrap();
+
+        // Peak should be near the known delay
+        let detected_samples = result.peak_sample;
+        assert!(
+            (detected_samples as isize - delay as isize).unsigned_abs() <= 2,
+            "Expected delay ~{} samples, got {}",
+            delay,
+            detected_samples
+        );
+
+        // Arrival time should be ~5ms
+        assert!(
+            (result.arrival_ms - 5.0).abs() < 0.1,
+            "Expected ~5.0 ms, got {:.3} ms",
+            result.arrival_ms
+        );
+    }
+
+    #[test]
+    fn test_cross_correlate_envelope_with_noise() {
+        // Probe detection should work even with additive noise
+        let n = 4096;
+        let sr = 48000_u32;
+        let probe = crate::signals::gen_narrowband_probe(n, sr, 0.5, 42, 800.0, 2000.0);
+
+        let delay = 480_usize; // 10ms
+        let mut recorded = vec![0.0_f32; n + delay + 1000];
+        for (i, &s) in probe.iter().enumerate() {
+            recorded[i + delay] += s * 0.5;
+        }
+        // Add noise
+        let noise = crate::signals::gen_white_noise(0.1, sr, recorded.len() as f32 / sr as f32);
+        for (r, &n_s) in recorded.iter_mut().zip(noise.iter()) {
+            *r += n_s;
+        }
+
+        let result = cross_correlate_envelope(&probe, &recorded, sr).unwrap();
+
+        assert!(
+            (result.peak_sample as isize - delay as isize).unsigned_abs() <= 2,
+            "Expected delay ~{}, got {} (with noise)",
+            delay,
+            result.peak_sample
+        );
+    }
+
+    #[test]
+    fn test_windowed_fr_synthetic() {
+        // Create synthetic IR: impulse at sample 0 + delayed impulse at sample 240 (5ms)
+        // Direct window [0, 240) should show flat response
+        // Early window [240, 1920) should show the reflection's response
+        let sr = 48000;
+        let mut ir = vec![0.0f32; 4096];
+        ir[0] = 1.0; // direct sound
+        ir[240] = 0.5; // reflection at 5ms, -6dB
+
+        let result = compute_windowed_fr(&ir, 240, 1920, sr, 200).unwrap();
+
+        // Direct window should have content
+        assert!(!result.direct_sound_spl.is_empty());
+        assert!(!result.early_reflections_spl.is_empty());
+        assert!(!result.late_reverb_spl.is_empty());
+
+        // All frequency vectors should have the requested number of points
+        assert_eq!(result.direct_sound_freq.len(), 200);
+        assert_eq!(result.early_reflections_freq.len(), 200);
+        assert_eq!(result.late_reverb_freq.len(), 200);
+
+        // Time boundaries should match
+        assert!((result.direct_end_ms - 5.0).abs() < 0.01);
+        assert!((result.early_end_ms - 40.0).abs() < 0.01);
+
+        // Direct sound should be roughly flat above the resolution limit.
+        // Short window = poor LF resolution, but mid-HF should be flat.
+        // Filter to frequencies above 500 Hz where the 240-sample window has resolution
+        let mid_hf: Vec<f32> = result
+            .direct_sound_freq
+            .iter()
+            .zip(result.direct_sound_spl.iter())
+            .filter(|&(&f, _)| f > 500.0 && f < 18000.0)
+            .map(|(_, &spl)| spl)
+            .collect();
+        if mid_hf.len() > 2 {
+            let max = mid_hf.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+            let min = mid_hf.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+            let range = max - min;
+            assert!(
+                range < 12.0,
+                "Direct sound mid-HF range too large: {:.1} dB",
+                range
+            );
+        }
+    }
+
+    #[test]
+    fn test_windowed_fr_empty_window() {
+        // If early_end == direct_end (no early reflections), that window should be empty/silent
+        let sr = 48000;
+        let mut ir = vec![0.0f32; 2048];
+        // Place impulse away from window edges so fading doesn't zero it out
+        ir[50] = 1.0;
+
+        let result = compute_windowed_fr(&ir, 200, 200, sr, 200).unwrap();
+
+        // Early reflections window is zero-length — SPL should be very low
+        assert_eq!(result.early_reflections_spl.len(), 200);
+        for &spl in &result.early_reflections_spl {
+            assert!(
+                spl <= -199.0,
+                "Expected silent early reflections, got {:.1} dB",
+                spl
+            );
+        }
+
+        // Direct and late should still have content
+        let direct_max = result
+            .direct_sound_spl
+            .iter()
+            .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        assert!(
+            direct_max > -100.0,
+            "Direct sound should have content, max was {:.1} dB",
+            direct_max
         );
     }
 }

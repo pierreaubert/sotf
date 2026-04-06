@@ -236,6 +236,8 @@ pub fn setup_objective_data(
         multi_objective: None,
         smooth: args.smooth,
         smooth_n: args.smooth_n,
+        max_boost_envelope: None,
+            min_cut_envelope: None,
     };
 
     Ok((objective_data, use_cea))
@@ -314,6 +316,8 @@ pub fn setup_drivers_objective_data(
         multi_objective: None,
         smooth: false, // Not applicable for crossover optimization
         smooth_n: 1,
+        max_boost_envelope: None,
+            min_cut_envelope: None,
     }
 }
 
@@ -1631,6 +1635,8 @@ pub fn setup_multisub_objective_data(
         multi_objective: None,
         smooth: false, // Not applicable for multi-sub optimization
         smooth_n: 1,
+        max_boost_envelope: None,
+            min_cut_envelope: None,
     }
 }
 

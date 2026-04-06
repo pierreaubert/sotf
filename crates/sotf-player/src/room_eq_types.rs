@@ -1071,6 +1071,9 @@ impl RoomEqOptimizerConfig {
             autoeq::roomeq::ProcessingMode::PhaseLinear => RoomEqOptimizationMode::Fir,
             autoeq::roomeq::ProcessingMode::Hybrid => RoomEqOptimizationMode::Mixed,
             autoeq::roomeq::ProcessingMode::MixedPhase => RoomEqOptimizationMode::MixedPhase,
+            // WarpedIir and KautzModal are IIR-based modes
+            autoeq::roomeq::ProcessingMode::WarpedIir
+            | autoeq::roomeq::ProcessingMode::KautzModal => RoomEqOptimizationMode::Iir,
         };
 
         // Feature toggles: only override from backend when explicitly present.

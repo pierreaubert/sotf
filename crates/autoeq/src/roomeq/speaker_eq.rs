@@ -126,6 +126,10 @@ pub(super) fn optimize_eq_maybe_multi(
 /// Process a simple speaker with a single measurement
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
+///
+/// `shared_mean_spl` — when `Some`, the target level is this shared average
+/// instead of the channel's own mean. Reduces inter-channel deviation at the
+/// source by making all channels optimize toward the same reference level.
 pub(super) fn process_single_speaker(
     channel_name: &str,
     source: &MeasurementSource,
@@ -133,6 +137,8 @@ pub(super) fn process_single_speaker(
     sample_rate: f64,
     output_dir: &Path,
     mut callback: Option<crate::optim::OptimProgressCallback>,
+    probe_arrival_ms: Option<f64>,
+    shared_mean_spl: Option<f64>,
 ) -> Result<MixedModeResult> {
     // Load measurement
     let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
@@ -148,31 +154,39 @@ pub(super) fn process_single_speaker(
         curve.freq[curve.freq.len() - 1]
     );
 
-    // Extract wav_path and calculate arrival time for time alignment
-    let arrival_time_ms: Option<f64> = extract_wav_path(source).and_then(|wav_path| {
-        let path = std::path::Path::new(&wav_path);
-        if path.exists() {
-            match super::time_align::find_arrival_time(path, None) {
-                Ok(result) => {
-                    debug!(
-                        "  Arrival time for '{}': {:.2} ms (peak at sample {})",
-                        channel_name, result.arrival_ms, result.arrival_samples
-                    );
-                    Some(result.arrival_ms)
+    // Use probe-based arrival time if available (more accurate), else fall back to WAV onset
+    let arrival_time_ms: Option<f64> = if let Some(probe_ms) = probe_arrival_ms {
+        debug!(
+            "  Using probe-based arrival time for '{}': {:.2} ms",
+            channel_name, probe_ms
+        );
+        Some(probe_ms)
+    } else {
+        extract_wav_path(source).and_then(|wav_path| {
+            let path = std::path::Path::new(&wav_path);
+            if path.exists() {
+                match super::time_align::find_arrival_time(path, None) {
+                    Ok(result) => {
+                        debug!(
+                            "  Arrival time for '{}': {:.2} ms (peak at sample {})",
+                            channel_name, result.arrival_ms, result.arrival_samples
+                        );
+                        Some(result.arrival_ms)
+                    }
+                    Err(e) => {
+                        debug!(
+                            "  Could not determine arrival time for '{}': {}",
+                            channel_name, e
+                        );
+                        None
+                    }
                 }
-                Err(e) => {
-                    debug!(
-                        "  Could not determine arrival time for '{}': {}",
-                        channel_name, e
-                    );
-                    None
-                }
+            } else {
+                debug!("  WAV file not found for '{}': {:?}", channel_name, path);
+                None
             }
-        } else {
-            debug!("  WAV file not found for '{}': {:?}", channel_name, path);
-            None
-        }
-    });
+        })
+    };
 
     // ========================================================================
     // Build target curve with tilt (if configured)
@@ -446,11 +460,26 @@ pub(super) fn process_single_speaker(
     // The optimizer range gives a consistent reference across channel types.
     let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
     let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
-    let mean_spl = compute_average_response(
+    let channel_mean_spl = compute_average_response(
         &freqs_f32,
         &spl_f32,
         Some((min_freq as f32, max_freq as f32)),
     ) as f64;
+
+    // When a shared average level is provided (multi-channel pre-pass), use it
+    // as the target level instead of this channel's own mean. This makes all
+    // channels optimize toward the same reference, reducing ICD at the source.
+    let mean_spl = if let Some(shared) = shared_mean_spl {
+        debug!(
+            "  Using shared target level {:.1} dB (channel mean was {:.1} dB, delta {:.1} dB)",
+            shared,
+            channel_mean_spl,
+            shared - channel_mean_spl
+        );
+        shared
+    } else {
+        channel_mean_spl
+    };
 
     // ========================================================================
     // Broadband Pre-Correction
@@ -1406,6 +1435,247 @@ pub(super) fn process_single_speaker(
             // was actually aiming for instead of a misleading 0dB line.
             let display_target_spl = if let Some(ref tilt_curve) = target_tilt_curve {
                 // Interpolate tilt to display frequency grid
+                let tilt_at_display = crate::read::normalize_and_interpolate_response(
+                    &display_initial.freq,
+                    tilt_curve,
+                );
+                &tilt_at_display.spl + mean_spl
+            } else {
+                ndarray::Array1::from_elem(display_initial.freq.len(), mean_spl)
+            };
+            chain.target_curve = Some(super::types::CurveData {
+                freq: display_initial.freq.to_vec(),
+                spl: display_target_spl.to_vec(),
+                phase: None,
+                norm_range,
+            });
+
+            Ok((
+                chain,
+                pre_score,
+                post_score,
+                curve_raw,
+                final_curve,
+                eq_filters,
+                mean_spl,
+                arrival_time_ms,
+                None,
+            ))
+        }
+
+        ProcessingMode::WarpedIir | ProcessingMode::KautzModal => {
+            // Both modes reuse the LowLatency IIR pipeline for now.
+            //
+            // WarpedIir: The warped biquad's benefits come from perceptually-weighted
+            // frequency resolution. Full integration (x2warped_peq) is a future step.
+            // Currently routes through the same optimizer as LowLatency.
+            //
+            // KautzModal: Detects room modes and converts Kautz gains to equivalent
+            // biquad Peak filters. Falls back to standard optimizer if no modes found.
+            let mode_name = match room_config.optimizer.processing_mode {
+                ProcessingMode::WarpedIir => "WarpedIir",
+                ProcessingMode::KautzModal => "KautzModal",
+                _ => unreachable!(),
+            };
+            info!("  {} mode: starting optimization...", mode_name);
+
+            let optimization_curve = if let Some(ref tilt_curve) = target_tilt_curve {
+                Curve {
+                    freq: curve_for_optim.freq.clone(),
+                    spl: &curve_for_optim.spl - &tilt_curve.spl,
+                    phase: curve_for_optim.phase.clone(),
+                }
+            } else {
+                curve_for_optim.clone()
+            };
+
+            let effective_target = if target_tilt_curve.is_some() {
+                None
+            } else {
+                room_config.target_curve.as_ref()
+            };
+
+            // KautzModal: try mode detection + Kautz gain optimization first
+            let eq_filters = if matches!(
+                room_config.optimizer.processing_mode,
+                ProcessingMode::KautzModal
+            ) {
+                let decomposed_config =
+                    super::impulse_analysis::DecomposedCorrectionConfig::default();
+                let room_modes = super::impulse_analysis::detect_room_modes(
+                    &optimization_curve.freq,
+                    &optimization_curve.spl,
+                    &decomposed_config,
+                );
+
+                if !room_modes.is_empty() {
+                    info!("  Detected {} room modes, building Kautz filter", room_modes.len());
+
+                    let mode_tuples: Vec<(f64, f64)> =
+                        room_modes.iter().map(|m| (m.frequency, m.q)).collect();
+
+                    let mut kautz =
+                        math_audio_iir_fir::KautzFilter::from_room_modes(&mode_tuples, sample_rate);
+
+                    let freqs_f64: Vec<f64> = optimization_curve.freq.iter().copied().collect();
+                    let measured_f64: Vec<f64> = optimization_curve.spl.iter().copied().collect();
+                    let target_f64: Vec<f64> = vec![0.0; freqs_f64.len()];
+
+                    kautz.optimize_gains(&freqs_f64, &measured_f64, &target_f64);
+
+                    // Convert Kautz sections to equivalent Peak biquads
+                    let kautz_filters: Vec<Biquad> = room_modes
+                        .iter()
+                        .zip(kautz.sections.iter())
+                        .filter(|(_, s)| s.gain.abs() > 0.1)
+                        .map(|(mode, section)| {
+                            use math_audio_iir_fir::BiquadFilterType;
+                            Biquad::new(
+                                BiquadFilterType::Peak,
+                                mode.frequency,
+                                sample_rate,
+                                mode.q.max(0.5),
+                                section.gain,
+                            )
+                        })
+                        .collect();
+
+                    info!(
+                        "  KautzModal: {} biquad filters from {} modes",
+                        kautz_filters.len(),
+                        room_modes.len()
+                    );
+                    kautz_filters
+                } else {
+                    info!("  No room modes detected, falling back to standard optimizer");
+                    let (filters, _) = optimize_eq_maybe_multi(
+                        source,
+                        &optimization_curve,
+                        &clamped_optimizer,
+                        effective_target,
+                        sample_rate,
+                        channel_name,
+                        callback,
+                    )?;
+                    filters
+                }
+            } else {
+                // WarpedIir: use standard optimizer (warped evaluation is future work)
+                let (filters, _) = optimize_eq_maybe_multi(
+                    source,
+                    &optimization_curve,
+                    &clamped_optimizer,
+                    effective_target,
+                    sample_rate,
+                    channel_name,
+                    callback,
+                )?;
+                filters
+            };
+
+            info!("  {} mode: {} EQ filters", mode_name, eq_filters.len());
+
+            // Combine all filters and build chain (same pattern as LowLatency)
+            let preference_filters = if cea2034_active {
+                if let Some(ref target_resp) = room_config.optimizer.target_response {
+                    super::cea2034_correction::generate_preference_filters(
+                        &target_resp.preference,
+                        sample_rate,
+                    )
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            };
+
+            let mut all_filters = excursion_filters.clone();
+            all_filters.extend(cea2034_filters.iter().cloned());
+            all_filters.extend(broadband_biquads.iter().cloned());
+            all_filters.extend(eq_filters.clone());
+            all_filters.extend(preference_filters.iter().cloned());
+
+            let mut main_eq_filters = excursion_filters.clone();
+            main_eq_filters.extend(eq_filters.clone());
+
+            let mut pre_plugins = Vec::new();
+            pre_plugins.extend(cea2034_plugins.iter().cloned());
+            pre_plugins.extend(broadband_plugins.iter().cloned());
+
+            let mut chain = output::build_channel_dsp_chain_with_curves(
+                channel_name,
+                None,
+                pre_plugins,
+                &main_eq_filters,
+                None,
+                None,
+            );
+
+            if !preference_filters.is_empty() {
+                chain.plugins.push(output::create_labeled_eq_plugin(
+                    &preference_filters,
+                    "user_preference",
+                ));
+            }
+
+            // Score and build curves (same as LowLatency)
+            let mut score_raw = curve_raw.clone();
+            score_raw.spl += bb_mean_shift;
+            let all_resp =
+                response::compute_peq_complex_response(&all_filters, &score_raw.freq, sample_rate);
+            let final_curve = response::apply_complex_response(&score_raw, &all_resp);
+
+            let score_curve = if let Some(ref tilt_curve) = target_tilt_curve {
+                Curve {
+                    freq: final_curve.freq.clone(),
+                    spl: &final_curve.spl - &tilt_curve.spl,
+                    phase: final_curve.phase.clone(),
+                }
+            } else {
+                final_curve.clone()
+            };
+
+            let post_freqs_f32: Vec<f32> = score_curve.freq.iter().map(|&f| f as f32).collect();
+            let post_spl_f32: Vec<f32> = score_curve.spl.iter().map(|&s| s as f32).collect();
+            let mean_final = compute_average_response(
+                &post_freqs_f32,
+                &post_spl_f32,
+                Some((min_freq as f32, max_freq as f32)),
+            ) as f64;
+            let normalized_final_spl = &score_curve.spl - mean_final;
+            let post_score = crate::loss::flat_loss(
+                &score_curve.freq,
+                &normalized_final_spl,
+                min_freq,
+                max_freq,
+            );
+
+            info!(
+                "  Pre-score: {:.6}, Post-score: {:.6}",
+                pre_score, post_score
+            );
+
+            let display_initial = output::extend_curve_to_full_range(&curve_raw);
+            let mut display_raw_with_bb = display_initial.clone();
+            display_raw_with_bb.spl += bb_mean_shift;
+            let display_resp = response::compute_peq_complex_response(
+                &all_filters,
+                &display_raw_with_bb.freq,
+                sample_rate,
+            );
+            let display_final =
+                response::apply_complex_response(&display_raw_with_bb, &display_resp);
+
+            let mut initial_data: super::types::CurveData = (&display_initial).into();
+            initial_data.norm_range = norm_range;
+            let mut final_data: super::types::CurveData = (&display_final).into();
+            final_data.norm_range = norm_range;
+
+            chain.initial_curve = Some(initial_data.clone());
+            chain.final_curve = Some(final_data.clone());
+            chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
+
+            let display_target_spl = if let Some(ref tilt_curve) = target_tilt_curve {
                 let tilt_at_display = crate::read::normalize_and_interpolate_response(
                     &display_initial.freq,
                     tilt_curve,

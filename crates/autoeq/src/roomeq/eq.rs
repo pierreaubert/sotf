@@ -104,7 +104,7 @@ fn prepare_single_channel_eq(
     };
 
     // Compute decomposed correction weights BEFORE psychoacoustic smoothing.
-    let decomposed_weights = config.decomposed_correction.as_ref().map(|dc_config| {
+    let decomposed_weights = config.decomposed_correction.as_ref().filter(|dc| dc.enabled).map(|dc_config| {
         let dc_analysis_config = impulse_analysis::DecomposedCorrectionConfig {
             schroeder_freq: dc_config.schroeder_freq,
             min_mode_q: dc_config.min_mode_q,
@@ -219,6 +219,7 @@ fn prepare_single_channel_eq(
             }
         }
         "score" => LossType::SpeakerScore,
+        "epa" => LossType::Epa,
         _ => return Err(format!("Unknown loss type: {}", config.loss_type).into()),
     };
 
@@ -246,7 +247,7 @@ fn prepare_single_channel_eq(
     };
 
     // Setup objective data
-    let (objective_data, _use_cea) = setup_objective_data(
+    let (mut objective_data, _use_cea) = setup_objective_data(
         &args_template,
         &normalized_curve,
         &target_curve,
@@ -254,6 +255,10 @@ fn prepare_single_channel_eq(
         &None,
     )
     .expect("setup_objective_data should not fail without spin data");
+
+    // Propagate frequency-dependent boost/cut envelopes for per-filter gain clamping
+    objective_data.max_boost_envelope = config.max_boost_envelope.clone();
+    objective_data.min_cut_envelope = config.min_cut_envelope.clone();
 
     Ok(PreparedSingleChannelEq {
         objective_data,
@@ -354,8 +359,21 @@ fn run_optimization_pass(
         global_loss
     };
 
+    // Apply boost and cut envelope clamps to the final result so deployed filters
+    // respect the same gain limits used during fitness evaluation.
+    let x_after_boost = if let Some(ref env) = prep.objective_data.max_boost_envelope {
+        crate::optim::clamp_gains_to_envelope(&x, env, prep.peq_model)
+    } else {
+        x.to_vec()
+    };
+    let x_final = if let Some(ref env) = prep.objective_data.min_cut_envelope {
+        crate::optim::clamp_cuts_to_envelope(&x_after_boost, env, prep.peq_model)
+    } else {
+        x_after_boost
+    };
+
     // Convert to Biquad filters, pruning near-zero gain
-    let peq = crate::x2peq::x2peq(&x, prep.sample_rate, prep.peq_model);
+    let peq = crate::x2peq::x2peq(&x_final, prep.sample_rate, prep.peq_model);
     let filters: Vec<Biquad> = peq
         .into_iter()
         .map(|(_weight, biquad)| biquad)
@@ -627,6 +645,7 @@ fn optimize_channel_eq_multi_inner(
             }
         }
         "score" => LossType::SpeakerScore,
+        "epa" => LossType::Epa,
         _ => return Err(format!("Unknown loss type: {}", config.loss_type).into()),
     };
 
@@ -1017,6 +1036,7 @@ fn optimize_spatial_robustness(
             }
         }
         "score" => LossType::SpeakerScore,
+        "epa" => LossType::Epa,
         _ => return Err(format!("Unknown loss type: {}", config.loss_type).into()),
     };
 

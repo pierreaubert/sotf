@@ -1,0 +1,615 @@
+//! Warped biquad IIR filter for perceptual room EQ.
+//!
+//! A warped biquad replaces each unit delay (z^-1) in a standard biquad with
+//! a first-order allpass section: A(z) = (z^-1 - λ)/(1 - λz^-1).
+//!
+//! When λ ≈ 0.876 at 48 kHz, the frequency axis maps to approximate the Bark
+//! scale, concentrating filter resolution in the bass/low-mid range where room
+//! modes are most problematic.
+//!
+//! # Design approach
+//!
+//! 1. Compute the "warped" prototype frequency using [`warp_frequency`].
+//! 2. Design a standard biquad at that warped frequency.
+//! 3. During sample processing, replace each z^-1 with the allpass section
+//!    to produce the warped response.
+//!
+//! # Frequency response
+//!
+//! The warped filter's response at physical frequency f equals the standard
+//! biquad's response at `warp_frequency(f, srate, lambda)`.
+
+use ndarray::Array1;
+use num_complex::Complex;
+
+use crate::iir::biquad::{Biquad, BiquadFilterType};
+use crate::traits::{FilterFloat, lit};
+
+/// Compute the Bark-scale warping coefficient for a given sample rate.
+///
+/// Formula: λ = 1.0674 * sqrt(2/π * arctan(0.06583 * fs)) - 0.1916
+///
+/// At 48 kHz, λ ≈ 0.876, which approximates the Bark frequency scale,
+/// concentrating filter resolution where human hearing is most sensitive
+/// to room modes (below ~500 Hz).
+pub fn bark_lambda<T: FilterFloat>(sample_rate: T) -> T {
+    let two_over_pi = lit::<T>(2.0) / T::PI();
+    let inner = (lit::<T>(0.06583) * sample_rate).atan();
+    lit::<T>(1.0674) * (two_over_pi * inner).sqrt() - lit::<T>(0.1916)
+}
+
+/// Map a physical frequency to the warped frequency domain.
+///
+/// ω_physical = 2π·freq / srate
+/// ω_warped   = arctan((1 - λ²)·sin(ω) / ((1 + λ²)·cos(ω) - 2λ))
+///
+/// The returned value is in Hz (suitable for passing to a standard biquad
+/// constructor as its `freq` argument).
+pub fn warp_frequency<T: FilterFloat>(freq_hz: T, sample_rate: T, lambda: T) -> T {
+    let omega = lit::<T>(2.0) * T::PI() * freq_hz / sample_rate;
+
+    // The first-order allpass D(z) = (z^-1 - λ)/(1 - λz^-1) maps
+    // e^(jω) → e^(jω_w) where:
+    //   ω_w = ω + 2·arctan(λ·sin(ω) / (1 - λ·cos(ω)))
+    // With λ > 0, this expands LF and compresses HF (Bark-like).
+    let correction = lit::<T>(2.0)
+        * (lambda * omega.sin()).atan2(T::one() - lambda * omega.cos());
+    let omega_w = omega + correction;
+
+    // Convert back to Hz, clamped to [0, Nyquist]
+    let hz = omega_w * sample_rate / (lit::<T>(2.0) * T::PI());
+    hz.max(T::zero()).min(sample_rate / lit::<T>(2.0))
+}
+
+/// Map a warped frequency back to the physical frequency domain.
+///
+/// Inverse of [`warp_frequency`]. The sign of the `2λ` term is flipped
+/// relative to the forward transform.
+pub fn unwarp_frequency<T: FilterFloat>(warped_hz: T, sample_rate: T, lambda: T) -> T {
+    let omega_w = lit::<T>(2.0) * T::PI() * warped_hz / sample_rate;
+    // Inverse of warp: use -λ in the same formula
+    let neg_lambda = T::zero() - lambda;
+    let correction = lit::<T>(2.0)
+        * (neg_lambda * omega_w.sin()).atan2(T::one() - neg_lambda * omega_w.cos());
+    let omega = omega_w + correction;
+
+    let hz = omega * sample_rate / (lit::<T>(2.0) * T::PI());
+    hz.max(T::zero()).min(sample_rate / lit::<T>(2.0))
+}
+
+/// Warped biquad IIR filter.
+///
+/// Provides perceptually-weighted frequency resolution by warping the frequency
+/// axis to approximate the Bark scale (when using [`bark_lambda`] for `lambda`).
+///
+/// With λ = 0 this degenerates to a standard biquad with identical output.
+/// With λ ≈ 0.876 (48 kHz Bark via Smith & Abel), low frequencies get
+/// finer resolution at the expense of high-frequency accuracy.
+///
+/// # Sample-by-sample processing algorithm
+///
+/// The standard biquad difference equation replaces each unit delay z^-1 with
+/// the first-order allpass A(z) = (z^-1 − λ)/(1 − λz^-1):
+///
+/// ```text
+/// y[n] = b0·x[n] + b1·(A·x)[n] + b2·(A²·x)[n] − a1·(A·y)[n] − a2·(A²·y)[n]
+/// ```
+///
+/// The input chain `(A·x)[n]`, `(A²·x)[n]` is computed causally from x[n].
+/// The output chain is **implicit**: `(A·y)[n]` depends on `y[n]`.
+///
+/// Expanding the allpass recurrence for the y-chain:
+/// ```text
+/// (A·y)[n]  = λ·y[n] + (1−λ²)·s_y1
+/// (A²·y)[n] = λ·(A·y)[n] + (1−λ²)·s_y2
+/// ```
+/// Substituting and solving for y[n] gives the closed-form update:
+/// ```text
+/// ff    = b0·x + b1·(A·x)[n] + b2·(A²·x)[n]
+/// numer = ff − (1−λ²)·[(a1 + a2·λ)·s_y1 + a2·s_y2]
+/// y[n]  = numer · inv_denom        where inv_denom = 1/(1 + a1·λ + a2·λ²)
+/// ```
+/// After computing y[n] the allpass states s_y1, s_y2 are advanced.
+///
+/// When λ = 0: `inv_denom = 1`, `one_minus_lam_sq = 1`, and the allpass
+/// states hold exactly `y[n-1]` and `y[n-2]`, reproducing standard DF-I.
+///
+/// # Frequency response
+///
+/// The response at physical frequency f equals the prototype biquad's
+/// response at `warp_frequency(f, srate, lambda)`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(bound = "")]
+pub struct WarpedBiquad<T: FilterFloat = f64> {
+    /// Prototype biquad coefficients (designed at the warped center frequency)
+    a1: T,
+    a2: T,
+    b0: T,
+    b1: T,
+    b2: T,
+    /// Warping coefficient λ
+    pub lambda: T,
+    /// Precomputed 1/(1 + a1·λ + a2·λ²)
+    inv_denom: T,
+    /// Precomputed (1 − λ²)
+    one_minus_lam_sq: T,
+    /// Filter type
+    pub filter_type: BiquadFilterType,
+    /// Center frequency in Hz (physical domain)
+    pub freq: T,
+    /// Sample rate in Hz
+    pub srate: T,
+    /// Q factor
+    pub q: T,
+    /// Gain in dB (for peak/shelf types)
+    pub db_gain: T,
+    // Allpass internal states for the input (x) chain.
+    // With λ=0 these degenerate to x[n-1] and x[n-2].
+    ap_x1_s: T,
+    ap_x2_s: T,
+    // Allpass internal states for the output (y) chain.
+    // With λ=0: s_y1 = y[n-1], s_y2 = y[n-2] (standard DF-I feedback).
+    s_y1: T,
+    s_y2: T,
+}
+
+/// Apply one first-order allpass section and return its output.
+///
+/// Transfer function: A(z) = (z^-1 − λ)/(1 − λ·z^-1)
+///
+/// Recurrence:
+/// ```text
+/// w      = input − λ·state
+/// output = λ·w + state
+/// state  ← w
+/// ```
+/// With λ = 0 this reduces to a unit delay: output = state, state ← input.
+#[inline(always)]
+fn allpass_step<T: FilterFloat>(input: T, state: &mut T, lambda: T) -> T {
+    let w = input - lambda * *state;
+    let out = lambda * w + *state;
+    *state = w;
+    out
+}
+
+/// Precompute the constants needed for the closed-form implicit-equation solution.
+///
+/// Returns `(inv_denom, one_minus_lam_sq)` where:
+/// - `inv_denom = 1 / (1 + a1·λ + a2·λ²)` — the denominator of the solved y[n]
+/// - `one_minus_lam_sq = 1 − λ²`
+#[inline]
+fn compute_implicit_consts<T: FilterFloat>(a1: T, a2: T, lambda: T) -> (T, T) {
+    let lambda_sq = lambda * lambda;
+    let one_minus_lam_sq = T::one() - lambda_sq;
+    let raw_denom = T::one() + a1 * lambda + a2 * lambda_sq;
+    let inv_denom = if raw_denom.abs() > lit(1e-15) {
+        T::one() / raw_denom
+    } else {
+        T::one() // degenerate: pass through
+    };
+    (inv_denom, one_minus_lam_sq)
+}
+
+impl<T: FilterFloat> WarpedBiquad<T> {
+    /// Creates a new warped biquad filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter_type` - The biquad filter topology to apply
+    /// * `freq`        - Center frequency in Hz (physical domain)
+    /// * `srate`       - Sample rate in Hz
+    /// * `q`           - Q factor (0.0 uses the same defaults as [`Biquad::new`])
+    /// * `db_gain`     - Gain in dB (peak/shelf types only)
+    /// * `lambda`      - Warping coefficient; use [`bark_lambda`] for Bark-scale,
+    ///   or 0.0 for standard biquad behavior
+    pub fn new(
+        filter_type: BiquadFilterType,
+        freq: T,
+        srate: T,
+        q: T,
+        db_gain: T,
+        lambda: T,
+    ) -> Self {
+        let zero = T::zero();
+
+        let freq_warped = if lambda == zero {
+            freq
+        } else {
+            warp_frequency(freq, srate, lambda)
+        };
+
+        let proto = Biquad::new(filter_type, freq_warped, srate, q, db_gain);
+        let coeffs = proto.coefficients();
+        let (inv_denom, one_minus_lam_sq) = compute_implicit_consts(coeffs.a1, coeffs.a2, lambda);
+
+        WarpedBiquad {
+            a1: coeffs.a1,
+            a2: coeffs.a2,
+            b0: coeffs.b0,
+            b1: coeffs.b1,
+            b2: coeffs.b2,
+            lambda,
+            inv_denom,
+            one_minus_lam_sq,
+            filter_type,
+            freq,
+            srate,
+            q: proto.q, // clamped/defaulted Q from Biquad::new
+            db_gain,
+            ap_x1_s: zero,
+            ap_x2_s: zero,
+            s_y1: zero,
+            s_y2: zero,
+        }
+    }
+
+    /// Update filter parameters and recompute coefficients without resetting state.
+    pub fn update_params(
+        &mut self,
+        filter_type: BiquadFilterType,
+        freq: T,
+        srate: T,
+        q: T,
+        db_gain: T,
+        lambda: T,
+    ) {
+        self.filter_type = filter_type;
+        self.freq = freq;
+        self.srate = srate;
+        self.db_gain = db_gain;
+        self.lambda = lambda;
+
+        let freq_warped = if lambda == T::zero() {
+            freq
+        } else {
+            warp_frequency(freq, srate, lambda)
+        };
+
+        let proto = Biquad::new(filter_type, freq_warped, srate, q, db_gain);
+        self.q = proto.q;
+        let coeffs = proto.coefficients();
+        self.a1 = coeffs.a1;
+        self.a2 = coeffs.a2;
+        self.b0 = coeffs.b0;
+        self.b1 = coeffs.b1;
+        self.b2 = coeffs.b2;
+        let (inv_denom, one_minus_lam_sq) = compute_implicit_consts(coeffs.a1, coeffs.a2, lambda);
+        self.inv_denom = inv_denom;
+        self.one_minus_lam_sq = one_minus_lam_sq;
+    }
+
+    /// Process a single audio sample through the warped biquad.
+    ///
+    /// See struct-level documentation for the derivation of the closed-form
+    /// implicit solution used here.
+    #[inline]
+    pub fn process(&mut self, x: T) -> T {
+        let lambda = self.lambda;
+
+        // Advance input allpass chain
+        let x_d1 = allpass_step(x, &mut self.ap_x1_s, lambda);
+        let x_d2 = allpass_step(x_d1, &mut self.ap_x2_s, lambda);
+
+        // Feedforward sum
+        let ff = self.b0 * x + self.b1 * x_d1 + self.b2 * x_d2;
+
+        // Closed-form solution for the implicit feedback term.
+        // Derived by substituting (A·y)[n] = λ·y[n] + (1-λ²)·s_y1 and solving.
+        let fb_corr = self.one_minus_lam_sq
+            * ((self.a1 + self.a2 * lambda) * self.s_y1 + self.a2 * self.s_y2);
+
+        let y = (ff - fb_corr) * self.inv_denom;
+
+        // Advance output allpass states using the newly computed y[n]
+        let y_d1 = allpass_step(y, &mut self.s_y1, lambda);
+        allpass_step(y_d1, &mut self.s_y2, lambda);
+
+        y
+    }
+
+    /// Process a block of audio samples in-place.
+    pub fn process_block(&mut self, samples: &mut [T]) {
+        let lambda = self.lambda;
+        let b0 = self.b0;
+        let b1 = self.b1;
+        let b2 = self.b2;
+        let a1 = self.a1;
+        let a2 = self.a2;
+        let inv_denom = self.inv_denom;
+        let one_minus_lam_sq = self.one_minus_lam_sq;
+
+        let mut ap_x1_s = self.ap_x1_s;
+        let mut ap_x2_s = self.ap_x2_s;
+        let mut s_y1 = self.s_y1;
+        let mut s_y2 = self.s_y2;
+
+        for sample in samples.iter_mut() {
+            let x = *sample;
+
+            let x_d1 = allpass_step(x, &mut ap_x1_s, lambda);
+            let x_d2 = allpass_step(x_d1, &mut ap_x2_s, lambda);
+
+            let ff = b0 * x + b1 * x_d1 + b2 * x_d2;
+            let fb_corr =
+                one_minus_lam_sq * ((a1 + a2 * lambda) * s_y1 + a2 * s_y2);
+
+            let y = (ff - fb_corr) * inv_denom;
+
+            let y_d1 = allpass_step(y, &mut s_y1, lambda);
+            allpass_step(y_d1, &mut s_y2, lambda);
+
+            *sample = y;
+        }
+
+        self.ap_x1_s = ap_x1_s;
+        self.ap_x2_s = ap_x2_s;
+        self.s_y1 = s_y1;
+        self.s_y2 = s_y2;
+    }
+
+    /// Complex frequency response at a single physical frequency `f`.
+    ///
+    /// Evaluates the prototype biquad at the warped frequency corresponding to `f`.
+    pub fn complex_response(&self, f: T) -> Complex<T> {
+        let f_w = if self.lambda == T::zero() {
+            f
+        } else {
+            warp_frequency(f, self.srate, self.lambda)
+        };
+
+        let omega = lit::<T>(2.0) * T::PI() * f_w / self.srate;
+        let z_inv = Complex::<T>::from_polar(T::one(), -omega);
+        let z_inv2 = z_inv * z_inv;
+
+        let num = Complex::new(self.b0, T::zero()) + z_inv * self.b1 + z_inv2 * self.b2;
+        let den = Complex::new(T::one(), T::zero()) + z_inv * self.a1 + z_inv2 * self.a2;
+
+        num / den
+    }
+
+    /// Magnitude response at a single physical frequency `f`.
+    pub fn result(&self, f: T) -> T {
+        self.complex_response(f).norm()
+    }
+
+    /// Response in dB at a single physical frequency `f`.
+    pub fn log_result(&self, f: T) -> T {
+        let mag = self.result(f);
+        if mag > T::zero() {
+            lit::<T>(20.0) * mag.log10()
+        } else {
+            lit(-200.0)
+        }
+    }
+
+    /// Vectorized dB response over an array of physical frequencies.
+    pub fn np_log_result(&self, freqs: &Array1<T>) -> Array1<T> {
+        freqs.mapv(|f| self.log_result(f))
+    }
+
+    /// Returns the normalized prototype coefficients as `(a1, a2, b0, b1, b2)`.
+    pub fn coefficients(&self) -> (T, T, T, T, T) {
+        (self.a1, self.a2, self.b0, self.b1, self.b2)
+    }
+}
+
+impl<T: FilterFloat> std::fmt::Display for WarpedBiquad<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "WarpedBiquad(Type:{},Freq:{:.1},Rate:{:.1},Q:{:.1},Gain:{:.1},Lambda:{:.4})",
+            self.filter_type.short_name(),
+            self.freq,
+            self.srate,
+            self.q,
+            self.db_gain,
+            self.lambda,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bark_lambda_48khz() {
+        // Smith & Abel (1999) formula: λ = 1.0674 * sqrt(2/π * arctan(0.06583 * fs)) - 0.1916
+        // At 48kHz: arctan(3159.84) ≈ π/2, so λ ≈ 1.0674 * 1.0 - 0.1916 ≈ 0.876
+        let lambda = bark_lambda(48000.0_f64);
+        assert!(
+            (lambda - 0.876).abs() < 0.01,
+            "λ at 48 kHz should be ~0.876 (Smith & Abel), got {}",
+            lambda
+        );
+    }
+
+    #[test]
+    fn test_bark_lambda_44khz() {
+        let lambda: f64 = bark_lambda(44100.0);
+        // At 44.1kHz: arctan(2903) ≈ π/2, similar to 48kHz
+        assert!(
+            lambda > 0.85 && lambda < 0.90,
+            "λ at 44.1 kHz should be ~0.875, got {}",
+            lambda
+        );
+    }
+
+    #[test]
+    fn test_warp_unwarp_roundtrip() {
+        let lambda = bark_lambda(48000.0_f64);
+        for &freq in &[50.0, 200.0, 500.0, 1000.0, 5000.0, 10000.0] {
+            let warped = warp_frequency(freq, 48000.0, lambda);
+            let unwarped = unwarp_frequency(warped, 48000.0, lambda);
+            assert!(
+                (freq - unwarped).abs() < 0.01,
+                "roundtrip failed at {} Hz: warped={:.2} unwarped={:.4}",
+                freq,
+                warped,
+                unwarped
+            );
+        }
+    }
+
+    #[test]
+    fn test_warp_is_monotonic_and_expansive() {
+        let lambda = bark_lambda(48000.0_f64);
+        // Warping should be monotonically increasing and should expand LF
+        // relative to HF (the ratio warped/physical should decrease with frequency)
+        let freqs = [50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0];
+        let warped: Vec<f64> = freqs.iter().map(|&f| warp_frequency(f, 48000.0, lambda)).collect();
+
+        // Monotonic
+        for i in 1..warped.len() {
+            assert!(
+                warped[i] > warped[i - 1],
+                "Warped frequencies should be monotonic: {:.1}Hz -> {:.1}Hz",
+                warped[i - 1],
+                warped[i]
+            );
+        }
+
+        // LF gets relatively more "space" than HF
+        let ratio_low = warped[0] / freqs[0]; // warped(50Hz) / 50Hz
+        let ratio_high = warped[5] / freqs[5]; // warped(10kHz) / 10kHz
+        assert!(
+            ratio_low > ratio_high,
+            "LF should get more relative expansion: ratio_50Hz={:.3}, ratio_10kHz={:.3}",
+            ratio_low,
+            ratio_high
+        );
+    }
+
+    #[test]
+    fn test_warped_biquad_zero_lambda_matches_standard() {
+        // With λ=0 every allpass degenerates to z^-1, so the warped biquad
+        // must produce identical output to a standard biquad.
+        let mut standard = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, -6.0);
+        let mut warped =
+            WarpedBiquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, -6.0, 0.0);
+
+        let signal: Vec<f64> = (0..1000).map(|i| ((i as f64) * 0.1).sin()).collect();
+
+        for (n, &x) in signal.iter().enumerate() {
+            let y_std = standard.process(x);
+            let y_wrp = warped.process(x);
+            assert!(
+                (y_std - y_wrp).abs() < 1e-12,
+                "λ=0 mismatch at sample {}: standard={} warped={}",
+                n,
+                y_std,
+                y_wrp
+            );
+        }
+    }
+
+    #[test]
+    fn test_warped_biquad_bark_resolution() {
+        // With Bark λ, the effective linear-frequency bandwidth of a fixed-Q peak
+        // filter should be narrower at 100 Hz than at 10 kHz, because the warping
+        // concentrates resolution at low frequencies.
+        let lambda = bark_lambda(48000.0_f64);
+        let srate = 48000.0_f64;
+
+        let low_filter =
+            WarpedBiquad::new(BiquadFilterType::Peak, 100.0, srate, 2.0, -6.0, lambda);
+        let high_filter =
+            WarpedBiquad::new(BiquadFilterType::Peak, 10000.0, srate, 2.0, -6.0, lambda);
+
+        let measure_bw = |filter: &WarpedBiquad<f64>, center: f64| -> f64 {
+            let peak_db = filter.log_result(center);
+            // For a cut filter, the "passband" target is 3 dB above the trough.
+            let threshold = peak_db + 3.0;
+            let mut first_cross = 0.0_f64;
+            let mut in_band = false;
+            let nyquist = (srate / 2.0) as usize;
+            for i in 1..nyquist {
+                let f = i as f64;
+                let db = filter.log_result(f);
+                if !in_band && db < threshold {
+                    in_band = true;
+                    first_cross = f;
+                }
+                if in_band && db >= threshold {
+                    return f - first_cross;
+                }
+            }
+            0.0
+        };
+
+        let low_bw = measure_bw(&low_filter, 100.0);
+        let high_bw = measure_bw(&high_filter, 10000.0);
+
+        assert!(
+            low_bw > 0.0 && high_bw > 0.0,
+            "bandwidth detection failed: low_bw={} high_bw={}",
+            low_bw,
+            high_bw
+        );
+        assert!(
+            low_bw < high_bw,
+            "expected narrower BW at 100 Hz than at 10 kHz with Bark warping, \
+             got low_bw={:.1} high_bw={:.1}",
+            low_bw,
+            high_bw
+        );
+    }
+
+    #[test]
+    fn test_center_gain_matches_design() {
+        // The warped filter at its physical center frequency should produce
+        // approximately the designed gain (within 0.5 dB).
+        let lambda = bark_lambda(48000.0_f64);
+        let gain_db = -6.0_f64;
+        let filter =
+            WarpedBiquad::new(BiquadFilterType::Peak, 500.0, 48000.0, 4.0, gain_db, lambda);
+        let actual_db = filter.log_result(500.0);
+        assert!(
+            (actual_db - gain_db).abs() < 0.5,
+            "center gain mismatch: expected {} dB, got {} dB",
+            gain_db,
+            actual_db
+        );
+    }
+
+    #[test]
+    fn test_warped_biquad_f32() {
+        let lambda: f32 = bark_lambda(48000.0_f32);
+        let mut filter =
+            WarpedBiquad::<f32>::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0, lambda);
+        for i in 0..100 {
+            let x = (i as f32 * 0.1).sin();
+            let y = filter.process(x);
+            assert!(y.is_finite(), "f32 output not finite at sample {}", i);
+        }
+    }
+
+    #[test]
+    fn test_process_block_matches_process() {
+        let lambda = bark_lambda(48000.0_f64);
+        let mut sample_by_sample =
+            WarpedBiquad::new(BiquadFilterType::Peak, 400.0, 48000.0, 2.0, -3.0, lambda);
+        let mut block =
+            WarpedBiquad::new(BiquadFilterType::Peak, 400.0, 48000.0, 2.0, -3.0, lambda);
+
+        let signal: Vec<f64> = (0..256).map(|i| ((i as f64) * 0.05).sin()).collect();
+        let mut block_signal = signal.clone();
+
+        let mut expected: Vec<f64> = Vec::with_capacity(256);
+        for &x in &signal {
+            expected.push(sample_by_sample.process(x));
+        }
+
+        block.process_block(&mut block_signal);
+
+        for (i, (&e, &g)) in expected.iter().zip(block_signal.iter()).enumerate() {
+            assert!(
+                (e - g).abs() < 1e-14,
+                "process vs process_block mismatch at sample {}: {} vs {}",
+                i,
+                e,
+                g
+            );
+        }
+    }
+}
