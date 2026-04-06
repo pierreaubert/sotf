@@ -1079,7 +1079,7 @@ impl RoomEqOptimizerConfig {
             self.target_tilt.tilt_type = match tilt.tilt_type {
                 autoeq::roomeq::TiltType::Harman => "harman".to_string(),
                 autoeq::roomeq::TiltType::Custom => "custom".to_string(),
-                autoeq::roomeq::TiltType::Flat => "flat".to_string(),
+                autoeq::roomeq::TiltType::Flat => "custom".to_string(),
             };
             self.target_tilt.slope = tilt.slope_db_per_octave;
             self.target_tilt.reference_freq = tilt.reference_freq;

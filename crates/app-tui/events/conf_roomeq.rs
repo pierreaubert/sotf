@@ -845,7 +845,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
                     let tilt_type = match config.target_tilt.tilt_type.as_str() {
                         "harman" => TiltType::Harman,
                         "custom" => TiltType::Custom,
-                        _ => TiltType::Flat,
+                        _ => TiltType::Custom,
                     };
                     Some(BackendTargetTiltConfig {
                         tilt_type,

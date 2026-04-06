@@ -372,7 +372,7 @@ impl Default for AutoEqConfig {
 
             // Scenario B defaults
             use_target_tilt: false,
-            tilt_type: "flat".to_string(),
+            tilt_type: "harman".to_string(),
             tilt_slope: -0.8,
             tilt_reference_freq: 1000.0,
             tilt_bass_shelf_db: 0.0,

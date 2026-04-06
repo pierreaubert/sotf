@@ -62,7 +62,7 @@
             );
 
             if config.use_target_tilt {
-                let tilt_options: Vec<SelectOption> = TILT_TYPE_OPTIONS
+                let tilt_options: Vec<SelectOption> = ROOMEQ_TILT_TYPE_OPTIONS
                     .iter()
                     .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                     .collect();

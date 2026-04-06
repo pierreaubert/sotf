@@ -123,14 +123,14 @@ doc:
 # Run the GPUI player (debug mode with ad-hoc signing for macOS file dialogs)
 [group('run')]
 run-gpui:
-	cargo build --bin SotF --features onnx
+	cargo build --bin SotF --features "onnx, gpu-2d, gpu-3d, iamf"
 	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/SotF
 	./target/debug/SotF
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-release:
-	cargo build --release --bin SotF --features onnx
+	cargo build --release --bin SotF --features "onnx, gpu-2d, gpu-3d, iamf"
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
 	./target/release/SotF
 

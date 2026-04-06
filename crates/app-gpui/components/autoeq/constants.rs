@@ -65,6 +65,12 @@ pub const TILT_TYPE_OPTIONS: &[(&str, &str)] = &[
     ("custom", "Custom Tilt"),
 ];
 
+/// Tilt Type options for Room EQ (no flat — use slopes only)
+pub const ROOMEQ_TILT_TYPE_OPTIONS: &[(&str, &str)] = &[
+    ("harman", "Harman (-0.8 dB/oct)"),
+    ("custom", "Custom Tilt"),
+];
+
 /// Highpass Filter options
 pub const HIGHPASS_TYPE_OPTIONS: &[(&str, &str)] =
     &[("lr", "Linkwitz-Riley"), ("bw", "Butterworth")];

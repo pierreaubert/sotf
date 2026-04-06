@@ -8,12 +8,35 @@
 //
 // Platform support:
 // - x86-64: AVX2 (processes 4 complex f32 at once using 256-bit registers)
-// - aarch64: NEON (processes 2 complex f32 at once using 128-bit registers)
+// - aarch64 + FCMA: FCMLA instructions (2 ops per complex mul, ARMv8.3+, all Apple Silicon)
+// - aarch64: NEON fallback (processes 2 complex f32 at once using 128-bit registers)
 // - fallback: Scalar implementation for all other platforms
 //
 // Performance gains: 2-4x speedup on supported platforms for FFT sizes >= 512
 
 use rustfft::num_complex::Complex;
+
+// FCMLA complex multiply-accumulate via inline asm (ARMv8.3+ / Apple Silicon)
+// Computes: r[i] += a[i] * b[i] for 2 complex f32 packed in float32x4_t
+#[cfg(all(target_arch = "aarch64", target_feature = "fcma"))]
+#[inline(always)]
+unsafe fn fcmla_mul_acc(
+    mut r: std::arch::aarch64::float32x4_t,
+    a: std::arch::aarch64::float32x4_t,
+    b: std::arch::aarch64::float32x4_t,
+) -> std::arch::aarch64::float32x4_t {
+    unsafe {
+        std::arch::asm!(
+            "fcmla {r:v}.4s, {a:v}.4s, {b:v}.4s, #0",
+            "fcmla {r:v}.4s, {a:v}.4s, {b:v}.4s, #90",
+            r = inout(vreg) r,
+            a = in(vreg) a,
+            b = in(vreg) b,
+            options(pure, nomem, nostack),
+        );
+    }
+    r
+}
 
 // AVX2 shuffle constant for swapping re/im pairs
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
@@ -71,7 +94,7 @@ pub unsafe fn complex_mul_add_simd_chunk(
     }
 }
 
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[cfg(all(target_arch = "aarch64", target_feature = "fcma"))]
 /// # Safety
 /// Caller must ensure `dst`, `src` and `hrtf` have at least `start + 2` elements.
 #[inline]
@@ -83,52 +106,61 @@ pub unsafe fn complex_mul_add_simd_chunk(
 ) {
     use std::arch::aarch64::*;
 
-    // Process 2 complex numbers (4 floats) at once using NEON
-    // Input layout: [re0, im0, re1, im1]
     unsafe {
         let src_ptr = src.as_ptr().add(start) as *const f32;
         let hrtf_ptr = hrtf.as_ptr().add(start) as *const f32;
         let dst_ptr = dst.as_mut_ptr().add(start) as *mut f32;
 
-        // Load 2 complex numbers
+        let a = vld1q_f32(src_ptr);
+        let b = vld1q_f32(hrtf_ptr);
+        let r = vld1q_f32(dst_ptr);
+        let result = fcmla_mul_acc(r, a, b);
+        vst1q_f32(dst_ptr, result);
+    }
+}
+
+#[cfg(all(
+    target_arch = "aarch64",
+    target_feature = "neon",
+    not(target_feature = "fcma")
+))]
+/// # Safety
+/// Caller must ensure `dst`, `src` and `hrtf` have at least `start + 2` elements.
+#[inline]
+pub unsafe fn complex_mul_add_simd_chunk(
+    dst: &mut [Complex<f32>],
+    src: &[Complex<f32>],
+    hrtf: &[Complex<f32>],
+    start: usize,
+) {
+    use std::arch::aarch64::*;
+
+    unsafe {
+        let src_ptr = src.as_ptr().add(start) as *const f32;
+        let hrtf_ptr = hrtf.as_ptr().add(start) as *const f32;
+        let dst_ptr = dst.as_mut_ptr().add(start) as *mut f32;
+
         let a = vld1q_f32(src_ptr);
         let b = vld1q_f32(hrtf_ptr);
         let dst_val = vld1q_f32(dst_ptr);
 
-        // Complex multiplication: (a + bi) * (c + di) = (ac - bd) + (ad + bc)i
-
-        // Duplicate real and imaginary parts properly for 2 complex numbers:
-        // vtrn1q_f32 extracts elements [0, 2, 0, 2] from both inputs (when both are same)
-        // vtrn2q_f32 extracts elements [1, 3, 1, 3] from both inputs (when both are same)
-        // This gives us [re0, re0, re1, re1] and [im0, im0, im1, im1]
-        let a_re = vtrn1q_f32(a, a); // [re0, re0, re1, re1]
-        let a_im = vtrn2q_f32(a, a); // [im0, im0, im1, im1]
-
-        // Compute: a.re * b = [re*re, re*im, ...] = [ac, ad, ...]
+        let a_re = vtrn1q_f32(a, a);
+        let a_im = vtrn2q_f32(a, a);
         let ac_ad = vmulq_f32(a_re, b);
-
-        // Swap b's re/im using vrev64: [re0, im0, re1, im1] -> [im0, re0, im1, re1]
         let b_swapped = vrev64q_f32(b);
-
-        // Compute: a.im * b_swapped = [im*im, im*re, ...] = [bd, bc, ...]
         let bd_bc = vmulq_f32(a_im, b_swapped);
 
-        // Combine: (ac - bd, ad + bc)
-        // Create alternating negation mask: [0x80000000, 0, 0x80000000, 0] for [-, +, -, +]
         let sign_bit: u32 = 0x80000000;
         let neg_mask = vreinterpretq_f32_u32(vsetq_lane_u32::<2>(
             sign_bit,
             vsetq_lane_u32::<0>(sign_bit, vdupq_n_u32(0)),
         ));
 
-        // Apply alternating negation to bd_bc, then add to ac_ad
         let bd_bc_negated = vreinterpretq_f32_u32(veorq_u32(
             vreinterpretq_u32_f32(bd_bc),
             vreinterpretq_u32_f32(neg_mask),
         ));
         let result = vaddq_f32(ac_ad, bd_bc_negated);
-
-        // Add to destination (accumulate)
         let final_result = vaddq_f32(dst_val, result);
 
         vst1q_f32(dst_ptr, final_result);
@@ -246,7 +278,36 @@ pub fn complex_mul_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf: &[
         }
     }
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[cfg(all(target_arch = "aarch64", target_feature = "fcma"))]
+    {
+        use std::arch::aarch64::*;
+
+        let simd_len = (len / 2) * 2;
+
+        for i in (0..simd_len).step_by(2) {
+            unsafe {
+                let src_ptr = src.as_ptr().add(i) as *const f32;
+                let hrtf_ptr = hrtf.as_ptr().add(i) as *const f32;
+                let dst_ptr = dst.as_mut_ptr().add(i) as *mut f32;
+
+                let a = vld1q_f32(src_ptr);
+                let b = vld1q_f32(hrtf_ptr);
+                let r = vdupq_n_f32(0.0);
+                let result = fcmla_mul_acc(r, a, b);
+                vst1q_f32(dst_ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            dst[i] = src[i] * hrtf[i];
+        }
+    }
+
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        not(target_feature = "fcma")
+    ))]
     {
         use std::arch::aarch64::*;
 
@@ -337,7 +398,35 @@ pub fn complex_mul_inplace_simd(dst: &mut [Complex<f32>], hrtf: &[Complex<f32>])
         }
     }
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[cfg(all(target_arch = "aarch64", target_feature = "fcma"))]
+    {
+        use std::arch::aarch64::*;
+
+        let simd_len = (len / 2) * 2;
+
+        for i in (0..simd_len).step_by(2) {
+            unsafe {
+                let dst_ptr = dst.as_mut_ptr().add(i) as *mut f32;
+                let hrtf_ptr = hrtf.as_ptr().add(i) as *const f32;
+
+                let a = vld1q_f32(dst_ptr);
+                let b = vld1q_f32(hrtf_ptr);
+                let r = vdupq_n_f32(0.0);
+                let result = fcmla_mul_acc(r, a, b);
+                vst1q_f32(dst_ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            dst[i] *= hrtf[i];
+        }
+    }
+
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        not(target_feature = "fcma")
+    ))]
     {
         use std::arch::aarch64::*;
 
