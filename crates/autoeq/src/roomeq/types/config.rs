@@ -1381,6 +1381,13 @@ pub struct OptimizerConfig {
     /// When set, overrides `max_db` on a per-frequency basis.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_boost_envelope: Option<Vec<(f64, f64)>>,
+
+    /// CDT-aware minimum cut envelope: limits how deep the optimizer can cut
+    /// at frequencies where the ear generates Cubic Distortion Tones.
+    /// Each entry is (frequency_hz, max_cut_db) where max_cut_db is negative.
+    /// Default: None (no CDT protection).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_cut_envelope: Option<Vec<(f64, f64)>>,
 }
 
 // Default values for OptimizerConfig
@@ -1506,6 +1513,7 @@ impl Default for OptimizerConfig {
             channel_matching: None,
             ssir_wav_path: None,
             max_boost_envelope: None,
+            min_cut_envelope: None,
         }
     }
 }

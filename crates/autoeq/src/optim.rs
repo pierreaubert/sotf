@@ -317,6 +317,11 @@ pub struct ObjectiveData {
     /// Each entry is (frequency_hz, max_boost_db). Interpolated in log-frequency.
     /// When Some, positive filter gains are clamped before loss evaluation.
     pub max_boost_envelope: Option<Vec<(f64, f64)>>,
+    /// CDT-aware minimum cut envelope: limits how deep the optimizer can cut
+    /// at frequencies where the ear generates Cubic Distortion Tones.
+    /// Each entry is (frequency_hz, max_cut_db) where max_cut_db is negative.
+    /// When Some, negative filter gains are clamped before loss evaluation.
+    pub min_cut_envelope: Option<Vec<(f64, f64)>>,
 }
 
 /// Data for multi-objective optimization across multiple measurements
@@ -534,23 +539,51 @@ fn interpolate_boost_envelope(envelope: &[(f64, f64)], freq_hz: f64) -> f64 {
     envelope[last].1
 }
 
+/// Clamp negative filter gains (cuts) to a frequency-dependent minimum.
+///
+/// Mirrors `clamp_gains_to_envelope` but for cuts: if a filter's gain is negative
+/// and exceeds the envelope's limit (more negative), it is clamped.
+/// Used for CDT protection — prevents over-cutting at frequencies where
+/// the ear generates distortion tones.
+pub fn clamp_cuts_to_envelope(x: &[f64], envelope: &[(f64, f64)], peq_model: PeqModel) -> Vec<f64> {
+    use crate::param_utils;
+    let mut clamped = x.to_vec();
+    let num_filters = param_utils::num_filters(x, peq_model);
+    for i in 0..num_filters {
+        let params = param_utils::get_filter_params(x, i, peq_model);
+        let freq_hz = 10f64.powf(params.freq);
+        if params.gain < 0.0 {
+            let max_cut = interpolate_boost_envelope(envelope, freq_hz); // returns negative dB
+            if params.gain < max_cut {
+                let ppf = param_utils::params_per_filter(peq_model);
+                let gain_idx = i * ppf + (ppf - 1);
+                clamped[gain_idx] = max_cut;
+            }
+        }
+    }
+    clamped
+}
+
 /// Compute the base fitness for a single ObjectiveData (no multi-objective delegation).
 /// This is the inner implementation that does not check `multi_objective`.
 fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
-    // If a max boost envelope is set, clamp positive gains before evaluation.
-    let clamped;
-    let x = if let Some(ref env) = data.max_boost_envelope {
-        if !matches!(
-            data.loss_type,
-            LossType::DriversFlat | LossType::MultiSubFlat
-        ) {
-            clamped = clamp_gains_to_envelope(x, env, data.peq_model);
-            &clamped
+    // Clamp gains to envelopes before evaluation (boost limits + CDT cut limits).
+    let clamped_boost;
+    let clamped_cut;
+    let x = {
+        let skip = matches!(data.loss_type, LossType::DriversFlat | LossType::MultiSubFlat);
+        let x = if !skip && let Some(ref env) = data.max_boost_envelope {
+            clamped_boost = clamp_gains_to_envelope(x, env, data.peq_model);
+            &clamped_boost
+        } else {
+            x
+        };
+        if !skip && let Some(ref env) = data.min_cut_envelope {
+            clamped_cut = clamp_cuts_to_envelope(x, env, data.peq_model);
+            &clamped_cut
         } else {
             x
         }
-    } else {
-        x
     };
 
     match data.loss_type {

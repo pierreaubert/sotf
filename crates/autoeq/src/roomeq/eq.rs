@@ -256,8 +256,9 @@ fn prepare_single_channel_eq(
     )
     .expect("setup_objective_data should not fail without spin data");
 
-    // Propagate frequency-dependent boost envelope for per-filter gain clamping
+    // Propagate frequency-dependent boost/cut envelopes for per-filter gain clamping
     objective_data.max_boost_envelope = config.max_boost_envelope.clone();
+    objective_data.min_cut_envelope = config.min_cut_envelope.clone();
 
     Ok(PreparedSingleChannelEq {
         objective_data,
@@ -358,12 +359,17 @@ fn run_optimization_pass(
         global_loss
     };
 
-    // Apply max_boost_envelope clamp to the final result so deployed filters
+    // Apply boost and cut envelope clamps to the final result so deployed filters
     // respect the same gain limits used during fitness evaluation.
-    let x_final = if let Some(ref env) = prep.objective_data.max_boost_envelope {
+    let x_after_boost = if let Some(ref env) = prep.objective_data.max_boost_envelope {
         crate::optim::clamp_gains_to_envelope(&x, env, prep.peq_model)
     } else {
         x.to_vec()
+    };
+    let x_final = if let Some(ref env) = prep.objective_data.min_cut_envelope {
+        crate::optim::clamp_cuts_to_envelope(&x_after_boost, env, prep.peq_model)
+    } else {
+        x_after_boost
     };
 
     // Convert to Biquad filters, pruning near-zero gain

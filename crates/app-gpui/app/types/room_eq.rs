@@ -863,6 +863,7 @@ impl RoomEqState {
             elimination_threshold: 0.0,
             ssir_wav_path: None,
             max_boost_envelope: None,
+            min_cut_envelope: None,
             phase_correction: None,
         };
 

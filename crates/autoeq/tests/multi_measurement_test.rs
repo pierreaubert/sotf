@@ -36,6 +36,7 @@ fn make_objective(deviation: Array1<f64>) -> ObjectiveData {
         smooth: false,
         smooth_n: 3,
         max_boost_envelope: None,
+            min_cut_envelope: None,
     }
 }
 

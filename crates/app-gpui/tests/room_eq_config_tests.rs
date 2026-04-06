@@ -260,6 +260,7 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         elimination_threshold: 0.005,
         ssir_wav_path: None,
         max_boost_envelope: None,
+            min_cut_envelope: None,
     }
 }
 
