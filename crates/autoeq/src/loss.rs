@@ -54,6 +54,10 @@ pub enum LossType {
     DriversFlat,
     /// Multi-subwoofer optimization (flatten summed response)
     MultiSubFlat,
+    /// EPA (Evaluation, Potency, Activity) perceptual loss.
+    /// Combines spectral flatness with sharpness, roughness, and loudness
+    /// balance penalties derived from Zwicker psychoacoustic metrics.
+    Epa,
 }
 
 /// Data required for computing speaker score-based loss

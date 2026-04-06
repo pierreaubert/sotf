@@ -27,7 +27,8 @@ pub(super) async fn compute_pre_optimization_metrics(
         }
         autoeq::LossType::SpeakerFlat
         | autoeq::LossType::SpeakerFlatAsymmetric
-        | autoeq::LossType::SpeakerScore => {
+        | autoeq::LossType::SpeakerScore
+        | autoeq::LossType::Epa => {
             if use_cea {
                 let metrics = score::compute_cea2034_metrics(
                     &objective_data.freqs,

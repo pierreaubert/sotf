@@ -219,6 +219,7 @@ fn prepare_single_channel_eq(
             }
         }
         "score" => LossType::SpeakerScore,
+        "epa" => LossType::Epa,
         _ => return Err(format!("Unknown loss type: {}", config.loss_type).into()),
     };
 
@@ -638,6 +639,7 @@ fn optimize_channel_eq_multi_inner(
             }
         }
         "score" => LossType::SpeakerScore,
+        "epa" => LossType::Epa,
         _ => return Err(format!("Unknown loss type: {}", config.loss_type).into()),
     };
 
@@ -1028,6 +1030,7 @@ fn optimize_spatial_robustness(
             }
         }
         "score" => LossType::SpeakerScore,
+        "epa" => LossType::Epa,
         _ => return Err(format!("Unknown loss type: {}", config.loss_type).into()),
     };
 

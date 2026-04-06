@@ -131,6 +131,9 @@ pub use time_align::{
     detect_delays_multi_channel, find_arrival_time,
 };
 
+// Perceptual temporal decay thresholds for modal ringing
+pub mod temporal_targets;
+
 // Advanced room correction features (Scenario A & B)
 pub mod excursion;
 pub mod multiseat;

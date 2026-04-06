@@ -500,6 +500,8 @@ fn run_single_test(
         ProcessingMode::PhaseLinear => "FIR",
         ProcessingMode::Hybrid => "Mixed",
         ProcessingMode::MixedPhase => "MixedPhase",
+        ProcessingMode::WarpedIir => "WarpedIIR",
+        ProcessingMode::KautzModal => "KautzModal",
     };
     let options_str = if option_names.is_empty() {
         "baseline".to_string()

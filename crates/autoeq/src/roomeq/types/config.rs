@@ -96,6 +96,15 @@ pub enum ProcessingMode {
     /// Mixed-phase mode (IIR for minimum-phase + excess phase FIR)
     /// Requires phase data in measurements. Low latency (~10ms).
     MixedPhase,
+    /// Warped IIR mode — biquads designed on a Bark-scale warped frequency axis.
+    /// Concentrates filter resolution in bass/low-mid where room modes live.
+    /// Same latency as LowLatency but perceptually-weighted correction.
+    WarpedIir,
+    /// Kautz modal mode — pole-tuned filter targeting detected room modes.
+    /// Uses room mode analysis to place filter poles at resonance frequencies.
+    /// Gain optimization via linear least-squares (very fast, no DE needed).
+    /// Best for small, highly resonant rooms with clear modal problems.
+    KautzModal,
 }
 
 /// Strategy for subwoofer optimization

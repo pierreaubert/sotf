@@ -123,7 +123,7 @@ pub fn analyze_decomposed_correction(
 /// - Only considers frequencies below Schroeder
 /// - Estimates Q from the -3 dB bandwidth around each peak
 /// - Filters by minimum Q and prominence
-fn detect_room_modes(
+pub fn detect_room_modes(
     freq: &Array1<f64>,
     spl: &Array1<f64>,
     config: &DecomposedCorrectionConfig,

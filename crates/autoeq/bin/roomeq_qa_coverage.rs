@@ -441,7 +441,10 @@ fn apply_qa_overrides(config: &mut RoomConfig, maxeval: usize) {
                 });
             }
         }
-        ProcessingMode::LowLatency | ProcessingMode::MixedPhase => {}
+        ProcessingMode::LowLatency
+        | ProcessingMode::MixedPhase
+        | ProcessingMode::WarpedIir
+        | ProcessingMode::KautzModal => {}
     }
 }
 

@@ -1,7 +1,16 @@
+# 0.4.24
+
+- Sharpness-aware target curve — Instead of "flat" or "Harman tilt", compute the sharpness (weighted spectral centroid) of the corrected response and add a penalty when it deviates from a target sharpness value. This would prevent the optimizer from creating a technically flat but perceptually harsh or dull result.
+- Roughness penalty for close modes — Two room modes within a critical band create beating perceived asroughness. The optimizer could detect mode pairs where |f1 - f2| < critical_bandwidth(f1) and prioritize correcting these over isolated modes, because the roughness they create is more annoying than the level error of a single mode.
+- Loudness-weighted loss — Replace the current flat/asymmetric MSE with a loss weighted by ISO 226
+  equal-loudness contours at the listening level. A 3dB error at 4kHz (where the ear is most sensitive) should cost more than a 3dB error at 50Hz.
+- Full EPA scoring — Compute E, P, A scores from the corrected response and optimize to maximize Evaluation while preserving Potency. Implemented the psychoacoustic metric computations (Zwicker loudness, sharpness, roughness models).
+
+
 # 0.4.23
 
-
-
+- Added Warped Biquad (Bark-scale resolution) and Kautz Filter (room-mode poles) support
+- Temporal decay thresholds
 
 # 0.4.22
 

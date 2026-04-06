@@ -656,14 +656,26 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 };
                 let s = headphone_loss(&error_curve);
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
-                // HeadphoneScore fitness: minimize (1000 - score + flatness*20)
-                // - 1000.0: reference ceiling for Olive preference score (max ~114.49)
-                // - *20.0: amplifies flatness term (headphone score has small dynamic range)
                 1000.0 - s + p * 20.0
             } else {
                 log::error!("headphone score loss requested but headphone data is missing");
                 f64::INFINITY
             }
+        }
+        LossType::Epa => {
+            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
+            let error = &peq_spl - &data.deviation;
+            let flatness = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
+            let freqs_vec: Vec<f64> = data.freqs.iter().copied().collect();
+            // The corrected SPL = target + deviation (measurement) + peq correction
+            let corrected_spl: Vec<f64> = data
+                .freqs
+                .iter()
+                .enumerate()
+                .map(|(i, _)| data.target[i] + data.deviation[i] + peq_spl[i])
+                .collect();
+            let epa_config = crate::epa::score::EpaConfig::default();
+            crate::epa::score::epa_loss(&freqs_vec, &corrected_spl, &epa_config, flatness)
         }
     }
 }
@@ -801,6 +813,20 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 log::error!("headphone score loss requested but headphone data is missing");
                 f64::INFINITY
             }
+        }
+        LossType::Epa => {
+            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
+            let error = &peq_spl - &data.deviation;
+            let flatness = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
+            let freqs_vec: Vec<f64> = data.freqs.iter().copied().collect();
+            let corrected_spl: Vec<f64> = data
+                .freqs
+                .iter()
+                .enumerate()
+                .map(|(i, _)| data.target[i] + data.deviation[i] + peq_spl[i])
+                .collect();
+            let epa_config = crate::epa::score::EpaConfig::default();
+            crate::epa::score::epa_loss(&freqs_vec, &corrected_spl, &epa_config, flatness)
         }
     }
 }
