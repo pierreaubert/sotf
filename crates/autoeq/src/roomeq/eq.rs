@@ -918,6 +918,7 @@ fn build_args(
         parallel_threads: num_cpus::get(),
         seed: config.seed,
         qa: None,
+        preset: None,
     }
 }
 

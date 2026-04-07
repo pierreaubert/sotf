@@ -280,6 +280,12 @@ pub struct Args {
     /// Crossover type for multi-driver optimization (butterworth2, linkwitzriley2, linkwitzriley4)
     #[arg(long, default_value = "linkwitzriley4")]
     pub crossover_type: String,
+
+    /// Use a named preset that sets all optimizer parameters at once.
+    /// Available presets: quick, balanced, max-quality, score (speakers only).
+    /// Individual parameter flags override preset values when both are specified.
+    #[arg(long)]
+    pub preset: Option<String>,
 }
 
 impl Args {
@@ -347,6 +353,7 @@ impl Args {
             driver3: None,
             driver4: None,
             crossover_type: "linkwitzriley4".to_string(),
+            preset: None,
         }
     }
 
@@ -372,6 +379,91 @@ impl Args {
             max_freq: 500.0, // Room EQ focuses on low frequencies
             ..Self::speaker_defaults()
         }
+    }
+
+    /// Apply a named preset, setting optimizer parameters to tuned values.
+    /// Call this after parsing CLI args. Parameters explicitly set by the user
+    /// are not tracked by clap, so this method overwrites all optimizer fields.
+    /// The caller should parse args, call `apply_preset()`, then override
+    /// any fields they want to customize.
+    ///
+    /// NOTE: These preset values are intentionally duplicated from
+    /// `sotf-player::autoeq::presets` because the `autoeq` crate cannot
+    /// depend on `sotf-player`. Keep values in sync when updating presets.
+    ///
+    /// Available presets:
+    /// - `quick`: 5 filters, fast (pop 40, maxeval 2000, no refine)
+    /// - `balanced`: 7 filters, good balance (pop 80, maxeval 5000, refine)
+    /// - `max-quality`: 10 filters, best results (pop 200, maxeval 20000, ls-pk-hs, refine)
+    /// - `score`: 7 filters, listener preference score (speaker-score loss)
+    pub fn apply_preset(&mut self) {
+        let preset_name = match &self.preset {
+            Some(name) => name.clone(),
+            None => return,
+        };
+        match preset_name.as_str() {
+            "quick" => {
+                self.num_filters = 5;
+                self.population = 40;
+                self.maxeval = 2000;
+                self.refine = false;
+                self.min_q = 0.5;
+                self.max_q = 6.0;
+                self.min_db = -12.0;
+                self.max_db = 6.0;
+            }
+            "balanced" => {
+                self.num_filters = 7;
+                self.population = 80;
+                self.maxeval = 5000;
+                self.refine = true;
+                self.min_q = 0.5;
+                self.max_q = 6.0;
+                self.min_db = -12.0;
+                self.max_db = 6.0;
+            }
+            "max-quality" => {
+                self.num_filters = 10;
+                self.peq_model = PeqModel::LsPkHs;
+                self.population = 200;
+                self.maxeval = 20000;
+                self.refine = true;
+                self.min_q = 0.5;
+                self.max_q = 6.0;
+                self.min_db = -12.0;
+                self.max_db = 6.0;
+            }
+            "score" => {
+                self.num_filters = 7;
+                self.loss = LossType::SpeakerScore;
+                self.population = 100;
+                self.maxeval = 10000;
+                self.refine = true;
+                self.min_q = 0.5;
+                self.max_q = 6.0;
+                self.min_db = -12.0;
+                self.max_db = 6.0;
+            }
+            other => {
+                eprintln!(
+                    "Warning: unknown preset '{}'. Available: quick, balanced, max-quality, score",
+                    other
+                );
+            }
+        }
+    }
+
+    /// Display available presets and exit.
+    pub fn display_preset_list() -> ! {
+        println!("Available Presets");
+        println!("=================\n");
+        println!("  quick        5 filters, fast optimization (seconds)");
+        println!("  balanced     7 filters, good balance of quality and speed (default)");
+        println!("  max-quality  10 filters with shelves, best results (slow)");
+        println!("  score        7 filters, listener preference score optimization");
+        println!("\nUse: --preset <name>");
+        println!("Individual flags (e.g. -n, --max-q) override preset values.");
+        process::exit(0);
     }
 }
 

@@ -1346,6 +1346,7 @@ fn create_driver_optimization_args(
         parallel_threads: num_cpus::get(),
         seed,
         qa: None,
+        preset: None,
     }
 }
 

@@ -50,7 +50,10 @@ async fn main() -> Result<()> {
     // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let args = autoeq::cli::Args::parse();
+    let mut args = autoeq::cli::Args::parse();
+
+    // Apply preset (if specified) before processing other flags
+    args.apply_preset();
 
     // Check if user wants to see algorithm list
     if args.algo_list {

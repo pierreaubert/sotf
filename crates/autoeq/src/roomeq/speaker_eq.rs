@@ -49,6 +49,7 @@ pub(super) fn optimize_eq_maybe_multi(
     sample_rate: f64,
     channel_name: &str,
     callback: Option<crate::optim::OptimProgressCallback>,
+    target_tilt_curve: Option<&Curve>,
 ) -> Result<(Vec<Biquad>, f64)> {
     use super::types::MultiMeasurementStrategy;
 
@@ -62,7 +63,7 @@ pub(super) fn optimize_eq_maybe_multi(
 
     if use_multi {
         let multi_config = optimizer_config.multi_measurement.as_ref().unwrap();
-        let curves =
+        let raw_curves =
             load::load_source_individual(source).map_err(|e| AutoeqError::InvalidMeasurement {
                 message: format!(
                     "Failed to load individual measurements for channel {}: {}",
@@ -70,10 +71,27 @@ pub(super) fn optimize_eq_maybe_multi(
                 ),
             })?;
 
+        // Apply target tilt to each individual curve (same as single-measurement path).
+        // Without this, multi-measurement optimization sees untilted curves while the
+        // averaged curve was tilted, causing variance to increase instead of decrease.
+        let curves: Vec<Curve> = if let Some(tilt) = target_tilt_curve {
+            raw_curves
+                .iter()
+                .map(|c| Curve {
+                    freq: c.freq.clone(),
+                    spl: &c.spl - &tilt.spl,
+                    phase: c.phase.clone(),
+                })
+                .collect()
+        } else {
+            raw_curves
+        };
+
         info!(
-            "  Multi-measurement optimization ({:?}) with {} curves",
+            "  Multi-measurement optimization ({:?}) with {} curves{}",
             multi_config.strategy,
-            curves.len()
+            curves.len(),
+            if target_tilt_curve.is_some() { " (tilt applied)" } else { "" },
         );
 
         if let Some(cb) = callback {
@@ -1036,6 +1054,7 @@ pub(super) fn process_single_speaker(
                 sample_rate,
                 channel_name,
                 callback,
+                target_tilt_curve.as_ref(),
             )?;
 
             info!("  IIR stage: {} filters", eq_filters.len());
@@ -1294,6 +1313,7 @@ pub(super) fn process_single_speaker(
                         sample_rate,
                         channel_name,
                         callback,
+                        target_tilt_curve.as_ref(),
                     )?;
                     filters
                 }
@@ -1307,6 +1327,7 @@ pub(super) fn process_single_speaker(
                     sample_rate,
                     channel_name,
                     callback,
+                    target_tilt_curve.as_ref(),
                 )?;
                 filters
             };
@@ -1556,6 +1577,7 @@ pub(super) fn process_single_speaker(
                         sample_rate,
                         channel_name,
                         callback,
+                        target_tilt_curve.as_ref(),
                     )?;
                     filters
                 }
@@ -1569,6 +1591,7 @@ pub(super) fn process_single_speaker(
                     sample_rate,
                     channel_name,
                     callback,
+                    target_tilt_curve.as_ref(),
                 )?;
                 filters
             };
