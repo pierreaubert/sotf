@@ -37,6 +37,9 @@ pub struct MdThemeColors {
     pub cursor_bg: Rgba,
     pub cursor_text: Rgba,
 
+    // Selection highlight
+    pub selection_bg: Rgba,
+
     // Find highlight
     pub find_match_bg: Rgba,
     pub find_match_text: Rgba,
@@ -68,6 +71,7 @@ impl MdThemeColors {
                 syn_checkbox: rgba(0x116329ff),
                 cursor_bg: rgba(0x000000ff),
                 cursor_text: rgba(0xffffffff),
+                selection_bg: rgba(0xb4d5feff),
                 find_match_bg: rgba(0xfff2ccff),
                 find_match_text: rgba(0x6e5600ff),
             }
@@ -92,6 +96,7 @@ impl MdThemeColors {
                 syn_checkbox: rgba(0x66ba6aff),
                 cursor_bg: rgba(0xffffffcc),
                 cursor_text: rgba(0x000000ff),
+                selection_bg: rgba(0x264f78ff),
                 find_match_bg: rgba(0x61502bff),
                 find_match_text: rgba(0xffdd57ff),
             }

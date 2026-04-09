@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+
+use clap::Parser;
 use gpui::*;
 use gpui_keybinding::{KeybindingProvider, KeymapPreset};
 use gpui_md::actions;
@@ -7,32 +10,96 @@ use gpui_md::MdKeybindingProvider;
 use gpui_ui_kit::{MiniApp, MiniAppConfig};
 use log::error;
 
+#[derive(Parser)]
+#[command(name = "gpui-md-editor", about = "Markdown editor with live preview")]
+struct Cli {
+    /// Markdown files to open (one window per file)
+    files: Vec<PathBuf>,
+}
+
 fn main() {
+    let cli = Cli::parse();
+    let files = cli.files;
+
     MiniApp::run(
         MiniAppConfig::new("Markdown Editor")
             .size(1400.0, 900.0)
             .scrollable(false)
             .with_theme(true),
-        |cx| {
+        move |cx| {
             // Register keybindings
             let provider = MdKeybindingProvider;
             let bindings = provider.bindings(KeymapPreset::Default);
             cx.bind_keys(bindings);
 
-            // Create shared app state as a global so action handlers can access it
-            let state = cx.new(|_| MdAppState::new());
+            // Create state for the primary window — load first file if given
+            let state = if let Some(first_file) = files.first() {
+                match std::fs::read_to_string(first_file) {
+                    Ok(content) => {
+                        let canonical = std::fs::canonicalize(first_file)
+                            .unwrap_or_else(|_| first_file.clone());
+                        cx.new(|_| MdAppState::from_file(canonical, &content))
+                    }
+                    Err(e) => {
+                        error!("Failed to open {}: {}", first_file.display(), e);
+                        cx.new(|_| MdAppState::new())
+                    }
+                }
+            } else {
+                cx.new(|_| MdAppState::new())
+            };
+
             let global_state = state.clone();
             cx.set_global(MdGlobalState(global_state));
 
-            // Register action handlers at the App level
             register_actions(cx);
-
-            // Set up the menu bar
             cx.set_menus(build_menus());
+
+            // Open additional windows for remaining files
+            for file in files.iter().skip(1) {
+                open_file_window(file, cx);
+            }
 
             cx.new(|cx| MainView::new(state, cx))
         },
     );
+}
+
+/// Open a new window for the given file path.
+fn open_file_window(path: &PathBuf, cx: &mut App) {
+    let file_name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let state = match std::fs::read_to_string(path) {
+        Ok(content) => {
+            let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+            MdAppState::from_file(canonical, &content)
+        }
+        Err(e) => {
+            error!("Failed to open {}: {}", path.display(), e);
+            MdAppState::new()
+        }
+    };
+
+    let title: SharedString = file_name.into();
+    let bounds = Bounds::centered(None, size(px(1400.0), px(900.0)), cx);
+    let state_entity = cx.new(|_| state);
+
+    cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            titlebar: Some(TitlebarOptions {
+                title: Some(title),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        move |_, cx| cx.new(|cx| MainView::new(state_entity, cx)),
+    )
+    .unwrap();
 }
 
 /// Global wrapper so we can access state from App-level action handlers.

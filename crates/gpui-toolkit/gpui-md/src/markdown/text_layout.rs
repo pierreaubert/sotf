@@ -1,7 +1,9 @@
 //! Text layout integration with gpui-pretext.
 //!
 //! Uses Knuth-Plass optimal line breaking for paragraph text
-//! in the preview pane.
+//! in the preview pane, with accurate GPUI text system measurement.
+
+use std::sync::Arc;
 
 use gpui::*;
 use gpui_pretext::{
@@ -9,44 +11,64 @@ use gpui_pretext::{
     prepare_with_segments,
 };
 
-/// Proportional text measure that estimates width based on character categories.
-struct ProportionalMeasure {
-    base_width: f64,
+/// Text measure backed by GPUI's platform text system for accurate glyph widths.
+struct GpuiTextMeasure {
+    text_system: Arc<WindowTextSystem>,
+    font: Font,
+    font_size: Pixels,
 }
 
-impl TextMeasure for ProportionalMeasure {
+impl TextMeasure for GpuiTextMeasure {
     fn measure_width(&self, text: &str) -> f64 {
-        let mut width = 0.0;
-        for ch in text.chars() {
-            width += match ch {
-                ' ' => self.base_width * 0.35,
-                'i' | 'l' | 'j' | 't' | 'f' | 'r' | '.' | ',' | ':' | ';' | '!' | '\'' => {
-                    self.base_width * 0.4
-                }
-                'm' | 'w' | 'M' | 'W' => self.base_width * 0.85,
-                'A'..='Z' => self.base_width * 0.7,
-                _ => self.base_width * 0.55,
-            };
+        if text.is_empty() {
+            return 0.0;
         }
-        width
+        // layout_line panics on newlines — filter them out
+        let clean = if text.contains('\n') || text.contains('\r') {
+            text.replace(['\n', '\r'], " ")
+        } else {
+            text.to_string()
+        };
+        let run = TextRun {
+            len: clean.len(),
+            font: self.font.clone(),
+            color: Hsla::default(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let layout = self.text_system.layout_line(&clean, self.font_size, &[run], None);
+        let w: f32 = layout.width.into();
+        w as f64
     }
 }
 
-/// Layout paragraph text using Knuth-Plass optimal line breaking.
-///
-/// Returns a Vec of (line_text, line_width, is_last_line) tuples.
-/// The caller can use these to render justified text.
-pub fn layout_paragraph(text: &str, max_width_px: f32, font_size_px: f32) -> Vec<JustifiedLine> {
-    if text.is_empty() {
+/// Layout paragraph text using Knuth-Plass optimal line breaking
+/// with accurate GPUI text system measurement.
+pub fn layout_paragraph(
+    text: &str,
+    max_width_px: f32,
+    font_size_px: f32,
+    text_system: &Arc<WindowTextSystem>,
+) -> Vec<JustifiedLine> {
+    if text.is_empty() || max_width_px <= 0.0 {
         return vec![JustifiedLine {
-            text: String::new(),
+            text: text.to_string(),
             width: 0.0,
             is_last: true,
         }];
     }
 
-    let measure = ProportionalMeasure {
-        base_width: font_size_px as f64,
+    let measure = GpuiTextMeasure {
+        text_system: text_system.clone(),
+        font: Font {
+            family: SharedString::from(".SystemUIFont"),
+            features: FontFeatures::default(),
+            fallbacks: None,
+            weight: FontWeight::NORMAL,
+            style: FontStyle::Normal,
+        },
+        font_size: px(font_size_px),
     };
     let profile = EngineProfile::default();
     let options = PrepareOptions::default();

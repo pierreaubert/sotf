@@ -11,10 +11,6 @@ use crate::state::MdAppState;
 /// Font size used for the editor (in pixels).
 const EDITOR_FONT_SIZE: f32 = 14.0;
 
-/// Estimated character width for a monospace font, derived from font size.
-/// For most monospace fonts, the advance width is approximately 0.6 * font_size.
-const CHAR_WIDTH: f32 = EDITOR_FONT_SIZE * 0.6;
-
 /// Estimated digit width in the gutter, derived from font size.
 /// Gutter uses a slightly smaller font (13px), so scale from that.
 const GUTTER_FONT_SIZE: f32 = 13.0;
@@ -42,20 +38,22 @@ pub struct EditorPane {
     state: Entity<MdAppState>,
     pub scroll_handle: ScrollHandle,
     focus_handle: FocusHandle,
-    /// Calibrated text origin X for pixel-to-char mapping during mouse clicks.
-    /// Shared via Rc<Cell> so closures can read/write without borrowing self.
-    text_origin_x: Rc<Cell<Option<f32>>>,
     /// Last known viewport height in pixels, used to derive page jump size.
     viewport_height: Rc<Cell<f32>>,
 }
 
 impl EditorPane {
     pub fn new(state: Entity<MdAppState>, cx: &mut Context<Self>) -> Self {
+        // Re-render when any state changes (line numbers toggle, etc.)
+        cx.observe(&state, |_this, _state, cx| {
+            cx.notify();
+        })
+        .detach();
+
         Self {
             state,
             scroll_handle: ScrollHandle::new(),
             focus_handle: cx.focus_handle(),
-            text_origin_x: Rc::new(Cell::new(None)),
             viewport_height: Rc::new(Cell::new(0.0)),
         }
     }
@@ -139,7 +137,7 @@ impl Render for EditorPane {
         let surface_color = theme.surface;
         let text_muted = theme.text_muted;
         let accent_color = theme.accent;
-        let accent_muted = theme.accent_muted;
+        let _accent_muted = theme.accent_muted; // kept for potential future use
         let border_color = theme.border;
         let text_color = theme.text_primary;
 
@@ -192,19 +190,23 @@ impl Render for EditorPane {
             let state_for_click = self.state.clone();
             let focus_for_click = self.focus_handle.clone();
             let state_for_drag = self.state.clone();
-            let origin_for_click = self.text_origin_x.clone();
-            let origin_for_drag = self.text_origin_x.clone();
 
             let (spans, new_code_block) = highlight_line(line_text, in_code_block, &md_colors);
             in_code_block = new_code_block;
 
             let line_start = line_char_offset;
             let line_end = line_char_offset + line_char_count;
-            let has_selection = selection
-                .map(|(sel_start, sel_end)| sel_start < line_end && sel_end > line_start)
-                .unwrap_or(false);
 
-            let char_width: f32 = CHAR_WIDTH;
+            // Compute per-character selection range within this line (in char cols)
+            let sel_cols = selection.and_then(|(sel_start, sel_end)| {
+                if sel_start < line_end && sel_end > line_start {
+                    let col_start = sel_start.saturating_sub(line_start);
+                    let col_end = (sel_end - line_start).min(line_char_count);
+                    Some((col_start, col_end))
+                } else {
+                    None
+                }
+            });
 
             let mut line_div = div()
                 .flex()
@@ -238,90 +240,90 @@ impl Render for EditorPane {
                 );
             }
 
-            // Content area -- handles all click/drag with pixel-to-char mapping
-            let content_div_for_click = {
-                let state_click = state_for_click;
-                let state_drag = state_for_drag;
-                let focus = focus_for_click;
-
-                move |mut content: Div| -> Div {
-                    content = content
-                        .on_mouse_down(MouseButton::Left, move |ev, window, cx| {
-                            window.focus(&focus, cx);
-
-                            let click_x: f32 = ev.position.x.into();
-
-                            // Calibrate: on first click, estimate the X origin of char 0.
-                            // origin = click_x - estimated_col * char_width
-                            let stored_origin = origin_for_click.get();
-                            let origin = stored_origin.unwrap_or_else(|| {
-                                let est_col = (click_x / char_width).floor();
-                                (click_x - est_col * char_width).max(0.0)
-                            });
-                            origin_for_click.set(Some(origin));
-
-                            // Use floor: clicking anywhere within a character cell selects
-                            // that character — standard text editor behavior.
-                            let col = ((click_x - origin) / char_width).floor().max(0.0) as usize;
-                            let char_pos = line_char_offset + col.min(line_char_count);
-
-                            let click_count = ev.click_count;
-                            let shift = ev.modifiers.shift;
-
-                            state_click.update(cx, |s, _cx| {
-                                match click_count {
-                                    2 => s.select_word_at(char_pos),
-                                    3 => s.select_line_at(char_pos),
-                                    _ => {
-                                        if shift {
-                                            s.cursor.start_selection();
-                                            s.cursor.position = char_pos;
-                                        } else {
-                                            s.cursor.position = char_pos;
-                                            s.cursor.clear_selection();
-                                            s.cursor.anchor = Some(char_pos);
-                                        }
-                                    }
-                                }
-                            });
-                        })
-                        .on_mouse_move(move |ev, _window, cx| {
-                            // Only update selection while a mouse button is pressed (dragging)
-                            if ev.pressed_button.is_none() {
-                                return;
-                            }
-
-                            let click_x: f32 = ev.position.x.into();
-                            let origin = origin_for_drag.get().unwrap_or(0.0);
-                            let col = ((click_x - origin) / char_width).floor().max(0.0) as usize;
-                            let char_pos = line_char_offset + col.min(line_char_count);
-
-                            state_drag.update(cx, |s, _cx| {
-                                if s.cursor.anchor.is_some() {
-                                    s.cursor.position = char_pos;
-                                }
-                            });
-                        });
-                    content
-                }
-            };
-
             if is_cursor_line {
                 line_div = line_div.bg(surface_color);
-            } else if has_selection {
-                line_div = line_div.bg(accent_muted);
             }
 
-            // Note: gutter is already added above (with its own click handler for line select)
+            // Build StyledText with syntax highlighting, selection, cursor, and find overlays
+            let (text_content, runs) = build_line_text_runs(
+                &spans,
+                line_text,
+                is_cursor_line,
+                cursor_col,
+                sel_cols,
+                &find_query,
+                &md_colors,
+            );
 
-            let content_div = if is_cursor_line {
-                render_cursor_line(&spans, cursor_col, &md_colors)
-            } else {
-                render_highlighted_line(&spans, &find_query, line_text, &md_colors)
-            };
+            let styled = StyledText::new(SharedString::from(text_content.clone()))
+                .with_runs(runs);
+            let text_layout = styled.layout().clone();
 
-            // Wrap content div with mouse handlers for click/drag
-            let content_div = content_div_for_click(content_div);
+            // Content area with StyledText and mouse handlers
+            let text_for_click = text_content.clone();
+            let text_for_drag = text_content;
+            let content_div = div()
+                .flex_grow()
+                .min_w(px(0.0))
+                .overflow_hidden()
+                .text_size(px(EDITOR_FONT_SIZE))
+                .font_family("monospace")
+                .child(styled)
+                .on_mouse_down(MouseButton::Left, {
+                    let text_layout = text_layout.clone();
+                    let state_click = state_for_click;
+                    let focus = focus_for_click;
+                    move |ev, window, cx| {
+                        window.focus(&focus, cx);
+
+                        let byte_idx = match text_layout.index_for_position(ev.position) {
+                            Ok(idx) | Err(idx) => idx,
+                        };
+                        let col = byte_index_to_char_index(&text_for_click, byte_idx);
+                        let char_pos = line_char_offset + col.min(line_char_count);
+
+                        let click_count = ev.click_count;
+                        let shift = ev.modifiers.shift;
+
+                        state_click.update(cx, |s, _cx| {
+                            match click_count {
+                                2 => s.select_word_at(char_pos),
+                                3 => s.select_line_at(char_pos),
+                                _ => {
+                                    if shift {
+                                        s.cursor.start_selection();
+                                        s.cursor.position = char_pos;
+                                    } else {
+                                        s.cursor.position = char_pos;
+                                        s.cursor.clear_selection();
+                                        s.cursor.anchor = Some(char_pos);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                })
+                .on_mouse_move({
+                    let text_layout = text_layout;
+                    let state_drag = state_for_drag;
+                    move |ev, _window, cx| {
+                        if ev.pressed_button.is_none() {
+                            return;
+                        }
+
+                        let byte_idx = match text_layout.index_for_position(ev.position) {
+                            Ok(idx) | Err(idx) => idx,
+                        };
+                        let col = byte_index_to_char_index(&text_for_drag, byte_idx);
+                        let char_pos = line_char_offset + col.min(line_char_count);
+
+                        state_drag.update(cx, |s, _cx| {
+                            if s.cursor.anchor.is_some() {
+                                s.cursor.position = char_pos;
+                            }
+                        });
+                    }
+                });
 
             line_div = line_div.child(content_div);
             line_elements.push(line_div.into_any_element());
@@ -613,28 +615,28 @@ impl Render for EditorPane {
                             "home" => s.move_to_line_start(shift),
                             "end" => s.move_to_line_end(shift),
 
-                            // Emacs navigation (C-a/e/f/b/p/n) — only active in Emacs preset
-                            // On Default preset these Ctrl combos are needed for
-                            // Select All, Find, Bold, etc.
-                            "a" if ctrl && !cmd && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
+                            // Emacs-style navigation (C-a/e/f/b/p/n) — active in all presets.
+                            // These use Ctrl (not Cmd) so they don't conflict with
+                            // Cmd+A (Select All), Cmd+F (Find), Cmd+B (Bold), etc.
+                            "a" if ctrl && !cmd => {
                                 s.move_to_line_start(shift);
                             }
-                            "e" if ctrl && !cmd && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
+                            "e" if ctrl && !cmd => {
                                 s.move_to_line_end(shift);
                             }
-                            "f" if ctrl && !cmd && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
+                            "f" if ctrl && !cmd => {
                                 let n = s.take_universal_arg();
                                 for _ in 0..n { s.move_right(shift); }
                             }
-                            "b" if ctrl && !cmd && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
+                            "b" if ctrl && !cmd => {
                                 let n = s.take_universal_arg();
                                 for _ in 0..n { s.move_left(shift); }
                             }
-                            "p" if ctrl && !cmd && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
+                            "p" if ctrl && !cmd => {
                                 let n = s.take_universal_arg();
                                 for _ in 0..n { s.move_up(shift); }
                             }
-                            "n" if ctrl && !cmd && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
+                            "n" if ctrl && !cmd => {
                                 let n = s.take_universal_arg();
                                 for _ in 0..n { s.move_down(shift); }
                             }
@@ -790,7 +792,7 @@ impl Render for EditorPane {
                 }
             })
             .child(
-                div().flex().flex_col().size_full().children(line_elements)
+                div().flex().flex_col().w_full().children(line_elements)
             )
             // Isearch status bar
             .when(isearch_active, |el| {
@@ -856,112 +858,142 @@ impl Render for EditorPane {
     }
 }
 
-fn render_highlighted_line(
-    spans: &[crate::markdown::HighlightSpan],
-    find_query: &str,
-    raw_line: &str,
-    colors: &MdThemeColors,
-) -> Div {
-    let mut content_div = div()
-        .flex_grow()
-        .flex()
-        .flex_row()
-        .text_size(px(14.0))
-        .font_family("monospace");
-
-    if spans.is_empty() {
-        return content_div.child(" ");
-    }
-
-    let has_match = !find_query.is_empty() && raw_line.contains(find_query);
-
-    if has_match {
-        let mut remaining = raw_line.to_string();
-        let mut parts: Vec<AnyElement> = Vec::new();
-
-        while let Some(pos) = remaining.find(find_query) {
-            if pos > 0 {
-                parts.push(
-                    div()
-                        .text_color(colors.text)
-                        .child(remaining[..pos].to_string())
-                        .into_any_element(),
-                );
-            }
-            parts.push(
-                div()
-                    .bg(colors.find_match_bg)
-                    .text_color(colors.find_match_text)
-                    .child(remaining[pos..pos + find_query.len()].to_string())
-                    .into_any_element(),
-            );
-            remaining = remaining[pos + find_query.len()..].to_string();
-        }
-        if !remaining.is_empty() {
-            parts.push(
-                div()
-                    .text_color(colors.text)
-                    .child(remaining)
-                    .into_any_element(),
-            );
-        }
-        content_div = content_div.children(parts);
-    } else {
-        for span in spans {
-            content_div = content_div.child(div().text_color(span.color).child(span.text.clone()));
-        }
-    }
-
-    content_div
+/// Convert a byte index (from TextLayout) to a char index within the line text.
+fn byte_index_to_char_index(line_text: &str, byte_index: usize) -> usize {
+    line_text[..byte_index.min(line_text.len())]
+        .chars()
+        .count()
 }
 
-fn render_cursor_line(
+/// Convert a char-based column offset to a byte offset within the line text.
+fn char_col_to_byte_offset(line_text: &str, char_col: usize) -> usize {
+    line_text
+        .char_indices()
+        .nth(char_col)
+        .map(|(byte_pos, _)| byte_pos)
+        .unwrap_or(line_text.len())
+}
+
+/// Build line text and TextRuns for a single editor line.
+///
+/// Bakes in syntax highlighting, selection background, cursor block, and find
+/// match highlights as TextRun properties. Returns the text string and runs
+/// vector ready for StyledText.
+fn build_line_text_runs(
     spans: &[crate::markdown::HighlightSpan],
+    line_text: &str,
+    is_cursor_line: bool,
     cursor_col: usize,
+    sel_cols: Option<(usize, usize)>,
+    find_query: &str,
     colors: &MdThemeColors,
-) -> Div {
-    let full_text: String = spans.iter().map(|s| s.text.as_str()).collect();
-    let content = if full_text.is_empty() {
-        " ".to_string()
-    } else {
-        full_text
+) -> (String, Vec<TextRun>) {
+    let font = Font {
+        family: SharedString::from("monospace"),
+        features: FontFeatures::default(),
+        fallbacks: None,
+        weight: FontWeight::NORMAL,
+        style: FontStyle::Normal,
     };
 
-    let before: String = content.chars().take(cursor_col).collect();
-    let cursor_char = content.chars().nth(cursor_col).unwrap_or(' ');
-    let after: String = content.chars().skip(cursor_col + 1).collect();
+    // Build the display text. For cursor at end-of-line, append a space for the
+    // cursor block. For empty lines, use a single space for height.
+    let line_char_count = line_text.chars().count();
+    let needs_cursor_space = is_cursor_line && cursor_col >= line_char_count;
+    let text = if line_text.is_empty() {
+        " ".to_string()
+    } else if needs_cursor_space {
+        format!("{} ", line_text)
+    } else {
+        line_text.to_string()
+    };
 
-    let before_color = find_color_at(spans, cursor_col.saturating_sub(1), colors);
-    let after_color = find_color_at(spans, cursor_col + 1, colors);
+    // Phase 1: Build base color map (one Hsla per byte) from syntax spans
+    let text_bytes = text.len();
+    let mut fg_colors: Vec<Hsla> = vec![Hsla::from(colors.text); text_bytes];
+    let mut bg_colors: Vec<Option<Hsla>> = vec![None; text_bytes];
 
-    div()
-        .flex_grow()
-        .flex()
-        .flex_row()
-        .text_size(px(14.0))
-        .font_family("monospace")
-        .child(div().text_color(before_color).child(before))
-        .child(
-            div()
-                .bg(colors.cursor_bg)
-                .text_color(colors.cursor_text)
-                .child(String::from(cursor_char)),
-        )
-        .child(div().text_color(after_color).child(after))
-}
-
-fn find_color_at(
-    spans: &[crate::markdown::HighlightSpan],
-    char_idx: usize,
-    colors: &MdThemeColors,
-) -> Rgba {
-    let mut offset = 0;
+    // Map span colors onto byte positions
+    let mut byte_offset = 0;
     for span in spans {
-        let span_len = span.text.chars().count();
-        if char_idx < offset + span_len {
-            return span.color;
+        let span_color = Hsla::from(span.color);
+        let span_byte_len = span.text.len();
+        for b in byte_offset..(byte_offset + span_byte_len).min(text_bytes) {
+            fg_colors[b] = span_color;
         }
-        offset += span_len;
+        byte_offset += span_byte_len;
     }
-    colors.text
+
+    // Phase 2: Overlay selection background
+    if let Some((sel_start_col, sel_end_col)) = sel_cols {
+        let sel_start_byte = char_col_to_byte_offset(&text, sel_start_col);
+        let sel_end_byte = char_col_to_byte_offset(&text, sel_end_col);
+        let sel_bg = Hsla::from(colors.selection_bg);
+        for b in sel_start_byte..sel_end_byte.min(text_bytes) {
+            bg_colors[b] = Some(sel_bg);
+        }
+    }
+
+    // Phase 3: Overlay find match highlights
+    if !find_query.is_empty() {
+        let find_fg = Hsla::from(colors.find_match_text);
+        let find_bg = Hsla::from(colors.find_match_bg);
+        let mut search_start = 0;
+        while let Some(pos) = text[search_start..].find(find_query) {
+            let match_start = search_start + pos;
+            let match_end = match_start + find_query.len();
+            for b in match_start..match_end.min(text_bytes) {
+                fg_colors[b] = find_fg;
+                bg_colors[b] = Some(find_bg);
+            }
+            search_start = match_end;
+        }
+    }
+
+    // Phase 4: Overlay cursor block (highest priority)
+    if is_cursor_line {
+        let cursor_byte_start = char_col_to_byte_offset(&text, cursor_col);
+        let cursor_byte_end = char_col_to_byte_offset(&text, cursor_col + 1);
+        let cursor_fg = Hsla::from(colors.cursor_text);
+        let cursor_bg = Hsla::from(colors.cursor_bg);
+        for b in cursor_byte_start..cursor_byte_end.min(text_bytes) {
+            fg_colors[b] = cursor_fg;
+            bg_colors[b] = Some(cursor_bg);
+        }
+    }
+
+    // Phase 5: Compress consecutive bytes with identical styling into TextRuns
+    let mut runs: Vec<TextRun> = Vec::new();
+    if text_bytes > 0 {
+        let mut run_start = 0;
+        let mut cur_fg = fg_colors[0];
+        let mut cur_bg = bg_colors[0];
+
+        for b in 1..text_bytes {
+            if fg_colors[b] != cur_fg || bg_colors[b] != cur_bg {
+                runs.push(TextRun {
+                    len: b - run_start,
+                    font: font.clone(),
+                    color: cur_fg,
+                    background_color: cur_bg,
+                    underline: None,
+                    strikethrough: None,
+                });
+                run_start = b;
+                cur_fg = fg_colors[b];
+                cur_bg = bg_colors[b];
+            }
+        }
+        // Final run
+        runs.push(TextRun {
+            len: text_bytes - run_start,
+            font,
+            color: cur_fg,
+            background_color: cur_bg,
+            underline: None,
+            strikethrough: None,
+        });
+    }
+
+    (text, runs)
 }

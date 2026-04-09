@@ -85,7 +85,8 @@ fn default_palette_commands() -> Vec<PaletteCommand> {
         PaletteCommand { name: "find".into(), description: "Find text".into(), id: "find" },
         PaletteCommand { name: "replace".into(), description: "Find and replace".into(), id: "replace" },
         PaletteCommand { name: "toggle-preview".into(), description: "Toggle preview pane".into(), id: "toggle-preview" },
-        PaletteCommand { name: "toggle-line-numbers".into(), description: "Toggle line numbers".into(), id: "toggle-line-numbers" },
+        PaletteCommand { name: "toggle-line-numbers".into(), description: "Toggle editor line numbers".into(), id: "toggle-line-numbers" },
+        PaletteCommand { name: "toggle-preview-line-numbers".into(), description: "Toggle preview line numbers".into(), id: "toggle-preview-line-numbers" },
         PaletteCommand { name: "select-all".into(), description: "Select all text".into(), id: "select-all" },
         PaletteCommand { name: "undo".into(), description: "Undo last edit".into(), id: "undo" },
         PaletteCommand { name: "redo".into(), description: "Redo last edit".into(), id: "redo" },
@@ -105,7 +106,9 @@ pub struct MdAppState {
     pub cursor: EditorCursor,
     pub keymap_preset: KeymapPreset,
     pub split_ratio: f32,
+    pub font_size: f32,
     pub show_line_numbers: bool,
+    pub show_preview_line_numbers: bool,
     pub show_preview: bool,
     pub last_parsed_version: u64,
     pub source_map: SourceMap,
@@ -140,6 +143,13 @@ pub struct MdAppState {
 }
 
 impl MdAppState {
+    /// Create state initialized with file contents.
+    pub fn from_file(path: std::path::PathBuf, content: &str) -> Self {
+        let mut state = Self::new();
+        state.document = DocumentBuffer::from_file(path, content);
+        state
+    }
+
     pub fn new() -> Self {
         Self {
             document: DocumentBuffer::from_text(
@@ -163,6 +173,7 @@ impl MdAppState {
             keymap_preset: KeymapPreset::Default,
             split_ratio: 0.5,
             show_line_numbers: true,
+            show_preview_line_numbers: false,
             show_preview: true,
             last_parsed_version: 0,
             source_map: SourceMap::new(),
@@ -1497,6 +1508,7 @@ impl MdAppState {
         match id {
             "toggle-preview" => self.show_preview = !self.show_preview,
             "toggle-line-numbers" => self.show_line_numbers = !self.show_line_numbers,
+            "toggle-preview-line-numbers" => self.show_preview_line_numbers = !self.show_preview_line_numbers,
             "find" => self.toggle_find(),
             "replace" => self.toggle_find_replace(),
             "select-all" => self.select_all(),

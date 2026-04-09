@@ -85,7 +85,7 @@ impl MainView {
 }
 
 impl Render for MainView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
         // Sync scroll positions between panes
@@ -107,6 +107,10 @@ impl Render for MainView {
             })
             .unwrap_or_else(|| "Untitled".to_string());
         let dirty_marker = if state.document.is_dirty() { " *" } else { "" };
+
+        // Keep window title in sync with the file name
+        let title = format!("{}{}", file_name, dirty_marker);
+        window.set_window_title(&title);
 
         let cursor_line = if state.document.len_chars() > 0 {
             state.document.char_to_line(

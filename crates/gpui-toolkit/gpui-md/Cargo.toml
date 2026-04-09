@@ -37,6 +37,9 @@ serde_json = { workspace = true }
 # File dialogs
 rfd = { workspace = true }
 
+# CLI
+clap = { workspace = true }
+
 # Logging
 log = { workspace = true }
 

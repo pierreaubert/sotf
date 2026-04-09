@@ -46,6 +46,9 @@ actions!(
         PageDown,
         WordLeft,
         WordRight,
+        // Font size
+        IncreaseFontSize,
+        DecreaseFontSize,
         // Emacs commands
         Abort,
         UpcaseWord,

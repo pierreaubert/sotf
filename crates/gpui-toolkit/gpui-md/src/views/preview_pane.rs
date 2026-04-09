@@ -14,14 +14,19 @@ pub struct PreviewPane {
     cached_version: u64,
     /// Cached source map from the last parse.
     cached_source_map: SourceMap,
+    /// Cached value of show_preview_line_numbers for change detection.
+    cached_show_line_numbers: bool,
 }
 
 impl PreviewPane {
     pub fn new(state: Entity<MdAppState>, cx: &mut Context<Self>) -> Self {
-        // Only re-render when the document version changes (not on every cursor move)
+        // Re-render on document changes and settings changes (line numbers, etc.)
         cx.observe(&state, |this, state, cx| {
-            let version = state.read(cx).document.version();
-            if version != this.cached_version {
+            let s = state.read(cx);
+            let version = s.document.version();
+            let show_ln = s.show_preview_line_numbers;
+            // Re-render on document changes and settings changes
+            if version != this.cached_version || show_ln != this.cached_show_line_numbers {
                 cx.notify();
             }
         })
@@ -32,12 +37,13 @@ impl PreviewPane {
             scroll_handle: ScrollHandle::new(),
             cached_version: u64::MAX, // force first parse
             cached_source_map: SourceMap::new(),
+            cached_show_line_numbers: false,
         }
     }
 }
 
 impl Render for PreviewPane {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let state_entity = self.state.clone();
         let state = self.state.read(cx);
@@ -45,6 +51,8 @@ impl Render for PreviewPane {
         let doc_version = state.document.version();
         let editing_block = state.editing_block.clone();
         let editing_text = state.editing_block_text.clone();
+        let show_line_numbers = state.show_preview_line_numbers;
+        let text_muted = theme.text_muted;
 
         let md_colors = MdThemeColors::from_theme(&theme);
 
@@ -59,8 +67,19 @@ impl Render for PreviewPane {
             source_map = SourceMap::new();
         }
 
-        let raw_elements = render_markdown(root, &mut source_map, &md_colors);
+        // Get content width for Knuth-Plass justification.
+        // Use window bounds directly so it works on first render (no mouse move needed).
+        // Preview pane takes ~50% of window width in split view, minus p_4 padding (32px).
+        let window_width: f32 = window.bounds().size.width.into();
+        let justify_width = if window_width > 100.0 && window_width < 10000.0 {
+            (window_width * 0.5) - 32.0
+        } else {
+            0.0
+        };
+        let text_system = window.text_system().clone();
+        let raw_elements = render_markdown(root, &mut source_map, &md_colors, justify_width, Some(&text_system));
 
+        self.cached_show_line_numbers = show_line_numbers;
         if needs_source_map_update {
             self.cached_version = doc_version;
             self.cached_source_map = source_map.clone();
@@ -156,20 +175,41 @@ impl Render for PreviewPane {
                 let block_id_for_edit = block_id.clone();
                 let hover_bg = theme.surface_hover;
 
-                elements.push(
-                    div()
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(hover_bg))
-                        .on_mouse_down(MouseButton::Left, move |_ev, _window, cx| {
-                            state_for_click.update(cx, |s, _cx| s.jump_to_line(line));
-                        })
-                        .on_mouse_down(MouseButton::Right, move |_ev, _window, cx| {
-                            state_for_edit
-                                .update(cx, |s, _cx| s.start_inline_edit(&block_id_for_edit));
-                        })
-                        .child(raw_el)
-                        .into_any_element(),
-                );
+                let mut block_div = div()
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(hover_bg))
+                    .on_mouse_down(MouseButton::Left, move |_ev, _window, cx| {
+                        state_for_click.update(cx, |s, _cx| s.jump_to_line(line));
+                    })
+                    .on_mouse_down(MouseButton::Right, move |_ev, _window, cx| {
+                        state_for_edit
+                            .update(cx, |s, _cx| s.start_inline_edit(&block_id_for_edit));
+                    });
+
+                if show_line_numbers {
+                    // Render as a row with line number gutter + content
+                    block_div = block_div
+                        .flex()
+                        .flex_row()
+                        .child(
+                            div()
+                                .w(px(36.0))
+                                .flex_shrink_0()
+                                .text_size(px(11.0))
+                                .text_color(text_muted)
+                                .text_right()
+                                .pr_2()
+                                .pt(px(2.0))
+                                .child(format!("{}", line + 1)),
+                        )
+                        .child(
+                            div().flex_grow().min_w(px(0.0)).overflow_hidden().child(raw_el),
+                        );
+                } else {
+                    block_div = block_div.child(raw_el);
+                }
+
+                elements.push(block_div.into_any_element());
             } else {
                 elements.push(raw_el);
             }
@@ -180,6 +220,7 @@ impl Render for PreviewPane {
             .size_full()
             .bg(theme.background)
             .overflow_y_scroll()
+            .overflow_x_hidden()
             .track_scroll(&self.scroll_handle)
             .p_4()
             .text_color(theme.text_primary)
