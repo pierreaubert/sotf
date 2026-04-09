@@ -1,0 +1,16 @@
+[package]
+name = "gpui-keybinding"
+version = "0.6.0"
+authors.workspace = true
+edition.workspace = true
+description = "Reusable keybinding framework with Vim/Emacs/VSCode presets for GPUI applications"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+gpui = { workspace = true }
+serde = { workspace = true }
+
+[lib]
+name = "gpui_keybinding"
+path = "src/lib.rs"
