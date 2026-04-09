@@ -46,7 +46,7 @@ impl Default for PsychoacousticSmoothingConfig {
 /// # Example
 /// ```
 /// use autoeq::read::{smooth_psychoacoustic, PsychoacousticSmoothingConfig};
-/// use crate::cea2034::Curve;
+/// use autoeq::cea2034::Curve;
 /// use ndarray::Array1;
 ///
 /// // Create a dummy curve
