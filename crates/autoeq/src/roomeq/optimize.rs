@@ -1507,6 +1507,13 @@ pub fn optimize_room(
         }
     }
 
+    let epa_cfg = config
+        .optimizer
+        .epa_config
+        .clone()
+        .unwrap_or_default();
+    let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+
     let metadata = OptimizationMetadata {
         pre_score: avg_pre_score,
         post_score: avg_post_score,
@@ -1514,6 +1521,7 @@ pub fn optimize_room(
         iterations: config.optimizer.max_iter,
         timestamp: chrono::Utc::now().to_rfc3339(),
         inter_channel_deviation: None,
+        epa_per_channel,
     };
 
     let mut result = RoomOptimizationResult {

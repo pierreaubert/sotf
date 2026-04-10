@@ -4,6 +4,7 @@
 
 - Added parameters to OptimConfig to be able to tune EPA scoring.
 - EPA scoring should now be visible in the return type of roomeq and in the generated json.
+- EPA is now calibrated versus the previous version that was dependant on normalization so total_loudness_sone and loudness_balance meaningful.
 
 # 0.4.24
 

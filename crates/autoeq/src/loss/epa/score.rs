@@ -105,6 +105,10 @@ pub fn compute_epa(freqs: &[f64], spl_db: &[f64], config: &EpaConfig) -> EpaScor
 
 /// EPA-based loss function for the optimizer.
 /// Lower = better (the optimizer minimizes this).
+///
+/// `spl_db` is expected to be **absolute** dB SPL. If you are working with
+/// level-relative (mean-subtracted around 1 kHz) measurements such as those
+/// in `CurveData`, use [`epa_loss_normalized`] instead.
 pub fn epa_loss(freqs: &[f64], spl_db: &[f64], config: &EpaConfig, flatness_loss: f64) -> f64 {
     let epa = compute_epa(freqs, spl_db, config);
 
@@ -114,6 +118,49 @@ pub fn epa_loss(freqs: &[f64], spl_db: &[f64], config: &EpaConfig, flatness_loss
 
     // Weighted combination: flatness dominates, EPA refines
     0.4 * flatness_loss + 0.3 * sharpness_penalty + 0.2 * roughness_penalty + 0.1 * balance_penalty
+}
+
+/// Denormalize a level-relative SPL curve to approximate absolute dB SPL.
+///
+/// Measurement curves in the autoeq/roomeq pipeline are typically
+/// mean-subtracted around 1–2 kHz so they hover near 0 dB. The psychoacoustic
+/// loudness model in [`crate::loss::epa::loudness`] compares against the
+/// absolute threshold of hearing and therefore needs absolute dB SPL to
+/// produce meaningful sone / loudness-balance values.
+///
+/// Since the phon scale is defined as equal-loudness contours referenced to a
+/// 1 kHz sinusoid in dB SPL, adding `listening_level_phon` to a curve
+/// normalized at 1 kHz yields an absolute SPL curve where 1 kHz sits at the
+/// listener's chosen level. This is an approximation — it does not account
+/// for frequency-dependent phon → SPL conversion via ISO 226 contours — but
+/// it is the correct first-order calibration for comparative metrics and is
+/// good enough for the loudness/balance penalty in [`epa_loss`].
+fn denormalize_spl(spl_rel: &[f64], listening_level_phon: f64) -> Vec<f64> {
+    spl_rel.iter().map(|v| v + listening_level_phon).collect()
+}
+
+/// Like [`compute_epa`] but for level-relative (mean-subtracted) input curves.
+///
+/// The input is denormalized by adding `config.listening_level_phon` before
+/// evaluation. See [`denormalize_spl`] for the calibration rationale.
+pub fn compute_epa_normalized(freqs: &[f64], spl_rel: &[f64], config: &EpaConfig) -> EpaScore {
+    let spl_abs = denormalize_spl(spl_rel, config.listening_level_phon);
+    compute_epa(freqs, &spl_abs, config)
+}
+
+/// Like [`epa_loss`] but for level-relative (mean-subtracted) input curves.
+///
+/// The input is denormalized by adding `config.listening_level_phon` before
+/// evaluation so the loudness/balance components of the objective are
+/// correctly calibrated against the absolute threshold of hearing.
+pub fn epa_loss_normalized(
+    freqs: &[f64],
+    spl_rel: &[f64],
+    config: &EpaConfig,
+    flatness_loss: f64,
+) -> f64 {
+    let spl_abs = denormalize_spl(spl_rel, config.listening_level_phon);
+    epa_loss(freqs, &spl_abs, config, flatness_loss)
 }
 
 #[cfg(test)]
@@ -243,6 +290,86 @@ mod tests {
         assert!(
             (total - 1.0).abs() < 1e-10,
             "EPA weights should sum to 1.0, got {total}"
+        );
+    }
+
+    #[test]
+    fn test_compute_epa_normalized_matches_absolute_equivalent() {
+        // A curve normalized around 0 dB plus a 75 phon listening level should
+        // produce the same EpaScore as the equivalent absolute 75 dB SPL curve.
+        let (freqs, spl_abs) = make_flat_response(75.0);
+        let spl_rel: Vec<f64> = spl_abs.iter().map(|v| v - 75.0).collect();
+
+        let config = EpaConfig {
+            listening_level_phon: 75.0,
+            ..EpaConfig::default()
+        };
+
+        let score_abs = compute_epa(&freqs, &spl_abs, &config);
+        let score_rel = compute_epa_normalized(&freqs, &spl_rel, &config);
+
+        assert!(
+            (score_abs.total_loudness_sone - score_rel.total_loudness_sone).abs() < 1e-9,
+            "normalized path should match absolute path, got abs={} rel={}",
+            score_abs.total_loudness_sone,
+            score_rel.total_loudness_sone
+        );
+        assert!((score_abs.sharpness_acum - score_rel.sharpness_acum).abs() < 1e-9);
+        assert!((score_abs.roughness - score_rel.roughness).abs() < 1e-9);
+        assert!((score_abs.loudness_balance - score_rel.loudness_balance).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_normalized_calibration_prevents_silent_floor() {
+        // A level-relative flat curve (~0 dB everywhere) fed through the raw
+        // `compute_epa` looks like near-silence to the Zwicker model because
+        // its threshold-in-quiet is specified in absolute dB SPL. The
+        // `_normalized` variant denormalizes against `listening_level_phon`
+        // and must produce a non-trivial total loudness.
+        let (freqs, _) = make_flat_response(0.0);
+        let spl_rel = vec![0.0_f64; freqs.len()];
+
+        let config = EpaConfig {
+            listening_level_phon: 75.0,
+            ..EpaConfig::default()
+        };
+
+        let raw_score = compute_epa(&freqs, &spl_rel, &config);
+        let calibrated_score = compute_epa_normalized(&freqs, &spl_rel, &config);
+
+        // Raw path (uncalibrated) should be at or near the silent floor.
+        assert!(
+            raw_score.total_loudness_sone < 0.5,
+            "raw normalized input should be near-silent, got {}",
+            raw_score.total_loudness_sone
+        );
+        // Calibrated path should show meaningful loudness (flat 75 dB ≈ 30+ sone).
+        assert!(
+            calibrated_score.total_loudness_sone > 5.0,
+            "calibrated 75 phon flat curve should have meaningful loudness, got {}",
+            calibrated_score.total_loudness_sone
+        );
+    }
+
+    #[test]
+    fn test_epa_loss_normalized_matches_absolute_equivalent() {
+        // Same invariant as the compute_epa test: normalized path with the
+        // listening-level offset should match the absolute path exactly.
+        let (freqs, spl_abs) = make_flat_response(75.0);
+        let spl_rel: Vec<f64> = spl_abs.iter().map(|v| v - 75.0).collect();
+
+        let config = EpaConfig {
+            listening_level_phon: 75.0,
+            ..EpaConfig::default()
+        };
+
+        let loss_abs = epa_loss(&freqs, &spl_abs, &config, 0.25);
+        let loss_rel = epa_loss_normalized(&freqs, &spl_rel, &config, 0.25);
+        assert!(
+            (loss_abs - loss_rel).abs() < 1e-12,
+            "epa_loss_normalized should match epa_loss on denormalized input, got abs={} rel={}",
+            loss_abs,
+            loss_rel
         );
     }
 }

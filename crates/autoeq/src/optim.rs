@@ -716,7 +716,17 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 .epa_config
                 .clone()
                 .unwrap_or_default();
-            crate::loss::epa::score::epa_loss(&freqs_vec, &corrected_spl, &epa_config, flatness)
+            // Use the `_normalized` variant because `corrected_spl` is built
+            // from level-relative (target + deviation + PEQ) components —
+            // it is not absolute dB SPL. The normalized helper denormalizes
+            // against `epa_config.listening_level_phon` so the loudness /
+            // loudness-balance penalties are properly calibrated.
+            crate::loss::epa::score::epa_loss_normalized(
+                &freqs_vec,
+                &corrected_spl,
+                &epa_config,
+                flatness,
+            )
         }
     }
 }
@@ -870,7 +880,17 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 .epa_config
                 .clone()
                 .unwrap_or_default();
-            crate::loss::epa::score::epa_loss(&freqs_vec, &corrected_spl, &epa_config, flatness)
+            // Use the `_normalized` variant because `corrected_spl` is built
+            // from level-relative (target + deviation + PEQ) components —
+            // it is not absolute dB SPL. The normalized helper denormalizes
+            // against `epa_config.listening_level_phon` so the loudness /
+            // loudness-balance penalties are properly calibrated.
+            crate::loss::epa::score::epa_loss_normalized(
+                &freqs_vec,
+                &corrected_spl,
+                &epa_config,
+                flatness,
+            )
         }
     }
 }

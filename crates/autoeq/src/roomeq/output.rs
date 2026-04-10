@@ -1,14 +1,42 @@
 //! Output generation for room EQ DSP chains
 
 use super::types::{
-    ChannelDspChain, DriverDspChain, DspChainOutput, MixedModeConfig, OptimizationMetadata,
-    PluginConfigWrapper,
+    ChannelDspChain, DriverDspChain, DspChainOutput, EpaChannelMetrics, MixedModeConfig,
+    OptimizationMetadata, PluginConfigWrapper,
 };
+use crate::loss::epa::score::{EpaConfig, compute_epa_normalized};
 use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
 use serde_json::json;
 use std::collections::HashMap;
 use std::error::Error;
+
+/// Compute per-channel EPA metrics (pre-EQ and post-EQ) from each
+/// channel's `initial_curve` and `final_curve`.
+///
+/// `CurveData.spl` is mean-subtracted around 1–2 kHz (level-relative),
+/// so we call [`compute_epa_normalized`] which denormalizes the curve
+/// against `config.listening_level_phon` before running the
+/// psychoacoustic model. Without that calibration step the loudness
+/// and loudness-balance components would be dominated by the absolute
+/// threshold of hearing.
+///
+/// Returns `None` if no channel has both curves populated.
+pub fn compute_epa_per_channel(
+    channels: &HashMap<String, ChannelDspChain>,
+    config: &EpaConfig,
+) -> Option<HashMap<String, EpaChannelMetrics>> {
+    let mut out: HashMap<String, EpaChannelMetrics> = HashMap::new();
+    for (name, chain) in channels {
+        let (Some(initial), Some(final_)) = (&chain.initial_curve, &chain.final_curve) else {
+            continue;
+        };
+        let pre = compute_epa_normalized(&initial.freq, &initial.spl, config);
+        let post = compute_epa_normalized(&final_.freq, &final_.spl, config);
+        out.insert(name.clone(), EpaChannelMetrics { pre, post });
+    }
+    if out.is_empty() { None } else { Some(out) }
+}
 
 const DISPLAY_MIN_FREQ: f64 = math_audio_iir_fir::AUDIBLE_MIN_FREQ;
 const DISPLAY_MAX_FREQ: f64 = math_audio_iir_fir::AUDIBLE_MAX_FREQ;
@@ -1149,6 +1177,7 @@ mod tests {
             iterations: 1000,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
             inter_channel_deviation: None,
+            epa_per_channel: None,
         };
 
         let output = create_dsp_chain_output(channels, Some(metadata));
