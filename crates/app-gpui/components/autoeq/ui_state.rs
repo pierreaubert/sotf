@@ -1,8 +1,16 @@
 //! UI state for AutoEQ form dropdowns.
 
+pub use sotf_audio_player::autoeq::DetailLevel;
+
 /// UI state for AutoEQ form dropdowns
 #[derive(Debug, Clone, Default)]
 pub struct AutoEqFormUiState {
+    /// How much detail to show (Simple / Intermediate / Expert).
+    pub detail_level: DetailLevel,
+    /// Preset selector dropdown open state.
+    pub preset_open: bool,
+    /// Currently selected preset id (e.g. "balanced", "custom").
+    pub selected_preset: Option<String>,
     /// EQ Mode dropdown open state
     pub opt_mode_open: bool,
     /// FIR Phase dropdown open state

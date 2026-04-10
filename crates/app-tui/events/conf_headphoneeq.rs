@@ -388,6 +388,8 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
         }
 
         HeadphoneEqStep::Configure => {
+            use sotf_audio_player::autoeq::DetailLevel;
+
             // Numerical direct-edit mode
             if app.headphone_eq.editing_value {
                 match key.code {
@@ -410,17 +412,32 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 }
                 return None;
             }
+
+            // Visible field indices depend on detail level
+            let visible_fields = headphone_eq_visible_fields(app.headphone_eq.detail_level);
+
             match key.code {
                 KeyCode::Up => {
-                    if app.headphone_eq.config_selected_field > 0 {
-                        app.headphone_eq.config_selected_field -= 1;
+                    let current = app.headphone_eq.config_selected_field;
+                    if let Some(pos) = visible_fields.iter().position(|&f| f == current) {
+                        if pos > 0 {
+                            app.headphone_eq.config_selected_field = visible_fields[pos - 1];
+                        } else {
+                            app.headphone_eq.step_tab_focused = true;
+                        }
                     } else {
-                        app.headphone_eq.step_tab_focused = true;
+                        // Field not in current view, reset to first
+                        app.headphone_eq.config_selected_field = visible_fields[0];
                     }
                 }
                 KeyCode::Down => {
-                    if app.headphone_eq.config_selected_field < 17 {
-                        app.headphone_eq.config_selected_field += 1;
+                    let current = app.headphone_eq.config_selected_field;
+                    if let Some(pos) = visible_fields.iter().position(|&f| f == current) {
+                        if pos + 1 < visible_fields.len() {
+                            app.headphone_eq.config_selected_field = visible_fields[pos + 1];
+                        }
+                    } else {
+                        app.headphone_eq.config_selected_field = visible_fields[0];
                     }
                 }
                 KeyCode::Left | KeyCode::Char('-') => {
@@ -430,10 +447,16 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     adjust_headphone_eq_field(app, 1);
                 }
                 KeyCode::Tab => {
-                    if app.headphone_eq.config_selected_field < 17 {
-                        app.headphone_eq.config_selected_field += 1;
-                    } else {
-                        app.headphone_eq.config_selected_field = 0;
+                    // Cycle detail level
+                    app.headphone_eq.detail_level = match app.headphone_eq.detail_level {
+                        DetailLevel::Simple => DetailLevel::Intermediate,
+                        DetailLevel::Intermediate => DetailLevel::Expert,
+                        DetailLevel::Expert => DetailLevel::Simple,
+                    };
+                    // Reset selection to first visible field
+                    let new_fields = headphone_eq_visible_fields(app.headphone_eq.detail_level);
+                    if !new_fields.contains(&app.headphone_eq.config_selected_field) {
+                        app.headphone_eq.config_selected_field = new_fields[0];
                     }
                 }
                 KeyCode::Enter => {
@@ -574,6 +597,16 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
     }
 }
 
+/// Returns the visible field indices for a given detail level.
+fn headphone_eq_visible_fields(detail: sotf_audio_player::autoeq::DetailLevel) -> Vec<usize> {
+    use sotf_audio_player::autoeq::DetailLevel;
+    match detail {
+        DetailLevel::Simple => vec![100],
+        DetailLevel::Intermediate => vec![100, 0, 7, 1, 2, 18],
+        DetailLevel::Expert => vec![100, 0, 1, 2, 3, 4, 5, 6, 7, 18, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+    }
+}
+
 fn is_headphone_eq_field_numerical(field: usize) -> bool {
     matches!(field, 0..=6 | 9 | 10 | 12 | 13 | 17)
 }
@@ -666,6 +699,48 @@ fn set_headphone_eq_field_from_string(app: &mut App) {
 }
 
 fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
+    // Field 100: preset cycling
+    if app.headphone_eq.config_selected_field == 100 {
+        use sotf_audio_player::autoeq::{self, EqWorkflow};
+        let presets = autoeq::presets_for(EqWorkflow::Headphone);
+        let ids: Vec<&str> = presets.iter().map(|p| p.id).collect();
+        let new_id = super::cycle_string(&app.headphone_eq.selected_preset, &ids, delta);
+        app.headphone_eq.selected_preset = new_id.clone();
+        // Apply preset parameters (skip for "custom")
+        if let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &new_id) {
+            if let Some(params) = preset.apply() {
+                let c = &mut app.headphone_eq.config;
+                c.num_filters = params.num_filters;
+                c.min_freq = params.min_freq;
+                c.max_freq = params.max_freq;
+                c.min_db = params.min_db;
+                c.max_db = params.max_db;
+                c.min_q = params.min_q;
+                c.max_q = params.max_q;
+                c.peq_model = params.peq_model;
+                c.population = params.population;
+                c.max_iter = params.maxeval;
+                c.refine = params.refine;
+                c.smooth = params.smooth;
+                c.smooth_n = params.smooth_n;
+                c.loss = params.loss;
+            }
+        }
+        return;
+    }
+    // Field 18: loss function cycling
+    if app.headphone_eq.config_selected_field == 18 {
+        let losses: Vec<&str> = sotf_audio_player::autoeq::HEADPHONE_LOSS_OPTIONS
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
+        app.headphone_eq.config.loss = super::cycle_string(
+            &app.headphone_eq.config.loss,
+            &losses,
+            delta,
+        );
+        return;
+    }
     let c = &mut app.headphone_eq.config;
     match app.headphone_eq.config_selected_field {
         0 => {

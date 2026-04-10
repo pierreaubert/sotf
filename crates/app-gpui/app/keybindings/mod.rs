@@ -15,7 +15,6 @@ mod vscode;
 
 use crate::app::actions;
 use gpui::*;
-use serde::{Deserialize, Serialize};
 
 use common::common_bindings;
 use emacs::{emacs_bindings, emacs_documented_keybindings};
@@ -24,52 +23,59 @@ use vim::{vim_bindings, vim_documented_keybindings};
 use volume::volume_control_bindings;
 use vscode::{vscode_bindings, vscode_documented_keybindings};
 
-/// Available keymap presets
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-pub enum KeymapPreset {
-    #[default]
-    Default,
-    Vim,
-    Emacs,
-    VSCode,
+// Re-export core types from gpui-keybinding
+pub use gpui_keybinding::KeymapPreset;
+
+// App-specific keybinding category — wraps the generic one with audio-player-specific categories.
+// We keep this local because the categories (Playback, Queue, Plugins, LevelMeters, ScreenSwitch)
+// are specific to the audio player, not generic enough for the framework crate.
+/// Keybinding category for help display
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KeybindingCategory {
+    Playback,
+    Navigation,
+    ScreenSwitch,
+    Library,
+    Queue,
+    Plugins,
+    LevelMeters,
+    System,
 }
 
-impl KeymapPreset {
+impl KeybindingCategory {
     pub fn name(&self) -> &'static str {
         match self {
-            KeymapPreset::Default => "Default",
-            KeymapPreset::Vim => "Vim",
-            KeymapPreset::Emacs => "Emacs",
-            KeymapPreset::VSCode => "VSCode",
+            KeybindingCategory::Playback => "Playback",
+            KeybindingCategory::Navigation => "Navigation",
+            KeybindingCategory::ScreenSwitch => "Screen Switching",
+            KeybindingCategory::Library => "Library",
+            KeybindingCategory::Queue => "Queue",
+            KeybindingCategory::Plugins => "Plugins",
+            KeybindingCategory::LevelMeters => "Level Meters",
+            KeybindingCategory::System => "System",
         }
     }
 
-    pub fn description(&self) -> &'static str {
-        match self {
-            KeymapPreset::Default => "Custom keybindings optimized for audio player",
-            KeymapPreset::Vim => "Vim-style navigation with hjkl keys",
-            KeymapPreset::Emacs => "Emacs-style navigation with Ctrl combinations",
-            KeymapPreset::VSCode => "VSCode-style shortcuts familiar to many developers",
-        }
-    }
-
-    pub fn next(&self) -> Self {
-        match self {
-            KeymapPreset::Default => KeymapPreset::Vim,
-            KeymapPreset::Vim => KeymapPreset::Emacs,
-            KeymapPreset::Emacs => KeymapPreset::VSCode,
-            KeymapPreset::VSCode => KeymapPreset::Default,
-        }
-    }
-
-    pub fn all() -> &'static [KeymapPreset] {
+    pub fn all() -> &'static [KeybindingCategory] {
         &[
-            KeymapPreset::Default,
-            KeymapPreset::Vim,
-            KeymapPreset::Emacs,
-            KeymapPreset::VSCode,
+            KeybindingCategory::Playback,
+            KeybindingCategory::Navigation,
+            KeybindingCategory::ScreenSwitch,
+            KeybindingCategory::Library,
+            KeybindingCategory::Queue,
+            KeybindingCategory::Plugins,
+            KeybindingCategory::LevelMeters,
+            KeybindingCategory::System,
         ]
     }
+}
+
+/// A documented keybinding for help display
+#[derive(Debug, Clone)]
+pub struct DocumentedKeybinding {
+    pub key: &'static str,
+    pub description: &'static str,
+    pub category: KeybindingCategory,
 }
 
 /// Get all keybindings for a given preset
@@ -166,55 +172,6 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-m", actions::ToggleMeterDim, None),
         KeyBinding::new("x", actions::ClearMeterMutesSolos, Some("PlayerView")),
     ]
-}
-
-/// Keybinding category for help display
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum KeybindingCategory {
-    Playback,
-    Navigation,
-    ScreenSwitch,
-    Library,
-    Queue,
-    Plugins,
-    LevelMeters,
-    System,
-}
-
-impl KeybindingCategory {
-    pub fn name(&self) -> &'static str {
-        match self {
-            KeybindingCategory::Playback => "Playback",
-            KeybindingCategory::Navigation => "Navigation",
-            KeybindingCategory::ScreenSwitch => "Screen Switching",
-            KeybindingCategory::Library => "Library",
-            KeybindingCategory::Queue => "Queue",
-            KeybindingCategory::Plugins => "Plugins",
-            KeybindingCategory::LevelMeters => "Level Meters",
-            KeybindingCategory::System => "System",
-        }
-    }
-
-    pub fn all() -> &'static [KeybindingCategory] {
-        &[
-            KeybindingCategory::Playback,
-            KeybindingCategory::Navigation,
-            KeybindingCategory::ScreenSwitch,
-            KeybindingCategory::Library,
-            KeybindingCategory::Queue,
-            KeybindingCategory::Plugins,
-            KeybindingCategory::LevelMeters,
-            KeybindingCategory::System,
-        ]
-    }
-}
-
-/// A documented keybinding for help display
-#[derive(Debug, Clone)]
-pub struct DocumentedKeybinding {
-    pub key: &'static str,
-    pub description: &'static str,
-    pub category: KeybindingCategory,
 }
 
 /// Get documented keybindings for help display (preset-aware)

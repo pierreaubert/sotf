@@ -682,13 +682,28 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         app.room_eq.opt_iteration = p.iteration;
         app.room_eq.opt_max_iter = p.max_iterations;
         app.room_eq.opt_loss = p.loss;
+        app.room_eq.opt_current_speaker = p.current_speaker.clone();
+        app.room_eq.opt_total_speakers = p.total_speakers;
         if p.loss > 0.0 {
-            app.room_eq.loss_history.push((p.speaker_index, p.loss));
+            // Use running index as X so the chart shows all iterations across all speakers
+            let idx = app.room_eq.loss_history.len();
+            app.room_eq.loss_history.push((idx, p.loss));
         }
         if let Some(msg) = p.message {
             for line in msg.lines() {
                 app.room_eq.opt_log_lines.push_back(line.to_string());
             }
+            while app.room_eq.opt_log_lines.len() > 300 {
+                app.room_eq.opt_log_lines.pop_front();
+            }
+        }
+        // Auto-generate log entries for iteration milestones
+        if p.iteration > 0 && p.iteration % 100 == 0 {
+            let msg = format!(
+                "[{}] iter {}/{} loss={:.6}",
+                p.current_speaker, p.iteration, p.max_iterations, p.loss
+            );
+            app.room_eq.opt_log_lines.push_back(msg);
             while app.room_eq.opt_log_lines.len() > 300 {
                 app.room_eq.opt_log_lines.pop_front();
             }
@@ -711,6 +726,8 @@ fn spawn_room_eq_optimization(app: &mut App) {
     app.room_eq.opt_progress = 0.0;
     app.room_eq.opt_iteration = 0;
     app.room_eq.opt_loss = 0.0;
+    app.room_eq.opt_current_speaker = String::new();
+    app.room_eq.opt_total_speakers = 0;
     app.room_eq.channel_results.clear();
     app.room_eq.loss_history.clear();
     app.room_eq.opt_log_lines.clear();
@@ -968,7 +985,8 @@ fn spawn_room_eq_optimization(app: &mut App) {
                 },
                 ssir_wav_path: None,
                 max_boost_envelope: None,
-            min_cut_envelope: None,
+                min_cut_envelope: None,
+                epa_config: None,
                 phase_correction: None,
                 min_filter_improvement: 0.0,
                 elimination_threshold: 0.0,

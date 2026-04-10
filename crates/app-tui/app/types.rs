@@ -229,6 +229,10 @@ pub struct HeadphoneEqTuiState {
     pub step: HeadphoneEqStep,
     /// When true, the wizard step tab bar has focus (Left/Right change step).
     pub step_tab_focused: bool,
+    /// Detail level for the Configure step (Simple / Intermediate / Expert).
+    pub detail_level: sotf_audio_player::autoeq::DetailLevel,
+    /// Currently selected preset id (e.g. "balanced", "custom").
+    pub selected_preset: String,
     // Step 1: measurement source
     pub measurement_source: HeadphoneMeasurementSource,
     // Step 1 (File mode): file selection
@@ -306,6 +310,8 @@ impl Default for HeadphoneEqTuiState {
         Self {
             step: HeadphoneEqStep::SelectFile,
             step_tab_focused: false,
+            detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
+            selected_preset: "balanced".to_string(),
             measurement_source: HeadphoneMeasurementSource::default(),
             measurement_path: String::new(),
             target_preset: "harman-over-ear-2018".to_string(),
@@ -373,6 +379,10 @@ pub struct RoomEqTuiState {
     pub opt_iteration: usize,
     pub opt_max_iter: usize,
     pub opt_loss: f64,
+    /// Name of the speaker currently being optimized
+    pub opt_current_speaker: String,
+    /// Total number of speakers being optimized
+    pub opt_total_speakers: usize,
     pub channel_results: Vec<ChannelOptResult>,
     pub loss_history: Vec<(usize, f64)>,
     /// Log buffer for optimization messages (max 300 lines)
@@ -409,6 +419,8 @@ impl Default for RoomEqTuiState {
             opt_iteration: 0,
             opt_max_iter: 0,
             opt_loss: 0.0,
+            opt_current_speaker: String::new(),
+            opt_total_speakers: 0,
             channel_results: Vec::new(),
             loss_history: Vec::new(),
             opt_log_lines: VecDeque::new(),

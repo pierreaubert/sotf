@@ -138,6 +138,8 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
+            detail_level: room_eq.detail_level,
+            selected_preset: Some(room_eq.selected_preset.clone()),
             opt_mode_open: room_eq.dropdowns.opt_mode_open,
             fir_phase_open: room_eq.dropdowns.fir_phase_open,
             algo_open: room_eq.dropdowns.algorithm_open,
@@ -155,6 +157,7 @@ impl PlayerView {
             vog_reference_channel_open: room_eq.dropdowns.vog_reference_channel_open,
             multi_measurement_strategy_open: room_eq.dropdowns.multi_measurement_strategy_open,
             focused_block: None,
+            ..Default::default()
         };
 
         // Compute available modes: if no phase data, only IIR
@@ -1498,6 +1501,60 @@ impl PlayerView {
                             .dropdowns
                             .mixed_fir_band_open = open;
                         cx.notify();
+                    });
+                }
+            })
+            .on_detail_level_change({
+                let state = self.state.clone();
+                move |level, _window, cx| {
+                    use sotf_audio_player::autoeq::DetailLevel;
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.room_eq_state.detail_level =
+                            match level {
+                                "simple" => DetailLevel::Simple,
+                                "intermediate" => DetailLevel::Intermediate,
+                                "expert" => DetailLevel::Expert,
+                                _ => DetailLevel::Simple,
+                            };
+                        cx.notify();
+                    });
+                }
+            })
+            .on_preset_change({
+                let state = self.state.clone();
+                move |preset_id, _window, cx| {
+                    use sotf_audio_player::autoeq::{DetailLevel, EqWorkflow, find_preset};
+                    state.update(cx, |state, cx| {
+                        let req = &mut state.app.measurement_state.room_eq_state;
+                        req.selected_preset = preset_id.to_string();
+                        if let Some(preset) = find_preset(EqWorkflow::RoomEq, preset_id) {
+                            if preset.is_custom() {
+                                req.detail_level = DetailLevel::Expert;
+                            } else if let Some(params) = preset.apply() {
+                                let c = &mut req.optimizer_config;
+                                c.num_filters = params.num_filters;
+                                c.min_freq = params.min_freq;
+                                c.max_freq = params.max_freq;
+                                c.min_db = params.min_db;
+                                c.max_db = params.max_db;
+                                c.min_q = params.min_q;
+                                c.max_q = params.max_q;
+                                c.peq_model = params.peq_model;
+                                c.population = params.population;
+                                c.max_iter = params.maxeval;
+                                c.refine = params.refine;
+                            }
+                        }
+                        cx.notify();
+                    });
+                }
+            })
+            .on_preset_toggle({
+                let state = self.state.clone();
+                move |_open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        cx.notify();
+                        let _ = state;
                     });
                 }
             });

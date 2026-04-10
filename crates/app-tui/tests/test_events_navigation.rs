@@ -1184,20 +1184,23 @@ mod tests {
     }
 
     #[test]
-    fn headphone_eq_configure_tab_cycles_fields() {
+    fn headphone_eq_configure_tab_cycles_detail_level() {
+        use sotf_audio_player::autoeq::DetailLevel;
         let mut app = app_on_headphone_eq();
         app.headphone_eq.step = HeadphoneEqStep::Configure;
-        app.headphone_eq.config_selected_field = 0;
+        app.headphone_eq.config_selected_field = 100; // preset field
 
+        // Tab cycles detail level: Simple -> Intermediate -> Expert -> Simple
+        assert_eq!(app.headphone_eq.detail_level, DetailLevel::Simple);
         send_keys(&mut app, &[KeyCode::Tab]);
-        assert_eq!(app.headphone_eq.config_selected_field, 1);
+        assert_eq!(app.headphone_eq.detail_level, DetailLevel::Intermediate);
         assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Configure);
 
-        // Wrap at max field (17)
-        app.headphone_eq.config_selected_field = 17;
         send_keys(&mut app, &[KeyCode::Tab]);
-        assert_eq!(app.headphone_eq.config_selected_field, 0);
-        assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Configure);
+        assert_eq!(app.headphone_eq.detail_level, DetailLevel::Expert);
+
+        send_keys(&mut app, &[KeyCode::Tab]);
+        assert_eq!(app.headphone_eq.detail_level, DetailLevel::Simple);
     }
 
     #[test]

@@ -66,6 +66,8 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
+            detail_level: headphone_eq.detail_level,
+            selected_preset: Some(headphone_eq.selected_preset.clone()),
             algo_open: headphone_eq.dropdowns.algorithm_open,
             peq_model_open: headphone_eq.dropdowns.peq_model_open,
             loss_type_open: headphone_eq.dropdowns.loss_type_open,
@@ -540,6 +542,64 @@ impl PlayerView {
                             .optimizer_config
                             .min_spacing_oct = value;
                         cx.notify();
+                    });
+                }
+            })
+            .on_detail_level_change({
+                let state = self.state.clone();
+                move |level, _window, cx| {
+                    use sotf_audio_player::autoeq::DetailLevel;
+                    state.update(cx, |state, cx| {
+                        let heq = &mut state.app.measurement_state.headphone_eq_state;
+                        heq.detail_level = match level {
+                            "simple" => DetailLevel::Simple,
+                            "intermediate" => DetailLevel::Intermediate,
+                            "expert" => DetailLevel::Expert,
+                            _ => DetailLevel::Simple,
+                        };
+                        cx.notify();
+                    });
+                }
+            })
+            .on_preset_change({
+                let state = self.state.clone();
+                move |preset_id, _window, cx| {
+                    use sotf_audio_player::autoeq::{DetailLevel, EqWorkflow, find_preset};
+                    state.update(cx, |state, cx| {
+                        let heq = &mut state.app.measurement_state.headphone_eq_state;
+                        heq.selected_preset = preset_id.to_string();
+                        // Apply preset parameters
+                        if let Some(preset) = find_preset(EqWorkflow::Headphone, preset_id) {
+                            if preset.is_custom() {
+                                heq.detail_level = DetailLevel::Expert;
+                            } else if let Some(params) = preset.apply() {
+                                heq.optimizer_config.num_filters = params.num_filters;
+                                heq.optimizer_config.min_freq = params.min_freq;
+                                heq.optimizer_config.max_freq = params.max_freq;
+                                heq.optimizer_config.min_db = params.min_db;
+                                heq.optimizer_config.max_db = params.max_db;
+                                heq.optimizer_config.min_q = params.min_q;
+                                heq.optimizer_config.max_q = params.max_q;
+                                heq.optimizer_config.peq_model = params.peq_model;
+                                heq.optimizer_config.population = params.population;
+                                heq.optimizer_config.max_iter = params.maxeval;
+                                heq.optimizer_config.refine = params.refine;
+                                heq.optimizer_config.smooth = params.smooth;
+                                heq.optimizer_config.smooth_n = params.smooth_n;
+                                heq.optimizer_config.loss = params.loss.clone();
+                                heq.set_ui_loss_type(&params.loss);
+                            }
+                        }
+                        cx.notify();
+                    });
+                }
+            })
+            .on_preset_toggle({
+                let state = self.state.clone();
+                move |_open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        cx.notify();
+                        let _ = state;
                     });
                 }
             });

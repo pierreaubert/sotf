@@ -145,6 +145,18 @@ pub struct PluginConfigWrapper {
     pub parameters: serde_json::Value,
 }
 
+/// Per-channel EPA psychoacoustic metrics computed on the initial
+/// (pre-EQ) and final (post-EQ) frequency responses.
+///
+/// See [`crate::loss::epa::score::EpaScore`] for the individual fields.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EpaChannelMetrics {
+    /// EPA score computed from the initial (pre-EQ) response.
+    pub pre: crate::loss::epa::score::EpaScore,
+    /// EPA score computed from the final (post-EQ) response.
+    pub post: crate::loss::epa::score::EpaScore,
+}
+
 /// Optimization metadata
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationMetadata {
@@ -161,4 +173,9 @@ pub struct OptimizationMetadata {
     /// Inter-channel deviation metric (computed when >1 channel)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inter_channel_deviation: Option<crate::roomeq::types::InterChannelDeviation>,
+    /// Per-channel EPA psychoacoustic metrics (pre-EQ and post-EQ).
+    /// Computed from each channel's initial and final frequency responses
+    /// using the configured `EpaConfig` (or defaults when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epa_per_channel: Option<HashMap<String, EpaChannelMetrics>>,
 }

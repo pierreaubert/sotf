@@ -19,4 +19,4 @@ pub use constants::*;
 pub use form::{AutoEqForm, AutoEqLayoutMode};
 pub use i18n::{AutoEqI18nExt, AutoEqI18nState, DocKey};
 pub use theme::AutoEqFormTheme;
-pub use ui_state::AutoEqFormUiState;
+pub use ui_state::{AutoEqFormUiState, DetailLevel};

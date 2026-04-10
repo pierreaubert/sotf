@@ -72,6 +72,8 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
+            detail_level: spinorama.detail_level,
+            selected_preset: Some(spinorama.selected_preset.clone()),
             opt_mode_open: spinorama.dropdowns.opt_mode_open,
             fir_phase_open: spinorama.dropdowns.fir_phase_open,
             peq_model_open: spinorama.dropdowns.peq_model_open,
@@ -641,6 +643,63 @@ impl PlayerView {
                             "flat".to_string()
                         };
                         cx.notify();
+                    });
+                }
+            })
+            .on_detail_level_change({
+                let state = self.state.clone();
+                move |level, _window, cx| {
+                    use sotf_audio_player::autoeq::DetailLevel;
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.spinorama_eq_state.detail_level =
+                            match level {
+                                "simple" => DetailLevel::Simple,
+                                "intermediate" => DetailLevel::Intermediate,
+                                "expert" => DetailLevel::Expert,
+                                _ => DetailLevel::Simple,
+                            };
+                        cx.notify();
+                    });
+                }
+            })
+            .on_preset_change({
+                let state = self.state.clone();
+                move |preset_id, _window, cx| {
+                    use sotf_audio_player::autoeq::{DetailLevel, EqWorkflow, find_preset};
+                    state.update(cx, |state, cx| {
+                        let seq = &mut state.app.measurement_state.spinorama_eq_state;
+                        seq.selected_preset = preset_id.to_string();
+                        if let Some(preset) = find_preset(EqWorkflow::Spinorama, preset_id) {
+                            if preset.is_custom() {
+                                seq.detail_level = DetailLevel::Expert;
+                            } else if let Some(params) = preset.apply() {
+                                let c = &mut seq.optimizer_config;
+                                c.num_filters = params.num_filters;
+                                c.min_freq = params.min_freq;
+                                c.max_freq = params.max_freq;
+                                c.min_db = params.min_db;
+                                c.max_db = params.max_db;
+                                c.min_q = params.min_q;
+                                c.max_q = params.max_q;
+                                c.peq_model = params.peq_model;
+                                c.population = params.population;
+                                c.max_iter = params.maxeval;
+                                c.refine = params.refine;
+                                c.smooth = params.smooth;
+                                c.smooth_n = params.smooth_n;
+                                c.loss_function = params.loss;
+                            }
+                        }
+                        cx.notify();
+                    });
+                }
+            })
+            .on_preset_toggle({
+                let state = self.state.clone();
+                move |_open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        cx.notify();
+                        let _ = state;
                     });
                 }
             });

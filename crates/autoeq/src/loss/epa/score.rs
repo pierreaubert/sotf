@@ -37,7 +37,7 @@ impl Default for EpaConfig {
 }
 
 /// EPA dimensions computed from a frequency response.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EpaScore {
     /// Evaluation: general quality (higher = better, 0-10 scale)
     pub evaluation: f64,

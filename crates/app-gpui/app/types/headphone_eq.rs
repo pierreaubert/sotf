@@ -91,6 +91,10 @@ pub struct HeadphoneEqState {
 
     // === UI State ===
     pub dropdowns: HeadphoneEqDropdowns,
+    /// Detail level for the configuration form (Simple / Intermediate / Expert)
+    pub detail_level: sotf_audio_player::autoeq::DetailLevel,
+    /// Currently selected preset id
+    pub selected_preset: String,
     pub status_message: String,
     pub error_message: Option<String>,
     /// Expanded accordion sections
@@ -122,6 +126,8 @@ impl Default for HeadphoneEqState {
             export_format: "json".to_string(),
             save_name: String::new(),
             dropdowns: HeadphoneEqDropdowns::default(),
+            detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
+            selected_preset: "balanced".to_string(),
             status_message: String::new(),
             error_message: None,
             expanded_sections: vec!["measurement".into(), "target".into(), "eq-design".into()],

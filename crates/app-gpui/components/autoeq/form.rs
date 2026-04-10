@@ -204,6 +204,12 @@ pub struct AutoEqForm {
 
     /// Callback when the user hovers over a parameter block (drives the docs panel).
     pub(crate) on_block_focus: Option<StringCallback>,
+    /// Callback when detail level changes (Simple/Intermediate/Expert).
+    pub(crate) on_detail_level_change: Option<StringCallback>,
+    /// Callback when preset selection changes.
+    pub(crate) on_preset_change: Option<StringCallback>,
+    /// Callback for preset dropdown toggle.
+    pub(crate) on_preset_toggle: Option<ToggleCallback>,
 }
 
 impl AutoEqForm {
@@ -326,6 +332,9 @@ impl AutoEqForm {
             on_multi_measurement_variance_lambda_change: None,
             on_multi_measurement_weight_change: None,
             on_block_focus: None,
+            on_detail_level_change: None,
+            on_preset_change: None,
+            on_preset_toggle: None,
         }
     }
 
@@ -1259,6 +1268,33 @@ impl AutoEqForm {
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_block_focus = Some(Box::new(handler));
+        self
+    }
+
+    /// Set detail level change handler (called with "simple", "intermediate", or "expert")
+    pub fn on_detail_level_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_detail_level_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set preset change handler (called with preset id like "balanced", "custom")
+    pub fn on_preset_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_preset_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set preset dropdown toggle handler
+    pub fn on_preset_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_preset_toggle = Some(Box::new(handler));
         self
     }
 }

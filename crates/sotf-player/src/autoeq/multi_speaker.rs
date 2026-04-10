@@ -333,6 +333,7 @@ pub fn run_multi_speaker_optimization(
             ssir_wav_path: None,
             max_boost_envelope: None,
             min_cut_envelope: None,
+            epa_config: None,
         },
         recording_config: None,
         cea2034_cache: None,
@@ -508,6 +509,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         ssir_wav_path: None,
         max_boost_envelope: None,
         min_cut_envelope: None,
+        epa_config: None,
     }
 }
 

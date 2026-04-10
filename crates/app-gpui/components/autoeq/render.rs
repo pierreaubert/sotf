@@ -25,6 +25,7 @@ use super::form::{
 };
 use super::layout_tree::solve_autoeq_layout;
 use super::theme::AutoEqFormTheme;
+use super::ui_state::DetailLevel;
 
 /// Render the documentation panel for the given focused block.
 fn render_docs_panel(
@@ -286,6 +287,9 @@ impl RenderOnce for AutoEqForm {
             .map(std::rc::Rc::new);
 
         let on_block_focus_rc = self.on_block_focus.map(std::rc::Rc::new);
+        let on_detail_level_change_rc = self.on_detail_level_change.map(std::rc::Rc::new);
+        let on_preset_change_rc = self.on_preset_change.map(std::rc::Rc::new);
+        let on_preset_toggle_rc = self.on_preset_toggle.map(std::rc::Rc::new);
 
         // Solve the two-panel layout
         let solved = solve_autoeq_layout(available_width, 800.0);
@@ -298,14 +302,22 @@ impl RenderOnce for AutoEqForm {
         // Override available_width for the form body to use the solved form width
         let available_width = form_width;
 
-        // Build the form body
-        let form_body = match layout_mode {
-            AutoEqLayoutMode::Default => {
-                include!("render_body.rs")
+        // Build the form body - branch on detail level
+        let detail_level = ui_state.detail_level;
+        let form_body = match detail_level {
+            // Simple and Intermediate: simplified render with preset selector
+            DetailLevel::Simple | DetailLevel::Intermediate => {
+                include!("render_body_simple.rs")
             }
-            AutoEqLayoutMode::RoomEq => {
-                include!("render_body_room_eq.rs")
-            }
+            // Expert: full parameter form
+            DetailLevel::Expert => match layout_mode {
+                AutoEqLayoutMode::Default => {
+                    include!("render_body.rs")
+                }
+                AutoEqLayoutMode::RoomEq => {
+                    include!("render_body_room_eq.rs")
+                }
+            },
         };
 
         // Two-panel layout: form (left) + docs (right)

@@ -30,6 +30,7 @@ pub struct BlockDoc {
 
 /// Key used when no block is focused — shows the overview.
 pub const BLOCK_OVERVIEW: &str = "overview";
+pub const BLOCK_PRESET: &str = "preset";
 pub const BLOCK_GOALS: &str = "goals";
 pub const BLOCK_EQ_DESIGN: &str = "eq-design";
 pub const BLOCK_RANGES: &str = "ranges";
@@ -37,6 +38,7 @@ pub const BLOCK_PEQ_MODEL: &str = "peq-model";
 pub const BLOCK_OPTIMIZER: &str = "optimizer";
 pub const BLOCK_DE_PARAMS: &str = "de-params";
 pub const BLOCK_REFINEMENT: &str = "refinement";
+pub const BLOCK_SMOOTHING: &str = "smoothing";
 pub const BLOCK_TARGET_TILT: &str = "target-tilt";
 pub const BLOCK_EXCURSION: &str = "excursion";
 pub const BLOCK_SCHROEDER: &str = "schroeder";
@@ -48,11 +50,46 @@ pub static BLOCK_DOCS: &[BlockDoc] = &[
     BlockDoc {
         id: BLOCK_OVERVIEW,
         title: "AutoEQ Parameters",
-        overview: "Configure the parametric EQ optimizer. The form is split into three \
-                   areas: goals (what to optimize for), EQ design (filter constraints), \
-                   and optimizer settings (how the search is performed). Hover over a \
-                   section on the left to see detailed help here.",
+        overview: "Configure the parametric EQ optimizer. Use the mode toggle to switch \
+                   between Simple (presets only), Customize (key parameters), and All \
+                   Parameters (full expert control). Hover over a section on the left \
+                   to see detailed help here.",
         fields: &[],
+    },
+    BlockDoc {
+        id: BLOCK_PRESET,
+        title: "Presets",
+        overview: "Presets bundle all optimizer parameters into a single choice. Select \
+                   a preset to get started quickly, then switch to Customize or All \
+                   Parameters if you want to fine-tune.",
+        fields: &[
+            FieldDoc {
+                name: "Quick / Quick Fix",
+                description: "Fast correction with fewer filters. Good results in seconds.",
+                default: "5 filters, no refinement",
+                tip: "Use this for a quick preview before committing to a longer run.",
+            },
+            FieldDoc {
+                name: "Balanced",
+                description: "Good balance of quality and speed. Recommended for most users.",
+                default: "7 filters, refinement enabled",
+                tip: "Start here if you're unsure. Covers most use cases well.",
+            },
+            FieldDoc {
+                name: "Maximum Quality / Audiophile",
+                description: "Best possible correction with more filters and longer \
+                              optimization. Use when quality matters more than speed.",
+                default: "10 filters, shelves, full refinement",
+                tip: "Can take several minutes. The result is typically the best \
+                      achievable with parametric EQ.",
+            },
+            FieldDoc {
+                name: "Custom",
+                description: "Unlocks all parameters for full expert control.",
+                default: "",
+                tip: "Switches the form to All Parameters mode automatically.",
+            },
+        ],
     },
     BlockDoc {
         id: BLOCK_GOALS,
@@ -70,12 +107,16 @@ pub static BLOCK_DOCS: &[BlockDoc] = &[
             },
             FieldDoc {
                 name: "Loss Function",
-                description: "'Flat' minimizes the RMS deviation from the target curve. \
-                              'Score' optimizes the Harman/Olive listener preference \
-                              score, which allows a controlled bass shelf.",
-                default: "flat",
-                tip: "Start with 'flat' for accuracy. Switch to 'score' if you want \
-                      perceptually-tuned bass emphasis.",
+                description: "'Flat Target Match' minimizes deviation from the target. \
+                              'Natural Correction' tolerates dips but penalizes peaks \
+                              (best for rooms where nulls can't be fixed). \
+                              'Listener Preference' optimizes the Harman score with a \
+                              natural bass shelf. 'Perceptual (EPA)' uses psychoacoustic \
+                              metrics: loudness balance, sharpness, and roughness.",
+                default: "Flat Target Match",
+                tip: "Start with 'Flat Target Match' for accuracy. Try 'Natural \
+                      Correction' for room EQ. 'Listener Preference' adds a bass \
+                      shelf. 'Perceptual' is experimental and best for advanced users.",
             },
             FieldDoc {
                 name: "Target Curve",
@@ -164,18 +205,19 @@ pub static BLOCK_DOCS: &[BlockDoc] = &[
     },
     BlockDoc {
         id: BLOCK_PEQ_MODEL,
-        title: "PEQ Model",
+        title: "Filter Type",
         overview: "Determines which filter types the optimizer can use. More \
                    flexible models can achieve better results but increase search \
                    complexity.",
         fields: &[FieldDoc {
-            name: "PEQ Model",
-            description: "'pk' = peak filters only. 'hp-pk' adds a highpass. \
-                              'hp-pk-lp' adds both highpass and lowpass. 'ls-pk-hs' \
-                              adds shelf filters. 'free' allows any combination.",
-            default: "pk",
-            tip: "For headphone EQ, 'pk' is usually sufficient. For speakers, \
-                      'hp-pk-lp' or 'ls-pk-hs' gives better low/high frequency control.",
+            name: "Filter Type",
+            description: "'Peaks Only' uses bell/peak filters — simplest and most \
+                          compatible. 'Highpass + Peaks' adds a bass rolloff. \
+                          'Shelves + Peaks' adds low and high shelves — most flexible. \
+                          'Fully Automatic' lets each filter choose its own type.",
+            default: "Peaks Only",
+            tip: "For headphone EQ, 'Peaks Only' is usually sufficient. For speakers, \
+                  'Shelves + Peaks' gives better control over the overall tonal balance.",
         }],
     },
     BlockDoc {
@@ -279,6 +321,47 @@ pub static BLOCK_DOCS: &[BlockDoc] = &[
                               stable near constraints.",
                 default: "cobyla",
                 tip: "COBYLA is the safest choice. Try BOBYQA if COBYLA is slow.",
+            },
+        ],
+    },
+    BlockDoc {
+        id: BLOCK_SMOOTHING,
+        title: "Signal Processing",
+        overview: "Controls how the target curve and measurements are processed before \
+                   optimization. These settings affect the trade-off between accuracy \
+                   and stability.",
+        fields: &[
+            FieldDoc {
+                name: "Smoothing",
+                description: "Applies fractional-octave smoothing to the inverted target. \
+                              Reduces noise sensitivity but may hide narrow features.",
+                default: "enabled",
+                tip: "Disable for room EQ where narrow modes need surgical correction.",
+            },
+            FieldDoc {
+                name: "Smooth Window",
+                description: "Smoothing resolution: 1/N octave. Lower N = more smoothing.",
+                default: "1 (1-octave)",
+                tip: "Use 1/3 octave (N=3) for a good balance. Use 1/12 (N=12) for \
+                      detailed correction.",
+            },
+            FieldDoc {
+                name: "Psychoacoustic Weighting",
+                description: "Weights the error by perceptual importance using ERB \
+                              (Equivalent Rectangular Bandwidth) spacing. Prioritizes \
+                              frequencies where the ear is most sensitive.",
+                default: "enabled",
+                tip: "Keep enabled for natural-sounding results. Disable for purely \
+                      analytical measurements.",
+            },
+            FieldDoc {
+                name: "Asymmetric Loss",
+                description: "Penalizes peaks more heavily than dips. Useful for room \
+                              EQ where cutting resonances is safe but boosting nulls \
+                              wastes amplifier power.",
+                default: "enabled (room EQ)",
+                tip: "Keep enabled for room correction. Disable for headphone EQ \
+                      where dips and peaks are equally problematic.",
             },
         ],
     },

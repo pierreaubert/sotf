@@ -24,9 +24,34 @@ pub const FIR_PHASE_OPTIONS: &[(&str, &str)] = &[
     ("kirkeby", "Kirkeby Inverse"),
 ];
 
-/// Loss Type options
-pub const LOSS_TYPE_OPTIONS: &[(&str, &str)] =
-    &[("flat", "Flat Response"), ("score", "Preference Score")];
+/// Loss Type options for speakers (Room EQ / Spinorama)
+pub const LOSS_TYPE_OPTIONS: &[(&str, &str)] = &[
+    ("flat", "Flat Target Match"),
+    ("flat-asymmetric", "Natural Correction"),
+    ("score", "Listener Preference"),
+    ("epa", "Perceptual (EPA)"),
+];
+
+/// Loss Type options for headphones
+pub const HEADPHONE_LOSS_TYPE_OPTIONS: &[(&str, &str)] = &[
+    ("flat", "Flat Target Match"),
+    ("score", "Listener Preference"),
+    ("epa", "Perceptual (EPA)"),
+];
+
+/// Short descriptions for loss types (used as tooltips / inline help)
+pub const LOSS_TYPE_DESCRIPTIONS: &[(&str, &str)] = &[
+    ("flat", "Minimize deviation from target curve"),
+    (
+        "flat-asymmetric",
+        "Tolerates dips, penalizes peaks \u{2014} better for rooms",
+    ),
+    ("score", "Optimize for how listeners rate the sound"),
+    (
+        "epa",
+        "Psychoacoustic optimization: loudness, sharpness, roughness",
+    ),
+];
 
 /// Target curve options for headphones (Harman curves)
 pub const HEADPHONE_TARGET_CURVE_OPTIONS: &[(&str, &str)] = &[
@@ -117,15 +142,26 @@ pub const DE_STRATEGY_OPTIONS: &[(&str, &str)] = &[
     ("lshadeexp", "L-SHADE/Exp"),
 ];
 
-/// PEQ model options
+/// PEQ model options with human-readable labels
 pub const PEQ_MODEL_OPTIONS: &[(&str, &str)] = &[
-    ("pk", "PK - All Peak Filters"),
-    ("hp-pk", "HP+PK - Highpass + Peaks"),
-    ("hp-pk-lp", "HP+PK+LP - Highpass + Peaks + Lowpass"),
-    ("ls-pk", "LS+PK - Low Shelf + Peaks"),
-    ("ls-pk-hs", "LS+PK+HS - Low Shelf + Peaks + High Shelf"),
-    ("free-pk-free", "Free+PK+Free - Flexible ends, peaks middle"),
-    ("free", "Free - All filters flexible"),
+    ("pk", "Peaks Only"),
+    ("hp-pk", "Highpass + Peaks"),
+    ("ls-pk", "Bass Shelf + Peaks"),
+    ("hp-pk-lp", "Bandpass + Peaks"),
+    ("ls-pk-hs", "Shelves + Peaks"),
+    ("free-pk-free", "Flexible Ends"),
+    ("free", "Fully Automatic"),
+];
+
+/// Short descriptions for PEQ models (used as tooltips / inline help)
+pub const PEQ_MODEL_DESCRIPTIONS: &[(&str, &str)] = &[
+    ("pk", "All filters are bell/peak type. Simplest and most compatible."),
+    ("hp-pk", "Adds a bass rolloff filter. Good for limited low extension."),
+    ("ls-pk", "Adds a low shelf for broad bass adjustment."),
+    ("hp-pk-lp", "Constrains both low and high ends."),
+    ("ls-pk-hs", "Low and high shelves plus peaks. Most flexible."),
+    ("free-pk-free", "End filters auto-select their type."),
+    ("free", "Every filter chooses its own type. Longest optimization."),
 ];
 
 /// Mixed mode crossover type options

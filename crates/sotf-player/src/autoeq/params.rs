@@ -117,13 +117,7 @@ impl OptimizationParamsSerializable {
         args.local_algo = self.local_algo.clone();
         args.smooth = self.smooth;
         args.smooth_n = self.smooth_n;
-        args.loss = match self.loss.as_str() {
-            "speaker-flat" | "speakerflat" => autoeq::LossType::SpeakerFlat,
-            "speaker-score" | "speakerscore" => autoeq::LossType::SpeakerScore,
-            "headphone-flat" | "headphoneflat" => autoeq::LossType::HeadphoneFlat,
-            "headphone-score" | "headphonescore" => autoeq::LossType::HeadphoneScore,
-            _ => autoeq::LossType::SpeakerFlat,
-        };
+        args.loss = parse_loss_type(&self.loss);
         args.curve_name = self.curve_name.clone();
         args
     }
@@ -224,25 +218,28 @@ pub const DE_STRATEGY_OPTIONS: &[(&str, &str)] = &[
 
 /// PEQ model options
 pub const PEQ_MODEL_OPTIONS: &[(&str, &str)] = &[
-    ("pk", "PK - All Peak Filters"),
-    ("hp-pk", "HP+PK - Highpass + Peaks"),
-    ("hp-pk-lp", "HP+PK+LP - Highpass + Peaks + Lowpass"),
-    ("ls-pk", "LS+PK - Low Shelf + Peaks"),
-    ("ls-pk-hs", "LS+PK+HS - Low Shelf + Peaks + High Shelf"),
-    ("free-pk-free", "Free+PK+Free - Flexible ends, peaks middle"),
-    ("free", "Free - All filters flexible"),
+    ("pk", "Peaks Only"),
+    ("hp-pk", "Highpass + Peaks"),
+    ("ls-pk", "Bass Shelf + Peaks"),
+    ("hp-pk-lp", "Bandpass + Peaks"),
+    ("ls-pk-hs", "Shelves + Peaks"),
+    ("free-pk-free", "Flexible Ends"),
+    ("free", "Fully Automatic"),
 ];
 
 /// Loss function options for speakers
 pub const SPEAKER_LOSS_OPTIONS: &[(&str, &str)] = &[
-    ("speaker-flat", "Flat Response"),
-    ("speaker-score", "Harman Score"),
+    ("speaker-flat", "Flat Target Match"),
+    ("speaker-flat-asymmetric", "Natural Correction"),
+    ("speaker-score", "Listener Preference"),
+    ("epa", "Perceptual (EPA)"),
 ];
 
 /// Loss function options for headphones
 pub const HEADPHONE_LOSS_OPTIONS: &[(&str, &str)] = &[
-    ("headphone-flat", "Flat Response"),
-    ("headphone-score", "Harman Score"),
+    ("headphone-flat", "Flat Target Match"),
+    ("headphone-score", "Listener Preference"),
+    ("epa", "Perceptual (EPA)"),
 ];
 
 /// Curve name options for speakers
@@ -333,11 +330,25 @@ pub fn format_peq_export(
 pub fn parse_loss_type(loss: &str) -> autoeq::LossType {
     match loss {
         "speaker-flat" | "speakerflat" => autoeq::LossType::SpeakerFlat,
+        "speaker-flat-asymmetric" | "speakerflatasymmetric" => {
+            autoeq::LossType::SpeakerFlatAsymmetric
+        }
         "speaker-score" | "speakerscore" => autoeq::LossType::SpeakerScore,
         "headphone-flat" | "headphoneflat" => autoeq::LossType::HeadphoneFlat,
         "headphone-score" | "headphonescore" => autoeq::LossType::HeadphoneScore,
+        "epa" => autoeq::LossType::Epa,
         _ => autoeq::LossType::SpeakerFlat,
     }
+}
+
+/// Look up the user-facing label for a value in an options array.
+/// Falls back to the raw value if not found.
+pub fn label_for<'a>(options: &[(&str, &'a str)], value: &'a str) -> &'a str {
+    options
+        .iter()
+        .find(|(id, _)| *id == value)
+        .map(|(_, label)| *label)
+        .unwrap_or(value)
 }
 
 /// Convert PEQ model string to PeqModel

@@ -270,33 +270,82 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
 
         HeadphoneEqStep::Configure => {
+            use sotf_audio_player::autoeq::{
+                self, DetailLevel, EqWorkflow, PEQ_MODEL_OPTIONS, HEADPHONE_LOSS_OPTIONS,
+            };
+
             let c = &s.config;
             let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
+            let detail = s.detail_level;
 
-            let rows: Vec<(Option<usize>, &str, String)> = vec![
-                (None, "── Filters ──", String::new()),
-                (Some(0), "Filters (n)", format!("{}", c.num_filters)),
-                (Some(1), "Min Freq (Hz)", format!("{:.0}", c.min_freq)),
-                (Some(2), "Max Freq (Hz)", format!("{:.0}", c.max_freq)),
-                (Some(3), "Min dB", format!("{:.1}", c.min_db)),
-                (Some(4), "Max dB", format!("{:.1}", c.max_db)),
-                (Some(5), "Min Q", format!("{:.2}", c.min_q)),
-                (Some(6), "Max Q", format!("{:.2}", c.max_q)),
-                (Some(7), "PEQ Model", c.peq_model.clone()),
-                (None, "── Optimization ──", String::new()),
-                (Some(8), "Algorithm", c.algorithm.as_str().to_string()),
-                (Some(9), "Max Iter", format!("{}", c.max_iter)),
-                (Some(10), "Population", format!("{}", c.population)),
-                (Some(11), "Strategy", c.strategy.clone()),
-                (Some(12), "DE F (mutation)", format!("{:.2}", c.de_f)),
-                (Some(13), "DE CR (crossover)", format!("{:.2}", c.de_cr)),
-                (None, "── Refinement ──", String::new()),
-                (Some(14), "Refine", bool_str(c.refine).to_string()),
-                (Some(15), "Local Algo", c.local_algo.clone()),
-                (None, "── Smoothing ──", String::new()),
-                (Some(16), "Smooth", bool_str(c.smooth).to_string()),
-                (Some(17), "Smooth N", format!("{}", c.smooth_n)),
-            ];
+            // Build rows based on detail level.
+            // Field indices stay stable across all modes — hidden fields just aren't shown.
+            let rows: Vec<(Option<usize>, &str, String)> = match detail {
+                DetailLevel::Simple => vec![
+                    (None, "── Preset ──", String::new()),
+                    (Some(100), "Preset", {
+                        autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
+                            .map(|p| p.name)
+                            .unwrap_or(&s.selected_preset)
+                            .to_string()
+                    }),
+                ],
+                DetailLevel::Intermediate => vec![
+                    (None, "── Preset ──", String::new()),
+                    (Some(100), "Preset", {
+                        autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
+                            .map(|p| p.name)
+                            .unwrap_or(&s.selected_preset)
+                            .to_string()
+                    }),
+                    (None, "── Filter Design ──", String::new()),
+                    (Some(0), "Filters (n)", format!("{}", c.num_filters)),
+                    (Some(7), "Filter Type", autoeq::label_for(PEQ_MODEL_OPTIONS, &c.peq_model).to_string()),
+                    (Some(1), "Min Freq (Hz)", format!("{:.0}", c.min_freq)),
+                    (Some(2), "Max Freq (Hz)", format!("{:.0}", c.max_freq)),
+                    (None, "── Goal ──", String::new()),
+                    (Some(18), "Loss Function", autoeq::label_for(HEADPHONE_LOSS_OPTIONS, &c.loss).to_string()),
+                ],
+                DetailLevel::Expert => vec![
+                    (None, "── Preset ──", String::new()),
+                    (Some(100), "Preset", {
+                        autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
+                            .map(|p| p.name)
+                            .unwrap_or(&s.selected_preset)
+                            .to_string()
+                    }),
+                    (None, "── Filters ──", String::new()),
+                    (Some(0), "Filters (n)", format!("{}", c.num_filters)),
+                    (Some(1), "Min Freq (Hz)", format!("{:.0}", c.min_freq)),
+                    (Some(2), "Max Freq (Hz)", format!("{:.0}", c.max_freq)),
+                    (Some(3), "Min dB", format!("{:.1}", c.min_db)),
+                    (Some(4), "Max dB", format!("{:.1}", c.max_db)),
+                    (Some(5), "Min Q", format!("{:.2}", c.min_q)),
+                    (Some(6), "Max Q", format!("{:.2}", c.max_q)),
+                    (Some(7), "Filter Type", autoeq::label_for(PEQ_MODEL_OPTIONS, &c.peq_model).to_string()),
+                    (Some(18), "Loss Function", autoeq::label_for(HEADPHONE_LOSS_OPTIONS, &c.loss).to_string()),
+                    (None, "── Optimization ──", String::new()),
+                    (Some(8), "Algorithm", c.algorithm.as_str().to_string()),
+                    (Some(9), "Max Iter", format!("{}", c.max_iter)),
+                    (Some(10), "Population", format!("{}", c.population)),
+                    (Some(11), "Strategy", c.strategy.clone()),
+                    (Some(12), "DE F (mutation)", format!("{:.2}", c.de_f)),
+                    (Some(13), "DE CR (crossover)", format!("{:.2}", c.de_cr)),
+                    (None, "── Refinement ──", String::new()),
+                    (Some(14), "Refine", bool_str(c.refine).to_string()),
+                    (Some(15), "Local Algo", c.local_algo.clone()),
+                    (None, "── Smoothing ──", String::new()),
+                    (Some(16), "Smooth", bool_str(c.smooth).to_string()),
+                    (Some(17), "Smooth N", format!("{}", c.smooth_n)),
+                ],
+            };
+
+            // Detail mode label
+            let mode_label = match detail {
+                DetailLevel::Simple => "Simple",
+                DetailLevel::Intermediate => "Customize",
+                DetailLevel::Expert => "All Parameters",
+            };
 
             let mut lines = vec![
                 Line::from(vec![
@@ -305,9 +354,24 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         &s.measurement_path,
                         Style::default().fg(app.theme.accent_primary),
                     ),
+                    Span::styled(
+                        format!("  [{}]  Tab=cycle mode", mode_label),
+                        Style::default().fg(app.theme.fg_secondary),
+                    ),
                 ]),
                 Line::from(""),
             ];
+
+            // Show preset description in Simple mode
+            if detail == DetailLevel::Simple {
+                if let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset) {
+                    lines.push(Line::from(Span::styled(
+                        format!("  {}", preset.description),
+                        Style::default().fg(app.theme.fg_secondary),
+                    )));
+                    lines.push(Line::from(""));
+                }
+            }
 
             for (idx, label, value) in &rows {
                 let is_selected = idx.is_some_and(|i| i == s.config_selected_field);
@@ -345,11 +409,20 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     style,
                 )));
             }
+
+            // Context-sensitive hint line
             lines.push(Line::from(""));
             let hint = if s.editing_value {
                 " Type value, Enter=confirm  Esc=cancel"
             } else {
-                " Up/Down=navigate  Left/Right=adjust  Enter=edit value  Tab=next field"
+                match s.config_selected_field {
+                    0 => " 5-7 for quick results, 10+ for surgical precision",
+                    1 | 2 => " Narrow the range to the problem region for faster results",
+                    7 => " Left/Right to cycle filter types",
+                    18 => " Left/Right to cycle loss functions",
+                    100 => " Left/Right to change preset",
+                    _ => " Up/Down=navigate  Left/Right=adjust  Enter=edit  Tab=cycle mode",
+                }
             };
             lines.push(Line::from(Span::styled(
                 hint,

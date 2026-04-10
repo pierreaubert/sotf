@@ -176,6 +176,10 @@ pub struct SpinoramaEqState {
     pub export_format: String,
 
     // === UI State ===
+    /// Detail level for the configuration form (Simple / Intermediate / Expert)
+    pub detail_level: sotf_audio_player::autoeq::DetailLevel,
+    /// Currently selected preset id
+    pub selected_preset: String,
     /// Loading indicator for speakers API call
     pub loading_speakers: bool,
     /// Loading indicator for versions API call
@@ -239,6 +243,8 @@ impl Default for SpinoramaEqState {
             result: None,
             full_result: None,
             export_format: "json".to_string(),
+            detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
+            selected_preset: "balanced".to_string(),
             loading_speakers: false,
             loading_versions: false,
             loading_measurements: false,

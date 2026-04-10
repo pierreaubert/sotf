@@ -205,6 +205,10 @@ pub struct RoomEqState {
     /// When false (default), the Configure step shows only basic settings
     /// (mode, algorithm, num_filters, target_curve). Toggle to show all parameters.
     pub show_advanced_config: bool,
+    /// Detail level for the configuration form (Simple / Intermediate / Expert)
+    pub detail_level: sotf_audio_player::autoeq::DetailLevel,
+    /// Currently selected preset id
+    pub selected_preset: String,
 
     // === Multi-position data detection ===
     /// Whether loaded data has multi-position measurements (MeasurementSource::Multiple)
@@ -240,6 +244,8 @@ impl Default for RoomEqState {
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
             show_advanced_config: false,
+            detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
+            selected_preset: "full-range".to_string(),
             has_multi_position_data: false,
             multi_position_counts: Vec::new(),
         }
@@ -867,6 +873,7 @@ impl RoomEqState {
             ssir_wav_path: None,
             max_boost_envelope: None,
             min_cut_envelope: None,
+            epa_config: None,
             phase_correction: None,
         };
 

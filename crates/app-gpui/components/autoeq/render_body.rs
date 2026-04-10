@@ -59,7 +59,11 @@
             }
 
             // Loss Type dropdown
-            let loss_type_options: Vec<SelectOption> = LOSS_TYPE_OPTIONS
+            let loss_options_source = match optimization_type {
+                OptimizationType::Headphone => HEADPHONE_LOSS_TYPE_OPTIONS,
+                OptimizationType::Speaker => LOSS_TYPE_OPTIONS,
+            };
+            let loss_type_options: Vec<SelectOption> = loss_options_source
                 .iter()
                 .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                 .collect();

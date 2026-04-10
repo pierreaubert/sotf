@@ -40,6 +40,7 @@ pub mod types;
 pub mod headphone;
 pub mod multi_speaker;
 pub mod params;
+pub mod presets;
 pub mod speaker;
 
 // Re-export types
@@ -50,7 +51,14 @@ pub use params::{
     ALGORITHM_OPTIONS, CURVE_NAME_OPTIONS, DE_STRATEGY_OPTIONS, EQ_EXPORT_FORMAT_OPTIONS,
     HEADPHONE_LOSS_OPTIONS, LOCAL_ALGO_OPTIONS, OptimizationParams, OptimizationParamsSerializable,
     PEQ_MODEL_OPTIONS, ParamLimits, SPEAKER_LOSS_OPTIONS, format_peq_export, get_export_extension,
-    parse_loss_type, parse_peq_model,
+    label_for, parse_loss_type, parse_peq_model,
+};
+
+// Re-export preset types
+pub use presets::{
+    DetailLevel, EqPreset, EqWorkflow, default_preset_id, field_hint, field_warning, find_preset,
+    population_to_quality, preset_options, presets_for, quality_label,
+    quality_to_optimizer_params,
 };
 
 // Re-export headphone types

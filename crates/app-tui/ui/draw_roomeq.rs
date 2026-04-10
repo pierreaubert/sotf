@@ -361,13 +361,26 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     "Ready to optimize. Press Enter to start.".to_string(),
                     Style::default().fg(app.theme.fg_secondary),
                 ),
-                OptimizationStatus::Running => (
-                    format!(
-                        "Optimizing... iter {}/{} | loss: {:.4}",
-                        s.opt_iteration, s.opt_max_iter, s.opt_loss
-                    ),
-                    Style::default().fg(app.theme.accent_primary),
-                ),
+                OptimizationStatus::Running => {
+                    let speaker_info = if !s.opt_current_speaker.is_empty() {
+                        if s.opt_total_speakers > 1 {
+                            format!(" | {}/{} {}",
+                                s.opt_total_speakers.min(s.channel_results.len() + 1),
+                                s.opt_total_speakers, s.opt_current_speaker)
+                        } else {
+                            format!(" | {}", s.opt_current_speaker)
+                        }
+                    } else {
+                        String::new()
+                    };
+                    (
+                        format!(
+                            "Optimizing... iter {}/{} | loss: {:.4}{}",
+                            s.opt_iteration, s.opt_max_iter, s.opt_loss, speaker_info
+                        ),
+                        Style::default().fg(app.theme.accent_primary),
+                    )
+                }
                 OptimizationStatus::Completed => (
                     format!("Completed! {} channel results", s.channel_results.len()),
                     Style::default().fg(app.theme.accent_success),
