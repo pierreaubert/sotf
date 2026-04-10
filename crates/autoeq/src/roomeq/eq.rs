@@ -259,6 +259,9 @@ fn prepare_single_channel_eq(
     // Propagate frequency-dependent boost/cut envelopes for per-filter gain clamping
     objective_data.max_boost_envelope = config.max_boost_envelope.clone();
     objective_data.min_cut_envelope = config.min_cut_envelope.clone();
+    // Propagate EPA config so compute_base_fitness uses user-provided
+    // weights when loss_type == LossType::Epa.
+    objective_data.epa_config = config.epa_config.clone();
 
     Ok(PreparedSingleChannelEq {
         objective_data,
@@ -721,7 +724,7 @@ fn optimize_channel_eq_multi_inner(
             phase: None,
         };
 
-        let (objective_data, _use_cea) = crate::workflow::setup_objective_data(
+        let (mut objective_data, _use_cea) = crate::workflow::setup_objective_data(
             &build_args(
                 config,
                 effective_min_freq,
@@ -736,6 +739,11 @@ fn optimize_channel_eq_multi_inner(
             &None,
         )
         .expect("setup_objective_data should not fail without spin data");
+
+        // Propagate EPA configuration from OptimizerConfig into the
+        // ObjectiveData so `compute_base_fitness` uses the user-provided
+        // weights when `loss_type == LossType::Epa`.
+        objective_data.epa_config = config.epa_config.clone();
 
         if i == 0 {
             primary_objective = Some(objective_data.clone());
@@ -1093,7 +1101,7 @@ fn optimize_spatial_robustness(
     );
 
     // Setup objective data with the masked deviation
-    let (objective_data, _use_cea) = setup_objective_data(
+    let (mut objective_data, _use_cea) = setup_objective_data(
         &args,
         &normalized_curve,
         &target_curve,
@@ -1101,6 +1109,10 @@ fn optimize_spatial_robustness(
         &None,
     )
     .expect("setup_objective_data should not fail without spin data");
+
+    // Propagate EPA config so compute_base_fitness uses user-provided
+    // weights when loss_type == LossType::Epa.
+    objective_data.epa_config = config.epa_config.clone();
 
     let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&args);
     let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);

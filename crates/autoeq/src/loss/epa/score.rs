@@ -5,9 +5,11 @@
 //! The composite preference score provides a single optimization target.
 
 use super::{loudness, roughness, sharpness};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Configuration for EPA scoring.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EpaConfig {
     /// Listening level in phon (affects loudness computation)
     pub listening_level_phon: f64,

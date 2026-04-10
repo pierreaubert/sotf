@@ -30,7 +30,7 @@ pub fn sharpness(specific_loudness: &[f64; 24]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::epa::loudness::specific_loudness;
+    use crate::loss::epa::loudness::specific_loudness;
 
     fn make_bandlimited_response(lo_hz: f64, hi_hz: f64, level_db: f64) -> (Vec<f64>, Vec<f64>) {
         let n = 1000;

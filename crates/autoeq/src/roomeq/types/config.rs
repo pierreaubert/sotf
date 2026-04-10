@@ -1257,9 +1257,23 @@ pub struct OptimizerConfig {
     /// Standalone phase correction (rePhase-style)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase_correction: Option<MixedPhaseSerdeConfig>,
-    /// Loss function type ("flat" or "score")
+    /// Loss function type. Supported values:
+    /// - `"flat"` — minimize deviation from target (default)
+    /// - `"score"` — maximize Harman/Olive preference score
+    /// - `"epa"` — EPA (Evaluation/Potency/Activity) psychoacoustic
+    ///   loss combining spectral flatness with sharpness, roughness,
+    ///   and loudness-balance penalties derived from Zwicker metrics.
+    ///   When selected, the EPA penalty weights can be customized via
+    ///   the [`epa_config`](Self::epa_config) field; otherwise the
+    ///   defaults from [`EpaConfig::default`](crate::loss::epa::score::EpaConfig::default)
+    ///   are used.
     #[serde(default = "default_loss_type")]
     pub loss_type: String,
+    /// EPA loss configuration. Only used when `loss_type == "epa"`.
+    /// When `None`, the optimizer falls back to
+    /// [`EpaConfig::default`](crate::loss::epa::score::EpaConfig::default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epa_config: Option<crate::loss::epa::score::EpaConfig>,
     /// Optimization algorithm
     #[serde(default = "default_algorithm")]
     pub algorithm: String,
@@ -1514,6 +1528,7 @@ impl Default for OptimizerConfig {
             ssir_wav_path: None,
             max_boost_envelope: None,
             min_cut_envelope: None,
+            epa_config: None,
         }
     }
 }

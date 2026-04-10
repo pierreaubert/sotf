@@ -322,6 +322,11 @@ pub struct ObjectiveData {
     /// Each entry is (frequency_hz, max_cut_db) where max_cut_db is negative.
     /// When Some, negative filter gains are clamped before loss evaluation.
     pub min_cut_envelope: Option<Vec<(f64, f64)>>,
+    /// EPA psychoacoustic loss configuration.
+    ///
+    /// Used only when `loss_type == LossType::Epa`. When `None`, the
+    /// optimizer falls back to `EpaConfig::default()`.
+    pub epa_config: Option<crate::loss::epa::score::EpaConfig>,
 }
 
 /// Data for multi-objective optimization across multiple measurements
@@ -707,8 +712,11 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 .enumerate()
                 .map(|(i, _)| data.target[i] + data.deviation[i] + peq_spl[i])
                 .collect();
-            let epa_config = crate::epa::score::EpaConfig::default();
-            crate::epa::score::epa_loss(&freqs_vec, &corrected_spl, &epa_config, flatness)
+            let epa_config = data
+                .epa_config
+                .clone()
+                .unwrap_or_default();
+            crate::loss::epa::score::epa_loss(&freqs_vec, &corrected_spl, &epa_config, flatness)
         }
     }
 }
@@ -858,8 +866,11 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 .enumerate()
                 .map(|(i, _)| data.target[i] + data.deviation[i] + peq_spl[i])
                 .collect();
-            let epa_config = crate::epa::score::EpaConfig::default();
-            crate::epa::score::epa_loss(&freqs_vec, &corrected_spl, &epa_config, flatness)
+            let epa_config = data
+                .epa_config
+                .clone()
+                .unwrap_or_default();
+            crate::loss::epa::score::epa_loss(&freqs_vec, &corrected_spl, &epa_config, flatness)
         }
     }
 }

@@ -1,3 +1,10 @@
+# 0.4.25
+
+## EPA scoring
+
+- Added parameters to OptimConfig to be able to tune EPA scoring.
+- EPA scoring should now be visible in the return type of roomeq and in the generated json.
+
 # 0.4.24
 
 ## EPA scoring

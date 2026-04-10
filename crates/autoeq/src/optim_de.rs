@@ -543,6 +543,7 @@ mod tests {
             smooth_n: 2,
             max_boost_envelope: None,
             min_cut_envelope: None,
+            epa_config: None,
         }
     }
 

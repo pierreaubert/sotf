@@ -162,7 +162,7 @@ mod tests {
             .unwrap()
             .0;
 
-        let peak_freq = crate::epa::bark::BARK_CENTER_FREQUENCIES[max_band];
+        let peak_freq = crate::loss::epa::bark::BARK_CENTER_FREQUENCIES[max_band];
 
         // Should peak somewhere in the 2-5 kHz range due to ear canal resonance
         assert!(

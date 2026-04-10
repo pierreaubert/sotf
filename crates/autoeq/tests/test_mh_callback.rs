@@ -42,7 +42,8 @@ fn create_test_objective_data() -> autoeq::optim::ObjectiveData {
         smooth: false,
         smooth_n: 3,
         max_boost_envelope: None,
-            min_cut_envelope: None,
+        min_cut_envelope: None,
+        epa_config: None,
     }
 }
 
