@@ -820,14 +820,16 @@ impl Render for EditorPane {
                                 }
                             }
 
-                            // Emacs kill ring — C-k/C-w/C-y gated by preset
-                            "k" if ctrl && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
+                            // Emacs kill ring — C-k/C-w/C-y active in all presets.
+                            // These use Ctrl (not Cmd) so they don't conflict with
+                            // Cmd-based shortcuts on macOS.
+                            "k" if ctrl && !cmd => {
                                 s.kill_to_end_of_line();
                             }
-                            "w" if ctrl && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
+                            "w" if ctrl && !cmd => {
                                 s.kill_region();
                             }
-                            "y" if ctrl && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
+                            "y" if ctrl && !cmd => {
                                 s.yank();
                             }
                             // Alt-based kill ring ops — safe for all presets

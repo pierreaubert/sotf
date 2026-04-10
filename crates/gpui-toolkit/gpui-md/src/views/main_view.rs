@@ -34,6 +34,19 @@ impl MainView {
         let find_bar = cx.new(|_cx| FindBar::new(state.clone()));
         let minibuffer = cx.new(|_cx| MiniBufferView::new(state.clone()));
 
+        // Observe editor and preview so MainView re-renders (and runs
+        // sync_scroll) whenever either pane scrolls. GPUI notifies a view's
+        // owning entity on scroll, so observing those entities gives us a
+        // scroll-change callback.
+        cx.observe(&editor, |_this, _editor, cx| {
+            cx.notify();
+        })
+        .detach();
+        cx.observe(&preview, |_this, _preview, cx| {
+            cx.notify();
+        })
+        .detach();
+
         Self {
             state,
             editor,
@@ -47,45 +60,78 @@ impl MainView {
     }
 
     /// Synchronize scroll positions between editor and preview panes.
-    /// Whichever pane's scroll changed since last frame drives the other.
+    ///
+    /// Uses a **source-line fraction** approach: the source line at the
+    /// centre of the driving pane is used to compute a fraction of the
+    /// document (line / total_lines), and the follower pane is scrolled to
+    /// show that same fraction at its own centre. This keeps the two views
+    /// aligned at the vertical middle regardless of how differently they
+    /// render blocks (long code blocks in preview, uniform 20px lines in
+    /// editor, etc.).
     fn sync_scroll(&mut self, cx: &mut Context<Self>) {
-        let editor_y: f32 = self.editor.read(cx).scroll_handle.offset().y.into();
-        let preview_y: f32 = self.preview.read(cx).scroll_handle.offset().y.into();
+        const LINE_HEIGHT: f32 = 20.0;
+
+        let editor_scroll = self.editor.read(cx).scroll_handle.clone();
+        let preview_scroll = self.preview.read(cx).scroll_handle.clone();
+
+        let editor_y: f32 = editor_scroll.offset().y.into();
+        let preview_y: f32 = preview_scroll.offset().y.into();
 
         let editor_changed = (editor_y - self.last_editor_scroll_y).abs() > 0.5;
         let preview_changed = (preview_y - self.last_preview_scroll_y).abs() > 0.5;
 
+        let doc_lines = self.state.read(cx).document.len_lines().max(1) as f32;
+
+        let editor_viewport_h: f32 = editor_scroll.bounds().size.height.into();
+        let editor_max: f32 = editor_scroll.max_offset().y.into();
+        let preview_viewport_h: f32 = preview_scroll.bounds().size.height.into();
+        let preview_max: f32 = preview_scroll.max_offset().y.into();
+
         if editor_changed && !preview_changed {
-            // Editor drove the scroll — sync preview proportionally
-            let editor_max: f32 = self.editor.read(cx).scroll_handle.max_offset().y.into();
-            let preview_max: f32 = self.preview.read(cx).scroll_handle.max_offset().y.into();
+            // Editor drove the scroll. Compute the source line at the editor's
+            // vertical middle, turn it into a fraction of total lines, and
+            // position the preview so that same fraction is at ITS centre.
+            //
+            // Editor scroll offset is negative; -editor_y is the distance the
+            // content has scrolled up.
+            let editor_center_content_y = (-editor_y) + editor_viewport_h * 0.5;
+            let center_line = (editor_center_content_y / LINE_HEIGHT).max(0.0);
+            let frac = (center_line / doc_lines).clamp(0.0, 1.0);
 
-            if editor_max.abs() > 1.0 {
-                let fraction = editor_y / editor_max;
-                let target_y = fraction * preview_max;
-                self.preview.read(cx).scroll_handle.set_offset(point(
-                    self.preview.read(cx).scroll_handle.offset().x,
-                    px(target_y),
-                ));
-            }
+            // Preview total scrollable content height.
+            // preview_max is negative; -preview_max + viewport_h = full content height.
+            let preview_content_h = (-preview_max) + preview_viewport_h;
+            let target_center = frac * preview_content_h;
+            let target_scroll_top = target_center - preview_viewport_h * 0.5;
+            let clamped = clamp_scroll(-target_scroll_top, preview_max);
+            preview_scroll.set_offset(point(preview_scroll.offset().x, px(clamped)));
         } else if preview_changed && !editor_changed {
-            // Preview drove the scroll — sync editor proportionally
-            let editor_max: f32 = self.editor.read(cx).scroll_handle.max_offset().y.into();
-            let preview_max: f32 = self.preview.read(cx).scroll_handle.max_offset().y.into();
-
-            if preview_max.abs() > 1.0 {
-                let fraction = preview_y / preview_max;
-                let target_y = fraction * editor_max;
-                self.editor.read(cx).scroll_handle.set_offset(point(
-                    self.editor.read(cx).scroll_handle.offset().x,
-                    px(target_y),
-                ));
+            // Preview drove the scroll. Mirror the line-fraction approach.
+            let preview_center_content_y = (-preview_y) + preview_viewport_h * 0.5;
+            let preview_content_h = (-preview_max) + preview_viewport_h;
+            if preview_content_h.abs() < 1.0 {
+                self.last_editor_scroll_y = editor_scroll.offset().y.into();
+                self.last_preview_scroll_y = preview_scroll.offset().y.into();
+                return;
             }
+            let frac = (preview_center_content_y / preview_content_h).clamp(0.0, 1.0);
+
+            let target_center_line = frac * doc_lines;
+            let target_center_y = target_center_line * LINE_HEIGHT;
+            let target_scroll_top = target_center_y - editor_viewport_h * 0.5;
+            let clamped = clamp_scroll(-target_scroll_top, editor_max);
+            editor_scroll.set_offset(point(editor_scroll.offset().x, px(clamped)));
         }
 
-        self.last_editor_scroll_y = editor_y;
-        self.last_preview_scroll_y = preview_y;
+        self.last_editor_scroll_y = editor_scroll.offset().y.into();
+        self.last_preview_scroll_y = preview_scroll.offset().y.into();
     }
+}
+
+/// Clamp `desired` (negative-or-zero scroll offset) to the valid range
+/// `[max_offset_y, 0]` where `max_offset_y` is also negative or zero.
+fn clamp_scroll(desired: f32, max_offset_y: f32) -> f32 {
+    desired.clamp(max_offset_y.min(0.0), 0.0)
 }
 
 impl Render for MainView {
