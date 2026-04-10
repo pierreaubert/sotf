@@ -7,8 +7,6 @@ use super::source_map::{SourceMap, SourceSpan};
 use super::text_layout::layout_paragraph;
 use super::theme_colors::MdThemeColors;
 
-const BODY_FONT_SIZE: f32 = 15.0;
-
 /// Render a comrak AST into GPUI elements with inline styling (bold, italic, code).
 ///
 /// When `max_width_px` is provided (> 0), paragraph text is justified using
@@ -19,12 +17,13 @@ pub fn render_markdown<'a>(
     colors: &MdThemeColors,
     max_width_px: f32,
     text_system: Option<&Arc<WindowTextSystem>>,
+    font_size: f32,
 ) -> Vec<AnyElement> {
     let mut elements = Vec::new();
     let mut block_counter: usize = 0;
 
     for child in root.children() {
-        if let Some(el) = render_node(child, source_map, &mut block_counter, colors, max_width_px, text_system) {
+        if let Some(el) = render_node(child, source_map, &mut block_counter, colors, max_width_px, text_system, font_size) {
             elements.push(el);
         }
     }
@@ -39,6 +38,7 @@ fn render_node<'a>(
     colors: &MdThemeColors,
     max_width_px: f32,
     text_system: Option<&Arc<WindowTextSystem>>,
+    font_size: f32,
 ) -> Option<AnyElement> {
     let data = node.data.borrow();
     let sourcepos = data.sourcepos;
@@ -54,13 +54,13 @@ fn render_node<'a>(
             let runs = collect_styled_runs(node, colors);
 
             // Use Knuth-Plass justification when width and text system are available
-            if max_width_px > 0.0 && text_system.is_some() {
+            if max_width_px > 0.0 && let Some(ts) = text_system {
                 let elements = render_justified_styled_paragraph(
                     &runs,
                     max_width_px,
-                    BODY_FONT_SIZE,
+                    font_size,
                     colors,
-                    text_system.unwrap(),
+                    ts,
                 );
                 return Some(
                     div()
@@ -68,7 +68,7 @@ fn render_node<'a>(
                         .mb_4()
                         .w_full()
                         .overflow_hidden()
-                        .text_size(px(BODY_FONT_SIZE))
+                        .text_size(px(font_size))
                         .text_color(colors.text)
                         .children(elements)
                         .into_any_element(),
@@ -83,7 +83,7 @@ fn render_node<'a>(
                     .mb_4()
                     .w_full()
                     .overflow_hidden()
-                    .text_size(px(BODY_FONT_SIZE))
+                    .text_size(px(font_size))
                     .text_color(colors.text)
                     .flex()
                     .flex_row()
@@ -300,7 +300,7 @@ fn render_node<'a>(
                     .w_full()
                     .rounded_sm()
                     .overflow_x_scroll()
-                    .text_size(px(BODY_FONT_SIZE))
+                    .text_size(px(font_size))
                     .children(rows)
                     .into_any_element(),
             )

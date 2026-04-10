@@ -49,12 +49,12 @@ fn issue_11_ordered_list_rendering_differs_from_unordered() {
     let root_ol = parse_markdown(&arena_ol, "1. First\n2. Second\n");
     let colors = dark_colors();
     let mut sm_ol = SourceMap::new();
-    let elements_ol = render_markdown(root_ol, &mut sm_ol, &colors, 0.0, None);
+    let elements_ol = render_markdown(root_ol, &mut sm_ol, &colors, 0.0, None, 15.0);
 
     let arena_ul = Arena::new();
     let root_ul = parse_markdown(&arena_ul, "- First\n- Second\n");
     let mut sm_ul = SourceMap::new();
-    let elements_ul = render_markdown(root_ul, &mut sm_ul, &colors, 0.0, None);
+    let elements_ul = render_markdown(root_ul, &mut sm_ul, &colors, 0.0, None, 15.0);
 
     // Both should render without crashing
     assert!(!elements_ol.is_empty(), "ordered list should produce elements");
@@ -105,7 +105,7 @@ fn issue_12_strikethrough_renders_without_crash() {
     let root = parse_markdown(&arena, "~~**bold** and *italic* text~~\n");
     let colors = dark_colors();
     let mut sm = SourceMap::new();
-    let elements = render_markdown(root, &mut sm, &colors, 0.0, None);
+    let elements = render_markdown(root, &mut sm, &colors, 0.0, None, 15.0);
     assert!(!elements.is_empty());
 }
 
@@ -150,7 +150,7 @@ fn issue_13_table_renders_with_source_map_entry() {
     let root = parse_markdown(&arena, "| A | B |\n|---|---|\n| 1 | 2 |\n");
     let colors = dark_colors();
     let mut sm = SourceMap::new();
-    let elements = render_markdown(root, &mut sm, &colors, 0.0, None);
+    let elements = render_markdown(root, &mut sm, &colors, 0.0, None, 15.0);
     assert!(!elements.is_empty(), "table should produce rendered elements");
     // After the fix, the table should be tracked in the source map
     // for click-to-locate and scroll sync support.

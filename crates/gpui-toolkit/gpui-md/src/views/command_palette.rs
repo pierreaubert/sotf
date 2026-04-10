@@ -34,6 +34,8 @@ impl Render for CommandPalette {
         let prompt = match state.command_palette.mode {
             PaletteMode::Command => "M-x: ",
             PaletteMode::GotoLine => "Goto line: ",
+            PaletteMode::SwitchBuffer => "Switch to buffer: ",
+            PaletteMode::KillBuffer => "Kill buffer: ",
         };
         let query = state.command_palette.query.clone();
 

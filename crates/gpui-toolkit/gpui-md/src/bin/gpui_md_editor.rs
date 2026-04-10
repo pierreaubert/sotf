@@ -13,7 +13,7 @@ use log::error;
 #[derive(Parser)]
 #[command(name = "gpui-md-editor", about = "Markdown editor with live preview")]
 struct Cli {
-    /// Markdown files to open (one window per file)
+    /// Markdown files to open as buffers in a single window
     files: Vec<PathBuf>,
 }
 
@@ -32,7 +32,9 @@ fn main() {
             let bindings = provider.bindings(KeymapPreset::Default);
             cx.bind_keys(bindings);
 
-            // Create state for the primary window — load first file if given
+            // Create state — load first file into the active buffer, rest as
+            // stored buffers. If no files, open with the default scratch-like
+            // welcome buffer.
             let state = if let Some(first_file) = files.first() {
                 match std::fs::read_to_string(first_file) {
                     Ok(content) => {
@@ -49,57 +51,31 @@ fn main() {
                 cx.new(|_| MdAppState::new())
             };
 
+            // Create additional buffers for remaining files.
+            state.update(cx, |s, _cx| {
+                for file in files.iter().skip(1) {
+                    match std::fs::read_to_string(file) {
+                        Ok(content) => {
+                            let canonical = std::fs::canonicalize(file)
+                                .unwrap_or_else(|_| file.clone());
+                            s.create_file_buffer(canonical, &content);
+                        }
+                        Err(e) => {
+                            error!("Failed to open {}: {}", file.display(), e);
+                        }
+                    }
+                }
+            });
+
             let global_state = state.clone();
             cx.set_global(MdGlobalState(global_state));
 
             register_actions(cx);
             cx.set_menus(build_menus());
 
-            // Open additional windows for remaining files
-            for file in files.iter().skip(1) {
-                open_file_window(file, cx);
-            }
-
             cx.new(|cx| MainView::new(state, cx))
         },
     );
-}
-
-/// Open a new window for the given file path.
-fn open_file_window(path: &PathBuf, cx: &mut App) {
-    let file_name = path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-
-    let state = match std::fs::read_to_string(path) {
-        Ok(content) => {
-            let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
-            MdAppState::from_file(canonical, &content)
-        }
-        Err(e) => {
-            error!("Failed to open {}: {}", path.display(), e);
-            MdAppState::new()
-        }
-    };
-
-    let title: SharedString = file_name.into();
-    let bounds = Bounds::centered(None, size(px(1400.0), px(900.0)), cx);
-    let state_entity = cx.new(|_| state);
-
-    cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some(title),
-                ..Default::default()
-            }),
-            ..Default::default()
-        },
-        move |_, cx| cx.new(|cx| MainView::new(state_entity, cx)),
-    )
-    .unwrap();
 }
 
 /// Global wrapper so we can access state from App-level action handlers.
@@ -157,12 +133,10 @@ fn register_actions(cx: &mut App) {
                 }
                 match std::fs::read_to_string(&path) {
                     Ok(content) => {
-                        cx.update(|cx| {
+                        let _ = cx.update(|cx| {
                             state.update(cx, |s, _cx| {
-                                s.document.set_text(&content);
-                                s.document.set_file_path(path.clone());
-                                s.cursor.position = 0;
-                                s.cursor.clear_selection();
+                                // Open as a new buffer (or switch to existing one)
+                                s.open_file_as_buffer(path.clone(), &content);
                                 s.add_recent_file(path);
                             });
                         });
@@ -329,6 +303,21 @@ fn register_actions(cx: &mut App) {
     cx.on_action::<actions::InsertTaskList>(|_action, cx| {
         let state = cx.global::<MdGlobalState>().0.clone();
         state.update(cx, |s, _cx| s.insert_text("- [ ] "));
+    });
+
+    // Font size
+    cx.on_action::<actions::IncreaseFontSize>(|_action, cx| {
+        let state = cx.global::<MdGlobalState>().0.clone();
+        state.update(cx, |s, _cx| {
+            s.font_size = (s.font_size + 1.0).min(48.0);
+        });
+    });
+
+    cx.on_action::<actions::DecreaseFontSize>(|_action, cx| {
+        let state = cx.global::<MdGlobalState>().0.clone();
+        state.update(cx, |s, _cx| {
+            s.font_size = (s.font_size - 1.0).max(8.0);
+        });
     });
 
     // View
@@ -565,6 +554,9 @@ fn build_menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action("Toggle Preview  Cmd+Shift+V", actions::TogglePreview),
                 MenuItem::action("Toggle Line Numbers", actions::ToggleLineNumbers),
+                MenuItem::separator(),
+                MenuItem::action("Increase Font Size  Cmd+=", actions::IncreaseFontSize),
+                MenuItem::action("Decrease Font Size  Cmd+-", actions::DecreaseFontSize),
                 MenuItem::separator(),
                 MenuItem::submenu(Menu {
                     name: "Theme".into(),

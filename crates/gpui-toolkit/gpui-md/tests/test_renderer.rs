@@ -42,7 +42,7 @@ fn render_markdown_produces_elements() {
         &gpui_ui_kit::theme::Theme::dark(),
     );
 
-    let elements = gpui_md::markdown::render_markdown(root, &mut source_map, &colors, 0.0, None);
+    let elements = gpui_md::markdown::render_markdown(root, &mut source_map, &colors, 0.0, None, 15.0);
     assert!(!elements.is_empty(), "Should produce at least one element for the paragraph");
 }
 

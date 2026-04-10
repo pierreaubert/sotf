@@ -5,6 +5,7 @@ use gpui_ui_kit::theme::ThemeExt;
 use crate::state::MdAppState;
 use crate::views::editor_pane::EditorPane;
 use crate::views::find_bar::FindBar;
+use crate::views::minibuffer::MiniBufferView;
 use crate::views::preview_pane::PreviewPane;
 use crate::views::toolbar_view::ToolbarView;
 
@@ -18,6 +19,7 @@ pub struct MainView {
     preview: Entity<PreviewPane>,
     toolbar: Entity<ToolbarView>,
     find_bar: Entity<FindBar>,
+    minibuffer: Entity<MiniBufferView>,
     /// Last known editor scroll Y offset (for detecting which pane moved).
     last_editor_scroll_y: f32,
     /// Last known preview scroll Y offset.
@@ -30,6 +32,7 @@ impl MainView {
         let preview = cx.new(|cx| PreviewPane::new(state.clone(), cx));
         let toolbar = cx.new(|_cx| ToolbarView::new(state.clone()));
         let find_bar = cx.new(|_cx| FindBar::new(state.clone()));
+        let minibuffer = cx.new(|_cx| MiniBufferView::new(state.clone()));
 
         Self {
             state,
@@ -37,6 +40,7 @@ impl MainView {
             preview,
             toolbar,
             find_bar,
+            minibuffer,
             last_editor_scroll_y: 0.0,
             last_preview_scroll_y: 0.0,
         }
@@ -96,20 +100,17 @@ impl Render for MainView {
 
         let state = self.state.read(cx);
 
-        let file_name = state
-            .document
-            .file_path()
-            .map(|p| {
-                p.file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string()
-            })
-            .unwrap_or_else(|| "Untitled".to_string());
+        // Prefer the active buffer name; fall back to the file name.
+        let buffer_name = state.current_buffer_name.clone();
         let dirty_marker = if state.document.is_dirty() { " *" } else { "" };
+        let buffer_count = state.buffer_count();
 
-        // Keep window title in sync with the file name
-        let title = format!("{}{}", file_name, dirty_marker);
+        // Keep window title in sync with the current buffer.
+        let title = if buffer_count > 1 {
+            format!("{}{}  [{} buffers]", buffer_name, dirty_marker, buffer_count)
+        } else {
+            format!("{}{}", buffer_name, dirty_marker)
+        };
         window.set_window_title(&title);
 
         let cursor_line = if state.document.len_chars() > 0 {
@@ -136,6 +137,11 @@ impl Render for MainView {
         };
         let palette_text = if state.command_palette.visible {
             Some(format!("M-x: {}", state.command_palette.query))
+        } else {
+            None
+        };
+        let macro_text = if state.macros.recording {
+            Some("Def".to_string())
         } else {
             None
         };
@@ -173,6 +179,8 @@ impl Render for MainView {
                             )
                     }),
             )
+            // Mini-buffer (renders only when active)
+            .child(self.minibuffer.clone())
             // Status bar
             .child(
                 div()
@@ -185,7 +193,8 @@ impl Render for MainView {
                     .bg(theme.accent)
                     .text_size(px(12.0))
                     .text_color(theme.text_on_accent)
-                    .child(format!("{}{}", file_name, dirty_marker))
+                    .child(format!("{}{}  [{} buffers]", buffer_name, dirty_marker, buffer_count))
+                    .when_some(macro_text, |el, text| el.child(text))
                     .when_some(universal_arg_text, |el, text| el.child(text))
                     .when_some(isearch_text, |el, text| el.child(text))
                     .when_some(palette_text, |el, text| el.child(text))

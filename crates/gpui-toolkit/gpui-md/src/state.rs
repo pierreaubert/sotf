@@ -1,10 +1,16 @@
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use gpui_keybinding::KeymapPreset;
 
+use crate::commands::{CommandArgs, CommandRegistry, InteractiveSpec, register_builtin_commands};
+use crate::dired::DiredState;
+use crate::document::buffer_list::{BufferId, BufferKind, StoredBuffer, name_from_path, unique_name as unique_buffer_name};
 use crate::document::kill_ring::KillRing;
 use crate::document::{DocumentBuffer, EditHistory, EditorCursor};
+use crate::macros::{MacroState, RecordedAction};
 use crate::markdown::SourceMap;
+use crate::minibuffer::{MiniBufferPrompt, MiniBufferResult, MiniBufferState};
 
 // ---- Emacs subsystem types ----
 
@@ -35,6 +41,29 @@ impl Default for IsearchState {
     }
 }
 
+/// Deferred action bound to the currently-open mini-buffer prompt.
+///
+/// When a command like "open-file" needs an argument, it stores a variant
+/// here and opens a mini-buffer prompt. On submit, the state machine looks
+/// at this field to decide what to do with the submitted value.
+#[derive(Clone, Debug)]
+pub enum PendingMinibufferAction {
+    /// Switch to the buffer whose name is typed.
+    SwitchBuffer,
+    /// Kill the buffer whose name is typed.
+    KillBuffer,
+    /// Open a file at the typed path.
+    OpenFile,
+    /// Goto the typed line number.
+    GotoLine,
+    /// M-x — run the command whose name is typed via the registry.
+    RunCommand,
+    /// Run a specific command with the typed string as its argument.
+    RunCommandWithInput { name: String },
+    /// YesNo confirmation for dired mark execution.
+    DiredConfirmDelete,
+}
+
 /// Mode the command palette is operating in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteMode {
@@ -42,6 +71,10 @@ pub enum PaletteMode {
     Command,
     /// Waiting for a line number (after selecting goto-line).
     GotoLine,
+    /// Switching to a buffer by name (C-x b).
+    SwitchBuffer,
+    /// Killing a buffer by name (C-x k).
+    KillBuffer,
 }
 
 /// A command available in the M-x palette.
@@ -101,9 +134,27 @@ fn default_palette_commands() -> Vec<PaletteCommand> {
 
 /// Top-level application state for the markdown editor.
 pub struct MdAppState {
+    // ---- Active buffer data (lives directly on MdAppState to minimise
+    // churn for the 346+ method bodies that access these fields). ----
     pub document: DocumentBuffer,
     pub history: EditHistory,
     pub cursor: EditorCursor,
+
+    // ---- Buffer list ----
+    /// Buffer id of the currently-active buffer (whose data is in
+    /// `document`/`cursor`/`history` above).
+    pub current_buffer_id: BufferId,
+    /// Display name of the currently-active buffer.
+    pub current_buffer_name: String,
+    /// Kind of the currently-active buffer.
+    pub current_buffer_kind: BufferKind,
+    /// Whether the current buffer is read-only.
+    pub current_buffer_read_only: bool,
+    /// Inactive buffers.
+    pub stored_buffers: Vec<StoredBuffer>,
+    /// Monotonic counter for generating new BufferIds.
+    next_buffer_id: u64,
+
     pub keymap_preset: KeymapPreset,
     pub split_ratio: f32,
     pub font_size: f32,
@@ -133,6 +184,16 @@ pub struct MdAppState {
     pub isearch: IsearchState,
     /// Command palette state (M-x).
     pub command_palette: CommandPaletteState,
+    /// Unified mini-buffer for modal prompts.
+    pub minibuffer: MiniBufferState,
+    /// Pending command name whose arguments are being collected via the mini-buffer.
+    pub pending_minibuffer_action: Option<PendingMinibufferAction>,
+    /// Dired state per buffer id (only for dired-kind buffers).
+    pub dired_states: HashMap<BufferId, DiredState>,
+    /// Keyboard macro state (recording + replay).
+    pub macros: MacroState,
+    /// Command registry — all user-visible commands.
+    pub commands: CommandRegistry,
     /// When true, the next character input is consumed as the target for zap-to-char (M-z).
     pub zap_to_char_pending: bool,
     /// Emacs C-x prefix: the next key is interpreted as the second key of a C-x chord.
@@ -143,9 +204,11 @@ pub struct MdAppState {
 }
 
 impl MdAppState {
-    /// Create state initialized with file contents.
+    /// Create state initialized with file contents as the first (and only) buffer.
     pub fn from_file(path: std::path::PathBuf, content: &str) -> Self {
         let mut state = Self::new();
+        state.current_buffer_name = name_from_path(&path);
+        state.current_buffer_kind = BufferKind::File;
         state.document = DocumentBuffer::from_file(path, content);
         state
     }
@@ -170,8 +233,15 @@ impl MdAppState {
             ),
             history: EditHistory::default(),
             cursor: EditorCursor::new(),
+            current_buffer_id: BufferId(0),
+            current_buffer_name: "*scratch*".to_string(),
+            current_buffer_kind: BufferKind::Scratch,
+            current_buffer_read_only: false,
+            stored_buffers: Vec::new(),
+            next_buffer_id: 1,
             keymap_preset: KeymapPreset::Default,
             split_ratio: 0.5,
+            font_size: 14.0,
             show_line_numbers: true,
             show_preview_line_numbers: false,
             show_preview: true,
@@ -192,9 +262,803 @@ impl MdAppState {
             universal_arg_accumulating: false,
             isearch: IsearchState::default(),
             command_palette: CommandPaletteState::default(),
+            minibuffer: MiniBufferState::default(),
+            pending_minibuffer_action: None,
+            dired_states: HashMap::new(),
+            macros: MacroState::default(),
+            commands: {
+                let mut r = CommandRegistry::new();
+                register_builtin_commands(&mut r);
+                r
+            },
             zap_to_char_pending: false,
             c_x_pending: false,
             c_x_r_pending: false,
+        }
+    }
+
+    // ---- Buffer list management ----
+
+    fn allocate_buffer_id(&mut self) -> BufferId {
+        let id = BufferId(self.next_buffer_id);
+        self.next_buffer_id += 1;
+        id
+    }
+
+    /// Collect all currently-existing buffer names (active + stored).
+    fn all_buffer_names(&self) -> Vec<String> {
+        let mut names = Vec::with_capacity(self.stored_buffers.len() + 1);
+        names.push(self.current_buffer_name.clone());
+        for b in &self.stored_buffers {
+            names.push(b.name.clone());
+        }
+        names
+    }
+
+    /// Pick a unique display name for a new buffer with the given base.
+    fn pick_unique_name(&self, base: &str) -> String {
+        let existing = self.all_buffer_names();
+        let refs: Vec<&str> = existing.iter().map(|s| s.as_str()).collect();
+        unique_buffer_name(base, &refs)
+    }
+
+    /// Create a new scratch buffer and return its id. Does not switch to it.
+    pub fn create_scratch(&mut self) -> BufferId {
+        let id = self.allocate_buffer_id();
+        let mut buf = StoredBuffer::new_scratch(id);
+        buf.name = self.pick_unique_name("*scratch*");
+        self.stored_buffers.push(buf);
+        id
+    }
+
+    /// Create a file-backed buffer. Returns the id. Does not switch to it.
+    /// If a buffer already exists for the same canonical path, returns its id
+    /// without creating a duplicate.
+    pub fn create_file_buffer(&mut self, path: PathBuf, content: &str) -> BufferId {
+        // Canonicalize for reliable deduping (handles "./foo" vs "foo" etc.)
+        let canonical = std::fs::canonicalize(&path).unwrap_or(path);
+        if let Some(id) = self.find_buffer_by_path(&canonical) {
+            return id;
+        }
+        let id = self.allocate_buffer_id();
+        let base = name_from_path(&canonical);
+        let name = self.pick_unique_name(&base);
+        let buf = StoredBuffer::new_file(id, name, canonical, content);
+        self.stored_buffers.push(buf);
+        id
+    }
+
+    /// Return the id of an existing buffer backed by `path`, or None.
+    pub fn find_buffer_by_path(&self, path: &Path) -> Option<BufferId> {
+        if let Some(p) = self.document.file_path() {
+            if p == path {
+                return Some(self.current_buffer_id);
+            }
+        }
+        for b in &self.stored_buffers {
+            if let Some(p) = b.document.file_path() {
+                if p == path {
+                    return Some(b.id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Return the id of the buffer whose display name matches `name`, or None.
+    pub fn find_buffer_by_name(&self, name: &str) -> Option<BufferId> {
+        if self.current_buffer_name == name {
+            return Some(self.current_buffer_id);
+        }
+        for b in &self.stored_buffers {
+            if b.name == name {
+                return Some(b.id);
+            }
+        }
+        None
+    }
+
+    /// List all buffer names, current buffer first.
+    pub fn buffer_names(&self) -> Vec<String> {
+        let mut names = Vec::with_capacity(self.stored_buffers.len() + 1);
+        names.push(self.current_buffer_name.clone());
+        for b in &self.stored_buffers {
+            names.push(b.name.clone());
+        }
+        names
+    }
+
+    /// Total number of buffers (active + stored).
+    pub fn buffer_count(&self) -> usize {
+        self.stored_buffers.len() + 1
+    }
+
+    /// Swap the active buffer with the given stored buffer index, making the
+    /// stored buffer active. The previously-active buffer becomes stored.
+    fn swap_active_with_stored(&mut self, stored_idx: usize) {
+        // Take the incoming stored buffer out of the vec
+        let incoming = self.stored_buffers.remove(stored_idx);
+
+        // Build an outgoing StoredBuffer from the current active fields,
+        // replacing each with the corresponding field from `incoming`.
+        let outgoing = StoredBuffer {
+            id: self.current_buffer_id,
+            name: std::mem::replace(&mut self.current_buffer_name, incoming.name),
+            document: std::mem::replace(&mut self.document, incoming.document),
+            history: std::mem::replace(&mut self.history, incoming.history),
+            cursor: std::mem::replace(&mut self.cursor, incoming.cursor),
+            kind: std::mem::replace(&mut self.current_buffer_kind, incoming.kind),
+            read_only: std::mem::replace(&mut self.current_buffer_read_only, incoming.read_only),
+            scroll_line: std::mem::replace(&mut self.editor_scroll_line, incoming.scroll_line),
+            last_edit_was_char_insert: std::mem::replace(
+                &mut self.last_edit_was_char_insert,
+                incoming.last_edit_was_char_insert,
+            ),
+            last_move_was_vertical: std::mem::replace(
+                &mut self.last_move_was_vertical,
+                incoming.last_move_was_vertical,
+            ),
+        };
+
+        // Active buffer id becomes the incoming buffer's id.
+        self.current_buffer_id = incoming.id;
+
+        // Push the now-inactive previous buffer onto the stored list.
+        self.stored_buffers.push(outgoing);
+
+        // Invalidate parsed version so preview re-parses
+        self.last_parsed_version = 0;
+    }
+
+    /// Switch to a buffer by its id. Returns true on success.
+    pub fn switch_to_buffer_id(&mut self, id: BufferId) -> bool {
+        if id == self.current_buffer_id {
+            return true;
+        }
+        if let Some(idx) = self.stored_buffers.iter().position(|b| b.id == id) {
+            self.swap_active_with_stored(idx);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Switch to a buffer by its display name. Returns true on success.
+    pub fn switch_to_buffer_by_name(&mut self, name: &str) -> bool {
+        if name == self.current_buffer_name {
+            return true;
+        }
+        if let Some(idx) = self.stored_buffers.iter().position(|b| b.name == name) {
+            self.swap_active_with_stored(idx);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Cycle to the next buffer in the list.
+    pub fn switch_to_next_buffer(&mut self) {
+        if self.stored_buffers.is_empty() {
+            return;
+        }
+        self.swap_active_with_stored(0);
+    }
+
+    /// Cycle to the previous buffer in the list.
+    pub fn switch_to_prev_buffer(&mut self) {
+        if self.stored_buffers.is_empty() {
+            return;
+        }
+        let last = self.stored_buffers.len() - 1;
+        self.swap_active_with_stored(last);
+    }
+
+    /// Kill a buffer by id. Refuses to kill if it would leave zero buffers.
+    /// If the killed buffer is the active one, switches to the first stored buffer.
+    /// Returns true on success.
+    pub fn kill_buffer_id(&mut self, id: BufferId) -> bool {
+        if self.buffer_count() <= 1 {
+            return false;
+        }
+        let removed = if id == self.current_buffer_id {
+            // Swap in a stored buffer, then drop the outgoing one.
+            self.swap_active_with_stored(0);
+            // The outgoing is now at the end of stored_buffers.
+            if let Some(pos) = self.stored_buffers.iter().position(|b| b.id == id) {
+                self.stored_buffers.remove(pos);
+                true
+            } else {
+                false
+            }
+        } else if let Some(pos) = self.stored_buffers.iter().position(|b| b.id == id) {
+            self.stored_buffers.remove(pos);
+            true
+        } else {
+            false
+        };
+        if removed {
+            // Clean up any per-buffer auxiliary state (dired, etc.) to avoid leaks.
+            self.dired_states.remove(&id);
+        }
+        removed
+    }
+
+    /// Kill the current buffer. Refuses if it's the only one.
+    pub fn kill_current_buffer(&mut self) -> bool {
+        self.kill_buffer_id(self.current_buffer_id)
+    }
+
+    /// Kill a buffer by name. Returns true on success.
+    pub fn kill_buffer_by_name(&mut self, name: &str) -> bool {
+        if let Some(id) = self.find_buffer_by_name(name) {
+            self.kill_buffer_id(id)
+        } else {
+            false
+        }
+    }
+
+    /// Open a file as a buffer. If a buffer for this path already exists,
+    /// switches to it instead of creating a duplicate.
+    pub fn open_file_as_buffer(&mut self, path: PathBuf, content: &str) -> BufferId {
+        let canonical = std::fs::canonicalize(&path).unwrap_or(path);
+        if let Some(id) = self.find_buffer_by_path(&canonical) {
+            self.switch_to_buffer_id(id);
+            return id;
+        }
+        let id = self.create_file_buffer(canonical, content);
+        self.switch_to_buffer_id(id);
+        id
+    }
+
+    // ---- Mini-buffer (unified modal prompt) ----
+
+    /// Open the mini-buffer with the given prompt. `candidates` are used for
+    /// completion — pass an empty Vec for free-text prompts.
+    pub fn minibuffer_open(
+        &mut self,
+        prompt: MiniBufferPrompt,
+        candidates: Vec<String>,
+        action: PendingMinibufferAction,
+    ) {
+        self.minibuffer.open(prompt, candidates);
+        self.pending_minibuffer_action = Some(action);
+    }
+
+    /// Close the mini-buffer without dispatching.
+    pub fn minibuffer_cancel(&mut self) {
+        self.minibuffer.close();
+        self.pending_minibuffer_action = None;
+    }
+
+    /// Dispatch the pending action with the given result, then close the mini-buffer.
+    pub fn minibuffer_dispatch(&mut self, result: MiniBufferResult) {
+        let action = self.pending_minibuffer_action.take();
+        self.minibuffer.close();
+        let Some(action) = action else { return };
+
+        match (action, result) {
+            (PendingMinibufferAction::SwitchBuffer, MiniBufferResult::Submitted(name)) => {
+                self.switch_to_buffer_by_name(&name);
+            }
+            (PendingMinibufferAction::KillBuffer, MiniBufferResult::Submitted(name)) => {
+                if !name.is_empty() {
+                    self.kill_buffer_by_name(&name);
+                } else {
+                    self.kill_current_buffer();
+                }
+            }
+            (PendingMinibufferAction::OpenFile, MiniBufferResult::Submitted(path_str)) => {
+                let raw = PathBuf::from(&path_str);
+                let path = if raw.is_absolute() {
+                    raw
+                } else {
+                    std::env::current_dir()
+                        .unwrap_or_else(|_| PathBuf::from("."))
+                        .join(raw)
+                };
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    self.open_file_as_buffer(path, &content);
+                }
+            }
+            (PendingMinibufferAction::GotoLine, MiniBufferResult::Submitted(s)) => {
+                if let Ok(n) = s.parse::<usize>() {
+                    self.jump_to_line(n);
+                }
+            }
+            (PendingMinibufferAction::RunCommand, MiniBufferResult::Submitted(name)) => {
+                // M-x — look up the command and run it.
+                self.run_command_by_name(&name);
+            }
+            (
+                PendingMinibufferAction::RunCommandWithInput { name },
+                MiniBufferResult::Submitted(input),
+            ) => {
+                self.run_command_with_string(&name, input);
+            }
+            (
+                PendingMinibufferAction::RunCommandWithInput { name },
+                MiniBufferResult::YesNoAnswer(answer),
+            ) => {
+                let input = if answer { "yes" } else { "no" };
+                self.run_command_with_string(&name, input.to_string());
+            }
+            (PendingMinibufferAction::DiredConfirmDelete, MiniBufferResult::YesNoAnswer(true)) => {
+                self.dired_perform_marked_deletes();
+            }
+            _ => {} // Cancelled or mismatched — nothing to do
+        }
+    }
+
+    /// Submit the current mini-buffer value. Dispatches the pending action.
+    pub fn minibuffer_submit(&mut self) {
+        if !self.minibuffer.active {
+            return;
+        }
+        let value = self.minibuffer.current_value();
+        self.minibuffer.push_history(value.clone());
+        self.minibuffer_dispatch(MiniBufferResult::Submitted(value));
+    }
+
+    /// Submit a YesNo answer.
+    pub fn minibuffer_submit_yes_no(&mut self, answer: bool) {
+        if !self.minibuffer.active {
+            return;
+        }
+        self.minibuffer_dispatch(MiniBufferResult::YesNoAnswer(answer));
+    }
+
+    /// Open a switch-to-buffer prompt.
+    pub fn minibuffer_start_switch_buffer(&mut self) {
+        let mut candidates = self.buffer_names();
+        // Move the current buffer to the end so Tab/selection defaults to the
+        // next buffer (Emacs convention).
+        if !candidates.is_empty() {
+            let current = candidates.remove(0);
+            candidates.push(current);
+        }
+        self.minibuffer_open(
+            MiniBufferPrompt::SwitchBuffer,
+            candidates,
+            PendingMinibufferAction::SwitchBuffer,
+        );
+    }
+
+    /// Open a kill-buffer prompt.
+    pub fn minibuffer_start_kill_buffer(&mut self) {
+        let candidates = self.buffer_names();
+        self.minibuffer_open(
+            MiniBufferPrompt::KillBuffer,
+            candidates,
+            PendingMinibufferAction::KillBuffer,
+        );
+    }
+
+    /// Open a find-file prompt at the current working directory.
+    pub fn minibuffer_start_find_file(&mut self) {
+        let base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+        let candidates = list_directory_entries(&base_dir);
+        self.minibuffer_open(
+            MiniBufferPrompt::FindFile { base_dir },
+            candidates,
+            PendingMinibufferAction::OpenFile,
+        );
+    }
+
+    /// Open an M-x command prompt with all registry commands as candidates.
+    pub fn minibuffer_start_command(&mut self) {
+        let candidates: Vec<String> = self.commands.names().map(|s| s.to_string()).collect();
+        self.minibuffer_open(
+            MiniBufferPrompt::Command,
+            candidates,
+            PendingMinibufferAction::RunCommand,
+        );
+    }
+
+    // ---- Dired (directory browser) ----
+
+    /// Open a dired buffer for the given directory. Creates a new buffer
+    /// or switches to an existing dired buffer for the same path.
+    pub fn dired_open(&mut self, path: PathBuf) {
+        let canonical = std::fs::canonicalize(&path).unwrap_or(path);
+
+        // If the current buffer is already dired on this path, just refresh.
+        if self.current_buffer_kind == BufferKind::Dired {
+            if let Some(state) = self.dired_states.get(&self.current_buffer_id) {
+                if state.path == canonical {
+                    let _ = self.dired_refresh();
+                    return;
+                }
+            }
+        }
+        // Check stored dired buffers
+        let existing_id = self
+            .stored_buffers
+            .iter()
+            .find(|b| {
+                if b.kind == BufferKind::Dired {
+                    self.dired_states
+                        .get(&b.id)
+                        .map(|s| s.path == canonical)
+                        .unwrap_or(false)
+                } else {
+                    false
+                }
+            })
+            .map(|b| b.id);
+        if let Some(id) = existing_id {
+            self.switch_to_buffer_id(id);
+            return;
+        }
+
+        // Create a new dired buffer.
+        let state = match DiredState::read_dir(&canonical) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let text = state.render_to_text();
+        let id = self.allocate_buffer_id();
+        let display_name = format!("*dired:{}*", canonical.display());
+        let unique = self.pick_unique_name(&display_name);
+
+        // Create the stored buffer
+        let buf = StoredBuffer {
+            id,
+            name: unique,
+            document: DocumentBuffer::from_text(&text),
+            history: EditHistory::default(),
+            cursor: EditorCursor::new(),
+            kind: BufferKind::Dired,
+            read_only: true,
+            scroll_line: 0,
+            last_edit_was_char_insert: false,
+            last_move_was_vertical: false,
+        };
+        self.stored_buffers.push(buf);
+        self.dired_states.insert(id, state);
+        self.switch_to_buffer_id(id);
+        self.dired_move_cursor_to_selection();
+    }
+
+    /// Position the cursor on the line corresponding to the current dired
+    /// selection.
+    fn dired_move_cursor_to_selection(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        if let Some(state) = self.dired_states.get(&self.current_buffer_id) {
+            let line = state.cursor_line();
+            if line < self.document.len_lines() {
+                self.cursor.position = self.document.line_to_char(line);
+                self.cursor.clear_selection();
+            }
+        }
+    }
+
+    /// Move to the next entry in a dired buffer.
+    pub fn dired_next(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        if let Some(state) = self.dired_states.get_mut(&self.current_buffer_id) {
+            state.move_down();
+        }
+        self.dired_move_cursor_to_selection();
+    }
+
+    /// Move to the previous entry in a dired buffer.
+    pub fn dired_prev(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        if let Some(state) = self.dired_states.get_mut(&self.current_buffer_id) {
+            state.move_up();
+        }
+        self.dired_move_cursor_to_selection();
+    }
+
+    /// Open the selected entry. If a directory, recurse into dired.
+    /// If a file, open it as a buffer.
+    pub fn dired_open_selected(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        let entry = match self
+            .dired_states
+            .get(&self.current_buffer_id)
+            .and_then(|s| s.current_entry().cloned())
+        {
+            Some(e) => e,
+            None => return,
+        };
+        match entry.kind {
+            crate::dired::DiredEntryKind::Directory => {
+                self.dired_open(entry.path);
+            }
+            _ => {
+                if let Ok(content) = std::fs::read_to_string(&entry.path) {
+                    self.open_file_as_buffer(entry.path, &content);
+                }
+            }
+        }
+    }
+
+    /// Mark the current entry for deletion.
+    pub fn dired_mark_delete(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        if let Some(state) = self.dired_states.get_mut(&self.current_buffer_id) {
+            state.mark_delete();
+        }
+        self.dired_regenerate_text();
+    }
+
+    /// Unmark the current entry.
+    pub fn dired_unmark(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        if let Some(state) = self.dired_states.get_mut(&self.current_buffer_id) {
+            state.unmark();
+        }
+        self.dired_regenerate_text();
+    }
+
+    /// Ask for confirmation, then execute marked deletions.
+    pub fn dired_execute_marks(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        let count = self
+            .dired_states
+            .get(&self.current_buffer_id)
+            .map(|s| s.marked_paths(crate::dired::DiredMark::Delete).len())
+            .unwrap_or(0);
+        if count == 0 {
+            return;
+        }
+        // Open a YesNo prompt. `dired-do-delete` is a pseudo-command that
+        // actually performs the deletions when the user answers yes.
+        self.minibuffer_open(
+            MiniBufferPrompt::YesNo {
+                label: format!("Delete {} file(s)?", count),
+            },
+            Vec::new(),
+            PendingMinibufferAction::DiredConfirmDelete,
+        );
+    }
+
+    /// Actually delete the marked files. Called after YesNo confirmation.
+    fn dired_perform_marked_deletes(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        let marked: Vec<PathBuf> = self
+            .dired_states
+            .get(&self.current_buffer_id)
+            .map(|s| s.marked_paths(crate::dired::DiredMark::Delete))
+            .unwrap_or_default();
+        for path in marked {
+            if path.is_dir() {
+                let _ = std::fs::remove_dir_all(&path);
+            } else {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        let _ = self.dired_refresh();
+    }
+
+    /// Refresh the current dired buffer.
+    pub fn dired_refresh(&mut self) -> std::io::Result<()> {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return Ok(());
+        }
+        if let Some(state) = self.dired_states.get_mut(&self.current_buffer_id) {
+            state.refresh()?;
+        }
+        self.dired_regenerate_text();
+        self.dired_move_cursor_to_selection();
+        Ok(())
+    }
+
+    /// Go up one directory in the current dired buffer.
+    pub fn dired_up_directory(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        let parent = self
+            .dired_states
+            .get(&self.current_buffer_id)
+            .and_then(|s| s.parent());
+        if let Some(p) = parent {
+            self.dired_open(p);
+        }
+    }
+
+    /// Regenerate the buffer text from the current dired state.
+    fn dired_regenerate_text(&mut self) {
+        if self.current_buffer_kind != BufferKind::Dired {
+            return;
+        }
+        let text = self
+            .dired_states
+            .get(&self.current_buffer_id)
+            .map(|s| s.render_to_text())
+            .unwrap_or_default();
+        self.document.set_text(&text);
+        self.last_parsed_version = 0;
+    }
+
+    // ---- Command registry dispatch ----
+
+    /// Run a command by name. If the command is interactive (needs input),
+    /// opens the mini-buffer and defers execution until submit.
+    pub fn run_command_by_name(&mut self, name: &str) {
+        let interactive = match self.commands.get(name) {
+            Some(c) => c.interactive.clone(),
+            None => return,
+        };
+        match interactive {
+            InteractiveSpec::None => {
+                self.run_command_direct(name, CommandArgs::default());
+            }
+            InteractiveSpec::File { prompt: _ } => {
+                let base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+                let candidates = list_directory_entries(&base_dir);
+                self.minibuffer_open(
+                    MiniBufferPrompt::FindFile { base_dir },
+                    candidates,
+                    PendingMinibufferAction::RunCommandWithInput {
+                        name: name.to_string(),
+                    },
+                );
+            }
+            InteractiveSpec::Buffer { prompt: _ } => {
+                let candidates = self.buffer_names();
+                self.minibuffer_open(
+                    MiniBufferPrompt::SwitchBuffer,
+                    candidates,
+                    PendingMinibufferAction::RunCommandWithInput {
+                        name: name.to_string(),
+                    },
+                );
+            }
+            InteractiveSpec::String { prompt } => {
+                self.minibuffer_open(
+                    MiniBufferPrompt::FreeText { label: prompt },
+                    Vec::new(),
+                    PendingMinibufferAction::RunCommandWithInput {
+                        name: name.to_string(),
+                    },
+                );
+            }
+            InteractiveSpec::Line => {
+                self.minibuffer_open(
+                    MiniBufferPrompt::GotoLine,
+                    Vec::new(),
+                    PendingMinibufferAction::RunCommandWithInput {
+                        name: name.to_string(),
+                    },
+                );
+            }
+            InteractiveSpec::Confirm { prompt } => {
+                self.minibuffer_open(
+                    MiniBufferPrompt::YesNo { label: prompt },
+                    Vec::new(),
+                    PendingMinibufferAction::RunCommandWithInput {
+                        name: name.to_string(),
+                    },
+                );
+            }
+        }
+    }
+
+    /// Run a command directly by cloning the handler Rc out of the registry
+    /// and invoking it. This avoids holding a borrow of the registry during
+    /// dispatch so the handler can mutate `self.commands` freely.
+    pub fn run_command_direct(&mut self, name: &str, args: CommandArgs) {
+        let handler = self.commands.get(name).map(|c| c.handler.clone());
+        if let Some(h) = handler {
+            h(self, args);
+        }
+    }
+
+    /// Run a command with a string argument obtained from the mini-buffer.
+    pub fn run_command_with_string(&mut self, name: &str, s: String) {
+        let args = CommandArgs::default().with_string(s);
+        self.run_command_direct(name, args);
+    }
+
+    // ---- Keyboard macros (C-x ( / C-x ) / C-x e) ----
+
+    /// Start recording a keyboard macro.
+    pub fn macro_start_recording(&mut self) {
+        self.macros.start_recording();
+    }
+
+    /// Stop recording the current macro and save it as `last`.
+    pub fn macro_stop_recording(&mut self) {
+        self.macros.stop_recording();
+    }
+
+    /// Execute the last recorded macro `count` times.
+    pub fn macro_execute_last(&mut self, count: usize) {
+        let mac = match self.macros.last.clone() {
+            Some(m) => m,
+            None => return,
+        };
+        self.macros.applying = true;
+        for _ in 0..count {
+            for action in &mac.actions {
+                self.apply_recorded_action(action);
+            }
+        }
+        self.macros.applying = false;
+    }
+
+    /// Execute a named macro by name.
+    pub fn macro_execute_named(&mut self, name: &str, count: usize) {
+        let mac = match self.macros.get_named(name).cloned() {
+            Some(m) => m,
+            None => return,
+        };
+        self.macros.applying = true;
+        for _ in 0..count {
+            for action in &mac.actions {
+                self.apply_recorded_action(action);
+            }
+        }
+        self.macros.applying = false;
+    }
+
+    /// Record an action if a macro is currently being recorded.
+    /// Called by the editor helpers that wrap edit verbs.
+    pub fn record_action(&mut self, action: RecordedAction) {
+        self.macros.record(action);
+    }
+
+    /// Apply a single recorded action to the current buffer.
+    /// Does NOT record itself (we're already inside a replay).
+    fn apply_recorded_action(&mut self, action: &RecordedAction) {
+        match action {
+            RecordedAction::InsertChar(c) => self.insert_text(&c.to_string()),
+            RecordedAction::InsertString(s) => self.insert_text(s),
+            RecordedAction::Newline => self.insert_text("\n"),
+            RecordedAction::Backspace => self.backspace(),
+            RecordedAction::DeleteForward => self.delete_forward(),
+            RecordedAction::MoveLeft => self.move_left(false),
+            RecordedAction::MoveRight => self.move_right(false),
+            RecordedAction::MoveUp => self.move_up(false),
+            RecordedAction::MoveDown => self.move_down(false),
+            RecordedAction::MoveWordLeft => self.move_word_left(false),
+            RecordedAction::MoveWordRight => self.move_word_right(false),
+            RecordedAction::MoveLineStart => self.move_to_line_start(false),
+            RecordedAction::MoveLineEnd => self.move_to_line_end(false),
+            RecordedAction::MoveDocStart => self.move_to_doc_start(false),
+            RecordedAction::MoveDocEnd => self.move_to_doc_end(false),
+            RecordedAction::KillLine => self.kill_to_end_of_line(),
+            RecordedAction::KillLineBackward => self.kill_to_start_of_line(),
+            RecordedAction::KillWordForward => self.kill_word_forward(),
+            RecordedAction::KillWordBackward => self.kill_word_backward(),
+            RecordedAction::KillRegion => self.kill_region(),
+            RecordedAction::CopyRegion => self.copy_region(),
+            RecordedAction::Yank => self.yank(),
+            RecordedAction::YankPop => self.yank_pop(),
+            RecordedAction::Undo => self.undo(),
+            RecordedAction::Redo => self.redo(),
+            RecordedAction::SetMark => self.set_mark(),
+            RecordedAction::ClearSelection => self.cursor.clear_selection(),
+            RecordedAction::ExchangePointAndMark => self.exchange_point_and_mark(),
+            RecordedAction::UpcaseWord => self.upcase_word(),
+            RecordedAction::DowncaseWord => self.downcase_word(),
+            RecordedAction::TransposeChars => self.transpose_chars(),
+            RecordedAction::TransposeWords => self.transpose_words(),
+            RecordedAction::Command { name, prefix_arg: _ } => {
+                // Phase 5 will wire this to the command registry.
+                // For now, fall back to dispatch_palette_command so the
+                // user-visible palette commands can be replayed.
+                self.dispatch_palette_command(name);
+            }
         }
     }
 
@@ -1432,6 +2296,9 @@ impl MdAppState {
         match self.command_palette.mode {
             PaletteMode::Command => self.command_palette_filter(),
             PaletteMode::GotoLine => {} // just accumulate digits
+            PaletteMode::SwitchBuffer | PaletteMode::KillBuffer => {
+                self.command_palette_filter_buffers();
+            }
         }
     }
 
@@ -1494,7 +2361,102 @@ impl MdAppState {
                 self.command_palette.query.clear();
                 Some(id)
             }
+            PaletteMode::SwitchBuffer => {
+                let name = self.command_palette_selected_buffer_name();
+                self.command_palette.visible = false;
+                self.command_palette.query.clear();
+                self.command_palette.mode = PaletteMode::Command;
+                if let Some(name) = name {
+                    self.switch_to_buffer_by_name(&name);
+                }
+                None
+            }
+            PaletteMode::KillBuffer => {
+                let name = self.command_palette_selected_buffer_name();
+                self.command_palette.visible = false;
+                self.command_palette.query.clear();
+                self.command_palette.mode = PaletteMode::Command;
+                if let Some(name) = name {
+                    self.kill_buffer_by_name(&name);
+                }
+                None
+            }
         }
+    }
+
+    /// Returns the currently highlighted buffer name in a SwitchBuffer/KillBuffer palette.
+    fn command_palette_selected_buffer_name(&self) -> Option<String> {
+        // In buffer mode, `commands` contains the buffer list as PaletteCommands
+        // with name = buffer name. If typed query doesn't match any filtered entry,
+        // fall back to the typed query itself.
+        if let Some(idx) = self
+            .command_palette
+            .filtered_indices
+            .get(self.command_palette.selected)
+        {
+            if let Some(cmd) = self.command_palette.commands.get(*idx) {
+                return Some(cmd.name.clone());
+            }
+        }
+        if !self.command_palette.query.is_empty() {
+            Some(self.command_palette.query.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Filter the palette candidates by the current query (buffer name mode).
+    fn command_palette_filter_buffers(&mut self) {
+        let query = self.command_palette.query.to_lowercase();
+        self.command_palette.filtered_indices = self
+            .command_palette
+            .commands
+            .iter()
+            .enumerate()
+            .filter(|(_, cmd)| {
+                query.is_empty() || cmd.name.to_lowercase().contains(&query)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        self.command_palette.selected = 0;
+    }
+
+    /// Open the palette in SwitchBuffer mode, populated with current buffer names.
+    pub fn command_palette_start_switch_buffer(&mut self) {
+        self.command_palette.visible = true;
+        self.command_palette.mode = PaletteMode::SwitchBuffer;
+        self.command_palette.query.clear();
+        self.command_palette.selected = 0;
+        self.command_palette.commands = self
+            .buffer_names()
+            .into_iter()
+            .map(|name| PaletteCommand {
+                description: name.clone(),
+                name,
+                id: "switch-buffer",
+            })
+            .collect();
+        self.command_palette.filtered_indices =
+            (0..self.command_palette.commands.len()).collect();
+    }
+
+    /// Open the palette in KillBuffer mode, populated with current buffer names.
+    pub fn command_palette_start_kill_buffer(&mut self) {
+        self.command_palette.visible = true;
+        self.command_palette.mode = PaletteMode::KillBuffer;
+        self.command_palette.query.clear();
+        self.command_palette.selected = 0;
+        self.command_palette.commands = self
+            .buffer_names()
+            .into_iter()
+            .map(|name| PaletteCommand {
+                description: format!("Kill buffer: {}", name),
+                name,
+                id: "kill-buffer",
+            })
+            .collect();
+        self.command_palette.filtered_indices =
+            (0..self.command_palette.commands.len()).collect();
     }
 
     pub fn command_palette_dismiss(&mut self) {
@@ -1520,7 +2482,11 @@ impl MdAppState {
             "transpose-chars" => self.transpose_chars(),
             "transpose-words" => self.transpose_words(),
             "zap-to-char" => self.zap_to_char_start(),
-            // "dired" and "load-theme" need view-level handling (file dialog, theme picker)
+            "dired" => {
+                let dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+                self.dired_open(dir);
+            }
+            // "load-theme" needs view-level handling (theme picker)
             _ => return false,
         }
         true
@@ -1543,4 +2509,23 @@ impl Default for MdAppState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// List entries in a directory for find-file completion.
+/// Directories are suffixed with "/" to make them visually distinct.
+fn list_directory_entries(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                let mut s = name.to_string();
+                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    s.push('/');
+                }
+                out.push(s);
+            }
+        }
+    }
+    out.sort();
+    out
 }

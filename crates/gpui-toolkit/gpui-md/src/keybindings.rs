@@ -89,6 +89,10 @@ fn common_bindings() -> Vec<KeyBinding> {
         // Search
         KeyBinding::new("secondary-f", actions::Find, None),
         KeyBinding::new("secondary-h", actions::FindReplace, None),
+        // Font size
+        KeyBinding::new("secondary-=", actions::IncreaseFontSize, None),
+        KeyBinding::new("secondary-+", actions::IncreaseFontSize, None),
+        KeyBinding::new("secondary--", actions::DecreaseFontSize, None),
     ]
 }
 

@@ -8,14 +8,6 @@ use gpui_ui_kit::theme::ThemeExt;
 use crate::markdown::{MdThemeColors, highlight_line};
 use crate::state::MdAppState;
 
-/// Font size used for the editor (in pixels).
-const EDITOR_FONT_SIZE: f32 = 14.0;
-
-/// Estimated digit width in the gutter, derived from font size.
-/// Gutter uses a slightly smaller font (13px), so scale from that.
-const GUTTER_FONT_SIZE: f32 = 13.0;
-const GUTTER_DIGIT_WIDTH: f32 = GUTTER_FONT_SIZE * 0.65;
-
 /// Estimated line height in pixels for scroll offset calculations.
 const LINE_HEIGHT_PX: f32 = 20.0;
 
@@ -67,6 +59,7 @@ impl Render for EditorPane {
         let show_line_numbers = state.show_line_numbers;
         let find_query = state.find_query.clone();
         let selection = state.cursor.selection();
+        let editor_font_size = state.font_size;
 
         // Capture status bar state before dropping the borrow
         let isearch_active = state.isearch.active;
@@ -86,6 +79,8 @@ impl Render for EditorPane {
             let mode_label = match state.command_palette.mode {
                 crate::state::PaletteMode::GotoLine => "Goto line: ",
                 crate::state::PaletteMode::Command => "M-x ",
+                crate::state::PaletteMode::SwitchBuffer => "Switch to buffer: ",
+                crate::state::PaletteMode::KillBuffer => "Kill buffer: ",
             };
             format!("{}{}", mode_label, state.command_palette.query)
         } else {
@@ -124,10 +119,11 @@ impl Render for EditorPane {
         };
         let cursor_col = clamped_cursor - doc.line_to_char(cursor_line);
 
+        let gutter_font_size = editor_font_size - 1.0;
+        let gutter_digit_width = gutter_font_size * 0.65;
         let gutter_width = if show_line_numbers {
             let digits = format!("{}", total_lines).len().max(3);
-            // width = digits * digit_width + right_padding (pr_2 = 8px)
-            digits as f32 * GUTTER_DIGIT_WIDTH + 12.0
+            digits as f32 * gutter_digit_width + 12.0
         } else {
             0.0
         };
@@ -222,7 +218,7 @@ impl Render for EditorPane {
                     div()
                         .min_w(px(gutter_width))
                         .pr_2()
-                        .text_size(px(13.0))
+                        .text_size(px(gutter_font_size))
                         .text_color(text_muted)
                         .font_family("monospace")
                         .flex_shrink_0()
@@ -266,7 +262,7 @@ impl Render for EditorPane {
                 .flex_grow()
                 .min_w(px(0.0))
                 .overflow_hidden()
-                .text_size(px(EDITOR_FONT_SIZE))
+                .text_size(px(editor_font_size))
                 .font_family("monospace")
                 .child(styled)
                 .on_mouse_down(MouseButton::Left, {
@@ -382,6 +378,73 @@ impl Render for EditorPane {
                 let alt = event.keystroke.modifiers.alt;
                 let modifier = ctrl || cmd; // platform-agnostic "primary modifier"
 
+                // ---- 0. Mini-buffer intercept (top priority when active) ----
+                let mb_active = state_for_keys.read(cx).minibuffer.active;
+                if mb_active {
+                    let mb_is_yesno = state_for_keys
+                        .read(cx)
+                        .minibuffer
+                        .prompt
+                        .as_ref()
+                        .map(|p| p.is_yes_no())
+                        .unwrap_or(false);
+                    if mb_is_yesno {
+                        match key {
+                            "y" | "Y" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer_submit_yes_no(true)),
+                            "n" | "N" | "escape" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer_submit_yes_no(false)),
+                            "g" if ctrl => state_for_keys
+                                .update(cx, |s, _| s.minibuffer_cancel()),
+                            _ => {}
+                        }
+                    } else {
+                        match key {
+                            "g" if ctrl => state_for_keys
+                                .update(cx, |s, _| s.minibuffer_cancel()),
+                            "escape" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer_cancel()),
+                            "enter" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer_submit()),
+                            "backspace" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.backspace()),
+                            "delete" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.delete_forward()),
+                            "left" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.move_left()),
+                            "right" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.move_right()),
+                            "home" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.move_to_start()),
+                            "end" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.move_to_end()),
+                            "tab" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.complete()),
+                            "down" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.select_next()),
+                            "up" => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.select_prev()),
+                            "p" if alt => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.history_prev()),
+                            "n" if alt => state_for_keys
+                                .update(cx, |s, _| s.minibuffer.history_next()),
+                            _ if !ctrl && !cmd && !alt => {
+                                if let Some(ch) = &event.keystroke.key_char {
+                                    let ch = ch.clone();
+                                    state_for_keys.update(cx, |s, _| {
+                                        for c in ch.chars() {
+                                            s.minibuffer.add_char(c);
+                                        }
+                                    });
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    window.refresh();
+                    return;
+                }
+
                 // ---- 1. Isearch intercept (top priority when active) ----
                 let isearch_active = state_for_keys.read(cx).isearch.active;
                 if isearch_active {
@@ -450,6 +513,32 @@ impl Render for EditorPane {
                             }
                         }
                         _ => {}
+                    }
+                    window.refresh();
+                    return;
+                }
+
+                // ---- 2.5. Dired key map (when current buffer is dired) ----
+                let is_dired = state_for_keys.read(cx).current_buffer_kind
+                    == crate::document::BufferKind::Dired;
+                if is_dired {
+                    match key {
+                        "n" | "down" => state_for_keys.update(cx, |s, _| s.dired_next()),
+                        "p" | "up" => state_for_keys.update(cx, |s, _| s.dired_prev()),
+                        "enter" => state_for_keys.update(cx, |s, _| s.dired_open_selected()),
+                        "d" => state_for_keys.update(cx, |s, _| s.dired_mark_delete()),
+                        "u" => state_for_keys.update(cx, |s, _| s.dired_unmark()),
+                        "x" => state_for_keys.update(cx, |s, _| s.dired_execute_marks()),
+                        "g" if !ctrl && !cmd && !alt => {
+                            state_for_keys.update(cx, |s, _| {
+                                let _ = s.dired_refresh();
+                            });
+                        }
+                        "^" => state_for_keys.update(cx, |s, _| s.dired_up_directory()),
+                        "q" => state_for_keys.update(cx, |s, _| {
+                            s.kill_current_buffer();
+                        }),
+                        _ => {} // ignore other keys in dired
                     }
                     window.refresh();
                     return;
@@ -587,6 +676,25 @@ impl Render for EditorPane {
                                 }
                                 "u" => s.undo(),
                                 "h" => s.select_all(),
+                                // C-x b — switch to buffer (minibuffer)
+                                "b" => { s.minibuffer_start_switch_buffer(); }
+                                // C-x k — kill buffer (minibuffer)
+                                "k" => { s.minibuffer_start_kill_buffer(); }
+                                // C-x C-f — find file (minibuffer)
+                                "f" if ctrl => { s.minibuffer_start_find_file(); }
+                                // C-x right — next buffer
+                                "right" => { s.switch_to_next_buffer(); }
+                                // C-x left — previous buffer
+                                "left" => { s.switch_to_prev_buffer(); }
+                                // C-x ( — start recording a macro
+                                "(" => s.macro_start_recording(),
+                                // C-x ) — stop recording a macro
+                                ")" => s.macro_stop_recording(),
+                                // C-x e — execute last macro (C-u N for count)
+                                "e" => {
+                                    let n = s.take_universal_arg();
+                                    s.macro_execute_last(n);
+                                }
                                 _ => {} // unknown C-x <key>: ignore
                             }
                             return;
@@ -594,12 +702,30 @@ impl Render for EditorPane {
 
                         match key {
                             // Arrow keys (with Alt for word movement)
-                            "left" if alt => s.move_word_left(shift),
-                            "right" if alt => s.move_word_right(shift),
-                            "left" => s.move_left(shift),
-                            "right" => s.move_right(shift),
-                            "up" => s.move_up(shift),
-                            "down" => s.move_down(shift),
+                            "left" if alt => {
+                                s.record_action(crate::macros::RecordedAction::MoveWordLeft);
+                                s.move_word_left(shift);
+                            }
+                            "right" if alt => {
+                                s.record_action(crate::macros::RecordedAction::MoveWordRight);
+                                s.move_word_right(shift);
+                            }
+                            "left" => {
+                                s.record_action(crate::macros::RecordedAction::MoveLeft);
+                                s.move_left(shift);
+                            }
+                            "right" => {
+                                s.record_action(crate::macros::RecordedAction::MoveRight);
+                                s.move_right(shift);
+                            }
+                            "up" => {
+                                s.record_action(crate::macros::RecordedAction::MoveUp);
+                                s.move_up(shift);
+                            }
+                            "down" => {
+                                s.record_action(crate::macros::RecordedAction::MoveDown);
+                                s.move_down(shift);
+                            }
 
                             // Page Up/Down
                             "pageup" => {
@@ -674,8 +800,8 @@ impl Render for EditorPane {
                                 for _ in 0..n { s.downcase_word(); }
                             }
 
-                            // M-x: command palette
-                            "x" if alt && !ctrl && !cmd => s.toggle_command_palette(),
+                            // M-x: command prompt (via mini-buffer + command registry)
+                            "x" if alt && !ctrl && !cmd => s.minibuffer_start_command(),
 
                             // C-x: prefix key for two-key chords (Emacs only)
                             "x" if ctrl && !cmd && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
@@ -728,16 +854,31 @@ impl Render for EditorPane {
                             ">" if alt => s.move_to_doc_end(shift),
 
                             // Deletion with universal arg
-                            "backspace" if alt => s.kill_word_backward(),
-                            "backspace" => s.backspace(),
-                            "delete" => s.delete_forward(),
+                            "backspace" if alt => {
+                                s.record_action(crate::macros::RecordedAction::KillWordBackward);
+                                s.kill_word_backward();
+                            }
+                            "backspace" => {
+                                s.record_action(crate::macros::RecordedAction::Backspace);
+                                s.backspace();
+                            }
+                            "delete" => {
+                                s.record_action(crate::macros::RecordedAction::DeleteForward);
+                                s.delete_forward();
+                            }
                             "d" if ctrl => {
                                 let n = s.take_universal_arg();
-                                for _ in 0..n { s.delete_forward(); }
+                                for _ in 0..n {
+                                    s.record_action(crate::macros::RecordedAction::DeleteForward);
+                                    s.delete_forward();
+                                }
                             }
 
                             // Enter (newline)
-                            "enter" => s.insert_text("\n"),
+                            "enter" => {
+                                s.record_action(crate::macros::RecordedAction::Newline);
+                                s.insert_text("\n");
+                            }
 
                             // Tab
                             "tab" if shift => {
@@ -771,6 +912,12 @@ impl Render for EditorPane {
                                             }
                                         } else {
                                             s.kill_ring.reset_flags();
+                                            // Record each character for macro replay
+                                            for c in ch.chars() {
+                                                s.record_action(
+                                                    crate::macros::RecordedAction::InsertChar(c),
+                                                );
+                                            }
                                             s.insert_text(ch);
                                         }
                                     }

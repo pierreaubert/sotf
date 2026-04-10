@@ -52,6 +52,8 @@ impl Render for PreviewPane {
         let editing_block = state.editing_block.clone();
         let editing_text = state.editing_block_text.clone();
         let show_line_numbers = state.show_preview_line_numbers;
+        let font_size = state.font_size;
+        let preview_font_size = font_size + 1.0; // preview is slightly larger than editor
         let text_muted = theme.text_muted;
 
         let md_colors = MdThemeColors::from_theme(&theme);
@@ -77,7 +79,7 @@ impl Render for PreviewPane {
             0.0
         };
         let text_system = window.text_system().clone();
-        let raw_elements = render_markdown(root, &mut source_map, &md_colors, justify_width, Some(&text_system));
+        let raw_elements = render_markdown(root, &mut source_map, &md_colors, justify_width, Some(&text_system), preview_font_size);
 
         self.cached_show_line_numbers = show_line_numbers;
         if needs_source_map_update {
@@ -224,7 +226,7 @@ impl Render for PreviewPane {
             .track_scroll(&self.scroll_handle)
             .p_4()
             .text_color(theme.text_primary)
-            .text_size(px(15.0))
+            .text_size(px(preview_font_size))
             .children(elements)
     }
 }

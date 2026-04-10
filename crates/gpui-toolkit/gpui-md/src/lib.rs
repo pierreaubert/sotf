@@ -10,11 +10,15 @@
 //! - Import/export: Word (.docx), PDF, Google Docs
 
 pub mod actions;
+pub mod commands;
+pub mod dired;
 pub mod document;
 pub mod export;
 pub mod import;
 pub mod keybindings;
+pub mod macros;
 pub mod markdown;
+pub mod minibuffer;
 pub mod state;
 pub mod views;
 
