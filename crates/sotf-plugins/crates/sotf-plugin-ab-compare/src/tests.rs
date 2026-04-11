@@ -792,12 +792,20 @@ fn test_auto_gain_runtime_enable_disable() {
         plugin.process(&input, &mut output, &context).unwrap();
     }
 
-    let data = plugin.get_data().unwrap();
-    let ab_data = data.downcast_ref::<ABCompareData>().unwrap();
-    assert!(
-        ab_data.auto_gain_db.abs() < 0.01,
-        "Auto-gain should be ~0 when disabled"
-    );
+    // Scope each cache read: RealTimeCache uses a 2-slot double-buffer and skips
+    // updates when the spare Arc is still held by a reader. `let` shadowing does
+    // not drop the old binding at the shadow point — it lives until the end of the
+    // function — so we must explicitly scope reads to release the Arc before
+    // subsequent audio-thread writes. Real UI code drops per poll; this test must
+    // match that pattern or it pins the cache on stale data.
+    {
+        let data = plugin.get_data().unwrap();
+        let ab_data = data.downcast_ref::<ABCompareData>().unwrap();
+        assert!(
+            ab_data.auto_gain_db.abs() < 0.01,
+            "Auto-gain should be ~0 when disabled"
+        );
+    }
 
     // Enable auto-gain at runtime
     plugin
@@ -812,15 +820,17 @@ fn test_auto_gain_runtime_enable_disable() {
         plugin.process(&input, &mut output, &context).unwrap();
     }
 
-    let data = plugin.get_data().unwrap();
-    let ab_data = data.downcast_ref::<ABCompareData>().unwrap();
+    {
+        let data = plugin.get_data().unwrap();
+        let ab_data = data.downcast_ref::<ABCompareData>().unwrap();
 
-    // Now auto-gain should be active (negative since B is louder)
-    assert!(
-        ab_data.auto_gain_db < -1.0,
-        "Auto-gain should be negative after enabling, got {} dB",
-        ab_data.auto_gain_db
-    );
+        // Now auto-gain should be active (negative since B is louder)
+        assert!(
+            ab_data.auto_gain_db < -1.0,
+            "Auto-gain should be negative after enabling, got {} dB",
+            ab_data.auto_gain_db
+        );
+    }
 
     // Disable again
     plugin
