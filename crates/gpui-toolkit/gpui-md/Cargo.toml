@@ -49,6 +49,9 @@ genpdf = { version = "0.2", optional = true }
 # Google Docs (optional)
 reqwest = { workspace = true, optional = true }
 
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+
 [lib]
 name = "gpui_md"
 path = "src/lib.rs"

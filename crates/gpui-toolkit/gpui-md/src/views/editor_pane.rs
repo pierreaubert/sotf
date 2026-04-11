@@ -9,7 +9,10 @@ use crate::markdown::{MdThemeColors, highlight_line};
 use crate::state::MdAppState;
 
 /// Estimated line height in pixels for scroll offset calculations.
-const LINE_HEIGHT_PX: f32 = 20.0;
+///
+/// Pub so that `MainView::sync_scroll` can project editor scroll offsets
+/// onto source lines using the same grid the editor paints against.
+pub const LINE_HEIGHT_PX: f32 = 20.0;
 
 /// Lines of padding rendered above/below the visible viewport for smooth scrolling.
 const VIRTUALIZATION_OVERSCAN: usize = 10;
@@ -820,16 +823,14 @@ impl Render for EditorPane {
                                 }
                             }
 
-                            // Emacs kill ring — C-k/C-w/C-y active in all presets.
-                            // These use Ctrl (not Cmd) so they don't conflict with
-                            // Cmd-based shortcuts on macOS.
-                            "k" if ctrl && !cmd => {
+                            // Emacs kill ring — C-k/C-w/C-y gated by preset
+                            "k" if ctrl && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
                                 s.kill_to_end_of_line();
                             }
-                            "w" if ctrl && !cmd => {
+                            "w" if ctrl && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
                                 s.kill_region();
                             }
-                            "y" if ctrl && !cmd => {
+                            "y" if ctrl && s.keymap_preset == gpui_keybinding::KeymapPreset::Emacs => {
                                 s.yank();
                             }
                             // Alt-based kill ring ops — safe for all presets

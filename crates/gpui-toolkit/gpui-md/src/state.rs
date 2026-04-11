@@ -196,6 +196,10 @@ pub struct MdAppState {
     pub commands: CommandRegistry,
     /// When true, the next character input is consumed as the target for zap-to-char (M-z).
     pub zap_to_char_pending: bool,
+    /// When true, the next keystroke is treated as if Alt/Meta were held.
+    /// Set by pressing Escape as a standalone key (classic Emacs terminal
+    /// convention: `Esc b` is equivalent to `M-b`).
+    pub meta_pending: bool,
     /// Emacs C-x prefix: the next key is interpreted as the second key of a C-x chord.
     /// Some chords have a sub-prefix (e.g. C-x r → rectangle ops).
     pub c_x_pending: bool,
@@ -272,6 +276,7 @@ impl MdAppState {
                 r
             },
             zap_to_char_pending: false,
+            meta_pending: false,
             c_x_pending: false,
             c_x_r_pending: false,
         }

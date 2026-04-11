@@ -34,6 +34,10 @@ actions!(
         FocusEditor,
         FocusPreview,
         ToggleLineNumbers,
+        // Keybindings preset
+        SetKeymapDefault,
+        SetKeymapEmacs,
+        SetKeymapVim,
         // Search
         Find,
         FindReplace,

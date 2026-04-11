@@ -3,7 +3,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::theme::ThemeExt;
 
-use crate::markdown::{MdThemeColors, SourceMap, parse_markdown, render_markdown};
+use crate::markdown::{MdThemeColors, SourceMap, SourceSpan, parse_markdown, render_markdown};
 use crate::state::MdAppState;
 
 /// Rendered markdown preview pane with click-to-locate and inline WYSIWYG editing.
@@ -16,6 +16,12 @@ pub struct PreviewPane {
     cached_source_map: SourceMap,
     /// Cached value of show_preview_line_numbers for change detection.
     cached_show_line_numbers: bool,
+    /// Source spans for each block, aligned with child index in the
+    /// `.children(elements)` call. `block_spans[i]` is the span of the
+    /// i-th child of the preview scroll container, which lets sync code
+    /// use `scroll_handle.bounds_for_item(i)` to get that block's
+    /// rendered pixel bounds.
+    pub block_spans: Vec<SourceSpan>,
 }
 
 impl PreviewPane {
@@ -38,6 +44,7 @@ impl PreviewPane {
             cached_version: u64::MAX, // force first parse
             cached_source_map: SourceMap::new(),
             cached_show_line_numbers: false,
+            block_spans: Vec::new(),
         }
     }
 }
@@ -95,6 +102,27 @@ impl Render for PreviewPane {
         let block_lines: Vec<(String, usize)> = blocks_by_line
             .iter()
             .map(|(id, span)| ((*id).clone(), span.start_line))
+            .collect();
+
+        // Build `block_spans` aligned with the child index that each
+        // block will occupy in the `.children(elements)` call below.
+        // `scroll_handle.bounds_for_item(i)` then returns the rendered
+        // pixel bounds for `block_spans[i]`, which is what the scroll
+        // sync in `MainView` uses to align editor lines to preview
+        // pixels without drift.
+        self.block_spans = (0..raw_elements.len())
+            .map(|i| {
+                let block_id = format!("md-block-{}", i);
+                source_map
+                    .get(&block_id)
+                    .copied()
+                    .unwrap_or(SourceSpan {
+                        start_line: 0,
+                        start_col: 0,
+                        end_line: 0,
+                        end_col: 0,
+                    })
+            })
             .collect();
 
         let mut elements: Vec<AnyElement> = Vec::new();

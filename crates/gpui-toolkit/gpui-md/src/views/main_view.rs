@@ -2,8 +2,9 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::theme::ThemeExt;
 
+use crate::markdown::SourceSpan;
 use crate::state::MdAppState;
-use crate::views::editor_pane::EditorPane;
+use crate::views::editor_pane::{EditorPane, LINE_HEIGHT_PX as EDITOR_LINE_HEIGHT_PX};
 use crate::views::find_bar::FindBar;
 use crate::views::minibuffer::MiniBufferView;
 use crate::views::preview_pane::PreviewPane;
@@ -34,19 +35,6 @@ impl MainView {
         let find_bar = cx.new(|_cx| FindBar::new(state.clone()));
         let minibuffer = cx.new(|_cx| MiniBufferView::new(state.clone()));
 
-        // Observe editor and preview so MainView re-renders (and runs
-        // sync_scroll) whenever either pane scrolls. GPUI notifies a view's
-        // owning entity on scroll, so observing those entities gives us a
-        // scroll-change callback.
-        cx.observe(&editor, |_this, _editor, cx| {
-            cx.notify();
-        })
-        .detach();
-        cx.observe(&preview, |_this, _preview, cx| {
-            cx.notify();
-        })
-        .detach();
-
         Self {
             state,
             editor,
@@ -59,20 +47,41 @@ impl MainView {
         }
     }
 
-    /// Synchronize scroll positions between editor and preview panes.
+    /// Synchronise scroll positions between editor and preview using a
+    /// **source-line anchor** via the preview's per-block source map.
     ///
-    /// Uses a **source-line fraction** approach: the source line at the
-    /// centre of the driving pane is used to compute a fraction of the
-    /// document (line / total_lines), and the follower pane is scrolled to
-    /// show that same fraction at its own centre. This keeps the two views
-    /// aligned at the vertical middle regardless of how differently they
-    /// render blocks (long code blocks in preview, uniform 20px lines in
-    /// editor, etc.).
+    /// The old proportional approach (`editor_y/editor_max` → scaled to
+    /// `preview_max`) drifts badly because the editor is uniform
+    /// (20 px/line) while the preview is not: a heading block is tall,
+    /// a paragraph is short, a long code block is very tall, and so on.
+    /// So the same source line maps to different fractional positions
+    /// in the two scroll ranges, and the gap grows as you scroll down.
+    ///
+    /// The accurate mapping uses, for each block `i`:
+    /// - `PreviewPane::block_spans[i]`: the block's source line range
+    /// - `preview_scroll.bounds_for_item(i)`: the block's rendered
+    ///   pixel bounds (in document-space — GPUI stores child bounds as
+    ///   if the scroll offset were 0, so they are stable across scroll
+    ///   events).
+    ///
+    /// When the editor drives, we figure out which source line is at
+    /// the top of the editor viewport, find the block that covers that
+    /// line, compute a fractional position inside that block, look up
+    /// the block's pixel bounds in the preview, and compute the scroll
+    /// offset that places `block_top + fraction * block_height` at the
+    /// preview viewport top.
+    ///
+    /// When the preview drives, we do the inverse: ask the preview
+    /// which block is currently at its top, compute how many pixels
+    /// into that block the viewport top is, convert to a fractional
+    /// source line inside the block's span, and scroll the editor to
+    /// `line * LINE_HEIGHT`.
     fn sync_scroll(&mut self, cx: &mut Context<Self>) {
-        const LINE_HEIGHT: f32 = 20.0;
-
         let editor_scroll = self.editor.read(cx).scroll_handle.clone();
-        let preview_scroll = self.preview.read(cx).scroll_handle.clone();
+        let (preview_scroll, block_spans) = {
+            let preview = self.preview.read(cx);
+            (preview.scroll_handle.clone(), preview.block_spans.clone())
+        };
 
         let editor_y: f32 = editor_scroll.offset().y.into();
         let preview_y: f32 = preview_scroll.offset().y.into();
@@ -80,47 +89,73 @@ impl MainView {
         let editor_changed = (editor_y - self.last_editor_scroll_y).abs() > 0.5;
         let preview_changed = (preview_y - self.last_preview_scroll_y).abs() > 0.5;
 
-        let doc_lines = self.state.read(cx).document.len_lines().max(1) as f32;
+        // Nothing to do until we have at least one measured block.
+        if block_spans.is_empty() {
+            self.last_editor_scroll_y = editor_y;
+            self.last_preview_scroll_y = preview_y;
+            return;
+        }
 
-        let editor_viewport_h: f32 = editor_scroll.bounds().size.height.into();
-        let editor_max: f32 = editor_scroll.max_offset().y.into();
-        let preview_viewport_h: f32 = preview_scroll.bounds().size.height.into();
-        let preview_max: f32 = preview_scroll.max_offset().y.into();
+        let preview_viewport_top: f32 = preview_scroll.bounds().origin.y.into();
 
         if editor_changed && !preview_changed {
-            // Editor drove the scroll. Compute the source line at the editor's
-            // vertical middle, turn it into a fraction of total lines, and
-            // position the preview so that same fraction is at ITS centre.
-            //
-            // Editor scroll offset is negative; -editor_y is the distance the
-            // content has scrolled up.
-            let editor_center_content_y = (-editor_y) + editor_viewport_h * 0.5;
-            let center_line = (editor_center_content_y / LINE_HEIGHT).max(0.0);
-            let frac = (center_line / doc_lines).clamp(0.0, 1.0);
+            // ---- Editor → Preview -----------------------------------------
+            // Source line (1-indexed, matching comrak's source_map) at the
+            // top of the editor viewport. Editor uses 0-indexed lines with
+            // uniform `EDITOR_LINE_HEIGHT_PX`, so line_0 = (-editor_y / H).
+            let editor_line_0: f32 = (-editor_y / EDITOR_LINE_HEIGHT_PX).max(0.0);
+            let source_line_1 = editor_line_0 + 1.0;
 
-            // Preview total scrollable content height.
-            // preview_max is negative; -preview_max + viewport_h = full content height.
-            let preview_content_h = (-preview_max) + preview_viewport_h;
-            let target_center = frac * preview_content_h;
-            let target_scroll_top = target_center - preview_viewport_h * 0.5;
-            let clamped = clamp_scroll(-target_scroll_top, preview_max);
-            preview_scroll.set_offset(point(preview_scroll.offset().x, px(clamped)));
-        } else if preview_changed && !editor_changed {
-            // Preview drove the scroll. Mirror the line-fraction approach.
-            let preview_center_content_y = (-preview_y) + preview_viewport_h * 0.5;
-            let preview_content_h = (-preview_max) + preview_viewport_h;
-            if preview_content_h.abs() < 1.0 {
-                self.last_editor_scroll_y = editor_scroll.offset().y.into();
-                self.last_preview_scroll_y = preview_scroll.offset().y.into();
-                return;
+            if let Some(target_y) = preview_y_for_source_line(
+                source_line_1,
+                &block_spans,
+                &preview_scroll,
+                preview_viewport_top,
+            ) {
+                preview_scroll
+                    .set_offset(point(preview_scroll.offset().x, px(target_y)));
             }
-            let frac = (preview_center_content_y / preview_content_h).clamp(0.0, 1.0);
+        } else if preview_changed && !editor_changed {
+            // ---- Preview → Editor -----------------------------------------
+            // Ask GPUI which block is at the preview top, then compute
+            // how deep we are inside it, convert to a source line, and
+            // project onto the editor's uniform grid.
+            let top_ix = preview_scroll.top_item();
+            let Some(span) = block_spans.get(top_ix) else {
+                self.last_editor_scroll_y = editor_y;
+                self.last_preview_scroll_y = preview_y;
+                return;
+            };
+            let Some(block_bounds) = preview_scroll.bounds_for_item(top_ix) else {
+                self.last_editor_scroll_y = editor_y;
+                self.last_preview_scroll_y = preview_y;
+                return;
+            };
 
-            let target_center_line = frac * doc_lines;
-            let target_center_y = target_center_line * LINE_HEIGHT;
-            let target_scroll_top = target_center_y - editor_viewport_h * 0.5;
-            let clamped = clamp_scroll(-target_scroll_top, editor_max);
-            editor_scroll.set_offset(point(editor_scroll.offset().x, px(clamped)));
+            let block_top: f32 = block_bounds.origin.y.into();
+            let block_height: f32 = block_bounds.size.height.into();
+
+            // Distance, in pixels, from this block's top to the viewport
+            // top, measured in document-space (i.e. including the current
+            // scroll offset).
+            let pixels_into_block = (preview_viewport_top - preview_y) - block_top;
+            let block_fraction = if block_height > 0.5 {
+                (pixels_into_block / block_height).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            let span_lines = span.end_line.saturating_sub(span.start_line) as f32 + 1.0;
+            let source_line_1 = span.start_line as f32 + block_fraction * span_lines;
+            let editor_line_0 = (source_line_1 - 1.0).max(0.0);
+            let target_editor_y = -(editor_line_0 * EDITOR_LINE_HEIGHT_PX);
+
+            let clamped = clamp_negative_offset(
+                target_editor_y,
+                editor_scroll.max_offset().y.into(),
+            );
+            editor_scroll
+                .set_offset(point(editor_scroll.offset().x, px(clamped)));
         }
 
         self.last_editor_scroll_y = editor_scroll.offset().y.into();
@@ -128,9 +163,73 @@ impl MainView {
     }
 }
 
-/// Clamp `desired` (negative-or-zero scroll offset) to the valid range
-/// `[max_offset_y, 0]` where `max_offset_y` is also negative or zero.
-fn clamp_scroll(desired: f32, max_offset_y: f32) -> f32 {
+/// Find the preview scroll offset that places `source_line_1` (1-indexed
+/// source line, matching comrak) at the top of the preview viewport.
+///
+/// Returns `None` when GPUI has not measured the target block yet
+/// (typical on first render, before layout runs).
+fn preview_y_for_source_line(
+    source_line_1: f32,
+    block_spans: &[SourceSpan],
+    preview_scroll: &ScrollHandle,
+    preview_viewport_top: f32,
+) -> Option<f32> {
+    // Find the first block whose end_line >= source_line. Blocks are
+    // stored in document order so a linear scan is fine; the typical
+    // document has tens to a few hundred blocks.
+    let target_line = source_line_1.max(1.0);
+    let target_line_usize = target_line.floor() as usize;
+
+    // Clamp against the first / last block so scrolling to the first
+    // source line snaps to the preview's natural top (keeps the
+    // container padding visible) and scrolling past the last line
+    // snaps to the bottom. The `<=` on the first bound is important:
+    // if we computed `viewport_top - block_top` for line 1, we would
+    // get `-container_padding`, which hides the padding above block 0
+    // for the whole first block. Snapping to 0 here preserves it.
+    let first = block_spans.first()?;
+    if target_line_usize <= first.start_line {
+        return Some(0.0);
+    }
+    let last = block_spans.last()?;
+    if target_line_usize >= last.end_line {
+        return Some(preview_scroll.max_offset().y.into());
+    }
+
+    let (block_ix, span) = block_spans
+        .iter()
+        .enumerate()
+        .find(|(_, s)| target_line_usize <= s.end_line && target_line_usize >= s.start_line)
+        .or_else(|| {
+            // Line sits between blocks (e.g. blank lines). Take the
+            // nearest block before it.
+            block_spans
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.start_line <= target_line_usize)
+                .max_by_key(|(_, s)| s.start_line)
+        })?;
+
+    let block_bounds = preview_scroll.bounds_for_item(block_ix)?;
+    let block_top: f32 = block_bounds.origin.y.into();
+    let block_height: f32 = block_bounds.size.height.into();
+
+    let span_lines = span.end_line.saturating_sub(span.start_line) as f32 + 1.0;
+    let line_in_block = (target_line - span.start_line as f32).max(0.0);
+    let block_fraction = (line_in_block / span_lines).clamp(0.0, 1.0);
+    let sub_offset = block_fraction * block_height;
+
+    // Place `block_top + sub_offset` at `preview_viewport_top`.
+    // Since child bounds are stored as if scroll offset were 0, the
+    // required scroll offset is `viewport_top - (block_top + sub_offset)`.
+    let raw = preview_viewport_top - (block_top + sub_offset);
+    Some(clamp_negative_offset(raw, preview_scroll.max_offset().y.into()))
+}
+
+/// Clamp a desired (negative-or-zero) scroll offset to the valid
+/// `[max_offset_y, 0]` range. `max_offset_y` is GPUI's convention: a
+/// non-positive value representing the most-scrolled offset.
+fn clamp_negative_offset(desired: f32, max_offset_y: f32) -> f32 {
     desired.clamp(max_offset_y.min(0.0), 0.0)
 }
 

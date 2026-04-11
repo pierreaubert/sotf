@@ -331,6 +331,34 @@ fn register_actions(cx: &mut App) {
         state.update(cx, |s, _cx| s.show_line_numbers = !s.show_line_numbers);
     });
 
+    // Keybindings preset selection
+    cx.on_action::<actions::SetKeymapDefault>(|_action, cx| {
+        let state = cx.global::<MdGlobalState>().0.clone();
+        let bindings = MdKeybindingProvider.bindings(KeymapPreset::Default);
+        cx.bind_keys(bindings);
+        state.update(cx, |s, _cx| {
+            s.keymap_preset = KeymapPreset::Default;
+        });
+    });
+
+    cx.on_action::<actions::SetKeymapEmacs>(|_action, cx| {
+        let state = cx.global::<MdGlobalState>().0.clone();
+        let bindings = MdKeybindingProvider.bindings(KeymapPreset::Emacs);
+        cx.bind_keys(bindings);
+        state.update(cx, |s, _cx| {
+            s.keymap_preset = KeymapPreset::Emacs;
+        });
+    });
+
+    cx.on_action::<actions::SetKeymapVim>(|_action, cx| {
+        let state = cx.global::<MdGlobalState>().0.clone();
+        let bindings = MdKeybindingProvider.bindings(KeymapPreset::Vim);
+        cx.bind_keys(bindings);
+        state.update(cx, |s, _cx| {
+            s.keymap_preset = KeymapPreset::Vim;
+        });
+    });
+
     // Find
     cx.on_action::<actions::Find>(|_action, cx| {
         let state = cx.global::<MdGlobalState>().0.clone();
@@ -582,6 +610,15 @@ fn build_menus() -> Vec<Menu> {
                         MenuItem::action("Apple HIG", gpui_ui_kit::app::miniapp::SetDesignAppleHig),
                         MenuItem::action("Material 3", gpui_ui_kit::app::miniapp::SetDesignMaterial3),
                         MenuItem::action("Fluent", gpui_ui_kit::app::miniapp::SetDesignFluent),
+                    ],
+                }),
+                MenuItem::submenu(Menu {
+                    name: "Keybindings".into(),
+                    disabled: false,
+                    items: vec![
+                        MenuItem::action("Default", actions::SetKeymapDefault),
+                        MenuItem::action("Emacs", actions::SetKeymapEmacs),
+                        MenuItem::action("Vim", actions::SetKeymapVim),
                     ],
                 }),
             ],
