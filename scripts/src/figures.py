@@ -1137,19 +1137,34 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
 # Multi-mode comparison figures
 # ============================================================================
 
-# Color scheme for processing modes
+# Color scheme: 8 chromatically distinct colours from the matplotlib
+# tab10 palette (with cyan substituted for the dull gray) so each
+# (processing_mode × loss_type) scenario stands out on its own — busy
+# overlay plots stay readable even at thin line widths where paired
+# light/dark shades of the same hue would smear together.
 MODE_COLORS: dict[str, str] = {
-    "iir": "#4a90d9",
-    "fir": "#2ecc71",
-    "hybrid": "#e67e22",
-    "mixed_phase": "#9b59b6",
+    "iir": "#1f77b4",              # blue
+    "iir_epa": "#ff7f0e",          # orange
+    "fir": "#2ca02c",              # green
+    "fir_epa": "#d62728",          # red
+    "hybrid": "#9467bd",           # purple
+    "hybrid_epa": "#8c564b",       # brown
+    "mixed_phase": "#e377c2",      # pink
+    "mixed_phase_epa": "#17becf",  # cyan
 }
 
+# Display names: every mode includes its loss function in the label so
+# legends, summary tables, and per-mode subplot titles always show
+# which objective the run minimized at a glance.
 MODE_DISPLAY_NAMES: dict[str, str] = {
-    "iir": "IIR (LowLatency)",
-    "fir": "FIR (PhaseLinear)",
-    "hybrid": "Hybrid (IIR+FIR)",
-    "mixed_phase": "MixedPhase",
+    "iir": "IIR (flat)",
+    "iir_epa": "IIR (EPA)",
+    "fir": "FIR (flat)",
+    "fir_epa": "FIR (EPA)",
+    "hybrid": "Hybrid (flat)",
+    "hybrid_epa": "Hybrid (EPA)",
+    "mixed_phase": "MixedPhase (flat)",
+    "mixed_phase_epa": "MixedPhase (EPA)",
 }
 
 
@@ -1159,6 +1174,26 @@ def _mode_color(mode_name: str) -> str:
 
 def _mode_label(mode_name: str) -> str:
     return MODE_DISPLAY_NAMES.get(mode_name, mode_name)
+
+
+def _grid_dims(n: int) -> tuple[int, int]:
+    """Pick a balanced (rows, cols) grid for `n` subplots.
+
+    Up to 4 modes the existing 1xN layout stays. From 5 onward we
+    switch to a 2-row layout so each subplot stays wide enough to read.
+    """
+    if n <= 4:
+        return (1, n)
+    if n <= 8:
+        return (2, (n + 1) // 2)
+    if n <= 12:
+        return (3, (n + 2) // 3)
+    return (4, (n + 3) // 4)
+
+
+def _grid_position(idx: int, n_cols: int) -> tuple[int, int]:
+    """Convert a flat subplot index into (row, col), 1-indexed for plotly."""
+    return (idx // n_cols + 1, idx % n_cols + 1)
 
 
 def create_comparison_overlay_figure(
@@ -1345,11 +1380,18 @@ def create_mode_subplots_figure(
     channel_name: str,
     mode_data: list[tuple[str, dict]],
 ) -> go.Figure:
-    """Create a 1xN subplot grid with one before/after plot per mode."""
+    """Create an MxN subplot grid with one before/after plot per mode."""
     n_modes = len(mode_data)
     titles = [_mode_label(name) for name, _ in mode_data]
+    n_rows, n_cols = _grid_dims(n_modes)
 
-    fig = make_subplots(rows=1, cols=n_modes, subplot_titles=titles, horizontal_spacing=0.05)
+    fig = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=titles,
+        horizontal_spacing=0.05,
+        vertical_spacing=0.18 if n_rows > 1 else 0.05,
+    )
 
     all_curves: list[dict | None] = []
     for _, ch_data in mode_data:
@@ -1357,7 +1399,9 @@ def create_mode_subplots_figure(
         all_curves.append(ch_data.get("final_curve"))
     y_min, y_max = compute_y_range(all_curves)
 
-    for col, (mode_name, ch_data) in enumerate(mode_data, start=1):
+    for idx, (mode_name, ch_data) in enumerate(mode_data):
+        row, col = _grid_position(idx, n_cols)
+        first_cell = (row == 1 and col == 1)
         initial_curve = ch_data.get("initial_curve")
         final_curve = ch_data.get("final_curve")
         color = _mode_color(mode_name)
@@ -1367,16 +1411,16 @@ def create_mode_subplots_figure(
             fig.add_trace(go.Scatter(
                 x=initial_curve["freq"], y=spl_sm, mode="lines",
                 name="Before EQ", line=dict(color="rgba(200, 200, 200, 0.6)", width=1.5),
-                showlegend=(col == 1), legendgroup="before",
-            ), row=1, col=col)
+                showlegend=first_cell, legendgroup="before",
+            ), row=row, col=col)
 
         if final_curve:
             spl_sm = smooth_octave(final_curve["freq"], final_curve["spl"], DEFAULT_SMOOTHING)
             fig.add_trace(go.Scatter(
                 x=final_curve["freq"], y=spl_sm, mode="lines",
                 name=_mode_label(mode_name), line=dict(color=color, width=2),
-                showlegend=(col == 1), legendgroup=mode_name,
-            ), row=1, col=col)
+                showlegend=False, legendgroup=mode_name,
+            ), row=row, col=col)
 
         if initial_curve:
             freq = initial_curve["freq"]
@@ -1384,22 +1428,23 @@ def create_mode_subplots_figure(
                 x=[freq[0], freq[-1]], y=[0, 0], mode="lines",
                 line=dict(color="rgba(150, 150, 150, 0.3)", width=1, dash="dash"),
                 showlegend=False,
-            ), row=1, col=col)
+            ), row=row, col=col)
 
         fig.update_xaxes(
             type="log", tickvals=[20, 100, 500, 2000, 10000],
             ticktext=["20", "100", "500", "2k", "10k"], tickfont=dict(size=9),
-            gridcolor="rgba(128, 128, 128, 0.2)", range=[1.3, 4.3], row=1, col=col,
+            gridcolor="rgba(128, 128, 128, 0.2)", range=[1.3, 4.3], row=row, col=col,
         )
         fig.update_yaxes(
             tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
-            range=[y_min, y_max], row=1, col=col,
+            range=[y_min, y_max], row=row, col=col,
         )
 
-    fig.update_yaxes(title_text="SPL (dB)", title_font=dict(size=10), row=1, col=1)
+    for r in range(1, n_rows + 1):
+        fig.update_yaxes(title_text="SPL (dB)", title_font=dict(size=10), row=r, col=1)
     fig.update_layout(
         title=dict(text=f"{channel_name}: Per-Mode Detail", font=dict(size=14)),
-        plot_bgcolor="white", paper_bgcolor="white", height=350,
+        plot_bgcolor="white", paper_bgcolor="white", height=320 * n_rows,
         margin=dict(l=60, r=30, t=60, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5, font=dict(size=9)),
     )
@@ -1426,9 +1471,18 @@ def create_comparison_phase_figure(
 
     n_modes = len(mode_data)
     titles = [_mode_label(name) for name, _ in mode_data]
-    fig = make_subplots(rows=1, cols=n_modes, subplot_titles=titles, horizontal_spacing=0.05)
+    n_rows, n_cols = _grid_dims(n_modes)
+    fig = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=titles,
+        horizontal_spacing=0.05,
+        vertical_spacing=0.18 if n_rows > 1 else 0.05,
+    )
 
-    for col, (mode_name, ch_data) in enumerate(mode_data, start=1):
+    for idx, (mode_name, ch_data) in enumerate(mode_data):
+        row, col = _grid_position(idx, n_cols)
+        first_cell = (row == 1 and col == 1)
         initial_curve = ch_data.get("initial_curve")
         final_curve = ch_data.get("final_curve")
         color = _mode_color(mode_name)
@@ -1438,31 +1492,32 @@ def create_comparison_phase_figure(
             fig.add_trace(go.Scatter(
                 x=initial_curve["freq"], y=phase_sm, mode="lines",
                 name="Before EQ", line=dict(color="rgba(200, 200, 200, 0.6)", width=1.5),
-                showlegend=(col == 1), legendgroup="phase_before",
-            ), row=1, col=col)
+                showlegend=first_cell, legendgroup="phase_before",
+            ), row=row, col=col)
 
         if final_curve and final_curve.get("phase"):
             phase_sm = smooth_octave(final_curve["freq"], final_curve["phase"], 1.0 / 3.0)
             fig.add_trace(go.Scatter(
                 x=final_curve["freq"], y=phase_sm, mode="lines",
                 name=_mode_label(mode_name), line=dict(color=color, width=2),
-                showlegend=(col == 1), legendgroup=f"phase_{mode_name}",
-            ), row=1, col=col)
+                showlegend=False, legendgroup=f"phase_{mode_name}",
+            ), row=row, col=col)
 
         fig.update_xaxes(
             type="log", tickvals=[20, 100, 500, 2000, 10000],
             ticktext=["20", "100", "500", "2k", "10k"], tickfont=dict(size=9),
-            gridcolor="rgba(128, 128, 128, 0.2)", range=[1.3, 4.3], row=1, col=col,
+            gridcolor="rgba(128, 128, 128, 0.2)", range=[1.3, 4.3], row=row, col=col,
         )
         fig.update_yaxes(
             tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
-            row=1, col=col,
+            row=row, col=col,
         )
 
-    fig.update_yaxes(title_text="Phase (\u00b0)", title_font=dict(size=10), row=1, col=1)
+    for r in range(1, n_rows + 1):
+        fig.update_yaxes(title_text="Phase (\u00b0)", title_font=dict(size=10), row=r, col=1)
     fig.update_layout(
         title=dict(text=f"{channel_name}: Phase Before / After EQ", font=dict(size=14)),
-        plot_bgcolor="white", paper_bgcolor="white", height=350,
+        plot_bgcolor="white", paper_bgcolor="white", height=320 * n_rows,
         margin=dict(l=60, r=30, t=60, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5, font=dict(size=9)),
     )
@@ -1491,11 +1546,20 @@ def create_comparison_group_delay_figure(
 
     n_modes = len(mode_data)
     titles = [_mode_label(name) for name, _ in mode_data]
-    fig = make_subplots(rows=1, cols=n_modes, subplot_titles=titles, horizontal_spacing=0.05)
+    n_rows, n_cols = _grid_dims(n_modes)
+    fig = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=titles,
+        horizontal_spacing=0.05,
+        vertical_spacing=0.18 if n_rows > 1 else 0.05,
+    )
 
     all_gd: list[list[float]] = []
 
-    for col, (mode_name, ch_data) in enumerate(mode_data, start=1):
+    for idx, (mode_name, ch_data) in enumerate(mode_data):
+        row, col = _grid_position(idx, n_cols)
+        first_cell = (row == 1 and col == 1)
         initial_curve = ch_data.get("initial_curve")
         final_curve = ch_data.get("final_curve")
         color = _mode_color(mode_name)
@@ -1508,8 +1572,8 @@ def create_comparison_group_delay_figure(
                 fig.add_trace(go.Scatter(
                     x=gd_freq, y=gd_sm, mode="lines",
                     name="Before EQ", line=dict(color="rgba(200, 200, 200, 0.6)", width=1.5),
-                    showlegend=(col == 1), legendgroup="gd_before",
-                ), row=1, col=col)
+                    showlegend=first_cell, legendgroup="gd_before",
+                ), row=row, col=col)
 
         if final_curve and final_curve.get("phase"):
             gd_freq, gd_ms = compute_group_delay(final_curve["freq"], final_curve["phase"])
@@ -1519,17 +1583,17 @@ def create_comparison_group_delay_figure(
                 fig.add_trace(go.Scatter(
                     x=gd_freq, y=gd_sm, mode="lines",
                     name=_mode_label(mode_name), line=dict(color=color, width=2),
-                    showlegend=(col == 1), legendgroup=f"gd_{mode_name}",
-                ), row=1, col=col)
+                    showlegend=False, legendgroup=f"gd_{mode_name}",
+                ), row=row, col=col)
 
         fig.update_xaxes(
             type="log", tickvals=[20, 100, 500, 2000, 10000],
             ticktext=["20", "100", "500", "2k", "10k"], tickfont=dict(size=9),
-            gridcolor="rgba(128, 128, 128, 0.2)", range=[1.3, 4.3], row=1, col=col,
+            gridcolor="rgba(128, 128, 128, 0.2)", range=[1.3, 4.3], row=row, col=col,
         )
         fig.update_yaxes(
             tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
-            row=1, col=col,
+            row=row, col=col,
         )
 
     # Compute a shared y-range from all GD data
@@ -1543,13 +1607,15 @@ def create_comparison_group_delay_figure(
         margin = (hi - lo) * 0.15
         y_lo = lo - margin
         y_hi = hi + margin
-        for col in range(1, n_modes + 1):
-            fig.update_yaxes(range=[y_lo, y_hi], row=1, col=col)
+        for idx in range(n_modes):
+            r, c = _grid_position(idx, n_cols)
+            fig.update_yaxes(range=[y_lo, y_hi], row=r, col=c)
 
-    fig.update_yaxes(title_text="Group Delay (ms)", title_font=dict(size=10), row=1, col=1)
+    for r in range(1, n_rows + 1):
+        fig.update_yaxes(title_text="Group Delay (ms)", title_font=dict(size=10), row=r, col=1)
     fig.update_layout(
         title=dict(text=f"{channel_name}: Group Delay Before / After EQ", font=dict(size=14)),
-        plot_bgcolor="white", paper_bgcolor="white", height=350,
+        plot_bgcolor="white", paper_bgcolor="white", height=320 * n_rows,
         margin=dict(l=60, r=30, t=60, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5, font=dict(size=9)),
     )
@@ -1572,9 +1638,18 @@ def create_comparison_ir_figure(
 
     n_modes = len(mode_data)
     titles = [_mode_label(name) for name, _ in mode_data]
-    fig = make_subplots(rows=1, cols=n_modes, subplot_titles=titles, horizontal_spacing=0.05)
+    n_rows, n_cols = _grid_dims(n_modes)
+    fig = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=titles,
+        horizontal_spacing=0.05,
+        vertical_spacing=0.18 if n_rows > 1 else 0.05,
+    )
 
-    for col, (mode_name, ch_data) in enumerate(mode_data, start=1):
+    for idx, (mode_name, ch_data) in enumerate(mode_data):
+        row, col = _grid_position(idx, n_cols)
+        first_cell = (row == 1 and col == 1)
         pre_ir = ch_data.get("pre_ir")
         post_ir = ch_data.get("post_ir")
         color = _mode_color(mode_name)
@@ -1583,30 +1658,31 @@ def create_comparison_ir_figure(
             fig.add_trace(go.Scatter(
                 x=pre_ir["time_ms"], y=pre_ir["amplitude"], mode="lines",
                 name="Before EQ", line=dict(color="rgba(200, 200, 200, 0.6)", width=1),
-                showlegend=(col == 1), legendgroup="ir_before",
-            ), row=1, col=col)
+                showlegend=first_cell, legendgroup="ir_before",
+            ), row=row, col=col)
 
         if post_ir:
             fig.add_trace(go.Scatter(
                 x=post_ir["time_ms"], y=post_ir["amplitude"], mode="lines",
                 name=_mode_label(mode_name), line=dict(color=color, width=1),
-                showlegend=(col == 1), legendgroup=f"ir_{mode_name}",
-            ), row=1, col=col)
+                showlegend=False, legendgroup=f"ir_{mode_name}",
+            ), row=row, col=col)
 
         fig.update_xaxes(
-            title_text="Time (ms)" if col == 1 else None,
+            title_text="Time (ms)" if first_cell else None,
             tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
-            range=[0, display_ms], row=1, col=col,
+            range=[0, display_ms], row=row, col=col,
         )
         fig.update_yaxes(
             tickfont=dict(size=9), gridcolor="rgba(128, 128, 128, 0.2)",
-            range=[-1.1, 1.1], row=1, col=col,
+            range=[-1.1, 1.1], row=row, col=col,
         )
 
-    fig.update_yaxes(title_text="Amplitude", title_font=dict(size=10), row=1, col=1)
+    for r in range(1, n_rows + 1):
+        fig.update_yaxes(title_text="Amplitude", title_font=dict(size=10), row=r, col=1)
     fig.update_layout(
         title=dict(text=f"{channel_name}: Impulse Response Before / After EQ", font=dict(size=14)),
-        plot_bgcolor="white", paper_bgcolor="white", height=350,
+        plot_bgcolor="white", paper_bgcolor="white", height=320 * n_rows,
         margin=dict(l=60, r=30, t=60, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="center", x=0.5, font=dict(size=9)),
     )
@@ -1615,8 +1691,22 @@ def create_comparison_ir_figure(
 
 def create_score_comparison_figure(
     mode_scores: list[tuple[str, float, float]],
+    loss_types: list[str | None] | None = None,
 ) -> go.Figure:
-    """Bar chart comparing pre/post scores across modes (lower is better)."""
+    """Bar chart comparing pre/post flat-loss values across modes.
+
+    Note: even when a mode minimized a non-flat loss (e.g. EPA), the
+    `pre_score` / `post_score` numbers in the JSON metadata are *always*
+    computed via the flat-loss helper in
+    `crate::roomeq::workflows::compute_flat_loss`. That makes every bar
+    directly comparable on a single shared y-axis regardless of which
+    objective each mode was actually optimizing.
+
+    The bar values therefore answer the question "did this mode flatten
+    the response well?", not "how well did this mode minimize its own
+    objective?". For perceptual comparison across loss functions, look
+    at the EPA Pref columns of the summary table instead.
+    """
     fig = go.Figure()
 
     mode_names = [_mode_label(n) for n, _, _ in mode_scores]
@@ -1629,12 +1719,40 @@ def create_score_comparison_figure(
     fig.add_trace(go.Bar(name="After EQ", x=mode_names, y=post_scores,
                          marker_color=colors))
 
+    # If multiple loss functions were used, add a clarification so
+    # readers know the bars still measure the same underlying flat loss
+    # (otherwise they might assume the EPA bars are EPA-loss values).
+    distinct_losses = (
+        sorted({lt for lt in loss_types if lt}) if loss_types else []
+    )
+    title_text = "Flat-loss before / after EQ (lower is better)"
+
+    annotations = []
+    if len(distinct_losses) >= 2:
+        annotations.append(
+            dict(
+                text=(
+                    "Note: bars show the flat-loss metric for every run, "
+                    "even ones that optimized EPA — this is so all modes "
+                    "stay on a single comparable scale. For perceptual "
+                    "comparison see the EPA Pref columns above."
+                ),
+                xref="paper", yref="paper", x=0.5, y=1.18, xanchor="center",
+                showarrow=False, font=dict(size=10, color="#555"),
+            )
+        )
+
     fig.update_layout(
-        title=dict(text="Score Comparison (lower is better)", font=dict(size=14)),
+        title=dict(text=title_text, font=dict(size=14)),
         barmode="group",
-        yaxis=dict(title=dict(text="Flat Loss Score", font=dict(size=11)), tickfont=dict(size=10)),
+        yaxis=dict(
+            title=dict(text="Flat loss (lower is better)", font=dict(size=11)),
+            tickfont=dict(size=10),
+        ),
         plot_bgcolor="white", paper_bgcolor="white",
-        height=350, margin=dict(l=60, r=30, t=60, b=50),
+        height=380 if annotations else 350,
+        margin=dict(l=60, r=30, t=80 if annotations else 60, b=50),
         legend=dict(font=dict(size=10)),
+        annotations=annotations,
     )
     return fig

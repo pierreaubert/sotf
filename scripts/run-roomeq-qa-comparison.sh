@@ -1,8 +1,28 @@
 #!/usr/bin/env bash
-# Run roomeq multi-mode comparison on real QA recordings and generate visual reports.
+# Run roomeq multi-mode comparison on real QA recordings and generate
+# a single comparison HTML covering every (processing_mode × loss_type)
+# combination supported on roomeq recordings.
 #
-# For each recording in roomeq_qa_data/*/recordings.json, runs roomeq in all 4
-# processing modes (iir, fir, hybrid, mixed_phase) and generates a comparison HTML.
+# For each recording in roomeq_qa_data/*/recordings.json this runs all
+# 8 combinations (4 processing modes × 2 loss functions):
+#
+#     iir              fir              hybrid              mixed_phase
+#     iir_epa          fir_epa          hybrid_epa          mixed_phase_epa
+#
+# and generates one comparison report:
+#
+#     <recording>/comparison.html
+#
+# The plain (non-`_epa`) variants minimize the default `flat` ERB+band
+# weighted loss; the `_epa` variants minimize the EPA psychoacoustic
+# composite (flatness + Zwicker sharpness / roughness / loudness
+# balance). The `score` loss is *not* included because it requires
+# CEA2034 speaker data, which the roomeq QA recordings do not provide.
+#
+# The comparison report's per-channel EPA score table makes the
+# perceptual outcome of every combination directly comparable, even
+# though the absolute pre/post loss numbers across `flat` vs `epa` runs
+# live on different scales (the report flags this in red automatically).
 #
 # Usage:
 #   ./scripts/run-roomeq-qa-comparison.sh [recording_name]
@@ -49,14 +69,32 @@ fi
 
 echo "=== Found ${#RECORDINGS[@]} recording(s): ${RECORDINGS[*]} ==="
 
-# Mode override configs (written to temp files)
+# Mode override configs (written to temp files). Each pair shares its
+# processing-mode-specific knobs but the `_epa` variant adds
+# `loss_type: "epa"` so it minimizes the EPA composite instead of the
+# default ERB+band weighted flat loss.
 TMPDIR_MODES="$(mktemp -d)"
 trap 'rm -rf "${TMPDIR_MODES}"' EXIT
 
 cat > "${TMPDIR_MODES}/iir.json" <<'EOF'
 {
     "optimizer": {
+        "max_iter": 50000,
+        "population": 300,
+        "strategy": "lshade",
         "processing_mode": "low_latency"
+    }
+}
+EOF
+
+cat > "${TMPDIR_MODES}/iir_epa.json" <<'EOF'
+{
+    "optimizer": {
+        "max_iter": 50000,
+        "population": 300,
+        "strategy": "lshade",
+        "processing_mode": "low_latency",
+        "loss_type": "epa"
     }
 }
 EOF
@@ -64,7 +102,35 @@ EOF
 cat > "${TMPDIR_MODES}/fir.json" <<'EOF'
 {
     "optimizer": {
+        "max_iter": 50000,
+        "population": 300,
+        "strategy": "lshade",
         "processing_mode": "phase_linear",
+        "max_freq": 1500.0,
+        "fir": {
+            "taps": 4096,
+            "phase": "kirkeby",
+            "correct_excess_phase": false,
+            "phase_smoothing": 0.167
+        },
+        "phase_correction": {
+            "max_fir_length_ms": 42.0,
+            "pre_ringing_threshold_db": -30.0,
+            "min_spatial_depth": 0.5,
+            "phase_smoothing_octaves": 0.167
+        }
+    }
+}
+EOF
+
+cat > "${TMPDIR_MODES}/fir_epa.json" <<'EOF'
+{
+    "optimizer": {
+        "max_iter": 50000,
+        "population": 300,
+        "strategy": "lshade",
+        "processing_mode": "phase_linear",
+        "loss_type": "epa",
         "max_freq": 1500.0,
         "fir": {
             "taps": 4096,
@@ -85,7 +151,35 @@ EOF
 cat > "${TMPDIR_MODES}/hybrid.json" <<'EOF'
 {
     "optimizer": {
+        "max_iter": 50000,
+        "population": 300,
+        "strategy": "lshade",
         "processing_mode": "hybrid",
+        "max_freq": 1500.0,
+        "fir": {
+            "taps": 2048,
+            "phase": "kirkeby",
+            "correct_excess_phase": false,
+            "phase_smoothing": 0.167
+        },
+        "phase_correction": {
+            "max_fir_length_ms": 10.0,
+            "pre_ringing_threshold_db": -30.0,
+            "min_spatial_depth": 0.5,
+            "phase_smoothing_octaves": 0.167
+        }
+    }
+}
+EOF
+
+cat > "${TMPDIR_MODES}/hybrid_epa.json" <<'EOF'
+{
+    "optimizer": {
+        "max_iter": 50000,
+        "population": 300,
+        "strategy": "lshade",
+        "processing_mode": "hybrid",
+        "loss_type": "epa",
         "max_freq": 1500.0,
         "fir": {
             "taps": 2048,
@@ -106,6 +200,9 @@ EOF
 cat > "${TMPDIR_MODES}/mixed_phase.json" <<'EOF'
 {
     "optimizer": {
+        "max_iter": 50000,
+        "population": 300,
+        "strategy": "lshade",
         "processing_mode": "mixed_phase",
         "mixed_phase": {
             "max_fir_length_ms": 10.0,
@@ -117,7 +214,34 @@ cat > "${TMPDIR_MODES}/mixed_phase.json" <<'EOF'
 }
 EOF
 
-MODES=(iir fir hybrid mixed_phase)
+cat > "${TMPDIR_MODES}/mixed_phase_epa.json" <<'EOF'
+{
+    "optimizer": {
+        "max_iter": 50000,
+        "population": 300,
+        "strategy": "lshade",
+        "processing_mode": "mixed_phase",
+        "loss_type": "epa",
+        "mixed_phase": {
+            "max_fir_length_ms": 10.0,
+            "pre_ringing_threshold_db": -30.0,
+            "min_spatial_depth": 0.5,
+            "phase_smoothing_octaves": 0.167
+        }
+    }
+}
+EOF
+
+# Modes are interleaved so each processing mode's `flat` and `_epa`
+# variants sit next to each other in the comparison's plot legends and
+# subplot grid. This makes the loss-type effect easy to spot at a
+# glance per processing mode.
+MODES=(
+    iir         iir_epa
+    fir         fir_epa
+    hybrid      hybrid_epa
+    mixed_phase mixed_phase_epa
+)
 
 for recording in "${RECORDINGS[@]}"; do
     echo ""
@@ -129,8 +253,6 @@ for recording in "${RECORDINGS[@]}"; do
     OUTPUT_DIR="${OUTPUT_BASE}/${recording}"
     mkdir -p "${OUTPUT_DIR}"
 
-    JSONS=()
-
     for mode in "${MODES[@]}"; do
         MODE_DIR="${OUTPUT_DIR}/${mode}"
         mkdir -p "${MODE_DIR}"
@@ -140,10 +262,20 @@ for recording in "${RECORDINGS[@]}"; do
         echo ""
         echo "--- Mode: ${mode} ---"
         if ${ROOMEQ} -c "${CONFIG}" -o "${OUTPUT_JSON}" --override-config "${OVERRIDE}"; then
-            JSONS+=("${OUTPUT_JSON}")
             echo "  Output: ${OUTPUT_JSON}"
         else
             echo "  FAILED (skipping)"
+            rm -f "${OUTPUT_JSON}"
+        fi
+    done
+
+    # Collect JSONs that actually landed on disk, preserving MODES order
+    # so the report renders combinations in a predictable layout.
+    JSONS=()
+    for mode in "${MODES[@]}"; do
+        json="${OUTPUT_DIR}/${mode}/${mode}.json"
+        if [ -f "$json" ]; then
+            JSONS+=("$json")
         fi
     done
 
@@ -152,12 +284,14 @@ for recording in "${RECORDINGS[@]}"; do
         continue
     fi
 
-    # Generate comparison HTML
+    # Drop any stale loss_types.html from earlier versions of this
+    # script — the 8-mode comparison subsumes it.
+    rm -f "${OUTPUT_DIR}/loss_types.html"
+
     HTML_OUTPUT="${OUTPUT_DIR}/comparison.html"
     echo ""
-    echo "=== Generating comparison report ==="
+    echo "=== Generating 8-mode comparison report ==="
     ./venv/bin/python scripts/display-roomeq.py --compare "${JSONS[@]}" -o "${HTML_OUTPUT}"
-
     echo "  Report: ${HTML_OUTPUT}"
 
     # Open in browser (macOS)

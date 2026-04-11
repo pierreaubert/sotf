@@ -216,3 +216,109 @@ def generate_freq_points(min_freq: float = 20.0, max_freq: float = 20000.0, n_po
     log_min = math.log10(min_freq)
     log_max = math.log10(max_freq)
     return [10 ** (log_min + (log_max - log_min) * i / (n_points - 1)) for i in range(n_points)]
+
+
+def complex_sum_curves(l_curve: dict | None, r_curve: dict | None) -> dict | None:
+    """Coherent (complex) sum of two frequency-response curves.
+
+    Each curve is a dict with `freq` (Hz), `spl` (dB), and optionally
+    `phase` (degrees). Both curves must share the same frequency grid.
+
+    When both curves have phase data the sum is computed in the complex
+    plane: each band is converted to a complex amplitude
+    `10**(spl/20) * exp(j * phase_rad)`, the two phasors are added, and
+    the magnitude is converted back to dB. The output curve also
+    carries the resulting `phase` so downstream phase / group-delay
+    plots keep working.
+
+    When phase is missing on either side, the function falls back to an
+    incoherent power sum: `10*log10(10**(L/10) + 10**(R/10))`. This
+    yields the same result the ear would hear for two uncorrelated
+    sources but does not preserve phase information, so the output
+    curve has no `phase` field.
+
+    Returns `None` if either input is missing or the frequency grids
+    do not match (in which case the caller should skip rendering the
+    L+R panel rather than silently producing wrong data).
+    """
+    if not l_curve or not r_curve:
+        return None
+    l_freq = l_curve.get("freq") or []
+    r_freq = r_curve.get("freq") or []
+    l_spl = l_curve.get("spl") or []
+    r_spl = r_curve.get("spl") or []
+    if not l_freq or not r_freq or not l_spl or not r_spl:
+        return None
+    if len(l_freq) != len(r_freq) or len(l_spl) != len(r_spl):
+        return None
+    # Sanity check: grids should be element-wise equal in this pipeline
+    # (both channels are interpolated onto the same logarithmic grid by
+    # the optimizer). Bail out if they aren't to avoid silent garbage.
+    for lf, rf in zip(l_freq, r_freq):
+        if abs(lf - rf) > max(1e-6, lf * 1e-9):
+            return None
+
+    l_phase = l_curve.get("phase")
+    r_phase = r_curve.get("phase")
+    if (
+        l_phase is not None
+        and r_phase is not None
+        and len(l_phase) == len(l_freq)
+        and len(r_phase) == len(r_freq)
+    ):
+        # Local references so type-checkers can narrow Optional → list.
+        l_phase_arr: list[float] = l_phase
+        r_phase_arr: list[float] = r_phase
+        spl_out: list[float] = []
+        phase_out: list[float] = []
+        for i in range(len(l_freq)):
+            mag_l = 10.0 ** (l_spl[i] / 20.0)
+            mag_r = 10.0 ** (r_spl[i] / 20.0)
+            phi_l = math.radians(l_phase_arr[i])
+            phi_r = math.radians(r_phase_arr[i])
+            re = mag_l * math.cos(phi_l) + mag_r * math.cos(phi_r)
+            im = mag_l * math.sin(phi_l) + mag_r * math.sin(phi_r)
+            mag_sum = math.sqrt(re * re + im * im)
+            if mag_sum <= 0.0:
+                spl_out.append(-200.0)
+                phase_out.append(0.0)
+            else:
+                spl_out.append(20.0 * math.log10(mag_sum))
+                phase_out.append(math.degrees(math.atan2(im, re)))
+        return {"freq": list(l_freq), "spl": spl_out, "phase": phase_out}
+
+    # Phase missing — fall back to incoherent power sum.
+    spl_out = [
+        10.0 * math.log10(10.0 ** (l_spl[i] / 10.0) + 10.0 ** (r_spl[i] / 10.0))
+        for i in range(len(l_freq))
+    ]
+    return {"freq": list(l_freq), "spl": spl_out}
+
+
+def synthesize_lr_channel(l_ch_data: dict | None, r_ch_data: dict | None) -> dict | None:
+    """Build a synthetic 'L+R' channel dict from the L and R channel data.
+
+    Sums `initial_curve` and `final_curve` via `complex_sum_curves`.
+    Drops `eq_response` (per-channel EQ filter responses are not
+    summable in any meaningful way) and any per-channel impulse-response
+    blobs (they would need to be summed in the time domain, out of scope
+    here).
+
+    Returns `None` if either side is missing both curves.
+    """
+    if not l_ch_data or not r_ch_data:
+        return None
+    initial = complex_sum_curves(
+        l_ch_data.get("initial_curve"), r_ch_data.get("initial_curve")
+    )
+    final = complex_sum_curves(
+        l_ch_data.get("final_curve"), r_ch_data.get("final_curve")
+    )
+    if not initial and not final:
+        return None
+    out: dict = {"channel": "L+R", "plugins": []}
+    if initial:
+        out["initial_curve"] = initial
+    if final:
+        out["final_curve"] = final
+    return out

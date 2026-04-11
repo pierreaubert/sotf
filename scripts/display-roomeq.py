@@ -23,14 +23,29 @@ from src.report import create_html_report, create_comparison_html_report
 
 
 def infer_mode_name(filepath: Path) -> str:
-    """Infer processing mode name from filename or parent directory."""
+    """Infer processing mode name from filename or parent directory.
+
+    The order matters: longer / more specific names must come first
+    so that e.g. `iir_epa.json` resolves to `iir_epa` rather than
+    being collapsed to `iir` by an earlier substring match.
+    """
+    known_modes = (
+        "mixed_phase_epa",
+        "mixed_phase",
+        "hybrid_epa",
+        "hybrid",
+        "fir_epa",
+        "fir",
+        "iir_epa",
+        "iir",
+    )
     stem = filepath.stem.lower()
-    for mode in ("iir", "fir", "hybrid", "mixed_phase"):
+    for mode in known_modes:
         if mode in stem:
             return mode
     # Try parent directory name
     parent = filepath.parent.name.lower()
-    for mode in ("iir", "fir", "hybrid", "mixed_phase"):
+    for mode in known_modes:
         if mode in parent:
             return mode
     return stem
@@ -65,7 +80,7 @@ Examples:
         type=Path,
         nargs="+",
         metavar="JSON",
-        help="Compare 2-4 roomeq output JSONs (e.g., --compare iir.json fir.json hybrid.json)",
+        help="Compare 2 or more roomeq output JSONs (e.g., --compare iir.json fir.json hybrid.json). The report layout adapts to the number of modes — up to 4 modes use a single row of subplots, 5–8 modes switch to a 2-row grid.",
     )
     parser.add_argument(
         "-o", "--output",
