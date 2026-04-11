@@ -5,7 +5,7 @@
 use crate::Curve;
 use crate::error::{AutoeqError, Result};
 use log::{debug, info, warn};
-use math_audio_dsp::analysis::{compute_average_response, find_db_point};
+use math_audio_dsp::analysis::compute_average_response;
 use math_audio_iir_fir::Biquad;
 use std::collections::HashMap;
 use std::path::Path;
@@ -66,58 +66,96 @@ type MixedModeResult = (
     Option<Vec<f64>>,
 );
 
-/// Detect passband and compute mean SPL for normalization
+/// Detect passband and compute mean SPL for normalization.
 ///
-/// Smooths the measurement at 1 octave to eliminate room mode dips, then
-/// finds the -10 dB points relative to the median SPL. Validates the result
-/// against 2-octave smoothing to ensure stability.
+/// Smooths the measurement at 1 octave to suppress room modes and comb
+/// filtering, then uses a log-frequency weighted average (not the raw
+/// median) as the reference level. The passband is the full span between
+/// the first and last samples whose smoothed SPL is within 10 dB of that
+/// reference.
+///
+/// Using a log-frequency weighted reference is essential: a raw median on
+/// linearly sampled curves biases toward the high-frequency region, and a
+/// single strong bass mode can inflate the median enough that the true
+/// passband falls below the -10 dB threshold, collapsing detection to a
+/// tiny bass window. Similarly, searching only for the first crossing from
+/// each end misreports the high edge when the curve does not roll off
+/// within the measurement range and is tricked into returning a deep
+/// mid-band null. First-above / last-above indices are robust to both
+/// failure modes.
 pub(super) fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f64) {
     let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
     let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
 
-    if spl_f32.is_empty() {
+    if spl_f32.len() < 2 {
         return (None, 0.0);
     }
 
-    // Smooth at 1 octave to filter out room modes and comb filtering
-    let smoothed_1oct = crate::read::smooth_one_over_n_octave(curve, 1);
-    let spl_1oct: Vec<f32> = smoothed_1oct.spl.iter().map(|&s| s as f32).collect();
+    // 1-octave smoothing suppresses narrow room modes while preserving
+    // the broadband shape of the speaker response.
+    let smoothed = crate::read::smooth_one_over_n_octave(curve, 1);
+    let smoothed_spl: Vec<f32> = smoothed.spl.iter().map(|&s| s as f32).collect();
 
-    // Use median of smoothed SPL as reference (robust to residual peaks/nulls)
-    let mut sorted_spl: Vec<f32> = spl_1oct.clone();
-    sorted_spl.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let median_spl = sorted_spl[sorted_spl.len() / 2];
-
-    if median_spl < -100.0 {
+    // Log-frequency weighted average of the smoothed curve: robust to
+    // narrow peaks and to non-uniform sample spacing.
+    let ref_level = compute_average_response(&freqs_f32, &smoothed_spl, None);
+    if !ref_level.is_finite() || ref_level < -100.0 {
         return (None, 0.0);
     }
 
-    let threshold = median_spl - 10.0;
-    let f_low_1 = find_db_point(&freqs_f32, &spl_1oct, threshold, true).unwrap_or(freqs_f32[0]);
-    let f_high_1 = find_db_point(&freqs_f32, &spl_1oct, threshold, false)
-        .unwrap_or(freqs_f32[freqs_f32.len() - 1]);
+    let threshold = ref_level - 10.0;
 
-    // Validate against double-smoothed (1 oct applied twice ≈ 2 oct effective).
-    // If the passband differs significantly, the 1-oct result is unstable;
-    // use the wider estimate.
-    let spl_2oct: Vec<f32> = {
-        let double_smooth = crate::read::smooth_one_over_n_octave(&smoothed_1oct, 1);
-        double_smooth.spl.iter().map(|&s| s as f32).collect()
+    // Outermost indices at or above the threshold. Interior dips (room
+    // nulls) are intentionally ignored -- they do not change the speaker's
+    // reproducible range, only its in-room smoothness.
+    let first_above = smoothed_spl.iter().position(|&v| v >= threshold);
+    let last_above = smoothed_spl.iter().rposition(|&v| v >= threshold);
+
+    let (start_idx, end_idx) = match (first_above, last_above) {
+        (Some(s), Some(e)) if e > s => (s, e),
+        _ => return (None, 0.0),
     };
 
-    let f_low_2 = find_db_point(&freqs_f32, &spl_2oct, threshold, true).unwrap_or(freqs_f32[0]);
-    let f_high_2 = find_db_point(&freqs_f32, &spl_2oct, threshold, false)
-        .unwrap_or(freqs_f32[freqs_f32.len() - 1]);
-
-    // Use the wider (more conservative) passband from the two estimates
-    let f_low = f_low_1.min(f_low_2);
-    let f_high = f_high_1.max(f_high_2);
+    let f_low = if start_idx > 0 {
+        interp_threshold_crossing(
+            freqs_f32[start_idx - 1],
+            freqs_f32[start_idx],
+            smoothed_spl[start_idx - 1],
+            smoothed_spl[start_idx],
+            threshold,
+        )
+    } else {
+        freqs_f32[start_idx]
+    };
+    let f_high = if end_idx + 1 < smoothed_spl.len() {
+        interp_threshold_crossing(
+            freqs_f32[end_idx],
+            freqs_f32[end_idx + 1],
+            smoothed_spl[end_idx],
+            smoothed_spl[end_idx + 1],
+            threshold,
+        )
+    } else {
+        freqs_f32[end_idx]
+    };
 
     // Compute mean on the original (unsmoothed) curve within the detected passband
     let norm_range_f32 = Some((f_low, f_high));
     let mean = compute_average_response(&freqs_f32, &spl_f32, norm_range_f32) as f64;
 
     (Some((f_low as f64, f_high as f64)), mean)
+}
+
+/// Linear interpolation of the frequency at which a segment crosses the
+/// given magnitude threshold. The result is clamped to the segment so a
+/// non-monotonic pair cannot return a frequency outside `[f0, f1]`.
+fn interp_threshold_crossing(f0: f32, f1: f32, m0: f32, m1: f32, threshold: f32) -> f32 {
+    let denom = m1 - m0;
+    if denom.abs() < 1e-9 {
+        return f0;
+    }
+    let t = ((threshold - m0) / denom).clamp(0.0, 1.0);
+    f0 + t * (f1 - f0)
 }
 
 /// Post-generate FIR coefficients for a channel that only has IIR results.
@@ -479,14 +517,47 @@ pub struct SpeakerOptimizationResult {
 /// * `config` - Complete room configuration
 /// * `sample_rate` - Sample rate for filter design (e.g., 48000.0)
 /// * `callback` - Optional progress callback
+/// * `output_dir` - Optional directory for writing intermediate artifacts
 ///
 /// # Returns
 /// * `RoomOptimizationResult` containing DSP chains and optimization results
 pub fn optimize_room(
     config: &RoomConfig,
     sample_rate: f64,
+    callback: Option<RoomOptimizationCallback>,
+    output_dir: Option<&Path>,
+) -> Result<RoomOptimizationResult> {
+    optimize_room_impl(config, sample_rate, callback, output_dir, None)
+}
+
+/// Same as [`optimize_room`] but accepts per-channel probe-based arrival times.
+///
+/// When the delay-detection UI step has measured arrival times with a tone
+/// burst probe, pass them here so `process_single_speaker` uses the measured
+/// values instead of falling back to WAV-onset detection. Channels absent from
+/// `probe_arrival_ms` still use the WAV-onset fallback.
+pub fn optimize_room_with_probe_arrivals(
+    config: &RoomConfig,
+    sample_rate: f64,
+    callback: Option<RoomOptimizationCallback>,
+    output_dir: Option<&Path>,
+    probe_arrival_ms: &HashMap<String, f64>,
+) -> Result<RoomOptimizationResult> {
+    optimize_room_impl(
+        config,
+        sample_rate,
+        callback,
+        output_dir,
+        Some(probe_arrival_ms),
+    )
+}
+
+fn optimize_room_impl(
+    config: &RoomConfig,
+    sample_rate: f64,
     mut callback: Option<RoomOptimizationCallback>,
     output_dir: Option<&Path>,
+    probe_arrival_overrides: Option<&HashMap<String, f64>>,
 ) -> Result<RoomOptimizationResult> {
     // Ensure legacy target_tilt/broadband fields are migrated.
     // load_config() does this already, but callers building RoomConfig in memory
@@ -952,6 +1023,7 @@ pub fn optimize_room(
             output_dir,
             eq_callback,
             shared_mean_spl,
+            probe_arrival_overrides,
         );
 
         match result {
@@ -1507,17 +1579,14 @@ pub fn optimize_room(
         }
     }
 
-    let epa_cfg = config
-        .optimizer
-        .epa_config
-        .clone()
-        .unwrap_or_default();
+    let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
     let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
 
     let metadata = OptimizationMetadata {
         pre_score: avg_pre_score,
         post_score: avg_post_score,
         algorithm: config.optimizer.algorithm.clone(),
+        loss_type: Some(config.optimizer.loss_type.clone()),
         iterations: config.optimizer.max_iter,
         timestamp: chrono::Utc::now().to_rfc3339(),
         inter_channel_deviation: None,
@@ -1759,6 +1828,7 @@ pub fn optimize_speaker(
         None,
         None,
         None, // no shared mean for standalone single-channel optimization
+        None, // no probe_arrival_overrides on the standalone path
     )?;
 
     Ok(SpeakerOptimizationResult {
@@ -1779,6 +1849,11 @@ pub fn optimize_speaker(
 /// Process a single speaker (simple or group)
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
+///
+/// `probe_arrival_overrides` — optional per-channel probe-based arrival times
+/// (from the delay-detection UI step). When present and the channel name has a
+/// matching entry, this overrides the WAV-onset fallback inside
+/// `process_single_speaker`.
 fn process_speaker_internal(
     channel_name: &str,
     speaker_config: &SpeakerConfig,
@@ -1787,20 +1862,25 @@ fn process_speaker_internal(
     output_dir: Option<&Path>,
     callback: Option<crate::optim::OptimProgressCallback>,
     shared_mean_spl: Option<f64>,
+    probe_arrival_overrides: Option<&HashMap<String, f64>>,
 ) -> Result<MixedModeResult> {
     let output_dir = output_dir.unwrap_or(Path::new("."));
 
     match speaker_config {
-        SpeakerConfig::Single(source) => process_single_speaker(
-            channel_name,
-            source,
-            room_config,
-            sample_rate,
-            output_dir,
-            callback,
-            None, // probe_arrival_ms: use WAV-based detection
-            shared_mean_spl,
-        ),
+        SpeakerConfig::Single(source) => {
+            let probe_arrival_ms =
+                probe_arrival_overrides.and_then(|m| m.get(channel_name).copied());
+            process_single_speaker(
+                channel_name,
+                source,
+                room_config,
+                sample_rate,
+                output_dir,
+                callback,
+                probe_arrival_ms,
+                shared_mean_spl,
+            )
+        }
         SpeakerConfig::Group(group) => {
             process_speaker_group(channel_name, group, room_config, sample_rate, output_dir)
         }

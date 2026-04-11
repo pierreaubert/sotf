@@ -352,6 +352,7 @@ Information about the optimization process.
     "pre_score": 2.451,
     "post_score": 0.125,
     "algorithm": "autoeq:de",
+    "loss_type": "flat",
     "iterations": 50000,
     "timestamp": "2025-01-15T12:34:56Z",
     "inter_channel_deviation": {
@@ -360,6 +361,31 @@ Information about the optimization process.
       "passband_rms_db": 2.1,
       "midrange_peak_db": 3.5,
       "midrange_peak_freq": 500
+    },
+    "epa_per_channel": {
+      "L": {
+        "pre": {
+          "evaluation": 7.12,
+          "potency": 5.21,
+          "activity": 3.40,
+          "preference": 5.62,
+          "sharpness_acum": 1.41,
+          "roughness": 0.42,
+          "total_loudness_sone": 52.1,
+          "loudness_balance": 0.81
+        },
+        "post": {
+          "evaluation": 8.33,
+          "potency": 5.19,
+          "activity": 2.72,
+          "preference": 6.81,
+          "sharpness_acum": 1.22,
+          "roughness": 0.31,
+          "total_loudness_sone": 51.8,
+          "loudness_balance": 0.89
+        }
+      },
+      "R": { "pre": { "...": "..." }, "post": { "...": "..." } }
     }
   }
 }
@@ -370,9 +396,33 @@ Information about the optimization process.
 | `pre_score` | number | Loss function value before optimization |
 | `post_score` | number | Loss function value after optimization (lower is better) |
 | `algorithm` | string | Algorithm used for optimization |
+| `loss_type` | string or null | Loss function that the optimizer minimized (`"flat"`, `"score"`, or `"epa"`). Note that `pre_score` / `post_score` are *not* the value of this loss function — they are always computed by `compute_flat_loss` over `[min_freq, max_freq]` so that runs with different `loss_type` values stay on the same scale. To compare perceptual outcomes across loss types use `epa_per_channel.{pre,post}.preference`, which is computed identically for every run. |
 | `iterations` | integer | Maximum iterations configured |
 | `timestamp` | string | ISO 8601 timestamp of optimization |
 | `inter_channel_deviation` | object or null | Inter-channel SPL consistency metric (present when >1 channel) |
+| `epa_per_channel` | object or null | Per-channel EPA psychoacoustic metrics computed on the pre-EQ and post-EQ frequency responses. Emitted for every channel that has both `initial_curve` and `final_curve` populated, regardless of `loss_type`. See [EPA Per-Channel Metrics](#epa-per-channel-metrics). |
+
+### EPA Per-Channel Metrics
+
+Keyed by channel name. Each entry has `pre` (computed from `initial_curve`)
+and `post` (computed from `final_curve`). Both curves are denormalized against
+`epa_config.listening_level_phon` before the Zwicker loudness model runs so
+that `total_loudness_sone` and `loudness_balance` are meaningful absolute
+quantities rather than near-silent-floor artifacts of the measurement
+normalization.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `evaluation` | number | Evaluation dimension (general quality), 0–10 scale. Higher = better. |
+| `potency` | number | Potency dimension (perceived energy / strength), 0–10 scale. |
+| `activity` | number | Activity dimension (temporal complexity from roughness), 0–10 scale. Lower = calmer. |
+| `preference` | number | Composite preference = `evaluation_weight·E + potency_weight·P − activity_weight·A`. Higher = better. |
+| `sharpness_acum` | number | Zwicker sharpness in acum. `1.0` ≈ broadband noise character. The EPA loss penalizes deviation from `epa_config.target_sharpness`. |
+| `roughness` | number | Spectral-peak-interaction roughness metric. The EPA loss penalizes values above `epa_config.max_roughness`. |
+| `total_loudness_sone` | number | Total loudness integrated over all 24 Bark bands, in sone. Meaningful only because the input curve is denormalized against `listening_level_phon` first. |
+| `loudness_balance` | number | Uniformity of specific loudness across Bark bands (0..=1, 1 = perfectly uniform). |
+
+EPA tuning knobs are described in [`INPUT_FORMAT.md`](./INPUT_FORMAT.md#epa-configuration).
 
 ### Inter-Channel Deviation (ICD)
 

@@ -750,11 +750,47 @@ pub struct RoomDimensions {
     pub height: f64,
 }
 
+/// Default RT60 (seconds) used when computing the Schroeder frequency
+/// from room dimensions without a measured reverberation time. 0.4 s
+/// is representative of a typical small, moderately-furnished
+/// listening room (carpet or rug, sofa, bookshelves). Rooms with a
+/// very different character (bare-floor, untreated, or heavily
+/// treated) should supply their own RT60 via
+/// [`RoomDimensions::schroeder_frequency_with_rt60`].
+pub const DEFAULT_LISTENING_ROOM_RT60_S: f64 = 0.4;
+
 impl RoomDimensions {
-    /// Calculate Schroeder frequency from room dimensions
+    /// Calculate the Schroeder frequency from room dimensions using a
+    /// default RT60 assumption of [`DEFAULT_LISTENING_ROOM_RT60_S`].
+    ///
+    /// See [`Self::schroeder_frequency_with_rt60`] for the underlying
+    /// formula and the meaning of the Schroeder frequency. The previous
+    /// implementation of this function used `11885 / √V`, which is
+    /// equivalent to the correct formula `2000 · √(RT60 / V)` with an
+    /// implicit RT60 of ~35 s — a value appropriate to a cathedral,
+    /// not a listening room. That bug inflated the computed Schroeder
+    /// frequency by roughly an order of magnitude for every small-room
+    /// caller.
     pub fn schroeder_frequency(&self) -> f64 {
+        self.schroeder_frequency_with_rt60(DEFAULT_LISTENING_ROOM_RT60_S)
+    }
+
+    /// Calculate the Schroeder frequency from room dimensions and a
+    /// known RT60 (reverberation time to −60 dB, in seconds).
+    ///
+    /// Uses Schroeder's engineering formula
+    /// `f_S ≈ 2000 · √(RT60 / V)` where V is the room volume in m³
+    /// and the result is in Hz. This is the canonical crossover
+    /// between the modal region (discrete resonances, where narrow EQ
+    /// cuts are effective and boosts cannot fill nulls) and the
+    /// diffuse region (statistical mode overlap, where broadband
+    /// correction works).
+    pub fn schroeder_frequency_with_rt60(&self, rt60_seconds: f64) -> f64 {
         let volume = self.length * self.width * self.height;
-        11885.0 / volume.sqrt()
+        if volume <= 0.0 || rt60_seconds <= 0.0 {
+            return 0.0;
+        }
+        2000.0 * (rt60_seconds / volume).sqrt()
     }
 }
 
@@ -1063,8 +1099,23 @@ pub struct DecomposedCorrectionSerdeConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
     /// Schroeder frequency (Hz). Below: modal, above: statistical.
+    ///
+    /// When `room_dimensions` is also provided AND an impulse response is
+    /// available, this value is overridden at run time by a
+    /// measurement-driven Schroeder frequency: the optimizer measures
+    /// RT60 from the IR via Schroeder backward integration and plugs it
+    /// into `f_S ≈ 2000 · √(RT60 / V)` with V from `room_dimensions`. In
+    /// that case this field is used only as the fallback if the RT60 fit
+    /// fails.
     #[serde(default = "default_decomposed_schroeder")]
     pub schroeder_freq: f64,
+    /// Room dimensions (L × W × H in metres). When present together with
+    /// a measured impulse response, enables a measurement-driven
+    /// Schroeder frequency via `RoomDimensions::schroeder_frequency_with_rt60`
+    /// using the RT60 measured from the IR. When absent, the optimizer
+    /// falls back to the `schroeder_freq` field above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_dimensions: Option<RoomDimensions>,
     /// Minimum Q to qualify as a room mode. Default: 3.0
     #[serde(default = "default_decomposed_min_q")]
     pub min_mode_q: f64,
@@ -1106,6 +1157,7 @@ impl Default for DecomposedCorrectionSerdeConfig {
         Self {
             enabled: true,
             schroeder_freq: default_decomposed_schroeder(),
+            room_dimensions: None,
             min_mode_q: default_decomposed_min_q(),
             min_mode_prominence_db: default_decomposed_prominence(),
             mode_correction_weight: default_decomposed_mode_weight(),
@@ -1451,7 +1503,7 @@ fn default_max_iter() -> usize {
     50000
 }
 fn default_population() -> usize {
-    50
+    300
 }
 fn default_refine() -> bool {
     true
@@ -1684,7 +1736,10 @@ mod tests {
         let dc = config
             .decomposed_correction
             .expect("decomposed_correction should be Some by default");
-        assert!(dc.enabled, "decomposed_correction should be enabled by default");
+        assert!(
+            dc.enabled,
+            "decomposed_correction should be enabled by default"
+        );
         assert_eq!(dc.schroeder_freq, 250.0);
         assert_eq!(dc.steady_state_weight, 0.4);
     }

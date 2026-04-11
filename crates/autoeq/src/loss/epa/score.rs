@@ -5,6 +5,7 @@
 //! The composite preference score provides a single optimization target.
 
 use super::{loudness, roughness, sharpness};
+use crate::loss::enhanced_weights::FrequencyBandWeights;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +22,24 @@ pub struct EpaConfig {
     pub evaluation_weight: f64,
     pub potency_weight: f64,
     pub activity_weight: f64,
+    /// Band weights used for the flatness component of the EPA loss.
+    /// Only consulted when `flatness_band_weight > 0`.
+    #[serde(default)]
+    pub flatness_band_weights: FrequencyBandWeights,
+    /// ERB weight for the flatness component of the EPA loss.
+    /// Default 1.0 (pure ERB) because EPA already has band-sensitive
+    /// sharpness / roughness / loudness_balance terms — adding band
+    /// weighting on top of flatness would double-count frequency bias.
+    #[serde(default = "default_flatness_erb_weight")]
+    pub flatness_erb_weight: f64,
+    /// Band weight for the flatness component of the EPA loss.
+    /// Default 0.0 (see `flatness_erb_weight`).
+    #[serde(default)]
+    pub flatness_band_weight: f64,
+}
+
+fn default_flatness_erb_weight() -> f64 {
+    1.0
 }
 
 impl Default for EpaConfig {
@@ -32,6 +51,9 @@ impl Default for EpaConfig {
             evaluation_weight: 0.6,
             potency_weight: 0.2,
             activity_weight: 0.2,
+            flatness_band_weights: FrequencyBandWeights::default(),
+            flatness_erb_weight: 1.0,
+            flatness_band_weight: 0.0,
         }
     }
 }
@@ -161,6 +183,47 @@ pub fn epa_loss_normalized(
 ) -> f64 {
     let spl_abs = denormalize_spl(spl_rel, config.listening_level_phon);
     epa_loss(freqs, &spl_abs, config, flatness_loss)
+}
+
+/// Compute the flatness component of the EPA loss using the blend and
+/// band weights specified in `config`.
+///
+/// This is the EPA-tunable counterpart of [`crate::loss::flat::flat_loss`].
+/// Unlike the plain `flat_loss`, which uses a fixed 70/30 ERB-band blend,
+/// `epa_flatness` honors the `flatness_erb_weight`, `flatness_band_weight`,
+/// and `flatness_band_weights` fields on [`EpaConfig`] so that users
+/// tuning their EPA runs can fully control the perceptual weighting of
+/// the flatness term alongside the sharpness / roughness / balance
+/// penalties in [`epa_loss`].
+///
+/// Frequencies outside `[min_freq, max_freq]` are excluded before the loss
+/// is evaluated. Returns `f64::INFINITY` if no points remain in range.
+pub fn epa_flatness(
+    freqs: &ndarray::Array1<f64>,
+    error: &ndarray::Array1<f64>,
+    min_freq: f64,
+    max_freq: f64,
+    config: &EpaConfig,
+) -> f64 {
+    use crate::loss::enhanced_weights::combined_weighted_loss;
+    let mut f_in = Vec::new();
+    let mut e_in = Vec::new();
+    for (&f, &e) in freqs.iter().zip(error.iter()) {
+        if f >= min_freq && f <= max_freq {
+            f_in.push(f);
+            e_in.push(e);
+        }
+    }
+    if f_in.is_empty() {
+        return f64::INFINITY;
+    }
+    combined_weighted_loss(
+        &ndarray::Array1::from(f_in),
+        &ndarray::Array1::from(e_in),
+        &config.flatness_band_weights,
+        config.flatness_erb_weight,
+        config.flatness_band_weight,
+    )
 }
 
 #[cfg(test)]
@@ -371,5 +434,41 @@ mod tests {
             loss_abs,
             loss_rel
         );
+    }
+
+    #[test]
+    fn epa_flatness_uses_config_blend() {
+        // At the extremes of the blend, `epa_flatness` should equal the
+        // pure `erb_weighted_loss` / `band_weighted_loss` helpers.
+        use crate::loss::enhanced_weights::{band_weighted_loss, erb_weighted_loss};
+        let freqs = ndarray::Array1::from(vec![100.0, 1000.0, 5000.0, 10000.0]);
+        let err = ndarray::Array1::from(vec![1.0, 1.0, 1.0, 1.0]);
+
+        let mut cfg = EpaConfig::default();
+        cfg.flatness_erb_weight = 1.0;
+        cfg.flatness_band_weight = 0.0;
+        let got_erb = epa_flatness(&freqs, &err, 20.0, 20000.0, &cfg);
+        let expected_erb = erb_weighted_loss(&freqs, &err);
+        assert!(
+            (got_erb - expected_erb).abs() < 1e-9,
+            "pure ERB blend should equal erb_weighted_loss, got {got_erb} vs {expected_erb}"
+        );
+
+        cfg.flatness_erb_weight = 0.0;
+        cfg.flatness_band_weight = 1.0;
+        let got_band = epa_flatness(&freqs, &err, 20.0, 20000.0, &cfg);
+        let expected_band = band_weighted_loss(&freqs, &err, &cfg.flatness_band_weights);
+        assert!(
+            (got_band - expected_band).abs() < 1e-9,
+            "pure band blend should equal band_weighted_loss, got {got_band} vs {expected_band}"
+        );
+    }
+
+    #[test]
+    fn epa_flatness_empty_range_returns_infinity() {
+        let freqs = ndarray::Array1::from(vec![100.0, 200.0, 500.0]);
+        let err = ndarray::Array1::from(vec![1.0, 1.0, 1.0]);
+        let cfg = EpaConfig::default();
+        assert!(epa_flatness(&freqs, &err, 5000.0, 10000.0, &cfg).is_infinite());
     }
 }

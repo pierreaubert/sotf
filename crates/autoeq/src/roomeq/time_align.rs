@@ -315,8 +315,7 @@ pub fn detect_delays_multi_channel(
         let end = (offset.saturating_add(segment_length)).min(recorded.len());
 
         let segment = &recorded[offset..end];
-        let channel_result =
-            detect_delay_with_probe_inner(probe, segment, sample_rate, auto_peak)?;
+        let channel_result = detect_delay_with_probe_inner(probe, segment, sample_rate, auto_peak)?;
 
         log::debug!(
             "[detect_delays_multi_channel] Ch {}: arrival={:.3}ms, gain={:.1}dB, SNR={:.1}dB",

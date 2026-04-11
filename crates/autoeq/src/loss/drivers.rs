@@ -63,9 +63,15 @@ impl std::str::FromStr for CrossoverType {
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "butterworth2" | "bw2" | "butterworth12" | "bw12" => Ok(CrossoverType::Butterworth2),
-            "lr2" | "lr12" | "linkwitzriley2" | "linkwitzriley12" => Ok(CrossoverType::LinkwitzRiley2),
-            "lr4" | "lr24" | "linkwitzriley4" | "linkwitzriley24" => Ok(CrossoverType::LinkwitzRiley4),
-            "lr8" | "lr48" | "linkwitzriley8" | "linkwitzriley48" => Ok(CrossoverType::LinkwitzRiley8),
+            "lr2" | "lr12" | "linkwitzriley2" | "linkwitzriley12" => {
+                Ok(CrossoverType::LinkwitzRiley2)
+            }
+            "lr4" | "lr24" | "linkwitzriley4" | "linkwitzriley24" => {
+                Ok(CrossoverType::LinkwitzRiley4)
+            }
+            "lr8" | "lr48" | "linkwitzriley8" | "linkwitzriley48" => {
+                Ok(CrossoverType::LinkwitzRiley8)
+            }
             "none" => Ok(CrossoverType::None),
             _ => Err(format!("Unknown crossover type: {}", s)),
         }

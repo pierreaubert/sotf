@@ -71,8 +71,6 @@ pub async fn fetch_available_headphones() -> Result<Vec<String>, Box<dyn Error>>
     fetch_name_list("https://api.spinorama.org/v1/headphones", "headphones").await
 }
 
-
-
 /// Find the closest matching speaker names using Levenshtein distance
 pub fn find_similar_speakers(
     invalid_speaker: &str,

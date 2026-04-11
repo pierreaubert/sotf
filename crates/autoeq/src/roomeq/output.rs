@@ -1174,6 +1174,7 @@ mod tests {
             pre_score: 5.0,
             post_score: 2.0,
             algorithm: "cobyla".to_string(),
+            loss_type: Some("flat".to_string()),
             iterations: 1000,
             timestamp: "2025-01-01T00:00:00Z".to_string(),
             inter_channel_deviation: None,

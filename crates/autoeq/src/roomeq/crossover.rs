@@ -17,9 +17,7 @@ use std::error::Error;
 ///
 /// Delegates to [`CrossoverType::from_str`]. Kept for backward compatibility.
 pub fn parse_crossover_type(type_str: &str) -> Result<CrossoverType, Box<dyn Error>> {
-    type_str
-        .parse::<CrossoverType>()
-        .map_err(|e| e.into())
+    type_str.parse::<CrossoverType>().map_err(|e| e.into())
 }
 
 /// Convert CrossoverType enum to plugin string format.

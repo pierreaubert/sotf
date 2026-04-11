@@ -4,8 +4,8 @@ use super::loudness::total_loudness;
 /// Bands 1-15 have weight 1.0; bands 16-24 increase linearly to emphasize
 /// high-frequency content in the sharpness calculation.
 pub const SHARPNESS_WEIGHT: [f64; 24] = [
-    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.2, 1.5, 1.8,
-    2.2, 2.7, 3.3, 4.0, 5.0, 6.2,
+    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.2, 1.5, 1.8, 2.2,
+    2.7, 3.3, 4.0, 5.0, 6.2,
 ];
 
 /// Compute Zwicker sharpness (in acum) from specific loudness values.
@@ -34,11 +34,18 @@ mod tests {
 
     fn make_bandlimited_response(lo_hz: f64, hi_hz: f64, level_db: f64) -> (Vec<f64>, Vec<f64>) {
         let n = 1000;
-        let freqs: Vec<f64> =
-            (0..n).map(|i| 20.0 + (16000.0 - 20.0) * i as f64 / n as f64).collect();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| 20.0 + (16000.0 - 20.0) * i as f64 / n as f64)
+            .collect();
         let spl: Vec<f64> = freqs
             .iter()
-            .map(|&f| if f >= lo_hz && f <= hi_hz { level_db } else { -40.0 })
+            .map(|&f| {
+                if f >= lo_hz && f <= hi_hz {
+                    level_db
+                } else {
+                    -40.0
+                }
+            })
             .collect();
         (freqs, spl)
     }

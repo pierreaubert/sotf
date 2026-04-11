@@ -156,8 +156,9 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
         ));
     }
 
-    // Validate loss type
-    let valid_loss_types = ["flat", "score"];
+    // Validate loss type. Keep this in sync with the match arms in
+    // `roomeq::eq::optimize_*` — they are the authoritative source.
+    let valid_loss_types = ["flat", "score", "epa"];
     if !valid_loss_types.contains(&opt.loss_type.as_str()) {
         result.add_error(format!(
             "Unknown loss_type '{}', must be one of {:?}",

@@ -15,7 +15,8 @@ use std::error::Error;
 use super::impulse_analysis;
 use super::spatial_robustness::{self, SpatialRobustnessConfig};
 use super::types::{
-    MultiMeasurementConfig, MultiMeasurementStrategy, OptimizerConfig, TargetCurveConfig,
+    DecomposedCorrectionSerdeConfig, MultiMeasurementConfig, MultiMeasurementStrategy,
+    OptimizerConfig, TargetCurveConfig,
 };
 use crate::optim::MultiObjectiveData;
 use hound;
@@ -58,6 +59,282 @@ struct PreparedSingleChannelEq {
     args_template: Args,
     peq_model: PeqModel,
     sample_rate: f64,
+    /// Schroeder frequency in Hz above which the room stops being
+    /// modal. Used by `run_optimization_pass` to clamp the gain upper
+    /// bound of any filter whose entire frequency range lives below
+    /// Schroeder — so the DE optimizer can't waste filter slots
+    /// boosting modal nulls it physically cannot fill. `None` means
+    /// decomposed-correction is disabled and no modal-region
+    /// constraint is applied.
+    schroeder_hz: Option<f64>,
+}
+
+/// Plausibility range for a measurement-driven Schroeder frequency.
+///
+/// Values outside this band almost always indicate a malformed IR
+/// (e.g. a raw sweep capture instead of a deconvolved impulse
+/// response), an incorrect `room_dimensions`, or a numerical quirk
+/// in the T20 fit. Anything outside the range triggers a warning
+/// and a fallback to the config-supplied value rather than silently
+/// corrupting the modal-region bounds downstream.
+///
+/// 50 Hz floor: the lowest plausible Schroeder for a very large,
+/// long-RT60 room (e.g. a large untreated home theatre). Below this
+/// the measured value is almost certainly the result of an
+/// over-long RT60 estimate from a contaminated IR.
+///
+/// 800 Hz ceiling: a very small room with a very short RT60 can
+/// push Schroeder into the low-mid range, but values above ~800 Hz
+/// would start clamping the bounds of filters that ought to be
+/// free and is a strong indicator that the RT60 fit ran on a
+/// truncated IR.
+const SCHROEDER_PLAUSIBLE_MIN_HZ: f64 = 50.0;
+const SCHROEDER_PLAUSIBLE_MAX_HZ: f64 = 800.0;
+
+/// Find the length (in samples) at which to truncate an impulse
+/// response so the Schroeder backward integration sees clean decay
+/// without post-decay noise contamination.
+///
+/// Late microphone self-noise, HVAC rumble, or ambient pickup that
+/// sits below the direct sound but above `-∞ dB` flattens the
+/// Schroeder decay slope once the actual room decay has reached
+/// the noise floor: the curve stops falling and levels off,
+/// pulling the T20 slope fit shallower and inflating the measured
+/// RT60. Truncating the IR at (or just past) the noise-floor
+/// crossing removes that contamination cleanly — the backward
+/// integral then sees `energy = 0` at the end of the buffer and
+/// the slope stays true to the room's actual decay.
+///
+/// Single-pass variant of Lundeby's method:
+/// 1. Window the IR into short 10 ms segments and compute each
+///    segment's mean-squared energy.
+/// 2. Estimate the noise floor as the mean energy of the last 10 %
+///    of segments (assumed to be post-decay noise only).
+/// 3. Walk backward and find the latest segment whose energy still
+///    exceeds the noise floor by +10 dB (factor of 10) — this is
+///    the last point where signal is cleanly above noise.
+/// 4. Keep a few segments of headroom past that point (~30 ms) so
+///    the T20 fit still has some decay curvature immediately
+///    before the noise crossover, then return that length.
+///
+/// Returns the full IR length unchanged when:
+/// - The buffer is shorter than `MIN_IR_LENGTH_FOR_TRIM_MS` (100 ms),
+///   i.e. too short to have a meaningful tail region.
+/// - Fewer than 20 windows fit in the buffer (tail fraction would
+///   be a single window, not statistically meaningful).
+/// - The noise-floor estimate is zero (a synthetic / perfectly
+///   clean IR with digital silence tail — nothing to trim).
+/// - No segment exceeds the +10 dB threshold (looks like pure
+///   noise or a dead channel — don't mangle it).
+fn trim_ir_length_to_noise_floor(ir: &[f32], sr: f32) -> usize {
+    /// Segment duration in ms — short enough to resolve the decay
+    /// crossover but long enough to smooth out individual sample
+    /// noise.
+    const WINDOW_MS: f32 = 10.0;
+    /// Fraction of the buffer used to estimate the noise floor.
+    const TAIL_FRACTION: f32 = 0.10;
+    /// Signal-to-noise threshold above which a segment still
+    /// counts as "signal" (linear, +10 dB).
+    const SNR_THRESHOLD: f32 = 10.0;
+    /// Extra segments kept past the last signal window so the
+    /// T20 slope fit has some decay data immediately before the
+    /// noise crossover.
+    const HEADROOM_WINDOWS: usize = 3;
+    /// Minimum IR length for any trimming to be attempted. Below
+    /// this we can't build a meaningful tail-noise estimate.
+    const MIN_IR_LENGTH_FOR_TRIM_MS: f32 = 100.0;
+
+    let window_samples = (sr * WINDOW_MS / 1000.0) as usize;
+    let min_samples = (sr * MIN_IR_LENGTH_FOR_TRIM_MS / 1000.0) as usize;
+    if window_samples == 0 || ir.len() < min_samples {
+        return ir.len();
+    }
+    let num_windows = ir.len() / window_samples;
+    if num_windows < 20 {
+        return ir.len();
+    }
+
+    // Mean squared energy per window.
+    let energies: Vec<f32> = (0..num_windows)
+        .map(|w| {
+            let start = w * window_samples;
+            let end = start + window_samples;
+            let sum: f32 = ir[start..end].iter().map(|s| s * s).sum();
+            sum / window_samples as f32
+        })
+        .collect();
+
+    // Noise floor = mean of last TAIL_FRACTION of windows.
+    let tail_count = ((num_windows as f32 * TAIL_FRACTION).ceil() as usize).max(1);
+    let tail_start = num_windows - tail_count;
+    let tail = &energies[tail_start..];
+    let noise_floor: f32 = tail.iter().sum::<f32>() / tail.len() as f32;
+    if noise_floor <= 0.0 {
+        // Perfectly silent tail — nothing to gain from trimming.
+        return ir.len();
+    }
+
+    let signal_threshold = noise_floor * SNR_THRESHOLD;
+    let Some(last_signal_window) = energies
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, e)| **e > signal_threshold)
+        .map(|(idx, _)| idx)
+    else {
+        // No segment exceeds the threshold — pure noise / dead
+        // channel. Leave the buffer alone; downstream DSP will
+        // return a zero RT60 and the helper falls back to config.
+        return ir.len();
+    };
+
+    let keep_windows = (last_signal_window + 1 + HEADROOM_WINDOWS).min(num_windows);
+    let keep_samples = (keep_windows * window_samples).min(ir.len());
+    if keep_samples >= ir.len() {
+        return ir.len();
+    }
+
+    log::debug!(
+        "  IR noise-floor trim: {} → {} samples ({:.0} → {:.0} ms, \
+         noise_floor={:.2e}, last_signal_window={}/{})",
+        ir.len(),
+        keep_samples,
+        ir.len() as f32 * 1000.0 / sr,
+        keep_samples as f32 * 1000.0 / sr,
+        noise_floor,
+        last_signal_window,
+        num_windows,
+    );
+    keep_samples
+}
+
+/// Measure RT60 from the recorded IR in the bass region (125 /
+/// 250 Hz octave bands) and return the bass-band RT60 that actually
+/// governs modal decay. Broadband RT60 averages across the whole
+/// spectrum, but bass RT60 is typically 1.5–2× mid-range RT60 in
+/// real rooms and is what the Schroeder formula `2000 · √(RT60/V)`
+/// is derived from, so the bass band is a systematically better
+/// input than the broadband number.
+///
+/// Before running the band-pass analysis, the IR is truncated at
+/// the late-noise floor via `trim_ir_length_to_noise_floor` so that
+/// ambient noise / mic self-noise in the tail doesn't flatten the
+/// Schroeder decay slope and inflate the measured RT60.
+///
+/// Returns `None` if neither band gave a positive fit (too short an
+/// IR, too much floor noise, or a non-IR input).
+fn measure_bass_rt60(mono_ir: &[f32], ir_sr: f32) -> Option<f64> {
+    // Strip the noise tail so the Schroeder slope is computed only
+    // over the clean signal decay. No-op for short or synthetic
+    // IRs — see `trim_ir_length_to_noise_floor` for the exact
+    // short-circuit conditions.
+    let trim_len = trim_ir_length_to_noise_floor(mono_ir, ir_sr);
+    let trimmed = &mono_ir[..trim_len];
+
+    // The two octave bands immediately below the typical Schroeder
+    // region. `compute_rt60_spectrum` runs a bandpass filter per
+    // band and feeds each band to `compute_rt60_broadband`. Pick
+    // the longer of the two valid values because (a) the lower
+    // band is usually what governs modal density, and (b) taking
+    // the max is conservative — it biases toward a higher
+    // Schroeder frequency, which widens the modal-constraint
+    // region rather than under-covering it.
+    let bass_centers = [125.0_f32, 250.0];
+    let bass_rt60s = math_audio_dsp::analysis::compute_rt60_spectrum(trimmed, ir_sr, &bass_centers);
+    let rt60_max = bass_rt60s
+        .iter()
+        .copied()
+        .filter(|v| *v > 0.0)
+        .fold(0.0_f32, f32::max);
+    if rt60_max > 0.0 {
+        Some(rt60_max as f64)
+    } else {
+        None
+    }
+}
+
+/// Decide whether a measured RT60 + `room_dimensions` should
+/// override the config-supplied Schroeder frequency, returning
+/// `Some(measured_schroeder_hz)` only when all preconditions hold:
+///
+/// 1. RT60 is positive (the fit succeeded).
+/// 2. `room_dimensions` is present so we have a room volume V.
+/// 3. The resulting Schroeder `2000 · √(RT60 / V)` lands in the
+///    plausible range
+///    [`SCHROEDER_PLAUSIBLE_MIN_HZ`, `SCHROEDER_PLAUSIBLE_MAX_HZ`].
+///
+/// Each branch logs the decision at info or warn level. The
+/// function is intentionally free of DSP and file I/O so it can be
+/// unit-tested with synthetic RT60 values — see the tests module
+/// at the bottom of this file.
+fn decide_schroeder_override(
+    rt60_seconds: Option<f64>,
+    dc_config: &DecomposedCorrectionSerdeConfig,
+    current_schroeder_hz: f64,
+) -> Option<f64> {
+    let Some(rt60) = rt60_seconds.filter(|v| *v > 0.0) else {
+        log::info!(
+            "  RT60 fit failed on measured IR (bass bands 125/250 Hz) \
+             — keeping config Schroeder value {:.1} Hz",
+            current_schroeder_hz
+        );
+        return None;
+    };
+
+    log::info!(
+        "  RT60 from measured IR (bass band, max of 125/250 Hz): {:.3} s \
+         (Schroeder backward integration, T20 × 3)",
+        rt60
+    );
+
+    let Some(dims) = dc_config.room_dimensions.as_ref() else {
+        log::info!(
+            "  Schroeder frequency: room_dimensions not provided, using \
+             config value {:.1} Hz (measured RT60 is available but V is not)",
+            current_schroeder_hz
+        );
+        return None;
+    };
+
+    let volume = dims.length * dims.width * dims.height;
+    let measured = dims.schroeder_frequency_with_rt60(rt60);
+
+    if measured <= 0.0 {
+        log::warn!(
+            "  Measured Schroeder non-positive ({:.3} Hz) for RT60={:.3} s, \
+             V={:.1} m³ — keeping config value {:.1} Hz",
+            measured,
+            rt60,
+            volume,
+            current_schroeder_hz
+        );
+        return None;
+    }
+
+    if !(SCHROEDER_PLAUSIBLE_MIN_HZ..=SCHROEDER_PLAUSIBLE_MAX_HZ).contains(&measured) {
+        log::warn!(
+            "  Measured Schroeder {:.1} Hz outside plausible range [{:.0}, {:.0}] Hz \
+             (RT60={:.3} s, V={:.1} m³) — keeping config value {:.1} Hz. \
+             Check that ssir_wav_path is a deconvolved IR and room_dimensions are correct.",
+            measured,
+            SCHROEDER_PLAUSIBLE_MIN_HZ,
+            SCHROEDER_PLAUSIBLE_MAX_HZ,
+            rt60,
+            volume,
+            current_schroeder_hz,
+        );
+        return None;
+    }
+
+    log::info!(
+        "  Schroeder frequency (measured): {:.1} Hz — overriding config value \
+         {:.1} Hz (room V={:.1} m³, RT60={:.3} s)",
+        measured,
+        current_schroeder_hz,
+        volume,
+        rt60
+    );
+    Some(measured)
 }
 
 /// Prepare shared data for single-channel EQ optimization.
@@ -104,66 +381,165 @@ fn prepare_single_channel_eq(
     };
 
     // Compute decomposed correction weights BEFORE psychoacoustic smoothing.
-    let decomposed_weights = config.decomposed_correction.as_ref().filter(|dc| dc.enabled).map(|dc_config| {
-        let dc_analysis_config = impulse_analysis::DecomposedCorrectionConfig {
-            schroeder_freq: dc_config.schroeder_freq,
-            min_mode_q: dc_config.min_mode_q,
-            min_mode_prominence_db: dc_config.min_mode_prominence_db,
-            mode_correction_weight: dc_config.mode_correction_weight,
-            early_reflection_weight: dc_config.early_reflection_weight,
-            steady_state_weight: dc_config.steady_state_weight,
-            ..Default::default()
-        };
+    // We keep both the per-frequency `correction_weights` (used to weight
+    // the deviation the optimizer sees) and the list of detected
+    // `room_modes` (used to seed the DE optimizer's smart-initial-guess
+    // generator via `ObjectiveData.detected_problems`). Previously this
+    // closure returned only the weights and the mode list was discarded
+    // after logging — which meant the optimizer re-ran its own cruder
+    // `find_peaks` over the smoothed deviation and landed on different
+    // frequencies than the SSIR modes.
+    let decomposed_result: Option<impulse_analysis::DecomposedCorrectionResult> = config
+        .decomposed_correction
+        .as_ref()
+        .filter(|dc| dc.enabled)
+        .map(|dc_config| {
+            let mut dc_analysis_config = impulse_analysis::DecomposedCorrectionConfig {
+                schroeder_freq: dc_config.schroeder_freq,
+                min_mode_q: dc_config.min_mode_q,
+                min_mode_prominence_db: dc_config.min_mode_prominence_db,
+                mode_correction_weight: dc_config.mode_correction_weight,
+                early_reflection_weight: dc_config.early_reflection_weight,
+                steady_state_weight: dc_config.steady_state_weight,
+                ..Default::default()
+            };
 
-        let result = if let Some(path) = config.ssir_wav_path.as_deref() {
-            match try_ssir_analysis(path, sample_rate) {
-                Some(ssir_result) => {
-                    log::info!(
-                        "  SSIR analysis: {} reflections, mixing time={:.1} ms",
-                        ssir_result.num_reflections(),
-                        ssir_result.mixing_time_ms(),
-                    );
-                    impulse_analysis::build_ssir_correction_weights(
-                        &normalized_curve_unsmoothed.freq,
-                        &normalized_curve_unsmoothed.spl,
-                        &ssir_result,
-                        &dc_analysis_config,
-                    )
-                }
-                None => {
-                    log::info!(
-                        "  SSIR analysis failed, falling back to Schroeder-based decomposition"
-                    );
-                    impulse_analysis::analyze_decomposed_correction(
-                        &normalized_curve_unsmoothed.freq,
-                        &normalized_curve_unsmoothed.spl,
-                        &dc_analysis_config,
-                    )
-                }
-            }
-        } else {
-            impulse_analysis::analyze_decomposed_correction(
-                &normalized_curve_unsmoothed.freq,
-                &normalized_curve_unsmoothed.spl,
-                &dc_analysis_config,
-            )
-        };
+            let result = if let Some(path) = config.ssir_wav_path.as_deref() {
+                match try_ssir_analysis(path, sample_rate) {
+                    Some((ssir_result, mono_ir, ir_sr)) => {
+                        log::info!(
+                            "  SSIR analysis: {} reflections, mixing time={:.1} ms",
+                            ssir_result.num_reflections(),
+                            ssir_result.mixing_time_ms(),
+                        );
 
-        log::info!(
-            "  Decomposed correction: {} room modes detected, boundary={:.0} Hz",
-            result.room_modes.len(),
-            result.schroeder_freq,
-        );
-        for mode in &result.room_modes {
+                        // Measurement-driven Schroeder frequency.
+                        //
+                        // The IR is already in memory, so instead of
+                        // using the config-supplied `schroeder_freq`
+                        // guess we measure the bass-band RT60 via
+                        // `compute_rt60_spectrum` and plug it into
+                        // `2000 · √(RT60 / V)` with V from
+                        // `dc_config.room_dimensions`. The override is
+                        // gated by `decide_schroeder_override` which
+                        // requires the result to land in a plausible
+                        // band — anything outside is treated as a
+                        // malformed IR / wrong dimensions and we fall
+                        // back to the config value. See that helper
+                        // for the exact decision logic and its tests.
+                        let rt60_bass = measure_bass_rt60(&mono_ir, ir_sr as f32);
+                        if let Some(measured) = decide_schroeder_override(
+                            rt60_bass,
+                            dc_config,
+                            dc_analysis_config.schroeder_freq,
+                        ) {
+                            dc_analysis_config.schroeder_freq = measured;
+                        }
+
+                        impulse_analysis::build_ssir_correction_weights(
+                            &normalized_curve_unsmoothed.freq,
+                            &normalized_curve_unsmoothed.spl,
+                            &ssir_result,
+                            &dc_analysis_config,
+                        )
+                    }
+                    None => {
+                        log::info!(
+                            "  SSIR analysis failed, falling back to Schroeder-based decomposition"
+                        );
+                        impulse_analysis::analyze_decomposed_correction(
+                            &normalized_curve_unsmoothed.freq,
+                            &normalized_curve_unsmoothed.spl,
+                            &dc_analysis_config,
+                        )
+                    }
+                }
+            } else {
+                impulse_analysis::analyze_decomposed_correction(
+                    &normalized_curve_unsmoothed.freq,
+                    &normalized_curve_unsmoothed.spl,
+                    &dc_analysis_config,
+                )
+            };
+
             log::info!(
-                "    Mode: {:.1} Hz, Q={:.1}, prominence={:.1} dB",
-                mode.frequency,
-                mode.q,
-                mode.prominence_db,
+                "  Decomposed correction: {} room modes detected, boundary={:.0} Hz",
+                result.room_modes.len(),
+                result.schroeder_freq,
+            );
+            for mode in &result.room_modes {
+                log::info!(
+                    "    Mode: {:.1} Hz, Q={:.1}, prominence={:.1} dB",
+                    mode.frequency,
+                    mode.q,
+                    mode.prominence_db,
+                );
+            }
+            result
+        });
+
+    let decomposed_weights = decomposed_result
+        .as_ref()
+        .map(|r| r.correction_weights.clone());
+
+    // Convert detected room modes into `(freq_hz, q, gain_db)` seed
+    // problems for the smart initial-guess generator. A mode is always
+    // a *peak* in the smoothed response (that's how `detect_room_modes`
+    // finds it), so the seeded filter is always a cut — gain is the
+    // negative of the mode's prominence in dB. The list is sorted by
+    // `|gain|` descending so the most prominent modes take priority
+    // when the optimizer has fewer filters than modes.
+    let detected_problems: Vec<(f64, f64, f64)> = match &decomposed_result {
+        Some(r) => {
+            let mut v: Vec<(f64, f64, f64)> = r
+                .room_modes
+                .iter()
+                .map(|m| (m.frequency, m.q, -m.prominence_db))
+                .collect();
+            v.sort_by(|a, b| {
+                b.2.abs()
+                    .partial_cmp(&a.2.abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            v
+        }
+        None => Vec::new(),
+    };
+
+    // Detect narrow nulls on the unsmoothed deviation curve and build a
+    // per-sample suppression mask for the asymmetric loss dip branch.
+    // High-Q dips = acoustic cancellation nulls that cannot be filled by
+    // EQ boost; the mask drives their contribution to the loss toward
+    // zero so the optimizer does not waste filters boosting into them.
+    // Low-Q dips are left at full weight and stay legitimate correction
+    // targets. The mask is only built when asymmetric loss is active —
+    // other loss types do not consume it.
+    let null_suppression_mask = if config.asymmetric_loss {
+        let null_config = impulse_analysis::NullDetectionConfig::default();
+        let nulls = impulse_analysis::detect_narrow_nulls(
+            &normalized_curve_unsmoothed.freq,
+            &normalized_curve_unsmoothed.spl,
+            &null_config,
+        );
+        log::info!(
+            "  Narrow-null detection: {} high-Q dip(s) suppressed for asymmetric loss",
+            nulls.len()
+        );
+        for n in &nulls {
+            log::info!(
+                "    Null: {:.1} Hz, Q={:.1}, depth={:.1} dB",
+                n.frequency,
+                n.q,
+                n.depth_db,
             );
         }
-        result.correction_weights
-    });
+        Some(impulse_analysis::build_null_suppression_mask(
+            &normalized_curve_unsmoothed.freq,
+            &nulls,
+        ))
+    } else {
+        None
+    };
 
     // Apply psychoacoustic smoothing if enabled
     let mut normalized_curve = normalized_curve_unsmoothed;
@@ -262,12 +638,30 @@ fn prepare_single_channel_eq(
     // Propagate EPA config so compute_base_fitness uses user-provided
     // weights when loss_type == LossType::Epa.
     objective_data.epa_config = config.epa_config.clone();
+    // Hand the SSIR / decomposed-correction mode list over to the DE
+    // optimizer's smart initial-guess generator so filters actually
+    // land on detected room modes instead of on whatever
+    // `create_smart_initial_guesses::find_peaks` decides to flag.
+    objective_data.detected_problems = detected_problems;
+    // Hand the narrow-null suppression mask over to the asymmetric loss
+    // branch of `compute_base_fitness`. `None` when `asymmetric_loss` is
+    // disabled, in which case the loss does not consume the mask anyway.
+    objective_data.null_suppression = null_suppression_mask;
+
+    // Schroeder frequency — used downstream by `run_optimization_pass`
+    // to forbid boost filters below the modal crossover. Pull it from
+    // the decomposition result (which after the recent SSIR-path fix
+    // just mirrors `config.decomposed_correction.schroeder_freq`).
+    // When decomposition is disabled, leave as `None` and the
+    // asymmetric bounds are not applied.
+    let schroeder_hz = decomposed_result.as_ref().map(|r| r.schroeder_freq);
 
     Ok(PreparedSingleChannelEq {
         objective_data,
         args_template,
         peq_model,
         sample_rate,
+        schroeder_hz,
     })
 }
 
@@ -286,7 +680,19 @@ fn run_optimization_pass(
     args.num_filters = num_filters;
     args.maxeval = max_iter;
 
-    let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&args);
+    let (lower_bounds, mut upper_bounds) = crate::workflow::setup_bounds(&args);
+
+    // Physics constraint: below the Schroeder frequency the room is
+    // modal — mode peaks can be cut with EQ but mode nulls can't be
+    // filled with boost, so letting the optimizer place boost filters
+    // there wastes slots and headroom. Clamp the gain upper bound of
+    // any filter whose frequency range sits entirely below Schroeder
+    // to 0 dB (cuts only). Skipped when decomposed-correction is
+    // disabled (no trustworthy Schroeder value available).
+    if let Some(sf) = prep.schroeder_hz {
+        crate::workflow::restrict_boost_above_schroeder(&mut upper_bounds, &args, sf);
+    }
+
     let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
 
     // Global optimization
@@ -1251,6 +1657,227 @@ mod tests {
         assert!(!filters.is_empty(), "should produce filters");
         assert!(loss < 5.0, "loss should be reasonable, got {:.4}", loss);
     }
+
+    // ---------------------------------------------------------------
+    // decide_schroeder_override: pure-logic helper for the
+    // measurement-driven Schroeder frequency path. DSP-free so we
+    // pass synthetic RT60 values directly and verify the four
+    // branches: (1) accepted override in range, (2) rejected
+    // implausible-high, (3) rejected implausible-low, (4) no
+    // room_dimensions → fallback, (5) RT60 fit failed → fallback.
+    // ---------------------------------------------------------------
+
+    fn dc_config_with_dims(
+        length: f64,
+        width: f64,
+        height: f64,
+    ) -> DecomposedCorrectionSerdeConfig {
+        DecomposedCorrectionSerdeConfig {
+            room_dimensions: Some(crate::roomeq::RoomDimensions {
+                length,
+                width,
+                height,
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn decide_schroeder_override_accepts_plausible_measurement() {
+        // 30 m³ room, RT60 = 0.4 s → Schroeder ≈ 2000·√(0.4/30) ≈ 231 Hz
+        // (well inside [50, 800] Hz)
+        let dc = dc_config_with_dims(4.0, 3.0, 2.5);
+        let result = decide_schroeder_override(Some(0.4), &dc, 250.0);
+        let measured = result.expect("should override with plausible value");
+        assert!(
+            (measured - 231.0).abs() < 2.0,
+            "expected ~231 Hz, got {:.1} Hz",
+            measured
+        );
+    }
+
+    #[test]
+    fn decide_schroeder_override_rejects_implausibly_high() {
+        // Tiny room (1 m³) with a very short RT60 (0.1 s) →
+        // Schroeder = 2000·√(0.1/1) = 632 Hz — still plausible.
+        // Push it harder: 0.5 m³ volume, 0.1 s → 2000·√(0.1/0.5) ≈ 894 Hz
+        // (outside the 800 Hz ceiling). This simulates a malformed
+        // IR whose T20 slope came out steep enough to under-report
+        // RT60 against a too-small user-supplied volume.
+        let dc = dc_config_with_dims(1.0, 1.0, 0.5);
+        let result = decide_schroeder_override(Some(0.1), &dc, 250.0);
+        assert!(
+            result.is_none(),
+            "894 Hz is outside [50, 800], should reject, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn decide_schroeder_override_rejects_implausibly_low() {
+        // Huge room (1000 m³) with a very long contaminated RT60
+        // (10 s) → Schroeder = 2000·√(10/1000) = 200 Hz — still
+        // plausible. Push harder: 10000 m³ (impossible for a
+        // listening room) with 10 s → 63 Hz, still just in range.
+        // Use 10000 m³ + 1 s → 20 Hz which is below the 50 Hz floor.
+        // This simulates either a pathologically large V or a
+        // truncated RT60 fit that under-reports modal decay.
+        let dc = dc_config_with_dims(100.0, 100.0, 1.0);
+        let result = decide_schroeder_override(Some(1.0), &dc, 250.0);
+        assert!(
+            result.is_none(),
+            "20 Hz is outside [50, 800], should reject, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn decide_schroeder_override_falls_back_without_room_dimensions() {
+        // RT60 was measurable but the user didn't provide room
+        // dimensions → we can't plug into the formula, fall back.
+        let dc = DecomposedCorrectionSerdeConfig::default();
+        assert!(dc.room_dimensions.is_none());
+        let result = decide_schroeder_override(Some(0.4), &dc, 250.0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn decide_schroeder_override_falls_back_on_rt60_fit_failure() {
+        // compute_rt60_spectrum returned 0.0 (or all-zeros) for all
+        // bass bands → `measure_bass_rt60` yields None → helper
+        // sees None and falls back to config.
+        let dc = dc_config_with_dims(4.0, 3.0, 2.5);
+        let result = decide_schroeder_override(None, &dc, 250.0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn decide_schroeder_override_falls_back_on_zero_rt60() {
+        // Defensive: filter also rejects explicitly-zero RT60 so the
+        // caller doesn't have to pre-filter.
+        let dc = dc_config_with_dims(4.0, 3.0, 2.5);
+        let result = decide_schroeder_override(Some(0.0), &dc, 250.0);
+        assert!(result.is_none());
+    }
+
+    // ---------------------------------------------------------------
+    // trim_ir_length_to_noise_floor: single-pass Lundeby-lite. We
+    // construct synthetic IRs (clean decay, clean + noise tail,
+    // zero, sinusoid) at 48 kHz and assert the truncation length
+    // matches the expected behaviour for each case.
+    // ---------------------------------------------------------------
+
+    /// Deterministic pseudo-random noise via a linear congruential
+    /// generator. Same seed → same output, so tests stay
+    /// reproducible without pulling `rand` into autoeq's
+    /// dev-dependencies.
+    fn lcg_noise(n: usize, seed: u32, amplitude: f32) -> Vec<f32> {
+        let mut state = seed;
+        (0..n)
+            .map(|_| {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                let normalised = (state as f32) / (u32::MAX as f32) - 0.5;
+                normalised * 2.0 * amplitude
+            })
+            .collect()
+    }
+
+    /// Synthesise an exponentially decaying impulse response with a
+    /// given RT60. Amplitude envelope is `exp(-k·t)` with
+    /// `k = 3·ln(10)/RT60`, chosen so the squared envelope
+    /// (Schroeder decay input) reaches −60 dB exactly at `t=RT60`.
+    fn make_exponential_decay(num_samples: usize, sr: f32, rt60_seconds: f32) -> Vec<f32> {
+        let k = 3.0 * std::f32::consts::LN_10 / rt60_seconds;
+        (0..num_samples)
+            .map(|i| {
+                let t = i as f32 / sr;
+                (-k * t).exp()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn trim_passes_short_ir_through_unchanged() {
+        // 50 ms @ 48 kHz = 2400 samples, well below the 100 ms
+        // minimum length. No trimming regardless of content.
+        let sr = 48_000.0_f32;
+        let ir = make_exponential_decay(2_400, sr, 0.2);
+        assert_eq!(trim_ir_length_to_noise_floor(&ir, sr), ir.len());
+    }
+
+    #[test]
+    fn trim_passes_all_zero_ir_through_unchanged() {
+        // All-zero buffer → tail-noise estimate is 0 → early return,
+        // keep full length. The DSP side will then fail the T20 fit
+        // and return 0 RT60, which measure_bass_rt60 turns into None.
+        let sr = 48_000.0_f32;
+        let ir = vec![0.0_f32; 48_000];
+        assert_eq!(trim_ir_length_to_noise_floor(&ir, sr), ir.len());
+    }
+
+    #[test]
+    fn trim_passes_pure_noise_through_unchanged() {
+        // Constant-amplitude LCG noise with near-uniform per-window
+        // energy → no window exceeds the tail noise floor by +10 dB
+        // → `find` returns None → full length kept. This matches
+        // the doc guarantee that we don't mangle dead channels.
+        let sr = 48_000.0_f32;
+        let ir = lcg_noise(48_000, 0xDEADBEEF, 0.1);
+        assert_eq!(trim_ir_length_to_noise_floor(&ir, sr), ir.len());
+    }
+
+    #[test]
+    fn trim_cuts_clean_decay_with_strong_noise_tail() {
+        // First 500 ms = exponential decay with RT60 = 0.5 s (so
+        // amplitude hits ~1e-3 = −60 dB by the end of the decay
+        // region). Next 500 ms = steady LCG noise at amplitude 0.01
+        // (energy ≈ 1e-4, +10 dB threshold at energy 1e-3 which the
+        // decay crosses around t ≈ 250 ms). The trim length must
+        // therefore be well below the full 1 s buffer (confirming
+        // the noise tail is cut) but still long enough that the
+        // T20 fit (which only needs up to ~170 ms of decay for
+        // RT60 = 0.5 s) has room to run.
+        let sr = 48_000.0_f32;
+        let full = 48_000_usize; // 1.0 s
+        let decay_samples = 24_000_usize; // 500 ms
+        let mut ir = make_exponential_decay(decay_samples, sr, 0.5);
+        ir.extend(lcg_noise(full - decay_samples, 0x1234_5678, 0.01));
+        assert_eq!(ir.len(), full);
+
+        let kept = trim_ir_length_to_noise_floor(&ir, sr);
+        // Must cut at least half the buffer (the noise tail).
+        assert!(
+            kept < full * 3 / 4,
+            "expected trim below 75 % of buffer, got {} of {}",
+            kept,
+            full
+        );
+        // Must keep at least the first 170 ms so the T20 fit still
+        // has its −5 → −25 dB span (~170 ms for RT60 = 500 ms).
+        let min_keep = (sr * 0.170) as usize;
+        assert!(
+            kept >= min_keep,
+            "expected trim above T20 span ({} samples), got {}",
+            min_keep,
+            kept
+        );
+    }
+
+    #[test]
+    fn trim_keeps_most_of_a_clean_decay_without_noise() {
+        // Pure exponential decay with a digital-silence tail (the
+        // decay has died below f32 subnormal range by the end of
+        // the buffer). The tail-noise estimate is effectively 0, so
+        // the early-return fires and the whole buffer is kept.
+        let sr = 48_000.0_f32;
+        let ir = make_exponential_decay(48_000, sr, 0.1);
+        // RT60 = 100 ms so by 1 s we're at exp(-k*1) with
+        // k = 3*ln(10)/0.1 ≈ 69.08 → exp(-69) ≈ 1e-30, which is
+        // below f32 subnormal range and reads as 0. Tail is all
+        // zero → noise_floor = 0 → early return.
+        let kept = trim_ir_length_to_noise_floor(&ir, sr);
+        assert_eq!(kept, ir.len(), "perfectly clean decay must be kept whole");
+    }
 }
 
 // ============================================================================
@@ -1575,13 +2202,18 @@ mod harman_regression_tests {
     }
 }
 
-/// Try to run SSIR analysis on a measured WAV file.
+/// Load a measured impulse response WAV file, run SSIR analysis, and
+/// return the analysis result alongside the mono IR and its sample
+/// rate so downstream callers can also compute RT60 directly from
+/// the decoded samples without re-reading the file from disk.
 ///
-/// Returns None if the WAV can't be loaded or the RIR is too short for analysis.
+/// Returns `None` when the file can't be opened, the buffer is empty,
+/// the IR is too short to be useful (< 10 ms), or SSIR didn't detect
+/// any events.
 fn try_ssir_analysis(
     wav_path: &std::path::Path,
     _sample_rate: f64,
-) -> Option<math_rir::SsirResult> {
+) -> Option<(math_rir::SsirResult, Vec<f32>, f64)> {
     let reader = hound::WavReader::open(wav_path).ok()?;
     let spec = reader.spec();
     let wav_sr = spec.sample_rate;
@@ -1625,7 +2257,7 @@ fn try_ssir_analysis(
 
     // Only return if we actually detected something meaningful
     if result.num_events() >= 1 {
-        Some(result)
+        Some((result, mono, wav_sr as f64))
     } else {
         None
     }

@@ -25,6 +25,25 @@ pub struct SmartInitConfig {
     pub variation_factor: f64,
     /// Random seed for deterministic initialization (None = random)
     pub seed: Option<u64>,
+    /// Pre-detected frequency problems as `(frequency_hz, q, gain_db)`
+    /// triples, typically produced by a higher-level analysis
+    /// (e.g. roomeq's SSIR / decomposed-correction mode detection).
+    ///
+    /// When this list is **non-empty**, `create_smart_initial_guesses`
+    /// uses these triples as the canonical "problems to correct"
+    /// instead of running its own naive `find_peaks` over the
+    /// smoothed deviation. This prevents the optimizer from placing
+    /// filters at invented frequencies while the real room modes
+    /// (typically detected with far better Q / prominence than
+    /// find_peaks can infer) go unused.
+    ///
+    /// Order matters: the list is treated as "most important first"
+    /// so when there are fewer filters than problems the top entries
+    /// are the ones kept.
+    ///
+    /// Defaults to empty (old behaviour — auto-detect from the
+    /// smoothed deviation).
+    pub pre_detected_problems: Vec<(f64, f64, f64)>,
 }
 
 impl Default for SmartInitConfig {
@@ -37,6 +56,7 @@ impl Default for SmartInitConfig {
             critical_frequencies: vec![100.0, 300.0, 1000.0, 3000.0, 8000.0, 16000.0],
             variation_factor: 0.1,
             seed: None,
+            pre_detected_problems: Vec::new(),
         }
     }
 }
@@ -115,39 +135,60 @@ pub fn create_smart_initial_guesses(
     } else {
         Box::new(rand::rng())
     };
-    // Smooth the response to reduce noise
-    let smoothed = smooth_problem_response(freq_grid, target_response, config.smoothing_sigma);
+    let mut problems: Vec<FrequencyProblem> = if !config.pre_detected_problems.is_empty() {
+        // Caller already ran a higher-quality analysis (e.g. SSIR
+        // room-mode detection) and handed us the problems explicitly.
+        // Use those verbatim — they're almost certainly better than
+        // anything `find_peaks` over a smoothed curve could recover.
+        config
+            .pre_detected_problems
+            .iter()
+            .map(|&(frequency, q, gain_db)| FrequencyProblem {
+                frequency,
+                magnitude: gain_db,
+                q_factor: q,
+            })
+            .collect()
+    } else {
+        // Legacy path: smooth the response and locate peaks/dips
+        // ourselves. Used when the caller has no upstream analysis.
+        let smoothed = smooth_problem_response(freq_grid, target_response, config.smoothing_sigma);
 
-    // Find peaks (need cuts) and dips (need boosts)
-    let peaks = find_peaks(&smoothed, config.min_peak_height, config.min_peak_distance);
-    let inverted = -&smoothed;
-    let dips = find_peaks(&inverted, config.min_peak_height, config.min_peak_distance);
+        // Find peaks (need cuts) and dips (need boosts)
+        let peaks = find_peaks(&smoothed, config.min_peak_height, config.min_peak_distance);
+        let inverted = -&smoothed;
+        let dips = find_peaks(&inverted, config.min_peak_height, config.min_peak_distance);
 
-    let mut problems = Vec::new();
+        let mut auto_problems = Vec::new();
 
-    // Add peaks (need cuts)
-    for &peak_idx in &peaks {
-        if peak_idx < freq_grid.len() {
-            problems.push(FrequencyProblem {
-                frequency: freq_grid[peak_idx],
-                magnitude: -smoothed[peak_idx].abs(), // Negative for cuts
-                q_factor: 1.0,
-            });
+        // Add peaks (need cuts)
+        for &peak_idx in &peaks {
+            if peak_idx < freq_grid.len() {
+                auto_problems.push(FrequencyProblem {
+                    frequency: freq_grid[peak_idx],
+                    magnitude: -smoothed[peak_idx].abs(), // Negative for cuts
+                    q_factor: 1.0,
+                });
+            }
         }
-    }
 
-    // Add dips (need boosts)
-    for &dip_idx in &dips {
-        if dip_idx < freq_grid.len() {
-            problems.push(FrequencyProblem {
-                frequency: freq_grid[dip_idx],
-                magnitude: smoothed[dip_idx].abs(), // Positive for boosts
-                q_factor: 0.7,                      // Lower Q for boosts
-            });
+        // Add dips (need boosts)
+        for &dip_idx in &dips {
+            if dip_idx < freq_grid.len() {
+                auto_problems.push(FrequencyProblem {
+                    frequency: freq_grid[dip_idx],
+                    magnitude: smoothed[dip_idx].abs(), // Positive for boosts
+                    q_factor: 0.7,                      // Lower Q for boosts
+                });
+            }
         }
-    }
 
-    // Sort by magnitude (most problematic first)
+        auto_problems
+    };
+
+    // Sort by magnitude (most problematic first). The caller-supplied
+    // list is already expected to be sorted, but re-sorting is cheap
+    // and guarantees the invariant regardless of input order.
     problems.sort_by(|a, b| {
         b.magnitude
             .abs()

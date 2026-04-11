@@ -239,6 +239,8 @@ pub fn setup_objective_data(
         max_boost_envelope: None,
         min_cut_envelope: None,
         epa_config: None,
+        detected_problems: Vec::new(),
+        null_suppression: None,
     };
 
     Ok((objective_data, use_cea))
@@ -320,6 +322,8 @@ pub fn setup_drivers_objective_data(
         max_boost_envelope: None,
         min_cut_envelope: None,
         epa_config: None,
+        detected_problems: Vec::new(),
+        null_suppression: None,
     }
 }
 
@@ -480,6 +484,68 @@ pub fn drivers_initial_guess_fixed_freqs(
     x.extend(vec![0.0; n_drivers]);
 
     x
+}
+
+/// Clamp the per-filter gain **upper** bound to 0 dB for any filter
+/// whose maximum allowed center frequency is at or below the Schroeder
+/// frequency.
+///
+/// Below Schroeder the room is modal: peaks caused by constructive
+/// interference between the direct wave and its reflections *can* be
+/// cut by EQ (reducing the input at f directly reduces the SPL at f),
+/// but nulls caused by destructive interference *cannot* be filled by
+/// EQ boost — the cancellation happens after the EQ, so adding more
+/// input energy just raises the direct wave and its anti-phase
+/// reflection by the same ratio and the null stays. Worse, the boost
+/// burns amplifier headroom and excites woofer excursion for no
+/// audible benefit.
+///
+/// Letting the DE optimizer place boost filters anywhere in the modal
+/// region therefore wastes filter slots on physically impossible
+/// corrections. This function enforces "below Schroeder is cuts-only"
+/// as a hard constraint on the optimizer's parameter bounds.
+///
+/// Filters whose allowed frequency range *straddles* Schroeder (i.e.
+/// their upper frequency bound is above `schroeder_hz`) keep their
+/// original symmetric bounds — those filters can still be positioned
+/// in the above-Schroeder part of their range where boosts are
+/// physically meaningful.
+pub fn restrict_boost_above_schroeder(
+    upper_bounds: &mut [f64],
+    args: &crate::cli::Args,
+    schroeder_hz: f64,
+) {
+    use crate::cli::PeqModel;
+    if schroeder_hz <= 0.0 {
+        return;
+    }
+    let model = args.effective_peq_model();
+    let ppf = crate::param_utils::params_per_filter(model);
+    let log_schroeder = schroeder_hz.log10();
+
+    for i in 0..args.num_filters {
+        let offset = i * ppf;
+        // Parameter indices per filter depend on the model. Only these
+        // two layouts exist today — `setup_bounds` uses the same
+        // match and the indices here must stay in sync with it.
+        let (freq_idx, gain_idx) = match model {
+            PeqModel::Pk
+            | PeqModel::HpPk
+            | PeqModel::HpPkLp
+            | PeqModel::LsPk
+            | PeqModel::LsPkHs => (offset, offset + 2),
+            PeqModel::FreePkFree | PeqModel::Free => (offset + 1, offset + 3),
+        };
+        if freq_idx >= upper_bounds.len() || gain_idx >= upper_bounds.len() {
+            continue;
+        }
+        // If the filter's highest possible center frequency is at or
+        // below Schroeder, every placement of this filter lives inside
+        // the modal region — constrain it to cuts only.
+        if upper_bounds[freq_idx] <= log_schroeder && upper_bounds[gain_idx] > 0.0 {
+            upper_bounds[gain_idx] = 0.0;
+        }
+    }
 }
 
 /// Build optimization parameter bounds for the optimizer.
@@ -1641,6 +1707,8 @@ pub fn setup_multisub_objective_data(
         max_boost_envelope: None,
         min_cut_envelope: None,
         epa_config: None,
+        detected_problems: Vec::new(),
+        null_suppression: None,
     }
 }
 

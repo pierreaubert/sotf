@@ -91,7 +91,11 @@ pub(super) fn optimize_eq_maybe_multi(
             "  Multi-measurement optimization ({:?}) with {} curves{}",
             multi_config.strategy,
             curves.len(),
-            if target_tilt_curve.is_some() { " (tilt applied)" } else { "" },
+            if target_tilt_curve.is_some() {
+                " (tilt applied)"
+            } else {
+                ""
+            },
         );
 
         if let Some(cb) = callback {
@@ -1530,7 +1534,10 @@ pub(super) fn process_single_speaker(
                 );
 
                 if !room_modes.is_empty() {
-                    info!("  Detected {} room modes, building Kautz filter", room_modes.len());
+                    info!(
+                        "  Detected {} room modes, building Kautz filter",
+                        room_modes.len()
+                    );
 
                     let mode_tuples: Vec<(f64, f64)> =
                         room_modes.iter().map(|m| (m.frequency, m.q)).collect();

@@ -314,6 +314,222 @@ fn build_correction_weights(
 }
 
 // ============================================================================
+// Narrow-null detection for asymmetric-loss dip suppression
+// ============================================================================
+
+/// Configuration for narrow-null detection.
+///
+/// A "narrow null" is a high-Q dip in the magnitude response caused by
+/// destructive interference (room modes, SBIR, early reflections). These
+/// nulls cannot be filled by EQ boost — the cancellation happens *after*
+/// the EQ, so adding input energy just raises both the direct wave and
+/// its anti-phase reflection by the same ratio. The asymmetric loss
+/// should de-weight the dip branch at these frequencies.
+///
+/// Broad dips (low-Q), by contrast, are usually legitimate response
+/// deficits (driver integration, baffle step, room absorption) and
+/// remain fillable. They are *not* suppressed.
+#[derive(Debug, Clone)]
+pub struct NullDetectionConfig {
+    /// Minimum Q factor to treat a local minimum as a narrow null.
+    /// Mirrors `DecomposedCorrectionConfig::min_mode_q`. Default: 3.0.
+    pub min_null_q: f64,
+
+    /// Minimum depth (dB below the local baseline) for a minimum to be
+    /// classified as a narrow null. Slightly stricter than the peak
+    /// prominence default because we are gating suppression: it is safer
+    /// to suppress too few nulls than too many. Default: 4.0 dB.
+    pub min_null_depth_db: f64,
+}
+
+impl Default for NullDetectionConfig {
+    fn default() -> Self {
+        Self {
+            min_null_q: 3.0,
+            min_null_depth_db: 4.0,
+        }
+    }
+}
+
+/// A detected narrow null (acoustic cancellation).
+#[derive(Debug, Clone)]
+pub struct NarrowNull {
+    /// Center frequency of the null (Hz)
+    pub frequency: f64,
+    /// Estimated Q factor (narrowness)
+    pub q: f64,
+    /// Depth in dB below the surrounding baseline (positive value)
+    pub depth_db: f64,
+    /// Index into the frequency array
+    pub index: usize,
+}
+
+/// Detect narrow nulls in the frequency response across the whole
+/// measurement band.
+///
+/// Mirrors `detect_room_modes` with the sign flipped: find local minima,
+/// compute depth relative to a ±1 octave local baseline, estimate Q from
+/// the +3 dB bandwidth around the nadir, and keep only the minima that
+/// pass both the depth and Q thresholds.
+///
+/// Unlike room-mode peak detection, this scans the full frequency range
+/// rather than stopping at the Schroeder frequency — narrow nulls exist
+/// above Schroeder too (SBIR, early reflections, crossover interactions)
+/// and they are just as unfillable there as in the modal region.
+pub fn detect_narrow_nulls(
+    freq: &Array1<f64>,
+    spl: &Array1<f64>,
+    config: &NullDetectionConfig,
+) -> Vec<NarrowNull> {
+    let mut nulls = Vec::new();
+    let n = freq.len();
+    if n < 5 {
+        return nulls;
+    }
+
+    for i in 2..n - 2 {
+        // Local minimum: lower than both neighbours at distance 1 and 2
+        // (same 2-sample window as detect_room_modes for robustness).
+        let is_min = spl[i] < spl[i - 1]
+            && spl[i] < spl[i + 1]
+            && spl[i] < spl[i - 2]
+            && spl[i] < spl[i + 2];
+
+        if !is_min {
+            continue;
+        }
+
+        let f_low_window = freq[i] / 2.0;
+        let f_high_window = freq[i] * 2.0;
+        let baseline = compute_local_baseline(freq, spl, i, f_low_window, f_high_window);
+        let depth = baseline - spl[i];
+
+        if depth < config.min_null_depth_db {
+            continue;
+        }
+
+        let q = estimate_dip_q(freq, spl, i);
+
+        if q >= config.min_null_q {
+            nulls.push(NarrowNull {
+                frequency: freq[i],
+                q,
+                depth_db: depth,
+                index: i,
+            });
+        }
+    }
+
+    nulls
+}
+
+/// Estimate Q factor of a dip from its +3 dB bandwidth.
+///
+/// Symmetric counterpart of `estimate_peak_q`: searches left and right
+/// from the nadir for the first crossing of `spl[peak_idx] + 3 dB`. When
+/// only one side is found the bandwidth is estimated as 2× the one-sided
+/// distance, same convention as the peak helper.
+fn estimate_dip_q(freq: &Array1<f64>, spl: &Array1<f64>, dip_idx: usize) -> f64 {
+    let dip_spl = spl[dip_idx];
+    let threshold = dip_spl + 3.0; // +3 dB from the nadir
+    let f_center = freq[dip_idx];
+
+    // Search left for the +3 dB crossing
+    let mut f_low: Option<f64> = None;
+    for i in (0..dip_idx).rev() {
+        if spl[i] >= threshold {
+            let denom = spl[i + 1] - spl[i];
+            if denom.abs() > 1e-12 {
+                let t = ((threshold - spl[i]) / denom).clamp(0.0, 1.0);
+                f_low = Some(freq[i] + t * (freq[i + 1] - freq[i]));
+            } else {
+                f_low = Some(freq[i]);
+            }
+            break;
+        }
+    }
+
+    // Search right for the +3 dB crossing
+    let mut f_high: Option<f64> = None;
+    for i in (dip_idx + 1)..freq.len() {
+        if spl[i] >= threshold {
+            let denom = spl[i] - spl[i - 1];
+            if denom.abs() > 1e-12 {
+                let t = ((threshold - spl[i - 1]) / denom).clamp(0.0, 1.0);
+                f_high = Some(freq[i - 1] + t * (freq[i] - freq[i - 1]));
+            } else {
+                f_high = Some(freq[i]);
+            }
+            break;
+        }
+    }
+
+    let bandwidth = match (f_low, f_high) {
+        (Some(lo), Some(hi)) => hi - lo,
+        (Some(lo), None) => 2.0 * (f_center - lo),
+        (None, Some(hi)) => 2.0 * (hi - f_center),
+        (None, None) => 0.0,
+    };
+
+    if bandwidth > 0.0 {
+        f_center / bandwidth
+    } else {
+        // No +3 dB crossing found: extremely narrow dip, treat as very high Q
+        20.0
+    }
+}
+
+/// Build a per-frequency dip-suppression mask from a list of narrow nulls.
+///
+/// The mask starts at 1.0 everywhere and drops toward 0.0 inside the
+/// -3 dB bandwidth `[f − bw/2, f + bw/2]` of each detected null. A short
+/// raised-cosine taper on each side keeps the mask C⁰-continuous, which
+/// behaves better in gradient-free optimizers than a hard step.
+///
+/// The asymmetric loss multiplies *only the dip branch* of its per-sample
+/// weights by this mask — narrow peaks at the same frequency are not
+/// suppressed.
+pub fn build_null_suppression_mask(freq: &Array1<f64>, nulls: &[NarrowNull]) -> Array1<f64> {
+    let n = freq.len();
+    let mut mask = Array1::ones(n);
+
+    if nulls.is_empty() {
+        return mask;
+    }
+
+    // Raised-cosine taper width, expressed as a fraction of the null's
+    // own half-bandwidth on each side. 0.5 means the taper spans the
+    // outer half of the half-bandwidth.
+    const TAPER_FRAC: f64 = 0.5;
+
+    for null in nulls {
+        let bw = null.frequency / null.q.max(1e-6);
+        let f_inner = bw * 0.5 * (1.0 - TAPER_FRAC);
+        let f_outer = bw * 0.5;
+
+        for i in 0..n {
+            let df = (freq[i] - null.frequency).abs();
+            if df > f_outer {
+                continue;
+            }
+            let w = if df <= f_inner {
+                0.0
+            } else {
+                // Raised cosine rising from 0 at f_inner to 1 at f_outer.
+                let t = (df - f_inner) / (f_outer - f_inner);
+                0.5 * (1.0 - (std::f64::consts::PI * t).cos())
+            };
+            // Overlapping nulls: keep the strongest suppression (lowest w).
+            if w < mask[i] {
+                mask[i] = w;
+            }
+        }
+    }
+
+    mask
+}
+
+// ============================================================================
 // SSIR-informed correction weights
 // ============================================================================
 
@@ -347,19 +563,31 @@ pub fn build_ssir_correction_weights(
     // 1. Detect room modes from frequency-domain data (same as before)
     let room_modes = detect_room_modes(freq, spl, config);
 
-    // 2. Use SSIR mixing time to derive a data-driven Schroeder-like boundary.
-    //    The mixing time tells us where early reflections end and the diffuse tail
-    //    begins. We map this to a frequency boundary: f_boundary ≈ 1 / T_mix.
-    //    This is a rough heuristic — the actual Schroeder frequency depends on
-    //    room volume and RT60, but the mixing time is a measured proxy.
-    let mixing_time_s = ssir_result.mixing_time_samples as f64 / ssir_result.sample_rate;
-    let ssir_boundary_freq = if mixing_time_s > 0.001 {
-        // Heuristic: the modal region extends up to roughly 1/T_mix.
-        // Clamp to a reasonable range (50-500 Hz).
-        (1.0 / mixing_time_s).clamp(50.0, 500.0)
-    } else {
-        config.schroeder_freq
-    };
+    // 2. Boundary between modal region and diffuse region.
+    //
+    //    Previous versions derived this from the SSIR mixing time via a
+    //    `1 / T_mix` heuristic, but that is dimensionally wrong: mixing
+    //    time is a *time-domain* property (the transition from discrete
+    //    early reflections to a diffuse reverberant tail), while the
+    //    Schroeder frequency is a *frequency-domain* property (where
+    //    modal density is high enough that individual modes overlap
+    //    statistically). The two are not reciprocals of each other —
+    //    there's no physical law relating them that way — and the
+    //    heuristic systematically under-estimated Schroeder by ~5–10×
+    //    for small listening rooms (e.g. a 30 m³ room reported ~26 Hz,
+    //    clamped up to a 50 Hz floor, when the true Schroeder is
+    //    ~230 Hz).
+    //
+    //    The correct Schroeder formula is `f_S ≈ 2000 · √(RT60 / V)`
+    //    with V in m³ and RT60 in seconds. Computing it here would need
+    //    a measured RT60 and known room volume, neither of which the
+    //    SSIR path currently threads through. Until that plumbing
+    //    exists, trust the caller-provided `config.schroeder_freq` —
+    //    which defaults to a sensible 250 Hz and can be overridden per
+    //    room in the JSON config. The config value stays accurate
+    //    across rooms because the user can override it, whereas the
+    //    heuristic was broken by physics regardless of input.
+    let ssir_boundary_freq = config.schroeder_freq;
 
     // 3. Determine the time extent of early reflections for energy-based weighting.
     //    If SSIR detected many reflections, the early sound field is rich and
@@ -763,5 +991,155 @@ mod tests {
         assert_eq!(config.mode_correction_weight, 1.0);
         assert_eq!(config.early_reflection_weight, 0.3);
         assert_eq!(config.transition_width_oct, 0.5);
+    }
+
+    // --- narrow-null detection ---
+
+    fn log_linspace(f_min: f64, f_max: f64, n: usize) -> Array1<f64> {
+        let lo = f_min.ln();
+        let hi = f_max.ln();
+        Array1::from_iter((0..n).map(|i| (lo + (hi - lo) * i as f64 / (n - 1) as f64).exp()))
+    }
+
+    #[test]
+    fn test_detect_narrow_nulls_flat_response_is_empty() {
+        let freq = log_linspace(20.0, 20000.0, 512);
+        let spl = Array1::from_elem(freq.len(), 80.0);
+        let nulls = detect_narrow_nulls(&freq, &spl, &NullDetectionConfig::default());
+        assert!(
+            nulls.is_empty(),
+            "flat response must not produce narrow nulls, got {nulls:?}"
+        );
+    }
+
+    #[test]
+    fn test_detect_narrow_nulls_finds_high_q_notch() {
+        // -15 dB Lorentzian notch at 80 Hz with Q=10.
+        let freq = log_linspace(20.0, 20000.0, 512);
+        let f0 = 80.0;
+        let q = 10.0;
+        let bw = f0 / q;
+        let spl: Array1<f64> = freq.mapv(|f| {
+            let x = (f - f0) / (bw / 2.0);
+            80.0 - 15.0 / (1.0 + x * x)
+        });
+        let nulls = detect_narrow_nulls(&freq, &spl, &NullDetectionConfig::default());
+        assert!(
+            !nulls.is_empty(),
+            "should detect the 80 Hz Q=10 notch as a narrow null"
+        );
+        let nearest = nulls
+            .iter()
+            .min_by(|a, b| {
+                (a.frequency - f0)
+                    .abs()
+                    .partial_cmp(&(b.frequency - f0).abs())
+                    .unwrap()
+            })
+            .unwrap();
+        assert!(
+            (nearest.frequency - f0).abs() < 5.0,
+            "detected null at {:.1} Hz should be near {f0} Hz",
+            nearest.frequency
+        );
+        assert!(
+            nearest.q >= 3.0,
+            "detected Q={:.1} should exceed min_null_q=3",
+            nearest.q
+        );
+        assert!(
+            nearest.depth_db >= 4.0,
+            "detected depth={:.1} should exceed min_null_depth_db=4",
+            nearest.depth_db
+        );
+    }
+
+    #[test]
+    fn test_detect_narrow_nulls_ignores_broad_dip() {
+        // Broad 8 dB dip centred at ~400 Hz with Q ~= 1 (unfillable-to-q check).
+        let freq = log_linspace(20.0, 20000.0, 512);
+        let f0 = 400.0;
+        let q = 0.8;
+        let bw = f0 / q;
+        let spl: Array1<f64> = freq.mapv(|f| {
+            let x = (f - f0) / (bw / 2.0);
+            80.0 - 8.0 / (1.0 + x * x)
+        });
+        let nulls = detect_narrow_nulls(&freq, &spl, &NullDetectionConfig::default());
+        assert!(
+            nulls.is_empty(),
+            "a broad Q=0.8 dip must not be flagged as a narrow null, got {nulls:?}"
+        );
+    }
+
+    #[test]
+    fn test_build_null_suppression_mask_is_zero_at_null() {
+        let freq = log_linspace(20.0, 20000.0, 512);
+        // Handcrafted null list instead of going through detect_narrow_nulls
+        // so the test is purely about the mask construction.
+        let nulls = vec![NarrowNull {
+            frequency: 80.0,
+            q: 10.0,
+            depth_db: 15.0,
+            index: 0,
+        }];
+        let mask = build_null_suppression_mask(&freq, &nulls);
+        assert_eq!(mask.len(), freq.len());
+
+        // At the null centre the mask must be close to zero.
+        let center_idx = freq
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| (*a - 80.0).abs().partial_cmp(&(*b - 80.0).abs()).unwrap())
+            .unwrap()
+            .0;
+        assert!(
+            mask[center_idx] < 1e-6,
+            "mask at null centre must be ~0, got {}",
+            mask[center_idx]
+        );
+
+        // Far away from the null the mask must be 1.0.
+        let far_idx = freq
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| {
+                (*a - 5000.0)
+                    .abs()
+                    .partial_cmp(&(*b - 5000.0).abs())
+                    .unwrap()
+            })
+            .unwrap()
+            .0;
+        assert!(
+            (mask[far_idx] - 1.0).abs() < 1e-12,
+            "mask far from any null must be 1.0, got {}",
+            mask[far_idx]
+        );
+
+        // The mask must be C⁰-continuous: no value outside [0, 1].
+        for (i, &m) in mask.iter().enumerate() {
+            assert!(
+                (0.0..=1.0).contains(&m),
+                "mask[{i}] = {m} must be in [0, 1]"
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_null_suppression_mask_empty_input_is_all_ones() {
+        let freq = log_linspace(20.0, 20000.0, 256);
+        let mask = build_null_suppression_mask(&freq, &[]);
+        assert!(
+            mask.iter().all(|&m| (m - 1.0).abs() < 1e-12),
+            "empty null list must yield an all-ones mask"
+        );
+    }
+
+    #[test]
+    fn test_null_detection_config_defaults() {
+        let config = NullDetectionConfig::default();
+        assert_eq!(config.min_null_q, 3.0);
+        assert_eq!(config.min_null_depth_db, 4.0);
     }
 }

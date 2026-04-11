@@ -1,15 +1,14 @@
 /// Standard Bark band center frequencies (Hz) for 24 critical bands.
 pub const BARK_CENTER_FREQUENCIES: [f64; 24] = [
-    50.0, 150.0, 250.0, 350.0, 450.0, 570.0, 700.0, 840.0, 1000.0, 1170.0, 1370.0, 1600.0,
-    1850.0, 2150.0, 2500.0, 2900.0, 3400.0, 4000.0, 4800.0, 5800.0, 7000.0, 8500.0, 10500.0,
-    13500.0,
+    50.0, 150.0, 250.0, 350.0, 450.0, 570.0, 700.0, 840.0, 1000.0, 1170.0, 1370.0, 1600.0, 1850.0,
+    2150.0, 2500.0, 2900.0, 3400.0, 4000.0, 4800.0, 5800.0, 7000.0, 8500.0, 10500.0, 13500.0,
 ];
 
 /// Standard Bark band edge frequencies (Hz), 25 edges defining 24 bands.
 pub const BARK_BAND_EDGES: [f64; 25] = [
-    0.0, 100.0, 200.0, 300.0, 400.0, 510.0, 630.0, 770.0, 920.0, 1080.0, 1270.0, 1480.0,
-    1720.0, 2000.0, 2320.0, 2700.0, 3150.0, 3700.0, 4400.0, 5300.0, 6400.0, 7700.0, 9500.0,
-    12000.0, 15500.0,
+    0.0, 100.0, 200.0, 300.0, 400.0, 510.0, 630.0, 770.0, 920.0, 1080.0, 1270.0, 1480.0, 1720.0,
+    2000.0, 2320.0, 2700.0, 3150.0, 3700.0, 4400.0, 5300.0, 6400.0, 7700.0, 9500.0, 12000.0,
+    15500.0,
 ];
 
 /// Convert frequency in Hz to Bark scale using Zwicker's formula.
@@ -92,8 +91,14 @@ mod tests {
         let z1000 = hz_to_bark(1000.0);
         let z10000 = hz_to_bark(10000.0);
 
-        assert!((z100 - 1.0).abs() < 0.15, "100 Hz -> Bark = {z100}, expected ~1.0");
-        assert!((z1000 - 8.5).abs() < 0.3, "1000 Hz -> Bark = {z1000}, expected ~8.5");
+        assert!(
+            (z100 - 1.0).abs() < 0.15,
+            "100 Hz -> Bark = {z100}, expected ~1.0"
+        );
+        assert!(
+            (z1000 - 8.5).abs() < 0.3,
+            "1000 Hz -> Bark = {z1000}, expected ~8.5"
+        );
         assert!(
             (z10000 - 22.4).abs() < 0.5,
             "10000 Hz -> Bark = {z10000}, expected ~22.4"
@@ -127,7 +132,9 @@ mod tests {
     fn test_bark_spectrum_flat_input() {
         // Generate flat SPL at 70 dB across 20-16000 Hz
         let n = 1000;
-        let freqs: Vec<f64> = (0..n).map(|i| 20.0 + (16000.0 - 20.0) * i as f64 / n as f64).collect();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| 20.0 + (16000.0 - 20.0) * i as f64 / n as f64)
+            .collect();
         let spl: Vec<f64> = vec![70.0; n];
 
         let spectrum = bark_spectrum(&freqs, &spl);

@@ -563,6 +563,7 @@ fn apply_option_override(config: &mut RoomConfig, option: &OptionOverride) {
             config.optimizer.decomposed_correction = Some(DecomposedCorrectionSerdeConfig {
                 enabled: true,
                 schroeder_freq: 200.0,
+                room_dimensions: None,
                 min_mode_q: 3.0,
                 min_mode_prominence_db: 3.0,
                 mode_correction_weight: 1.0,
@@ -2347,8 +2348,8 @@ fn validate_phase_alignment(
     // In combos with multiple options, allow more tolerance since shared mean SPL
     // and decomposed correction defaults shift absolute scores.
     let tolerance = OPTION_SCORE_TOLERANCE + (num_options.saturating_sub(1) as f64) * 0.15;
-    let score_ok = option_result.combined_post_score
-        <= tolerance * baseline_result.combined_post_score;
+    let score_ok =
+        option_result.combined_post_score <= tolerance * baseline_result.combined_post_score;
 
     let pass = score_ok; // delay presence is informational, not required
     let delay_str = if has_delay {

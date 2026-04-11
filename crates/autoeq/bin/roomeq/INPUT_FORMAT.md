@@ -419,7 +419,8 @@ Controls the optimization algorithm, constraints, and advanced features.
 | `fir` | object | - | FIR configuration (when mode is `"fir"` or `"mixed"`) |
 | `mixed_config` | object | - | Mixed mode configuration for frequency-based crossover |
 | `mixed_phase` | object | - | Mixed-phase correction config (when processing_mode is `"mixed_phase"`) |
-| `loss_type` | string | `"flat"` | Loss function: `"flat"` or `"score"` |
+| `loss_type` | string | `"flat"` | Loss function: `"flat"`, `"score"`, or `"epa"` (see [Loss Types](#loss-types) and [EPA Configuration](#epa-configuration)) |
+| `epa_config` | object | - | Tuning knobs for the EPA psychoacoustic loss (consulted for any `loss_type`; required only when you want to override defaults). See [EPA Configuration](#epa-configuration) |
 | `algorithm` | string | `"autoeq:de"` | Optimization algorithm |
 | `num_filters` | integer | `7` | Number of PEQ filters per channel |
 | `min_q` | number | `0.5` | Minimum Q factor |
@@ -476,8 +477,74 @@ Controls the optimization algorithm, constraints, and advanced features.
 
 | Type | Description |
 |------|-------------|
-| `flat` | Optimize for flat frequency response |
-| `score` | Optimize for Harman/Olive score (bass boost + flat PIR) |
+| `flat` | Optimize for flat frequency response. Internally uses an ERB-weighted + band-weighted MSE (70/30 blend) for better perceptual relevance than a plain MSE. |
+| `score` | Optimize for Harman/Olive preference score (bass boost + flat PIR). |
+| `epa` | EPA (Evaluation / Potency / Activity) psychoacoustic loss. Combines an ERB-weighted flatness term with sharpness (vs. target), roughness (spectral beating), and loudness-balance penalties derived from Zwicker's models. Tuning knobs live in [`epa_config`](#epa-configuration). |
+
+### EPA Configuration
+
+EPA tuning knobs. Every field is optional and serde-defaulted, so omitting
+`epa_config` entirely gives sensible defaults.
+
+```json
+{
+  "optimizer": {
+    "loss_type": "epa",
+    "epa_config": {
+      "listening_level_phon": 75.0,
+      "target_sharpness": 1.2,
+      "max_roughness": 0.5,
+      "evaluation_weight": 0.6,
+      "potency_weight": 0.2,
+      "activity_weight": 0.2,
+      "flatness_erb_weight": 1.0,
+      "flatness_band_weight": 0.0,
+      "flatness_band_weights": {
+        "bass_min": 20.0,
+        "bass_max": 200.0,
+        "mid_min": 200.0,
+        "mid_max": 4000.0,
+        "treble_min": 4000.0,
+        "treble_max": 20000.0,
+        "bass_weight": 2.0,
+        "mid_weight": 1.0,
+        "treble_weight": 0.8
+      }
+    }
+  }
+}
+```
+
+**EpaConfig fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `listening_level_phon` | number | `75.0` | Presentation level in phon. Also used to denormalize level-relative measurement curves (~0 dB mean) back to absolute dB SPL before running the Zwicker loudness model. |
+| `target_sharpness` | number | `1.2` | Target Zwicker sharpness in acum. `1.0` ≈ broadband noise character; higher = brighter. |
+| `max_roughness` | number | `0.5` | Roughness threshold above which the penalty kicks in (spectral beating between close modes). |
+| `evaluation_weight` | number | `0.6` | Weight of the Evaluation (quality) dimension in the composite score. |
+| `potency_weight` | number | `0.2` | Weight of the Potency (energy) dimension. |
+| `activity_weight` | number | `0.2` | Weight of the Activity (temporal complexity) dimension. |
+| `flatness_erb_weight` | number | `1.0` | ERB-weighted blend for the flatness term. Default pure ERB because EPA already has band-sensitive sharpness/roughness/loudness-balance terms. |
+| `flatness_band_weight` | number | `0.0` | Band-weighted blend for the flatness term. Increase to add an explicit bass/mid/treble bias on top of the ERB flatness. |
+| `flatness_band_weights` | object | see `FrequencyBandWeights` defaults | Per-band frequency ranges and weights. Only consulted when `flatness_band_weight > 0`. |
+
+**FrequencyBandWeights fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `bass_min` / `bass_max` | number (Hz) | `20.0` / `200.0` | Bass band bounds. |
+| `mid_min` / `mid_max` | number (Hz) | `200.0` / `4000.0` | Midrange band bounds. |
+| `treble_min` / `treble_max` | number (Hz) | `4000.0` / `20000.0` | Treble band bounds. |
+| `bass_weight` | number | `2.0` | Weight applied to the bass RMS contribution. |
+| `mid_weight` | number | `1.0` | Weight applied to the midrange RMS contribution. |
+| `treble_weight` | number | `0.8` | Weight applied to the treble RMS contribution. |
+
+The EPA metrics (`pre`/`post` per channel) are always emitted in the output
+JSON under `metadata.epa_per_channel`, regardless of which `loss_type` is
+selected — EPA is usable as a diagnostic even when the optimizer is minimizing
+a different objective. See [`OUTPUT_FORMAT.md`](./OUTPUT_FORMAT.md) for the
+per-channel EPA score fields.
 
 ### PEQ Models
 
@@ -950,6 +1017,11 @@ Applies frequency-dependent correction weights based on acoustic decomposition. 
   "optimizer": {
     "decomposed_correction": {
       "schroeder_freq": 200,
+      "room_dimensions": {
+        "length": 4.0,
+        "width": 3.0,
+        "height": 2.5
+      },
       "min_mode_q": 3.0,
       "min_mode_prominence_db": 3.0,
       "mode_correction_weight": 1.0,
@@ -962,7 +1034,8 @@ Applies frequency-dependent correction weights based on acoustic decomposition. 
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `schroeder_freq` | number (Hz) | `200` | Schroeder frequency. Below: modal, above: statistical. |
+| `schroeder_freq` | number (Hz) | `200` | Fallback Schroeder frequency when no IR or no `room_dimensions`. Below: modal, above: statistical. |
+| `room_dimensions` | object | - | Optional L × W × H in metres. When both this and `ssir_wav_path` are set, the optimizer measures RT60 from the recorded impulse response (Schroeder backward integration) and computes the Schroeder frequency as `2000 · √(RT60 / V)`, overriding the fallback `schroeder_freq` above. |
 | `min_mode_q` | number | `3.0` | Minimum Q to qualify as a room mode |
 | `min_mode_prominence_db` | number | `3.0` | Minimum prominence (dB) for mode detection |
 | `mode_correction_weight` | number | `1.0` | Correction weight for room modes (0.0-1.0) |

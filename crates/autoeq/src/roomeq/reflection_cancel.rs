@@ -71,9 +71,7 @@ pub fn compute_reflection_cancellation(
 
     // Step 2: Find the first non-direct-sound segment with significant energy.
     // "Significant" = peak_energy > 0 (any detectable reflection).
-    let first_reflection = ssir_result
-        .reflections()
-        .find(|s| s.peak_energy > 0.0)?;
+    let first_reflection = ssir_result.reflections().find(|s| s.peak_energy > 0.0)?;
 
     // Step 3: Compute delay in samples between direct sound TOA and reflection TOA.
     let delay_samples = first_reflection
@@ -101,7 +99,15 @@ pub fn compute_reflection_cancellation(
     let q_values = math_audio_iir_fir::peq_butterworth_q(config.lp_order);
     let lp_biquads: Vec<Biquad> = q_values
         .into_iter()
-        .map(|q| Biquad::new(BiquadFilterType::Lowpass, config.max_freq_hz, sample_rate, q, 0.0))
+        .map(|q| {
+            Biquad::new(
+                BiquadFilterType::Lowpass,
+                config.max_freq_hz,
+                sample_rate,
+                q,
+                0.0,
+            )
+        })
         .collect();
 
     Some(ReflectionCancellationResult {

@@ -1111,7 +1111,10 @@ fn parse_headphone_csv(csv_text: &str) -> Result<crate::Curve, Box<dyn Error>> {
             continue;
         }
 
-        let parts: Vec<&str> = line.split(',').map(|s| s.trim().trim_matches('"')).collect();
+        let parts: Vec<&str> = line
+            .split(',')
+            .map(|s| s.trim().trim_matches('"'))
+            .collect();
 
         if parts.len() >= 4 {
             // 4-column: freq_L, spl_L, freq_R, spl_R → average L/R

@@ -327,6 +327,32 @@ pub struct ObjectiveData {
     /// Used only when `loss_type == LossType::Epa`. When `None`, the
     /// optimizer falls back to `EpaConfig::default()`.
     pub epa_config: Option<crate::loss::epa::score::EpaConfig>,
+    /// Pre-detected frequency problems (usually SSIR / decomposed-correction
+    /// room modes) to seed the DE optimizer's smart initial-guess
+    /// generator with.
+    ///
+    /// Each entry is `(frequency_hz, q, suggested_gain_db)` — the sign of
+    /// the gain says whether the seed should cut (negative) or boost
+    /// (positive) the problem. When this list is non-empty,
+    /// `initial_guess::create_smart_initial_guesses` will use it instead
+    /// of running its own naive `find_peaks` over the smoothed deviation.
+    /// Order should be "most important first" (i.e. sorted by
+    /// `|gain_db|` descending) so that if there are fewer filters than
+    /// problems the most prominent ones are the ones kept.
+    ///
+    /// Defaults to empty, which preserves the old behaviour
+    /// (auto-detected peaks/dips).
+    pub detected_problems: Vec<(f64, f64, f64)>,
+    /// Per-frequency dip-suppression mask for
+    /// [`LossType::SpeakerFlatAsymmetric`].
+    ///
+    /// `Some(mask)` scales the dip branch of the asymmetric loss toward
+    /// zero inside detected narrow nulls (see
+    /// [`crate::roomeq::impulse_analysis::build_null_suppression_mask`]).
+    /// `None` disables suppression — dips are weighted with the
+    /// full `bass_dip_weight` / `dip_weight` of the asymmetric config.
+    /// Must have the same length as `freqs` when provided.
+    pub null_suppression: Option<Array1<f64>>,
 }
 
 /// Data for multi-objective optimization across multiple measurements
@@ -501,7 +527,11 @@ fn compute_multi_objective_fitness(x: &[f64], mo: &MultiObjectiveData) -> f64 {
 ///
 /// For each filter, if its gain is positive (boost), clamp it to the envelope's
 /// max boost at that filter's center frequency. Returns a new owned vector.
-pub fn clamp_gains_to_envelope(x: &[f64], envelope: &[(f64, f64)], peq_model: PeqModel) -> Vec<f64> {
+pub fn clamp_gains_to_envelope(
+    x: &[f64],
+    envelope: &[(f64, f64)],
+    peq_model: PeqModel,
+) -> Vec<f64> {
     use crate::param_utils;
     let mut clamped = x.to_vec();
     let num_filters = param_utils::num_filters(x, peq_model);
@@ -576,7 +606,10 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
     let clamped_boost;
     let clamped_cut;
     let x = {
-        let skip = matches!(data.loss_type, LossType::DriversFlat | LossType::MultiSubFlat);
+        let skip = matches!(
+            data.loss_type,
+            LossType::DriversFlat | LossType::MultiSubFlat
+        );
         let x = if !skip && let Some(ref env) = data.max_boost_envelope {
             clamped_boost = clamp_gains_to_envelope(x, env, data.peq_model);
             &clamped_boost
@@ -656,6 +689,7 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
         LossType::SpeakerFlatAsymmetric => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
+            let null_mask = data.null_suppression.as_ref();
             if data.smooth {
                 let curve = Curve {
                     freq: data.freqs.clone(),
@@ -663,9 +697,15 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                     phase: None,
                 };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
-                flat_loss_asymmetric(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
+                flat_loss_asymmetric(
+                    &data.freqs,
+                    &smoothed.spl,
+                    data.min_freq,
+                    data.max_freq,
+                    null_mask,
+                )
             } else {
-                flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq)
+                flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq, null_mask)
             }
         }
         LossType::SpeakerScore => {
@@ -703,7 +743,17 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
         LossType::Epa => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
-            let flatness = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
+            let epa_config = data.epa_config.clone().unwrap_or_default();
+            // Flatness now honors the EpaConfig blend (ERB-dominant by
+            // default) instead of going through the generic `flat_loss`,
+            // so the whole EPA objective is user-tunable.
+            let flatness = crate::loss::epa::score::epa_flatness(
+                &data.freqs,
+                &error,
+                data.min_freq,
+                data.max_freq,
+                &epa_config,
+            );
             let freqs_vec: Vec<f64> = data.freqs.iter().copied().collect();
             // The corrected SPL = target + deviation (measurement) + peq correction
             let corrected_spl: Vec<f64> = data
@@ -712,10 +762,6 @@ fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
                 .enumerate()
                 .map(|(i, _)| data.target[i] + data.deviation[i] + peq_spl[i])
                 .collect();
-            let epa_config = data
-                .epa_config
-                .clone()
-                .unwrap_or_default();
             // Use the `_normalized` variant because `corrected_spl` is built
             // from level-relative (target + deviation + PEQ) components —
             // it is not absolute dB SPL. The normalized helper denormalizes
@@ -814,6 +860,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
         LossType::SpeakerFlatAsymmetric => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
+            let null_mask = data.null_suppression.as_ref();
             if data.smooth {
                 let curve = Curve {
                     freq: data.freqs.clone(),
@@ -821,9 +868,15 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     phase: None,
                 };
                 let smoothed = crate::read::smooth_one_over_n_octave(&curve, data.smooth_n);
-                flat_loss_asymmetric(&data.freqs, &smoothed.spl, data.min_freq, data.max_freq)
+                flat_loss_asymmetric(
+                    &data.freqs,
+                    &smoothed.spl,
+                    data.min_freq,
+                    data.max_freq,
+                    null_mask,
+                )
             } else {
-                flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq)
+                flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq, null_mask)
             }
         }
         LossType::SpeakerScore => {
@@ -876,10 +929,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 .enumerate()
                 .map(|(i, _)| data.target[i] + data.deviation[i] + peq_spl[i])
                 .collect();
-            let epa_config = data
-                .epa_config
-                .clone()
-                .unwrap_or_default();
+            let epa_config = data.epa_config.clone().unwrap_or_default();
             // Use the `_normalized` variant because `corrected_spl` is built
             // from level-relative (target + deviation + PEQ) components —
             // it is not absolute dB SPL. The normalized helper denormalizes

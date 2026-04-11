@@ -354,6 +354,7 @@ fn option_decomposed_correction(config: &mut RoomConfig) {
     config.optimizer.decomposed_correction = Some(DecomposedCorrectionSerdeConfig {
         enabled: true,
         schroeder_freq: 200.0,
+        room_dimensions: None,
         min_mode_q: 3.0,
         min_mode_prominence_db: 3.0,
         mode_correction_weight: 1.0,

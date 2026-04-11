@@ -38,6 +38,8 @@ fn make_objective(deviation: Array1<f64>) -> ObjectiveData {
         max_boost_envelope: None,
         min_cut_envelope: None,
         epa_config: None,
+        detected_problems: Vec::new(),
+        null_suppression: None,
     }
 }
 

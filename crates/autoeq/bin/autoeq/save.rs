@@ -27,7 +27,9 @@ pub(super) async fn save_peq_to_file(
         autoeq::LossType::SpeakerFlat
         | autoeq::LossType::SpeakerFlatAsymmetric
         | autoeq::LossType::HeadphoneFlat => "iir-autoeq-flat.txt",
-        autoeq::LossType::SpeakerScore | autoeq::LossType::HeadphoneScore | autoeq::LossType::Epa => "iir-autoeq-score.txt",
+        autoeq::LossType::SpeakerScore
+        | autoeq::LossType::HeadphoneScore
+        | autoeq::LossType::Epa => "iir-autoeq-score.txt",
         autoeq::LossType::DriversFlat | autoeq::LossType::MultiSubFlat => {
             // Unreachable: DriversFlat mode uses a separate code path
             unreachable!("DriversFlat mode should not reach this point");

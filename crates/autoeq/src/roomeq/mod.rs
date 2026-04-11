@@ -48,7 +48,7 @@ mod optimize;
 pub use optimize::{
     CallbackAction, ChannelOptimizationResult, RoomOptimizationCallback, RoomOptimizationProgress,
     RoomOptimizationResult, SpeakerOptimizationCallback, SpeakerOptimizationResult, optimize_room,
-    optimize_speaker,
+    optimize_room_with_probe_arrivals, optimize_speaker,
 };
 
 // Extracted optimization submodules

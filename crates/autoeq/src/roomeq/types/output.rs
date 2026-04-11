@@ -166,6 +166,19 @@ pub struct OptimizationMetadata {
     pub post_score: f64,
     /// Optimization algorithm used
     pub algorithm: String,
+    /// Loss function that the optimizer minimized.
+    /// One of `"flat"`, `"score"`, `"epa"`.
+    ///
+    /// Note: `pre_score` and `post_score` are *not* values of this loss
+    /// function — they are always computed by
+    /// `crate::roomeq::workflows::compute_flat_loss` over the
+    /// `[min_freq, max_freq]` evaluation window so that runs with
+    /// different `loss_type` values stay on the same scale and can be
+    /// compared directly. To compare *perceptual* outcomes across
+    /// loss types use `epa_per_channel.{pre,post}.preference` instead,
+    /// which is computed identically for every run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loss_type: Option<String>,
     /// Number of iterations
     pub iterations: usize,
     /// Timestamp

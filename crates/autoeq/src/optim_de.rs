@@ -7,10 +7,10 @@ use super::constraints::{
     CeilingConstraintData, MinGainConstraintData, SpacingConstraintData, constraint_ceiling,
     constraint_min_gain, constraint_spacing,
 };
-use crate::de::init_sobol::init_sobol;
 use super::initial_guess::{SmartInitConfig, create_smart_initial_guesses};
 use super::optim::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
 use super::optim_callback::{ProgressTracker, format_param_summary};
+use crate::de::init_sobol::init_sobol;
 use crate::de::{
     CallbackAction, DEConfig, DEConfigBuilder, DEIntermediate, DEReport, Init, Mutation,
     NonlinearConstraintHelper, ParallelConfig, Strategy, differential_evolution,
@@ -315,8 +315,22 @@ pub fn optimize_filters_autoeq_with_callback(
         let params_per_filter =
             crate::param_utils::params_per_filter(cli_args.effective_peq_model());
         let num_filters = x.len() / params_per_filter;
+        // If the caller (typically roomeq's `prepare_single_channel_eq`)
+        // already detected high-quality room-mode problems via SSIR /
+        // decomposed correction, feed them into the smart-guess
+        // generator instead of letting it run its own cruder
+        // find_peaks over the smoothed deviation. Empty list → fall
+        // back to the legacy auto-detection.
+        let pre_detected_problems = setup.penalty_data.detected_problems.clone();
+        if !pre_detected_problems.is_empty() && cli_args.qa.is_none() {
+            log::debug!(
+                "🎯 Seeding smart initial guesses with {} pre-detected problem(s) from upstream analysis",
+                pre_detected_problems.len()
+            );
+        }
         let smart_config = SmartInitConfig {
             seed: cli_args.seed, // Pass seed for deterministic initialization
+            pre_detected_problems,
             ..SmartInitConfig::default()
         };
 
@@ -544,6 +558,8 @@ mod tests {
             max_boost_envelope: None,
             min_cut_envelope: None,
             epa_config: None,
+            detected_problems: Vec::new(),
+            null_suppression: None,
         }
     }
 

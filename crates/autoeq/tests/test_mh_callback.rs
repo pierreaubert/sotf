@@ -44,6 +44,8 @@ fn create_test_objective_data() -> autoeq::optim::ObjectiveData {
         max_boost_envelope: None,
         min_cut_envelope: None,
         epa_config: None,
+        detected_problems: Vec::new(),
+        null_suppression: None,
     }
 }
 

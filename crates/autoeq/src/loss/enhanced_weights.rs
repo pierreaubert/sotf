@@ -5,9 +5,11 @@
 //! - "Frequency-Dependent Weighting in Audio Equalization" (Zölzer et al.)
 
 use ndarray::Array1;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Frequency band configuration for weighted loss
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FrequencyBandWeights {
     /// Bass band minimum frequency (Hz)
     pub bass_min: f64,

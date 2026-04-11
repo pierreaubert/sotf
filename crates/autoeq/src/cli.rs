@@ -312,9 +312,16 @@ impl Args {
             sample_rate: 48000.0,
             loss: LossType::SpeakerFlat,
             algo: "autoeq:de".to_string(),
-            population: 50,
-            maxeval: 2000,
-            strategy: "currenttobest1bin".to_string(),
+            // Bumped from the previous (population=50, maxeval=2000,
+            // strategy="currenttobest1bin") defaults after some runs
+            // failed to converge. L-SHADE adapts its mutation and
+            // crossover rates per generation, so it handles noisy
+            // room-EQ loss landscapes much better than the fixed-rate
+            // strategies. 300/50000 is conservative for a 7-filter
+            // problem — cheaper runs can still pick `--preset quick`.
+            population: 300,
+            maxeval: 50000,
+            strategy: "lshade".to_string(),
             min_db: -12.0,
             max_db: 12.0,
             min_q: 0.5,

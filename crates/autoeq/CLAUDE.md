@@ -12,12 +12,16 @@ Core automatic equalization system for speakers, headphones, and rooms.
 
 ## Loss Functions
 
-- `speaker-flat` -- Minimize deviation from flat response
+- `speaker-flat` -- Minimize deviation from flat response (ERB + band weighted MSE)
 - `speaker-score` -- Optimize Harman/Olive score (bass boost + PIR flatness)
 - `headphone-flat` -- Minimize deviation from headphone target
 - `headphone-score` -- Target Harman headphone curve
 - `drivers-flat` -- Multi-driver flat response
 - `multi-sub-flat` -- Multi-subwoofer flat response
+- `epa` -- EPA psychoacoustic composite (flatness + Zwicker sharpness/roughness/loudness-balance). Tunable via `OptimizerConfig.epa_config`; see `bin/roomeq/INPUT_FORMAT.md` for the full config schema.
+
+Per-channel pre/post EPA scores are always emitted in the roomeq JSON
+output under `metadata.epa_per_channel`, even when `loss_type != "epa"`.
 
 ## Optimizer Backends
 

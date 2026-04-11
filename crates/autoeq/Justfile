@@ -101,7 +101,7 @@ qa-edifierw830nb-autoeqde:
 	--loss headphone-score \
 	--min-spacing-oct 0.08 \
 	--algo autoeq:de --population 70 --maxeval 8000 --seed 42 \
-	--qa 14.0
+	--qa 6.0
 
 [group('qa-autoeq')]
 qa-edifierw830nb-mhrga:

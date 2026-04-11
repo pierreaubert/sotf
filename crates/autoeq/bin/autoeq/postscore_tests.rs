@@ -63,6 +63,8 @@ mod tests {
             max_boost_envelope: None,
             min_cut_envelope: None,
             epa_config: None,
+            detected_problems: Vec::new(),
+            null_suppression: None,
         };
 
         let opt_params = vec![500.0, 2.0, -2.0]; // Example PEQ params

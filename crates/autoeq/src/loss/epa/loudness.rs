@@ -1,17 +1,17 @@
-use super::bark::{bark_spectrum, BARK_CENTER_FREQUENCIES};
+use super::bark::{BARK_CENTER_FREQUENCIES, bark_spectrum};
 
 /// Outer/middle ear transfer function in dB relative to free-field,
 /// at Bark band center frequencies. Models the resonance of the ear canal
 /// and pinna effects (peak ~2-4 kHz).
 pub const OUTER_EAR_TF: [f64; 24] = [
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 9.0,
-    10.0, 9.0, 7.0, 5.0, 3.0, 2.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 9.0, 10.0, 9.0,
+    7.0, 5.0, 3.0, 2.0, 0.0,
 ];
 
 /// Absolute threshold of hearing in dB SPL per Bark band (ISO 226 approximation).
 pub const THRESHOLD_IN_QUIET: [f64; 24] = [
-    40.0, 30.0, 22.0, 17.0, 14.0, 10.0, 7.0, 5.0, 4.0, 4.0, 4.0, 4.0, 5.0, 6.0, 7.0, 9.0,
-    12.0, 15.0, 19.0, 25.0, 33.0, 44.0, 58.0, 80.0,
+    40.0, 30.0, 22.0, 17.0, 14.0, 10.0, 7.0, 5.0, 4.0, 4.0, 4.0, 4.0, 5.0, 6.0, 7.0, 9.0, 12.0,
+    15.0, 19.0, 25.0, 33.0, 44.0, 58.0, 80.0,
 ];
 
 /// Convert dB SPL to linear power (intensity-like quantity).
@@ -115,8 +115,9 @@ mod tests {
 
     fn make_flat_response(level_db: f64) -> (Vec<f64>, Vec<f64>) {
         let n = 1000;
-        let freqs: Vec<f64> =
-            (0..n).map(|i| 20.0 + (16000.0 - 20.0) * i as f64 / n as f64).collect();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| 20.0 + (16000.0 - 20.0) * i as f64 / n as f64)
+            .collect();
         let spl = vec![level_db; n];
         (freqs, spl)
     }

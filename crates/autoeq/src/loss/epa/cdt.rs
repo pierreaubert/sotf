@@ -145,7 +145,12 @@ mod tests {
         );
         // Should be sorted by frequency
         for w in envelope.windows(2) {
-            assert!(w[0].0 <= w[1].0, "Envelope not sorted: {} > {}", w[0].0, w[1].0);
+            assert!(
+                w[0].0 <= w[1].0,
+                "Envelope not sorted: {} > {}",
+                w[0].0,
+                w[1].0
+            );
         }
     }
 
@@ -154,7 +159,11 @@ mod tests {
         let envelope = cdt_protection_envelope(20.0, 500.0);
         for &(freq, max_cut) in &envelope {
             assert!(freq >= 20.0 && freq <= 500.0, "Freq {} out of range", freq);
-            assert!(max_cut <= 0.0, "Max cut should be negative, got {}", max_cut);
+            assert!(
+                max_cut <= 0.0,
+                "Max cut should be negative, got {}",
+                max_cut
+            );
             assert!(max_cut >= -18.0, "Max cut too deep: {}", max_cut);
         }
     }

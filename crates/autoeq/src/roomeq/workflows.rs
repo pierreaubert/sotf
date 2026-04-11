@@ -498,13 +498,8 @@ pub fn optimize_stereo_2_0(
         avg_pre, avg_post
     );
 
-    let epa_cfg = config
-        .optimizer
-        .epa_config
-        .clone()
-        .unwrap_or_default();
-    let epa_per_channel =
-        crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
+    let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -515,6 +510,7 @@ pub fn optimize_stereo_2_0(
             pre_score: avg_pre,
             post_score: avg_post,
             algorithm: config.optimizer.algorithm.clone(),
+            loss_type: Some(config.optimizer.loss_type.clone()),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
@@ -1100,13 +1096,8 @@ pub fn optimize_stereo_2_1(
         avg_pre, avg_post
     );
 
-    let epa_cfg = config
-        .optimizer
-        .epa_config
-        .clone()
-        .unwrap_or_default();
-    let epa_per_channel =
-        crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
+    let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -1117,6 +1108,7 @@ pub fn optimize_stereo_2_1(
             pre_score: avg_pre,
             post_score: avg_post,
             algorithm: config.optimizer.algorithm.clone(),
+            loss_type: Some(config.optimizer.loss_type.clone()),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
@@ -1334,13 +1326,8 @@ fn optimize_home_cinema_no_sub(
         avg_pre, avg_post
     );
 
-    let epa_cfg = config
-        .optimizer
-        .epa_config
-        .clone()
-        .unwrap_or_default();
-    let epa_per_channel =
-        crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
+    let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -1351,6 +1338,7 @@ fn optimize_home_cinema_no_sub(
             pre_score: avg_pre,
             post_score: avg_post,
             algorithm: config.optimizer.algorithm.clone(),
+            loss_type: Some(config.optimizer.loss_type.clone()),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,
@@ -1826,13 +1814,8 @@ fn optimize_home_cinema_with_sub(
         avg_pre, avg_post
     );
 
-    let epa_cfg = config
-        .optimizer
-        .epa_config
-        .clone()
-        .unwrap_or_default();
-    let epa_per_channel =
-        crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
+    let epa_cfg = config.optimizer.epa_config.clone().unwrap_or_default();
+    let epa_per_channel = crate::roomeq::output::compute_epa_per_channel(&channel_chains, &epa_cfg);
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -1843,6 +1826,7 @@ fn optimize_home_cinema_with_sub(
             pre_score: avg_pre,
             post_score: avg_post,
             algorithm: config.optimizer.algorithm.clone(),
+            loss_type: Some(config.optimizer.loss_type.clone()),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
             inter_channel_deviation: None,

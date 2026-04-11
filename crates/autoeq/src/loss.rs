@@ -29,10 +29,7 @@ pub mod slope;
 pub mod speaker;
 pub mod types;
 
-pub use asymmetric::{
-    AsymmetricLossConfig, flat_loss_asymmetric, weighted_mse_asymmetric,
-    weighted_mse_asymmetric_with_split,
-};
+pub use asymmetric::{AsymmetricLossConfig, flat_loss_asymmetric, weighted_mse_asymmetric};
 pub use drivers::{
     CrossoverType, DriverMeasurement, DriversLossData, compute_drivers_combined_response,
     compute_per_driver_responses, drivers_flat_loss,

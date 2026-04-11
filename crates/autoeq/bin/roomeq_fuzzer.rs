@@ -243,10 +243,8 @@ fn generate_plots_for_multi_drivers(
         }
 
         // Parse crossover type
-        let crossover_type: autoeq::loss::CrossoverType = group
-            .crossover_type
-            .parse()
-            .unwrap_or_default();
+        let crossover_type: autoeq::loss::CrossoverType =
+            group.crossover_type.parse().unwrap_or_default();
 
         // Create DriversLossData
         let drivers_data = autoeq::loss::DriversLossData::new(driver_measurements, crossover_type);
