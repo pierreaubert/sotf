@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ReleaseChannel;
-use crate::recording_types::RecordingResult;
+use crate::recording_types::{DelayProbeResults, RecordingResult};
 
 /// (frequencies, magnitude_db, phase_deg, wav_path, csv_path)
 type MeasurementData = (Vec<f32>, Vec<f32>, Vec<f32>, Option<String>, Option<String>);
@@ -14,13 +14,17 @@ pub enum RoomEqStep {
     /// Step 1: Load/import measurement data
     #[default]
     LoadData,
-    /// Step 2: Configure channels, mode, and optimizer settings
+    /// Step 2: Tone-burst delay detection (measures per-channel acoustic
+    /// propagation delay using a narrowband probe). Runs optionally before
+    /// Configure; results feed auto-alignment into the optimizer.
+    DelayDetection,
+    /// Step 3: Configure channels, mode, and optimizer settings
     Configure,
-    /// Step 3: Run optimization (per-channel, then combined)
+    /// Step 4: Run optimization (per-channel, then combined)
     Optimize,
-    /// Step 4: Review results and visualizations
+    /// Step 5: Review results and visualizations
     Review,
-    /// Step 5: Export DSP chain and apply
+    /// Step 6: Export DSP chain and apply
     Export,
 }
 
@@ -29,6 +33,7 @@ impl RoomEqStep {
     pub fn all() -> &'static [RoomEqStep] {
         &[
             RoomEqStep::LoadData,
+            RoomEqStep::DelayDetection,
             RoomEqStep::Configure,
             RoomEqStep::Optimize,
             RoomEqStep::Review,
@@ -40,10 +45,11 @@ impl RoomEqStep {
     pub fn index(&self) -> usize {
         match self {
             RoomEqStep::LoadData => 0,
-            RoomEqStep::Configure => 1,
-            RoomEqStep::Optimize => 2,
-            RoomEqStep::Review => 3,
-            RoomEqStep::Export => 4,
+            RoomEqStep::DelayDetection => 1,
+            RoomEqStep::Configure => 2,
+            RoomEqStep::Optimize => 3,
+            RoomEqStep::Review => 4,
+            RoomEqStep::Export => 5,
         }
     }
 
@@ -51,6 +57,7 @@ impl RoomEqStep {
     pub fn label(&self) -> &'static str {
         match self {
             RoomEqStep::LoadData => "Load Data",
+            RoomEqStep::DelayDetection => "Delay",
             RoomEqStep::Configure => "Configure",
             RoomEqStep::Optimize => "Optimize",
             RoomEqStep::Review => "Review",
@@ -61,7 +68,8 @@ impl RoomEqStep {
     /// Get next step
     pub fn next(&self) -> Option<RoomEqStep> {
         match self {
-            RoomEqStep::LoadData => Some(RoomEqStep::Configure),
+            RoomEqStep::LoadData => Some(RoomEqStep::DelayDetection),
+            RoomEqStep::DelayDetection => Some(RoomEqStep::Configure),
             RoomEqStep::Configure => Some(RoomEqStep::Optimize),
             RoomEqStep::Optimize => Some(RoomEqStep::Review),
             RoomEqStep::Review => Some(RoomEqStep::Export),
@@ -73,7 +81,8 @@ impl RoomEqStep {
     pub fn previous(&self) -> Option<RoomEqStep> {
         match self {
             RoomEqStep::LoadData => None,
-            RoomEqStep::Configure => Some(RoomEqStep::LoadData),
+            RoomEqStep::DelayDetection => Some(RoomEqStep::LoadData),
+            RoomEqStep::Configure => Some(RoomEqStep::DelayDetection),
             RoomEqStep::Optimize => Some(RoomEqStep::Configure),
             RoomEqStep::Review => Some(RoomEqStep::Optimize),
             RoomEqStep::Export => Some(RoomEqStep::Review),
@@ -164,6 +173,43 @@ impl RoomEqMeasurementsFile {
         }
 
         serde_json::from_value(value)
+    }
+
+    /// Try to extract the delay-detection hints from a measurements JSON
+    /// blob in either the legacy `RoomEqMeasurementsFile` format or the
+    /// newer `autoeq::RoomConfig` format. Returns the canonical channel
+    /// name order and sample rate the recording session was captured
+    /// at, so the Delay Detection step can align its probe with the
+    /// same device settings the user measured with.
+    ///
+    /// Returns `None` when neither format carries the config — that
+    /// means the file was recorded without session metadata and the
+    /// caller should fall back to defaults (0..N indices, 48 000 Hz).
+    pub fn extract_delay_detection_hints(json: &str) -> Option<DelayDetectionHints> {
+        // Newer RoomConfig format
+        if let Ok(room_config) = serde_json::from_str::<autoeq::RoomConfig>(json)
+            && let Some(rc) = room_config.recording_config
+        {
+            return Some(DelayDetectionHints {
+                channel_names: rc.channel_names.clone(),
+                sample_rate: rc.recording_sample_rate,
+                playback_device_name: rc.playback_device_name.clone(),
+                recording_device_name: rc.recording_device_name.clone(),
+            });
+        }
+        // Legacy format — the player-layer `RecordingConfiguration`
+        // stores the same fields but with stricter types.
+        if let Ok(file) = Self::from_json_str(json)
+            && let Some(cfg) = file.configuration
+        {
+            return Some(DelayDetectionHints {
+                channel_names: Some(cfg.channel_names),
+                sample_rate: Some(cfg.recording_sample_rate),
+                playback_device_name: Some(cfg.playback_device_name),
+                recording_device_name: Some(cfg.recording_device_name),
+            });
+        }
+        None
     }
 
     fn convert_v1_to_v2(mut value: serde_json::Value) -> serde_json::Value {
@@ -1146,9 +1192,7 @@ impl RoomEqOptimizerConfig {
         if let Some(ref ms) = backend.multi_seat {
             self.multi_seat.strategy = match ms.strategy {
                 autoeq::roomeq::MultiSeatStrategy::MinimizeVariance => "variance".to_string(),
-                autoeq::roomeq::MultiSeatStrategy::PrimaryWithConstraints => {
-                    "primary".to_string()
-                }
+                autoeq::roomeq::MultiSeatStrategy::PrimaryWithConstraints => "primary".to_string(),
                 autoeq::roomeq::MultiSeatStrategy::Average => "average".to_string(),
             };
             self.multi_seat.primary_seat = ms.primary_seat;
@@ -1159,9 +1203,7 @@ impl RoomEqOptimizerConfig {
             self.multi_measurement.enabled = true;
             self.multi_measurement.strategy = match mm.strategy {
                 autoeq::roomeq::MultiMeasurementStrategy::Average => "average".to_string(),
-                autoeq::roomeq::MultiMeasurementStrategy::WeightedSum => {
-                    "weighted_sum".to_string()
-                }
+                autoeq::roomeq::MultiMeasurementStrategy::WeightedSum => "weighted_sum".to_string(),
                 autoeq::roomeq::MultiMeasurementStrategy::Minimax => "minimax".to_string(),
                 autoeq::roomeq::MultiMeasurementStrategy::VariancePenalized => {
                     "variance_penalized".to_string()
@@ -1271,6 +1313,219 @@ pub enum OptimizationStatus {
     Completed,
     Failed,
     Cancelled,
+}
+
+/// Status of the tone-burst delay detection measurement.
+///
+/// The measurement runs on a background thread (kicked off from the UI).
+/// `Running` carries the wall-clock start time in ms so the UI can
+/// render a progress estimate as `elapsed / estimated_total` without
+/// requiring the engine to surface a progress callback. The estimated
+/// total is computed by the UI from `probe_duration_ms` and
+/// `silence_duration_ms` × channel count.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum DelayDetectionStatus {
+    #[default]
+    Idle,
+    Running {
+        /// Milliseconds since the Unix epoch when the measurement was
+        /// spawned. Used purely for elapsed-time computation; if the
+        /// system clock jumps backward the progress bar may briefly
+        /// misreport but nothing else depends on this value.
+        started_at_ms: u64,
+    },
+    Complete,
+    Failed(String),
+}
+
+impl DelayDetectionStatus {
+    /// Estimated fraction of the measurement completed, in `0.0..=1.0`.
+    ///
+    /// Returns `None` when the status is not `Running` or the estimated
+    /// duration is zero. Callers should render a fallback (e.g. an
+    /// indeterminate spinner) in that case.
+    pub fn progress(&self, estimated_total_ms: u64, now_ms: u64) -> Option<f32> {
+        match self {
+            Self::Running { started_at_ms } if estimated_total_ms > 0 => {
+                let elapsed = now_ms.saturating_sub(*started_at_ms);
+                Some((elapsed as f32 / estimated_total_ms as f32).clamp(0.0, 1.0))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Session metadata extracted from a loaded measurements file, used to
+/// pre-seed the Delay Detection form so the probe runs with the same
+/// device settings the measurements were captured under.
+///
+/// Every field is optional because older files — and files migrated
+/// from other tools — may not carry this metadata.
+#[derive(Debug, Clone, Default)]
+pub struct DelayDetectionHints {
+    /// Canonical channel name order from the recording session, e.g.
+    /// `["L", "R", "C", "LFE", "SL", "SR"]` for 5.1. Used by the UI to
+    /// re-order or validate the playback channel map.
+    pub channel_names: Option<Vec<String>>,
+    /// Recording device sample rate in Hz (used for the probe).
+    pub sample_rate: Option<u32>,
+    /// Playback device name (None = system default).
+    pub playback_device_name: Option<String>,
+    /// Recording device name (None = system default).
+    pub recording_device_name: Option<String>,
+}
+
+/// Estimate the total duration of a probe sequence in milliseconds.
+///
+/// `num_channels` probes + (`num_channels - 1`) gaps + a ~1 s head/tail
+/// budget for device startup and stream settling. Used by the UI to
+/// turn `DelayDetectionStatus::Running { started_at_ms }` into a
+/// progress estimate.
+pub fn estimate_probe_sequence_ms(
+    num_channels: usize,
+    probe_duration_ms: f32,
+    silence_duration_ms: f32,
+) -> u64 {
+    if num_channels == 0 {
+        return 0;
+    }
+    let per_channel = probe_duration_ms as f64 + silence_duration_ms as f64;
+    let total = per_channel * num_channels as f64 + 1_000.0;
+    total.round().max(0.0) as u64
+}
+
+/// Shared state for the Room EQ "Delay Detection" wizard step.
+///
+/// The UI of both app-tui and app-gpui drives this struct: it carries the
+/// probe/device form inputs, the background-measurement status, the raw
+/// per-channel detection results from [`DelayProbeResults`], and the
+/// user-editable override values that ultimately feed into
+/// [`crate::autoeq::run_room_optimization_with_probe_arrivals`].
+///
+/// Channel identity (name, hardware index) always flows through
+/// `results.channels`. We intentionally do **not** carry a parallel
+/// `channel_names` vec on this struct: the earlier design had an
+/// alignment bug where `probe_arrival_map` zipped `channel_names` with
+/// `edited_arrival_ms` and silently truncated on length mismatch.
+#[derive(Debug, Clone)]
+pub struct DelayDetectionState {
+    /// Duration of each narrowband tone-burst in milliseconds.
+    /// The default (1000 ms) is long enough for robust cross-correlation
+    /// in typical rooms without making the full sweep tediously slow.
+    pub probe_duration_ms: f32,
+    /// Silence gap between probes in milliseconds. Avoids overlap between
+    /// late reflections of one channel and the onset of the next.
+    pub silence_duration_ms: f32,
+    /// Sample rate used for the probe in Hz. Populated from the loaded
+    /// measurement's recording configuration when available, otherwise
+    /// defaults to 48 000.
+    pub sample_rate: u32,
+    /// Playback device name (None = system default).
+    pub output_device_name: Option<String>,
+    /// Recording device name (None = system default).
+    pub input_device_name: Option<String>,
+    /// Microphone input channel index (0-based).
+    pub input_channel: u16,
+    /// Background-measurement status.
+    pub status: DelayDetectionStatus,
+    /// Raw detection results (populated on success). Cleared on Reset / new
+    /// run. Contains per-channel arrival_ms, gain_db, snr_db, and the
+    /// auto-computed `alignment_delays_ms` vector. This is the authority
+    /// on channel identity — `edited_arrival_ms[i]` corresponds to
+    /// `results.channels[i]`.
+    pub results: Option<DelayProbeResults>,
+    /// User-editable per-channel arrival times in milliseconds (seeded
+    /// from `results.channels[i].arrival_ms` after a successful
+    /// measurement). Indices mirror `results.channels` exactly. The
+    /// optimizer consumes these values (not `alignment_delays_ms`) so the
+    /// downstream speaker_eq path can compute consistent alignment.
+    pub edited_arrival_ms: Vec<f64>,
+}
+
+impl Default for DelayDetectionState {
+    fn default() -> Self {
+        Self {
+            probe_duration_ms: 1000.0,
+            silence_duration_ms: 500.0,
+            sample_rate: 48_000,
+            output_device_name: None,
+            input_device_name: None,
+            input_channel: 0,
+            status: DelayDetectionStatus::Idle,
+            results: None,
+            edited_arrival_ms: Vec::new(),
+        }
+    }
+}
+
+impl DelayDetectionState {
+    /// Seed `edited_arrival_ms` from a fresh set of probe results.
+    ///
+    /// Called after a successful measurement so the override editor has
+    /// sensible initial values. The UI may then let the user tweak these
+    /// before they flow into `run_room_optimization_with_probe_arrivals`.
+    pub fn apply_results(&mut self, results: DelayProbeResults) {
+        self.edited_arrival_ms = results.channels.iter().map(|c| c.arrival_ms).collect();
+        self.results = Some(results);
+        self.status = DelayDetectionStatus::Complete;
+    }
+
+    /// Build the per-channel arrival-time map used by
+    /// [`crate::autoeq::run_room_optimization_with_probe_arrivals`].
+    ///
+    /// Returns `None` if the measurement has not completed or the user
+    /// has cleared it. Channels with non-finite overrides (e.g. the user
+    /// blanked an entry) are skipped so the optimizer falls back to
+    /// WAV-onset detection for them. Channel identity comes from
+    /// `results.channels[i].channel_name` — this is the authoritative
+    /// source — and `edited_arrival_ms[i]` is read by position.
+    pub fn probe_arrival_map(&self) -> Option<std::collections::HashMap<String, f64>> {
+        if !matches!(self.status, DelayDetectionStatus::Complete) {
+            return None;
+        }
+        let results = self.results.as_ref()?;
+        let mut map = std::collections::HashMap::with_capacity(results.channels.len());
+        for (i, ch) in results.channels.iter().enumerate() {
+            let arrival = self
+                .edited_arrival_ms
+                .get(i)
+                .copied()
+                .unwrap_or(ch.arrival_ms);
+            if arrival.is_finite() {
+                map.insert(ch.channel_name.clone(), arrival);
+            }
+        }
+        if map.is_empty() { None } else { Some(map) }
+    }
+
+    /// Recompute per-channel alignment delays from the current
+    /// `edited_arrival_ms`. Used by the UI to show a live "Align ms"
+    /// column that reflects user overrides instead of the stale values
+    /// the engine computed from the raw measurement.
+    ///
+    /// Returns a vector indexed the same way as `results.channels`.
+    /// Empty when there are no results.
+    pub fn edited_alignment_delays_ms(&self) -> Vec<f64> {
+        let Some(results) = self.results.as_ref() else {
+            return Vec::new();
+        };
+        let arrivals: Vec<f64> = results
+            .channels
+            .iter()
+            .enumerate()
+            .map(|(i, ch)| {
+                self.edited_arrival_ms
+                    .get(i)
+                    .copied()
+                    .unwrap_or(ch.arrival_ms)
+            })
+            .collect();
+        if arrivals.is_empty() {
+            return Vec::new();
+        }
+        let max = arrivals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        arrivals.iter().map(|a| max - a).collect()
+    }
 }
 
 /// Field identifiers for AutoEQ form editing
@@ -1530,6 +1785,7 @@ impl CustomTargetCurve {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::recording_types::DelayProbeChannelResult;
 
     #[test]
     fn load_from_json_legacy_format() {
@@ -1662,5 +1918,182 @@ mod tests {
             "Default strategy '{}' not in valid set",
             default.strategy
         );
+    }
+
+    // ── DelayDetectionState tests ────────────────────────────────────────
+
+    fn make_results(entries: &[(&str, f64, f64, f64)]) -> DelayProbeResults {
+        DelayProbeResults {
+            channels: entries
+                .iter()
+                .enumerate()
+                .map(|(i, (name, arrival, gain, snr))| DelayProbeChannelResult {
+                    channel_name: (*name).to_string(),
+                    channel_index: i,
+                    arrival_ms: *arrival,
+                    gain_db: *gain,
+                    snr_db: *snr,
+                })
+                .collect(),
+            sample_rate: 48_000,
+            alignment_delays_ms: entries
+                .iter()
+                .map(|(_, a, _, _)| {
+                    let max = entries
+                        .iter()
+                        .map(|(_, a, _, _)| *a)
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    max - a
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn probe_arrival_map_returns_none_when_idle() {
+        let dd = DelayDetectionState::default();
+        assert_eq!(dd.status, DelayDetectionStatus::Idle);
+        assert!(dd.probe_arrival_map().is_none());
+    }
+
+    #[test]
+    fn probe_arrival_map_returns_none_when_failed() {
+        let mut dd = DelayDetectionState::default();
+        dd.status = DelayDetectionStatus::Failed("mic unplugged".to_string());
+        assert!(dd.probe_arrival_map().is_none());
+    }
+
+    #[test]
+    fn apply_results_populates_edited_arrivals_and_sets_complete() {
+        let mut dd = DelayDetectionState::default();
+        let results = make_results(&[
+            ("L", 5.0, -3.0, 15.0),
+            ("R", 8.0, -2.5, 14.0),
+            ("C", 6.0, -3.2, 12.0),
+        ]);
+        dd.apply_results(results);
+
+        assert!(matches!(dd.status, DelayDetectionStatus::Complete));
+        assert_eq!(dd.edited_arrival_ms, vec![5.0, 8.0, 6.0]);
+        assert_eq!(dd.results.as_ref().unwrap().channels.len(), 3);
+    }
+
+    #[test]
+    fn probe_arrival_map_uses_results_channels_as_source_of_truth() {
+        let mut dd = DelayDetectionState::default();
+        dd.apply_results(make_results(&[
+            ("L", 5.0, -3.0, 15.0),
+            ("R", 8.0, -2.5, 14.0),
+        ]));
+        let map = dd.probe_arrival_map().expect("should produce map");
+        assert_eq!(map.len(), 2);
+        assert_eq!(map["L"], 5.0);
+        assert_eq!(map["R"], 8.0);
+    }
+
+    #[test]
+    fn probe_arrival_map_respects_user_edits() {
+        let mut dd = DelayDetectionState::default();
+        dd.apply_results(make_results(&[
+            ("L", 5.0, -3.0, 15.0),
+            ("R", 8.0, -2.5, 14.0),
+        ]));
+        dd.edited_arrival_ms[1] = 9.5; // user bumped R
+        let map = dd.probe_arrival_map().unwrap();
+        assert_eq!(map["L"], 5.0);
+        assert_eq!(map["R"], 9.5);
+    }
+
+    #[test]
+    fn probe_arrival_map_skips_non_finite_values() {
+        let mut dd = DelayDetectionState::default();
+        dd.apply_results(make_results(&[
+            ("L", 5.0, -3.0, 15.0),
+            ("R", 8.0, -2.5, 14.0),
+            ("C", 6.0, -3.2, 12.0),
+        ]));
+        dd.edited_arrival_ms[1] = f64::NAN; // user cleared R
+        let map = dd.probe_arrival_map().unwrap();
+        assert!(!map.contains_key("R"));
+        assert_eq!(map.len(), 2);
+        assert_eq!(map["L"], 5.0);
+        assert_eq!(map["C"], 6.0);
+    }
+
+    #[test]
+    fn probe_arrival_map_uses_raw_arrival_when_edited_vec_shorter() {
+        // Simulate a corrupted state: edited_arrival_ms was cleared but
+        // results still present. `probe_arrival_map` must fall back to
+        // the raw measured arrival for rows past the edit cursor.
+        let mut dd = DelayDetectionState::default();
+        dd.apply_results(make_results(&[
+            ("L", 5.0, -3.0, 15.0),
+            ("R", 8.0, -2.5, 14.0),
+        ]));
+        dd.edited_arrival_ms.truncate(1);
+        let map = dd.probe_arrival_map().unwrap();
+        assert_eq!(map["L"], 5.0);
+        assert_eq!(map["R"], 8.0);
+    }
+
+    #[test]
+    fn edited_alignment_delays_track_user_overrides() {
+        let mut dd = DelayDetectionState::default();
+        dd.apply_results(make_results(&[
+            ("L", 5.0, -3.0, 15.0),
+            ("R", 8.0, -2.5, 14.0),
+            ("C", 6.0, -3.2, 12.0),
+        ]));
+        // Initially R is slowest (8.0) → L gets 3, R gets 0, C gets 2.
+        let initial = dd.edited_alignment_delays_ms();
+        assert!((initial[0] - 3.0).abs() < 1e-9);
+        assert!((initial[1] - 0.0).abs() < 1e-9);
+        assert!((initial[2] - 2.0).abs() < 1e-9);
+
+        // User moves C to 10 ms → C is now slowest, all others rebase.
+        dd.edited_arrival_ms[2] = 10.0;
+        let updated = dd.edited_alignment_delays_ms();
+        assert!((updated[0] - 5.0).abs() < 1e-9);
+        assert!((updated[1] - 2.0).abs() < 1e-9);
+        assert!((updated[2] - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn status_progress_returns_none_when_idle_or_failed() {
+        let idle = DelayDetectionStatus::Idle;
+        assert_eq!(idle.progress(10_000, 5_000), None);
+        let failed = DelayDetectionStatus::Failed("x".to_string());
+        assert_eq!(failed.progress(10_000, 5_000), None);
+    }
+
+    #[test]
+    fn status_progress_computes_fraction_when_running() {
+        let running = DelayDetectionStatus::Running {
+            started_at_ms: 1_000,
+        };
+        // 3000 ms elapsed out of 10000 estimated = 30%
+        let p = running.progress(10_000, 4_000).unwrap();
+        assert!((p - 0.3).abs() < 1e-6);
+        // Clamps to 1.0 after the estimated total elapses.
+        let p = running.progress(10_000, 50_000).unwrap();
+        assert_eq!(p, 1.0);
+    }
+
+    #[test]
+    fn status_progress_returns_none_for_zero_total() {
+        let running = DelayDetectionStatus::Running { started_at_ms: 0 };
+        assert_eq!(running.progress(0, 1000), None);
+    }
+
+    #[test]
+    fn estimate_probe_sequence_ms_sums_channels_gaps_and_headroom() {
+        // 3 channels × (1000 ms probe + 500 ms gap) + 1000 ms head/tail
+        let total = estimate_probe_sequence_ms(3, 1000.0, 500.0);
+        assert_eq!(total, 3 * 1500 + 1000);
+    }
+
+    #[test]
+    fn estimate_probe_sequence_ms_zero_channels_is_zero() {
+        assert_eq!(estimate_probe_sequence_ms(0, 1000.0, 500.0), 0);
     }
 }

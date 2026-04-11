@@ -8,7 +8,7 @@ use sotf_audio_player::Player;
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
 use sotf_audio_player_tui::events::{
     AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
-    poll_federation_scan, poll_federation_test, poll_headphone_download,
+    poll_delay_detection, poll_federation_scan, poll_federation_test, poll_headphone_download,
     poll_headphone_eq_optimization, poll_headphone_list_load, poll_recording,
     poll_room_eq_optimization, poll_spinorama_optimization, poll_spinorama_speaker_load,
 };
@@ -408,6 +408,9 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.needs_redraw = true;
                     }
                     if poll_room_eq_optimization(app) {
+                        app.needs_redraw = true;
+                    }
+                    if poll_delay_detection(app) {
                         app.needs_redraw = true;
                     }
                     if poll_recording(app) {

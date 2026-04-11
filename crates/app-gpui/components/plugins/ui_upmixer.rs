@@ -156,7 +156,14 @@ pub fn render_upmixer_plugin(
     let tab_bar = render_tab_bar(d, entity.clone(), selected_config, theme);
 
     // Configuration row: conditional on selected_config (1-7)
-    let config_row = render_config_row(d, entity.clone(), plugin_idx, selected_config, &state, theme);
+    let config_row = render_config_row(
+        d,
+        entity.clone(),
+        plugin_idx,
+        selected_config,
+        &state,
+        theme,
+    );
 
     // Diagnostic toggles row
     let diag_row = render_config_diagnostic(d, entity.clone(), plugin_idx, &state, theme);
@@ -205,7 +212,12 @@ fn render_tab_button(
         .border_color(if is_active {
             theme.accent
         } else {
-            gpui::Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }
+            gpui::Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            }
         })
         .hover(|s| {
             s.text_color(theme.text_primary).border_color(if is_active {

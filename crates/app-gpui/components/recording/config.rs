@@ -369,7 +369,11 @@ impl PlayerView {
             .filter_map(|(i, d)| d.map(|data| (i, data)))
             .collect();
         if !cal_entries.is_empty() {
-            container = container.child(Self::render_calibration_graph_multi(&cal_entries, &theme, &d));
+            container = container.child(Self::render_calibration_graph_multi(
+                &cal_entries,
+                &theme,
+                &d,
+            ));
         }
 
         container

@@ -25,6 +25,15 @@ impl PlayerView {
         let is_completed = room_eq.is_optimization_complete();
         let is_failed =
             room_eq.optimization_status == crate::app::types::OptimizationStatus::Failed;
+        // Warn the user when a prior Delay Detection run failed so they
+        // know the optimizer is about to silently fall back to WAV-onset
+        // detection. Surfacing this here (rather than only on Step 2)
+        // prevents the user from scratching their head when alignment
+        // delays look worse than expected.
+        let dd_failed_reason = match &room_eq.delay_detection.status {
+            crate::app::types::room_eq::DelayDetectionStatus::Failed(msg) => Some(msg.clone()),
+            _ => None,
+        };
         let show_progress = is_running || is_completed || is_failed;
         let progress_history = room_eq.progress_history.clone();
         let current_channel = room_eq.current_channel.clone();
@@ -78,6 +87,35 @@ impl PlayerView {
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
+            // Delay-detection failure banner: the optimizer silently
+            // falls back to WAV-onset detection when the probe didn't
+            // complete, so we surface the reason up-front.
+            .when_some(dd_failed_reason, |div, reason| {
+                div.child(
+                    Card::new()
+                        .background(theme.surface)
+                        .border(theme.warning)
+                        .content(
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(
+                                    Text::new("Delay Detection did not complete")
+                                        .weight(TextWeight::Bold)
+                                        .size(TextSize::Sm)
+                                        .color(theme.warning),
+                                )
+                                .child(
+                                    Text::new(format!(
+                                        "{} — the optimizer will use WAV-onset \
+                                         detection for per-channel arrival times.",
+                                        reason
+                                    ))
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary),
+                                ),
+                        ),
+                )
+            })
             // Optimization completed success card
             .when(is_completed, |div| {
                 div.child(
@@ -683,12 +721,16 @@ impl PlayerView {
         use autoeq::roomeq::CallbackAction;
         use sotf_audio_player::autoeq::{
             RoomOptimizationCallback, RoomOptimizationProgress, run_room_optimization,
+            run_room_optimization_with_probe_arrivals,
         };
 
         log::info!("Starting room EQ optimization using roomeq");
 
-        // Build RoomConfig from state using the unified helper
-        let (room_config, channel_names, max_iter) = {
+        // Build RoomConfig from state using the unified helper. Also read
+        // any probe-based per-channel arrival times that the Delay Detection
+        // step measured so we can feed them into the optimizer instead of
+        // letting it fall back to WAV-onset detection.
+        let (room_config, channel_names, max_iter, probe_arrivals) = {
             let state = self.state.read(cx);
             let room_eq = &state.app.measurement_state.room_eq_state;
             let cfg = &room_eq.optimizer_config;
@@ -723,6 +765,7 @@ impl PlayerView {
                 room_eq.to_room_config(),
                 channel_names,
                 room_eq.optimizer_config.max_iter,
+                room_eq.delay_detection.probe_arrival_map(),
             )
         };
 
@@ -841,10 +884,23 @@ impl PlayerView {
                     CallbackAction::Continue
                 });
 
-            // Run room optimization (parallel via rayon internally)
-            let result =
-                smol::unblock(move || run_room_optimization(&room_config, 48000.0, Some(callback)))
-                    .await;
+            // Run room optimization (parallel via rayon internally). Use
+            // the probe-arrivals entry point when the user measured
+            // per-channel delays in the Delay Detection step; otherwise
+            // fall back to WAV-onset detection.
+            let result = smol::unblock(move || {
+                if let Some(arrivals) = probe_arrivals.as_ref() {
+                    run_room_optimization_with_probe_arrivals(
+                        &room_config,
+                        48000.0,
+                        Some(callback),
+                        arrivals,
+                    )
+                } else {
+                    run_room_optimization(&room_config, 48000.0, Some(callback))
+                }
+            })
+            .await;
 
             // Drop progress sender to close channel and stop receiver
             drop(progress_tx);

@@ -424,9 +424,7 @@ pub fn field_warning(field: &str, value: f64) -> Option<&'static str> {
 pub fn field_hint(field: &str) -> Option<&'static str> {
     match field {
         "num_filters" => Some("5-7 for quick results, 10+ for surgical precision"),
-        "min_freq" | "max_freq" => {
-            Some("Narrow to the problem region for faster, better results")
-        }
+        "min_freq" | "max_freq" => Some("Narrow to the problem region for faster, better results"),
         "quality" => Some("Higher = better corrections, longer optimization"),
         "loss" => Some("Flat Match for accuracy, Listener Preference for enjoyment"),
         "peq_model" => Some("Peaks Only is simplest; Shelves + Peaks is most flexible"),
@@ -441,7 +439,11 @@ mod tests {
 
     #[test]
     fn test_all_presets_have_valid_ids() {
-        for workflow in [EqWorkflow::Headphone, EqWorkflow::Spinorama, EqWorkflow::RoomEq] {
+        for workflow in [
+            EqWorkflow::Headphone,
+            EqWorkflow::Spinorama,
+            EqWorkflow::RoomEq,
+        ] {
             let presets = presets_for(workflow);
             assert!(!presets.is_empty());
             // Last preset must be "custom"
@@ -452,15 +454,26 @@ mod tests {
 
     #[test]
     fn test_default_preset_exists() {
-        for workflow in [EqWorkflow::Headphone, EqWorkflow::Spinorama, EqWorkflow::RoomEq] {
+        for workflow in [
+            EqWorkflow::Headphone,
+            EqWorkflow::Spinorama,
+            EqWorkflow::RoomEq,
+        ] {
             let id = default_preset_id(workflow);
-            assert!(find_preset(workflow, id).is_some(), "default preset '{id}' not found");
+            assert!(
+                find_preset(workflow, id).is_some(),
+                "default preset '{id}' not found"
+            );
         }
     }
 
     #[test]
     fn test_apply_preset_produces_valid_params() {
-        for workflow in [EqWorkflow::Headphone, EqWorkflow::Spinorama, EqWorkflow::RoomEq] {
+        for workflow in [
+            EqWorkflow::Headphone,
+            EqWorkflow::Spinorama,
+            EqWorkflow::RoomEq,
+        ] {
             for preset in presets_for(workflow) {
                 if let Some(params) = preset.apply() {
                     assert!(params.num_filters > 0);

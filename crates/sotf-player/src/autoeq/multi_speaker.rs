@@ -54,6 +54,7 @@ pub use autoeq::roomeq::{
     SpeakerOptimizationResult as RoomSpeakerOptResult,
     // Optimization functions
     optimize_room,
+    optimize_room_with_probe_arrivals,
     optimize_speaker,
     save_dsp_chain,
 };
@@ -103,6 +104,26 @@ pub fn run_room_optimization(
     callback: Option<RoomOptimizationCallback>,
 ) -> Result<RoomOptimizationResult, String> {
     optimize_room(config, sample_rate, callback, None).map_err(|e| e.to_string())
+}
+
+/// Run room optimization with per-channel probe-based arrival times.
+///
+/// Same as [`run_room_optimization`] but lets the delay-detection UI step
+/// pass in measured arrival times (keyed by channel name). Channels present
+/// in the map use the probe value directly; channels absent from the map
+/// fall back to WAV-onset detection inside the optimizer.
+///
+/// The map uses raw channel names (the same keys as `config.speakers`) and
+/// arrival times in milliseconds. Time alignment (delay = max_arrival -
+/// channel_arrival) is computed downstream by the autoeq speaker_eq path.
+pub fn run_room_optimization_with_probe_arrivals(
+    config: &RoomConfig,
+    sample_rate: f64,
+    callback: Option<RoomOptimizationCallback>,
+    probe_arrival_ms: &HashMap<String, f64>,
+) -> Result<RoomOptimizationResult, String> {
+    optimize_room_with_probe_arrivals(config, sample_rate, callback, None, probe_arrival_ms)
+        .map_err(|e| e.to_string())
 }
 
 /// Convert RoomOptimizationResult to legacy SingleSpeakerResult format

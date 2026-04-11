@@ -6,10 +6,8 @@
 
 use std::path::Path;
 
-use crate::{
-    BiquadFilterType, ChannelConflict, EQFilter, Plugin, PluginSettings, PluginType,
-};
 use crate::plugin_graph::PluginGraph;
+use crate::{BiquadFilterType, ChannelConflict, EQFilter, Plugin, PluginSettings, PluginType};
 
 // Re-export param_index_to_engine_param as a free function (used by GPUI apply_plugin_update)
 pub use super::plugin_param_map::param_index_to_engine_param;

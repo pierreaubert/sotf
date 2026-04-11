@@ -286,12 +286,15 @@ mod tests {
                     assert_eq!(app.input_mode, InputMode::ConfigureRoomEq);
                 },
             ),
-            // 4. Esc → step tab bar, Right x4 → Export, Down → enter content
+            // 4. Esc → step tab bar, Right x5 → Export, Down → enter content.
+            // Step order: LoadData → DelayDetection → Configure → Optimize →
+            // Review → Export
             step(
                 "Navigate via step tab bar to Export",
                 vec![
                     Input::Key(KeyCode::Esc),   // → step tab bar (from LoadData content)
-                    Input::Key(KeyCode::Right), // LoadData → Configure
+                    Input::Key(KeyCode::Right), // LoadData → DelayDetection
+                    Input::Key(KeyCode::Right), // DelayDetection → Configure
                     Input::Key(KeyCode::Right), // Configure → Optimize
                     Input::Key(KeyCode::Right), // Optimize → Review
                     Input::Key(KeyCode::Right), // Review → Export

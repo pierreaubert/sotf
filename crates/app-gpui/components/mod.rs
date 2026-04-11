@@ -229,7 +229,9 @@ impl PlayerView {
                                         .when(!is_selected, |el| {
                                             el.hover(move |s| s.text_color(text_hover))
                                         })
-                                        .when(is_selected, |el| el.font_weight(FontWeight::SEMIBOLD))
+                                        .when(is_selected, |el| {
+                                            el.font_weight(FontWeight::SEMIBOLD)
+                                        })
                                         .child(label),
                                 )
                                 .child(
@@ -281,7 +283,12 @@ impl PlayerView {
                 .collect();
 
             for idx in eq_indices.into_iter().rev() {
-                state.app.plugin_state.graph.remove_plugin_by_index(idx).ok();
+                state
+                    .app
+                    .plugin_state
+                    .graph
+                    .remove_plugin_by_index(idx)
+                    .ok();
             }
 
             state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);

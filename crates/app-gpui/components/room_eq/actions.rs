@@ -341,6 +341,25 @@ impl PlayerView {
                                     backend_optimizer.max_iter,
                                     backend_optimizer.refine,
                                 );
+                                // Pre-seed the Delay Detection step from recording
+                                // session metadata when the file carries it. Only
+                                // untouched fields are overwritten so we don't stomp
+                                // user overrides from an earlier session.
+                                if let Some(hints) =
+                                    RoomEqMeasurementsFile::extract_delay_detection_hints(&json)
+                                {
+                                    let dd = &mut state.app.measurement_state.room_eq_state.delay_detection;
+                                    if let Some(sr) = hints.sample_rate {
+                                        dd.sample_rate = sr;
+                                    }
+                                    if dd.output_device_name.is_none() {
+                                        dd.output_device_name = hints.playback_device_name;
+                                    }
+                                    if dd.input_device_name.is_none() {
+                                        dd.input_device_name = hints.recording_device_name;
+                                    }
+                                }
+
                                 state.app.measurement_state.room_eq_state.apply_smart_defaults();
                             });
                             return;

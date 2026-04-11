@@ -1,8 +1,8 @@
 use crate::theme::Theme;
 use sotf_audio::LoudnessData;
 use sotf_audio::devices::AudioDevice;
-use sotf_audio_player::{Album, ChannelConflict, MusicLibrary, Track};
 use sotf_audio_player::plugin_graph::PluginGraph;
+use sotf_audio_player::{Album, ChannelConflict, MusicLibrary, Track};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -622,7 +622,9 @@ impl App {
         } else {
             // No EQ plugin found — insert one at the user-plugin slot
             let insert_at = self.plugin_graph.user_plugin_insert_index();
-            self.plugin_graph.insert_plugin(insert_at, &PluginType::EQ).ok();
+            self.plugin_graph
+                .insert_plugin(insert_at, &PluginType::EQ)
+                .ok();
             insert_at
         };
 

@@ -697,7 +697,16 @@ pub fn render_transfer_curve_sized(
     width: f32,
     theme: &Theme,
 ) -> impl IntoElement {
-    render_transfer_curve_with_level(d, threshold_db, ratio, knee_db, is_limiter, width, None, theme)
+    render_transfer_curve_with_level(
+        d,
+        threshold_db,
+        ratio,
+        knee_db,
+        is_limiter,
+        width,
+        None,
+        theme,
+    )
 }
 
 /// Render a transfer curve with optional input level indicator.

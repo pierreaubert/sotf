@@ -862,7 +862,12 @@ pub fn render_lufs_with_true_peak(
 
 impl PlayerView {
     /// Render vertical dB legend
-    pub fn render_vertical_legend(&self, d: &Ds, theme: &Theme, align_right: bool) -> impl IntoElement {
+    pub fn render_vertical_legend(
+        &self,
+        d: &Ds,
+        theme: &Theme,
+        align_right: bool,
+    ) -> impl IntoElement {
         let ticks = [0, -6, -12, -18, -24, -30, -40, -50, -60];
         let theme = theme.clone();
         let text_xs = d.text_xs;
@@ -1193,7 +1198,10 @@ impl PlayerView {
                 }
 
                 // Right Legend
-                meter_elements.push(self.render_vertical_legend(&d, &theme, true).into_any_element());
+                meter_elements.push(
+                    self.render_vertical_legend(&d, &theme, true)
+                        .into_any_element(),
+                );
 
                 div()
                     .id("meter-groups-scroll")
@@ -1333,11 +1341,11 @@ impl PlayerView {
             .w_full()
             .p(d.card)
             .bg(theme.background)
-            .child(
-                div()
-                    .w(rems(25.0))
-                    .child(self.render_lufs_with_true_peak(&d, loudness.as_ref(), &theme)),
-            )
+            .child(div().w(rems(25.0)).child(self.render_lufs_with_true_peak(
+                &d,
+                loudness.as_ref(),
+                &theme,
+            )))
     }
 }
 
@@ -1393,10 +1401,7 @@ impl LevelMeterManager for AppState {
         let num_channels = if num_channels == 0 { 2 } else { num_channels };
 
         // Get current speaker config
-        let current_speaker_config = self
-            .plugin_state
-            .graph
-            .output_speaker_config();
+        let current_speaker_config = self.plugin_state.graph.output_speaker_config();
 
         // Skip rebuilding if nothing has changed
         if num_channels == self.level_meter_last_channel_count

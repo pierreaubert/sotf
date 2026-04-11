@@ -186,10 +186,11 @@ pub fn render_mute_solo_plugin(
         ));
 
     // === Main layout, centered ===
-    div()
-        .w_full()
-        .flex()
-        .justify_center()
-        .p(d.pad_x)
-        .child(div().flex().gap(d.section).child(setup_col).child(center_col))
+    div().w_full().flex().justify_center().p(d.pad_x).child(
+        div()
+            .flex()
+            .gap(d.section)
+            .child(setup_col)
+            .child(center_col),
+    )
 }

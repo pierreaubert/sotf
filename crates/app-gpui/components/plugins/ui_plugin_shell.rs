@@ -225,7 +225,12 @@ pub fn render_plugin_shell(
                         .flex()
                         .items_center()
                         .gap(d.gap)
-                        .child(div().text_size(d.text_base).text_color(accent).child(icon.to_string()))
+                        .child(
+                            div()
+                                .text_size(d.text_base)
+                                .text_color(accent)
+                                .child(icon.to_string()),
+                        )
                         .child(
                             div()
                                 .text_size(d.text_sm)

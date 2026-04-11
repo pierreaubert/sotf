@@ -562,44 +562,54 @@ pub fn render_spectrum_analyzer_plugin(
         .gap(d.gap)
         // Main spectrum area with dB axis
         .child(
-            div().flex().gap(d.grid).child(render_db_axis(d, theme)).child(
-                div()
-                    .flex_1()
-                    .h(px(200.0))
-                    .bg(theme.surface)
-                    .rounded(d.r_lg)
-                    .border_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .items_end()
-                    .gap_px()
-                    .p(d.pad_y)
-                    .child(if let Some(data) = state.data {
-                        let magnitudes: Arc<[f32]> = Arc::from(data.magnitudes.as_ref().as_slice());
-                        SpectrumElement::new(magnitudes)
-                            .height(px(200.0))
-                            .frequency_range(state.min_freq, state.max_freq)
-                            .smoothing(state.smoothing)
-                            .colors(SpectrumColors::from(&theme.spectrum_colors))
-                            .into_any_element()
-                    } else {
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size_full()
-                            .text_color(theme.text_muted)
-                            .child("No signal")
-                            .into_any_element()
-                    }),
-            ),
+            div()
+                .flex()
+                .gap(d.grid)
+                .child(render_db_axis(d, theme))
+                .child(
+                    div()
+                        .flex_1()
+                        .h(px(200.0))
+                        .bg(theme.surface)
+                        .rounded(d.r_lg)
+                        .border_1()
+                        .border_color(theme.border)
+                        .flex()
+                        .items_end()
+                        .gap_px()
+                        .p(d.pad_y)
+                        .child(if let Some(data) = state.data {
+                            let magnitudes: Arc<[f32]> =
+                                Arc::from(data.magnitudes.as_ref().as_slice());
+                            SpectrumElement::new(magnitudes)
+                                .height(px(200.0))
+                                .frequency_range(state.min_freq, state.max_freq)
+                                .smoothing(state.smoothing)
+                                .colors(SpectrumColors::from(&theme.spectrum_colors))
+                                .into_any_element()
+                        } else {
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .size_full()
+                                .text_color(theme.text_muted)
+                                .child("No signal")
+                                .into_any_element()
+                        }),
+                ),
         )
         // Frequency axis
         .child(
             div()
                 .flex()
                 .child(div().w(px(32.0)))
-                .child(render_frequency_axis(d, state.min_freq, state.max_freq, theme)),
+                .child(render_frequency_axis(
+                    d,
+                    state.min_freq,
+                    state.max_freq,
+                    theme,
+                )),
         );
 
     // === BOTTOM: Config params (horizontal row with wrapping) ===

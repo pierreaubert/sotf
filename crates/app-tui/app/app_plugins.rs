@@ -16,7 +16,9 @@ impl App {
 
     pub fn add_plugin(&mut self, plugin_type: &PluginType) {
         let insert_idx = self.plugin_graph.user_plugin_insert_index();
-        self.plugin_graph.insert_plugin(insert_idx, plugin_type).ok();
+        self.plugin_graph
+            .insert_plugin(insert_idx, plugin_type)
+            .ok();
         // Update BinauralDecoder input channels after adding
         self.plugin_graph.update_channel_dependent_plugins();
         self.request_plugin_update();

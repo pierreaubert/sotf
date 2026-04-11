@@ -20,5 +20,11 @@ pub fn render_loudness_monitor_plugin(
         .flex_col()
         .gap(d.section)
         .child(render_lufs_with_true_peak(d, loudness.as_ref(), theme))
-        .child(div().flex().flex_col().gap(d.gap).param_section_base(d, theme))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .param_section_base(d, theme),
+        )
 }

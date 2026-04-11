@@ -426,8 +426,7 @@ fn render_response_comparison_graph(
         &frequencies,
         &original_values_raw,
     );
-    let mut original_values: Vec<f64> =
-        original_values_raw.iter().map(|&db| db - offset).collect();
+    let mut original_values: Vec<f64> = original_values_raw.iter().map(|&db| db - offset).collect();
     let mut corrected_values: Vec<f64> =
         corrected_values_raw.iter().map(|&db| db - offset).collect();
 
@@ -440,11 +439,10 @@ fn render_response_comparison_graph(
         if let Some(ref target_vals) = target_interpolated {
             // Normalize target with same 1-2kHz method, then subtract from
             // original/corrected (which already had their own offset subtracted)
-            let target_offset =
-                crate::app::types::RoomEqState::calculate_normalization_offset(
-                    &frequencies,
-                    target_vals,
-                );
+            let target_offset = crate::app::types::RoomEqState::calculate_normalization_offset(
+                &frequencies,
+                target_vals,
+            );
             for (i, v) in original_values.iter_mut().enumerate() {
                 *v -= target_vals[i] - target_offset;
             }
@@ -611,13 +609,11 @@ fn render_response_comparison_graph(
         } else if let Some(ref target_vals) = target_interpolated {
             // Normalize target using same method (1-2kHz band mean) so it aligns
             // with original/corrected at the reference frequency range
-            let target_offset =
-                crate::app::types::RoomEqState::calculate_normalization_offset(
-                    &frequencies,
-                    target_vals,
-                );
-            let relative_target: Vec<f64> =
-                target_vals.iter().map(|v| v - target_offset).collect();
+            let target_offset = crate::app::types::RoomEqState::calculate_normalization_offset(
+                &frequencies,
+                target_vals,
+            );
+            let relative_target: Vec<f64> = target_vals.iter().map(|v| v - target_offset).collect();
             chart_builder =
                 chart_builder.add_series(&relative_target, Some("Target"), RED, 2.0, 0.8);
         }

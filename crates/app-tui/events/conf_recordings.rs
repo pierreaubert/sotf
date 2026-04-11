@@ -581,7 +581,9 @@ fn start_recording_channel(app: &mut App, channel_idx: usize) {
         }
         sotf_audio_player::recording_types::RecordingSignalType::PinkNoise => SignalType::PinkNoise,
         sotf_audio_player::recording_types::RecordingSignalType::DelayProbe => {
-            log::warn!("DelayProbe selected in per-channel mode; use probe_channel_delays() instead. Falling back to Sweep.");
+            log::warn!(
+                "DelayProbe selected in per-channel mode; use probe_channel_delays() instead. Falling back to Sweep."
+            );
             SignalType::Sweep
         }
     };

@@ -113,16 +113,22 @@ pub fn render_downmix_plugin(
                 .flex_col()
                 .gap(d.gap)
                 .child(render_section_title(d, "PHASE COHERENCE", theme))
-                .child(div().flex().items_center().gap(d.section).child(render_toggle(
-                    entity.clone(),
-                    plugin_idx,
-                    "Enable FFT Phase Alignment",
-                    state.phase_coherence,
-                    4,
-                    state.selected_param,
-                    state.is_editing,
-                    theme,
-                )))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(d.section)
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Enable FFT Phase Alignment",
+                            state.phase_coherence,
+                            4,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        )),
+                )
                 .when(state.phase_coherence, |el| {
                     el.child(
                         div()

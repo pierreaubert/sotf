@@ -549,7 +549,12 @@ impl PlayerView {
                             ),
                     )
                     // Status text
-                    .child(div().text_size(d.text_xs).text_color(theme.text_secondary).child(text)),
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_secondary)
+                            .child(text),
+                    ),
             )
             // Cancel button
             .child(

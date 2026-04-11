@@ -85,17 +85,16 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         HeadphoneEqStep::SelectFile => {
             use sotf_audio_player::headphone_eq_types::HeadphoneMeasurementSource;
 
-            let is_spinorama =
-                s.measurement_source == HeadphoneMeasurementSource::Spinorama;
+            let is_spinorama = s.measurement_source == HeadphoneMeasurementSource::Spinorama;
 
             let inner = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3), // source toggle
+                    Constraint::Length(3),                                // source toggle
                     Constraint::Length(if is_spinorama { 8 } else { 3 }), // measurement/search
-                    Constraint::Length(3), // target preset
-                    Constraint::Length(3), // custom target path
-                    Constraint::Min(1),    // help
+                    Constraint::Length(3),                                // target preset
+                    Constraint::Length(3),                                // custom target path
+                    Constraint::Min(1),                                   // help
                 ])
                 .split(content);
 
@@ -271,7 +270,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
         HeadphoneEqStep::Configure => {
             use sotf_audio_player::autoeq::{
-                self, DetailLevel, EqWorkflow, PEQ_MODEL_OPTIONS, HEADPHONE_LOSS_OPTIONS,
+                self, DetailLevel, EqWorkflow, HEADPHONE_LOSS_OPTIONS, PEQ_MODEL_OPTIONS,
             };
 
             let c = &s.config;
@@ -300,11 +299,19 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     }),
                     (None, "── Filter Design ──", String::new()),
                     (Some(0), "Filters (n)", format!("{}", c.num_filters)),
-                    (Some(7), "Filter Type", autoeq::label_for(PEQ_MODEL_OPTIONS, &c.peq_model).to_string()),
+                    (
+                        Some(7),
+                        "Filter Type",
+                        autoeq::label_for(PEQ_MODEL_OPTIONS, &c.peq_model).to_string(),
+                    ),
                     (Some(1), "Min Freq (Hz)", format!("{:.0}", c.min_freq)),
                     (Some(2), "Max Freq (Hz)", format!("{:.0}", c.max_freq)),
                     (None, "── Goal ──", String::new()),
-                    (Some(18), "Loss Function", autoeq::label_for(HEADPHONE_LOSS_OPTIONS, &c.loss).to_string()),
+                    (
+                        Some(18),
+                        "Loss Function",
+                        autoeq::label_for(HEADPHONE_LOSS_OPTIONS, &c.loss).to_string(),
+                    ),
                 ],
                 DetailLevel::Expert => vec![
                     (None, "── Preset ──", String::new()),
@@ -322,8 +329,16 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     (Some(4), "Max dB", format!("{:.1}", c.max_db)),
                     (Some(5), "Min Q", format!("{:.2}", c.min_q)),
                     (Some(6), "Max Q", format!("{:.2}", c.max_q)),
-                    (Some(7), "Filter Type", autoeq::label_for(PEQ_MODEL_OPTIONS, &c.peq_model).to_string()),
-                    (Some(18), "Loss Function", autoeq::label_for(HEADPHONE_LOSS_OPTIONS, &c.loss).to_string()),
+                    (
+                        Some(7),
+                        "Filter Type",
+                        autoeq::label_for(PEQ_MODEL_OPTIONS, &c.peq_model).to_string(),
+                    ),
+                    (
+                        Some(18),
+                        "Loss Function",
+                        autoeq::label_for(HEADPHONE_LOSS_OPTIONS, &c.loss).to_string(),
+                    ),
                     (None, "── Optimization ──", String::new()),
                     (Some(8), "Algorithm", c.algorithm.as_str().to_string()),
                     (Some(9), "Max Iter", format!("{}", c.max_iter)),
@@ -364,7 +379,8 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Show preset description in Simple mode
             if detail == DetailLevel::Simple {
-                if let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset) {
+                if let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
+                {
                     lines.push(Line::from(Span::styled(
                         format!("  {}", preset.description),
                         Style::default().fg(app.theme.fg_secondary),

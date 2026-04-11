@@ -53,13 +53,13 @@ impl InteractiveChartStateWrapper {
 // Domain types shared via sotf-player crate — single source of truth for all apps.
 pub use sotf_audio_player::room_eq_types::{
     BroadbandTargetMatchingConfig, ChannelDspChain, ChannelMatchingUiConfig, ChannelMeasurement,
-    ChannelOptResult, CustomTargetCurve, DriverDspChain, DspChainMetadata, DspChainOutput,
-    DspPluginConfig, EqFilterConfig, ExcursionProtectionConfig, GroupDelayOptConfig,
-    MixedModeUiConfig, MixedPhaseUiConfig, MultiMeasurementUiConfig, MultiSeatConfig,
-    MultiSpeakerMode, PhaseAlignmentConfig, PreRingingConfig, RecordingConfiguration,
-    RoomEqDataSource, RoomEqFirConfig, RoomEqMeasurementsFile, RoomEqOptimizationMode,
-    RoomEqSpeakerConfig, RoomEqStep, SchroederSplitConfig, SpeakerConfigType, SubOptimizerUiConfig,
-    TargetCurveControlPoint, TargetTiltConfig, VoGConfig,
+    ChannelOptResult, CustomTargetCurve, DelayDetectionState, DelayDetectionStatus, DriverDspChain,
+    DspChainMetadata, DspChainOutput, DspPluginConfig, EqFilterConfig, ExcursionProtectionConfig,
+    GroupDelayOptConfig, MixedModeUiConfig, MixedPhaseUiConfig, MultiMeasurementUiConfig,
+    MultiSeatConfig, MultiSpeakerMode, PhaseAlignmentConfig, PreRingingConfig,
+    RecordingConfiguration, RoomEqDataSource, RoomEqFirConfig, RoomEqMeasurementsFile,
+    RoomEqOptimizationMode, RoomEqSpeakerConfig, RoomEqStep, SchroederSplitConfig,
+    SpeakerConfigType, SubOptimizerUiConfig, TargetCurveControlPoint, TargetTiltConfig, VoGConfig,
 };
 pub type CrossoverType = sotf_audio_player::room_eq_types::RoomEqCrossoverType;
 pub use sotf_audio_player::room_eq_types::AutoEqField;
@@ -157,7 +157,15 @@ pub struct RoomEqState {
     /// Loaded channel measurements
     pub channel_measurements: Vec<ChannelMeasurement>,
 
-    // === Step 2: Configuration ===
+    // === Step 2: Delay Detection (tone-burst probe) ===
+    /// Shared state for the tone-burst delay-detection step. Business
+    /// logic (probe/silence durations, status, results, overrides) lives
+    /// in `sotf_audio_player::room_eq_types::DelayDetectionState`. The
+    /// UI in `components/room_eq/step_2_delay_detection.rs` reads and
+    /// mutates this through the normal `state.update(cx, ...)` path.
+    pub delay_detection: DelayDetectionState,
+
+    // === Step 3: Configuration ===
     /// Per-channel speaker configurations
     pub speaker_configs: Vec<RoomEqSpeakerConfig>,
     /// Global optimizer configuration
@@ -223,6 +231,7 @@ impl Default for RoomEqState {
             step: RoomEqStep::LoadData,
             data_source: RoomEqDataSource::FromRecording,
             channel_measurements: Vec::new(),
+            delay_detection: DelayDetectionState::default(),
             speaker_configs: Vec::new(),
             optimizer_config: RoomEqOptimizerConfig::default(),
             optimization_status: OptimizationStatus::Idle,

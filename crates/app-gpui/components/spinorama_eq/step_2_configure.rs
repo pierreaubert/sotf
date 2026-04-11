@@ -1,10 +1,10 @@
 use crate::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
+use crate::components::autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState};
 use crate::components::design::Ds;
 use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use crate::components::autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState};
 use gpui_px::line;
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Card, HStack, Progress, ProgressSize,
@@ -651,13 +651,12 @@ impl PlayerView {
                 move |level, _window, cx| {
                     use sotf_audio_player::autoeq::DetailLevel;
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.spinorama_eq_state.detail_level =
-                            match level {
-                                "simple" => DetailLevel::Simple,
-                                "intermediate" => DetailLevel::Intermediate,
-                                "expert" => DetailLevel::Expert,
-                                _ => DetailLevel::Simple,
-                            };
+                        state.app.measurement_state.spinorama_eq_state.detail_level = match level {
+                            "simple" => DetailLevel::Simple,
+                            "intermediate" => DetailLevel::Intermediate,
+                            "expert" => DetailLevel::Expert,
+                            _ => DetailLevel::Simple,
+                        };
                         cx.notify();
                     });
                 }

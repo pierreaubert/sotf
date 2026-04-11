@@ -8,7 +8,8 @@ use sotf_audio_player::recording_types::{
     RecordingStep,
 };
 use sotf_audio_player::room_eq_types::{
-    ChannelMeasurement, ChannelOptResult, OptimizationStatus, RoomEqOptimizerConfig, RoomEqStep,
+    ChannelMeasurement, ChannelOptResult, DelayDetectionState, OptimizationStatus,
+    RoomEqOptimizerConfig, RoomEqStep,
 };
 use sotf_audio_player::spinorama_eq_types::{SpinoramaBiquad, SpinoramaOptimizerConfig};
 use std::collections::VecDeque;
@@ -297,8 +298,9 @@ impl HeadphoneEqTuiState {
         }
         // Clamp index
         if !self.filtered_headphones.is_empty() {
-            self.selected_headphone_idx =
-                self.selected_headphone_idx.min(self.filtered_headphones.len() - 1);
+            self.selected_headphone_idx = self
+                .selected_headphone_idx
+                .min(self.filtered_headphones.len() - 1);
         } else {
             self.selected_headphone_idx = 0;
         }
@@ -365,7 +367,27 @@ pub struct RoomEqTuiState {
     pub editing_file_path: bool,
     pub channel_measurements: Vec<ChannelMeasurement>,
     pub load_error: Option<String>,
-    // Step 2: configure (shared config struct)
+    // Step 2: delay detection (tone-burst probe). Business state lives in
+    // the shared `DelayDetectionState`; the `dd_*` fields below are
+    // TUI-only UI state.
+    pub delay_detection: DelayDetectionState,
+    /// Index of the currently focused form field on the delay-detection
+    /// step (0..=3: probe_duration, silence_duration, input_channel,
+    /// Run button). Scroll-local cursor only — no semantic meaning.
+    pub dd_field: usize,
+    /// Row index of the results table currently highlighted for editing.
+    /// Row selection navigates with `j` / `k`; `e` starts editing the
+    /// row pointed to by this cursor.
+    pub dd_selected_row: usize,
+    /// Row index of the results table being edited, or `None` when no
+    /// override edit is in progress.
+    pub dd_edit_row: Option<usize>,
+    /// Set when the user hits `r` while `edited_arrival_ms` is non-empty.
+    /// A second `r` within the same focus session confirms and starts a
+    /// fresh measurement (which wipes the overrides); any other key
+    /// clears the flag, so the next `r` re-prompts.
+    pub dd_pending_rerun_confirm: bool,
+    // Step 3: configure (shared config struct)
     pub config: RoomEqOptimizerConfig,
     pub selected_field: usize,
     pub selected_section: usize,
@@ -408,6 +430,11 @@ impl Default for RoomEqTuiState {
             editing_file_path: false,
             channel_measurements: Vec::new(),
             load_error: None,
+            delay_detection: DelayDetectionState::default(),
+            dd_field: 0,
+            dd_selected_row: 0,
+            dd_edit_row: None,
+            dd_pending_rerun_confirm: false,
             config: RoomEqOptimizerConfig::default(),
             selected_field: 0,
             selected_section: 0,

@@ -1,9 +1,9 @@
 use crate::app::types::RoomEqOptimizationMode;
+use crate::components::autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use crate::components::autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize, TextWeight,
     VStack,
@@ -1509,13 +1509,12 @@ impl PlayerView {
                 move |level, _window, cx| {
                     use sotf_audio_player::autoeq::DetailLevel;
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.detail_level =
-                            match level {
-                                "simple" => DetailLevel::Simple,
-                                "intermediate" => DetailLevel::Intermediate,
-                                "expert" => DetailLevel::Expert,
-                                _ => DetailLevel::Simple,
-                            };
+                        state.app.measurement_state.room_eq_state.detail_level = match level {
+                            "simple" => DetailLevel::Simple,
+                            "intermediate" => DetailLevel::Intermediate,
+                            "expert" => DetailLevel::Expert,
+                            _ => DetailLevel::Simple,
+                        };
                         cx.notify();
                     });
                 }

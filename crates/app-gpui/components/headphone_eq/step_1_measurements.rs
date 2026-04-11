@@ -479,12 +479,7 @@ impl PlayerView {
             .build();
 
         match chart {
-            Ok(el) => div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .w_full()
-                .child(el),
+            Ok(el) => div().flex().flex_col().items_center().w_full().child(el),
             Err(e) => div().child(
                 gpui_ui_kit::Text::new(format!("Graph error: {}", e))
                     .size(gpui_ui_kit::TextSize::Xs)

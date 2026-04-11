@@ -486,7 +486,10 @@ fn render_eq_visualization(
         let border_color = if is_selected {
             theme.text_primary
         } else {
-            Rgba { a: 0.5, ..theme.text_primary }
+            Rgba {
+                a: 0.5,
+                ..theme.text_primary
+            }
         };
 
         // Calculate Q bar width
@@ -525,7 +528,10 @@ fn render_eq_visualization(
                 .border_color(if is_selected {
                     theme.text_primary
                 } else {
-                    Rgba { a: 0.4, ..theme.text_primary }
+                    Rgba {
+                        a: 0.4,
+                        ..theme.text_primary
+                    }
                 })
                 .cursor(gpui::CursorStyle::ResizeLeftRight)
                 .hover(|s| s.size(px(Q_HANDLE_RADIUS * 2.5)))
@@ -599,7 +605,10 @@ fn render_eq_visualization(
                 .border_color(if is_selected {
                     theme.text_primary
                 } else {
-                    Rgba { a: 0.4, ..theme.text_primary }
+                    Rgba {
+                        a: 0.4,
+                        ..theme.text_primary
+                    }
                 })
                 .cursor(gpui::CursorStyle::ResizeLeftRight)
                 .hover(|s| s.size(px(Q_HANDLE_RADIUS * 2.5)))
@@ -1279,7 +1288,12 @@ pub fn render_eq_plugin(
                             .flex()
                             .flex_col()
                             .gap(ds.grid)
-                            .child(div().text_size(ds.text_xs).text_color(theme.text_muted).child("Type"))
+                            .child(
+                                div()
+                                    .text_size(ds.text_xs)
+                                    .text_color(theme.text_muted)
+                                    .child("Type"),
+                            )
                             .child(render_filter_type_selector(
                                 &ds,
                                 entity.clone(),

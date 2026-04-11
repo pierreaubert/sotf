@@ -665,8 +665,11 @@ impl PluginGraph {
             NodeRole::OutputMonitor,
             true,
         );
-        let output_id =
-            g.add_special_node(SpecialNodeType::Output, NodePosition::new(spacing * 5.0, y), 2);
+        let output_id = g.add_special_node(
+            SpecialNodeType::Output,
+            NodePosition::new(spacing * 5.0, y),
+            2,
+        );
 
         // Wire linearly (stereo: connect port 0 and port 1)
         let chain = [input_id, im, rg, mx, om, output_id];
@@ -734,10 +737,7 @@ impl PluginGraph {
 
         // Every node must have ≤1 outgoing and ≤1 incoming logical edge
         let total_nodes = self.nodes.len() + self.special_nodes.len();
-        let all_ids = self
-            .nodes
-            .keys()
-            .chain(self.special_nodes.keys());
+        let all_ids = self.nodes.keys().chain(self.special_nodes.keys());
 
         for &id in all_ids {
             let out_count = logical_edges.iter().filter(|(f, _)| *f == id).count();
@@ -802,9 +802,7 @@ impl PluginGraph {
     /// Insert a user plugin before the Matrix node in a linear graph.
     /// Returns the new node's ID, or an error if the graph is not linear.
     pub fn add_user_plugin(&mut self, plugin_type: &PluginType) -> Result<GraphNodeId, String> {
-        let order = self
-            .linear_order()
-            .ok_or("Graph is not linear")?;
+        let order = self.linear_order().ok_or("Graph is not linear")?;
 
         // Find the Matrix node position in the chain
         let matrix_id = self
@@ -825,10 +823,7 @@ impl PluginGraph {
         // Position the new node between predecessor and Matrix
         let pred_pos = self.node_position(pred_id).unwrap_or_default();
         let matrix_node_pos = self.node_position(matrix_id).unwrap_or_default();
-        let new_pos = NodePosition::new(
-            (pred_pos.x + matrix_node_pos.x) / 2.0,
-            pred_pos.y,
-        );
+        let new_pos = NodePosition::new((pred_pos.x + matrix_node_pos.x) / 2.0, pred_pos.y);
 
         // Create the new plugin node
         let new_id = self.add_plugin_node_with_role(plugin_type, new_pos, NodeRole::User, false);
@@ -841,17 +836,12 @@ impl PluginGraph {
 
     /// Remove a user plugin and re-wire its predecessor to its successor.
     pub fn remove_user_plugin(&mut self, node_id: GraphNodeId) -> Result<(), String> {
-        let node = self
-            .nodes
-            .get(&node_id)
-            .ok_or("Node not found")?;
+        let node = self.nodes.get(&node_id).ok_or("Node not found")?;
         if node.role != NodeRole::User {
             return Err("Cannot remove permanent plugin".to_string());
         }
 
-        let order = self
-            .linear_order()
-            .ok_or("Graph is not linear")?;
+        let order = self.linear_order().ok_or("Graph is not linear")?;
         let pos = order
             .iter()
             .position(|&id| id == node_id)
@@ -868,7 +858,10 @@ impl PluginGraph {
             .retain(|c| c.from_node != node_id && c.to_node != node_id);
         self.nodes.remove(&node_id);
 
-        let ch = self.node_output_channels(pred_id).min(self.node_input_channels(succ_id)).max(1);
+        let ch = self
+            .node_output_channels(pred_id)
+            .min(self.node_input_channels(succ_id))
+            .max(1);
         for port in 0..ch {
             let _ = self.add_connection(pred_id, port, succ_id, port);
         }
@@ -1125,7 +1118,11 @@ impl PluginGraph {
 
     /// Insert a plugin at a specific linear index. The node is wired into the chain.
     /// Equivalent to `PluginChain::insert_plugin()`.
-    pub fn insert_plugin(&mut self, index: usize, plugin_type: &PluginType) -> Result<GraphNodeId, String> {
+    pub fn insert_plugin(
+        &mut self,
+        index: usize,
+        plugin_type: &PluginType,
+    ) -> Result<GraphNodeId, String> {
         let order = self.linear_order().ok_or("Graph is not linear")?;
         let plugin_ids: Vec<GraphNodeId> = order
             .iter()
@@ -1376,14 +1373,18 @@ impl PluginGraph {
 
     /// Whether the plugin at `index` in linear order is the input monitor.
     pub fn is_input_monitor(&self, index: usize) -> bool {
-        self.plugins_linear()
-            .is_some_and(|p| p.get(index).is_some_and(|n| n.role == NodeRole::InputMonitor))
+        self.plugins_linear().is_some_and(|p| {
+            p.get(index)
+                .is_some_and(|n| n.role == NodeRole::InputMonitor)
+        })
     }
 
     /// Whether the plugin at `index` in linear order is the output monitor.
     pub fn is_output_monitor(&self, index: usize) -> bool {
-        self.plugins_linear()
-            .is_some_and(|p| p.get(index).is_some_and(|n| n.role == NodeRole::OutputMonitor))
+        self.plugins_linear().is_some_and(|p| {
+            p.get(index)
+                .is_some_and(|n| n.role == NodeRole::OutputMonitor)
+        })
     }
 
     /// Index of the insert position for user plugins (before the Matrix).
@@ -1616,10 +1617,7 @@ impl PluginGraph {
                             current_channels,
                         );
                         let mut new_states = channel_states.clone();
-                        new_states.resize(
-                            current_channels,
-                            sotf_plugins::ChannelState::default(),
-                        );
+                        new_states.resize(current_channels, sotf_plugins::ChannelState::default());
                         updated_settings = Some(PluginSettings::Matrix {
                             input_channels: current_channels,
                             output_channels: current_channels,
@@ -1865,11 +1863,8 @@ impl PluginGraph {
                 .and_then(|id| self.node_position(id))
                 .map(|p| p.x - 10.0)
                 .unwrap_or(400.0);
-            let node = PluginGraphNode::with_role(
-                plugin,
-                NodePosition::new(pos_x, 200.0),
-                NodeRole::User,
-            );
+            let node =
+                PluginGraphNode::with_role(plugin, NodePosition::new(pos_x, 200.0), NodeRole::User);
             let node_id = node.id;
             self.nodes.insert(node_id, node);
 
@@ -1908,10 +1903,7 @@ impl PluginGraph {
 
         // If linear, simple arrow chain
         if let Some(order) = self.linear_order() {
-            let names: Vec<String> = order
-                .iter()
-                .map(|id| self.node_display_name(*id))
-                .collect();
+            let names: Vec<String> = order.iter().map(|id| self.node_display_name(*id)).collect();
             // Split into lines of ~80 chars
             let mut lines = Vec::new();
             let mut line = String::new();
@@ -1984,7 +1976,10 @@ impl PluginGraph {
             arrow_line.push_str(&format!("{:^16}", if count > 1 { "┤" } else { "─" }));
         }
         lines.insert(0, arrow_line);
-        lines.insert(0, "(non-linear graph — use GUI for full editing)".to_string());
+        lines.insert(
+            0,
+            "(non-linear graph — use GUI for full editing)".to_string(),
+        );
 
         lines
     }
@@ -2128,7 +2123,9 @@ impl PluginGraph {
     pub fn spectrum_engine_index(&self) -> Option<usize> {
         self.nodes
             .values()
-            .find(|n| n.plugin.enabled && matches!(n.plugin.plugin_type(), PluginType::SpectrumAnalyzer))
+            .find(|n| {
+                n.plugin.enabled && matches!(n.plugin.plugin_type(), PluginType::SpectrumAnalyzer)
+            })
             .and_then(|n| self.get_engine_index(n.id))
     }
 
@@ -2524,9 +2521,16 @@ mod tests {
         let types: Vec<&str> = configs.iter().map(|c| c.plugin_type.as_str()).collect();
 
         // Spectrum should come before compressor (user ordering preserved)
-        let spec_pos = types.iter().position(|&t| t == "spectrum_analyzer").unwrap();
+        let spec_pos = types
+            .iter()
+            .position(|&t| t == "spectrum_analyzer")
+            .unwrap();
         let comp_pos = types.iter().position(|&t| t == "compressor").unwrap();
-        assert!(spec_pos < comp_pos, "spectrum_analyzer should come before compressor but got {:?}", types);
+        assert!(
+            spec_pos < comp_pos,
+            "spectrum_analyzer should come before compressor but got {:?}",
+            types
+        );
     }
 
     #[test]
@@ -2538,9 +2542,18 @@ mod tests {
         g.update_channel_dependent_plugins();
 
         let matrix = g.node_for_role(NodeRole::Matrix).unwrap();
-        if let PluginSettings::Matrix { channel_states, input_channels, .. } = &matrix.plugin.settings {
+        if let PluginSettings::Matrix {
+            channel_states,
+            input_channels,
+            ..
+        } = &matrix.plugin.settings
+        {
             assert_eq!(*input_channels, 6);
-            assert_eq!(channel_states.len(), 6, "channel_states should be resized to match input_channels");
+            assert_eq!(
+                channel_states.len(),
+                6,
+                "channel_states should be resized to match input_channels"
+            );
         } else {
             panic!("Expected Matrix settings");
         }
@@ -2552,7 +2565,11 @@ mod tests {
         let lines = g.to_ascii_diagram();
         assert!(!lines.is_empty());
         let joined = lines.join(" ");
-        assert!(joined.contains("→"), "Linear diagram should contain arrows: {}", joined);
+        assert!(
+            joined.contains("→"),
+            "Linear diagram should contain arrows: {}",
+            joined
+        );
         assert!(joined.contains("Audio Input"), "Should show Input node");
         assert!(joined.contains("Audio Output"), "Should show Output node");
     }
@@ -2572,6 +2589,9 @@ mod tests {
         let lines = g.to_ascii_diagram();
         assert!(!lines.is_empty());
         let joined = lines.join("\n");
-        assert!(joined.contains("non-linear"), "Non-linear diagram should indicate non-linearity");
+        assert!(
+            joined.contains("non-linear"),
+            "Non-linear diagram should indicate non-linearity"
+        );
     }
 }

@@ -124,12 +124,11 @@ pub fn render_simple_plugin_view(
 
     for (group_name, rows) in groups {
         // Section title above each group table
-        container = container.child(
-            div()
-                .mt(d.gap)
-                .mb(d.grid)
-                .child(render_section_title(d, &group_name.to_uppercase(), theme)),
-        );
+        container = container.child(div().mt(d.gap).mb(d.grid).child(render_section_title(
+            d,
+            &group_name.to_uppercase(),
+            theme,
+        )));
 
         // Determine which row in this group is selected
         let selected_in_group: HashSet<usize> = if is_editing {
@@ -166,7 +165,12 @@ pub fn render_simple_plugin_view(
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {
                     let is_sel = selected_in_group_for_name.contains(&row_idx);
-                    let mut name_row = div().w_full().flex().justify_end().items_center().gap(ds_for_name.grid);
+                    let mut name_row = div()
+                        .w_full()
+                        .flex()
+                        .justify_end()
+                        .items_center()
+                        .gap(ds_for_name.grid);
 
                     // MIDI badge (before param name)
                     if let Some(ref assignment) = row.midi_assignment {

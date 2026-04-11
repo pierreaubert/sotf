@@ -594,7 +594,6 @@ fn optimize_from_curve(
     })
 }
 
-
 /// Load a MeasurementInput into an autoeq DriverMeasurement
 fn load_measurement_as_driver(
     input: &MeasurementInput,

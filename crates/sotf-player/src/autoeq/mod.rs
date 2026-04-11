@@ -57,8 +57,7 @@ pub use params::{
 // Re-export preset types
 pub use presets::{
     DetailLevel, EqPreset, EqWorkflow, default_preset_id, field_hint, field_warning, find_preset,
-    population_to_quality, preset_options, presets_for, quality_label,
-    quality_to_optimizer_params,
+    population_to_quality, preset_options, presets_for, quality_label, quality_to_optimizer_params,
 };
 
 // Re-export headphone types
@@ -111,10 +110,12 @@ pub use multi_speaker::{
     TargetCurveConfig,
     build_room_config_from_curves,
     optimize_room,
+    optimize_room_with_probe_arrivals,
     optimize_speaker,
     optimizer_config_from_args,
     // Functions
     run_room_optimization,
+    run_room_optimization_with_probe_arrivals,
     save_dsp_chain,
     to_single_speaker_results,
 };

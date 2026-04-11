@@ -4,10 +4,10 @@
 //! a scrollable plugin strip, an "add plugin" picker, and remove/move controls.
 
 use crate::app::state::plugin::ABPathTarget;
+use crate::components::design::Ds;
 use crate::components::plugins::actions::{
     ABPathAddPlugin, ABPathMovePlugin, ABPathRemovePlugin, ABPathToggleAddMenu,
 };
-use crate::components::design::Ds;
 use crate::components::plugins::custom_view_registry::CustomViewRenderContext;
 use crate::theme::Theme;
 use crate::ui::PlayerView;

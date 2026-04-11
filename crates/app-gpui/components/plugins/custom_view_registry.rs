@@ -260,10 +260,7 @@ fn render_loudness(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) 
     .into_any_element()
 }
 
-fn render_mb_compressor(
-    ctx: &CustomViewRenderContext,
-    cx: &mut Context<PlayerView>,
-) -> AnyElement {
+fn render_mb_compressor(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement {
     let d = Ds::from_cx(cx);
     use super::ui_mb_compressor;
     if let PluginSettings::MultibandCompressor {

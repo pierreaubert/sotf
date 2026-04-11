@@ -1,7 +1,7 @@
 //! Keybindings settings content
 
-use crate::components::design::Ds;
 use crate::app::keybindings::{KeybindingCategory, KeymapPreset, get_documented_keybindings};
+use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -108,7 +108,13 @@ impl PlayerView {
                             // Table body by category
                             .children(KeybindingCategory::all().iter().filter_map(|category| {
                                 by_category.get(category).map(|rows| {
-                                    render_category_section(&d, *category, rows, &theme, current_preset)
+                                    render_category_section(
+                                        &d,
+                                        *category,
+                                        rows,
+                                        &theme,
+                                        current_preset,
+                                    )
                                 })
                             })),
                     ),
@@ -171,7 +177,8 @@ fn render_table_header(d: &Ds, theme: &crate::app::Theme) -> impl IntoElement {
         )
 }
 
-fn render_category_section(d: &Ds, 
+fn render_category_section(
+    d: &Ds,
     category: KeybindingCategory,
     rows: &[(String, HashMap<KeymapPreset, String>)],
     theme: &crate::app::Theme,
@@ -187,7 +194,8 @@ fn render_category_section(d: &Ds,
     let row_elements: Vec<_> = rows
         .iter()
         .map(|(action, keys)| {
-            render_comparison_row(d, 
+            render_comparison_row(
+                d,
                 action.clone(),
                 keys.clone(),
                 current_preset,
@@ -224,7 +232,8 @@ fn render_category_section(d: &Ds,
         .children(row_elements)
 }
 
-fn render_comparison_row(d: &Ds, 
+fn render_comparison_row(
+    d: &Ds,
     action: String,
     keys: HashMap<KeymapPreset, String>,
     current_preset: KeymapPreset,

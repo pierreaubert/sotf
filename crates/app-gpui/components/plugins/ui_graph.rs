@@ -418,32 +418,38 @@ impl PlayerView {
                     .text_color(theme.text_muted)
                     .child("INPUT"),
             )
-            .child(div().flex().flex_col().gap(d.grid).px(d.pad_y).mb(d.gap_md).children(
-                input_items.into_iter().map(|(label, item_type, color)| {
-                    let drag_data = PaletteDragData {
-                        item_type,
-                        label: label.to_string(),
-                        color,
-                        text_on_accent: theme.text_on_accent,
-                    };
-                    div()
-                        .id(SharedString::from(format!("palette-{}", label)))
-                        .px(d.pad_y)
-                        .py(d.pad_y_half)
-                        .rounded(d.r_md)
-                        .bg(theme.background)
-                        .border_l_2()
-                        .border_color(color)
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_secondary)
-                        .cursor_grab()
-                        .hover(|s| s.bg(theme.background_secondary))
-                        .on_drag(drag_data, |info, _pos, _window, cx| {
-                            cx.new(|_| info.clone())
-                        })
-                        .child(label)
-                }),
-            ))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(d.grid)
+                    .px(d.pad_y)
+                    .mb(d.gap_md)
+                    .children(input_items.into_iter().map(|(label, item_type, color)| {
+                        let drag_data = PaletteDragData {
+                            item_type,
+                            label: label.to_string(),
+                            color,
+                            text_on_accent: theme.text_on_accent,
+                        };
+                        div()
+                            .id(SharedString::from(format!("palette-{}", label)))
+                            .px(d.pad_y)
+                            .py(d.pad_y_half)
+                            .rounded(d.r_md)
+                            .bg(theme.background)
+                            .border_l_2()
+                            .border_color(color)
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_secondary)
+                            .cursor_grab()
+                            .hover(|s| s.bg(theme.background_secondary))
+                            .on_drag(drag_data, |info, _pos, _window, cx| {
+                                cx.new(|_| info.clone())
+                            })
+                            .child(label)
+                    })),
+            )
             // Plugins section header
             .child(
                 div()
@@ -463,7 +469,12 @@ impl PlayerView {
                     .gap(d.grid)
                     .px(d.pad_y)
                     .mb(d.gap)
-                    .child(div().text_size(d.text_xs).text_color(theme.text_muted).child(category))
+                    .child(
+                        div()
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_muted)
+                            .child(category),
+                    )
                     .children(plugins.into_iter().map(|(plugin_type, label)| {
                         let color = plugin_color(&plugin_type, &theme);
                         let drag_data = PaletteDragData {

@@ -595,8 +595,12 @@ impl PlayerView {
             .border_color(theme.border)
             .child(
                 // Decade buttons row
-                div().flex().flex_wrap().justify_center().gap(d.grid).children(
-                    decade_counts.into_iter().map(|(start, end, count)| {
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .justify_center()
+                    .gap(d.grid)
+                    .children(decade_counts.into_iter().map(|(start, end, count)| {
                         let is_selected = selected_decade == Some((start, end));
                         let label = format!("{}s ({})", start, count);
 
@@ -631,8 +635,7 @@ impl PlayerView {
                                 cx.notify();
                             }),
                         )
-                    }),
-                ),
+                    })),
             )
             .when_some(selected_decade, |el, (decade_start, decade_end)| {
                 // Year buttons for selected decade
@@ -869,8 +872,12 @@ impl PlayerView {
             .border_color(theme.border)
             .child(
                 // Letter buttons row
-                div().flex().flex_wrap().justify_center().gap(d.grid).children(
-                    letters.into_iter().map(|letter| {
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .justify_center()
+                    .gap(d.grid)
+                    .children(letters.into_iter().map(|letter| {
                         let is_selected = selected_letter == Some(letter);
 
                         Button::new(
@@ -904,8 +911,7 @@ impl PlayerView {
                                 cx.notify();
                             }),
                         )
-                    }),
-                ),
+                    })),
             )
             // Artist names row (when a letter is selected)
             .when(!artists_for_letter.is_empty(), |el| {
@@ -1047,8 +1053,12 @@ impl PlayerView {
             .border_color(theme.border)
             .child(
                 // Letter buttons row
-                div().flex().flex_wrap().justify_center().gap(d.grid).children(
-                    letters.into_iter().map(|letter| {
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .justify_center()
+                    .gap(d.grid)
+                    .children(letters.into_iter().map(|letter| {
                         let is_selected = selected_letter == Some(letter);
 
                         Button::new(
@@ -1082,8 +1092,7 @@ impl PlayerView {
                                 cx.notify();
                             }),
                         )
-                    }),
-                ),
+                    })),
             )
             // Composer names row (when a letter is selected)
             .when(!composers_for_letter.is_empty(), |el| {

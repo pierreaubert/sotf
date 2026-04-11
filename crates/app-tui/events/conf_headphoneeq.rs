@@ -155,11 +155,9 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     }
                     KeyCode::Down => {
                         if !app.headphone_eq.filtered_headphones.is_empty() {
-                            app.headphone_eq.selected_headphone_idx = (app
-                                .headphone_eq
-                                .selected_headphone_idx
-                                + 1)
-                                .min(app.headphone_eq.filtered_headphones.len() - 1);
+                            app.headphone_eq.selected_headphone_idx =
+                                (app.headphone_eq.selected_headphone_idx + 1)
+                                    .min(app.headphone_eq.filtered_headphones.len() - 1);
                         }
                     }
                     KeyCode::Up => {
@@ -603,7 +601,9 @@ fn headphone_eq_visible_fields(detail: sotf_audio_player::autoeq::DetailLevel) -
     match detail {
         DetailLevel::Simple => vec![100],
         DetailLevel::Intermediate => vec![100, 0, 7, 1, 2, 18],
-        DetailLevel::Expert => vec![100, 0, 1, 2, 3, 4, 5, 6, 7, 18, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+        DetailLevel::Expert => vec![
+            100, 0, 1, 2, 3, 4, 5, 6, 7, 18, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+        ],
     }
 }
 
@@ -734,11 +734,8 @@ fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
             .iter()
             .map(|(id, _)| *id)
             .collect();
-        app.headphone_eq.config.loss = super::cycle_string(
-            &app.headphone_eq.config.loss,
-            &losses,
-            delta,
-        );
+        app.headphone_eq.config.loss =
+            super::cycle_string(&app.headphone_eq.config.loss, &losses, delta);
         return;
     }
     let c = &mut app.headphone_eq.config;

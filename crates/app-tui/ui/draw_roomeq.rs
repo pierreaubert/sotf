@@ -182,6 +182,10 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             }
         }
 
+        RoomEqStep::DelayDetection => {
+            draw_delay_detection_step(f, content, app);
+        }
+
         RoomEqStep::Configure => {
             let c = &s.config;
             let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
@@ -364,9 +368,12 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 OptimizationStatus::Running => {
                     let speaker_info = if !s.opt_current_speaker.is_empty() {
                         if s.opt_total_speakers > 1 {
-                            format!(" | {}/{} {}",
+                            format!(
+                                " | {}/{} {}",
                                 s.opt_total_speakers.min(s.channel_results.len() + 1),
-                                s.opt_total_speakers, s.opt_current_speaker)
+                                s.opt_total_speakers,
+                                s.opt_current_speaker
+                            )
                         } else {
                             format!(" | {}", s.opt_current_speaker)
                         }
@@ -664,4 +671,221 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             }
         }
     }
+}
+
+/// Render the "Delay Detection" wizard step.
+///
+/// Three panes stacked vertically:
+///   1. Form: probe duration / silence / mic channel + Run button
+///   2. Status line: Idle / Running progress / Complete / Failed(msg)
+///   3. Results table: Channel | Arrival (ms) | Gain (dB) | SNR | Delay (ms)
+///
+/// The SNR column is color-coded (green >10, yellow 0–10, red <0) so the
+/// user can tell at a glance which channels had a confident detection.
+fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
+    use sotf_audio_player::room_eq_types::{DelayDetectionStatus, estimate_probe_sequence_ms};
+
+    let s = &app.room_eq;
+    let dd = &s.delay_detection;
+
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7), // form (4 rows + borders)
+            Constraint::Length(3), // status / progress
+            Constraint::Min(5),    // results
+            Constraint::Length(1), // help
+        ])
+        .split(content);
+
+    // --- Form ----------------------------------------------------------
+    let focused_style = Style::default()
+        .fg(app.theme.accent_primary)
+        .add_modifier(Modifier::BOLD);
+    let unfocused_style = Style::default().fg(app.theme.fg_primary);
+    let field_style = |idx: usize| {
+        if s.dd_field == idx {
+            focused_style
+        } else {
+            unfocused_style
+        }
+    };
+
+    let form_rows: Vec<Row> = vec![
+        Row::new(vec![
+            Cell::from("Probe Duration (ms)").style(field_style(0)),
+            Cell::from(format!("{:.0}", dd.probe_duration_ms)).style(field_style(0)),
+        ]),
+        Row::new(vec![
+            Cell::from("Silence Gap (ms)").style(field_style(1)),
+            Cell::from(format!("{:.0}", dd.silence_duration_ms)).style(field_style(1)),
+        ]),
+        Row::new(vec![
+            Cell::from("Mic Input Channel").style(field_style(2)),
+            Cell::from(format!("{}", dd.input_channel)).style(field_style(2)),
+        ]),
+        Row::new(vec![
+            Cell::from("[ Run Detection ]").style(field_style(3)),
+            Cell::from(match dd.status {
+                DelayDetectionStatus::Running { .. } => "running...",
+                DelayDetectionStatus::Complete => "done",
+                DelayDetectionStatus::Failed(_) => "failed",
+                DelayDetectionStatus::Idle => "press r",
+            })
+            .style(field_style(3)),
+        ]),
+    ];
+    let form = Table::new(
+        form_rows,
+        [Constraint::Length(24), Constraint::Percentage(60)],
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Delay Detection"),
+    );
+    f.render_widget(form, inner[0]);
+
+    // --- Status / progress --------------------------------------------
+    // The engine has no per-channel progress callback, so we estimate
+    // "fraction done" as (wall-clock elapsed) / (predicted total) based
+    // on the form inputs. Good enough to show the user something is
+    // happening; never misleading because it plateaus at 100% until
+    // results actually arrive.
+    let estimated_total = estimate_probe_sequence_ms(
+        s.channel_measurements.len(),
+        dd.probe_duration_ms,
+        dd.silence_duration_ms,
+    );
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let (status_text, status_color) = match &dd.status {
+        DelayDetectionStatus::Idle => (
+            "Idle — press `r` to measure per-channel delays".to_string(),
+            app.theme.fg_secondary,
+        ),
+        DelayDetectionStatus::Running { .. } => {
+            let pct = dd
+                .status
+                .progress(estimated_total, now_ms)
+                .map(|p| format!("{:.0}%", p * 100.0))
+                .unwrap_or_else(|| "…".to_string());
+            (format!("Running... {}", pct), app.theme.accent_primary)
+        }
+        DelayDetectionStatus::Complete => {
+            let n = dd.results.as_ref().map(|r| r.channels.len()).unwrap_or(0);
+            (
+                format!("Complete — detected {} channel(s)", n),
+                app.theme.accent_success,
+            )
+        }
+        DelayDetectionStatus::Failed(msg) => (format!("Failed: {}", msg), app.theme.accent_error),
+    };
+    let status_widget = Paragraph::new(status_text)
+        .style(Style::default().fg(status_color))
+        .block(Block::default().borders(Borders::ALL).title("Status"));
+    f.render_widget(status_widget, inner[1]);
+
+    // --- Results table -------------------------------------------------
+    if let Some(results) = dd.results.as_ref() {
+        // Recompute alignment delays from the *edited* arrival times so
+        // user overrides are reflected live instead of the engine's
+        // original (pre-edit) numbers.
+        let live_alignment = dd.edited_alignment_delays_ms();
+        let selected_row = s
+            .dd_selected_row
+            .min(results.channels.len().saturating_sub(1));
+        let rows: Vec<Row> = results
+            .channels
+            .iter()
+            .enumerate()
+            .map(|(i, ch)| {
+                let snr_color = if ch.snr_db > 10.0 {
+                    app.theme.accent_success
+                } else if ch.snr_db > 0.0 {
+                    app.theme.accent_primary
+                } else {
+                    app.theme.accent_error
+                };
+                let arrival = dd
+                    .edited_arrival_ms
+                    .get(i)
+                    .copied()
+                    .unwrap_or(ch.arrival_ms);
+                let alignment = live_alignment
+                    .get(i)
+                    .copied()
+                    .or_else(|| results.alignment_delays_ms.get(i).copied())
+                    .unwrap_or(0.0);
+                let row_style = if i == selected_row {
+                    Style::default()
+                        .fg(app.theme.bg_primary)
+                        .bg(app.theme.accent_primary)
+                } else {
+                    Style::default()
+                };
+                Row::new(vec![
+                    Cell::from(ch.channel_name.clone()),
+                    Cell::from(format!("{:.2}", arrival)),
+                    Cell::from(format!("{:+.1}", ch.gain_db)),
+                    Cell::from(format!("{:+.1}", ch.snr_db)).style(Style::default().fg(snr_color)),
+                    Cell::from(format!("{:.2}", alignment)),
+                ])
+                .style(row_style)
+            })
+            .collect();
+
+        let header = Row::new(vec![
+            Cell::from("Channel"),
+            Cell::from("Arrival ms"),
+            Cell::from("Gain dB"),
+            Cell::from("SNR dB"),
+            Cell::from("Align ms"),
+        ])
+        .style(
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        );
+
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(12),
+                Constraint::Length(12),
+                Constraint::Length(10),
+                Constraint::Length(10),
+                Constraint::Length(12),
+            ],
+        )
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title("Results"));
+        f.render_widget(table, inner[2]);
+    } else {
+        let empty = Paragraph::new(" No results yet — run detection to measure channels")
+            .style(Style::default().fg(app.theme.fg_secondary))
+            .block(Block::default().borders(Borders::ALL).title("Results"));
+        f.render_widget(empty, inner[2]);
+    }
+
+    // --- Help line -----------------------------------------------------
+    let help = if s.dd_edit_row.is_some() {
+        " Type arrival ms | Enter=confirm | Esc=cancel".to_string()
+    } else if s.dd_pending_rerun_confirm {
+        " Re-run wipes edited overrides. Press r again to confirm, any other key to cancel"
+            .to_string()
+    } else {
+        " Tab=next field  ←→=adjust  r=run  j/k=row  e=edit row".to_string()
+    };
+    let help_color = if s.dd_pending_rerun_confirm {
+        app.theme.accent_error
+    } else {
+        app.theme.fg_secondary
+    };
+    f.render_widget(
+        Paragraph::new(help).style(Style::default().fg(help_color)),
+        inner[3],
+    );
 }

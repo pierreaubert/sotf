@@ -171,7 +171,11 @@ impl PlayerView {
                                     .flex()
                                     .flex_col()
                                     .gap(d.grid)
-                                    .child(div().text_size(d.text_sm).child(dir.path.display().to_string()))
+                                    .child(
+                                        div()
+                                            .text_size(d.text_sm)
+                                            .child(dir.path.display().to_string()),
+                                    )
                                     .child(
                                         div()
                                             .flex()
@@ -706,12 +710,15 @@ impl PlayerView {
                                 .child(translations.settings_scanning_in_progress),
                         )
                         .child(
-                            div().text_size(d.text_xs).text_color(theme.text_secondary).child(
-                                translations
-                                    .settings_scan_progress
-                                    .replace("{}", &scan_progress_tracks.to_string())
-                                    .replacen("{}", &scan_progress_albums.to_string(), 1),
-                            ),
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_secondary)
+                                .child(
+                                    translations
+                                        .settings_scan_progress
+                                        .replace("{}", &scan_progress_tracks.to_string())
+                                        .replacen("{}", &scan_progress_albums.to_string(), 1),
+                                ),
                         ),
                 )
             })

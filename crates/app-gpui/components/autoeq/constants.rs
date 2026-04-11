@@ -155,13 +155,25 @@ pub const PEQ_MODEL_OPTIONS: &[(&str, &str)] = &[
 
 /// Short descriptions for PEQ models (used as tooltips / inline help)
 pub const PEQ_MODEL_DESCRIPTIONS: &[(&str, &str)] = &[
-    ("pk", "All filters are bell/peak type. Simplest and most compatible."),
-    ("hp-pk", "Adds a bass rolloff filter. Good for limited low extension."),
+    (
+        "pk",
+        "All filters are bell/peak type. Simplest and most compatible.",
+    ),
+    (
+        "hp-pk",
+        "Adds a bass rolloff filter. Good for limited low extension.",
+    ),
     ("ls-pk", "Adds a low shelf for broad bass adjustment."),
     ("hp-pk-lp", "Constrains both low and high ends."),
-    ("ls-pk-hs", "Low and high shelves plus peaks. Most flexible."),
+    (
+        "ls-pk-hs",
+        "Low and high shelves plus peaks. Most flexible.",
+    ),
     ("free-pk-free", "End filters auto-select their type."),
-    ("free", "Every filter chooses its own type. Longest optimization."),
+    (
+        "free",
+        "Every filter chooses its own type. Longest optimization.",
+    ),
 ];
 
 /// Mixed mode crossover type options

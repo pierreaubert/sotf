@@ -290,7 +290,8 @@ impl PlayerView {
                     self.render_magnitude_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme)
+                        .into_any_element()
                 }),
         )
     }
@@ -318,7 +319,8 @@ impl PlayerView {
                     self.render_phase_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme)
+                        .into_any_element()
                 }),
         )
     }
@@ -346,7 +348,8 @@ impl PlayerView {
                     self.render_group_delay_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme)
+                        .into_any_element()
                 }),
         )
     }
@@ -373,7 +376,8 @@ impl PlayerView {
                     self.render_impulse_response_chart(&results, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme)
+                        .into_any_element()
                 }),
         )
     }
@@ -401,7 +405,8 @@ impl PlayerView {
                     self.render_distortion_chart(&d, &results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme)
+                        .into_any_element()
                 }),
         )
     }
@@ -429,7 +434,8 @@ impl PlayerView {
                     self.render_rt60_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme)
+                        .into_any_element()
                 }),
         )
     }
@@ -457,7 +463,8 @@ impl PlayerView {
                     self.render_clarity_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme)
+                        .into_any_element()
                 }),
         )
     }
@@ -490,7 +497,8 @@ impl PlayerView {
                     self.render_spectrogram_chart(&d, &results, &theme, sample_rate)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme).into_any_element()
+                    self.render_no_data_placeholder(&d, &theme)
+                        .into_any_element()
                 }),
         )
     }
@@ -706,9 +714,17 @@ impl PlayerView {
                     .filter(|(_, mag)| **mag > -150.0)
                     .unzip();
 
+                // Normalize by subtracting the reference level so the
+                // loudest channel (averaged over 100 Hz – 10 kHz) sits
+                // near 0 dB. The sign is preserved: peaks in the
+                // measurement stay peaks in the plot. A leading minus
+                // here (`-(mag - offset)`) would vertically flip the
+                // curve and turn real bass modes into apparent nulls
+                // and vice versa, which was a real regression spotted
+                // against both the raw L.wav FFT and dsp.json.
                 let normalized: Vec<f32> = filtered_mags
                     .iter()
-                    .map(|&mag| -(mag - normalization_offset))
+                    .map(|&mag| mag - normalization_offset)
                     .collect();
                 let smoothed = Self::apply_smoothing(&filtered_freqs, &normalized, smoothing);
 

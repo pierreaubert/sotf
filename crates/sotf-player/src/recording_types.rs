@@ -362,31 +362,13 @@ impl RecordingSignalType {
     }
 }
 
-/// Result of a delay probing session across all channels
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DelayProbeResults {
-    /// Per-channel delay detection results
-    pub channels: Vec<DelayProbeChannelResult>,
-    /// Sample rate used for probing
-    pub sample_rate: u32,
-    /// Computed alignment delays in ms (to add to each channel)
-    pub alignment_delays_ms: Vec<f64>,
-}
-
-/// Delay probe result for a single channel
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DelayProbeChannelResult {
-    /// Channel name (e.g. "L", "R", "C")
-    pub channel_name: String,
-    /// Channel output index
-    pub channel_index: usize,
-    /// Detected arrival time in ms (acoustic propagation delay)
-    pub arrival_ms: f64,
-    /// Relative gain in dB
-    pub gain_db: f64,
-    /// Detection confidence (SNR in dB, higher = more reliable)
-    pub snr_db: f64,
-}
+// The tone-burst delay detection result types live in the engine
+// (`sotf_audio::signal_recorder`) because that's where the measurement is
+// implemented. Re-export them under player-layer names so UI code only
+// has to depend on `sotf_audio_player` types.
+pub use sotf_audio::signal_recorder::{
+    ProbeDelayChannelResult as DelayProbeChannelResult, ProbeDelayResults as DelayProbeResults,
+};
 
 /// Speaker configuration presets
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

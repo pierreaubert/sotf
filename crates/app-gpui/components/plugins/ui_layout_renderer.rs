@@ -105,7 +105,11 @@ fn render_solved_layout(
     let mut root = div().flex().flex_col().gap(d.section);
 
     // Build the main row (columns side-by-side, centered)
-    let mut row = div().flex().gap(d.section_lg).items_start().justify_center();
+    let mut row = div()
+        .flex()
+        .gap(d.section_lg)
+        .items_start()
+        .justify_center();
 
     for col in &solved.columns {
         match col.role {
@@ -286,7 +290,12 @@ fn render_main_column(
                     .border_color(if is_active {
                         theme.accent
                     } else {
-                        gpui::Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }
+                        gpui::Rgba {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.0,
+                        }
                     })
                     .hover(|s| {
                         s.text_color(theme.text_primary).border_color(if is_active {

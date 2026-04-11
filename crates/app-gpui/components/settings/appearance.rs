@@ -173,17 +173,20 @@ impl PlayerView {
                         div()
                             .flex()
                             .gap(d.grid)
-                            .child(self.render_color_swatch(&d, 
+                            .child(self.render_color_swatch(
+                                &d,
                                 "BG",
                                 preview_theme.background,
                                 preview_theme.text_primary,
                             ))
-                            .child(self.render_color_swatch(&d, 
+                            .child(self.render_color_swatch(
+                                &d,
                                 "Surf",
                                 preview_theme.surface,
                                 preview_theme.text_primary,
                             ))
-                            .child(self.render_color_swatch(&d, 
+                            .child(self.render_color_swatch(
+                                &d,
                                 "Hover",
                                 preview_theme.surface_hover,
                                 preview_theme.text_primary,
@@ -194,17 +197,20 @@ impl PlayerView {
                         div()
                             .flex()
                             .gap(d.grid)
-                            .child(self.render_color_swatch(&d, 
+                            .child(self.render_color_swatch(
+                                &d,
                                 "Accent",
                                 preview_theme.accent,
                                 preview_theme.text_on_accent,
                             ))
-                            .child(self.render_color_swatch(&d, 
+                            .child(self.render_color_swatch(
+                                &d,
                                 "Text",
                                 preview_theme.background,
                                 preview_theme.text_primary,
                             ))
-                            .child(self.render_color_swatch(&d, 
+                            .child(self.render_color_swatch(
+                                &d,
                                 "Muted",
                                 preview_theme.background,
                                 preview_theme.text_muted,
@@ -215,17 +221,20 @@ impl PlayerView {
                         div()
                             .flex()
                             .gap(d.grid)
-                            .child(self.render_color_swatch(&d, 
+                            .child(self.render_color_swatch(
+                                &d,
                                 "✓",
                                 preview_theme.success,
                                 preview_theme.text_on_accent,
                             ))
-                            .child(self.render_color_swatch(&d, 
+                            .child(self.render_color_swatch(
+                                &d,
                                 "⚠",
                                 preview_theme.warning,
                                 preview_theme.text_on_accent,
                             ))
-                            .child(self.render_color_swatch(&d, 
+                            .child(self.render_color_swatch(
+                                &d,
                                 "✗",
                                 preview_theme.error,
                                 preview_theme.text_on_accent,
