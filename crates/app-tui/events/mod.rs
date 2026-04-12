@@ -27,7 +27,7 @@ pub use conf_federation::{poll_federation_scan, poll_federation_test};
 pub use conf_headphoneeq::{
     poll_headphone_download, poll_headphone_eq_optimization, poll_headphone_list_load,
 };
-pub use conf_recordings::poll_recording;
+pub use conf_recordings::{poll_probe_capture, poll_recording};
 pub use conf_roomeq::{poll_delay_detection, poll_room_eq_optimization};
 pub use conf_spinoramaeq::{poll_spinorama_optimization, poll_spinorama_speaker_load};
 pub use media_control::handle_media_control_event;

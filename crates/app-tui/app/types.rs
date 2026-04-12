@@ -4,8 +4,8 @@ use sotf_audio_player::headphone_eq_types::{
     HeadphoneEqBiquad, HeadphoneEqOptimizerConfig, HeadphoneMeasurementSource,
 };
 use sotf_audio_player::recording_types::{
-    ChannelRecording, PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType,
-    RecordingStep,
+    ChannelRecording, PlaybackDeviceConfig, ProbeCaptureState, RecordingDeviceConfig,
+    RecordingSignalType, RecordingStep, RoomDimensionUnit,
 };
 use sotf_audio_player::room_eq_types::{
     ChannelMeasurement, ChannelOptResult, DelayDetectionState, OptimizationStatus,
@@ -501,12 +501,38 @@ pub struct RecordingTuiState {
     pub recording_progress: f32,
     pub auto_record: bool,
     pub status_message: String,
-    // Step 3: evaluate
+    // Step 3 (Probe): tone-burst delay probe capture. Shared
+    // business state lives in ProbeCaptureState; the TUI-only fields
+    // below are cursor + in-progress-edit state.
+    pub probe_capture: ProbeCaptureState,
+    /// Form-field cursor for the Probe step: 0=duration, 1=silence,
+    /// 2=mic channel, 3=Run button.
+    pub probe_selected_field: usize,
+    pub probe_editing_value: bool,
+    // Step 4: evaluate
     pub selected_channel_view: usize,
     // Step 4: save
     pub save_name: String,
     pub editing_save_name: bool,
+    /// Cursor within the save-step form. 0 = save_name, 1..=3 = room
+    /// width/depth/height, 4 = unit toggle, 5 = setup description,
+    /// 6..6+N-1 = per-channel speaker entries (N = channel count).
     pub selected_save_field: usize,
+    /// When true, a text/number field under the save cursor is being
+    /// typed into. Re-uses `edit_buffer` for the keystroke buffer.
+    pub editing_save_value: bool,
+    /// Room dimensions — interpreted in `save_room_unit`. Zero means
+    /// "not specified" and is dropped at save time.
+    pub save_room_width: f64,
+    pub save_room_depth: f64,
+    pub save_room_height: f64,
+    pub save_room_unit: RoomDimensionUnit,
+    /// Free-form description of the listening setup.
+    pub setup_description: String,
+    /// Per-channel speaker identity (brand + model). Indices align
+    /// with `channel_recordings[i].channel_name`. Auto-resized at
+    /// render time.
+    pub channel_speakers: Vec<String>,
     pub save_error: Option<String>,
     pub save_success: bool,
 }
@@ -539,13 +565,83 @@ impl Default for RecordingTuiState {
             recording_progress: 0.0,
             auto_record: false,
             status_message: String::new(),
+            probe_capture: ProbeCaptureState::default(),
+            probe_selected_field: 0,
+            probe_editing_value: false,
             selected_channel_view: 0,
             save_name: String::new(),
             editing_save_name: false,
             selected_save_field: 0,
+            editing_save_value: false,
+            save_room_width: 0.0,
+            save_room_depth: 0.0,
+            save_room_height: 0.0,
+            save_room_unit: RoomDimensionUnit::default(),
+            setup_description: String::new(),
+            channel_speakers: Vec::new(),
             save_error: None,
             save_success: false,
         }
+    }
+}
+
+impl RecordingTuiState {
+    /// Ensure `channel_speakers` has one slot per current channel row.
+    /// Call this whenever the channel list changes so the UI never
+    /// indexes a short vec. Preserves any pre-existing values.
+    pub fn sync_channel_speakers_length(&mut self) {
+        self.channel_speakers
+            .resize(self.channel_recordings.len(), String::new());
+    }
+
+    /// Build the canonical-metric `RoomDimensionsLegacy` to persist in
+    /// `RecordingConfiguration`. Returns `None` when any dimension is
+    /// blank (zero) — a partial triple would mislead downstream
+    /// consumers (e.g. the optimizer's Schroeder auto-detect).
+    pub fn room_dimensions_for_save(
+        &self,
+    ) -> Option<sotf_audio_player::room_eq_types::RoomDimensionsLegacy> {
+        if self.save_room_width <= 0.0
+            || self.save_room_depth <= 0.0
+            || self.save_room_height <= 0.0
+        {
+            return None;
+        }
+        let u = self.save_room_unit;
+        Some(sotf_audio_player::room_eq_types::RoomDimensionsLegacy {
+            length: u.to_meters(self.save_room_depth),
+            width: u.to_meters(self.save_room_width),
+            height: u.to_meters(self.save_room_height),
+        })
+    }
+
+    /// Build the channel-name → "brand model" map persisted in
+    /// `RecordingConfiguration`. Blank entries are skipped; returns
+    /// `None` when every entry is empty.
+    pub fn channel_speakers_map_for_save(
+        &self,
+    ) -> Option<std::collections::HashMap<String, String>> {
+        let mut map = std::collections::HashMap::new();
+        for (i, rec) in self.channel_recordings.iter().enumerate() {
+            if let Some(entry) = self.channel_speakers.get(i) {
+                let trimmed = entry.trim();
+                if !trimmed.is_empty() {
+                    map.insert(rec.channel_name.clone(), trimmed.to_string());
+                }
+            }
+        }
+        if map.is_empty() { None } else { Some(map) }
+    }
+
+    /// How many fields are in the Save-step form given the current
+    /// channel list. Layout:
+    ///   0        save_name
+    ///   1..=3    room width / depth / height
+    ///   4        unit toggle
+    ///   5        setup description
+    ///   6..6+N-1 per-channel speaker entries
+    pub fn save_field_count(&self) -> usize {
+        6 + self.channel_recordings.len()
     }
 }
 

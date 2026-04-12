@@ -12,7 +12,8 @@ fn recording_step_prev_wrap(
     match s {
         RecordingStep::Config => RecordingStep::Saving,
         RecordingStep::Capture => RecordingStep::Config,
-        RecordingStep::Evaluating => RecordingStep::Capture,
+        RecordingStep::Probe => RecordingStep::Capture,
+        RecordingStep::Evaluating => RecordingStep::Probe,
         RecordingStep::Saving => RecordingStep::Evaluating,
     }
 }
@@ -23,7 +24,8 @@ fn recording_step_next_wrap(
     use sotf_audio_player::recording_types::RecordingStep;
     match s {
         RecordingStep::Config => RecordingStep::Capture,
-        RecordingStep::Capture => RecordingStep::Evaluating,
+        RecordingStep::Capture => RecordingStep::Probe,
+        RecordingStep::Probe => RecordingStep::Evaluating,
         RecordingStep::Evaluating => RecordingStep::Saving,
         RecordingStep::Saving => RecordingStep::Config,
     }
@@ -357,38 +359,419 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             _ => None,
         },
 
+        RecordingStep::Probe => {
+            handle_probe_step_keys(app, key);
+            None
+        }
+
         RecordingStep::Saving => {
-            if app.recording.editing_save_name {
-                match key.code {
-                    KeyCode::Enter => {
-                        app.recording.editing_save_name = false;
-                        save_recordings(app);
-                    }
-                    KeyCode::Backspace => {
-                        app.recording.save_name.pop();
-                    }
-                    KeyCode::Char(c) => {
-                        app.recording.save_name.push(c);
-                    }
-                    _ => {}
-                }
-                return None;
-            }
-            match key.code {
-                KeyCode::Up => {
-                    app.recording.step_tab_focused = true;
-                }
-                KeyCode::Enter => {
-                    app.recording.editing_save_name = true;
-                }
-                KeyCode::BackTab => {
-                    app.recording.step = RecordingStep::Evaluating;
-                }
-                _ => {}
-            }
+            handle_saving_step_keys(app, key);
             None
         }
     }
+}
+
+/// Key handler for the Probe step of the Recording wizard.
+///
+/// Cursor fields:
+///   0  probe duration (ms)
+///   1  silence gap (ms)
+///   2  mic input channel
+///   3  Run button
+///
+/// `Tab` / `↓` advance; `Shift-Tab` / `↑` retreat. `Enter` on a numeric
+/// field begins editing; `Enter` on Run triggers the capture. `+` / `-`
+/// or `←` / `→` nudge numeric values. `r` starts the capture from any
+/// focused field. `Ctrl+S` never applies here — saving lives on the
+/// Save step.
+fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
+    use sotf_audio_player::recording_types::ProbeCaptureStatus;
+
+    const FIELD_COUNT: usize = 4;
+    const FIELD_PROBE_MS: usize = 0;
+    const FIELD_SILENCE_MS: usize = 1;
+    const FIELD_MIC_CHANNEL: usize = 2;
+    const FIELD_RUN: usize = 3;
+
+    if app.recording.probe_editing_value {
+        match key.code {
+            KeyCode::Esc => {
+                app.recording.probe_editing_value = false;
+                app.recording.edit_buffer.clear();
+            }
+            KeyCode::Enter => {
+                let v = app.recording.edit_buffer.trim().parse::<f32>();
+                match app.recording.probe_selected_field {
+                    FIELD_PROBE_MS => {
+                        if let Ok(v) = v {
+                            app.recording.probe_capture.probe_duration_ms = v.clamp(100.0, 5000.0);
+                        }
+                    }
+                    FIELD_SILENCE_MS => {
+                        if let Ok(v) = v {
+                            app.recording.probe_capture.silence_duration_ms =
+                                v.clamp(100.0, 5000.0);
+                        }
+                    }
+                    FIELD_MIC_CHANNEL => {
+                        if let Ok(v) = v {
+                            app.recording.probe_capture.input_channel = v.max(0.0) as u16;
+                        }
+                    }
+                    _ => {}
+                }
+                app.recording.probe_editing_value = false;
+                app.recording.edit_buffer.clear();
+            }
+            KeyCode::Char(c) if c.is_ascii_digit() || c == '.' || c == '-' => {
+                app.recording.edit_buffer.push(c);
+            }
+            KeyCode::Backspace => {
+                app.recording.edit_buffer.pop();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    let running = matches!(
+        app.recording.probe_capture.status,
+        ProbeCaptureStatus::Running { .. }
+    );
+
+    match key.code {
+        KeyCode::Tab | KeyCode::Down => {
+            app.recording.probe_selected_field =
+                (app.recording.probe_selected_field + 1) % FIELD_COUNT;
+        }
+        KeyCode::BackTab | KeyCode::Up => {
+            app.recording.probe_selected_field =
+                (app.recording.probe_selected_field + FIELD_COUNT - 1) % FIELD_COUNT;
+        }
+        KeyCode::Char('+') | KeyCode::Right => match app.recording.probe_selected_field {
+            FIELD_PROBE_MS => {
+                let v = (app.recording.probe_capture.probe_duration_ms + 100.0).min(5000.0);
+                app.recording.probe_capture.probe_duration_ms = v;
+            }
+            FIELD_SILENCE_MS => {
+                let v = (app.recording.probe_capture.silence_duration_ms + 100.0).min(5000.0);
+                app.recording.probe_capture.silence_duration_ms = v;
+            }
+            FIELD_MIC_CHANNEL => {
+                app.recording.probe_capture.input_channel =
+                    app.recording.probe_capture.input_channel.saturating_add(1);
+            }
+            _ => {}
+        },
+        KeyCode::Char('-') | KeyCode::Left => match app.recording.probe_selected_field {
+            FIELD_PROBE_MS => {
+                let v = (app.recording.probe_capture.probe_duration_ms - 100.0).max(100.0);
+                app.recording.probe_capture.probe_duration_ms = v;
+            }
+            FIELD_SILENCE_MS => {
+                let v = (app.recording.probe_capture.silence_duration_ms - 100.0).max(100.0);
+                app.recording.probe_capture.silence_duration_ms = v;
+            }
+            FIELD_MIC_CHANNEL => {
+                app.recording.probe_capture.input_channel =
+                    app.recording.probe_capture.input_channel.saturating_sub(1);
+            }
+            _ => {}
+        },
+        KeyCode::Enter => {
+            if app.recording.probe_selected_field == FIELD_RUN && !running {
+                spawn_probe_capture(app);
+            } else if app.recording.probe_selected_field != FIELD_RUN {
+                app.recording.probe_editing_value = true;
+                app.recording.edit_buffer.clear();
+            }
+        }
+        KeyCode::Char('r') if !running => {
+            spawn_probe_capture(app);
+        }
+        _ => {}
+    }
+}
+
+/// Kick off the tone-burst probe capture on a background thread. The
+/// shared-slot pattern mirrors `spawn_room_eq_optimization` (OnceLock
+/// + Arc<Mutex>), drained by [`poll_probe_capture`] on every main
+/// loop tick.
+#[allow(clippy::type_complexity)]
+static PROBE_CAPTURE_RESULT: std::sync::OnceLock<
+    Arc<
+        Mutex<
+            Option<
+                Result<
+                    (
+                        sotf_audio_player::recording_types::DelayProbeResults,
+                        String,
+                    ),
+                    String,
+                >,
+            >,
+        >,
+    >,
+> = std::sync::OnceLock::new();
+
+fn spawn_probe_capture(app: &mut App) {
+    use sotf_audio_player::recording_types::ProbeCaptureStatus;
+
+    if app.recording.channel_recordings.is_empty() {
+        app.recording.probe_capture.status =
+            ProbeCaptureStatus::Failed("Record sweeps first (Capture step)".to_string());
+        return;
+    }
+
+    // Build the channel list from the already-captured sweeps so we
+    // probe the same speakers the user recorded.
+    let channel_names: Vec<String> = app
+        .recording
+        .channel_recordings
+        .iter()
+        .map(|r| r.channel_name.clone())
+        .collect();
+    let channel_indices: Vec<u16> = (0..channel_names.len() as u16).collect();
+
+    // Build the output WAV path under the same directory the sweeps
+    // landed in so everything travels together at save time.
+    let wav_path_str = {
+        let base_dir = if app.recording.output_directory.is_empty() {
+            ".".to_string()
+        } else {
+            app.recording.output_directory.clone()
+        };
+        format!("{}/probe_all_channels.wav", base_dir)
+    };
+
+    let probe_ms = app.recording.probe_capture.probe_duration_ms;
+    let silence_ms = app.recording.probe_capture.silence_duration_ms;
+    let sample_rate = app.recording.probe_capture.sample_rate;
+    let input_channel = app.recording.probe_capture.input_channel;
+    let output_device = Some(app.recording.playback_config.device_name.clone());
+    let input_device = Some(app.recording.recording_config.device_name.clone());
+
+    app.recording.probe_capture.status = ProbeCaptureStatus::Running {
+        started_at_ms: now_ms(),
+    };
+    app.recording.probe_capture.results = None;
+
+    let slot = PROBE_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    if let Ok(mut g) = slot.lock() {
+        *g = None;
+    }
+
+    std::thread::spawn(move || {
+        let wav_path = std::path::PathBuf::from(&wav_path_str);
+        let result = sotf_audio::signal_recorder::probe_channel_delays_with_recording(
+            &channel_indices,
+            &channel_names,
+            sample_rate,
+            probe_ms,
+            silence_ms,
+            output_device.as_deref(),
+            input_device.as_deref(),
+            input_channel,
+            &wav_path,
+        )
+        .map(|r| (r, wav_path_str));
+        if let Ok(mut g) = slot.lock() {
+            *g = Some(result);
+        }
+    });
+}
+
+/// Drain the probe-capture slot into `app.recording.probe_capture`.
+/// Returns `true` if state changed and the UI should redraw.
+pub fn poll_probe_capture(app: &mut App) -> bool {
+    use sotf_audio_player::recording_types::ProbeCaptureStatus;
+
+    if !matches!(
+        app.recording.probe_capture.status,
+        ProbeCaptureStatus::Running { .. }
+    ) {
+        return false;
+    }
+    let slot = PROBE_CAPTURE_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    let Ok(mut guard) = slot.lock() else {
+        return false;
+    };
+    let Some(outcome) = guard.take() else {
+        return false;
+    };
+    drop(guard);
+    match outcome {
+        Ok((results, wav_path)) => {
+            app.recording
+                .probe_capture
+                .apply_results(results, Some(wav_path));
+        }
+        Err(e) => {
+            app.recording.probe_capture.status = ProbeCaptureStatus::Failed(e);
+        }
+    }
+    true
+}
+
+/// Wall-clock millis since the Unix epoch — used by the Probe step's
+/// `started_at_ms` so the status banner can render an elapsed-time
+/// progress estimate.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Key handler for the Save step of the Recording wizard.
+///
+/// Field cursor semantics match `draw_recording_saving_step`:
+///   0        session name (text)
+///   1..=3    room width / depth / height (numeric)
+///   4        unit toggle (Metric / Imperial)
+///   5        setup description (text)
+///   6..      per-channel speaker entries (text, autocomplete-backed)
+///
+/// Tab / ↓ advance; Shift-Tab / ↑ retreat. Enter starts editing the
+/// current field (or toggles the unit); Esc cancels an in-flight edit.
+/// `Ctrl+S` saves from any state.
+fn handle_saving_step_keys(app: &mut App, key: KeyEvent) {
+    use super::conf_spinoramaeq::ensure_spinorama_speakers_loading;
+    use crossterm::event::KeyModifiers;
+    use sotf_audio_player::recording_types::RecordingStep;
+
+    // Pre-warm the spinorama speaker catalog so the per-channel
+    // autocomplete has something to show. Idempotent — returns
+    // immediately once the fetch is in flight or cached.
+    ensure_spinorama_speakers_loading(app);
+
+    // Ctrl+S saves regardless of mode.
+    if key.modifiers.contains(KeyModifiers::CONTROL)
+        && matches!(key.code, KeyCode::Char('s') | KeyCode::Char('S'))
+    {
+        app.recording.editing_save_value = false;
+        app.recording.edit_buffer.clear();
+        save_recordings(app);
+        return;
+    }
+
+    // Keep the speaker vec in sync with the channel list so the
+    // cursor never indexes a short vec.
+    app.recording.sync_channel_speakers_length();
+    let field_count = app.recording.save_field_count();
+
+    // --- Edit-in-progress sub-mode ---------------------------------
+    if app.recording.editing_save_value {
+        match key.code {
+            KeyCode::Esc => {
+                app.recording.editing_save_value = false;
+                app.recording.edit_buffer.clear();
+            }
+            KeyCode::Enter => commit_save_field_edit(app),
+            KeyCode::Backspace => {
+                app.recording.edit_buffer.pop();
+            }
+            KeyCode::Char(c) => {
+                app.recording.edit_buffer.push(c);
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // --- Navigation / activation ------------------------------------
+    match key.code {
+        KeyCode::Up => {
+            if app.recording.selected_save_field == 0 {
+                app.recording.step_tab_focused = true;
+            } else {
+                app.recording.selected_save_field -= 1;
+            }
+        }
+        KeyCode::Down | KeyCode::Tab => {
+            app.recording.selected_save_field =
+                (app.recording.selected_save_field + 1) % field_count.max(1);
+        }
+        KeyCode::BackTab => {
+            app.recording.step = RecordingStep::Evaluating;
+        }
+        KeyCode::Enter => {
+            if app.recording.selected_save_field == 4 {
+                // Unit toggle is a pure cycle — no edit mode needed.
+                app.recording.save_room_unit = app.recording.save_room_unit.toggled();
+            } else {
+                app.recording.editing_save_value = true;
+                app.recording.edit_buffer = current_save_field_value(app);
+            }
+        }
+        KeyCode::Char('u') | KeyCode::Char('U') => {
+            // Quick keyboard shortcut for the unit toggle from any
+            // field — saves the user tabbing to field 4.
+            app.recording.save_room_unit = app.recording.save_room_unit.toggled();
+        }
+        _ => {}
+    }
+}
+
+/// Snapshot the current field's display value into `edit_buffer` so
+/// editing an existing value doesn't start from an empty buffer.
+fn current_save_field_value(app: &App) -> String {
+    match app.recording.selected_save_field {
+        0 => app.recording.save_name.clone(),
+        1 => fmt_opt_dim(app.recording.save_room_width),
+        2 => fmt_opt_dim(app.recording.save_room_depth),
+        3 => fmt_opt_dim(app.recording.save_room_height),
+        5 => app.recording.setup_description.clone(),
+        n if n >= 6 => {
+            let row = n - 6;
+            app.recording
+                .channel_speakers
+                .get(row)
+                .cloned()
+                .unwrap_or_default()
+        }
+        _ => String::new(),
+    }
+}
+
+fn fmt_opt_dim(v: f64) -> String {
+    if v > 0.0 {
+        format!("{:.2}", v)
+    } else {
+        String::new()
+    }
+}
+
+/// Commit the `edit_buffer` into the currently-selected field.
+fn commit_save_field_edit(app: &mut App) {
+    let buf = app.recording.edit_buffer.clone();
+    match app.recording.selected_save_field {
+        0 => app.recording.save_name = buf,
+        1 => {
+            app.recording.save_room_width = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+        }
+        2 => {
+            app.recording.save_room_depth = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+        }
+        3 => {
+            app.recording.save_room_height = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+        }
+        5 => app.recording.setup_description = buf,
+        n if n >= 6 => {
+            let row = n - 6;
+            app.recording.sync_channel_speakers_length();
+            if let Some(slot) = app.recording.channel_speakers.get_mut(row) {
+                *slot = buf;
+            }
+        }
+        _ => {}
+    }
+    app.recording.editing_save_value = false;
+    app.recording.edit_buffer.clear();
 }
 
 /// Fields 4-7 are numerical (duration, level, start_freq, end_freq)
@@ -893,6 +1276,28 @@ pub(crate) fn save_recordings(app: &mut App) {
         signal_level_db: app.recording.signal_level_db,
         sweep_start_freq: Some(app.recording.sweep_start_freq),
         sweep_end_freq: Some(app.recording.sweep_end_freq),
+        // Room info collected on the Save step. Converted to metric,
+        // trimmed, or dropped when the user left the fields blank.
+        room_dimensions: app.recording.room_dimensions_for_save(),
+        setup_description: {
+            let s = app.recording.setup_description.trim();
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
+        },
+        channel_speakers: app.recording.channel_speakers_map_for_save(),
+        // Tone-burst delay-probe results (Recording wizard Probe
+        // step). `None` when the user skipped the step.
+        probe_results: app.recording.probe_capture.results.clone(),
+        probe_wav_relative: app
+            .recording
+            .probe_capture
+            .wav_path
+            .as_ref()
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .map(|f| f.to_string_lossy().to_string()),
     };
 
     let measurements_file = RoomEqMeasurementsFile::with_configuration(channels, configuration);

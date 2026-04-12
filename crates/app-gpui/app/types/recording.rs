@@ -9,9 +9,46 @@ use super::calibration::CalibrationData;
 // Re-export shared domain types from player crate
 pub use sotf_audio_player::recording_types::{
     ChannelMapping, ChannelRecording, ChannelRecordingState, PlaybackDeviceConfig, PlotSmoothing,
-    RecordingDeviceConfig, RecordingResult, RecordingSignalType, RecordingStep,
-    SpeakerConfiguration,
+    ProbeCaptureState, ProbeCaptureStatus, RecordingDeviceConfig, RecordingResult,
+    RecordingSignalType, RecordingStep, SpeakerConfiguration,
 };
+
+/// Measurement-unit preference for the room-dimensions inputs on the
+/// Save step. Purely a UI convenience: the canonical unit on disk is
+/// always metric (meters). The conversion happens at save time via
+/// [`RecordingState::room_dimensions_for_save`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RoomDimensionUnit {
+    #[default]
+    Metric,
+    Imperial,
+}
+
+impl RoomDimensionUnit {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Metric => "m",
+            Self::Imperial => "ft",
+        }
+    }
+
+    /// Convert a user-entered value in this unit to canonical meters.
+    pub fn to_meters(&self, value: f64) -> f64 {
+        match self {
+            Self::Metric => value,
+            // 1 international foot = 0.3048 m exactly.
+            Self::Imperial => value * 0.304_8,
+        }
+    }
+
+    /// Toggle between the two units.
+    pub fn toggled(&self) -> Self {
+        match self {
+            Self::Metric => Self::Imperial,
+            Self::Imperial => Self::Metric,
+        }
+    }
+}
 
 /// Complete recording screen state
 #[derive(Debug, Clone)]
@@ -50,6 +87,12 @@ pub struct RecordingState {
     /// Base directory selected by user (before adding timestamp subdirectory)
     pub recording_base_directory: Option<String>,
 
+    // === Probe Step State ===
+    /// Shared business state for the tone-burst delay probe step.
+    /// Populated by `start_probe_capture` on success; consumed by
+    /// `save_recordings` to embed results in the session JSON.
+    pub probe_capture: ProbeCaptureState,
+
     // === UI State ===
     pub playback_device_dropdown_open: bool,
     pub recording_device_dropdown_open: bool,
@@ -78,6 +121,28 @@ pub struct RecordingState {
     // === Saving Step State ===
     /// Name for the recording session (used as subdirectory name)
     pub save_name: String,
+    /// Room width — interpreted in `room_dimension_unit`. Zero means
+    /// "not specified" and is skipped during serialization.
+    pub room_width_input: f64,
+    /// Room depth — interpreted in `room_dimension_unit`. Zero means
+    /// "not specified".
+    pub room_depth_input: f64,
+    /// Room height — interpreted in `room_dimension_unit`. Zero means
+    /// "not specified".
+    pub room_height_input: f64,
+    /// Unit the three `room_*_input` values are expressed in. UI-only;
+    /// the persisted JSON always stores metric.
+    pub room_dimension_unit: RoomDimensionUnit,
+    /// Free-form description of the listening setup (treatment,
+    /// seating, notes). Persisted verbatim in `RecordingConfiguration`.
+    pub setup_description: String,
+    /// Per-channel speaker identity (brand + model). Indices align
+    /// with `channel_recordings[i].channel_name` at render time.
+    /// Short or padded to match the channel list in the UI.
+    pub channel_speakers: Vec<String>,
+    /// Index of the channel-speaker row whose autocomplete suggestions
+    /// are currently visible, or `None` when no dropdown is open.
+    pub channel_speaker_autocomplete_open: Option<usize>,
 
     // === Noise Floor Warning ===
     /// Warning message when recording level is close to noise floor
@@ -120,6 +185,7 @@ impl Default for RecordingState {
             auto_record_remaining: false,
             recording_directory: None,
             recording_base_directory: None,
+            probe_capture: ProbeCaptureState::default(),
             playback_device_dropdown_open: false,
             recording_device_dropdown_open: false,
             playback_sample_rate_dropdown_open: false,
@@ -135,6 +201,13 @@ impl Default for RecordingState {
             plot_channel_dropdown_open: false,
             plot_smoothing_dropdown_open: false,
             save_name: "recording".to_string(),
+            room_width_input: 0.0,
+            room_depth_input: 0.0,
+            room_height_input: 0.0,
+            room_dimension_unit: RoomDimensionUnit::default(),
+            setup_description: String::new(),
+            channel_speakers: Vec::new(),
+            channel_speaker_autocomplete_open: None,
             noise_floor_warning: None,
             migration_modal_open: false,
             migration_file_path: None,
@@ -192,5 +265,53 @@ impl RecordingState {
     /// Check if any recording is in progress
     pub fn is_recording(&self) -> bool {
         self.current_recording_channel.is_some()
+    }
+
+    /// Ensure `channel_speakers` has one slot per current channel row.
+    /// Call this whenever the channel list changes so the UI never
+    /// indexes a short vec. Preserves any pre-existing values.
+    pub fn sync_channel_speakers_length(&mut self) {
+        self.channel_speakers
+            .resize(self.channel_recordings.len(), String::new());
+    }
+
+    /// Build the canonical-metric [`RoomDimensions`] to persist in
+    /// `RecordingConfiguration`. Returns `None` when the user left any
+    /// dimension blank (zero) — partial data is not worth storing and
+    /// would mislead the Schroeder-frequency auto-detector.
+    pub fn room_dimensions_for_save(&self) -> Option<autoeq::roomeq::RoomDimensions> {
+        if self.room_width_input <= 0.0
+            || self.room_depth_input <= 0.0
+            || self.room_height_input <= 0.0
+        {
+            return None;
+        }
+        let unit = self.room_dimension_unit;
+        Some(autoeq::roomeq::RoomDimensions {
+            // `length` in RoomDimensions is the depth of the room
+            // (front-to-back distance); the UI exposes it as "Depth" so
+            // it matches how most people describe their listening space.
+            length: unit.to_meters(self.room_depth_input),
+            width: unit.to_meters(self.room_width_input),
+            height: unit.to_meters(self.room_height_input),
+        })
+    }
+
+    /// Build the `channel_name → "brand model"` map persisted in
+    /// `RecordingConfiguration`. Returns `None` when every entry is
+    /// blank so absence round-trips through serialization.
+    pub fn channel_speakers_map_for_save(
+        &self,
+    ) -> Option<std::collections::HashMap<String, String>> {
+        let mut map = std::collections::HashMap::new();
+        for (i, rec) in self.channel_recordings.iter().enumerate() {
+            if let Some(name) = self.channel_speakers.get(i) {
+                let trimmed = name.trim();
+                if !trimmed.is_empty() {
+                    map.insert(rec.channel_name.clone(), trimmed.to_string());
+                }
+            }
+        }
+        if map.is_empty() { None } else { Some(map) }
     }
 }

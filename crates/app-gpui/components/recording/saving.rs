@@ -3,6 +3,7 @@
 //! Save recordings and configuration to disk.
 
 use crate::app::types::ChannelRecordingState;
+use crate::app::types::recording::RoomDimensionUnit;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -11,9 +12,73 @@ use gpui_ui_kit::{
     TextSize, TextWeight, VStack,
 };
 
+/// Filter the available-speakers list to the top matches for a query.
+/// Case-insensitive substring match with a hard ceiling so the dropdown
+/// never blows up even if every speaker in the catalog is a match.
+fn filter_speakers(catalog: &[String], query: &str, limit: usize) -> Vec<String> {
+    if query.trim().is_empty() {
+        return Vec::new();
+    }
+    let q = query.to_lowercase();
+    catalog
+        .iter()
+        .filter(|name| name.to_lowercase().contains(&q))
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
 impl PlayerView {
     /// Render the saving step UI
     pub(crate) fn render_recording_saving_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        // IMPORTANT: render paths run INSIDE a GPUI entity update, so any
+        // `state.update(...)` or `view.update(...)` called directly from
+        // here triggers a re-entrant update and panics with
+        // `cannot update PlayerView while it is already being updated`.
+        //
+        // We therefore:
+        //   1. Read-only snapshots only during render.
+        //   2. Any state mutation (syncing the channel_speakers vec,
+        //      kicking off the spinorama catalog fetch) is scheduled
+        //      via `cx.defer` so it runs after this update finishes.
+        //   3. The render code tolerates an un-synced state by using
+        //      `.get(i).cloned().unwrap_or_default()` for all lookups.
+        let needs_fetch = {
+            let snap = self.state.read(cx);
+            let sp = &snap.app.measurement_state.spinorama_eq_state;
+            let rec = &snap.app.measurement_state.recording_state;
+            let catalog_missing = sp.available_speakers.is_empty() && !sp.loading_speakers;
+            let speakers_unsynced = rec.channel_speakers.len() != rec.channel_recordings.len();
+            catalog_missing || speakers_unsynced
+        };
+        if needs_fetch {
+            // Capture the PlayerView entity outside the defer closure so
+            // the deferred block can call `update` on it after the
+            // current render finishes. `cx.defer` takes a single `cx`
+            // argument — see `components/room_eq/custom_target_modal.rs`
+            // for the same pattern.
+            let view = cx.entity().clone();
+            cx.defer(move |cx| {
+                view.update(cx, |this, cx| {
+                    this.state.update(cx, |state, _| {
+                        state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .sync_channel_speakers_length();
+                    });
+                    let need_catalog = {
+                        let snap = this.state.read(cx);
+                        let sp = &snap.app.measurement_state.spinorama_eq_state;
+                        sp.available_speakers.is_empty() && !sp.loading_speakers
+                    };
+                    if need_catalog {
+                        this.fetch_spinorama_speakers(cx);
+                    }
+                });
+            });
+        }
+
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
@@ -45,6 +110,9 @@ impl PlayerView {
             )
             .child(self.render_save_name_card(cx))
             .child(self.render_save_location_card(cx))
+            .child(self.render_room_info_card(cx))
+            .child(self.render_setup_description_card(cx))
+            .child(self.render_channel_speakers_card(cx))
             .child(self.render_save_contents_card(cx))
             .child(self.render_save_actions(has_recordings, recording_dir, cx))
     }
@@ -432,4 +500,388 @@ impl PlayerView {
                 }),
         )
     }
+
+    /// Render the room-dimensions card (3 number inputs + unit toggle).
+    ///
+    /// The three inputs (W × D × H) are always interpreted in the
+    /// currently-selected unit; the toggle to the right swaps between
+    /// metric (meters) and imperial (feet). Conversion to canonical
+    /// meters happens at save time via
+    /// [`RecordingState::room_dimensions_for_save`] — the state on the
+    /// UI side never carries mixed units.
+    fn render_room_info_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let rec = &state.app.measurement_state.recording_state;
+        let width = rec.room_width_input;
+        let depth = rec.room_depth_input;
+        let height = rec.room_height_input;
+        let unit = rec.room_dimension_unit;
+        let view = cx.entity().clone();
+
+        Card::new().content(
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(
+                    Text::new("ROOM DIMENSIONS")
+                        .size(TextSize::Xs)
+                        .weight(TextWeight::Bold)
+                        .color(theme.accent),
+                )
+                .child(
+                    Text::new(
+                        "Width × Depth × Height. Optional, but lets the optimizer auto-tune \
+                         the Schroeder frequency from room volume.",
+                    )
+                    .size(TextSize::Xs)
+                    .color(theme.text_muted),
+                )
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(dimension_field(
+                            "room_width",
+                            "Width",
+                            width,
+                            unit,
+                            theme.clone(),
+                            view.clone(),
+                            |rec, v| rec.room_width_input = v,
+                        ))
+                        .child(dimension_field(
+                            "room_depth",
+                            "Depth",
+                            depth,
+                            unit,
+                            theme.clone(),
+                            view.clone(),
+                            |rec, v| rec.room_depth_input = v,
+                        ))
+                        .child(dimension_field(
+                            "room_height",
+                            "Height",
+                            height,
+                            unit,
+                            theme.clone(),
+                            view.clone(),
+                            |rec, v| rec.room_height_input = v,
+                        ))
+                        .child(
+                            Button::new("room_unit_toggle", unit.label())
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
+                                .on_click({
+                                    let view = view.clone();
+                                    move |_, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.state.update(cx, |state, _| {
+                                                let rec = &mut state
+                                                    .app
+                                                    .measurement_state
+                                                    .recording_state;
+                                                rec.room_dimension_unit =
+                                                    rec.room_dimension_unit.toggled();
+                                            });
+                                            cx.notify();
+                                        });
+                                    }
+                                }),
+                        ),
+                ),
+        )
+    }
+
+    /// Render the free-form "setup description" text card.
+    fn render_setup_description_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let description = state
+            .app
+            .measurement_state
+            .recording_state
+            .setup_description
+            .clone();
+        let view = cx.entity().clone();
+
+        Card::new().content(
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(
+                    Text::new("SETUP DESCRIPTION")
+                        .size(TextSize::Xs)
+                        .weight(TextWeight::Bold)
+                        .color(theme.accent),
+                )
+                .child(
+                    Text::new(
+                        "Notes about the listening position, acoustic treatment, \
+                         equipment chain, anything worth remembering next session.",
+                    )
+                    .size(TextSize::Xs)
+                    .color(theme.text_muted),
+                )
+                .child(
+                    div()
+                        .w(px(560.0))
+                        .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
+                            cx.stop_propagation();
+                        })
+                        .child(
+                            Input::new("setup_description_input")
+                                .value(description)
+                                .placeholder(
+                                    "e.g. small bedroom, equilateral triangle, \
+                                     bass traps in corners, 2.2m sweet-spot to plane",
+                                )
+                                .on_text_change({
+                                    let view = view.clone();
+                                    move |value, _window, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.state.update(cx, |state, _| {
+                                                state
+                                                    .app
+                                                    .measurement_state
+                                                    .recording_state
+                                                    .setup_description = value;
+                                            });
+                                            cx.notify();
+                                        });
+                                    }
+                                }),
+                        ),
+                ),
+        )
+    }
+
+    /// Render the per-channel speaker-identity card.
+    ///
+    /// One row per recorded channel. Each row has a text input for the
+    /// speaker brand+model and renders a filtered-autocomplete dropdown
+    /// of suggestions from the spinorama.org catalog
+    /// (`spinorama_eq_state.available_speakers`). The catalog is
+    /// populated the first time the save step renders — see
+    /// [`render_recording_saving_step`].
+    fn render_channel_speakers_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let rec = &state.app.measurement_state.recording_state;
+        let catalog = state
+            .app
+            .measurement_state
+            .spinorama_eq_state
+            .available_speakers
+            .clone();
+        let is_loading = state
+            .app
+            .measurement_state
+            .spinorama_eq_state
+            .loading_speakers;
+        let open_row = rec.channel_speaker_autocomplete_open;
+
+        // Snapshot the per-row (channel_name, current_value) pairs so we
+        // can build the dropdown without borrowing `state` into the
+        // listeners. The `channel_speakers` vec is kept in sync with
+        // `channel_recordings` by `sync_channel_speakers_length` at
+        // render entry.
+        let rows: Vec<(usize, String, String)> = rec
+            .channel_recordings
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let current = rec.channel_speakers.get(i).cloned().unwrap_or_default();
+                (i, r.channel_name.clone(), current)
+            })
+            .collect();
+        let view = cx.entity().clone();
+
+        Card::new().content(
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(
+                    Text::new("SPEAKERS PER CHANNEL")
+                        .size(TextSize::Xs)
+                        .weight(TextWeight::Bold)
+                        .color(theme.accent),
+                )
+                .child(
+                    Text::new(if is_loading {
+                        "Loading catalog from spinorama.org…"
+                    } else if catalog.is_empty() {
+                        "Catalog unavailable. Type freely — any label is saved as-is."
+                    } else {
+                        "Type to filter the spinorama.org catalog; click a match to fill in."
+                    })
+                    .size(TextSize::Xs)
+                    .color(theme.text_muted),
+                )
+                .children(rows.into_iter().map(|(row, channel_name, current)| {
+                    let suggestions = if open_row == Some(row) {
+                        filter_speakers(&catalog, &current, 8)
+                    } else {
+                        Vec::new()
+                    };
+                    let exact_match = catalog.iter().any(|c| c == &current);
+                    let show_dropdown = !suggestions.is_empty() && !exact_match;
+
+                    VStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    div().w(px(80.0)).child(
+                                        Text::new(channel_name.clone())
+                                            .size(TextSize::Xs)
+                                            .weight(TextWeight::Semibold)
+                                            .color(theme.text_primary),
+                                    ),
+                                )
+                                .child(
+                                    div()
+                                        .w(px(380.0))
+                                        .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
+                                            cx.stop_propagation();
+                                        })
+                                        .child(
+                                            Input::new(SharedString::from(format!(
+                                                "channel_speaker_input_{}",
+                                                row
+                                            )))
+                                            .value(current.clone())
+                                            .placeholder("Brand and model")
+                                            .on_text_change({
+                                                let view = view.clone();
+                                                move |value, _window, cx| {
+                                                    view.update(cx, |this, cx| {
+                                                        this.state.update(cx, |state, _| {
+                                                            let rec = &mut state
+                                                                .app
+                                                                .measurement_state
+                                                                .recording_state;
+                                                            rec.sync_channel_speakers_length();
+                                                            if let Some(slot) =
+                                                                rec.channel_speakers.get_mut(row)
+                                                            {
+                                                                *slot = value;
+                                                            }
+                                                            rec.channel_speaker_autocomplete_open =
+                                                                Some(row);
+                                                        });
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            }),
+                                        ),
+                                ),
+                        )
+                        .when(show_dropdown, |el| {
+                            el.child(
+                                div()
+                                    .id(SharedString::from(format!(
+                                        "channel_speaker_suggestions_{}",
+                                        row
+                                    )))
+                                    .ml(px(88.0)) // align under the input
+                                    .w(px(380.0))
+                                    .max_h(px(220.0))
+                                    .overflow_y_scroll()
+                                    .bg(theme.surface)
+                                    .rounded(px(4.0))
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .children(suggestions.into_iter().map(|s| {
+                                        let suggestion = s.clone();
+                                        div()
+                                            .id(SharedString::from(format!(
+                                                "channel_speaker_opt_{}_{}",
+                                                row, suggestion
+                                            )))
+                                            .px(px(8.0))
+                                            .py(px(4.0))
+                                            .cursor_pointer()
+                                            .hover(|s| s.bg(theme.surface_hover))
+                                            .child(Text::new(suggestion.clone()).size(TextSize::Xs))
+                                            .on_mouse_down(MouseButton::Left, {
+                                                let view = view.clone();
+                                                let picked = suggestion.clone();
+                                                move |_event, _window, cx| {
+                                                    view.update(cx, |this, cx| {
+                                                        this.state.update(cx, |state, _| {
+                                                            let rec = &mut state
+                                                                .app
+                                                                .measurement_state
+                                                                .recording_state;
+                                                            rec.sync_channel_speakers_length();
+                                                            if let Some(slot) =
+                                                                rec.channel_speakers.get_mut(row)
+                                                            {
+                                                                *slot = picked.clone();
+                                                            }
+                                                            rec.channel_speaker_autocomplete_open =
+                                                                None;
+                                                        });
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            })
+                                    })),
+                            )
+                        })
+                })),
+        )
+    }
+}
+
+/// Build a single "label + number input" block for the room-dimensions
+/// card. Kept as a free function (not a method) to sidestep lifetime
+/// gymnastics inside the HStack chain.
+fn dimension_field(
+    id: &'static str,
+    label: &'static str,
+    current: f64,
+    unit: RoomDimensionUnit,
+    theme: crate::app::theme::Theme,
+    view: gpui::Entity<PlayerView>,
+    apply: fn(&mut crate::app::types::recording::RecordingState, f64),
+) -> impl IntoElement {
+    let display = if current > 0.0 {
+        format!("{:.2}", current)
+    } else {
+        String::new()
+    };
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            Text::new(format!("{} ({})", label, unit.label()))
+                .size(TextSize::Xs)
+                .color(theme.text_secondary),
+        )
+        .child(
+            div()
+                .w(px(100.0))
+                .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
+                    cx.stop_propagation();
+                })
+                .child(
+                    Input::new(id)
+                        .value(display)
+                        .placeholder("0.00")
+                        .on_text_change(move |value, _window, cx| {
+                            // Empty string means "clear" — stored as 0.0
+                            // which `room_dimensions_for_save` treats as
+                            // "not specified" so the whole triple is
+                            // dropped from serialization.
+                            let parsed = value.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    apply(&mut state.app.measurement_state.recording_state, parsed);
+                                });
+                                cx.notify();
+                            });
+                        }),
+                ),
+        )
 }

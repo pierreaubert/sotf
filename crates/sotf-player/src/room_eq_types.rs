@@ -124,6 +124,42 @@ pub struct RecordingConfiguration {
     pub sweep_start_freq: Option<f32>,
     #[serde(default)]
     pub sweep_end_freq: Option<f32>,
+    /// Physical room dimensions collected at save time (W × D × H, in
+    /// meters). Optional — older files and hastily-saved sessions will
+    /// not have this populated. When present the field round-trips
+    /// through load/save unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_dimensions: Option<RoomDimensionsLegacy>,
+    /// Free-form description of the listening setup (treatment,
+    /// seating, notes). Empty strings are stored as `None` on save.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_description: Option<String>,
+    /// Per-channel speaker identity (brand + model) keyed by channel
+    /// name so rename/reorder survives.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_speakers: Option<std::collections::HashMap<String, String>>,
+    /// Tone-burst delay probe results captured during the Recording
+    /// wizard's Probe step. When present the Room EQ "Delay Detection"
+    /// step can auto-populate from these instead of running a live
+    /// measurement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probe_results: Option<DelayProbeResults>,
+    /// Relative path (within the recording directory) of the raw
+    /// probe WAV persisted by `probe_channel_delays_with_recording`.
+    /// `None` for sessions that skipped the Probe step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probe_wav_relative: Option<String>,
+}
+
+/// Simple W/D/H triple in meters for the legacy
+/// `RoomEqMeasurementsFile` format. Mirrors `autoeq::RoomDimensions`
+/// but lives in the player crate so nothing here has to depend on
+/// autoeq's roomeq types.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RoomDimensionsLegacy {
+    pub length: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 /// File format for saving/loading room EQ measurements

@@ -1680,6 +1680,47 @@ impl PlayerView {
                 // Sweep parameters for recomputing metrics from WAV
                 sweep_start_freq: Some(rec_state.sweep_start_freq),
                 sweep_end_freq: Some(rec_state.sweep_end_freq),
+                // Room info collected on the save step. `room_dimensions`
+                // is converted to canonical metric; `setup_description`
+                // and `channel_speakers` round-trip as-is. `None` when
+                // the user left the field blank.
+                room_dimensions: rec_state.room_dimensions_for_save(),
+                setup_description: {
+                    let s = rec_state.setup_description.trim();
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
+                },
+                channel_speakers: rec_state.channel_speakers_map_for_save(),
+                // Tone-burst delay probe captured during the Probe
+                // step. Translate the engine `ProbeDelayResults` into
+                // the autoeq-local `ProbeResultsLegacy` mirror so the
+                // RoomConfig JSON only depends on autoeq types.
+                probe_results: rec_state.probe_capture.results.as_ref().map(|r| {
+                    autoeq::roomeq::ProbeResultsLegacy {
+                        channels: r
+                            .channels
+                            .iter()
+                            .map(|c| autoeq::roomeq::ProbeChannelResultLegacy {
+                                channel_name: c.channel_name.clone(),
+                                channel_index: c.channel_index,
+                                arrival_ms: c.arrival_ms,
+                                gain_db: c.gain_db,
+                                snr_db: c.snr_db,
+                            })
+                            .collect(),
+                        sample_rate: r.sample_rate,
+                        alignment_delays_ms: r.alignment_delays_ms.clone(),
+                    }
+                }),
+                probe_wav_relative: rec_state
+                    .probe_capture
+                    .wav_path
+                    .as_ref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|f| f.to_string_lossy().to_string()),
             };
 
             // Convert ChannelRecording to speakers HashMap with inline measurements

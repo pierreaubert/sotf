@@ -10,10 +10,204 @@ pub enum RecordingStep {
     Config,
     /// Step 2: Record frequency response for each channel
     Capture,
-    /// Step 3: Evaluate recordings and view frequency response
+    /// Step 3: Tone-burst probe for per-channel acoustic delay detection.
+    /// Runs once across all channels while the mic is still set up so
+    /// the arrival times can flow directly into the Room EQ optimizer
+    /// without a separate measurement session.
+    Probe,
+    /// Step 4: Evaluate recordings and view frequency response
     Evaluating,
-    /// Step 4: Save recordings to disk
+    /// Step 5: Save recordings to disk
     Saving,
+}
+
+impl RecordingStep {
+    /// Enumerate all steps in UI order. Both frontends iterate this so
+    /// the wizard tab bar and step dispatch never drift from the enum.
+    pub fn all() -> &'static [RecordingStep] {
+        &[
+            RecordingStep::Config,
+            RecordingStep::Capture,
+            RecordingStep::Probe,
+            RecordingStep::Evaluating,
+            RecordingStep::Saving,
+        ]
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            RecordingStep::Config => "Config",
+            RecordingStep::Capture => "Capture",
+            RecordingStep::Probe => "Probe",
+            RecordingStep::Evaluating => "Evaluate",
+            RecordingStep::Saving => "Save",
+        }
+    }
+
+    pub fn next(&self) -> Option<RecordingStep> {
+        match self {
+            RecordingStep::Config => Some(RecordingStep::Capture),
+            RecordingStep::Capture => Some(RecordingStep::Probe),
+            RecordingStep::Probe => Some(RecordingStep::Evaluating),
+            RecordingStep::Evaluating => Some(RecordingStep::Saving),
+            RecordingStep::Saving => None,
+        }
+    }
+
+    pub fn previous(&self) -> Option<RecordingStep> {
+        match self {
+            RecordingStep::Config => None,
+            RecordingStep::Capture => Some(RecordingStep::Config),
+            RecordingStep::Probe => Some(RecordingStep::Capture),
+            RecordingStep::Evaluating => Some(RecordingStep::Probe),
+            RecordingStep::Saving => Some(RecordingStep::Evaluating),
+        }
+    }
+}
+
+/// Status of the probe capture (Recording wizard Step 3).
+///
+/// Mirrors `DelayDetectionStatus` from `room_eq_types` — wall-clock
+/// progress via `started_at_ms`, `Failed(String)` for error reporting.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum ProbeCaptureStatus {
+    #[default]
+    Idle,
+    Running {
+        started_at_ms: u64,
+    },
+    Complete,
+    Failed(String),
+}
+
+impl ProbeCaptureStatus {
+    /// Estimated fraction of the probe capture completed, in
+    /// `0.0..=1.0`, computed from wall-clock elapsed vs. the estimated
+    /// total duration. Returns `None` when the status is not `Running`
+    /// or the estimated total is zero — callers should render an
+    /// indeterminate spinner in that case.
+    pub fn progress(&self, estimated_total_ms: u64, now_ms: u64) -> Option<f32> {
+        match self {
+            Self::Running { started_at_ms } if estimated_total_ms > 0 => {
+                let elapsed = now_ms.saturating_sub(*started_at_ms);
+                Some((elapsed as f32 / estimated_total_ms as f32).clamp(0.0, 1.0))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Shared business state for the Recording wizard "Probe" step.
+///
+/// Lives on both `RecordingState` (app-gpui) and `RecordingTuiState`
+/// (app-tui) so the UIs only manage cursor state locally. The raw
+/// results come from the engine (`ProbeDelayResults` aliased as
+/// [`DelayProbeResults`]) and flow at save time into
+/// `RecordingConfiguration.probe_results`.
+#[derive(Debug, Clone)]
+pub struct ProbeCaptureState {
+    /// Duration of each narrowband tone-burst in milliseconds.
+    /// Default 1000 ms — long enough for robust cross-correlation
+    /// without making the full sweep tediously slow.
+    pub probe_duration_ms: f32,
+    /// Silence gap between probes in milliseconds. Avoids overlap
+    /// between late reflections of one channel and the onset of the
+    /// next.
+    pub silence_duration_ms: f32,
+    /// Sample rate used for the probe, in Hz. Seeded from the
+    /// recording device's negotiated sample rate when the Probe step
+    /// is entered; falls back to 48 000.
+    pub sample_rate: u32,
+    /// Microphone input channel (0-based).
+    pub input_channel: u16,
+    /// Background-measurement status.
+    pub status: ProbeCaptureStatus,
+    /// Raw detection results (populated on success). Cleared on
+    /// Reset / new run.
+    pub results: Option<DelayProbeResults>,
+    /// Absolute path to the persisted probe WAV once the capture
+    /// succeeds. `None` until a successful run writes the file.
+    pub wav_path: Option<String>,
+}
+
+impl Default for ProbeCaptureState {
+    fn default() -> Self {
+        Self {
+            probe_duration_ms: 1000.0,
+            silence_duration_ms: 500.0,
+            sample_rate: 48_000,
+            input_channel: 0,
+            status: ProbeCaptureStatus::Idle,
+            results: None,
+            wav_path: None,
+        }
+    }
+}
+
+impl ProbeCaptureState {
+    /// Seed the state from a fresh set of probe results plus the
+    /// filesystem path of the persisted recording. Sets the status
+    /// to `Complete` so the UI renders the results table.
+    pub fn apply_results(&mut self, results: DelayProbeResults, wav_path: Option<String>) {
+        self.results = Some(results);
+        self.wav_path = wav_path;
+        self.status = ProbeCaptureStatus::Complete;
+    }
+
+    /// Build the per-channel arrival-time map passed into
+    /// `run_room_optimization_with_probe_arrivals` at Room EQ time.
+    /// Returns `None` unless the status is `Complete` — a failed or
+    /// in-flight probe must never contaminate the optimizer input.
+    pub fn probe_arrival_map(&self) -> Option<std::collections::HashMap<String, f64>> {
+        if !matches!(self.status, ProbeCaptureStatus::Complete) {
+            return None;
+        }
+        let results = self.results.as_ref()?;
+        let mut map = std::collections::HashMap::with_capacity(results.channels.len());
+        for ch in &results.channels {
+            if ch.arrival_ms.is_finite() {
+                map.insert(ch.channel_name.clone(), ch.arrival_ms);
+            }
+        }
+        if map.is_empty() { None } else { Some(map) }
+    }
+}
+
+/// Measurement-unit preference for the room-dimensions form on the
+/// Save step. UI state only — the canonical unit on disk is always
+/// metric (meters). Call [`RoomDimensionUnit::to_meters`] at save
+/// time to convert. Both app-tui and app-gpui re-export this type so
+/// the conversion constants live in exactly one place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum RoomDimensionUnit {
+    #[default]
+    Metric,
+    Imperial,
+}
+
+impl RoomDimensionUnit {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Metric => "m",
+            Self::Imperial => "ft",
+        }
+    }
+
+    /// Convert a user-entered value in this unit to canonical meters.
+    pub fn to_meters(&self, value: f64) -> f64 {
+        match self {
+            Self::Metric => value,
+            // 1 international foot = 0.3048 m exactly.
+            Self::Imperial => value * 0.304_8,
+        }
+    }
+
+    pub fn toggled(&self) -> Self {
+        match self {
+            Self::Metric => Self::Imperial,
+            Self::Imperial => Self::Metric,
+        }
+    }
 }
 
 /// Smoothing options for frequency response plots (1/N octave)

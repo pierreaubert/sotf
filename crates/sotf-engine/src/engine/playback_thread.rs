@@ -360,7 +360,9 @@ fn run_playback_thread(
             if native_ch != channels as u16 {
                 log::warn!(
                     "[Playback Thread] Stream build failed with {}ch ({}) — retrying with device native {}ch",
-                    channels, e, native_ch
+                    channels,
+                    e,
+                    native_ch
                 );
                 channels = native_ch as usize;
                 config.channels = native_ch;
@@ -1288,10 +1290,7 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
     available_channels.sort();
     available_channels.dedup();
 
-    if available_channels
-        .iter()
-        .any(|&ch| ch >= config.channels)
-    {
+    if available_channels.iter().any(|&ch| ch >= config.channels) {
         // Pick format from ANY sample-rate-compatible config (ignoring channel count).
         let fmt = pick_format_any_channels(&candidates, config.sample_rate);
         if let Some(fmt) = fmt {

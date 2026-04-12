@@ -9,6 +9,7 @@
 mod capture;
 mod config;
 mod evaluating;
+mod probe;
 mod saving;
 
 use crate::app::types::{RecordingStep, Screen};
@@ -36,6 +37,7 @@ impl PlayerView {
         let step_content = match current_step {
             RecordingStep::Config => self.render_recording_config_step(cx).into_any_element(),
             RecordingStep::Capture => self.render_recording_capture_step(cx).into_any_element(),
+            RecordingStep::Probe => self.render_recording_probe_step(cx).into_any_element(),
             RecordingStep::Evaluating => {
                 self.render_recording_evaluating_step(cx).into_any_element()
             }
@@ -72,17 +74,20 @@ impl PlayerView {
             .all_channels_recorded();
         let is_recording = state.app.measurement_state.recording_state.is_recording();
 
-        // Convert RecordingStep to step index
-        let step_index = match current_step {
-            RecordingStep::Config => 0,
-            RecordingStep::Capture => 1,
-            RecordingStep::Evaluating => 2,
-            RecordingStep::Saving => 3,
-        };
+        // Build wizard steps from `RecordingStep::all()` so new
+        // variants (e.g. `Probe`) show up automatically and can't be
+        // silently skipped — see the Room EQ wizard header bug for
+        // why hand-rolling this list is dangerous.
+        let all_steps = RecordingStep::all();
+        let step_index = all_steps
+            .iter()
+            .position(|s| *s == current_step)
+            .unwrap_or(0);
 
-        // Build step statuses
-        let step_statuses: Vec<StepStatus> = (0..4)
-            .map(|i| {
+        let step_statuses: Vec<StepStatus> = all_steps
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
                 if i < step_index {
                     StepStatus::Completed
                 } else if i == step_index {
@@ -93,13 +98,19 @@ impl PlayerView {
             })
             .collect();
 
-        // Build wizard steps
-        let steps = vec![
-            WizardStep::new("config", "Setup"),
-            WizardStep::new("capture", "Capture"),
-            WizardStep::new("evaluating", "Evaluate"),
-            WizardStep::new("saving", "Save"),
-        ];
+        let steps: Vec<WizardStep> = all_steps
+            .iter()
+            .map(|s| {
+                let id = match s {
+                    RecordingStep::Config => "config",
+                    RecordingStep::Capture => "capture",
+                    RecordingStep::Probe => "probe",
+                    RecordingStep::Evaluating => "evaluating",
+                    RecordingStep::Saving => "saving",
+                };
+                WizardStep::new(id, s.label())
+            })
+            .collect();
 
         let ui_kit_theme = theme.to_ui_kit_theme(theme_id);
         let wizard_theme = WizardTheme::from(&ui_kit_theme);
@@ -116,6 +127,8 @@ impl PlayerView {
         let next_disabled = match current_step {
             RecordingStep::Config => !has_output_dir,
             RecordingStep::Capture => !all_recorded || is_recording,
+            // Probe is optional; always allow advancing past it.
+            RecordingStep::Probe => false,
             RecordingStep::Evaluating => false,
             RecordingStep::Saving => false,
         };
@@ -148,24 +161,16 @@ impl PlayerView {
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
+                            // Back navigates via `RecordingStep::previous()`
+                            // so inserting a new variant can't silently
+                            // skip it — same lesson as Room EQ.
                             view.state.update(cx, |state, _| {
-                                match state.app.measurement_state.recording_state.step {
-                                    RecordingStep::Config => {
-                                        state.app.ui_state.current_screen =
-                                            state.app.ui_state.last_screen;
-                                    }
-                                    RecordingStep::Capture => {
-                                        state.app.measurement_state.recording_state.step =
-                                            RecordingStep::Config;
-                                    }
-                                    RecordingStep::Evaluating => {
-                                        state.app.measurement_state.recording_state.step =
-                                            RecordingStep::Capture;
-                                    }
-                                    RecordingStep::Saving => {
-                                        state.app.measurement_state.recording_state.step =
-                                            RecordingStep::Evaluating;
-                                    }
+                                let step = state.app.measurement_state.recording_state.step;
+                                if step == RecordingStep::Config {
+                                    state.app.ui_state.current_screen =
+                                        state.app.ui_state.last_screen;
+                                } else if let Some(prev) = step.previous() {
+                                    state.app.measurement_state.recording_state.step = prev;
                                 }
                             });
                             cx.notify();
@@ -183,28 +188,22 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
-                                match state.app.measurement_state.recording_state.step {
-                                    RecordingStep::Config => {
-                                        state
-                                            .app
-                                            .measurement_state
-                                            .recording_state
-                                            .init_channel_recordings();
-                                        state.app.measurement_state.recording_state.step =
-                                            RecordingStep::Capture;
-                                    }
-                                    RecordingStep::Capture => {
-                                        state.app.measurement_state.recording_state.step =
-                                            RecordingStep::Evaluating;
-                                    }
-                                    RecordingStep::Evaluating => {
-                                        state.app.measurement_state.recording_state.step =
-                                            RecordingStep::Saving;
-                                    }
-                                    RecordingStep::Saving => {
-                                        state.app.ui_state.current_screen =
-                                            state.app.ui_state.last_screen;
-                                    }
+                                let step = state.app.measurement_state.recording_state.step;
+                                // Transitioning out of Config still needs
+                                // to initialise channel recordings before
+                                // advancing — preserve that side-effect.
+                                if step == RecordingStep::Config {
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .init_channel_recordings();
+                                }
+                                if step == RecordingStep::Saving {
+                                    state.app.ui_state.current_screen =
+                                        state.app.ui_state.last_screen;
+                                } else if let Some(next) = step.next() {
+                                    state.app.measurement_state.recording_state.step = next;
                                 }
                             });
                             cx.notify();

@@ -544,7 +544,7 @@ impl PlayerView {
     // Action Handlers
     // ========================================================================
 
-    fn fetch_spinorama_speakers(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn fetch_spinorama_speakers(&mut self, cx: &mut Context<Self>) {
         log::info!("Fetching spinorama speakers from API...");
         // Note: loading_speakers is set to true before spawning to prevent duplicate fetches
         self.state.update(cx, |state, _cx| {

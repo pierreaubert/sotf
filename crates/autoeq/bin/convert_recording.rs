@@ -148,6 +148,9 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
             // Sweep parameters for recomputing metrics from WAV
             sweep_start_freq: cfg.sweep_start_freq,
             sweep_end_freq: cfg.sweep_end_freq,
+            // Legacy files predate room-info metadata; leave empty so
+            // the new fields round-trip as absent.
+            ..Default::default()
         });
 
     RoomConfig {

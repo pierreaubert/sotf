@@ -614,6 +614,21 @@ pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
     false
 }
 
+/// Kick off a spinorama speaker-catalog fetch if one isn't already
+/// in flight and the cache is empty. Used by the Recording wizard's
+/// save step to pre-warm the per-channel autocomplete without having
+/// to visit the spinorama EQ screen first.
+pub(crate) fn ensure_spinorama_speakers_loading(app: &mut App) {
+    if app.spinorama_eq.loading_speakers
+        || !app.spinorama_eq.available_speakers.is_empty()
+        || app.spinorama_eq.speakers_error.is_some()
+    {
+        return;
+    }
+    app.spinorama_eq.loading_speakers = true;
+    spawn_spinorama_speaker_load();
+}
+
 fn spawn_spinorama_speaker_load() {
     let result_slot = SPEAKERS_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))

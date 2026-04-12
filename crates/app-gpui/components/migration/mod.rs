@@ -184,6 +184,10 @@ pub fn write_room_config(measurements: &RoomEqMeasurementsFile, path: &Path) -> 
             // Sweep parameters for recomputing metrics from WAV
             sweep_start_freq: cfg.sweep_start_freq,
             sweep_end_freq: cfg.sweep_end_freq,
+            // Legacy migration predates the room-info metadata —
+            // leave the new fields absent so callers can distinguish
+            // "never filled in" from "intentionally empty".
+            ..Default::default()
         }
     });
 

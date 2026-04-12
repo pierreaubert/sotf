@@ -1127,6 +1127,9 @@ mod tests {
         assert_eq!(app.recording.step, RecordingStep::Capture);
 
         send_keys(&mut app, &[KeyCode::Right]);
+        assert_eq!(app.recording.step, RecordingStep::Probe);
+
+        send_keys(&mut app, &[KeyCode::Right]);
         assert_eq!(app.recording.step, RecordingStep::Evaluating);
 
         send_keys(&mut app, &[KeyCode::Right]);

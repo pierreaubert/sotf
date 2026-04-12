@@ -76,6 +76,56 @@ pub struct RecordingConfiguration {
     /// Sweep end frequency in Hz (only applicable when signal_type is "Sweep")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sweep_end_freq: Option<f32>,
+    /// Physical room dimensions (metric — length/width/height in meters)
+    /// collected from the user at save time. When present these are
+    /// reused by the optimizer's Schroeder-frequency auto-detection; see
+    /// [`RoomDimensions::schroeder_frequency_with_rt60`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_dimensions: Option<RoomDimensions>,
+    /// Free-form description of the listening setup (treatment,
+    /// seating, notes about speaker placement, etc.). Not consumed by
+    /// the optimizer — stored purely for session reproducibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_description: Option<String>,
+    /// Per-channel speaker identity (brand + model) as free-form
+    /// strings, ideally autocompleted from the spinorama.org catalog.
+    /// Keyed by channel name so it round-trips through reorder/rename.
+    /// Not consumed by the optimizer — metadata only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_speakers: Option<HashMap<String, String>>,
+    /// Tone-burst delay probe results captured during the Recording
+    /// wizard's Probe step. Stored here so the `autoeq::roomeq`
+    /// pipeline can pick them up at config-load time without requiring
+    /// a live measurement. Mirrors the shape of the engine's
+    /// `ProbeDelayResults` for cross-crate serde compatibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probe_results: Option<ProbeResultsLegacy>,
+    /// Relative path (within the recording directory) of the raw
+    /// probe WAV persisted by `probe_channel_delays_with_recording`.
+    /// `None` for sessions that skipped the Probe step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probe_wav_relative: Option<String>,
+}
+
+/// Serializable mirror of the engine's `ProbeDelayResults`. Kept
+/// in-crate (rather than depending on `sotf-engine` or `sotf-player`)
+/// so the autoeq crate remains lean. Fields match the engine type
+/// 1:1 so round-trip through serde is lossless.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ProbeResultsLegacy {
+    pub channels: Vec<ProbeChannelResultLegacy>,
+    pub sample_rate: u32,
+    pub alignment_delays_ms: Vec<f64>,
+}
+
+/// Per-channel probe result (mirror of `ProbeDelayChannelResult`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ProbeChannelResultLegacy {
+    pub channel_name: String,
+    pub channel_index: usize,
+    pub arrival_ms: f64,
+    pub gain_db: f64,
+    pub snr_db: f64,
 }
 
 // ============================================================================

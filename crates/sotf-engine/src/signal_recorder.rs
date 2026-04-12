@@ -1045,6 +1045,9 @@ pub struct ProbeDelayChannelResult {
 ///
 /// Plays it while recording from the mic, then analyzes each segment
 /// for arrival time using cross-correlation with analytic envelope.
+/// The raw recording is discarded after analysis — use
+/// [`probe_channel_delays_with_recording`] if you want to persist the
+/// mono mic capture to a WAV file for inspection or re-analysis.
 ///
 /// # Arguments
 /// * `channel_indices` - Output channel indices to probe (0-based)
@@ -1067,6 +1070,113 @@ pub fn probe_channel_delays(
     input_device_name: Option<&str>,
     input_channel: u16,
 ) -> Result<ProbeDelayResults, String> {
+    // Thin wrapper around the shared core — drops the recorded audio.
+    let (results, _recorded, _input_sr) = probe_channel_delays_core(
+        channel_indices,
+        channel_names,
+        sample_rate,
+        probe_duration_ms,
+        silence_duration_ms,
+        output_device_name,
+        input_device_name,
+        input_channel,
+    )?;
+    Ok(results)
+}
+
+/// Run delay probing and persist the raw mono mic recording to a WAV
+/// file. Identical to [`probe_channel_delays`] in every other respect.
+///
+/// The recording is written as a single-channel `f32` WAV at the
+/// sample rate cpal negotiated for the input device (which may differ
+/// from the requested `sample_rate` if the hardware doesn't support
+/// it). The file can then be loaded with `hound`, played back, or
+/// re-analyzed with the low-level helpers in
+/// `autoeq::roomeq::time_align` if the original detection was flagged
+/// as low-confidence.
+///
+/// The probe timing inside the recording follows the same layout as
+/// `probe_channel_delays`:
+///   `[silence][ch0_probe][silence][ch1_probe][silence]...[tail]`
+/// so callers can re-analyze it by running `detect_delays_multi_channel`
+/// against the same `channel_offsets` the core used.
+///
+/// # Arguments
+/// Same as [`probe_channel_delays`], plus:
+/// * `recording_wav_path` - Filesystem path to write the recorded
+///   mono mic audio to. The parent directory must exist.
+#[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)]
+pub fn probe_channel_delays_with_recording(
+    channel_indices: &[u16],
+    channel_names: &[String],
+    sample_rate: u32,
+    probe_duration_ms: f32,
+    silence_duration_ms: f32,
+    output_device_name: Option<&str>,
+    input_device_name: Option<&str>,
+    input_channel: u16,
+    recording_wav_path: &std::path::Path,
+) -> Result<ProbeDelayResults, String> {
+    let (results, recorded, input_sr) = probe_channel_delays_core(
+        channel_indices,
+        channel_names,
+        sample_rate,
+        probe_duration_ms,
+        silence_duration_ms,
+        output_device_name,
+        input_device_name,
+        input_channel,
+    )?;
+
+    // Write the mono recording as an f32 WAV. Matches the spec used by
+    // `record_and_analyze` for consistency (same bits/sample_format).
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: input_sr,
+        bits_per_sample: 32,
+        sample_format: SampleFormat::Float,
+    };
+    let mut writer = WavWriter::create(recording_wav_path, spec)
+        .map_err(|e| format!("Failed to create probe recording WAV: {}", e))?;
+    for &s in &recorded {
+        writer
+            .write_sample(s)
+            .map_err(|e| format!("Failed to write probe recording sample: {}", e))?;
+    }
+    writer
+        .finalize()
+        .map_err(|e| format!("Failed to finalize probe recording WAV: {}", e))?;
+    log::info!(
+        "[probe_channel_delays_with_recording] Saved {} samples ({:.2}s) to {}",
+        recorded.len(),
+        recorded.len() as f64 / input_sr as f64,
+        recording_wav_path.display()
+    );
+
+    Ok(results)
+}
+
+/// Shared implementation behind [`probe_channel_delays`] and
+/// [`probe_channel_delays_with_recording`]. Plays the sequential probe
+/// pattern, records from the mic, estimates system latency from the
+/// first probe, analyzes each segment, and returns the analyzed
+/// results together with the raw mono recording buffer and the
+/// **negotiated** input sample rate (which may differ from the
+/// requested `sample_rate` argument if the hardware doesn't support
+/// it).
+#[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)]
+fn probe_channel_delays_core(
+    channel_indices: &[u16],
+    channel_names: &[String],
+    sample_rate: u32,
+    probe_duration_ms: f32,
+    silence_duration_ms: f32,
+    output_device_name: Option<&str>,
+    input_device_name: Option<&str>,
+    input_channel: u16,
+) -> Result<(ProbeDelayResults, Vec<f32>, u32), String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::{Arc, Mutex};
@@ -1152,8 +1262,11 @@ pub fn probe_channel_delays(
     // Interleave all channels
     let interleaved = interleave_per_channel(&per_channel);
 
-    // Write to temporary WAV file
-    let temp_file = NamedTempFile::new()
+    // Write to temporary WAV file. The `.wav` suffix is required so
+    // Symphonia's format detection (used by AudioEngineManager::load_file)
+    // can identify the file as PCM/WAV. Without it the load fails with
+    // "unsupported audio format: no file extension found".
+    let temp_file = NamedTempFile::with_suffix(".wav")
         .map_err(|e| format!("Failed to create temp file: {}", e))?;
     let temp_path = temp_file.path().to_path_buf();
 
@@ -1315,10 +1428,22 @@ pub fn probe_channel_delays(
     // detected arrival in the full recording includes system latency (DAC + ADC +
     // driver buffering). We estimate this offset once, then use it to align the
     // segment slicing to the actual recording timeline.
+    //
+    // IMPORTANT: the search window must NOT extend into the second channel's
+    // probe region. The previous `segment_len * 2` window was wide enough to
+    // cover ch1's probe, and if ch1 had a stronger arrival (closer to the
+    // mic or higher gain), the cross-correlation would lock onto ch1
+    // instead of ch0, giving a system-latency estimate that was off by
+    // one full segment_len (~1.5 s). This shifted every subsequent
+    // channel's extraction window past its actual probe, producing
+    // nonsensical arrival deltas (tens of ms in a small room).
+    //
+    // The tighter window covers ch0's probe plus a generous margin for
+    // system latency (up to `silence_samples` worth — typically 500 ms,
+    // far beyond any real DAC+ADC round-trip).
     let system_latency_samples = {
-        // Search a generous window around where we expect the first probe
         let search_start = 0;
-        let search_end = (playback_offsets[0] + segment_len * 2).min(recorded.len());
+        let search_end = (playback_offsets[0] + segment_len).min(recorded.len());
         if search_end > search_start {
             let search_segment = &recorded[search_start..search_end];
             match math_audio_dsp::analysis::cross_correlate_envelope(
@@ -1361,8 +1486,7 @@ pub fn probe_channel_delays(
         .collect();
 
     // Compute probe autocorrelation peak once (for gain normalization)
-    let auto_result =
-        math_audio_dsp::analysis::cross_correlate_envelope(&probe, &probe, input_sr)?;
+    let auto_result = math_audio_dsp::analysis::cross_correlate_envelope(&probe, &probe, input_sr)?;
     let auto_peak = auto_result.peak_value as f64;
 
     let mut arrivals_ms = Vec::with_capacity(num_channels);
@@ -1373,13 +1497,14 @@ pub fn probe_channel_delays(
         if offset >= recorded.len() {
             return Err(format!(
                 "Channel {} adjusted offset {} exceeds recording length {}",
-                i, offset, recorded.len()
+                i,
+                offset,
+                recorded.len()
             ));
         }
         let segment = &recorded[offset..end];
 
-        let xcorr =
-            math_audio_dsp::analysis::cross_correlate_envelope(&probe, segment, input_sr)?;
+        let xcorr = math_audio_dsp::analysis::cross_correlate_envelope(&probe, segment, input_sr)?;
 
         let gain_linear = if auto_peak > 1e-10 {
             xcorr.peak_value as f64 / auto_peak
@@ -1409,7 +1534,10 @@ pub fn probe_channel_delays(
     }
 
     // Compute alignment delays (align to the slowest channel)
-    let max_arrival = arrivals_ms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let max_arrival = arrivals_ms
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
     let alignment_delays_ms: Vec<f64> = arrivals_ms.iter().map(|&a| max_arrival - a).collect();
 
     log::info!("[probe_channel_delays] Results:");
@@ -1424,11 +1552,15 @@ pub fn probe_channel_delays(
         );
     }
 
-    Ok(ProbeDelayResults {
-        channels: channel_results,
-        sample_rate: input_sr,
-        alignment_delays_ms,
-    })
+    Ok((
+        ProbeDelayResults {
+            channels: channel_results,
+            sample_rate: input_sr,
+            alignment_delays_ms,
+        },
+        recorded,
+        input_sr,
+    ))
 }
 
 /// Parse comma-separated channel list (0-based indices)

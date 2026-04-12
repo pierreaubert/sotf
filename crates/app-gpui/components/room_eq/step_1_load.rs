@@ -1,4 +1,3 @@
-use crate::app::types::RoomEqStep;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -215,7 +214,12 @@ impl PlayerView {
                     )
                     .child(
                         gpui::div().flex().justify_center().child(
-                            Button::new("next-from-load", "Next: Configure")
+                            // Label and target both come from `.next()`
+                            // so new wizard steps inserted before this
+                            // button can't be silently skipped the way
+                            // an earlier hardcoded "Next: Configure"
+                            // was bypassing the Delay Detection step.
+                            Button::new("next-from-load", "Next")
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Md)
                                 .theme(theme.to_button_theme())
@@ -224,8 +228,19 @@ impl PlayerView {
                                     MouseButton::Left,
                                     cx.listener(|view, _, _, cx| {
                                         view.state.update(cx, |state, _| {
-                                            state.app.measurement_state.room_eq_state.step =
-                                                RoomEqStep::Configure;
+                                            if let Some(next) = state
+                                                .app
+                                                .measurement_state
+                                                .room_eq_state
+                                                .step
+                                                .next()
+                                            {
+                                                state
+                                                    .app
+                                                    .measurement_state
+                                                    .room_eq_state
+                                                    .step = next;
+                                            }
                                         });
                                         cx.notify();
                                     }),

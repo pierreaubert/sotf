@@ -304,18 +304,14 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
         app.theme.accent_primary
     };
 
-    // Step tabs
-    let steps = [
-        RecordingStep::Config,
-        RecordingStep::Capture,
-        RecordingStep::Evaluating,
-        RecordingStep::Saving,
-    ];
-    let step_labels = ["Config", "Capture", "Evaluate", "Save"];
+    // Step tabs — built from `RecordingStep::all()` so new variants
+    // (e.g. `Probe`) show up automatically. The Room EQ wizard had a
+    // bug where a hand-rolled `Vec<WizardStep>` list silently dropped
+    // newly-added variants; we don't repeat the pattern here.
+    let steps = RecordingStep::all();
     let tab_titles: Vec<Line> = steps
         .iter()
-        .zip(step_labels.iter())
-        .map(|(st, label)| {
+        .map(|st| {
             let style = if *st == s.step {
                 Style::default()
                     .fg(app.theme.accent_primary)
@@ -323,7 +319,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 Style::default().fg(app.theme.fg_secondary)
             };
-            Line::from(Span::styled(*label, style))
+            Line::from(Span::styled(st.label(), style))
         })
         .collect();
     let step_idx = steps.iter().position(|st| *st == s.step).unwrap_or(0);
@@ -614,6 +610,10 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(help, inner[2]);
         }
 
+        RecordingStep::Probe => {
+            draw_recording_probe_step(f, content, app);
+        }
+
         RecordingStep::Evaluating => {
             let inner = Layout::default()
                 .direction(Direction::Vertical)
@@ -726,64 +726,457 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
         }
 
         RecordingStep::Saving => {
-            let inner = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3), // save name
-                    Constraint::Length(3), // status
-                    Constraint::Min(1),    // help
-                ])
-                .split(content);
-
-            let name_label = if s.editing_save_name {
-                "Session Name (editing)"
-            } else {
-                "Session Name"
-            };
-            let name_style = Style::default().fg(app.theme.accent_primary);
-            let name_para = Paragraph::new(if s.save_name.is_empty() {
-                "<type session name>".to_string()
-            } else {
-                s.save_name.clone()
-            })
-            .style(name_style)
-            .block(Block::default().borders(Borders::ALL).title(name_label));
-            f.render_widget(name_para, inner[0]);
-
-            // Status
-            if let Some(ref err) = s.save_error {
-                let err_para = Paragraph::new(err.as_str())
-                    .style(Style::default().fg(app.theme.accent_error))
-                    .block(Block::default().borders(Borders::ALL).title("Error"));
-                f.render_widget(err_para, inner[1]);
-            } else if s.save_success {
-                let ok = Paragraph::new(" Recordings saved successfully!")
-                    .style(Style::default().fg(app.theme.accent_success))
-                    .block(Block::default().borders(Borders::ALL).title("Status"));
-                f.render_widget(ok, inner[1]);
-            } else {
-                let completed = s
-                    .channel_recordings
-                    .iter()
-                    .filter(|ch| ch.state == ChannelRecordingState::Done)
-                    .count();
-                let status = Paragraph::new(format!(
-                    " {} channels ready to save. Output: {}",
-                    completed,
-                    if s.output_directory.is_empty() {
-                        "<default>"
-                    } else {
-                        &s.output_directory
-                    }
-                ))
-                .style(Style::default().fg(app.theme.fg_secondary))
-                .block(Block::default().borders(Borders::ALL).title("Status"));
-                f.render_widget(status, inner[1]);
-            }
-
-            let help = Paragraph::new(" Enter=edit name/save  Tab=config  BackTab=evaluate")
-                .style(Style::default().fg(app.theme.fg_secondary));
-            f.render_widget(help, inner[2]);
+            draw_recording_saving_step(f, content, app);
         }
     }
+}
+
+/// Save-step renderer for the Recording wizard.
+///
+/// Lays out five boxes vertically: session name, room dimensions,
+/// setup description, per-channel speakers, and a status/help strip.
+/// The currently-focused field (`selected_save_field`) is highlighted
+/// with the accent color; when `editing_save_value` is set, the field
+/// shows a `>` marker and echoes `edit_buffer`.
+///
+/// Selected-field layout:
+///   0      Session name
+///   1..=3  Room width / depth / height
+///   4      Unit toggle (Metric / Imperial)
+///   5      Setup description
+///   6..    Per-channel speaker entries (one index per `channel_recordings`)
+fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
+    use sotf_audio_player::recording_types::{ChannelRecordingState, RoomDimensionUnit};
+
+    let s = &app.recording;
+    let channel_count = s.channel_recordings.len();
+    // Results table (speakers per channel) grows with the channel
+    // count; 1 row per channel + 2 lines borders + 1 line dropdown
+    // overlay when editing.
+    let speakers_rows = channel_count.max(1) as u16 + 2;
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),             // session name
+            Constraint::Length(5),             // room dimensions
+            Constraint::Length(3),             // setup description
+            Constraint::Length(speakers_rows), // speakers per channel
+            Constraint::Length(3),             // status
+            Constraint::Length(1),             // help
+        ])
+        .split(content);
+
+    let focused = |idx: usize| -> Style {
+        if s.selected_save_field == idx {
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.fg_primary)
+        }
+    };
+    let is_editing_field = |idx: usize| s.editing_save_value && s.selected_save_field == idx;
+    let field_text = |idx: usize, value: String, placeholder: &str| -> String {
+        if is_editing_field(idx) {
+            format!("> {}_", s.edit_buffer)
+        } else if value.is_empty() {
+            format!("<{}>", placeholder)
+        } else {
+            value
+        }
+    };
+
+    // --- Session Name ------------------------------------------------
+    let name_title = if is_editing_field(0) {
+        "Session Name (editing)"
+    } else {
+        "Session Name"
+    };
+    let name_para = Paragraph::new(field_text(0, s.save_name.clone(), "type session name"))
+        .style(focused(0))
+        .block(Block::default().borders(Borders::ALL).title(name_title));
+    f.render_widget(name_para, inner[0]);
+
+    // --- Room Dimensions ---------------------------------------------
+    // Single line with four "cells" separated by spaces. Each cell is
+    // rendered via a sub-paragraph so the accent-bold style only lands
+    // on the focused one.
+    let room_block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!("Room Dimensions ({})", s.save_room_unit.label()));
+    let room_inner = room_block.inner(inner[1]);
+    f.render_widget(room_block, inner[1]);
+
+    let cells = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+        ])
+        .split(room_inner);
+    let dim_str = |idx: usize, v: f64| {
+        field_text(
+            idx,
+            if v > 0.0 {
+                format!("{:.2}", v)
+            } else {
+                String::new()
+            },
+            "0.00",
+        )
+    };
+    f.render_widget(
+        Paragraph::new(format!(" W: {}", dim_str(1, s.save_room_width))).style(focused(1)),
+        cells[0],
+    );
+    f.render_widget(
+        Paragraph::new(format!(" D: {}", dim_str(2, s.save_room_depth))).style(focused(2)),
+        cells[1],
+    );
+    f.render_widget(
+        Paragraph::new(format!(" H: {}", dim_str(3, s.save_room_height))).style(focused(3)),
+        cells[2],
+    );
+    let unit_marker = match s.save_room_unit {
+        RoomDimensionUnit::Metric => "[Metric]",
+        RoomDimensionUnit::Imperial => "[Imperial]",
+    };
+    f.render_widget(
+        Paragraph::new(format!(" {}", unit_marker)).style(focused(4)),
+        cells[3],
+    );
+
+    // --- Setup Description -------------------------------------------
+    let desc_title = if is_editing_field(5) {
+        "Setup Description (editing)"
+    } else {
+        "Setup Description"
+    };
+    let desc_para = Paragraph::new(field_text(
+        5,
+        s.setup_description.clone(),
+        "describe treatment, seating, equipment",
+    ))
+    .style(focused(5))
+    .block(Block::default().borders(Borders::ALL).title(desc_title));
+    f.render_widget(desc_para, inner[2]);
+
+    // --- Speakers per Channel ----------------------------------------
+    let catalog = &app.spinorama_eq.available_speakers;
+    let spk_title = if catalog.is_empty() {
+        "Speakers per Channel  (catalog loading…)"
+    } else {
+        "Speakers per Channel"
+    };
+    let spk_block = Block::default().borders(Borders::ALL).title(spk_title);
+    let spk_inner = spk_block.inner(inner[3]);
+    f.render_widget(spk_block, inner[3]);
+    if channel_count == 0 {
+        f.render_widget(
+            Paragraph::new(" No channels yet — record some first.")
+                .style(Style::default().fg(app.theme.fg_secondary)),
+            spk_inner,
+        );
+    } else {
+        let rows: Vec<Row> = s
+            .channel_recordings
+            .iter()
+            .enumerate()
+            .map(|(i, rec)| {
+                let field_idx = 6 + i;
+                let current = s.channel_speakers.get(i).cloned().unwrap_or_default();
+                let cell_value = if is_editing_field(field_idx) {
+                    format!("> {}_", s.edit_buffer)
+                } else if current.is_empty() {
+                    "<empty>".to_string()
+                } else {
+                    current
+                };
+                let row_style = if s.selected_save_field == field_idx {
+                    Style::default()
+                        .fg(app.theme.accent_primary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                Row::new(vec![
+                    Cell::from(format!(" {}", rec.channel_name.clone())),
+                    Cell::from(cell_value),
+                ])
+                .style(row_style)
+            })
+            .collect();
+        let table = Table::new(rows, [Constraint::Length(8), Constraint::Percentage(90)]);
+        f.render_widget(table, spk_inner);
+    }
+
+    // --- Status / suggestions ----------------------------------------
+    // When editing a channel-speaker field, repurpose the status box
+    // to show pipe-separated autocomplete matches from the spinorama
+    // catalog. The user types freely in the input; this line is a
+    // visual hint — they still commit with Enter.
+    let editing_speaker = s.editing_save_value
+        && s.selected_save_field >= 6
+        && s.selected_save_field < 6 + channel_count;
+    if editing_speaker {
+        let q = s.edit_buffer.to_lowercase();
+        let matches: Vec<String> = catalog
+            .iter()
+            .filter(|name| !q.is_empty() && name.to_lowercase().contains(&q))
+            .take(5)
+            .cloned()
+            .collect();
+        let hint = if matches.is_empty() && catalog.is_empty() {
+            " Loading catalog…".to_string()
+        } else if matches.is_empty() {
+            " No matches — free-form text is saved as-is".to_string()
+        } else {
+            format!(" ▸ {}", matches.join(" | "))
+        };
+        let suggestions = Paragraph::new(hint)
+            .style(Style::default().fg(app.theme.accent_primary))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Suggestions (spinorama.org)"),
+            );
+        f.render_widget(suggestions, inner[4]);
+    } else if let Some(ref err) = s.save_error {
+        let err_para = Paragraph::new(err.as_str())
+            .style(Style::default().fg(app.theme.accent_error))
+            .block(Block::default().borders(Borders::ALL).title("Error"));
+        f.render_widget(err_para, inner[4]);
+    } else if s.save_success {
+        let ok = Paragraph::new(" Recordings saved successfully!")
+            .style(Style::default().fg(app.theme.accent_success))
+            .block(Block::default().borders(Borders::ALL).title("Status"));
+        f.render_widget(ok, inner[4]);
+    } else {
+        let completed = s
+            .channel_recordings
+            .iter()
+            .filter(|ch| ch.state == ChannelRecordingState::Done)
+            .count();
+        let status = Paragraph::new(format!(
+            " {} channels ready. Output: {}",
+            completed,
+            if s.output_directory.is_empty() {
+                "<default>"
+            } else {
+                &s.output_directory
+            }
+        ))
+        .style(Style::default().fg(app.theme.fg_secondary))
+        .block(Block::default().borders(Borders::ALL).title("Status"));
+        f.render_widget(status, inner[4]);
+    }
+
+    // --- Help --------------------------------------------------------
+    let help_text = if s.editing_save_value {
+        " Type value | Enter=confirm | Esc=cancel"
+    } else {
+        " Tab=next field  ↑↓=nav  Enter=edit  u=unit  Ctrl+S=save"
+    };
+    f.render_widget(
+        Paragraph::new(help_text).style(Style::default().fg(app.theme.fg_secondary)),
+        inner[5],
+    );
+}
+
+/// Probe-step renderer for the Recording wizard.
+///
+/// Three panes: probe/silence/mic form, status/progress banner, and a
+/// per-channel results table populated from
+/// `ProbeCaptureState.results` after a successful capture. Mirrors the
+/// Room EQ Delay Detection step layout so the two feel consistent —
+/// differences are:
+///   - channel list is seeded from `channel_recordings` (Capture step
+///     already ran) rather than loaded measurements.
+///   - on success, also shows the persisted WAV path under "Results".
+fn draw_recording_probe_step(f: &mut Frame, content: Rect, app: &App) {
+    use sotf_audio_player::recording_types::ProbeCaptureStatus;
+    use sotf_audio_player::room_eq_types::estimate_probe_sequence_ms;
+
+    let s = &app.recording;
+    let pc = &s.probe_capture;
+    let channel_count = s.channel_recordings.len();
+
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7), // form
+            Constraint::Length(3), // status
+            Constraint::Min(5),    // results
+            Constraint::Length(1), // help
+        ])
+        .split(content);
+
+    let focused = |idx: usize| -> Style {
+        if s.probe_selected_field == idx {
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.fg_primary)
+        }
+    };
+    let is_editing = |idx: usize| s.probe_editing_value && s.probe_selected_field == idx;
+    let field_text = |idx: usize, val: String, placeholder: &str| -> String {
+        if is_editing(idx) {
+            format!("> {}_", s.edit_buffer)
+        } else if val.is_empty() {
+            format!("<{}>", placeholder)
+        } else {
+            val
+        }
+    };
+
+    // --- Form ----------------------------------------------------------
+    let form_rows = vec![
+        Row::new(vec![
+            Cell::from("Probe duration (ms)").style(focused(0)),
+            Cell::from(field_text(
+                0,
+                format!("{:.0}", pc.probe_duration_ms),
+                "1000",
+            ))
+            .style(focused(0)),
+        ]),
+        Row::new(vec![
+            Cell::from("Silence gap (ms)").style(focused(1)),
+            Cell::from(field_text(
+                1,
+                format!("{:.0}", pc.silence_duration_ms),
+                "500",
+            ))
+            .style(focused(1)),
+        ]),
+        Row::new(vec![
+            Cell::from("Mic input channel").style(focused(2)),
+            Cell::from(field_text(2, format!("{}", pc.input_channel), "0")).style(focused(2)),
+        ]),
+        Row::new(vec![
+            Cell::from("[ Run Probe ]").style(focused(3)),
+            Cell::from(match pc.status {
+                ProbeCaptureStatus::Running { .. } => "running...",
+                ProbeCaptureStatus::Complete => "done",
+                ProbeCaptureStatus::Failed(_) => "failed",
+                ProbeCaptureStatus::Idle => "press r or Enter",
+            })
+            .style(focused(3)),
+        ]),
+    ];
+    let form = Table::new(
+        form_rows,
+        [Constraint::Length(24), Constraint::Percentage(60)],
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Delay Probe Capture"),
+    );
+    f.render_widget(form, inner[0]);
+
+    // --- Status banner -------------------------------------------------
+    let estimated_total =
+        estimate_probe_sequence_ms(channel_count, pc.probe_duration_ms, pc.silence_duration_ms);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let (status_text, status_color) = match &pc.status {
+        ProbeCaptureStatus::Idle => (
+            "Idle — press `r` to capture tone-burst delays".to_string(),
+            app.theme.fg_secondary,
+        ),
+        ProbeCaptureStatus::Running { .. } => {
+            let pct = pc
+                .status
+                .progress(estimated_total, now_ms)
+                .map(|p| format!("{:.0}%", p * 100.0))
+                .unwrap_or_else(|| "…".to_string());
+            (format!("Running... {}", pct), app.theme.accent_primary)
+        }
+        ProbeCaptureStatus::Complete => {
+            let n = pc.results.as_ref().map(|r| r.channels.len()).unwrap_or(0);
+            (
+                format!("Complete — detected {} channel(s)", n),
+                app.theme.accent_success,
+            )
+        }
+        ProbeCaptureStatus::Failed(msg) => (format!("Failed: {}", msg), app.theme.accent_error),
+    };
+    let status = Paragraph::new(status_text)
+        .style(Style::default().fg(status_color))
+        .block(Block::default().borders(Borders::ALL).title("Status"));
+    f.render_widget(status, inner[1]);
+
+    // --- Results table -------------------------------------------------
+    if let Some(results) = pc.results.as_ref() {
+        let rows: Vec<Row> = results
+            .channels
+            .iter()
+            .enumerate()
+            .map(|(i, ch)| {
+                let snr_color = if ch.snr_db > 10.0 {
+                    app.theme.accent_success
+                } else if ch.snr_db > 0.0 {
+                    app.theme.accent_primary
+                } else {
+                    app.theme.accent_error
+                };
+                let align = results.alignment_delays_ms.get(i).copied().unwrap_or(0.0);
+                Row::new(vec![
+                    Cell::from(ch.channel_name.clone()),
+                    Cell::from(format!("{:.2}", ch.arrival_ms)),
+                    Cell::from(format!("{:+.1}", ch.gain_db)),
+                    Cell::from(format!("{:+.1}", ch.snr_db)).style(Style::default().fg(snr_color)),
+                    Cell::from(format!("{:.2}", align)),
+                ])
+            })
+            .collect();
+        let header = Row::new(vec![
+            Cell::from("Channel"),
+            Cell::from("Arrival ms"),
+            Cell::from("Gain dB"),
+            Cell::from("SNR dB"),
+            Cell::from("Align ms"),
+        ])
+        .style(
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        );
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(12),
+                Constraint::Length(12),
+                Constraint::Length(10),
+                Constraint::Length(10),
+                Constraint::Length(12),
+            ],
+        )
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title("Results"));
+        f.render_widget(table, inner[2]);
+    } else {
+        let empty = Paragraph::new(" No probe captured yet — press `r` to run")
+            .style(Style::default().fg(app.theme.fg_secondary))
+            .block(Block::default().borders(Borders::ALL).title("Results"));
+        f.render_widget(empty, inner[2]);
+    }
+
+    // --- Help ----------------------------------------------------------
+    let help = if s.probe_editing_value {
+        " Type value | Enter=confirm | Esc=cancel"
+    } else {
+        " Tab=next field  ←→=adjust  r=run  Tab=evaluate"
+    };
+    f.render_widget(
+        Paragraph::new(help).style(Style::default().fg(app.theme.fg_secondary)),
+        inner[3],
+    );
 }

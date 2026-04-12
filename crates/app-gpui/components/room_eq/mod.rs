@@ -111,14 +111,25 @@ impl PlayerView {
 
         let step_index = current_step.index();
 
-        // Build wizard steps
-        let steps = vec![
-            WizardStep::new("load-data", "Load Data"),
-            WizardStep::new("configure", "Configure"),
-            WizardStep::new("optimize", "Optimize"),
-            WizardStep::new("review", "Review"),
-            WizardStep::new("export", "Export"),
-        ];
+        // Build wizard steps from `RoomEqStep::all()` so new variants
+        // (e.g. `DelayDetection`) show up in the tab bar automatically.
+        // Hand-rolling this list is how the Delay step initially went
+        // missing from the header even though it was wired everywhere
+        // else.
+        let steps: Vec<WizardStep> = RoomEqStep::all()
+            .iter()
+            .map(|s| {
+                let id = match s {
+                    RoomEqStep::LoadData => "load-data",
+                    RoomEqStep::DelayDetection => "delay-detection",
+                    RoomEqStep::Configure => "configure",
+                    RoomEqStep::Optimize => "optimize",
+                    RoomEqStep::Review => "review",
+                    RoomEqStep::Export => "export",
+                };
+                WizardStep::new(id, s.label())
+            })
+            .collect();
 
         // Build step statuses based on current step
         let step_statuses: Vec<StepStatus> = RoomEqStep::all()
