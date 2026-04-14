@@ -9,22 +9,29 @@ use crate::recording_types::{DelayProbeResults, RecordingResult};
 type MeasurementData = (Vec<f32>, Vec<f32>, Vec<f32>, Option<String>, Option<String>);
 
 /// Room EQ workflow step
+///
+/// Flow: LoadData → Delay → Process → Configure → Optimize → Review → Export
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RoomEqStep {
     /// Step 1: Load/import measurement data
     #[default]
     LoadData,
-    /// Step 2: Tone-burst delay detection (measures per-channel acoustic
-    /// propagation delay using a narrowband probe). Runs optionally before
-    /// Configure; results feed auto-alignment into the optimizer.
-    DelayDetection,
-    /// Step 3: Configure channels, mode, and optimizer settings
+    /// Step 2: Per-channel alignment delay table. Shows arrival times
+    /// from the recording session's probe results (or manual entry).
+    /// The user can override delays; values < 0.3 ms get a "consider
+    /// using 0" hint.
+    Delay,
+    /// Step 3: Choose between Simple Wizard (guided presets) and Full
+    /// Wizard (all parameters in Acoustic + Optimizer blocks).
+    Process,
+    /// Step 4: Configure channels, mode, and optimizer settings.
+    /// Layout depends on the wizard mode selected in the Process step.
     Configure,
-    /// Step 4: Run optimization (per-channel, then combined)
+    /// Step 5: Run optimization (per-channel, then combined)
     Optimize,
-    /// Step 5: Review results and visualizations
+    /// Step 6: Review results and visualizations
     Review,
-    /// Step 6: Export DSP chain and apply
+    /// Step 7: Export DSP chain and apply
     Export,
 }
 
@@ -33,7 +40,8 @@ impl RoomEqStep {
     pub fn all() -> &'static [RoomEqStep] {
         &[
             RoomEqStep::LoadData,
-            RoomEqStep::DelayDetection,
+            RoomEqStep::Delay,
+            RoomEqStep::Process,
             RoomEqStep::Configure,
             RoomEqStep::Optimize,
             RoomEqStep::Review,
@@ -45,11 +53,12 @@ impl RoomEqStep {
     pub fn index(&self) -> usize {
         match self {
             RoomEqStep::LoadData => 0,
-            RoomEqStep::DelayDetection => 1,
-            RoomEqStep::Configure => 2,
-            RoomEqStep::Optimize => 3,
-            RoomEqStep::Review => 4,
-            RoomEqStep::Export => 5,
+            RoomEqStep::Delay => 1,
+            RoomEqStep::Process => 2,
+            RoomEqStep::Configure => 3,
+            RoomEqStep::Optimize => 4,
+            RoomEqStep::Review => 5,
+            RoomEqStep::Export => 6,
         }
     }
 
@@ -57,7 +66,8 @@ impl RoomEqStep {
     pub fn label(&self) -> &'static str {
         match self {
             RoomEqStep::LoadData => "Load Data",
-            RoomEqStep::DelayDetection => "Delay",
+            RoomEqStep::Delay => "Delay",
+            RoomEqStep::Process => "Process",
             RoomEqStep::Configure => "Configure",
             RoomEqStep::Optimize => "Optimize",
             RoomEqStep::Review => "Review",
@@ -68,8 +78,9 @@ impl RoomEqStep {
     /// Get next step
     pub fn next(&self) -> Option<RoomEqStep> {
         match self {
-            RoomEqStep::LoadData => Some(RoomEqStep::DelayDetection),
-            RoomEqStep::DelayDetection => Some(RoomEqStep::Configure),
+            RoomEqStep::LoadData => Some(RoomEqStep::Delay),
+            RoomEqStep::Delay => Some(RoomEqStep::Process),
+            RoomEqStep::Process => Some(RoomEqStep::Configure),
             RoomEqStep::Configure => Some(RoomEqStep::Optimize),
             RoomEqStep::Optimize => Some(RoomEqStep::Review),
             RoomEqStep::Review => Some(RoomEqStep::Export),
@@ -81,11 +92,190 @@ impl RoomEqStep {
     pub fn previous(&self) -> Option<RoomEqStep> {
         match self {
             RoomEqStep::LoadData => None,
-            RoomEqStep::DelayDetection => Some(RoomEqStep::LoadData),
-            RoomEqStep::Configure => Some(RoomEqStep::DelayDetection),
+            RoomEqStep::Delay => Some(RoomEqStep::LoadData),
+            RoomEqStep::Process => Some(RoomEqStep::Delay),
+            RoomEqStep::Configure => Some(RoomEqStep::Process),
             RoomEqStep::Optimize => Some(RoomEqStep::Configure),
             RoomEqStep::Review => Some(RoomEqStep::Optimize),
             RoomEqStep::Export => Some(RoomEqStep::Review),
+        }
+    }
+}
+
+/// Wizard mode selected in the Process step. Determines which
+/// Configure layout renders: Simple shows guided presets, Full
+/// shows all parameters in two organized blocks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum RoomEqWizardMode {
+    /// Guided preset selector adapted to the speaker configuration.
+    #[default]
+    Simple,
+    /// Full parameter access split into Acoustic + Optimizer blocks.
+    Full,
+}
+
+/// Listening distance tier used by the Simple Wizard to set the
+/// target curve family. Near-field (<1.5m, desktop), Mid-field
+/// (1.5–3m, typical couch), Far-field (>3m, theater/large room).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum SpeakerTier {
+    NearField,
+    #[default]
+    MidField,
+    FarField,
+}
+
+impl SpeakerTier {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::NearField => "Near-field (<1.5m)",
+            Self::MidField => "Mid-field (1.5–3m)",
+            Self::FarField => "Far-field (>3m)",
+        }
+    }
+
+    pub fn all() -> &'static [SpeakerTier] {
+        &[Self::NearField, Self::MidField, Self::FarField]
+    }
+}
+
+/// Simple-mode loss function choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum SimpleLossChoice {
+    #[default]
+    Flat,
+    Epa,
+}
+
+impl SimpleLossChoice {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Flat => "Flat (minimize deviation)",
+            Self::Epa => "EPA (perceptual quality)",
+        }
+    }
+}
+
+/// Simple-mode processing capability choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum SimpleProcessingChoice {
+    #[default]
+    Iir,
+    MixedPhase,
+}
+
+impl SimpleProcessingChoice {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Iir => "IIR (low latency)",
+            Self::MixedPhase => "Mixed Phase (best quality)",
+        }
+    }
+}
+
+/// Simple-mode crossover choice (shown for 2.1+ configs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum SimpleCrossoverChoice {
+    #[default]
+    Lr24,
+    Lr48,
+}
+
+impl SimpleCrossoverChoice {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Lr24 => "Linkwitz-Riley 24 dB/oct",
+            Self::Lr48 => "Linkwitz-Riley 48 dB/oct",
+        }
+    }
+}
+
+/// Collected choices from the Simple Wizard's Configure step.
+///
+/// [`apply_simple_preset`] translates these into the full
+/// `RoomEqOptimizerConfig` so the optimizer sees the same field
+/// structure regardless of which wizard path the user took.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SimplePresetConfig {
+    pub target: SpeakerTier,
+    pub loss: SimpleLossChoice,
+    pub processing: SimpleProcessingChoice,
+    /// Only meaningful for 2.1+ configs.
+    pub crossover: SimpleCrossoverChoice,
+    /// Only meaningful for 5.0+ or >2 subs.
+    pub bass_management: String,
+    /// Multi-position strategy (only when multi-position data detected).
+    pub multi_position_strategy: String,
+}
+
+impl SimplePresetConfig {
+    /// Apply the user's Simple Wizard choices to a full optimizer
+    /// config. Fields not controlled by the preset keep their current
+    /// values so the user doesn't lose any manual tuning done in a
+    /// previous Full Wizard session.
+    pub fn apply(&self, config: &mut RoomEqOptimizerConfig) {
+        // --- Processing mode ---
+        config.mode = match self.processing {
+            SimpleProcessingChoice::Iir => RoomEqOptimizationMode::Iir,
+            SimpleProcessingChoice::MixedPhase => RoomEqOptimizationMode::MixedPhase,
+        };
+
+        // --- Loss function ---
+        config.loss_type = match self.loss {
+            SimpleLossChoice::Flat => "flat".to_string(),
+            SimpleLossChoice::Epa => "epa".to_string(),
+        };
+
+        // --- Target tilt based on listening distance ---
+        // Near-field: flat (no tilt). Mid-field: gentle -0.5 dB/oct.
+        // Far-field: steeper -1.0 dB/oct (compensates for room gain).
+        match self.target {
+            SpeakerTier::NearField => {
+                config.target_tilt.enabled = false;
+                config.target_tilt.slope = 0.0;
+            }
+            SpeakerTier::MidField => {
+                config.target_tilt.enabled = true;
+                config.target_tilt.slope = -0.5;
+            }
+            SpeakerTier::FarField => {
+                config.target_tilt.enabled = true;
+                config.target_tilt.slope = -1.0;
+            }
+        }
+
+        // --- Crossover (2.1+ only) ---
+        if !self.bass_management.is_empty() || matches!(self.crossover, SimpleCrossoverChoice::Lr48)
+        {
+            config.schroeder_split.enabled = true;
+        }
+
+        // --- Sane defaults for params not exposed in Simple mode ---
+        // These cover all the fields the Simple Wizard doesn't surface
+        // so the optimizer always runs with reasonable values even if
+        // the user never visited the Full Wizard.
+        config.num_filters = 7;
+        config.algorithm = "autoeq:de".to_string();
+        config.population = 50;
+        config.max_iter = 50_000;
+        config.min_freq = 20.0;
+        config.max_freq = 1600.0;
+        config.min_db = -12.0;
+        config.max_db = 4.0;
+        config.min_q = 0.5;
+        config.max_q = 6.0;
+        config.peq_model = "pk".to_string();
+        config.tolerance = 1e-5;
+        config.atolerance = 1e-5;
+        config.psychoacoustic = true;
+        config.asymmetric_loss = true;
+        config.refine = true;
+        config.local_algo = "cobyla".to_string();
+
+        // --- Multi-position strategy ---
+        if !self.multi_position_strategy.is_empty() {
+            config.multi_measurement.enabled = true;
+            config.multi_measurement.strategy = self.multi_position_strategy.clone();
         }
     }
 }
@@ -226,11 +416,22 @@ impl RoomEqMeasurementsFile {
         if let Ok(room_config) = serde_json::from_str::<autoeq::RoomConfig>(json)
             && let Some(rc) = room_config.recording_config
         {
+            // The autoeq crate stores probe results as `ProbeResultsLegacy`
+            // which is shape-compatible with the engine's `ProbeDelayResults`
+            // (re-exported as `DelayProbeResults`). Translate via serde
+            // round-trip so the player-layer type is what DelayDetectionState
+            // expects.
+            let probe_results = rc.probe_results.as_ref().and_then(|pr| {
+                serde_json::to_string(pr)
+                    .ok()
+                    .and_then(|j| serde_json::from_str::<DelayProbeResults>(&j).ok())
+            });
             return Some(DelayDetectionHints {
                 channel_names: rc.channel_names.clone(),
                 sample_rate: rc.recording_sample_rate,
                 playback_device_name: rc.playback_device_name.clone(),
                 recording_device_name: rc.recording_device_name.clone(),
+                probe_results,
             });
         }
         // Legacy format — the player-layer `RecordingConfiguration`
@@ -243,6 +444,7 @@ impl RoomEqMeasurementsFile {
                 sample_rate: Some(cfg.recording_sample_rate),
                 playback_device_name: Some(cfg.playback_device_name),
                 recording_device_name: Some(cfg.recording_device_name),
+                probe_results: cfg.probe_results,
             });
         }
         None
@@ -1409,6 +1611,10 @@ pub struct DelayDetectionHints {
     pub playback_device_name: Option<String>,
     /// Recording device name (None = system default).
     pub recording_device_name: Option<String>,
+    /// Probe results captured during the Recording wizard's Probe step.
+    /// When present, the Room EQ Delay step auto-populates arrival
+    /// times from these instead of showing "no data".
+    pub probe_results: Option<DelayProbeResults>,
 }
 
 /// Estimate the total duration of a probe sequence in milliseconds.

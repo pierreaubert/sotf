@@ -9,8 +9,9 @@ use std::sync::{Arc, Mutex};
 fn room_eq_step_prev_wrap(s: RoomEqStep) -> RoomEqStep {
     match s {
         RoomEqStep::LoadData => RoomEqStep::Export,
-        RoomEqStep::DelayDetection => RoomEqStep::LoadData,
-        RoomEqStep::Configure => RoomEqStep::DelayDetection,
+        RoomEqStep::Delay => RoomEqStep::LoadData,
+        RoomEqStep::Process => RoomEqStep::Delay,
+        RoomEqStep::Configure => RoomEqStep::Process,
         RoomEqStep::Optimize => RoomEqStep::Configure,
         RoomEqStep::Review => RoomEqStep::Optimize,
         RoomEqStep::Export => RoomEqStep::Review,
@@ -19,8 +20,9 @@ fn room_eq_step_prev_wrap(s: RoomEqStep) -> RoomEqStep {
 
 fn room_eq_step_next_wrap(s: RoomEqStep) -> RoomEqStep {
     match s {
-        RoomEqStep::LoadData => RoomEqStep::DelayDetection,
-        RoomEqStep::DelayDetection => RoomEqStep::Configure,
+        RoomEqStep::LoadData => RoomEqStep::Delay,
+        RoomEqStep::Delay => RoomEqStep::Process,
+        RoomEqStep::Process => RoomEqStep::Configure,
         RoomEqStep::Configure => RoomEqStep::Optimize,
         RoomEqStep::Optimize => RoomEqStep::Review,
         RoomEqStep::Review => RoomEqStep::Export,
@@ -108,7 +110,20 @@ pub fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
 
     match app.room_eq.step {
         RoomEqStep::LoadData => handle_load_data_keys(app, key),
-        RoomEqStep::DelayDetection => handle_delay_detection_keys(app, key),
+        RoomEqStep::Delay => handle_delay_detection_keys(app, key),
+        RoomEqStep::Process => {
+            use sotf_audio_player::room_eq_types::RoomEqWizardMode;
+            match key.code {
+                KeyCode::Char('1') => {
+                    app.room_eq.wizard_mode = RoomEqWizardMode::Simple;
+                }
+                KeyCode::Char('2') => {
+                    app.room_eq.wizard_mode = RoomEqWizardMode::Full;
+                }
+                _ => {}
+            }
+            None
+        }
         RoomEqStep::Configure => handle_configure_keys(app, key),
         RoomEqStep::Optimize => handle_optimize_keys(app, key),
         RoomEqStep::Review => handle_review_keys(app, key),
@@ -1108,25 +1123,12 @@ pub(crate) fn export_room_eq_results(app: &mut App) {
 }
 
 // ============================================================================
-// Delay Detection (tone-burst probe) step
+// Delay step (simplified — just table + editing, no probe form)
 // ============================================================================
 
-/// Number of form fields on the Delay Detection step. Used by the field
-/// cycling logic (`Tab`/`Shift-Tab`).
-const DD_FIELD_COUNT: usize = 4;
-const DD_FIELD_PROBE_MS: usize = 0;
-const DD_FIELD_SILENCE_MS: usize = 1;
-const DD_FIELD_MIC_CHANNEL: usize = 2;
-const DD_FIELD_RUN: usize = 3;
-
-#[allow(clippy::type_complexity)]
-static DELAY_DETECT_RESULT: std::sync::OnceLock<
-    Arc<Mutex<Option<Result<sotf_audio_player::recording_types::DelayProbeResults, String>>>>,
-> = std::sync::OnceLock::new();
-
+/// Simplified delay step handler — just row navigation + editing.
+/// The probe form has moved to the Recording wizard's Probe step.
 fn handle_delay_detection_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use sotf_audio_player::room_eq_types::DelayDetectionStatus;
-
     // --- Row edit sub-mode: typing a new arrival time for a row ---
     if let Some(row) = app.room_eq.dd_edit_row {
         match key.code {
@@ -1156,15 +1158,6 @@ fn handle_delay_detection_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCom
         return None;
     }
 
-    // Any key that isn't `r` (or `Enter` on the Run button) cancels a
-    // pending re-run confirmation so we never silently confirm after a
-    // stray keystroke.
-    let is_run_key = matches!(key.code, KeyCode::Char('r'))
-        || (matches!(key.code, KeyCode::Enter) && app.room_eq.dd_field == DD_FIELD_RUN);
-    if !is_run_key {
-        app.room_eq.dd_pending_rerun_confirm = false;
-    }
-
     let num_rows = app
         .room_eq
         .delay_detection
@@ -1174,72 +1167,14 @@ fn handle_delay_detection_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCom
         .unwrap_or(0);
 
     match key.code {
-        KeyCode::Tab | KeyCode::Down => {
-            app.room_eq.dd_field = (app.room_eq.dd_field + 1) % DD_FIELD_COUNT;
-        }
-        KeyCode::BackTab | KeyCode::Up => {
-            app.room_eq.dd_field = (app.room_eq.dd_field + DD_FIELD_COUNT - 1) % DD_FIELD_COUNT;
-        }
-        // j / k / PgDown / PgUp: navigate results table row cursor
-        // (only meaningful when there are results; no-op otherwise).
-        KeyCode::Char('j') | KeyCode::PageDown if num_rows > 0 => {
+        // j / k: navigate results table row cursor
+        KeyCode::Char('j') | KeyCode::Down if num_rows > 0 => {
             app.room_eq.dd_selected_row = (app.room_eq.dd_selected_row + 1) % num_rows;
         }
-        KeyCode::Char('k') | KeyCode::PageUp if num_rows > 0 => {
+        KeyCode::Char('k') | KeyCode::Up if num_rows > 0 => {
             app.room_eq.dd_selected_row = (app.room_eq.dd_selected_row + num_rows - 1) % num_rows;
         }
-        // + / -: nudge the focused numeric form field.
-        KeyCode::Char('+') | KeyCode::Right => match app.room_eq.dd_field {
-            DD_FIELD_PROBE_MS => {
-                let v = (app.room_eq.delay_detection.probe_duration_ms + 100.0).min(5000.0);
-                app.room_eq.delay_detection.probe_duration_ms = v;
-            }
-            DD_FIELD_SILENCE_MS => {
-                let v = (app.room_eq.delay_detection.silence_duration_ms + 100.0).min(5000.0);
-                app.room_eq.delay_detection.silence_duration_ms = v;
-            }
-            DD_FIELD_MIC_CHANNEL => {
-                app.room_eq.delay_detection.input_channel =
-                    app.room_eq.delay_detection.input_channel.saturating_add(1);
-            }
-            _ => {}
-        },
-        KeyCode::Char('-') | KeyCode::Left => match app.room_eq.dd_field {
-            DD_FIELD_PROBE_MS => {
-                let v = (app.room_eq.delay_detection.probe_duration_ms - 100.0).max(100.0);
-                app.room_eq.delay_detection.probe_duration_ms = v;
-            }
-            DD_FIELD_SILENCE_MS => {
-                let v = (app.room_eq.delay_detection.silence_duration_ms - 100.0).max(100.0);
-                app.room_eq.delay_detection.silence_duration_ms = v;
-            }
-            DD_FIELD_MIC_CHANNEL => {
-                app.room_eq.delay_detection.input_channel =
-                    app.room_eq.delay_detection.input_channel.saturating_sub(1);
-            }
-            _ => {}
-        },
-        // `r` (from anywhere) or Enter on the Run field starts a
-        // measurement. When results already exist we require a double
-        // press so a stray `r` can't destroy in-progress overrides.
-        KeyCode::Char('r') | KeyCode::Enter if is_run_key => {
-            if matches!(
-                app.room_eq.delay_detection.status,
-                DelayDetectionStatus::Running { .. }
-            ) {
-                // Refuse to run while a measurement is already in flight.
-                return None;
-            }
-            let has_edits = !app.room_eq.delay_detection.edited_arrival_ms.is_empty();
-            if has_edits && !app.room_eq.dd_pending_rerun_confirm {
-                app.room_eq.dd_pending_rerun_confirm = true;
-            } else {
-                app.room_eq.dd_pending_rerun_confirm = false;
-                spawn_delay_detection(app);
-            }
-        }
-        // `e`: start editing the arrival override for the currently
-        // selected results row. Row selection is driven by `j` / `k`.
+        // e: start editing the selected row's delay override
         KeyCode::Char('e') if num_rows > 0 => {
             let row = app.room_eq.dd_selected_row.min(num_rows - 1);
             app.room_eq.dd_edit_row = Some(row);
@@ -1251,116 +1186,11 @@ fn handle_delay_detection_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCom
     None
 }
 
-fn spawn_delay_detection(app: &mut App) {
-    use sotf_audio_player::room_eq_types::DelayDetectionStatus;
-
-    // Measurements must be loaded before we know which channels to probe.
-    if app.room_eq.channel_measurements.is_empty() {
-        app.room_eq.delay_detection.status = DelayDetectionStatus::Failed(
-            "Load measurements (Step 1) before running delay detection".to_string(),
-        );
-        return;
-    }
-
-    // Build the playback channel map from the loaded measurements. The
-    // order matches `channel_measurements` so the engine's per-channel
-    // result is indexed consistently with the rest of the wizard. The
-    // hardware channel indices are a best-effort `0..N` fallback — the
-    // real map would come from a recording configuration (not yet
-    // plumbed through) or from a device picker (future work).
-    let channel_names: Vec<String> = app
-        .room_eq
-        .channel_measurements
-        .iter()
-        .map(|m| m.channel_name.clone())
-        .collect();
-    let channel_indices: Vec<u16> = (0..channel_names.len() as u16).collect();
-
-    // Preserve any in-progress user edits until the new results come in.
-    // `apply_results` will overwrite `edited_arrival_ms` on success.
-    app.room_eq.delay_detection.status = DelayDetectionStatus::Running {
-        started_at_ms: now_ms(),
-    };
-    app.room_eq.delay_detection.results = None;
-    app.room_eq.delay_detection.edited_arrival_ms.clear();
-
-    let probe_duration_ms = app.room_eq.delay_detection.probe_duration_ms;
-    let silence_duration_ms = app.room_eq.delay_detection.silence_duration_ms;
-    let sample_rate = app.room_eq.delay_detection.sample_rate;
-    let input_channel = app.room_eq.delay_detection.input_channel;
-    let output_device = app.room_eq.delay_detection.output_device_name.clone();
-    let input_device = app.room_eq.delay_detection.input_device_name.clone();
-
-    let slot = DELAY_DETECT_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
-    if let Ok(mut g) = slot.lock() {
-        *g = None;
-    }
-
-    std::thread::spawn(move || {
-        // `probe_channel_delays` returns the engine type `ProbeDelayResults`
-        // which is re-exported in `sotf_audio_player::recording_types` under
-        // the player-layer alias `DelayProbeResults`. No translation needed.
-        let result = sotf_audio::signal_recorder::probe_channel_delays(
-            &channel_indices,
-            &channel_names,
-            sample_rate,
-            probe_duration_ms,
-            silence_duration_ms,
-            output_device.as_deref(),
-            input_device.as_deref(),
-            input_channel,
-        );
-        if let Ok(mut g) = slot.lock() {
-            *g = Some(result);
-        }
-    });
-}
-
-/// Wall-clock milliseconds since an arbitrary epoch. Used by the
-/// delay-detection progress estimator so the UI can show a sensible
-/// "x% done" without requiring the engine to grow a progress callback.
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
-
-/// Drain the background delay-detection slot into `app.room_eq.delay_detection`.
-/// Returns `true` if any state changed and the UI should redraw.
-pub fn poll_delay_detection(app: &mut App) -> bool {
-    use sotf_audio_player::room_eq_types::DelayDetectionStatus;
-
-    if !matches!(
-        app.room_eq.delay_detection.status,
-        DelayDetectionStatus::Running { .. }
-    ) {
-        return false;
-    }
-
-    let slot = DELAY_DETECT_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
-
-    let Ok(mut guard) = slot.lock() else {
-        return false;
-    };
-    let Some(outcome) = guard.take() else {
-        return false;
-    };
-    drop(guard);
-
-    match outcome {
-        Ok(results) => {
-            app.room_eq.delay_detection.apply_results(results);
-        }
-        Err(e) => {
-            app.room_eq.delay_detection.status = DelayDetectionStatus::Failed(e);
-        }
-    }
-    true
+/// No-op poll — the delay step no longer runs probes (that moved to
+/// the Recording wizard's Probe step). Kept as a public function
+/// because `main.rs` still calls it on every tick.
+pub fn poll_delay_detection(_app: &mut App) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -1455,7 +1285,7 @@ mod tests {
         app.room_eq.step_tab_focused = true;
 
         handle_room_eq_keys(&mut app, key(KeyCode::Right));
-        assert_eq!(app.room_eq.step, RoomEqStep::DelayDetection);
+        assert_eq!(app.room_eq.step, RoomEqStep::Delay);
         assert!(app.room_eq.step_tab_focused, "should stay on step tab bar");
     }
 
@@ -1466,7 +1296,7 @@ mod tests {
         app.room_eq.step_tab_focused = true;
 
         handle_room_eq_keys(&mut app, key(KeyCode::Left));
-        assert_eq!(app.room_eq.step, RoomEqStep::DelayDetection);
+        assert_eq!(app.room_eq.step, RoomEqStep::Process);
         assert!(app.room_eq.step_tab_focused);
     }
 

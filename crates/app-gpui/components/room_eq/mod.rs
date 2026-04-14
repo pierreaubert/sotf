@@ -24,6 +24,7 @@ mod render;
 mod step_1_load;
 mod step_2_delay_detection;
 mod step_3_configure;
+mod step_3_process;
 mod step_4_optimise;
 mod step_5_review;
 mod step_6_export;
@@ -44,9 +45,8 @@ impl PlayerView {
         // Content for current step.
         let content = match current_step {
             RoomEqStep::LoadData => self.render_room_eq_load_data(cx).into_any_element(),
-            RoomEqStep::DelayDetection => {
-                self.render_room_eq_delay_detection(cx).into_any_element()
-            }
+            RoomEqStep::Delay => self.render_room_eq_delay_detection(cx).into_any_element(),
+            RoomEqStep::Process => self.render_room_eq_process(cx).into_any_element(),
             RoomEqStep::Configure => self.render_room_eq_configure(cx).into_any_element(),
             RoomEqStep::Optimize => self.render_room_eq_optimize(cx).into_any_element(),
             RoomEqStep::Review => self.render_room_eq_review(cx).into_any_element(),
@@ -121,7 +121,8 @@ impl PlayerView {
             .map(|s| {
                 let id = match s {
                     RoomEqStep::LoadData => "load-data",
-                    RoomEqStep::DelayDetection => "delay-detection",
+                    RoomEqStep::Delay => "delay",
+                    RoomEqStep::Process => "process",
                     RoomEqStep::Configure => "configure",
                     RoomEqStep::Optimize => "optimize",
                     RoomEqStep::Review => "review",
@@ -279,7 +280,9 @@ impl PlayerView {
             // Delay detection is optional — it auto-feeds probe arrivals
             // into the optimizer when run, but skipping it falls back to
             // WAV-onset detection, so advancement is always allowed.
-            RoomEqStep::DelayDetection => true,
+            RoomEqStep::Delay => true,
+            // Process is the wizard-mode selector — always advanceable.
+            RoomEqStep::Process => true,
             RoomEqStep::Configure => !room_eq.speaker_configs.is_empty(),
             RoomEqStep::Optimize => room_eq.is_optimization_complete(),
             RoomEqStep::Review => true,

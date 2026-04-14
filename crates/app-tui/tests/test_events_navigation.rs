@@ -1052,7 +1052,10 @@ mod tests {
         app.room_eq.step_tab_focused = true;
 
         send_keys(&mut app, &[KeyCode::Right]);
-        assert_eq!(app.room_eq.step, RoomEqStep::DelayDetection);
+        assert_eq!(app.room_eq.step, RoomEqStep::Delay);
+
+        send_keys(&mut app, &[KeyCode::Right]);
+        assert_eq!(app.room_eq.step, RoomEqStep::Process);
 
         send_keys(&mut app, &[KeyCode::Right]);
         assert_eq!(app.room_eq.step, RoomEqStep::Configure);

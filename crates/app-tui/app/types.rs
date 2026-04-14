@@ -362,6 +362,8 @@ pub struct RoomEqTuiState {
     /// When true, focus is on the step tabs row; Left/Right/Tab cycle steps.
     /// When false, focus is inside the current step's content.
     pub step_tab_focused: bool,
+    /// Wizard mode selected in the Process step.
+    pub wizard_mode: sotf_audio_player::room_eq_types::RoomEqWizardMode,
     // Step 1: load measurement file (JSON)
     pub file_path: String,
     pub editing_file_path: bool,
@@ -426,6 +428,7 @@ impl Default for RoomEqTuiState {
         Self {
             step: RoomEqStep::LoadData,
             step_tab_focused: false,
+            wizard_mode: sotf_audio_player::room_eq_types::RoomEqWizardMode::default(),
             file_path: String::new(),
             editing_file_path: false,
             channel_measurements: Vec::new(),

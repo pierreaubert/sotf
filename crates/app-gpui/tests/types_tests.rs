@@ -651,37 +651,34 @@ fn test_calibration_data_is_valid() {
 #[test]
 fn test_room_eq_step_all() {
     let all = RoomEqStep::all();
-    assert_eq!(all.len(), 6);
+    assert_eq!(all.len(), 7);
 }
 
 #[test]
 fn test_room_eq_step_index() {
     assert_eq!(RoomEqStep::LoadData.index(), 0);
-    assert_eq!(RoomEqStep::DelayDetection.index(), 1);
-    assert_eq!(RoomEqStep::Configure.index(), 2);
-    assert_eq!(RoomEqStep::Optimize.index(), 3);
-    assert_eq!(RoomEqStep::Review.index(), 4);
-    assert_eq!(RoomEqStep::Export.index(), 5);
+    assert_eq!(RoomEqStep::Delay.index(), 1);
+    assert_eq!(RoomEqStep::Process.index(), 2);
+    assert_eq!(RoomEqStep::Configure.index(), 3);
+    assert_eq!(RoomEqStep::Optimize.index(), 4);
+    assert_eq!(RoomEqStep::Review.index(), 5);
+    assert_eq!(RoomEqStep::Export.index(), 6);
 }
 
 #[test]
 fn test_room_eq_step_label() {
     assert_eq!(RoomEqStep::LoadData.label(), "Load Data");
-    assert_eq!(RoomEqStep::DelayDetection.label(), "Delay");
+    assert_eq!(RoomEqStep::Delay.label(), "Delay");
+    assert_eq!(RoomEqStep::Process.label(), "Process");
     assert_eq!(RoomEqStep::Configure.label(), "Configure");
     assert_eq!(RoomEqStep::Export.label(), "Export");
 }
 
 #[test]
 fn test_room_eq_step_next() {
-    assert_eq!(
-        RoomEqStep::LoadData.next(),
-        Some(RoomEqStep::DelayDetection)
-    );
-    assert_eq!(
-        RoomEqStep::DelayDetection.next(),
-        Some(RoomEqStep::Configure)
-    );
+    assert_eq!(RoomEqStep::LoadData.next(), Some(RoomEqStep::Delay));
+    assert_eq!(RoomEqStep::Delay.next(), Some(RoomEqStep::Process));
+    assert_eq!(RoomEqStep::Process.next(), Some(RoomEqStep::Configure));
     assert_eq!(RoomEqStep::Configure.next(), Some(RoomEqStep::Optimize));
     assert_eq!(RoomEqStep::Export.next(), None);
 }
@@ -689,14 +686,9 @@ fn test_room_eq_step_next() {
 #[test]
 fn test_room_eq_step_previous() {
     assert_eq!(RoomEqStep::LoadData.previous(), None);
-    assert_eq!(
-        RoomEqStep::DelayDetection.previous(),
-        Some(RoomEqStep::LoadData)
-    );
-    assert_eq!(
-        RoomEqStep::Configure.previous(),
-        Some(RoomEqStep::DelayDetection)
-    );
+    assert_eq!(RoomEqStep::Delay.previous(), Some(RoomEqStep::LoadData));
+    assert_eq!(RoomEqStep::Process.previous(), Some(RoomEqStep::Delay));
+    assert_eq!(RoomEqStep::Configure.previous(), Some(RoomEqStep::Process));
     assert_eq!(RoomEqStep::Export.previous(), Some(RoomEqStep::Review));
 }
 

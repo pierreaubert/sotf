@@ -51,6 +51,7 @@ impl InteractiveChartStateWrapper {
 }
 
 // Domain types shared via sotf-player crate — single source of truth for all apps.
+pub use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 pub use sotf_audio_player::room_eq_types::{
     BroadbandTargetMatchingConfig, ChannelDspChain, ChannelMatchingUiConfig, ChannelMeasurement,
     ChannelOptResult, CustomTargetCurve, DelayDetectionState, DelayDetectionStatus, DriverDspChain,
@@ -59,7 +60,8 @@ pub use sotf_audio_player::room_eq_types::{
     MultiSeatConfig, MultiSpeakerMode, PhaseAlignmentConfig, PreRingingConfig,
     RecordingConfiguration, RoomEqDataSource, RoomEqFirConfig, RoomEqMeasurementsFile,
     RoomEqOptimizationMode, RoomEqSpeakerConfig, RoomEqStep, SchroederSplitConfig,
-    SpeakerConfigType, SubOptimizerUiConfig, TargetCurveControlPoint, TargetTiltConfig, VoGConfig,
+    SimplePresetConfig, SpeakerConfigType, SubOptimizerUiConfig, TargetCurveControlPoint,
+    TargetTiltConfig, VoGConfig,
 };
 pub type CrossoverType = sotf_audio_player::room_eq_types::RoomEqCrossoverType;
 pub use sotf_audio_player::room_eq_types::AutoEqField;
@@ -191,6 +193,10 @@ pub struct RoomEqState {
     /// Generated DSP chain output
     pub dsp_output: Option<DspChainOutput>,
 
+    // === Export State ===
+    /// Selected export format index (0 = SotF JSON, 1..=6 = external formats).
+    pub export_format_index: usize,
+
     // === UI State ===
     pub dropdowns: RoomEqDropdowns,
     pub status_message: String,
@@ -217,6 +223,10 @@ pub struct RoomEqState {
     pub detail_level: sotf_audio_player::autoeq::DetailLevel,
     /// Currently selected preset id
     pub selected_preset: String,
+    /// Wizard mode selected in the Process step.
+    pub wizard_mode: RoomEqWizardMode,
+    /// Simple-wizard collected choices (only used when wizard_mode == Simple).
+    pub simple_preset: SimplePresetConfig,
 
     // === Multi-position data detection ===
     /// Whether loaded data has multi-position measurements (MeasurementSource::Multiple)
@@ -242,6 +252,7 @@ impl Default for RoomEqState {
             current_iteration: 0,
             current_loss: 0.0,
             dsp_output: None,
+            export_format_index: 0,
             dropdowns: RoomEqDropdowns::default(),
             status_message: String::new(),
             error_message: None,
@@ -253,6 +264,8 @@ impl Default for RoomEqState {
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
             show_advanced_config: false,
+            wizard_mode: RoomEqWizardMode::default(),
+            simple_preset: SimplePresetConfig::default(),
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "full-range".to_string(),
             has_multi_position_data: false,

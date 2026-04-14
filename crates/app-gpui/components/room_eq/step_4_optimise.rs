@@ -408,81 +408,9 @@ impl PlayerView {
                             )
                     }),
             )
-            // Full RoomConfig key-value table
-            .child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new("Full Parameters (Optimizer)")
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
-                    )
-                    .content({
-                        let mut pairs: Vec<(String, String)> = Vec::new();
-                        match serde_json::from_str::<serde_json::Value>(&room_config_json) {
-                            Ok(json_val) => flatten_json(&json_val, String::new(), &mut pairs),
-                            Err(e) => log::error!("Failed to parse optimizer config JSON: {}", e),
-                        }
-
-                        let label_color = theme.text_secondary;
-                        let value_color = theme.text_primary;
-
-                        let table_theme = TableTheme {
-                            header_bg: theme.background_secondary,
-                            header_text: theme.text_primary,
-                            header_border: theme.border,
-                            row_bg: theme.surface,
-                            row_alt_bg: theme.background_secondary,
-                            row_hover_bg: theme.surface_hover,
-                            row_selected_bg: theme.accent_muted,
-                            cell_text: theme.text_secondary,
-                            cell_border: theme.border,
-                            sort_icon_color: theme.accent,
-                            pagination_text: theme.text_muted,
-                            footer_bg: theme.background_secondary,
-                            footer_text: theme.text_secondary,
-                        };
-
-                        div()
-                            .id("room-config-params")
-                            .overflow_y_scroll()
-                            .max_h(px(400.0))
-                            .child(
-                                Table::new("optimizer-params-table", pairs)
-                                    .column(
-                                        Column::new("key", "Parameter")
-                                            .width(px(250.0))
-                                            .sortable(false)
-                                            .resizable(false)
-                                            .cell_render(
-                                                move |pair: &(String, String), _, _, _| {
-                                                    Text::new(pair.0.clone())
-                                                        .size(TextSize::Xs)
-                                                        .color(label_color)
-                                                },
-                                            ),
-                                    )
-                                    .column(
-                                        Column::new("value", "Value")
-                                            .sortable(false)
-                                            .resizable(false)
-                                            .cell_render(
-                                                move |pair: &(String, String), _, _, _| {
-                                                    Text::new(pair.1.clone())
-                                                        .size(TextSize::Xs)
-                                                        .weight(TextWeight::Semibold)
-                                                        .color(value_color)
-                                                },
-                                            ),
-                                    )
-                                    .alternating_rows(true)
-                                    .theme(table_theme),
-                            )
-                    }),
-            )
-            // Optimization Process graph (shown when progress history is available)
+            // Optimization Process graph — placed between Configuration
+            // Summary and Full Parameters so the user sees live progress
+            // without scrolling past the JSON dump.
             .when(!progress_history.is_empty(), |vstack| {
                 // Initialize interactive chart state if needed
                 {
@@ -714,6 +642,79 @@ impl PlayerView {
                         ),
                 )
             })
+            // Full RoomConfig key-value table (expandable, below the
+            // graph so it doesn't push live progress off-screen)
+            .child(
+                Card::new()
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(
+                        Text::new("Full Parameters (Optimizer)")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
+                    .content({
+                        let mut pairs: Vec<(String, String)> = Vec::new();
+                        match serde_json::from_str::<serde_json::Value>(&room_config_json) {
+                            Ok(json_val) => flatten_json(&json_val, String::new(), &mut pairs),
+                            Err(e) => log::error!("Failed to parse optimizer config JSON: {}", e),
+                        }
+
+                        let label_color = theme.text_secondary;
+                        let value_color = theme.text_primary;
+
+                        let table_theme = TableTheme {
+                            header_bg: theme.background_secondary,
+                            header_text: theme.text_primary,
+                            header_border: theme.border,
+                            row_bg: theme.surface,
+                            row_alt_bg: theme.background_secondary,
+                            row_hover_bg: theme.surface_hover,
+                            row_selected_bg: theme.accent_muted,
+                            cell_text: theme.text_secondary,
+                            cell_border: theme.border,
+                            sort_icon_color: theme.accent,
+                            ..Default::default()
+                        };
+
+                        div()
+                            .id("room-config-params")
+                            .overflow_y_scroll()
+                            .max_h(px(400.0))
+                            .child(
+                                Table::new("optimizer-params-table", pairs)
+                                    .column(
+                                        Column::new("key", "Parameter")
+                                            .width(px(250.0))
+                                            .sortable(false)
+                                            .resizable(false)
+                                            .cell_render(
+                                                move |pair: &(String, String), _, _, _| {
+                                                    Text::new(pair.0.clone())
+                                                        .size(TextSize::Xs)
+                                                        .color(label_color)
+                                                },
+                                            ),
+                                    )
+                                    .column(
+                                        Column::new("value", "Value")
+                                            .sortable(false)
+                                            .resizable(false)
+                                            .cell_render(
+                                                move |pair: &(String, String), _, _, _| {
+                                                    Text::new(pair.1.clone())
+                                                        .size(TextSize::Xs)
+                                                        .weight(TextWeight::Semibold)
+                                                        .color(value_color)
+                                                },
+                                            ),
+                                    )
+                                    .alternating_rows(true)
+                                    .theme(table_theme),
+                            )
+                    }),
+            )
     }
 
     fn start_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
@@ -723,8 +724,30 @@ impl PlayerView {
             RoomOptimizationCallback, RoomOptimizationProgress, run_room_optimization,
             run_room_optimization_with_probe_arrivals,
         };
+        use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 
         log::info!("Starting room EQ optimization using roomeq");
+
+        // When the user went through the Simple Wizard, apply their
+        // preset choices to the optimizer config BEFORE building the
+        // RoomConfig. This must happen via state.update (mutating) so
+        // subsequent read sees the updated values.
+        {
+            let wizard_mode = self
+                .state
+                .read(cx)
+                .app
+                .measurement_state
+                .room_eq_state
+                .wizard_mode;
+            if wizard_mode == RoomEqWizardMode::Simple {
+                self.state.update(cx, |state, _| {
+                    let room_eq = &mut state.app.measurement_state.room_eq_state;
+                    let preset = room_eq.simple_preset.clone();
+                    preset.apply(&mut room_eq.optimizer_config);
+                });
+            }
+        }
 
         // Build RoomConfig from state using the unified helper. Also read
         // any probe-based per-channel arrival times that the Delay Detection
@@ -807,6 +830,8 @@ impl PlayerView {
                 .clear();
             state.app.measurement_state.room_eq_state.current_iteration = 0;
             state.app.measurement_state.room_eq_state.current_loss = 0.0;
+            state.app.measurement_state.room_eq_state.current_channel = None;
+            state.app.measurement_state.room_eq_state.error_message = None;
 
             // Initialize progress chart state immediately
             state
@@ -828,27 +853,59 @@ impl PlayerView {
         // Clone state for progress receiver task
         let state_for_progress = self.state.clone();
 
-        // Spawn a task to receive progress updates and update UI
+        // Spawn a task to receive progress updates and update UI.
+        //
+        // The optimizer can fire thousands of callbacks per second. If we
+        // call state.update() + cx.notify() for every single one, the GPUI
+        // event loop spends all its time re-rendering and never polls the
+        // smol::unblock future that drives the optimization itself — making
+        // the second run appear stuck after the first speaker finishes.
+        //
+        // Fix: drain all pending messages on each wakeup and coalesce them
+        // into a single state update + notify. A small sleep between
+        // iterations caps UI refresh at ~20 fps for progress, which is
+        // plenty for a progress bar / chart.
         cx.spawn({
             async move |_, cx| {
-                while let Ok((iteration, loss, overall_progress, speaker)) =
-                    progress_rx.recv().await
-                {
-                    state_for_progress.update(&mut cx.clone(), |state, cx| {
-                        state.app.measurement_state.room_eq_state.current_iteration = iteration;
-                        state.app.measurement_state.room_eq_state.current_loss = loss;
-                        state.app.measurement_state.room_eq_state.overall_progress =
-                            overall_progress;
+                loop {
+                    // Block until at least one message arrives (or channel closes).
+                    let first = progress_rx.recv().await;
+                    let Ok((mut iteration, mut loss, mut overall_progress, mut speaker)) = first
+                    else {
+                        break;
+                    };
 
-                        // Add to progress history with channel name.
-                        // Each channel's iterations restart from 0 on the X axis.
-                        let history =
-                            &mut state.app.measurement_state.room_eq_state.progress_history;
-                        if history.len() < 10000 {
-                            history.push((iteration, loss, speaker));
+                    // Drain all additional pending messages without blocking.
+                    let mut batch: Vec<(usize, f64, String)> =
+                        vec![(iteration, loss, speaker.clone())];
+                    while let Ok((it, l, op, sp)) = progress_rx.try_recv() {
+                        batch.push((it, l, sp.clone()));
+                        iteration = it;
+                        loss = l;
+                        overall_progress = op;
+                        speaker = sp;
+                    }
+
+                    state_for_progress.update(&mut cx.clone(), |state, cx| {
+                        let room_eq = &mut state.app.measurement_state.room_eq_state;
+                        room_eq.current_iteration = iteration;
+                        room_eq.current_loss = loss;
+                        room_eq.overall_progress = overall_progress;
+                        room_eq.current_channel = Some(speaker);
+
+                        let history = &mut room_eq.progress_history;
+                        for (it, l, sp) in batch {
+                            if history.len() < 10000 {
+                                history.push((it, l, sp));
+                            }
                         }
                         cx.notify();
                     });
+
+                    // Yield to the executor so it can poll other futures
+                    // (critically, the smol::unblock that drives the
+                    // optimizer). 50 ms ≈ 20 fps progress refresh.
+                    smol::Timer::after(std::time::Duration::from_millis(50)).await;
                 }
                 log::info!("Progress receiver loop finished");
             }

@@ -1,7 +1,22 @@
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
+};
+
+/// Export format options shown in the dropdown. Index 0 is the native
+/// SotF JSON; indices 1–6 map to `autoeq::roomeq::ExportFormat` variants.
+const EXPORT_FORMATS: &[(&str, &str)] = &[
+    ("SotF JSON", "json"),
+    ("CamillaDSP", "yaml"),
+    ("Equalizer APO", "txt"),
+    ("EasyEffects", "json"),
+    ("Wavelet / GraphicEQ", "txt"),
+    ("PipeWire filter-chain", "conf"),
+    ("Roon DSP", "json"),
+];
 
 impl PlayerView {
     pub(crate) fn render_room_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -20,6 +35,22 @@ impl PlayerView {
             .dsp_output
             .as_ref()
             .is_none_or(|dsp| dsp.is_rack_compatible());
+        let selected_format_idx = state
+            .app
+            .measurement_state
+            .room_eq_state
+            .export_format_index;
+        let format_dropdown_open = state
+            .app
+            .measurement_state
+            .room_eq_state
+            .dropdowns
+            .export_format_open;
+
+        let (format_name, format_ext) = EXPORT_FORMATS
+            .get(selected_format_idx)
+            .copied()
+            .unwrap_or(EXPORT_FORMATS[0]);
 
         let mut stack = VStack::new()
             .spacing(StackSpacing::Md)
@@ -38,7 +69,11 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Backup Current Rack").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(
+                        Text::new("Backup Current Rack")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Sm)
@@ -63,28 +98,142 @@ impl PlayerView {
                             ),
                     ),
             )
+            // ── Export Options with format selector ──────────────────
             .child(
                 Card::new()
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Export Options").color(theme.text_primary).weight(TextWeight::Semibold))
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Sm)
-                            .child(
-                                Button::new("export_json", "Export as JSON")
-                                    .variant(ButtonVariant::Secondary)
-                                    .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            view.export_room_eq_json(cx);
-                                        }),
-                                    ),
-                            ),
-                    ),
+                    .header(
+                        Text::new("Export Options")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
+                    .content({
+                        let mut export_content = VStack::new().spacing(StackSpacing::Sm);
+
+                        // Format selector — click to toggle dropdown
+                        export_content = export_content.child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Text::new("Format:")
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_secondary),
+                                )
+                                .child(
+                                    div()
+                                        .id("export-format-selector")
+                                        .px(px(12.0))
+                                        .py(px(6.0))
+                                        .rounded(px(6.0))
+                                        .border_1()
+                                        .border_color(theme.accent)
+                                        .cursor_pointer()
+                                        .hover(|s| s.bg(theme.surface_hover))
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(|view, _, _, cx| {
+                                                view.state.update(cx, |state, _| {
+                                                    let open = &mut state
+                                                        .app
+                                                        .measurement_state
+                                                        .room_eq_state
+                                                        .dropdowns
+                                                        .export_format_open;
+                                                    *open = !*open;
+                                                });
+                                                cx.notify();
+                                            }),
+                                        )
+                                        .child(
+                                            Text::new(format!("{} (.{})", format_name, format_ext))
+                                                .size(TextSize::Xs)
+                                                .weight(TextWeight::Semibold)
+                                                .color(theme.text_primary),
+                                        ),
+                                )
+                                .child(
+                                    Button::new("export_file", "Export...")
+                                        .variant(ButtonVariant::Primary)
+                                        .size(ButtonSize::Sm)
+                                        .theme(theme.to_button_theme())
+                                        .build()
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(|view, _, _, cx| {
+                                                view.export_room_eq_format(cx);
+                                            }),
+                                        ),
+                                ),
+                        );
+
+                        // Dropdown list (visible when open)
+                        if format_dropdown_open {
+                            export_content = export_content.child(
+                                div()
+                                    .id("export-format-dropdown")
+                                    .w(px(300.0))
+                                    .max_h(px(250.0))
+                                    .overflow_y_scroll()
+                                    .bg(theme.surface)
+                                    .rounded(px(4.0))
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .children(EXPORT_FORMATS.iter().enumerate().map(
+                                        |(i, (name, ext))| {
+                                            let is_selected = i == selected_format_idx;
+                                            let name = name.to_string();
+                                            let ext = ext.to_string();
+                                            div()
+                                                .id(SharedString::from(format!(
+                                                    "export-fmt-{}",
+                                                    i
+                                                )))
+                                                .px(px(10.0))
+                                                .py(px(5.0))
+                                                .cursor_pointer()
+                                                .bg(if is_selected {
+                                                    theme.accent_muted
+                                                } else {
+                                                    theme.surface
+                                                })
+                                                .hover(|s| s.bg(theme.surface_hover))
+                                                .on_mouse_down(MouseButton::Left, {
+                                                    cx.listener(move |view, _, _, cx| {
+                                                        view.state.update(cx, |state, _| {
+                                                            state
+                                                                .app
+                                                                .measurement_state
+                                                                .room_eq_state
+                                                                .export_format_index = i;
+                                                            state
+                                                                .app
+                                                                .measurement_state
+                                                                .room_eq_state
+                                                                .dropdowns
+                                                                .export_format_open = false;
+                                                        });
+                                                        cx.notify();
+                                                    })
+                                                })
+                                                .child(
+                                                    Text::new(format!("{} (.{})", name, ext))
+                                                        .size(TextSize::Xs)
+                                                        .color(if is_selected {
+                                                            theme.accent
+                                                        } else {
+                                                            theme.text_primary
+                                                        }),
+                                                )
+                                        },
+                                    )),
+                            );
+                        }
+
+                        export_content
+                    }),
             );
 
         if is_rack_compatible {
@@ -157,6 +306,131 @@ impl PlayerView {
         }
 
         stack
+    }
+
+    /// Export DSP chain in the user-selected format (JSON, CamillaDSP,
+    /// APO, EasyEffects, Wavelet, PipeWire, Roon). Index 0 = SotF JSON
+    /// (pretty-printed DspChainOutput); indices 1–6 delegate to
+    /// `autoeq::roomeq::export::export_dsp_chain`.
+    fn export_room_eq_format(&mut self, cx: &mut Context<Self>) {
+        let (dsp_output, format_idx) = {
+            let state = self.state.read(cx);
+            (
+                state.app.measurement_state.room_eq_state.dsp_output.clone(),
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .export_format_index,
+            )
+        };
+
+        let Some(dsp_output) = dsp_output else {
+            log::warn!("No DSP output to export");
+            self.state.update(cx, |state, _| {
+                state.app.measurement_state.room_eq_state.error_message =
+                    Some("No optimization results to export".to_string());
+            });
+            return;
+        };
+
+        if format_idx == 0 {
+            // SotF JSON — use existing JSON export path
+            self.export_room_eq_json(cx);
+            return;
+        }
+
+        // External format via autoeq::roomeq::export
+        let format = match format_idx {
+            1 => autoeq::roomeq::ExportFormat::CamillaDsp,
+            2 => autoeq::roomeq::ExportFormat::EqualizerApo,
+            3 => autoeq::roomeq::ExportFormat::EasyEffects,
+            4 => autoeq::roomeq::ExportFormat::Wavelet,
+            5 => autoeq::roomeq::ExportFormat::PipeWire,
+            6 => autoeq::roomeq::ExportFormat::RoonDsp,
+            _ => {
+                log::warn!("Unknown export format index {}", format_idx);
+                return;
+            }
+        };
+        let ext = format.default_extension();
+        let (format_name, _) = EXPORT_FORMATS
+            .get(format_idx)
+            .copied()
+            .unwrap_or(("Unknown", "bin"));
+
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            let state_entity = self.state.clone();
+            // Convert DspChainOutput (player type) to the autoeq output
+            // type expected by export_dsp_chain. They're the same shape
+            // — the player re-exports from autoeq. Use serde round-trip
+            // for type conversion since they may be different crate types.
+            let dsp_json = match serde_json::to_string(&dsp_output) {
+                Ok(j) => j,
+                Err(e) => {
+                    log::error!("Failed to serialize DSP output: {}", e);
+                    return;
+                }
+            };
+
+            cx.spawn(async move |_, cx| {
+                let file = rfd::AsyncFileDialog::new()
+                    .add_filter(format_name, &[ext])
+                    .set_title(&format!("Export Room EQ — {}", format_name))
+                    .set_file_name(&format!("room_eq.{}", ext))
+                    .save_file()
+                    .await;
+
+                if let Some(file) = file {
+                    // Parse back into autoeq DspChainOutput
+                    match serde_json::from_str::<autoeq::roomeq::DspChainOutput>(&dsp_json) {
+                        Ok(autoeq_output) => {
+                            match autoeq::roomeq::export_dsp_chain(
+                                &autoeq_output,
+                                format,
+                                file.path(),
+                                48000.0,
+                            ) {
+                                Ok(()) => {
+                                    log::info!(
+                                        "Exported room EQ as {} to {:?}",
+                                        format_name,
+                                        file.path()
+                                    );
+                                    state_entity.update(cx, |state, _| {
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .room_eq_state
+                                            .status_message = format!(
+                                            "Exported {} to {}",
+                                            format_name,
+                                            file.path().display()
+                                        );
+                                    });
+                                }
+                                Err(e) => {
+                                    log::error!("Export failed: {}", e);
+                                    state_entity.update(cx, |state, _| {
+                                        state.app.measurement_state.room_eq_state.error_message =
+                                            Some(format!("Export failed: {}", e));
+                                    });
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to parse DSP output for export: {}", e);
+                            state_entity.update(cx, |state, _| {
+                                state.app.measurement_state.room_eq_state.error_message =
+                                    Some(format!("Internal error: {}", e));
+                            });
+                        }
+                    }
+                }
+            })
+            .detach();
+        }
     }
 
     fn export_room_eq_json(&mut self, cx: &mut Context<Self>) {
@@ -397,7 +671,16 @@ impl PlayerView {
             total_filters
         );
 
-        // Update the plugin chain
+        // Update the plugin graph AND immediately flush the config to
+        // the audio engine. The previous code set `pending_plugin_update`
+        // and relied on the 100ms timer to pick it up, but that path
+        // sometimes didn't fire (the timer processes pending updates
+        // only on its own tick, and if it happened to miss the window
+        // the user saw "applied" but heard no change).
+        //
+        // Calling `update_plugins` directly inside the same state.update
+        // closure guarantees the engine sees the new filters before we
+        // show the success toast.
         self.state.update(cx, |state, _| {
             let plugin_graph = &mut state.app.plugin_state.graph;
 
@@ -442,15 +725,36 @@ impl PlayerView {
                 );
             }
 
-            // Mark that plugin chain was modified and needs sync
+            // Flush immediately to the engine — don't defer via
+            // `pending_plugin_update` which depends on the timer.
+            let device_name = state
+                .app
+                .audio_device_state
+                .current_output_device_name
+                .as_deref();
+            let track_sr = state.app.playback.sample_rate.unwrap_or(48000);
+            let sr = sotf_audio::select_output_sample_rate(track_sr, device_name) as f64;
+            let plugins = state.app.plugin_state.graph.to_plugin_configs(sr);
+            log::info!(
+                "Flushing {} plugins to engine at {:.0} Hz",
+                plugins.len(),
+                sr
+            );
+            match state.player.lock().update_plugins(plugins) {
+                Ok(()) => {
+                    state.app.measurement_state.room_eq_state.status_message =
+                        "Room EQ applied to player!".to_string();
+                    state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
+                        "Room EQ applied successfully",
+                    ));
+                }
+                Err(e) => {
+                    log::error!("Failed to apply room EQ: {}", e);
+                    state.app.measurement_state.room_eq_state.error_message =
+                        Some(format!("Failed to apply: {}", e));
+                }
+            }
             state.app.plugin_state.plugin_graph_modified = true;
-            state.app.plugin_state.pending_plugin_update =
-                Some(crate::app::types::PluginUpdateType::Structural);
-            state.app.measurement_state.room_eq_state.status_message =
-                "Room EQ applied to player!".to_string();
-            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
-                "Room EQ applied successfully",
-            ));
         });
 
         cx.notify();

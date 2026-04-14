@@ -14,12 +14,28 @@ use super::render::render_channel_config_row;
 impl PlayerView {
     pub(crate) fn render_room_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let wizard_mode = state.app.measurement_state.room_eq_state.wizard_mode;
+
+        match wizard_mode {
+            crate::app::types::room_eq::RoomEqWizardMode::Simple => {
+                self.render_simple_configure(cx).into_any_element()
+            }
+            crate::app::types::room_eq::RoomEqWizardMode::Full => {
+                self.render_full_configure(cx).into_any_element()
+            }
+        }
+    }
+
+    /// Full wizard — all parameters in Acoustic + Optimizer blocks.
+    /// This is the pre-existing Configure layout, now gated behind
+    /// `wizard_mode == Full`.
+    fn render_full_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
         let release_channel = state.app.ui_state.release_channel;
         let has_phase_data = room_eq.has_phase_data();
         let has_multi_driver = room_eq.has_multi_driver();
-        let is_iir_mode = room_eq.optimizer_config.mode == RoomEqOptimizationMode::Iir;
 
         // Build AutoEqConfig from our RoomEqOptimizerConfig
         let config = &room_eq.optimizer_config;
@@ -171,25 +187,23 @@ impl PlayerView {
         };
 
         let window_width = state.app.ui_state.window_width;
-        let show_advanced = room_eq.show_advanced_config;
 
-        // Build the AutoEQ form with handlers
-        // In Basic mode, hide most params so users only see mode + algorithm + num_filters + target_curve
+        // Build the AutoEQ form — Full Wizard shows everything.
         let autoeq_form = AutoEqForm::new("room-eq-optimizer-form")
             .layout_mode(AutoEqLayoutMode::RoomEq)
             .available_width(window_width)
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
-            .show_goals(false) // Goals hidden: loss is always flat, system type is auto-detected
-            .show_optimization_tuning(show_advanced) // Only in advanced mode
-            .hide_de_params(true) // Always hidden (internal to DE algorithm)
-            .hide_smoothing(true) // Smoothing is handled directly in the room config card
-            .hide_spacing(true) // Always hidden (internal)
-            .hide_tolerance(!show_advanced) // Only in advanced mode
-            .hide_sample_rate(true) // Always hidden (auto-detected)
-            .hide_phase_alignment(is_iir_mode || !show_advanced)
-            .hide_scenario_a_text(true) // Remove "Scenario A" subtitle
-            .hide_multi_measurement(!room_eq.has_multiple_measurements() || !show_advanced)
+            .show_goals(true)
+            .show_optimization_tuning(true)
+            .hide_de_params(false)
+            .hide_smoothing(false)
+            .hide_spacing(false)
+            .hide_tolerance(false)
+            .hide_sample_rate(true) // auto-detected, not user-facing
+            .hide_phase_alignment(false)
+            .hide_scenario_a_text(true)
+            .hide_multi_measurement(!room_eq.has_multiple_measurements())
             .allowed_opt_modes(available_modes)
             .on_opt_mode_change({
                 let state = self.state.clone();
@@ -1610,52 +1624,43 @@ impl PlayerView {
                 }))
         };
 
-        // Basic/Advanced toggle
-        let toggle_state = self.state.clone();
-        let toggle_label = if show_advanced { "Basic" } else { "Advanced" };
-
+        // Full Wizard: all parameters in two visual sections —
+        // Acoustic (what to correct) and Optimizer (how to optimize).
+        // The AutoEqForm renders them sequentially; we add section
+        // dividers and force all params visible.
         let mut content = VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(
-                        Text::new("Configure Optimization")
-                            .weight(TextWeight::Bold)
-                            .size(TextSize::Md),
-                    )
-                    .child(
-                        Button::new("toggle-advanced", toggle_label)
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Xs)
-                            .theme(theme.to_button_theme())
-                            .build()
-                            .on_click(move |_event: &ClickEvent, _window, cx| {
-                                toggle_state.update(cx, |state, cx| {
-                                    let adv = &mut state
-                                        .app
-                                        .measurement_state
-                                        .room_eq_state
-                                        .show_advanced_config;
-                                    *adv = !*adv;
-                                    cx.notify();
-                                });
-                            }),
-                    ),
+                Text::new("Full Configuration")
+                    .weight(TextWeight::Bold)
+                    .size(TextSize::Md),
             )
             .child(
-                Text::new(if show_advanced {
-                    "All optimizer parameters are shown."
-                } else {
-                    "Showing basic settings. Click Advanced for full control."
-                })
+                Text::new(
+                    "All parameters are shown, organized into Acoustic \
+                           and Optimizer sections.",
+                )
                 .size(TextSize::Xs)
                 .color(theme.text_secondary),
             )
+            // ── Block 1: Acoustic ─────────────────────────────────
+            .child(
+                Text::new("ACOUSTIC — what to correct")
+                    .weight(TextWeight::Bold)
+                    .size(TextSize::Xs)
+                    .color(theme.accent),
+            )
+            .child(self.render_slope_recommendation(cx))
+            // ── Block 2: Optimizer ────────────────────────────────
+            .child(
+                Text::new("OPTIMIZER — how to optimize")
+                    .weight(TextWeight::Bold)
+                    .size(TextSize::Xs)
+                    .color(theme.accent),
+            )
             // Mode selector inline
             .child(mode_selector)
-            .child(autoeq_form)
-            .child(self.render_slope_recommendation(cx));
+            .child(autoeq_form);
 
         // Only show channel configuration for multi-driver measurements
         if has_multi_driver {
@@ -1801,4 +1806,388 @@ impl PlayerView {
             .children(rows)
             .into_any_element()
     }
+
+    /// Simple wizard — guided preset selector adapted to the speaker
+    /// configuration detected from the loaded measurements.
+    ///
+    /// Shows a concise set of dropdowns (target distance, loss, processing
+    /// mode, and optionally crossover + bass management for surround/sub
+    /// setups). Each choice maps to specific `RoomEqOptimizerConfig`
+    /// fields via `apply_simple_preset` at optimization time.
+    /// Simple wizard — all options inside a single Card with descriptions
+    /// below each dropdown, matching the agreed ASCII diagram layout.
+    fn render_simple_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use sotf_audio_player::room_eq_types::{
+            SimpleCrossoverChoice, SimpleLossChoice, SimpleProcessingChoice, SpeakerTier,
+        };
+
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let room_eq = &state.app.measurement_state.room_eq_state;
+        let preset = room_eq.simple_preset.clone();
+        let channel_count = room_eq.channel_measurements.len();
+        let has_multi_position = room_eq.has_multi_position_data;
+
+        // Detect speaker tier: >4 channels = surround, has sub naming hints
+        let has_sub = room_eq.channel_measurements.iter().any(|m| {
+            let n = m.channel_name.to_lowercase();
+            n.contains("sub") || n.contains("lfe") || n == "sw"
+        });
+        let is_surround = channel_count > 4;
+
+        // Build the dropdown rows. Each row is a label + current value +
+        // cycle-on-click. We use a simple Button that cycles through the
+        // options — no separate Dropdown widget needed for 2-4 options.
+        let config_label = if is_surround {
+            format!("SIMPLE CONFIGURATION ({} channels)", channel_count)
+        } else if has_sub {
+            format!("SIMPLE CONFIGURATION ({} ch + sub)", channel_count)
+        } else {
+            format!("SIMPLE CONFIGURATION ({}.0 Stereo)", channel_count.min(2))
+        };
+
+        let view = cx.entity().clone();
+        let mut form = VStack::new().spacing(StackSpacing::Lg);
+
+        // --- Target distance + descriptions + customize ---
+        form = form.child(
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(simple_dropdown_row(
+                    cx,
+                    &theme,
+                    "Target distance",
+                    preset.target.label(),
+                    {
+                        let view = view.clone();
+                        move |cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    let p = &mut state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .simple_preset;
+                                    p.target = match p.target {
+                                        SpeakerTier::NearField => SpeakerTier::MidField,
+                                        SpeakerTier::MidField => SpeakerTier::FarField,
+                                        SpeakerTier::FarField => SpeakerTier::NearField,
+                                    };
+                                });
+                                cx.notify();
+                            });
+                        }
+                    },
+                ))
+                .child(
+                    VStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .child(
+                            Text::new("Near-field: <1.5m (desktop)")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        )
+                        .child(
+                            Text::new("Mid-field:  1.5–3m (couch)")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        )
+                        .child(
+                            Text::new("Far-field:  >3m (theater)")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        ),
+                )
+                .child(
+                    HStack::new().child(
+                        Button::new("open_target_modal", "Customize target curve...")
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _, _, cx| {
+                                    view.state.update(cx, |state, _| {
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .room_eq_state
+                                            .dropdowns
+                                            .custom_target_modal_open = true;
+                                    });
+                                    cx.notify();
+                                }),
+                            ),
+                    ),
+                ),
+        );
+
+        // --- Loss function + descriptions ---
+        form = form.child(
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(simple_dropdown_row(
+                    cx,
+                    &theme,
+                    "Loss function",
+                    preset.loss.label(),
+                    {
+                        let view = view.clone();
+                        move |cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    let p = &mut state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .simple_preset;
+                                    p.loss = match p.loss {
+                                        SimpleLossChoice::Flat => SimpleLossChoice::Epa,
+                                        SimpleLossChoice::Epa => SimpleLossChoice::Flat,
+                                    };
+                                });
+                                cx.notify();
+                            });
+                        }
+                    },
+                ))
+                .child(
+                    VStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .child(
+                            Text::new("Flat: minimize frequency response deviation")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        )
+                        .child(
+                            Text::new("EPA: optimize perceived quality (psychoacoustic)")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        ),
+                ),
+        );
+
+        // --- Processing + descriptions ---
+        form = form.child(
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(simple_dropdown_row(
+                    cx,
+                    &theme,
+                    "Processing",
+                    preset.processing.label(),
+                    {
+                        let view = view.clone();
+                        move |cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    let p = &mut state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .simple_preset;
+                                    p.processing = match p.processing {
+                                        SimpleProcessingChoice::Iir => {
+                                            SimpleProcessingChoice::MixedPhase
+                                        }
+                                        SimpleProcessingChoice::MixedPhase => {
+                                            SimpleProcessingChoice::Iir
+                                        }
+                                    };
+                                });
+                                cx.notify();
+                            });
+                        }
+                    },
+                ))
+                .child(
+                    VStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .child(
+                            Text::new("IIR: low latency (<5ms)")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        )
+                        .child(
+                            Text::new("Mixed Phase: best quality")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        ),
+                ),
+        );
+
+        // --- Crossover (2.1+ only) ---
+        if has_sub {
+            form = form.child(simple_dropdown_row(
+                cx,
+                &theme,
+                "Crossover",
+                preset.crossover.label(),
+                {
+                    let view = view.clone();
+                    move |cx| {
+                        view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                let p =
+                                    &mut state.app.measurement_state.room_eq_state.simple_preset;
+                                p.crossover = match p.crossover {
+                                    SimpleCrossoverChoice::Lr24 => SimpleCrossoverChoice::Lr48,
+                                    SimpleCrossoverChoice::Lr48 => SimpleCrossoverChoice::Lr24,
+                                };
+                            });
+                            cx.notify();
+                        });
+                    }
+                },
+            ));
+        }
+
+        // --- Bass management (5.0+ or >2 subs) ---
+        if is_surround {
+            let bass_label = if preset.bass_management.is_empty() {
+                "Standard"
+            } else {
+                &preset.bass_management
+            };
+            form = form.child(simple_dropdown_row(
+                cx,
+                &theme,
+                "Bass management",
+                bass_label,
+                {
+                    let view = view.clone();
+                    move |cx| {
+                        view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                let p =
+                                    &mut state.app.measurement_state.room_eq_state.simple_preset;
+                                let options = ["Standard", "Cardioid", "DBA"];
+                                let idx = options
+                                    .iter()
+                                    .position(|&o| o == p.bass_management)
+                                    .unwrap_or(0);
+                                p.bass_management = options[(idx + 1) % options.len()].to_string();
+                            });
+                            cx.notify();
+                        });
+                    }
+                },
+            ));
+        }
+
+        // Wrap all options in a single Card
+        let mut result = VStack::new().spacing(StackSpacing::Md).child(
+            Card::new()
+                .background(theme.surface)
+                .border(theme.border)
+                .header(
+                    Text::new(config_label)
+                        .color(theme.accent)
+                        .weight(TextWeight::Bold),
+                )
+                .content(form),
+        );
+
+        // --- Multi-position strategy (separate card) ---
+        if has_multi_position {
+            let strategy_label = if preset.multi_position_strategy.is_empty() {
+                "Average"
+            } else {
+                &preset.multi_position_strategy
+            };
+            result = result.child(
+                Card::new()
+                    .background(theme.surface)
+                    .border(theme.border)
+                    .header(
+                        Text::new("MULTI-POSITION")
+                            .color(theme.accent)
+                            .weight(TextWeight::Bold),
+                    )
+                    .content(simple_dropdown_row(
+                        cx,
+                        &theme,
+                        "Strategy",
+                        strategy_label,
+                        {
+                            let view = view.clone();
+                            move |cx| {
+                                view.update(cx, |this, cx| {
+                                    this.state.update(cx, |state, _| {
+                                        let p = &mut state
+                                            .app
+                                            .measurement_state
+                                            .room_eq_state
+                                            .simple_preset;
+                                        let options = [
+                                            "Average",
+                                            "Minimize Variance",
+                                            "MinMax",
+                                            "Weighted Sum",
+                                        ];
+                                        let idx = options
+                                            .iter()
+                                            .position(|&o| o == p.multi_position_strategy)
+                                            .unwrap_or(0);
+                                        p.multi_position_strategy =
+                                            options[(idx + 1) % options.len()].to_string();
+                                    });
+                                    cx.notify();
+                                });
+                            }
+                        },
+                    )),
+            );
+        }
+
+        result
+    }
+}
+
+/// A labelled row with a clickable value that cycles through options.
+/// Used by the Simple Wizard to present each preset choice as a
+/// compact label + "button-like" current-value display.
+fn simple_dropdown_row(
+    _cx: &mut Context<PlayerView>,
+    theme: &crate::app::theme::Theme,
+    label: &str,
+    current_value: &str,
+    on_click: impl Fn(&mut gpui::App) + Send + 'static,
+) -> impl IntoElement {
+    let label_color = theme.text_secondary;
+    let value_color = theme.text_primary;
+    let accent = theme.accent;
+    let hover_bg = theme.surface_hover;
+    let label = label.to_string();
+    let current_value = current_value.to_string();
+
+    HStack::new()
+        .spacing(StackSpacing::Md)
+        .align(gpui_ui_kit::StackAlign::Center)
+        .child(
+            gpui::div()
+                .w(px(160.0))
+                .child(Text::new(label).size(TextSize::Xs).color(label_color)),
+        )
+        .child(
+            gpui::div()
+                .id(SharedString::from(format!("simple-cfg-{}", current_value)))
+                .px(px(12.0))
+                .py(px(6.0))
+                .rounded(px(6.0))
+                .border_1()
+                .border_color(accent)
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover_bg))
+                .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                    on_click(cx);
+                })
+                .child(
+                    Text::new(current_value)
+                        .size(TextSize::Xs)
+                        .weight(TextWeight::Semibold)
+                        .color(value_color),
+                ),
+        )
 }

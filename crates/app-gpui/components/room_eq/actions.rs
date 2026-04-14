@@ -358,6 +358,12 @@ impl PlayerView {
                                     if dd.input_device_name.is_none() {
                                         dd.input_device_name = hints.recording_device_name;
                                     }
+                                    // Populate probe results so the Delay step shows
+                                    // arrival times from the recording session instead
+                                    // of "no delay data available".
+                                    if let Some(probe_results) = hints.probe_results {
+                                        dd.apply_results(probe_results);
+                                    }
                                 }
 
                                 state.app.measurement_state.room_eq_state.apply_smart_defaults();

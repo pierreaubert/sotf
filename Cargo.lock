@@ -10762,7 +10762,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.18"
+version = "1.0.19"
 dependencies = [
  "arc-swap",
  "chrono",
