@@ -1331,6 +1331,48 @@ fn probe_channel_delays_core(
         )
     };
 
+    // When the mic's sample rate differs from the playback rate, the
+    // recording buffer is indexed in input_sr units but the playback
+    // offsets were computed in sample_rate units. If we don't correct
+    // for this, segment slicing drifts proportionally with channel
+    // index — producing multi-hundred-ms phantom deltas and
+    // non-reproducible results across runs (the OS may negotiate a
+    // different rate each time). Fix: recompute analysis-side timing
+    // and regenerate the probe at the mic's actual rate.
+    let (
+        analysis_probe,
+        _analysis_silence,
+        _analysis_probe_samples,
+        analysis_segment_len,
+        analysis_offsets,
+    ) = {
+        let sr = input_sr as f32;
+        let a_probe_samples = (probe_duration_ms / 1000.0 * sr) as usize;
+        let a_silence_samples = (silence_duration_ms / 1000.0 * sr) as usize;
+        let a_segment_len = a_silence_samples + a_probe_samples;
+        let a_offsets: Vec<usize> = (0..num_channels)
+            .map(|i| a_silence_samples + i * a_segment_len)
+            .collect();
+        let a_probe = if input_sr == sample_rate {
+            probe.clone()
+        } else {
+            log::warn!(
+                "[probe_channel_delays] Input SR ({}) differs from playback SR ({}); \
+                 regenerating probe at input rate for correct cross-correlation",
+                input_sr,
+                sample_rate
+            );
+            gen_narrowband_probe(a_probe_samples, input_sr, 0.5, PROBE_SEED, 800.0, 2000.0)
+        };
+        (
+            a_probe,
+            a_silence_samples,
+            a_probe_samples,
+            a_segment_len,
+            a_offsets,
+        )
+    };
+
     let input_config = cpal::StreamConfig {
         channels: hw_input_ch as u16,
         sample_rate: input_sr,
@@ -1412,9 +1454,15 @@ fn probe_channel_delays_core(
     // Extra buffer to capture tail
     sleep(Duration::from_millis(500));
 
+    // Stop playback first, then drop the input stream, then give
+    // CoreAudio / ALSA time to fully release the device handles.
+    // Without this, rapid consecutive probe runs can encounter a
+    // device-busy condition where playback silently fails and the
+    // mic records silence — producing 0ms arrivals for all channels.
     manager.stop().ok();
+    std::mem::drop(manager);
     std::mem::drop(input_stream);
-    sleep(Duration::from_millis(100));
+    sleep(Duration::from_millis(500));
 
     let recorded = recorded_samples.lock().unwrap().clone();
     log::info!(
@@ -1423,88 +1471,77 @@ fn probe_channel_delays_core(
         recorded.len() as f64 / input_sr as f64
     );
 
-    // --- Estimate system latency from the first channel ---
-    // The recording starts before playback (100ms head start). The first probe's
-    // detected arrival in the full recording includes system latency (DAC + ADC +
-    // driver buffering). We estimate this offset once, then use it to align the
-    // segment slicing to the actual recording timeline.
-    //
-    // IMPORTANT: the search window must NOT extend into the second channel's
-    // probe region. The previous `segment_len * 2` window was wide enough to
-    // cover ch1's probe, and if ch1 had a stronger arrival (closer to the
-    // mic or higher gain), the cross-correlation would lock onto ch1
-    // instead of ch0, giving a system-latency estimate that was off by
-    // one full segment_len (~1.5 s). This shifted every subsequent
-    // channel's extraction window past its actual probe, producing
-    // nonsensical arrival deltas (tens of ms in a small room).
-    //
-    // The tighter window covers ch0's probe plus a generous margin for
-    // system latency (up to `silence_samples` worth — typically 500 ms,
-    // far beyond any real DAC+ADC round-trip).
-    let system_latency_samples = {
-        let search_start = 0;
-        let search_end = (playback_offsets[0] + segment_len).min(recorded.len());
-        if search_end > search_start {
-            let search_segment = &recorded[search_start..search_end];
-            match math_audio_dsp::analysis::cross_correlate_envelope(
-                &probe,
-                search_segment,
-                input_sr,
-            ) {
-                Ok(result) => {
-                    // The probe was placed at playback_offsets[0] in the playback timeline.
-                    // Its arrival in the recording is at result.peak_sample.
-                    // System latency = detected_position - expected_position
-                    let expected = playback_offsets[0];
-                    let detected = result.peak_sample;
-                    let latency = detected.saturating_sub(expected);
-                    let latency_ms = latency as f64 / input_sr as f64 * 1000.0;
-                    log::info!(
-                        "[probe_channel_delays] System latency estimate: {} samples ({:.1}ms)",
-                        latency,
-                        latency_ms
-                    );
-                    latency
-                }
-                Err(_) => {
-                    log::warn!(
-                        "[probe_channel_delays] Could not estimate system latency, assuming 0"
-                    );
-                    0
-                }
-            }
-        } else {
-            0
-        }
-    };
+    // Sanity check: if the recording is essentially silent, the probe
+    // was never picked up (device busy, wrong mic channel, volume at
+    // zero, etc.). Abort with a clear error instead of returning
+    // bogus 0ms arrivals for every channel.
+    let rec_peak = recorded.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+    if rec_peak < 1e-4 {
+        return Err(format!(
+            "Recording appears silent (peak amplitude {:.6}). \
+             Check that the mic is connected, the correct input channel \
+             is selected, and the output device is not busy from a \
+             previous probe run.",
+            rec_peak
+        ));
+    }
 
-    // --- Analyze each channel's segment ---
-    // Adjust offsets by system latency so segments align with actual recording
-    let adjusted_offsets: Vec<usize> = playback_offsets
-        .iter()
-        .map(|&o| o + system_latency_samples)
-        .collect();
+    // --- Per-channel analysis via absolute-position detection ---
+    //
+    // Previous approach: estimate system latency from ch0, shift all
+    // segment windows by that amount, then detect arrival within each
+    // shifted segment. This was circular — ch0's segment started at the
+    // exact peak, so cross-correlation found peak at sample 0, giving
+    // arrival_ms=0 for every channel.
+    //
+    // New approach: for each channel, cross-correlate against a wide
+    // search window centered on the expected playback offset plus a
+    // generous margin for system latency. The cross-correlation peak
+    // gives the ABSOLUTE position of the probe in the recording. We
+    // then subtract the expected playback offset to get the per-channel
+    // acoustic propagation delay. System latency (DAC+ADC+driver) is
+    // a constant additive term that cancels when computing alignment
+    // differences, so we don't need to estimate it separately.
 
     // Compute probe autocorrelation peak once (for gain normalization)
-    let auto_result = math_audio_dsp::analysis::cross_correlate_envelope(&probe, &probe, input_sr)?;
+    // using the analysis-rate probe so units are consistent.
+    let auto_result = math_audio_dsp::analysis::cross_correlate_envelope(
+        &analysis_probe,
+        &analysis_probe,
+        input_sr,
+    )?;
     let auto_peak = auto_result.peak_value as f64;
 
     let mut arrivals_ms = Vec::with_capacity(num_channels);
     let mut channel_results = Vec::with_capacity(num_channels);
 
-    for (i, &offset) in adjusted_offsets.iter().enumerate() {
-        let end = (offset.saturating_add(segment_len)).min(recorded.len());
-        if offset >= recorded.len() {
+    for (i, &expected_offset) in analysis_offsets.iter().enumerate() {
+        // Search window: from the expected offset to one full segment
+        // past it. This covers the probe even with system latency up to
+        // silence_duration_ms (typically 500ms — far beyond any real
+        // DAC+ADC round-trip). The window must NOT extend into the next
+        // channel's region.
+        let search_start = expected_offset;
+        let search_end = (expected_offset + analysis_segment_len).min(recorded.len());
+        if search_start >= recorded.len() {
             return Err(format!(
-                "Channel {} adjusted offset {} exceeds recording length {}",
+                "Channel {} expected offset {} exceeds recording length {}",
                 i,
-                offset,
+                expected_offset,
                 recorded.len()
             ));
         }
-        let segment = &recorded[offset..end];
+        let segment = &recorded[search_start..search_end];
 
-        let xcorr = math_audio_dsp::analysis::cross_correlate_envelope(&probe, segment, input_sr)?;
+        let xcorr =
+            math_audio_dsp::analysis::cross_correlate_envelope(&analysis_probe, segment, input_sr)?;
+
+        // The peak position within the segment represents the absolute
+        // arrival relative to the segment start (= expected_offset).
+        // This includes both system latency and acoustic propagation.
+        // Since system latency is constant across all channels, it
+        // cancels out when computing alignment delays (max - each).
+        let arrival_ms = xcorr.peak_sample_refined / input_sr as f64 * 1000.0;
 
         let gain_linear = if auto_peak > 1e-10 {
             xcorr.peak_value as f64 / auto_peak
@@ -1523,11 +1560,20 @@ fn probe_channel_delays_core(
         let median = sorted_env[sorted_env.len() / 2].max(1e-10) as f64;
         let snr_db = 20.0 * (xcorr.peak_value as f64 / median).log10();
 
-        arrivals_ms.push(xcorr.arrival_ms);
+        log::info!(
+            "[probe] Ch {} '{}': arrival={:.3}ms, gain={:.1}dB, SNR={:.1}dB",
+            i,
+            channel_names[i],
+            arrival_ms,
+            gain_db,
+            snr_db,
+        );
+
+        arrivals_ms.push(arrival_ms);
         channel_results.push(ProbeDelayChannelResult {
             channel_name: channel_names[i].clone(),
             channel_index: channel_indices[i] as usize,
-            arrival_ms: xcorr.arrival_ms,
+            arrival_ms,
             gain_db,
             snr_db,
         });
@@ -2666,5 +2712,167 @@ mod tests {
 
         // Just verify it compiles
         let _ = _check;
+    }
+
+    /// Diagnostic test: reads the real probe WAV from a recording session,
+    /// regenerates the narrowband probe, and runs cross-correlation per
+    /// channel to inspect arrival times, gains, and SNR. Reproduces the
+    /// analysis path from `probe_channel_delays_core` without live audio.
+    ///
+    /// ```sh
+    /// cargo test -p sotf-engine --lib -- test_probe_wav_analysis --nocapture
+    /// ```
+    #[test]
+    fn test_probe_wav_analysis() {
+        let wav_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../data_generated/recording-20260413-163800/probe_all_channels.wav");
+        if !wav_path.exists() {
+            eprintln!("SKIP: probe WAV not found at {}", wav_path.display());
+            return;
+        }
+
+        // Read mono probe recording
+        let mut reader = WavReader::open(&wav_path).expect("failed to open probe WAV");
+        let spec = reader.spec();
+        let sample_rate = spec.sample_rate;
+        eprintln!(
+            "WAV: {} ch, {} Hz, {} frames",
+            spec.channels,
+            sample_rate,
+            reader.len() / spec.channels as u32
+        );
+
+        let recorded: Vec<f32> = if spec.sample_format == hound::SampleFormat::Float {
+            reader.samples::<f32>().map(|s| s.unwrap()).collect()
+        } else {
+            reader
+                .samples::<i32>()
+                .map(|s| {
+                    let v = s.unwrap();
+                    v as f32 / (1_i64 << (spec.bits_per_sample - 1)) as f32
+                })
+                .collect()
+        };
+
+        let mono: Vec<f32> = if spec.channels > 1 {
+            recorded
+                .chunks(spec.channels as usize)
+                .map(|frame| frame[0])
+                .collect()
+        } else {
+            recorded
+        };
+
+        eprintln!(
+            "Mono samples: {} ({:.3}s)",
+            mono.len(),
+            mono.len() as f64 / sample_rate as f64
+        );
+
+        // Probe parameters matching the recording session
+        let probe_duration_ms = 1000.0_f32;
+        let silence_duration_ms = 500.0_f32;
+        let num_channels = 2_usize;
+
+        let probe_samples = (probe_duration_ms / 1000.0 * sample_rate as f32) as usize;
+        let silence_samples = (silence_duration_ms / 1000.0 * sample_rate as f32) as usize;
+        let segment_len = silence_samples + probe_samples;
+
+        let expected_offsets: Vec<usize> = (0..num_channels)
+            .map(|i| silence_samples + i * segment_len)
+            .collect();
+
+        eprintln!(
+            "Probe: {} samples ({:.1}ms), silence: {} samples ({:.1}ms)",
+            probe_samples, probe_duration_ms, silence_samples, silence_duration_ms
+        );
+        eprintln!("Expected playback offsets: {:?}", expected_offsets);
+
+        let probe = math_audio_dsp::signals::gen_narrowband_probe(
+            probe_samples,
+            sample_rate,
+            0.5,
+            PROBE_SEED,
+            800.0,
+            2000.0,
+        );
+
+        let auto_result = math_audio_dsp::analysis::cross_correlate_envelope(
+            &probe,
+            &probe,
+            sample_rate,
+        )
+        .expect("autocorrelation failed");
+        let auto_peak = auto_result.peak_value as f64;
+        eprintln!("Probe autocorrelation peak: {:.6}", auto_peak);
+
+        // New approach: search from expected_offset, peak position within
+        // the segment = system_latency + acoustic_propagation. System
+        // latency cancels when computing alignment differences.
+        eprintln!("\n=== Per-Channel Analysis (absolute-position, no system-latency step) ===");
+
+        let channel_names = ["L", "R"];
+        let mut arrivals = Vec::new();
+
+        for (i, &expected) in expected_offsets.iter().enumerate() {
+            let end = (expected + segment_len).min(mono.len());
+            let segment = &mono[expected..end];
+
+            let xcorr = math_audio_dsp::analysis::cross_correlate_envelope(
+                &probe,
+                segment,
+                sample_rate,
+            )
+            .expect("channel xcorr failed");
+
+            let arrival_ms = xcorr.peak_sample_refined / sample_rate as f64 * 1000.0;
+
+            let gain_linear = if auto_peak > 1e-10 {
+                xcorr.peak_value as f64 / auto_peak
+            } else {
+                0.0
+            };
+            let gain_db = if gain_linear > 1e-10 {
+                20.0 * gain_linear.log10()
+            } else {
+                -120.0
+            };
+            let mut sorted_env = xcorr.envelope.to_vec();
+            sorted_env.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let median = sorted_env[sorted_env.len() / 2].max(1e-10) as f64;
+            let snr_db = 20.0 * (xcorr.peak_value as f64 / median).log10();
+
+            eprintln!(
+                "\nCh {} '{}' (window [{}, {}]):",
+                i, channel_names[i], expected, end
+            );
+            eprintln!(
+                "  Arrival:  {:.3} ms (sample {:.1})",
+                arrival_ms, xcorr.peak_sample_refined
+            );
+            eprintln!("  Gain:     {:.1} dB", gain_db);
+            eprintln!("  SNR:      {:.1} dB", snr_db);
+
+            arrivals.push(arrival_ms);
+        }
+
+        if !arrivals.is_empty() {
+            let max = arrivals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            eprintln!("\n=== Alignment Delays ===");
+            for (i, name) in channel_names.iter().enumerate() {
+                eprintln!("  {} — {:.3} ms", name, max - arrivals[i]);
+            }
+        }
+
+        // Arrivals must include system latency (~475ms for this recording)
+        // so they should be well above 0.
+        for (i, &a) in arrivals.iter().enumerate() {
+            assert!(
+                a > 100.0,
+                "Channel {} arrival should include system latency (>100ms), got {:.3}ms",
+                i,
+                a
+            );
+        }
     }
 }
