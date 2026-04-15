@@ -217,7 +217,7 @@ impl Default for SpinoramaOptimizerConfig {
             tolerance: 0.00001,
             atolerance: 0.00001,
             psychoacoustic: true,
-            loss_function: "flat-asymmetric".to_string(),
+            loss_function: "flat".to_string(),
         }
     }
 }

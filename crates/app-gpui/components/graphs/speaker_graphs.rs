@@ -125,7 +125,22 @@ fn render_spinorama_main_response_plot(
 ) -> Div {
     let chart_theme = theme_to_chart_theme(theme);
 
-    let chart = line(&result.frequencies, &result.input_curve)
+    // Use the LW curve as "Original" for consistency with CEA2034 plot above.
+    // Fall back to input_curve if LW is empty (e.g., headphone mode).
+    let original = if !result.lw_curve.is_empty() {
+        &result.lw_curve
+    } else {
+        &result.input_curve
+    };
+
+    // Corrected = original + filter response
+    let corrected: Vec<f64> = original
+        .iter()
+        .zip(result.filter_response.iter())
+        .map(|(a, b)| a + b)
+        .collect();
+
+    let chart = line(&result.frequencies, original)
         .x_scale(ScaleType::Log)
         .y_label("SPL (dB)")
         .y_range(-15.0, 5.0)
@@ -143,7 +158,7 @@ fn render_spinorama_main_response_plot(
             1.0,
         )
         .add_series(
-            &result.corrected_curve,
+            &corrected,
             Some("Corrected"),
             rgba_to_u32(colors::corrected(theme)),
             2.0,
@@ -383,8 +398,15 @@ pub fn render_spinorama_horizontal_graph(
         0x17becf, // Cyan
     ];
 
-    // Sort curves by angle
-    let mut sorted_curves: Vec<_> = curves.horizontal_directivity.iter().collect();
+    // Standard horizontal angles for spinorama display
+    let display_angles: &[f64] = &[0.0, 10.0, -10.0, 20.0, -20.0, 30.0, -30.0];
+
+    // Filter and sort curves to standard display angles
+    let mut sorted_curves: Vec<_> = curves
+        .horizontal_directivity
+        .iter()
+        .filter(|c| display_angles.iter().any(|a| (c.angle - a).abs() < 0.5))
+        .collect();
     sorted_curves.sort_by(|a, b| {
         a.angle
             .partial_cmp(&b.angle)
@@ -462,8 +484,15 @@ pub fn render_spinorama_vertical_graph(
         0x17becf, // Cyan
     ];
 
-    // Sort curves by angle
-    let mut sorted_curves: Vec<_> = curves.vertical_directivity.iter().collect();
+    // Standard vertical angles for spinorama display
+    let display_angles: &[f64] = &[0.0, 10.0, -10.0, 20.0, -20.0, 30.0, -30.0];
+
+    // Filter and sort curves to standard display angles
+    let mut sorted_curves: Vec<_> = curves
+        .vertical_directivity
+        .iter()
+        .filter(|c| display_angles.iter().any(|a| (c.angle - a).abs() < 0.5))
+        .collect();
     sorted_curves.sort_by(|a, b| {
         a.angle
             .partial_cmp(&b.angle)

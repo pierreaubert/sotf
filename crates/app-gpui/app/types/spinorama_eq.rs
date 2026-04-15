@@ -95,6 +95,8 @@ pub struct SpinoramaEqDropdowns {
     pub strategy_open: bool,
     /// AutoEQ form: local algorithm dropdown
     pub local_algo_open: bool,
+    /// AutoEQ form: loss type dropdown
+    pub loss_type_open: bool,
     /// AutoEQ form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
     /// AutoEQ form edit text
@@ -117,6 +119,7 @@ impl Default for SpinoramaEqDropdowns {
             peq_model_open: false,
             strategy_open: false,
             local_algo_open: false,
+            loss_type_open: false,
             autoeq_editing_field: None,
             autoeq_edit_text: String::new(),
         }

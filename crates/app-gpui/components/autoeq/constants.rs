@@ -15,6 +15,7 @@ pub const OPT_MODE_OPTIONS: &[(&str, &str)] = &[
     ("iir", "IIR (PEQ)"),
     ("fir", "FIR (Convolution)"),
     ("mixed", "Mixed (IIR + FIR)"),
+    ("mixed_phase", "Mixed Phase (IIR + Excess Phase FIR)"),
 ];
 
 /// FIR Phase options
@@ -34,9 +35,8 @@ pub const LOSS_TYPE_OPTIONS: &[(&str, &str)] = &[
 
 /// Loss Type options for headphones
 pub const HEADPHONE_LOSS_TYPE_OPTIONS: &[(&str, &str)] = &[
-    ("flat", "Flat Target Match"),
-    ("score", "Listener Preference"),
-    ("epa", "Perceptual (EPA)"),
+    ("flat", "Target Match"),
+    ("score", "Score"),
 ];
 
 /// Short descriptions for loss types (used as tooltips / inline help)
@@ -201,4 +201,51 @@ pub const LOCAL_ALGO_OPTIONS: &[(&str, &str)] = &[
     ("cobyla", "COBYLA"),
     ("bobyqa", "BOBYQA"),
     ("newuoa", "NEWUOA"),
+];
+
+/// Target distance presets: (id, label, description, recommended_slope_db_per_oct)
+pub const TARGET_DISTANCE_OPTIONS: &[(&str, &str, &str, f64)] = &[
+    ("near", "Near-Field", "~1m \u{2014} Good for desk", -0.5),
+    (
+        "mid",
+        "Mid-Field",
+        "1.2~3m \u{2014} Good for large desk, console",
+        -0.8,
+    ),
+    (
+        "far",
+        "Far-Field",
+        ">3m \u{2014} Classical Home Cinema or Dining room",
+        -1.2,
+    ),
+    ("custom", "Custom", "Set your own slope", 0.0),
+];
+
+/// Optimisation goal presets: (id, label, description)
+pub const OPTIMIZATION_GOAL_OPTIONS: &[(&str, &str, &str)] = &[
+    (
+        "match_target",
+        "Match Target",
+        "As close as possible from target",
+    ),
+    (
+        "natural",
+        "Natural Correction",
+        "Correct dips more than peaks",
+    ),
+    (
+        "psychoacoustic",
+        "Psychoacoustic Correction",
+        "Take psychoacoustics into account",
+    ),
+];
+
+/// Loss Type options for spinorama (Target or Score only)
+pub const SPINORAMA_LOSS_TYPE_OPTIONS: &[(&str, &str)] =
+    &[("flat", "Target"), ("score", "Score")];
+
+/// Smoothing strategy options
+pub const SMOOTHING_STRATEGY_OPTIONS: &[(&str, &str)] = &[
+    ("psychoacoustic", "Psychoacoustic"),
+    ("window", "Window"),
 ];

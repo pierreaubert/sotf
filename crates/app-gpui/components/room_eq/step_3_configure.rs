@@ -1,5 +1,7 @@
 use crate::app::types::RoomEqOptimizationMode;
-use crate::components::autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode};
+use crate::components::autoeq::{
+    AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode, DetailLevel,
+};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -154,7 +156,7 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
-            detail_level: room_eq.detail_level,
+            detail_level: DetailLevel::Expert,
             selected_preset: Some(room_eq.selected_preset.clone()),
             opt_mode_open: room_eq.dropdowns.opt_mode_open,
             fir_phase_open: room_eq.dropdowns.fir_phase_open,
@@ -190,11 +192,11 @@ impl PlayerView {
 
         // Build the AutoEQ form — Full Wizard shows everything.
         let autoeq_form = AutoEqForm::new("room-eq-optimizer-form")
-            .layout_mode(AutoEqLayoutMode::RoomEq)
+            .layout_mode(AutoEqLayoutMode::Default)
             .available_width(window_width)
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
-            .show_goals(true)
+            .show_goals(false)
             .show_optimization_tuning(true)
             .hide_de_params(false)
             .hide_smoothing(false)
@@ -1635,31 +1637,6 @@ impl PlayerView {
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
-            .child(
-                Text::new(
-                    "All parameters are shown, organized into Acoustic \
-                           and Optimizer sections.",
-                )
-                .size(TextSize::Xs)
-                .color(theme.text_secondary),
-            )
-            // ── Block 1: Acoustic ─────────────────────────────────
-            .child(
-                Text::new("ACOUSTIC — what to correct")
-                    .weight(TextWeight::Bold)
-                    .size(TextSize::Xs)
-                    .color(theme.accent),
-            )
-            .child(self.render_slope_recommendation(cx))
-            // ── Block 2: Optimizer ────────────────────────────────
-            .child(
-                Text::new("OPTIMIZER — how to optimize")
-                    .weight(TextWeight::Bold)
-                    .size(TextSize::Xs)
-                    .color(theme.accent),
-            )
-            // Mode selector inline
-            .child(mode_selector)
             .child(autoeq_form);
 
         // Only show channel configuration for multi-driver measurements

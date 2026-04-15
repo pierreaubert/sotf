@@ -14,98 +14,16 @@ use gpui_ui_kit::select::{Select, SelectOption};
 use gpui_ui_kit::stack::{HStack, StackAlign, StackJustify, StackSpacing, VStack};
 use gpui_ui_kit::text::{Text, TextSize, TextWeight};
 use gpui_ui_kit::theme::ThemeExt;
-use gpui_ui_kit::toggle::{Toggle, ToggleSize, ToggleTheme};
+use gpui_ui_kit::toggle::{Toggle, ToggleSize};
 
 use super::config::ParamLimits;
 use super::constants::*;
 use super::docs;
 use super::form::{
     AutoEqForm, AutoEqLayoutMode, is_narrow_default_layout, is_narrow_room_eq_layout,
-    is_single_column_default_grid,
 };
-use super::layout_tree::solve_autoeq_layout;
 use super::theme::AutoEqFormTheme;
 use super::ui_state::DetailLevel;
-
-/// Render the documentation panel for the given focused block.
-fn render_docs_panel(
-    focused_block: Option<&'static str>,
-    theme: &AutoEqFormTheme,
-) -> impl IntoElement {
-    let block_id = focused_block.unwrap_or(docs::BLOCK_OVERVIEW);
-    let doc = docs::block_doc(block_id);
-
-    let mut panel = VStack::new().spacing(StackSpacing::Md);
-
-    // Title
-    panel = panel.child(
-        Text::new(doc.title)
-            .size(TextSize::Sm)
-            .weight(TextWeight::Semibold)
-            .color(theme.header_color),
-    );
-
-    // Overview
-    panel = panel.child(
-        Text::new(doc.overview)
-            .size(TextSize::Xs)
-            .color(theme.description_color),
-    );
-
-    // Per-field docs
-    for field in doc.fields {
-        let mut field_section = VStack::new().spacing(StackSpacing::None);
-
-        field_section = field_section.child(
-            Text::new(field.name)
-                .size(TextSize::Xs)
-                .weight(TextWeight::Semibold)
-                .color(theme.header_color),
-        );
-
-        field_section = field_section.child(
-            Text::new(field.description)
-                .size(TextSize::Xs)
-                .color(theme.description_color),
-        );
-
-        if !field.default.is_empty() {
-            field_section = field_section.child(
-                HStack::new()
-                    .spacing(StackSpacing::Xs)
-                    .child(
-                        Text::new("Default:")
-                            .size(TextSize::Xs)
-                            .weight(TextWeight::Semibold)
-                            .color(theme.description_color),
-                    )
-                    .child(
-                        Text::new(field.default)
-                            .size(TextSize::Xs)
-                            .color(theme.description_color),
-                    ),
-            );
-        }
-
-        if !field.tip.is_empty() {
-            field_section = field_section.child(
-                Text::new(format!("Tip: {}", field.tip))
-                    .size(TextSize::Xs)
-                    .color(theme.accent),
-            );
-        }
-
-        panel = panel.child(
-            div()
-                .py(px(4.0))
-                .border_b_1()
-                .border_color(theme.border)
-                .child(field_section),
-        );
-    }
-
-    div().size_full().px(px(12.0)).py(px(8.0)).child(panel)
-}
 
 #[allow(clippy::too_many_lines)]
 impl RenderOnce for AutoEqForm {
@@ -137,10 +55,15 @@ impl RenderOnce for AutoEqForm {
         let hide_scenario_a_text = self.hide_scenario_a_text;
         let hide_room_sections = self.hide_room_sections;
         let hide_multi_measurement = self.hide_multi_measurement;
+        let hide_capability_section = self.hide_capability_section;
+        let hide_target_distance_section = self.hide_target_distance_section;
+        let hide_optimization_goal_section = self.hide_optimization_goal_section;
+        let hide_bass_management = self.hide_bass_management;
+        let hide_asymmetric_loss = self.hide_asymmetric_loss;
+        let hide_broadband_matching = self.hide_broadband_matching;
+        let loss_type_options_override = self.loss_type_options_override;
         let available_width = self.available_width;
         let layout_mode = self.layout_mode;
-        let focused_block = ui_state.focused_block;
-
         // Wrap callbacks in Rc for sharing
         let on_opt_mode_change_rc = self.on_opt_mode_change.map(std::rc::Rc::new);
         let on_opt_mode_toggle_rc = self.on_opt_mode_toggle.map(std::rc::Rc::new);
@@ -291,16 +214,10 @@ impl RenderOnce for AutoEqForm {
         let on_preset_change_rc = self.on_preset_change.map(std::rc::Rc::new);
         let on_preset_toggle_rc = self.on_preset_toggle.map(std::rc::Rc::new);
 
-        // Solve the two-panel layout
-        let solved = solve_autoeq_layout(available_width, 800.0);
-        let form_node = solved.find("form");
-        let docs_node = solved.find("docs");
-        let form_width = form_node.map_or(available_width, |n| n.width);
-        let docs_visible = docs_node.is_some_and(|n| n.visible && n.width > 10.0);
-        let docs_width = docs_node.map_or(0.0, |n| n.width);
-
-        // Override available_width for the form body to use the solved form width
-        let available_width = form_width;
+        // Complex mode section callbacks Rc
+        let on_target_distance_change_rc = self.on_target_distance_change.map(std::rc::Rc::new);
+        let on_optimization_goal_change_rc =
+            self.on_optimization_goal_change.map(std::rc::Rc::new);
 
         // Build the form body - branch on detail level
         let detail_level = ui_state.detail_level;
@@ -320,31 +237,7 @@ impl RenderOnce for AutoEqForm {
             },
         };
 
-        // Two-panel layout: form (left) + docs (right)
-        let mut root = HStack::new().spacing(StackSpacing::None).full();
-
-        // Left panel: form
-        root = root.child(
-            div()
-                .flex_shrink_0()
-                .w(px(form_width))
-                .h_full()
-                .child(form_body),
-        );
-
-        // Right panel: documentation (only when space permits)
-        if docs_visible {
-            root = root.child(
-                div()
-                    .border_l_1()
-                    .border_color(theme.border)
-                    .w(px(docs_width))
-                    .h_full()
-                    .flex_shrink_0()
-                    .child(render_docs_panel(focused_block, &theme)),
-            );
-        }
-
-        root
+        // Full-width layout (no docs panel)
+        div().w_full().h_full().child(form_body)
     }
 }

@@ -90,6 +90,20 @@ pub struct AutoEqForm {
     pub(crate) hide_room_sections: bool,
     /// Hide multi-measurement optimization section
     pub(crate) hide_multi_measurement: bool,
+    /// Hide the Capability section (IIR/FIR/Mixed selection)
+    pub(crate) hide_capability_section: bool,
+    /// Hide the Target distance section (Near/Mid/Far-Field)
+    pub(crate) hide_target_distance_section: bool,
+    /// Hide the Optimisation Goal section (Match Target/Natural/Psychoacoustic)
+    pub(crate) hide_optimization_goal_section: bool,
+    /// Hide Bass Management subsection in Filter Design
+    pub(crate) hide_bass_management: bool,
+    /// Hide Asymmetric Loss toggle in Algorithm section
+    pub(crate) hide_asymmetric_loss: bool,
+    /// Hide Broadband Target Matching toggle in Algorithm section
+    pub(crate) hide_broadband_matching: bool,
+    /// Override loss type options shown in Goals section
+    pub(crate) loss_type_options_override: Option<&'static [(&'static str, &'static str)]>,
     /// Available width in pixels for responsive layout
     pub(crate) available_width: f32,
 
@@ -210,6 +224,12 @@ pub struct AutoEqForm {
     pub(crate) on_preset_change: Option<StringCallback>,
     /// Callback for preset dropdown toggle.
     pub(crate) on_preset_toggle: Option<ToggleCallback>,
+
+    // Complex mode section callbacks
+    /// Callback when target distance preset changes (near/mid/far/custom).
+    pub(crate) on_target_distance_change: Option<StringCallback>,
+    /// Callback when optimization goal preset changes (match_target/natural/psychoacoustic).
+    pub(crate) on_optimization_goal_change: Option<StringCallback>,
 }
 
 impl AutoEqForm {
@@ -238,7 +258,15 @@ impl AutoEqForm {
             hide_scenario_a_text: false,
             hide_room_sections: false,
             hide_multi_measurement: false,
+            hide_capability_section: false,
+            hide_target_distance_section: false,
+            hide_optimization_goal_section: false,
+            hide_bass_management: false,
+            hide_asymmetric_loss: false,
+            hide_broadband_matching: false,
+            loss_type_options_override: None,
             available_width: 0.0,
+            // Note: loss_type_options_override is initialized above
             on_opt_mode_change: None,
             on_opt_mode_toggle: None,
             on_fir_taps_change: None,
@@ -335,6 +363,8 @@ impl AutoEqForm {
             on_detail_level_change: None,
             on_preset_change: None,
             on_preset_toggle: None,
+            on_target_distance_change: None,
+            on_optimization_goal_change: None,
         }
     }
 
@@ -1221,6 +1251,41 @@ impl AutoEqForm {
         self
     }
 
+    pub fn hide_capability_section(mut self, hide: bool) -> Self {
+        self.hide_capability_section = hide;
+        self
+    }
+
+    pub fn hide_target_distance_section(mut self, hide: bool) -> Self {
+        self.hide_target_distance_section = hide;
+        self
+    }
+
+    pub fn hide_optimization_goal_section(mut self, hide: bool) -> Self {
+        self.hide_optimization_goal_section = hide;
+        self
+    }
+
+    pub fn hide_bass_management(mut self, hide: bool) -> Self {
+        self.hide_bass_management = hide;
+        self
+    }
+
+    pub fn hide_asymmetric_loss(mut self, hide: bool) -> Self {
+        self.hide_asymmetric_loss = hide;
+        self
+    }
+
+    pub fn hide_broadband_matching(mut self, hide: bool) -> Self {
+        self.hide_broadband_matching = hide;
+        self
+    }
+
+    pub fn loss_type_options(mut self, options: &'static [(&'static str, &'static str)]) -> Self {
+        self.loss_type_options_override = Some(options);
+        self
+    }
+
     pub fn on_use_multi_measurement_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1295,6 +1360,24 @@ impl AutoEqForm {
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_preset_toggle = Some(Box::new(handler));
+        self
+    }
+
+    /// Set handler for target distance preset changes (near/mid/far/custom)
+    pub fn on_target_distance_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_target_distance_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set handler for optimization goal preset changes (match_target/natural/psychoacoustic)
+    pub fn on_optimization_goal_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_optimization_goal_change = Some(Box::new(handler));
         self
     }
 }

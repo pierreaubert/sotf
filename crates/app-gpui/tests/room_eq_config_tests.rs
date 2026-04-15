@@ -568,7 +568,7 @@ fn extract_filter_freqs(channel_result_names: &[String], dsp_output: &DspChainOu
     for name in channel_result_names {
         if let Some(chain) = dsp_output.channels.get(name) {
             for plugin in &chain.plugins {
-                if plugin.plugin_type == "EQ"
+                if plugin.plugin_type.eq_ignore_ascii_case("eq")
                     && let Some(filters) =
                         plugin.parameters.get("filters").and_then(|f| f.as_array())
                 {

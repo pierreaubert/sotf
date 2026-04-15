@@ -1,5 +1,7 @@
 use crate::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
-use crate::components::autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState};
+use crate::components::autoeq::{
+    AutoEqConfig, AutoEqForm, AutoEqFormUiState, DetailLevel, SPINORAMA_LOSS_TYPE_OPTIONS,
+};
 use crate::components::design::Ds;
 use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
 use crate::ui::PlayerView;
@@ -22,11 +24,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
 
-        let allowed_modes = spinorama
-            .supported_eq_modes()
-            .iter()
-            .map(|mode| (*mode).to_string())
-            .collect::<Vec<_>>();
+        let allowed_modes = vec!["iir".to_string()];
         let opt_mode = spinorama.selected_eq_mode().to_string();
 
         // Build AutoEqConfig from our SpinoramaOptimizerConfig
@@ -67,12 +65,14 @@ impl PlayerView {
             asymmetric_loss: config.loss_function == "flat-asymmetric",
             spacing_weight: config.spacing_weight,
             min_spacing_oct: config.min_spacing_oct,
+            loss_type: config.loss_function.clone(),
+            target_curve: config.target_curve.short_name().to_string(),
             ..Default::default()
         };
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
-            detail_level: spinorama.detail_level,
+            detail_level: DetailLevel::Expert,
             selected_preset: Some(spinorama.selected_preset.clone()),
             opt_mode_open: spinorama.dropdowns.opt_mode_open,
             fir_phase_open: spinorama.dropdowns.fir_phase_open,
@@ -80,6 +80,8 @@ impl PlayerView {
             algo_open: spinorama.dropdowns.algorithm_open,
             strategy_open: spinorama.dropdowns.strategy_open,
             local_algo_open: spinorama.dropdowns.local_algo_open,
+            target_curve_open: spinorama.dropdowns.target_curve_open,
+            loss_type_open: spinorama.dropdowns.loss_type_open,
             ..Default::default()
         };
 
@@ -88,9 +90,93 @@ impl PlayerView {
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
             .allowed_opt_modes(allowed_modes)
-            .show_goals(false) // Hide Goals section (System Type, Loss Type, Target Curve)
+            .show_goals(false)
             .show_optimization_tuning(true)
             .hide_room_sections(true) // No room-specific params for spinorama EQ
+            .hide_capability_section(true)
+            .hide_target_distance_section(true)
+            .hide_optimization_goal_section(true)
+            .hide_bass_management(true)
+            .hide_asymmetric_loss(true)
+            .hide_broadband_matching(true)
+            .hide_multi_measurement(true)
+            .loss_type_options(SPINORAMA_LOSS_TYPE_OPTIONS)
+            .available_spinorama_curves(spinorama.available_curves.clone())
+            .on_loss_type_change({
+                let state = self.state.clone();
+                move |loss_type, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .optimizer_config
+                            .loss_function = loss_type.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .dropdowns
+                            .loss_type_open = false;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_loss_type_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .dropdowns
+                            .loss_type_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_target_curve_change({
+                let state = self.state.clone();
+                move |curve, _window, cx| {
+                    use sotf_audio_player::spinorama_eq_types::SpinoramaTargetCurve;
+                    let tc = match curve {
+                        "ON" => SpinoramaTargetCurve::OnAxis,
+                        "LW" => SpinoramaTargetCurve::ListeningWindow,
+                        "ER" => SpinoramaTargetCurve::EarlyReflections,
+                        "PIR" | _ => SpinoramaTargetCurve::EstimatedInRoom,
+                    };
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .optimizer_config
+                            .target_curve = tc;
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .dropdowns
+                            .target_curve_open = false;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_target_curve_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .dropdowns
+                            .target_curve_open = open;
+                        cx.notify();
+                    });
+                }
+            })
             .on_opt_mode_change({
                 let state = self.state.clone();
                 move |mode, _window, cx| {

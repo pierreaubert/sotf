@@ -3,26 +3,10 @@
         let base_id = id.clone();
         let is_narrow_layout = is_narrow_room_eq_layout(available_width);
 
-        let toggle_theme = ToggleTheme {
-            checked_bg: theme.toggle_checked_bg,
-            unchecked_bg: theme.toggle_unchecked_bg,
-            knob: theme.toggle_knob,
-            knob_on_checked: theme.card_bg,
-            track_border: theme.border,
-            label: theme.label_color,
-            accent: theme.accent,
-            accent_muted: theme.accent,
-            success: theme.accent,
-            border: theme.border,
-            text_on_accent: theme.toggle_knob,
-            text_muted: theme.text_muted,
-            text_primary: theme.header_color,
-            surface_hover: theme.toggle_unchecked_bg,
-            background: theme.card_bg,
-        };
+        let toggle_theme = theme.toggle_theme();
 
-        let is_fir = config.opt_mode == "fir" || config.opt_mode == "mixed";
-        let is_iir = config.opt_mode == "iir" || config.opt_mode == "mixed";
+        let is_fir = matches!(config.opt_mode.as_str(), "fir" | "mixed" | "mixed_phase");
+        let is_iir = matches!(config.opt_mode.as_str(), "iir" | "mixed" | "mixed_phase");
 
         // ========================================
         // Section 2: Room Configuration

@@ -583,6 +583,9 @@ impl PlayerView {
             self.state.update(cx, |state, _| {
                 state.app.measurement_state.room_eq_state.error_message =
                     Some("No optimization results to apply".to_string());
+                state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
+                    "No optimization results to apply. Run the optimizer first.",
+                ));
             });
             return;
         };
@@ -627,7 +630,7 @@ impl PlayerView {
             if let Some(channel_dsp) = dsp_output.channels.get(channel_name) {
                 let mut channel_eq_filters: Vec<EQFilter> = Vec::new();
                 for plugin in &channel_dsp.plugins {
-                    if plugin.plugin_type == "EQ"
+                    if plugin.plugin_type.eq_ignore_ascii_case("eq")
                         && let Some(filters) =
                             plugin.parameters.get("filters").and_then(|f| f.as_array())
                     {

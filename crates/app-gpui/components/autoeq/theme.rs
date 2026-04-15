@@ -4,6 +4,7 @@ use gpui::*;
 use gpui_ui_kit::number_input::NumberInputTheme;
 use gpui_ui_kit::select::SelectTheme;
 use gpui_ui_kit::theme::Theme;
+use gpui_ui_kit::toggle::ToggleTheme;
 
 /// Theme for the AutoEQ form
 #[derive(Debug, Clone)]
@@ -47,6 +48,29 @@ impl Default for AutoEqFormTheme {
             text_muted: rgba(0x888888ff),
             number_input_theme: NumberInputTheme::default(),
             select_theme: SelectTheme::default(),
+        }
+    }
+}
+
+impl AutoEqFormTheme {
+    /// Build a `ToggleTheme` from this form theme.
+    pub fn toggle_theme(&self) -> ToggleTheme {
+        ToggleTheme {
+            checked_bg: self.toggle_checked_bg,
+            unchecked_bg: self.toggle_unchecked_bg,
+            knob: self.toggle_knob,
+            knob_on_checked: self.card_bg,
+            track_border: self.border,
+            label: self.label_color,
+            accent: self.accent,
+            accent_muted: self.accent,
+            success: self.accent,
+            border: self.border,
+            text_on_accent: self.toggle_knob,
+            text_muted: self.text_muted,
+            text_primary: self.header_color,
+            surface_hover: self.toggle_unchecked_bg,
+            background: self.card_bg,
         }
     }
 }

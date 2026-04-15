@@ -1,5 +1,7 @@
 use crate::app::types::OptimizationStatus;
-use crate::components::autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, OptimizationType};
+use crate::components::autoeq::{
+    AutoEqConfig, AutoEqForm, AutoEqFormUiState, DetailLevel, OptimizationType,
+};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -66,7 +68,7 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
-            detail_level: headphone_eq.detail_level,
+            detail_level: DetailLevel::Expert,
             selected_preset: Some(headphone_eq.selected_preset.clone()),
             algo_open: headphone_eq.dropdowns.algorithm_open,
             peq_model_open: headphone_eq.dropdowns.peq_model_open,
@@ -88,6 +90,14 @@ impl PlayerView {
             .hide_smoothing(true)
             .hide_tolerance(false)
             .hide_sample_rate(true)
+            .hide_capability_section(true)
+            .hide_target_distance_section(true)
+            .hide_optimization_goal_section(true)
+            .hide_bass_management(true)
+            .hide_room_sections(true)
+            .hide_multi_measurement(true)
+            .hide_asymmetric_loss(true)
+            .hide_broadband_matching(true)
             .on_loss_type_change({
                 let state = self.state.clone();
                 move |loss_type, _window, cx| {

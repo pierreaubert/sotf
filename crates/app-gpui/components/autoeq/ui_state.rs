@@ -50,4 +50,11 @@ pub struct AutoEqFormUiState {
     /// Currently focused parameter block (drives the docs panel).
     /// Set by hovering over a block section. `None` shows the overview.
     pub focused_block: Option<&'static str>,
+
+    /// Selected target distance preset (near/mid/far/custom).
+    /// UI helper only — drives `tilt_slope` pre-fill.
+    pub selected_target_distance: Option<String>,
+    /// Selected optimization goal preset (match_target/natural/psychoacoustic).
+    /// Derived from loss_type + asymmetric_loss + psychoacoustic config fields.
+    pub selected_optimization_goal: Option<String>,
 }
