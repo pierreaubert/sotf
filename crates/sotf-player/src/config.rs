@@ -313,9 +313,13 @@ pub fn load_app_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
 fn migrate_app_config(config: AppConfig) -> Result<AppConfig, Box<dyn std::error::Error>> {
     const LATEST_VERSION: u32 = 1;
 
-    // Apply migrations sequentially
+    // Reject corrupt configs with version below minimum
     if config.version < LATEST_VERSION {
-        return Err(format!("Unknown AppConfig version: {}", config.version).into());
+        return Err(format!(
+            "Unsupported AppConfig version {} (minimum: {})",
+            config.version, LATEST_VERSION
+        )
+        .into());
     }
 
     Ok(config)

@@ -1491,7 +1491,8 @@ impl PluginGraph {
                     let old_in = *input_channels;
                     let old_out = *output_channels;
                     // Need mutable access
-                    let node = self.nodes.get_mut(&node_id).unwrap();
+                    let node = self.nodes.get_mut(&node_id)
+                        .expect("plugin_ids/nodes desync: node missing from map");
                     if let PluginSettings::Matrix {
                         input_channels,
                         output_channels,
@@ -1676,7 +1677,9 @@ impl PluginGraph {
             }
 
             if let Some(new_settings) = updated_settings {
-                self.nodes.get_mut(&node_id).unwrap().plugin.settings = new_settings;
+                self.nodes.get_mut(&node_id)
+                    .expect("plugin_ids/nodes desync: node missing from map")
+                    .plugin.settings = new_settings;
             }
 
             // Track output channels for the next plugin
@@ -1736,7 +1739,11 @@ impl PluginGraph {
             filename.to_string()
         };
 
-        let full_path = presets_dir.join(&filename);
+        // Sanitize: use only the file name component to prevent path traversal
+        let safe_name = std::path::Path::new(&filename)
+            .file_name()
+            .ok_or("Invalid preset filename")?;
+        let full_path = presets_dir.join(safe_name);
 
         // Extract plugins in linear order for serialization
         let plugins: Vec<Plugin> = self
@@ -1780,7 +1787,11 @@ impl PluginGraph {
             format!("{}.json", filename)
         };
 
-        let full_path = presets_dir.join(&final_filename);
+        // Sanitize: use only the file name component to prevent path traversal
+        let safe_name = std::path::Path::new(&final_filename)
+            .file_name()
+            .ok_or("Invalid preset filename")?;
+        let full_path = presets_dir.join(safe_name);
         let json = std::fs::read_to_string(&full_path)?;
 
         // Parse with lenient per-plugin deserialization
@@ -2226,6 +2237,8 @@ pub struct NodeDrag {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use math_audio_iir_fir::BiquadFilterType;
+    use sotf_audio::plugins::EQFilter;
 
     #[test]
     fn test_add_and_remove_nodes() {
@@ -2592,6 +2605,174 @@ mod tests {
         assert!(
             joined.contains("non-linear"),
             "Non-linear diagram should indicate non-linearity"
+        );
+    }
+
+    // =========================================================================
+    // Save-to-rack tests
+    // =========================================================================
+
+    #[test]
+    fn test_find_plugin_index_no_eq() {
+        let g = PluginGraph::with_default_rack();
+        assert!(g.find_plugin_index(&PluginType::EQ).is_none());
+    }
+
+    #[test]
+    fn test_insert_eq_and_configure_per_channel() {
+        let mut g = PluginGraph::with_default_rack();
+        let insert_idx = g.user_plugin_insert_index();
+        let node_id = g.insert_plugin(insert_idx, &PluginType::EQ).unwrap();
+        assert!(!node_id.is_nil());
+
+        // Configure with per-channel settings
+        let ch0_filters = vec![EQFilter::new(BiquadFilterType::Peak, 100.0, 1.5, -3.0)];
+        let ch1_filters = vec![EQFilter::new(BiquadFilterType::Peak, 200.0, 2.0, -5.0)];
+        let eq_plugin = g.get_plugin_mut(insert_idx).unwrap();
+        eq_plugin.settings = PluginSettings::EQ {
+            channels: 2,
+            filters: ch0_filters.clone(),
+            channel_filters: Some(vec![ch0_filters.clone(), ch1_filters.clone()]),
+            per_channel_mode: true,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+
+        // Verify the graph is still linear
+        assert!(g.is_linear());
+
+        // Verify settings are preserved
+        let eq = g.get_plugin(insert_idx).unwrap();
+        if let PluginSettings::EQ { channels, per_channel_mode, channel_filters, .. } = &eq.settings {
+            assert_eq!(*channels, 2);
+            assert!(*per_channel_mode);
+            let cf = channel_filters.as_ref().unwrap();
+            assert_eq!(cf.len(), 2);
+            assert_eq!(cf[0][0].frequency, 100.0);
+            assert_eq!(cf[1][0].frequency, 200.0);
+        } else {
+            panic!("Expected EQ settings");
+        }
+
+        // Verify EQ is before Matrix
+        let eq_idx = g.find_plugin_index(&PluginType::EQ).unwrap();
+        let matrix_idx = g.find_plugin_index(&PluginType::Matrix).unwrap();
+        assert!(eq_idx < matrix_idx, "EQ should be before Matrix");
+    }
+
+    #[test]
+    fn test_update_existing_eq_preserves_position() {
+        let mut g = PluginGraph::with_default_rack();
+        // Add EQ then Compressor
+        let _eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();
+        let _comp_id = g.add_user_plugin(&PluginType::Compressor).unwrap();
+
+        let eq_idx = g.find_plugin_index(&PluginType::EQ).unwrap();
+        let comp_idx = g.find_plugin_index(&PluginType::Compressor).unwrap();
+        assert!(eq_idx < comp_idx);
+
+        // Update EQ with new per-channel settings
+        let new_filters = vec![EQFilter::new(BiquadFilterType::Peak, 500.0, 3.0, -8.0)];
+        let eq_plugin = g.get_plugin_mut(eq_idx).unwrap();
+        eq_plugin.settings = PluginSettings::EQ {
+            channels: 2,
+            filters: new_filters.clone(),
+            channel_filters: Some(vec![new_filters.clone(), new_filters.clone()]),
+            per_channel_mode: true,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+
+        // Verify position unchanged
+        let eq_idx_after = g.find_plugin_index(&PluginType::EQ).unwrap();
+        let comp_idx_after = g.find_plugin_index(&PluginType::Compressor).unwrap();
+        assert_eq!(eq_idx, eq_idx_after, "EQ position should not change");
+        assert_eq!(comp_idx, comp_idx_after, "Compressor position should not change");
+
+        // Verify new settings
+        let eq = g.get_plugin(eq_idx).unwrap();
+        if let PluginSettings::EQ { filters, per_channel_mode, .. } = &eq.settings {
+            assert!(*per_channel_mode);
+            assert_eq!(filters[0].frequency, 500.0);
+        } else {
+            panic!("Expected EQ settings");
+        }
+    }
+
+    #[test]
+    fn test_to_plugin_configs_per_channel_eq() {
+        let mut g = PluginGraph::with_default_rack();
+        let insert_idx = g.user_plugin_insert_index();
+        g.insert_plugin(insert_idx, &PluginType::EQ).unwrap();
+
+        let ch0 = vec![EQFilter::new(BiquadFilterType::Peak, 100.0, 1.5, -3.0)];
+        let ch1 = vec![EQFilter::new(BiquadFilterType::Peak, 200.0, 2.0, -5.0)];
+        let eq = g.get_plugin_mut(insert_idx).unwrap();
+        eq.settings = PluginSettings::EQ {
+            channels: 2,
+            filters: ch0.clone(),
+            channel_filters: Some(vec![ch0, ch1]),
+            per_channel_mode: true,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+
+        let configs = g.to_plugin_configs(48000.0);
+        let eq_config = configs.iter().find(|c| c.plugin_type == "eq").expect("EQ config should be present");
+        let params = &eq_config.parameters;
+
+        // per_channel_mode should produce "channel_filters" key
+        assert!(params.get("channel_filters").is_some(), "Should have channel_filters key");
+        let ch_filters = params["channel_filters"].as_array().unwrap();
+        assert_eq!(ch_filters.len(), 2);
+
+        // Verify different frequencies per channel
+        let ch0_freq = ch_filters[0][0]["freq"].as_f64().unwrap();
+        let ch1_freq = ch_filters[1][0]["freq"].as_f64().unwrap();
+        assert!((ch0_freq - 100.0).abs() < 0.1);
+        assert!((ch1_freq - 200.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_to_plugin_configs_global_eq() {
+        let mut g = PluginGraph::with_default_rack();
+        let insert_idx = g.user_plugin_insert_index();
+        g.insert_plugin(insert_idx, &PluginType::EQ).unwrap();
+
+        let filters = vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.4, 3.0)];
+        let eq = g.get_plugin_mut(insert_idx).unwrap();
+        eq.settings = PluginSettings::EQ {
+            channels: 2,
+            filters,
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+
+        let configs = g.to_plugin_configs(48000.0);
+        let eq_config = configs.iter().find(|c| c.plugin_type == "eq").expect("EQ config");
+        let params = &eq_config.parameters;
+
+        // Global mode should produce "filters" key, NOT "channel_filters"
+        assert!(params.get("filters").is_some(), "Should have filters key");
+        assert!(params.get("channel_filters").is_none(), "Should NOT have channel_filters key");
+    }
+
+    #[test]
+    fn test_disabled_eq_excluded_from_configs() {
+        let mut g = PluginGraph::with_default_rack();
+        let eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();
+        g.toggle_plugin(eq_id).unwrap(); // disable it
+
+        let configs = g.to_plugin_configs(48000.0);
+        assert!(
+            configs.iter().all(|c| c.plugin_type != "eq"),
+            "Disabled EQ should not appear in configs"
         );
     }
 }

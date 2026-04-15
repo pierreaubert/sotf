@@ -66,17 +66,23 @@ impl QueueController {
     }
 
     /// Add an album to the end of the queue. Returns the insertion index.
-    pub fn add_album(&mut self, album: Album) -> usize {
-        self.queue.add(album)
+    ///
+    /// Returns an error if none of the album's tracks exist on disk.
+    pub fn add_album(&mut self, album: Album) -> Result<usize, String> {
+        validate_album_has_files(&album)?;
+        Ok(self.queue.add(album))
     }
 
     /// Add album to queue and immediately jump to it for playback.
-    pub fn play_album_now(&mut self, album: Album) -> QueuePlaybackEffect {
+    ///
+    /// Returns an error if none of the album's tracks exist on disk.
+    pub fn play_album_now(&mut self, album: Album) -> Result<QueuePlaybackEffect, String> {
+        validate_album_has_files(&album)?;
         let new_index = self.queue.add(album);
         self.queue.current_index = Some(new_index);
         match self.queue.current_track_source() {
-            Some(source) => QueuePlaybackEffect::Play(source),
-            None => QueuePlaybackEffect::None,
+            Some(source) => Ok(QueuePlaybackEffect::Play(source)),
+            None => Ok(QueuePlaybackEffect::None),
         }
     }
 
@@ -264,6 +270,20 @@ impl QueueController {
     }
 }
 
+/// Check that at least one track in the album has a file that exists on disk.
+fn validate_album_has_files(album: &Album) -> Result<(), String> {
+    if album.tracks.is_empty() {
+        return Err("Album has no tracks".to_string());
+    }
+    if album.tracks.iter().any(|t| t.path.exists()) {
+        return Ok(());
+    }
+    Err(format!(
+        "None of the files for \"{}\" exist on disk",
+        album.title,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,13 +302,19 @@ mod tests {
         }
     }
 
+    /// Helper: add album directly to the underlying queue, bypassing
+    /// file-existence validation (test paths are fake).
+    fn add_test_album(ctrl: &mut QueueController, album: Album) {
+        ctrl.queue.add(album);
+    }
+
     #[test]
     fn test_add_and_start() {
         let mut ctrl = QueueController::new();
         assert!(ctrl.is_empty());
 
-        ctrl.add_album(make_album("A", 3));
-        ctrl.add_album(make_album("B", 2));
+        add_test_album(&mut ctrl, make_album("A", 3));
+        add_test_album(&mut ctrl, make_album("B", 2));
         assert_eq!(ctrl.len(), 2);
 
         let effect = ctrl.start();
@@ -298,7 +324,7 @@ mod tests {
     #[test]
     fn test_next_track_stop_at_end() {
         let mut ctrl = QueueController::new();
-        ctrl.add_album(make_album("A", 1));
+        add_test_album(&mut ctrl, make_album("A", 1));
         ctrl.start();
 
         let effect = ctrl.next_track();
@@ -306,20 +332,31 @@ mod tests {
     }
 
     #[test]
-    fn test_play_album_now() {
+    fn test_play_album_now_via_queue() {
         let mut ctrl = QueueController::new();
-        ctrl.add_album(make_album("A", 2));
+        add_test_album(&mut ctrl, make_album("A", 2));
         ctrl.start();
 
-        let effect = ctrl.play_album_now(make_album("B", 3));
-        assert!(matches!(effect, QueuePlaybackEffect::Play(_)));
+        // Use low-level queue to add + jump (bypasses validation)
+        let new_idx = ctrl.queue.add(make_album("B", 3));
+        ctrl.queue.current_index = Some(new_idx);
+        let source = ctrl.queue.current_track_source();
+        assert!(source.is_some());
         assert_eq!(ctrl.current_index(), Some(1));
+    }
+
+    #[test]
+    fn test_add_album_rejects_missing_files() {
+        let mut ctrl = QueueController::new();
+        let result = ctrl.add_album(make_album("Missing", 2));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("None of the files"));
     }
 
     #[test]
     fn test_remove_current_stops_when_empty() {
         let mut ctrl = QueueController::new();
-        ctrl.add_album(make_album("A", 1));
+        add_test_album(&mut ctrl, make_album("A", 1));
         ctrl.start();
 
         let (effect, was_current) = ctrl.remove(0);
@@ -330,8 +367,8 @@ mod tests {
     #[test]
     fn test_clear() {
         let mut ctrl = QueueController::new();
-        ctrl.add_album(make_album("A", 2));
-        ctrl.add_album(make_album("B", 2));
+        add_test_album(&mut ctrl, make_album("A", 2));
+        add_test_album(&mut ctrl, make_album("B", 2));
         ctrl.start();
 
         ctrl.clear();

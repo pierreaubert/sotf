@@ -263,16 +263,22 @@ impl PluginController {
     }
 
     /// Set a string parameter value for a plugin (e.g., file paths).
+    ///
+    /// File path parameters (IR file, SOFA file) are validated against
+    /// path traversal before being accepted. AB Compare config strings
+    /// are JSON and not validated as paths.
     pub fn set_plugin_param_string(
         &mut self,
         plugin_idx: usize,
         param_idx: usize,
         value: String,
-    ) -> PluginUpdateEffect {
+    ) -> Result<PluginUpdateEffect, String> {
         let mut update_needed = false;
 
         if let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) {
             match &mut plugin.settings {
+                // AB Compare: path_a_config / path_b_config are JSON config
+                // strings, not file paths — no path validation needed.
                 PluginSettings::ABCompare {
                     path_a_config,
                     path_b_config,
@@ -290,12 +296,20 @@ impl PluginController {
                 },
                 PluginSettings::Convolution { ir_file, .. } => {
                     if param_idx == 0 {
+                        if !value.is_empty() {
+                            crate::security::validate_plugin_file_path(Path::new(&value))
+                                .map_err(|e| e.to_string())?;
+                        }
                         *ir_file = value;
                         update_needed = true;
                     }
                 }
                 PluginSettings::BinauralDecoder { sofa_file, .. } => {
                     if param_idx == 0 {
+                        if !value.is_empty() {
+                            crate::security::validate_plugin_file_path(Path::new(&value))
+                                .map_err(|e| e.to_string())?;
+                        }
                         *sofa_file = value;
                         update_needed = true;
                     }
@@ -305,9 +319,9 @@ impl PluginController {
         }
 
         if update_needed {
-            PluginUpdateEffect::Structural
+            Ok(PluginUpdateEffect::Structural)
         } else {
-            PluginUpdateEffect::None
+            Ok(PluginUpdateEffect::None)
         }
     }
 
@@ -415,6 +429,8 @@ impl PluginController {
 
     /// Load EQ filters from an APO file path.
     pub fn load_apo_filters(&mut self, path: &Path) -> Result<PluginUpdateEffect, String> {
+        crate::security::validate_plugin_file_path(path).map_err(|e| e.to_string())?;
+
         if let Some(plugin) = self.get_editing_plugin() {
             if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
                 return Err("Selected plugin is not an EQ".to_string());

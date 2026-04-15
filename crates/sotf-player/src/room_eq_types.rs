@@ -2,8 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::EQFilter;
 use crate::ReleaseChannel;
 use crate::recording_types::{DelayProbeResults, RecordingResult};
+use math_audio_iir_fir::BiquadFilterType;
 
 /// (frequencies, magnitude_db, phase_deg, wav_path, csv_path)
 type MeasurementData = (Vec<f32>, Vec<f32>, Vec<f32>, Option<String>, Option<String>);
@@ -2024,6 +2026,43 @@ impl CustomTargetCurve {
     }
 }
 
+/// Parse EQ filters from JSON array.
+///
+/// Accepts both autoeq optimizer output format (`"freq"`, `"db_gain"`)
+/// and engine format (`"frequency"`, `"gain_db"`).
+pub fn parse_eq_filters_from_json(filters_json: &[serde_json::Value]) -> Vec<EQFilter> {
+    filters_json
+        .iter()
+        .map(|filter| {
+            let filter_type_str = filter
+                .get("filter_type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("peak");
+            let filter_type = match filter_type_str.to_lowercase().as_str() {
+                "peak" | "pk" => BiquadFilterType::Peak,
+                "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
+                "highshelf" | "hs" => BiquadFilterType::Highshelf,
+                "lowpass" | "lp" => BiquadFilterType::Lowpass,
+                "highpass" | "hp" => BiquadFilterType::Highpass,
+                "notch" => BiquadFilterType::Notch,
+                _ => BiquadFilterType::Peak,
+            };
+            let frequency = filter
+                .get("frequency")
+                .or_else(|| filter.get("freq"))
+                .and_then(|f| f.as_f64())
+                .unwrap_or(1000.0);
+            let q = filter.get("q").and_then(|q| q.as_f64()).unwrap_or(1.0);
+            let gain_db = filter
+                .get("gain_db")
+                .or_else(|| filter.get("db_gain"))
+                .and_then(|g| g.as_f64())
+                .unwrap_or(0.0);
+            EQFilter::new(filter_type, frequency, q, gain_db)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2337,5 +2376,146 @@ mod tests {
     #[test]
     fn estimate_probe_sequence_ms_zero_channels_is_zero() {
         assert_eq!(estimate_probe_sequence_ms(0, 1000.0, 500.0), 0);
+    }
+
+    // =========================================================================
+    // parse_eq_filters_from_json tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_filters_autoeq_format() {
+        let json: Vec<serde_json::Value> = serde_json::from_str(r#"[
+            {"filter_type": "peak", "freq": 200.0, "q": 2.0, "db_gain": -5.0}
+        ]"#).unwrap();
+        let filters = parse_eq_filters_from_json(&json);
+        assert_eq!(filters.len(), 1);
+        assert_eq!(filters[0].frequency, 200.0);
+        assert_eq!(filters[0].q, 2.0);
+        assert_eq!(filters[0].gain_db, -5.0);
+        assert_eq!(filters[0].filter_type, BiquadFilterType::Peak);
+    }
+
+    #[test]
+    fn test_parse_filters_engine_format() {
+        let json: Vec<serde_json::Value> = serde_json::from_str(r#"[
+            {"filter_type": "peak", "frequency": 100.0, "q": 1.5, "gain_db": -3.0}
+        ]"#).unwrap();
+        let filters = parse_eq_filters_from_json(&json);
+        assert_eq!(filters.len(), 1);
+        assert_eq!(filters[0].frequency, 100.0);
+        assert_eq!(filters[0].q, 1.5);
+        assert_eq!(filters[0].gain_db, -3.0);
+    }
+
+    #[test]
+    fn test_parse_filters_all_filter_types() {
+        let json: Vec<serde_json::Value> = serde_json::from_str(r#"[
+            {"filter_type": "peak", "freq": 100.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "pk", "freq": 200.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "lowshelf", "freq": 300.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "ls", "freq": 400.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "highshelf", "freq": 500.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "hs", "freq": 600.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "lowpass", "freq": 700.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "lp", "freq": 800.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "highpass", "freq": 900.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "hp", "freq": 1000.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "notch", "freq": 1100.0, "q": 1.0, "db_gain": 0.0},
+            {"filter_type": "unknown_type", "freq": 1200.0, "q": 1.0, "db_gain": 0.0}
+        ]"#).unwrap();
+        let filters = parse_eq_filters_from_json(&json);
+        assert_eq!(filters.len(), 12);
+        assert_eq!(filters[0].filter_type, BiquadFilterType::Peak);
+        assert_eq!(filters[1].filter_type, BiquadFilterType::Peak);
+        assert_eq!(filters[2].filter_type, BiquadFilterType::Lowshelf);
+        assert_eq!(filters[3].filter_type, BiquadFilterType::Lowshelf);
+        assert_eq!(filters[4].filter_type, BiquadFilterType::Highshelf);
+        assert_eq!(filters[5].filter_type, BiquadFilterType::Highshelf);
+        assert_eq!(filters[6].filter_type, BiquadFilterType::Lowpass);
+        assert_eq!(filters[7].filter_type, BiquadFilterType::Lowpass);
+        assert_eq!(filters[8].filter_type, BiquadFilterType::Highpass);
+        assert_eq!(filters[9].filter_type, BiquadFilterType::Highpass);
+        assert_eq!(filters[10].filter_type, BiquadFilterType::Notch);
+        assert_eq!(filters[11].filter_type, BiquadFilterType::Peak); // unknown → Peak
+    }
+
+    #[test]
+    fn test_parse_filters_missing_fields_use_defaults() {
+        let json: Vec<serde_json::Value> = serde_json::from_str(r#"[
+            {"filter_type": "peak"}
+        ]"#).unwrap();
+        let filters = parse_eq_filters_from_json(&json);
+        assert_eq!(filters.len(), 1);
+        assert_eq!(filters[0].frequency, 1000.0);
+        assert_eq!(filters[0].q, 1.0);
+        assert_eq!(filters[0].gain_db, 0.0);
+    }
+
+    #[test]
+    fn test_parse_filters_empty_array() {
+        let json: Vec<serde_json::Value> = Vec::new();
+        let filters = parse_eq_filters_from_json(&json);
+        assert!(filters.is_empty());
+    }
+
+    // =========================================================================
+    // is_rack_compatible tests
+    // =========================================================================
+
+    #[test]
+    fn test_is_rack_compatible_no_drivers() {
+        let output = DspChainOutput {
+            channels: [
+                ("L".to_string(), ChannelDspChain { channel: "L".to_string(), plugins: vec![], drivers: None }),
+                ("R".to_string(), ChannelDspChain { channel: "R".to_string(), plugins: vec![], drivers: None }),
+            ].into_iter().collect(),
+            metadata: None,
+        };
+        assert!(output.is_rack_compatible());
+    }
+
+    #[test]
+    fn test_is_rack_compatible_with_drivers() {
+        let output = DspChainOutput {
+            channels: [(
+                "L".to_string(),
+                ChannelDspChain {
+                    channel: "L".to_string(),
+                    plugins: vec![],
+                    drivers: Some(vec![DriverDspChain {
+                        name: "woofer".to_string(),
+                        index: 0,
+                        plugins: vec![],
+                    }]),
+                },
+            )].into_iter().collect(),
+            metadata: None,
+        };
+        assert!(!output.is_rack_compatible());
+    }
+
+    #[test]
+    fn test_is_rack_compatible_mixed() {
+        let output = DspChainOutput {
+            channels: [
+                ("L".to_string(), ChannelDspChain { channel: "L".to_string(), plugins: vec![], drivers: None }),
+                ("R".to_string(), ChannelDspChain {
+                    channel: "R".to_string(),
+                    plugins: vec![],
+                    drivers: Some(vec![DriverDspChain { name: "woofer".to_string(), index: 0, plugins: vec![] }]),
+                }),
+            ].into_iter().collect(),
+            metadata: None,
+        };
+        assert!(!output.is_rack_compatible());
+    }
+
+    #[test]
+    fn test_is_rack_compatible_empty() {
+        let output = DspChainOutput {
+            channels: std::collections::HashMap::new(),
+            metadata: None,
+        };
+        assert!(output.is_rack_compatible());
     }
 }

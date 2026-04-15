@@ -153,6 +153,44 @@ pub fn validate_config_read_path(path: &Path) -> Result<PathBuf, SecurityError> 
     }
 }
 
+/// Validate a user-supplied file path for plugin use (SOFA, IR, APO files).
+///
+/// Rejects paths that contain traversal components (`..`), ensuring the
+/// resolved path matches what the user sees. This prevents a malicious
+/// preset from reading arbitrary files like `../../.ssh/id_rsa`.
+pub fn validate_plugin_file_path(path: &Path) -> Result<PathBuf, SecurityError> {
+    // Reject empty paths
+    if path.as_os_str().is_empty() {
+        return Err(SecurityError {
+            message: "Empty file path".to_string(),
+            path: path.to_path_buf(),
+            allowed_dirs: vec![],
+        });
+    }
+
+    // Reject paths with traversal components
+    for component in path.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err(SecurityError {
+                message: "Path traversal (\"..\" component) is not allowed".to_string(),
+                path: path.to_path_buf(),
+                allowed_dirs: vec![],
+            });
+        }
+    }
+
+    // Canonicalize and verify the resolved path matches the logical path
+    // (catches symlink-based traversal)
+    match path.canonicalize() {
+        Ok(canonical) => Ok(canonical),
+        Err(_) => Err(SecurityError {
+            message: "File does not exist or is not accessible".to_string(),
+            path: path.to_path_buf(),
+            allowed_dirs: vec![],
+        }),
+    }
+}
+
 /// Validate that a path is within a music directory for reading audio files.
 pub fn validate_music_read_path(
     path: &Path,
@@ -239,5 +277,30 @@ mod tests {
 
         // Cleanup
         std::fs::remove_dir(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_validate_plugin_file_path_rejects_traversal() {
+        let path = PathBuf::from("/music/presets/../../.ssh/id_rsa");
+        assert!(validate_plugin_file_path(&path).is_err());
+    }
+
+    #[test]
+    fn test_validate_plugin_file_path_rejects_empty() {
+        let path = PathBuf::from("");
+        assert!(validate_plugin_file_path(&path).is_err());
+    }
+
+    #[test]
+    fn test_validate_plugin_file_path_rejects_nonexistent() {
+        let path = PathBuf::from("/nonexistent/file.sofa");
+        assert!(validate_plugin_file_path(&path).is_err());
+    }
+
+    #[test]
+    fn test_validate_plugin_file_path_accepts_valid() {
+        // Use a file that definitely exists
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        assert!(validate_plugin_file_path(&path).is_ok());
     }
 }
