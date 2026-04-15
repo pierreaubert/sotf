@@ -3,6 +3,7 @@
 //! Provides a complete menu system for application navigation and context menus.
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
@@ -176,6 +177,8 @@ pub struct Menu {
     on_close: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
     /// Called when keyboard focus changes (arrow up/down, home/end)
     on_focus_change: Option<Box<dyn Fn(Option<usize>, &mut Window, &mut App) + 'static>>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Menu {
@@ -191,6 +194,8 @@ impl Menu {
             on_select: None,
             on_close: None,
             on_focus_change: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -226,6 +231,18 @@ impl Menu {
         handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_select = Some(Box::new(handler));
+        self
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Menu)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -498,6 +515,12 @@ impl Menu {
 
 impl RenderOnce for Menu {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: self.aria_label.clone().unwrap_or_default(),
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Menu)),
+        });
+
         let global_theme = cx.theme();
         let menu_theme = MenuTheme::from(&global_theme);
         self.build_with_theme(&menu_theme)

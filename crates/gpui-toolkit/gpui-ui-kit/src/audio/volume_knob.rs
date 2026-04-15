@@ -17,6 +17,7 @@
 
 use super::interactions::{InteractionConfig, handle_keyboard, handle_scroll, value_tracker};
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::scale::Scale;
 use crate::theme::ThemeExt;
 use gpui::*;
@@ -268,6 +269,8 @@ pub struct VolumeKnob {
     on_change: Option<Box<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
     on_mute_toggle: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
     focus_handle: Option<FocusHandle>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 static VOLUME_KNOB_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -289,6 +292,8 @@ impl VolumeKnob {
             on_change: None,
             on_mute_toggle: None,
             focus_handle: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -367,6 +372,18 @@ impl VolumeKnob {
         self.focus_handle = Some(focus_handle);
         self
     }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Slider)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
+        self
+    }
 }
 
 impl Default for VolumeKnob {
@@ -377,6 +394,18 @@ impl Default for VolumeKnob {
 
 impl RenderOnce for VolumeKnob {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let effective_label = self
+            .aria_label
+            .clone()
+            .unwrap_or_else(|| self.label.clone());
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: effective_label,
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Slider))
+                .value_range(self.value as f64, 0.0, 1.0),
+        });
+
         // Resolve DefiniteLength to Pixels using window's rem_size
         let resolved_size = match self.size {
             DefiniteLength::Absolute(abs) => match abs {

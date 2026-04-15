@@ -14,6 +14,7 @@
 //! ```
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
@@ -118,6 +119,8 @@ pub struct Toolbar {
     id: ElementId,
     items: Vec<ToolbarItem>,
     bordered: bool,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Toolbar {
@@ -127,6 +130,8 @@ impl Toolbar {
             id: id.into(),
             items: Vec::new(),
             bordered: true,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -139,6 +144,18 @@ impl Toolbar {
     /// Add a separator
     pub fn separator(mut self) -> Self {
         self.items.push(ToolbarItem::Separator);
+        self
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Toolbar)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -223,6 +240,13 @@ impl Toolbar {
 
 impl RenderOnce for Toolbar {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: self.aria_label.clone().unwrap_or_default(),
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Toolbar)),
+        });
+
         let global_theme = cx.theme();
         let theme = ToolbarTheme::from(&global_theme);
         self.build_with_theme(&theme)

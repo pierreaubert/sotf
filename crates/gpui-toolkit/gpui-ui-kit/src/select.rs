@@ -12,6 +12,7 @@
 //!
 //! Note: Uses `deferred()` to ensure dropdown renders on top of other content.
 
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use gpui::prelude::*;
 use gpui::{deferred, *};
 use std::cell::RefCell;
@@ -146,6 +147,8 @@ pub struct Select {
     on_change: Option<Box<dyn Fn(&SharedString, &mut Window, &mut App) + 'static>>,
     on_toggle: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
     on_highlight: Option<Box<dyn Fn(Option<usize>, &mut Window, &mut App) + 'static>>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Select {
@@ -165,6 +168,8 @@ impl Select {
             on_change: None,
             on_toggle: None,
             on_highlight: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -243,6 +248,18 @@ impl Select {
         handler: impl Fn(Option<usize>, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_highlight = Some(Box::new(handler));
+        self
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Combobox)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -533,6 +550,21 @@ impl Select {
 
 impl RenderOnce for Select {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let effective_label = self
+            .aria_label
+            .clone()
+            .or_else(|| self.label.clone())
+            .or_else(|| self.placeholder.clone())
+            .unwrap_or_default();
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: effective_label,
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Combobox))
+                .state(AriaState::Expanded(self.is_open))
+                .maybe_state(self.disabled, AriaState::Disabled),
+        });
+
         let global_theme = cx.theme();
         let theme = self
             .theme

@@ -59,6 +59,7 @@
 //! ```
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
@@ -698,6 +699,8 @@ pub struct Input {
     on_text_change: Option<Box<dyn Fn(String, &mut Window, &mut App) + 'static>>,
     /// Focus handle for this input
     focus_handle: Option<FocusHandle>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Input {
@@ -724,6 +727,8 @@ impl Input {
             on_edit_end: None,
             on_text_change: None,
             focus_handle: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -847,10 +852,36 @@ impl Input {
         self.on_text_change = Some(Box::new(handler));
         self
     }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Textbox)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
+        self
+    }
 }
 
 impl RenderOnce for Input {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let effective_label = self
+            .aria_label
+            .clone()
+            .or_else(|| self.label.clone())
+            .or_else(|| self.placeholder.clone())
+            .unwrap_or_default();
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: effective_label,
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Textbox))
+                .maybe_state(self.disabled, AriaState::Disabled),
+        });
+
         let global_theme = cx.theme();
         let theme = InputTheme::from(&global_theme);
 

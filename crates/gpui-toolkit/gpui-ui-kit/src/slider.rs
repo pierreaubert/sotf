@@ -14,6 +14,7 @@
 //! - Value snapping with step parameter
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
 use gpui::*;
 use std::cell::RefCell;
@@ -132,6 +133,8 @@ pub struct Slider {
     fill_color: Option<Rgba>,
     thumb_color: Option<Rgba>,
     theme: Option<SliderTheme>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Slider {
@@ -155,7 +158,21 @@ impl Slider {
             fill_color: None,
             thumb_color: None,
             theme: None,
+            aria_label: None,
+            aria_role: None,
         }
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Slider)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
+        self
     }
 
     /// Set the current value
@@ -312,6 +329,20 @@ impl Slider {
 
 impl RenderOnce for Slider {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let effective_label = self
+            .aria_label
+            .clone()
+            .or_else(|| self.label.clone())
+            .unwrap_or_default();
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: effective_label,
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Slider))
+                .value_range(self.value as f64, self.min as f64, self.max as f64)
+                .maybe_state(self.disabled, AriaState::Disabled),
+        });
+
         let track_height = self.size.track_height();
         let thumb_size = self.size.thumb_size();
         let width = self.width;

@@ -1,4 +1,4 @@
-# gpui-ui-kit (lib: `gpui_ui_kit`, version: 0.6.0)
+# gpui-ui-kit (lib: `gpui_ui_kit`, version: 0.6.16)
 
 Reusable UI component library for the GPUI framework.
 
@@ -9,12 +9,64 @@ Read `GPUI.md` at the project root before working on GPUI code.
 - Button, Input, Slider, Dropdown, Modal, Tabs, Toggle, Select, NumberInput, ColorPicker
 - Audio controls: Potentiometer, VerticalSlider, VolumeKnob
 - Data display: Table, Badge, Avatar, Progress, Spinner, QrCode, KeyboardShortcutLabel, EmptyState
-
 - Layout: VStack, HStack, PaneDivider, Sidebar, StatusBar, Accordion, Breadcrumbs
 - Navigation: Tabs, Menu, ContextMenu, Wizard
 - Feedback: Alert, Toast, Tooltip, Dialog, ConfirmDialog, Popover, SearchBar
 - Workflow: Node graph editor
 - Theme system with 6 variants, i18n with 5 languages
+- Accessibility: ARIA roles, labels, and runtime accessibility tree
+
+## Accessibility
+
+All components support ARIA roles and labels via the `accessibility` module.
+GPUI has no native accessibility support; this is a UI-kit-level data layer.
+
+### Adding accessibility to a component
+
+Every component should have:
+1. `aria_label: Option<SharedString>` and `aria_role: Option<AriaRole>` fields
+2. `.aria_label()` and `.aria_role()` builder methods
+3. `cx.register_accessible(...)` at the start of `render()` with a default role
+
+```rust
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
+
+// In render():
+cx.register_accessible(AccessibilityNode {
+    element_id: self.id.clone(),
+    label: self.aria_label.clone().unwrap_or_else(|| self.label.clone()),
+    props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Button))
+        .maybe_state(self.disabled, AriaState::Disabled),
+});
+```
+
+### Default role mapping
+
+| Component type | Default AriaRole |
+|---------------|-----------------|
+| Buttons | `Button` |
+| Checkboxes | `Checkbox` |
+| Toggles | `Switch` |
+| Text inputs | `Textbox` |
+| Number inputs | `Spinbutton` |
+| Sliders/knobs | `Slider` |
+| Dropdowns | `Combobox` |
+| Dialogs | `Dialog` / `Alertdialog` |
+| Toasts (error) | `Alert` + `AriaLive::Assertive` |
+| Toasts (other) | `Status` + `AriaLive::Polite` |
+
+### Querying the tree
+
+```rust
+let tree = cx.global::<AccessibilityTree>();
+for node in tree.nodes_in_order() {
+    println!("{:?}: {} (role={:?})", node.element_id, node.label, node.props.role);
+}
+```
+
+Note: `Button::build()` and similar `build_with_theme()` methods bypass
+accessibility registration. Prefer using components via `RenderOnce` for
+automatic registration.
 
 ## Adding a New Component
 

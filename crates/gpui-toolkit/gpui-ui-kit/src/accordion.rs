@@ -3,6 +3,7 @@
 //! Collapsible content sections with support for both vertical and horizontal orientations.
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
@@ -91,6 +92,8 @@ pub struct Accordion {
     orientation: AccordionOrientation,
     theme: Option<AccordionTheme>,
     on_change: Option<Box<dyn Fn(&SharedString, bool, &mut Window, &mut App) + 'static>>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Accordion {
@@ -103,6 +106,8 @@ impl Accordion {
             orientation: AccordionOrientation::default(),
             theme: None,
             on_change: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -139,6 +144,18 @@ impl Accordion {
     /// Set theme
     pub fn theme(mut self, theme: AccordionTheme) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Group)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -415,6 +432,13 @@ impl Default for Accordion {
 
 impl RenderOnce for Accordion {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        cx.register_accessible(AccessibilityNode {
+            element_id: ElementId::Name("accordion".into()),
+            label: self.aria_label.clone().unwrap_or_default(),
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Group)),
+        });
+
         let global_theme = cx.theme();
         let accordion_theme = AccordionTheme::from(&global_theme);
         self.build_with_theme(&accordion_theme)

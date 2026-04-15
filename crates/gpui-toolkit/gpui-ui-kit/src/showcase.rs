@@ -80,9 +80,11 @@ impl ShowcaseGroup {
                 ShowcaseSection::Tag,
                 ShowcaseSection::KeyboardShortcut,
             ],
-            ShowcaseGroup::FormControls => {
-                &[ShowcaseSection::FormControls, ShowcaseSection::SettingsForm]
-            }
+            ShowcaseGroup::FormControls => &[
+                ShowcaseSection::FormControls,
+                ShowcaseSection::SettingsForm,
+                ShowcaseSection::Accessibility,
+            ],
             ShowcaseGroup::Navigation => &[
                 ShowcaseSection::Menu,
                 ShowcaseSection::ContextMenu,
@@ -270,6 +272,7 @@ pub enum ShowcaseSection {
     TreeView,
     DragList,
     CommandPalette,
+    Accessibility,
 }
 
 impl ShowcaseSection {
@@ -317,6 +320,7 @@ impl ShowcaseSection {
             ShowcaseSection::TreeView => "Tree View",
             ShowcaseSection::DragList => "Drag List",
             ShowcaseSection::CommandPalette => "Command Palette",
+            ShowcaseSection::Accessibility => "Accessibility",
         }
     }
 
@@ -712,6 +716,9 @@ impl Render for Showcase {
             ShowcaseSection::CommandPalette => {
                 self.render_command_palette_section(cx).into_any_element()
             }
+            ShowcaseSection::Accessibility => {
+                self.render_accessibility_section(cx).into_any_element()
+            }
         };
 
         div()
@@ -1062,3 +1069,4 @@ include!("../examples/includes/render_notification.inc.rs");
 include!("../examples/includes/render_tree_view.inc.rs");
 include!("../examples/includes/render_drag_list.inc.rs");
 include!("../examples/includes/render_command_palette.inc.rs");
+include!("../examples/includes/render_accessibility.inc.rs");

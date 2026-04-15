@@ -15,6 +15,7 @@
 //! ```
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::button::{Button, ButtonVariant};
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
@@ -69,6 +70,8 @@ pub struct ConfirmDialog {
     cancel_label: SharedString,
     on_confirm: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
     on_cancel: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl ConfirmDialog {
@@ -83,6 +86,8 @@ impl ConfirmDialog {
             cancel_label: "Cancel".into(),
             on_confirm: None,
             on_cancel: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -125,6 +130,18 @@ impl ConfirmDialog {
     /// Set the cancel handler
     pub fn on_cancel(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_cancel = Some(Box::new(handler));
+        self
+    }
+
+    /// Set an explicit ARIA label (overrides the dialog's title)
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Alertdialog)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -245,6 +262,18 @@ impl ConfirmDialog {
 
 impl RenderOnce for ConfirmDialog {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let effective_label = self
+            .aria_label
+            .clone()
+            .or_else(|| self.title.clone())
+            .unwrap_or_default();
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: effective_label,
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Alertdialog)),
+        });
+
         let global_theme = cx.theme();
         let theme = ConfirmDialogTheme::from(&global_theme);
         self.build_with_theme(&theme)

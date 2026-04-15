@@ -128,6 +128,7 @@ pub enum TranslationKey {
     SectionTreeView,
     SectionDragList,
     SectionCommandPalette,
+    SectionAccessibility,
 
     // Component labels
     LabelVariants,
@@ -261,6 +262,7 @@ impl Translations {
         t.insert((L, SectionTreeView), "Tree View");
         t.insert((L, SectionDragList), "Drag List");
         t.insert((L, SectionCommandPalette), "Command Palette");
+        t.insert((L, SectionAccessibility), "Accessibility");
 
         // Labels
         t.insert((L, LabelVariants), "Variants");
@@ -382,6 +384,7 @@ impl Translations {
         t.insert((L, SectionTreeView), "Vue arborescente");
         t.insert((L, SectionDragList), "Liste glissable");
         t.insert((L, SectionCommandPalette), "Palette de commandes");
+        t.insert((L, SectionAccessibility), "Accessibilite");
 
         // Labels
         t.insert((L, LabelVariants), "Variantes");
@@ -503,6 +506,7 @@ impl Translations {
         t.insert((L, SectionTreeView), "Baumansicht");
         t.insert((L, SectionDragList), "Zieh-Liste");
         t.insert((L, SectionCommandPalette), "Befehlspalette");
+        t.insert((L, SectionAccessibility), "Barrierefreiheit");
 
         // Labels
         t.insert((L, LabelVariants), "Varianten");
@@ -624,6 +628,7 @@ impl Translations {
         t.insert((L, SectionTreeView), "Vista de arbol");
         t.insert((L, SectionDragList), "Lista arrastrable");
         t.insert((L, SectionCommandPalette), "Paleta de comandos");
+        t.insert((L, SectionAccessibility), "Accesibilidad");
 
         // Labels
         t.insert((L, LabelVariants), "Variantes");
@@ -745,6 +750,7 @@ impl Translations {
         t.insert((L, SectionTreeView), "ツリービュー");
         t.insert((L, SectionDragList), "ドラッグリスト");
         t.insert((L, SectionCommandPalette), "コマンドパレット");
+        t.insert((L, SectionAccessibility), "アクセシビリティ");
 
         // Labels
         t.insert((L, LabelVariants), "バリエーション");

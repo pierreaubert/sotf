@@ -12,7 +12,8 @@
 #[path = "../src-app/mod.rs"]
 pub mod app;
 
-// Theme, animation, and i18n
+// Theme, animation, i18n, and accessibility
+pub mod accessibility;
 pub mod animation;
 pub mod color_tokens;
 pub mod i18n;
@@ -191,6 +192,12 @@ pub use app::{MiniApp, MiniAppConfig};
 pub use animation::{
     Animation, Easing, Keyframe, KeyframeAnimation, Spring, ease, evaluate_keyframes, interpolate,
     interpolate_color,
+};
+
+// Accessibility
+pub use accessibility::{
+    AccessibilityExt, AccessibilityNode, AccessibilityTree, AriaLive, AriaProps, AriaRole,
+    AriaState,
 };
 
 // Theme and i18n

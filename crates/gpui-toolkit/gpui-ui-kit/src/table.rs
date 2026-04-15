@@ -11,6 +11,7 @@
 //! - Styling via TableTheme
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
@@ -226,6 +227,8 @@ pub struct Table<T> {
     alternating_rows: bool,
     show_footer: bool,
     theme: Option<TableTheme>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl<T: 'static> Table<T> {
@@ -246,6 +249,8 @@ impl<T: 'static> Table<T> {
             alternating_rows: true,
             show_footer: false,
             theme: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -336,6 +341,18 @@ impl<T: 'static> Table<T> {
     /// Set custom theme
     pub fn theme(mut self, theme: TableTheme) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Table)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -683,6 +700,13 @@ impl<T: 'static> Table<T> {
 
 impl<T: 'static> RenderOnce for Table<T> {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: self.aria_label.clone().unwrap_or_default(),
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Table)),
+        });
+
         let global_theme = cx.theme();
         let theme = self
             .theme

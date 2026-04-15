@@ -18,6 +18,7 @@
 
 use super::interactions::{InteractionConfig, handle_keyboard, handle_scroll, value_tracker};
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::scale::Scale;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
@@ -339,6 +340,8 @@ pub struct Potentiometer {
     on_select: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
     on_reset: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
     focus_handle: Option<FocusHandle>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Potentiometer {
@@ -364,6 +367,8 @@ impl Potentiometer {
             on_select: None,
             on_reset: None,
             focus_handle: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -494,6 +499,18 @@ impl Potentiometer {
         self
     }
 
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Slider)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
+        self
+    }
+
     /// Format the label with keyboard shortcut indicator
     fn format_label(&self) -> String {
         let label = self
@@ -570,6 +587,20 @@ impl Potentiometer {
 
 impl RenderOnce for Potentiometer {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let effective_label = self
+            .aria_label
+            .clone()
+            .or_else(|| self.label.clone())
+            .unwrap_or_default();
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: effective_label,
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Slider))
+                .value_range(self.value, self.min, self.max)
+                .maybe_state(self.disabled, AriaState::Disabled),
+        });
+
         let global_theme = cx.theme();
         let default_theme = PotentiometerTheme::from(&global_theme);
         let theme = self.theme.clone().unwrap_or(default_theme);

@@ -93,6 +93,31 @@ gpui-ui-kit = { version = "0.6.12", git="https://github.com/pierreaubert/sotf/tr
 | `VerticalSlider` | Vertical slider with ticks and value display |
 | `VolumeKnob` | Specialized volume control with mute state and dB display |
 
+### Accessibility
+
+All components support ARIA roles and labels via the `accessibility` module. Since GPUI has no native accessibility support, this stores semantic metadata in a runtime `AccessibilityTree` for tests, dev tools, and future screen reader bridges.
+
+```rust
+use gpui_ui_kit::{Button, AriaRole};
+
+// Icon-only button with accessible name
+Button::new("save-btn", "💾")
+    .aria_label("Save document")
+
+// Override default role
+Button::new("link-btn", "Visit website")
+    .aria_role(AriaRole::Link)
+
+// All components auto-register with sensible defaults:
+// Button -> AriaRole::Button
+// Checkbox -> AriaRole::Checkbox
+// Toggle -> AriaRole::Switch
+// Slider -> AriaRole::Slider (with value_range)
+// Select -> AriaRole::Combobox
+// Dialog -> AriaRole::Dialog
+// Toast -> AriaRole::Status (or Alert for errors)
+```
+
 ## Usage Examples
 
 ### Button

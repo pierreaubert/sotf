@@ -43,6 +43,7 @@
 //! ```
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
@@ -462,6 +463,8 @@ pub struct NumberInput {
     theme: Option<NumberInputTheme>,
     on_change: Option<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>,
     focus_handle: Option<FocusHandle>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl NumberInput {
@@ -482,6 +485,8 @@ impl NumberInput {
             theme: None,
             on_change: None,
             focus_handle: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -611,6 +616,18 @@ impl NumberInput {
         self
     }
 
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Spinbutton)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
+        self
+    }
+
     /// Format value for display
     fn format_value_str(value: f64, decimals: usize, unit: Option<&SharedString>) -> String {
         let formatted = format!("{:.prec$}", value, prec = decimals);
@@ -635,6 +652,20 @@ impl NumberInput {
 
 impl RenderOnce for NumberInput {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let effective_label = self
+            .aria_label
+            .clone()
+            .or_else(|| self.label.clone())
+            .unwrap_or_default();
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: effective_label,
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Spinbutton))
+                .maybe_state(self.disabled, AriaState::Disabled)
+                .value_range(self.value, self.min, self.max),
+        });
+
         let global_theme = cx.theme();
         let default_theme = NumberInputTheme::from(&global_theme);
         let theme = self.theme.clone().unwrap_or(default_theme);

@@ -8,6 +8,7 @@
 //! - Indeterminate state support
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
@@ -76,6 +77,8 @@ pub struct Checkbox {
     size: CheckboxSize,
     disabled: bool,
     on_change: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Checkbox {
@@ -89,6 +92,8 @@ impl Checkbox {
             size: CheckboxSize::default(),
             disabled: false,
             on_change: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -125,6 +130,18 @@ impl Checkbox {
     /// Set change handler
     pub fn on_change(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Checkbox)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -230,6 +247,26 @@ impl Checkbox {
 
 impl RenderOnce for Checkbox {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let effective_label = self
+            .aria_label
+            .clone()
+            .or_else(|| self.label.clone())
+            .unwrap_or_default();
+        let role = self.aria_role.unwrap_or(AriaRole::Checkbox);
+        let mut props = AriaProps::with_role(role)
+            .maybe_state(self.disabled, AriaState::Disabled);
+        if self.indeterminate {
+            props = props.state(AriaState::Mixed);
+        } else {
+            props = props.state(AriaState::Checked(self.checked));
+        }
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: effective_label,
+            props,
+        });
+
         let global_theme = cx.theme();
         let checkbox_theme = CheckboxTheme::from(&global_theme);
         self.build_with_theme(&checkbox_theme)

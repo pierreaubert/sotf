@@ -3,6 +3,7 @@
 //! Provides a horizontal tab bar with content panels and theming support.
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
@@ -158,6 +159,8 @@ pub struct Tabs {
     on_change: Option<Box<dyn Fn(usize, &mut Window, &mut App) + 'static>>,
     on_close: Option<Box<dyn Fn(&SharedString, &mut Window, &mut App) + 'static>>,
     focus_handle: Option<FocusHandle>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Tabs {
@@ -172,6 +175,8 @@ impl Tabs {
             on_change: None,
             on_close: None,
             focus_handle: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -208,6 +213,18 @@ impl Tabs {
     /// Set the tab change handler
     pub fn on_change(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Tablist)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -668,6 +685,12 @@ impl Default for Tabs {
 
 impl RenderOnce for Tabs {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: self.aria_label.clone().unwrap_or_default(),
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Tablist)),
+        });
+
         let global_theme = cx.theme();
         self.build_with_theme(&global_theme, cx)
     }

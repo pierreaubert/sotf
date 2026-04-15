@@ -4,6 +4,7 @@
 //! Supports both text/emoji icons and custom child elements (like SVG icons).
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
@@ -135,6 +136,8 @@ pub struct IconButton {
     padding: Option<Pixels>,
     theme: Option<IconButtonTheme>,
     on_click: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl IconButton {
@@ -151,6 +154,8 @@ impl IconButton {
             padding: None,
             theme: None,
             on_click: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -167,6 +172,8 @@ impl IconButton {
             padding: None,
             theme: None,
             on_click: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -215,6 +222,18 @@ impl IconButton {
     /// Set the button theme
     pub fn theme(mut self, theme: IconButtonTheme) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// Set an explicit ARIA label (overrides the icon text)
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Button)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -324,6 +343,18 @@ impl IconButton {
 
 impl RenderOnce for IconButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let fallback_label = match &self.content {
+            IconContent::Text(text) => text.clone(),
+            IconContent::Element(_) => SharedString::default(),
+        };
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: self.aria_label.clone().unwrap_or(fallback_label),
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Button))
+                .maybe_state(self.disabled, AriaState::Disabled),
+        });
+
         let global_theme = cx.theme();
         let icon_theme = IconButtonTheme::from(&global_theme);
         self.build_with_theme(&global_theme, &icon_theme)

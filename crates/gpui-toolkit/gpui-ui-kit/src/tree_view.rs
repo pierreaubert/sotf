@@ -19,6 +19,7 @@
 //! ```
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
@@ -97,6 +98,8 @@ pub struct TreeView {
     show_guides: bool,
     on_select: Option<Box<dyn Fn(SharedString, &mut Window, &mut App) + 'static>>,
     on_toggle: Option<Box<dyn Fn(SharedString, bool, &mut Window, &mut App) + 'static>>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl TreeView {
@@ -111,6 +114,8 @@ impl TreeView {
             show_guides: true,
             on_select: None,
             on_toggle: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -153,6 +158,18 @@ impl TreeView {
         handler: impl Fn(SharedString, bool, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_toggle = Some(Box::new(handler));
+        self
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Tree)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -263,6 +280,13 @@ impl TreeView {
 
 impl RenderOnce for TreeView {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: self.aria_label.clone().unwrap_or_default(),
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Tree)),
+        });
+
         let global_theme = cx.theme();
         let theme = TreeViewTheme::from(&global_theme);
         self.build_with_theme(&theme)

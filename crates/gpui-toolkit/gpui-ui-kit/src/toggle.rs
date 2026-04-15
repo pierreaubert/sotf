@@ -10,6 +10,7 @@
 //! - Two visual styles: Sliding (iOS-style) and Segmented ([OFF|ON])
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
@@ -141,6 +142,8 @@ pub struct Toggle {
     selected: bool,
     theme: Option<ToggleTheme>,
     on_change: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Toggle {
@@ -156,6 +159,8 @@ impl Toggle {
             selected: false,
             theme: None,
             on_change: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -218,6 +223,18 @@ impl Toggle {
     /// Set change handler
     pub fn on_change(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set an explicit ARIA label
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Switch)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
         self
     }
 
@@ -481,6 +498,20 @@ impl Toggle {
 
 impl RenderOnce for Toggle {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        let effective_label = self
+            .aria_label
+            .clone()
+            .or_else(|| self.label.clone())
+            .unwrap_or_default();
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: effective_label,
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Switch))
+                .state(AriaState::Checked(self.checked))
+                .maybe_state(self.disabled, AriaState::Disabled),
+        });
+
         let global_theme = cx.theme();
         let toggle_theme = ToggleTheme::from(&global_theme);
         self.build_with_theme(&toggle_theme)

@@ -3,6 +3,7 @@
 //! Provides a flexible button component with different visual styles.
 
 use crate::ComponentTheme;
+use crate::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState};
 use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
@@ -92,6 +93,8 @@ pub struct Button {
     icon_right: Option<SharedString>,
     theme: Option<ButtonTheme>,
     on_click: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    aria_label: Option<SharedString>,
+    aria_role: Option<AriaRole>,
 }
 
 impl Button {
@@ -109,6 +112,8 @@ impl Button {
             icon_right: None,
             theme: None,
             on_click: None,
+            aria_label: None,
+            aria_role: None,
         }
     }
 
@@ -166,6 +171,18 @@ impl Button {
         self
     }
 
+    /// Set an explicit ARIA label (overrides the button's text label)
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Override the default ARIA role (Button)
+    pub fn aria_role(mut self, role: AriaRole) -> Self {
+        self.aria_role = Some(role);
+        self
+    }
+
     /// Compute colors based on variant and selected state
     /// Returns (bg, bg_hover, text_color, border_color)
     fn compute_colors(
@@ -216,8 +233,11 @@ impl Button {
         }
     }
 
-    /// Build the button into a `Stateful<Div>` that can have additional handlers added
-    /// Use this when you need to add a cx.listener() handler
+    /// Build the button into a `Stateful<Div>` that can have additional handlers added.
+    /// Use this when you need to add a cx.listener() handler.
+    ///
+    /// Note: This bypasses accessibility registration. Prefer using the component
+    /// directly via `RenderOnce` for automatic accessibility tree integration.
     pub fn build(self) -> Stateful<Div> {
         let theme = self.theme.unwrap_or_default();
         let (bg, bg_hover, text_color, border_color) =
@@ -282,6 +302,18 @@ impl Button {
 
 impl RenderOnce for Button {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Register in accessibility tree
+        cx.register_accessible(AccessibilityNode {
+            element_id: self.id.clone(),
+            label: self
+                .aria_label
+                .clone()
+                .unwrap_or_else(|| self.label.clone()),
+            props: AriaProps::with_role(self.aria_role.unwrap_or(AriaRole::Button))
+                .maybe_state(self.disabled, AriaState::Disabled)
+                .maybe_state(self.selected, AriaState::Pressed(true)),
+        });
+
         let global_theme = cx.theme();
         let theme = self
             .theme

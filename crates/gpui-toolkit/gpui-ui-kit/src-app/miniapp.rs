@@ -26,6 +26,7 @@
 //! }
 //! ```
 
+use crate::accessibility::AccessibilityTree;
 use crate::i18n::{I18nState, Language};
 use crate::theme::{ThemeState, ThemeVariant};
 use gpui::*;
@@ -234,6 +235,9 @@ impl MiniApp {
 
             // Always set design system global (platform-appropriate defaults)
             cx.set_global(DesignSystemState::new());
+
+            // Initialize accessibility tree
+            cx.set_global(AccessibilityTree::new());
 
             // Initialize i18n state if enabled
             if config_clone.with_i18n {
