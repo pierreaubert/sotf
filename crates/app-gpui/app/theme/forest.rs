@@ -121,6 +121,14 @@ impl Theme {
                 rgb(0x7dd07c), // Cyan
                 rgb(0x7a9a73), // Gray
             ],
+            channel_colors: vec![
+                rgb(0x6cb2d9), // Blue
+                rgb(0xd96c6c), // Red
+                rgb(0x7dd07c), // Green
+                rgb(0xd9b96c), // Yellow
+                rgb(0xb07aa1), // Purple
+                rgb(0x5fb5b0), // Teal
+            ],
             eq_curve_colors: EQCurveColors {
                 background: rgb(0x1a2418),
                 grid: Rgba {

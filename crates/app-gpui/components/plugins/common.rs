@@ -203,7 +203,7 @@ pub fn render_midi_badge(d: &Ds, assignment: &ParamAssignment, theme: &Theme) ->
         .gap(px(2.0))
         .px(px(4.0))
         .py(px(1.0))
-        .rounded(px(3.0))
+        .rounded(d.r_sm)
         .bg(Theme::with_opacity(badge_color, 0.2))
         .child(
             div()
@@ -435,12 +435,16 @@ pub fn format_shortcut_label(label: &str, shortcut_key: Option<char>) -> String 
             let key_lower = key.to_ascii_lowercase();
             let label_lower = label.to_lowercase();
             if let Some(pos) = label_lower.find(key_lower) {
-                format!(
-                    "{}[{}]{}",
-                    &label[..pos],
-                    label.chars().nth(pos).unwrap().to_ascii_uppercase(),
-                    &label[pos + 1..]
-                )
+                if let Some(ch) = label.chars().nth(pos) {
+                    format!(
+                        "{}[{}]{}",
+                        &label[..pos],
+                        ch.to_ascii_uppercase(),
+                        &label[pos + 1..]
+                    )
+                } else {
+                    format!("[{}] {}", key.to_ascii_uppercase(), label)
+                }
             } else {
                 format!("[{}] {}", key.to_ascii_uppercase(), label)
             }
@@ -980,8 +984,9 @@ impl Element for TransferCurveElement {
                 builder.line_to(point(ox + px(cx_pt), oy + px(cy_pt)));
             }
             // Down to bottom-right
-            let last = curve_points.last().unwrap();
-            builder.line_to(point(ox + px(last.0), oy + px(h - pad)));
+            if let Some(last) = curve_points.last() {
+                builder.line_to(point(ox + px(last.0), oy + px(h - pad)));
+            }
             if let Ok(path) = builder.build() {
                 window.paint_path(path, fill_color);
             }

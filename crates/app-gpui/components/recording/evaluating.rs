@@ -5,9 +5,11 @@
 
 use crate::app::types::{PlotSmoothing, RecordingResult};
 use crate::components::design::Ds;
+use crate::components::graphs::common::render_empty_state;
 use crate::components::graphs::response_graphs::{
-    CHANNEL_COLORS, ChartConfig, Series, render_line_chart,
+    ChartConfig, Series, channel_color, render_line_chart,
 };
+use crate::components::icons::IconName;
 use crate::components::graphs::spectrum_graphs::{
     SpectrumConfig, SpectrumGrid, render_spectrum_heatmap,
 };
@@ -546,11 +548,11 @@ impl PlayerView {
     ) -> impl IntoElement {
         let num_time_slices = spectrogram.len();
         if num_time_slices == 0 {
-            return div().child("No data").into_any_element();
+            return render_empty_state(IconName::AudioWaveform, "No data", &theme);
         }
         let num_freq_bins = spectrogram[0].len();
         if num_freq_bins == 0 {
-            return div().child("No data").into_any_element();
+            return render_empty_state(IconName::AudioWaveform, "No data", &theme);
         }
 
         // Limit total cells to avoid exceeding GPU buffer limits.
@@ -733,7 +735,7 @@ impl PlayerView {
 
                 Series::new(
                     name.clone(),
-                    CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                    channel_color(&theme, *idx),
                     freqs_f64,
                     mags_f64,
                 )
@@ -791,7 +793,7 @@ impl PlayerView {
 
                 Series::new(
                     name.clone(),
-                    CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                    channel_color(&theme, *idx),
                     freqs_f64,
                     phases_f64,
                 )
@@ -830,7 +832,7 @@ impl PlayerView {
 
             series.push(Series::new(
                 name.clone(),
-                CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                channel_color(&theme, *idx),
                 freqs_f64.clone(),
                 gd_f64,
             ));
@@ -846,7 +848,7 @@ impl PlayerView {
                 series.push(
                     Series::new(
                         format!("{} (Excess)", name),
-                        CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                        channel_color(&theme, *idx),
                         freqs_f64,
                         excess_f64,
                     )
@@ -910,7 +912,7 @@ impl PlayerView {
 
                 Some(Series::new(
                     name.clone(),
-                    CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                    channel_color(&theme, *idx),
                     freqs_f64,
                     thd_f64,
                 ))
@@ -1005,7 +1007,7 @@ impl PlayerView {
 
                     Series::new(
                         label,
-                        CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                        channel_color(&theme, *idx),
                         freqs_f64,
                         rt60_f64,
                     )
@@ -1070,7 +1072,7 @@ impl PlayerView {
 
                 Some(Series::new(
                     label,
-                    CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                    channel_color(&theme, *idx),
                     freqs_f64,
                     c50_f64,
                 ))
@@ -1165,7 +1167,7 @@ impl PlayerView {
 
                 Series::new(
                     name.clone(),
-                    CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                    channel_color(&theme, *idx),
                     adjusted_times,
                     impulse_f64,
                 )

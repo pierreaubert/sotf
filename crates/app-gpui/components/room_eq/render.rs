@@ -1,4 +1,6 @@
 use crate::components::design::Ds;
+use crate::components::graphs::common::render_empty_state;
+use crate::components::icons::IconName;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -281,8 +283,12 @@ pub(crate) fn render_channel_result_card(
         )
         // Filter plot: each filter and the sum (if available)
         .when(has_response_data && !result.eq_filters.is_empty(), |div| {
-            let original = result.original_response.as_ref().unwrap();
-            let normalized = result.normalized_response.as_ref().unwrap();
+            let (Some(original), Some(normalized)) = (
+                result.original_response.as_ref(),
+                result.normalized_response.as_ref(),
+            ) else {
+                return div;
+            };
             div.child(render_filter_plot(
                 original,
                 normalized,
@@ -295,8 +301,12 @@ pub(crate) fn render_channel_result_card(
         })
         // Original vs Corrected with trendlines (if available)
         .when(has_response_data, |div| {
-            let original = result.original_response.as_ref().unwrap();
-            let normalized = result.normalized_response.as_ref().unwrap();
+            let (Some(original), Some(normalized)) = (
+                result.original_response.as_ref(),
+                result.normalized_response.as_ref(),
+            ) else {
+                return div;
+            };
             div.child(render_response_comparison_graph(
                 original,
                 normalized,
@@ -310,10 +320,15 @@ pub(crate) fn render_channel_result_card(
         })
         // Histogram (if trend data available)
         .when(
-            result.group_delay_before.is_some() || result.group_delay_after.is_some(),
+            (result.group_delay_before.is_some() || result.group_delay_after.is_some())
+                && has_response_data,
             |div| {
-                let original = result.original_response.as_ref().unwrap();
-                let normalized = result.normalized_response.as_ref().unwrap();
+                let (Some(original), Some(normalized)) = (
+                    result.original_response.as_ref(),
+                    result.normalized_response.as_ref(),
+                ) else {
+                    return div;
+                };
                 div.child(render_tonal_histogram(
                     original,
                     normalized,
@@ -345,11 +360,8 @@ pub(crate) fn render_channel_result_card(
             },
         )
         // Impulse response plot (if IR data available)
-        .when(result.impulse_response.is_some(), |div| {
-            div.child(render_impulse_response_graph(
-                result.impulse_response.as_ref().unwrap(),
-                theme,
-            ))
+        .when_some(result.impulse_response.as_ref(), |div, ir| {
+            div.child(render_impulse_response_graph(ir, theme))
         })
         // EQ Filter details
         .child(
@@ -364,8 +376,7 @@ pub(crate) fn render_channel_result_card(
                 .child(render_filter_table(d, &result.eq_filters, theme)),
         )
         // Crossover info (if multi-driver)
-        .when(result.crossover_freqs.is_some(), |el| {
-            let xover_freqs = result.crossover_freqs.as_ref().unwrap();
+        .when_some(result.crossover_freqs.as_ref(), |el, xover_freqs| {
             el.child(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
@@ -504,13 +515,7 @@ fn render_response_comparison_graph(
     };
 
     if frequencies.is_empty() {
-        return div()
-            .child(
-                Text::new("No data available")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-            )
-            .into_any_element();
+        return render_empty_state(IconName::AudioWaveform, "No data available", theme);
     }
 
     let chart_theme = theme_to_chart_theme(theme);
@@ -1033,7 +1038,9 @@ fn render_phase_graph(
 
     let chart_theme = theme_to_chart_theme(theme);
 
-    let reference = phase_before.or(phase_after).unwrap();
+    let Some(reference) = phase_before.or(phase_after) else {
+        return div().into_any_element();
+    };
     let frequencies: Vec<f64> = reference.iter().map(|(f, _)| *f).collect();
 
     let in_range = |f: f64| (20.0..=20000.0).contains(&f);
@@ -1318,7 +1325,9 @@ fn render_group_delay_graph(
     let chart_theme = theme_to_chart_theme(theme);
 
     // Use the before curve for the x-axis, or after if before is missing
-    let reference = gd_before.or(gd_after).unwrap();
+    let Some(reference) = gd_before.or(gd_after) else {
+        return div().into_any_element();
+    };
     let frequencies: Vec<f64> = reference.iter().map(|(f, _)| *f).collect();
 
     // Filter to 20Hz-20kHz and compute y range

@@ -46,8 +46,7 @@ impl PlayerView {
             fir_taps: config.fir.taps,
             fir_phase: config.fir.phase.clone(),
             num_filters: config.num_filters,
-            // sample_rate removed from RoomEqOptimizerConfig (CLI-specific)
-            sample_rate: 48000,
+            sample_rate: config.sample_rate as u32,
             min_db: config.min_db,
             max_db: config.max_db,
             min_q: config.min_q,
@@ -58,19 +57,17 @@ impl PlayerView {
             algo: config.algorithm.clone(),
             population: config.population,
             maxeval: config.max_iter,
-            // DE-specific params use defaults (hidden in room EQ form)
-            de_f: 0.8,
-            de_cr: 0.9,
-            strategy: "currenttobest1bin".to_string(),
-            adaptive_weight_f: 0.8,
-            adaptive_weight_cr: 0.7,
+            de_f: config.de_f,
+            de_cr: config.de_cr,
+            strategy: config.strategy.clone(),
+            adaptive_weight_f: config.adaptive_weight_f,
+            adaptive_weight_cr: config.adaptive_weight_cr,
             refine: config.refine,
             local_algo: config.local_algo.clone(),
             smooth: config.smooth,
             smooth_n: config.smooth_n,
-            // Spacing uses defaults (hidden in room EQ form)
-            spacing_weight: 1.0,
-            min_spacing_oct: 0.08,
+            spacing_weight: config.spacing_weight,
+            min_spacing_oct: config.min_spacing_oct,
             tolerance: config.tolerance,
             atolerance: config.atolerance,
             psychoacoustic: config.psychoacoustic,
@@ -202,7 +199,7 @@ impl PlayerView {
             .hide_smoothing(false)
             .hide_spacing(false)
             .hide_tolerance(false)
-            .hide_sample_rate(true) // auto-detected, not user-facing
+            .hide_sample_rate(false)
             .hide_phase_alignment(false)
             .hide_scenario_a_text(true)
             .hide_multi_measurement(!room_eq.has_multiple_measurements())
@@ -374,6 +371,34 @@ impl PlayerView {
                     });
                 }
             })
+            .on_sample_rate_change({
+                let state = self.state.clone();
+                move |raw, _window, cx| {
+                    use sotf_audio_player::room_eq_types::{next_sample_rate, prev_sample_rate};
+                    state.update(cx, |state, cx| {
+                        let current = state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .sample_rate;
+                        let snapped = if raw > current {
+                            next_sample_rate(current)
+                        } else if raw < current {
+                            prev_sample_rate(current)
+                        } else {
+                            current
+                        };
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .sample_rate = snapped;
+                        cx.notify();
+                    });
+                }
+            })
             .on_min_q_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
@@ -510,6 +535,100 @@ impl PlayerView {
                             .room_eq_state
                             .optimizer_config
                             .atolerance = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_de_f_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.de_f = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_de_cr_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.de_cr = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_strategy_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.strategy =
+                            value.to_string();
+                        state.app.measurement_state.room_eq_state.dropdowns.strategy_open = false;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_strategy_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.room_eq_state.dropdowns.strategy_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_adaptive_weight_f_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .adaptive_weight_f = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_adaptive_weight_cr_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .adaptive_weight_cr = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_spacing_weight_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .spacing_weight = value;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_min_spacing_oct_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .min_spacing_oct = value;
                         cx.notify();
                     });
                 }

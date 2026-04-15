@@ -32,7 +32,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
 
         self.driver.read_app(move |app| {
             app.plugin_state
-                .chain
+                .graph
                 .plugins()
                 .iter()
                 .map(|p| p.id)
@@ -48,7 +48,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn get_plugin_type(&mut self, index: usize) -> Option<PluginType> {
         self.driver.read_app(move |app| {
             app.plugin_state
-                .chain
+                .graph
                 .get_plugin(index)
                 .map(|p| p.plugin_type())
         })
@@ -57,7 +57,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn is_plugin_enabled(&mut self, index: usize) -> bool {
         self.driver.read_app(move |app| {
             app.plugin_state
-                .chain
+                .graph
                 .get_plugin(index)
                 .map(|p| p.enabled)
                 .unwrap_or(false)
@@ -67,7 +67,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn is_plugin_permanent(&mut self, index: usize) -> bool {
         self.driver.read_app(move |app| {
             app.plugin_state
-                .chain
+                .graph
                 .get_plugin(index)
                 .map(|p| p.permanent)
                 .unwrap_or(false)
@@ -94,7 +94,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn find_plugin_index_by_id(&mut self, id: usize) -> Option<usize> {
         self.driver.read_app(move |app| {
             app.plugin_state
-                .chain
+                .graph
                 .plugins()
                 .iter()
                 .position(|p| p.id == id)

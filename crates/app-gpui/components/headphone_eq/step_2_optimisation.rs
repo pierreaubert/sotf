@@ -8,7 +8,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Progress,
-    ProgressSize, ProgressVariant, StackSpacing, Text, TextSize, TextWeight, VStack,
+    ProgressSize, ProgressVariant, Spinner, SpinnerSize, StackSpacing, Text, TextSize, TextWeight,
+    VStack,
 };
 
 impl PlayerView {
@@ -758,6 +759,9 @@ impl PlayerView {
                                             .flex_row()
                                             .items_center()
                                             .gap(d.gap)
+                                            .when(is_optimizing, |el| {
+                                                el.child(Spinner::new().size(SpinnerSize::Sm))
+                                            })
                                             .child(
                                                 Text::new(if is_optimizing {
                                                     "Optimizing...".to_string()

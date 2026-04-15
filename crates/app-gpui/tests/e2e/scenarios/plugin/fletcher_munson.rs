@@ -34,10 +34,10 @@ impl TestScenario for FletcherMunsonScenario {
             // FletcherMunson is now LoudnessCompensation with mode=2
             let plugin_idx = app
                 .plugin_state
-                .chain
+                .graph
                 .plugins()
                 .iter()
-                .position(|p| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .position(|p: &&sotf_audio::plugins::Plugin| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
                 .expect("LoudnessCompensation plugin not found after addition");
 
             println!("LoudnessCompensation (FM) found at index {}", plugin_idx);
@@ -51,15 +51,15 @@ impl TestScenario for FletcherMunsonScenario {
             println!("Verifying Reference Level...");
             let plugin_idx = app
                 .plugin_state
-                .chain
+                .graph
                 .plugins()
                 .iter()
-                .position(|p| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .position(|p: &&sotf_audio::plugins::Plugin| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
                 .expect("LoudnessCompensation plugin not found for verification");
 
             let plugin = app
                 .plugin_state
-                .chain
+                .graph
                 .get_plugin(plugin_idx)
                 .ok_or("Plugin not found")?;
 
@@ -88,10 +88,10 @@ impl TestScenario for FletcherMunsonScenario {
             println!("Modifying Low Frequency...");
             let plugin_idx = app
                 .plugin_state
-                .chain
+                .graph
                 .plugins()
                 .iter()
-                .position(|p| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .position(|p: &&sotf_audio::plugins::Plugin| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
                 .expect("LoudnessCompensation plugin not found");
 
             // Set Low Freq to 80 Hz (index 0 in LC PARAMS)
@@ -103,15 +103,15 @@ impl TestScenario for FletcherMunsonScenario {
             println!("Verifying Low Frequency...");
             let plugin_idx = app
                 .plugin_state
-                .chain
+                .graph
                 .plugins()
                 .iter()
-                .position(|p| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
+                .position(|p: &&sotf_audio::plugins::Plugin| matches!(p.plugin_type(), PluginType::LoudnessCompensation))
                 .expect("LoudnessCompensation plugin not found");
 
             let plugin = app
                 .plugin_state
-                .chain
+                .graph
                 .get_plugin(plugin_idx)
                 .expect("Plugin not found");
 

@@ -171,7 +171,9 @@ impl PlayerView {
                                                 layout.library_h_ratio.min(max_lib_ratio.max(0.15));
                                         }
                                     }
-                                    let _ = state.app.save_config(layout);
+                                    if let Err(e) = state.app.save_config(layout) {
+                                        log::debug!("Config save failed: {e}");
+                                    }
                                 });
                             });
                         }
@@ -208,7 +210,9 @@ impl PlayerView {
                                 state_handle.update(cx, |state, cx| {
                                     state.layout.update(cx, |layout, _| {
                                         layout.rack_panel_collapsed = collapsed;
-                                        let _ = state.app.save_config(layout);
+                                        if let Err(e) = state.app.save_config(layout) {
+                                            log::debug!("Config save failed: {e}");
+                                        }
                                     });
                                 });
                             }
@@ -380,7 +384,9 @@ impl PlayerView {
                             state_handle.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.library_panel_collapsed = collapsed;
-                                    let _ = state.app.save_config(layout);
+                                    if let Err(e) = state.app.save_config(layout) {
+                                        log::debug!("Config save failed: {e}");
+                                    }
                                 });
                             });
                         }
@@ -417,7 +423,9 @@ impl PlayerView {
                                 state_handle.update(cx, |state, cx| {
                                     state.layout.update(cx, |layout, _| {
                                         layout.rack_panel_collapsed = collapsed;
-                                        let _ = state.app.save_config(layout);
+                                        if let Err(e) = state.app.save_config(layout) {
+                                            log::debug!("Config save failed: {e}");
+                                        }
                                     });
                                 });
                             }

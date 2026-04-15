@@ -1731,7 +1731,7 @@ impl PlayerView {
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> impl IntoElement {
-        use crate::components::graphs::response_graphs::CHANNEL_COLORS;
+        use crate::components::graphs::response_graphs::channel_color;
 
         let chart_width: f32 = 500.0;
         let chart_height: f32 = 200.0;
@@ -1761,7 +1761,7 @@ impl PlayerView {
 
         // Build chart from first channel as primary series
         let (first_ch, first_data) = &entries[0];
-        let first_color = CHANNEL_COLORS[*first_ch % CHANNEL_COLORS.len()];
+        let first_color = channel_color(theme, *first_ch);
         let first_label = if entries.len() == 1 {
             "Calibration".to_string()
         } else {
@@ -1783,7 +1783,7 @@ impl PlayerView {
 
         // Add additional channels as extra series
         for &(ch_idx, ref data) in &entries[1..] {
-            let color = CHANNEL_COLORS[ch_idx % CHANNEL_COLORS.len()];
+            let color = channel_color(theme, ch_idx);
             builder = builder.add_series_with_x(
                 &data.frequencies,
                 &data.spl_db,

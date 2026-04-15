@@ -339,7 +339,7 @@ fn test_import_then_smart_defaults_matches_backend() {
     state.init_speaker_configs();
 
     state.optimizer_config.import_from_backend(&backend);
-    state.apply_smart_defaults();
+    state.apply_smart_defaults(None);
 
     let room_config = state.to_room_config();
     let opt = &room_config.optimizer;
@@ -380,7 +380,7 @@ fn test_fresh_measurement_gets_smart_defaults() {
     // No import_from_backend call — this is a fresh recording
     assert!(!state.optimizer_config.imported_from_file);
 
-    state.apply_smart_defaults();
+    state.apply_smart_defaults(None);
 
     let room_config = state.to_room_config();
     let opt = &room_config.optimizer;
@@ -433,7 +433,7 @@ fn test_import_with_features_enabled_preserves_them() {
     state.init_speaker_configs();
 
     state.optimizer_config.import_from_backend(&backend);
-    state.apply_smart_defaults();
+    state.apply_smart_defaults(None);
 
     let room_config = state.to_room_config();
     let opt = &room_config.optimizer;
@@ -774,7 +774,7 @@ fn test_import_preserves_seed_and_refine() {
     state.init_speaker_configs();
 
     state.optimizer_config.import_from_backend(&backend);
-    state.apply_smart_defaults();
+    state.apply_smart_defaults(None);
 
     assert_eq!(
         state.optimizer_config.seed,

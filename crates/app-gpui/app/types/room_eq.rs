@@ -351,7 +351,7 @@ impl RoomEqState {
 
     /// Apply smart defaults based on loaded measurement data.
     /// Called after loading measurements to set sensible initial values.
-    pub fn apply_smart_defaults(&mut self) {
+    pub fn apply_smart_defaults(&mut self, playback_sample_rate: Option<u32>) {
         // Compute detection values before mutably borrowing optimizer_config
         let is_surround = self.is_surround();
         let has_subwoofer = self.has_subwoofer();
@@ -359,6 +359,13 @@ impl RoomEqState {
         let is_cinema = self.is_home_cinema();
 
         let config = &mut self.optimizer_config;
+
+        // Seed sample rate from playback device when still at default
+        if let Some(sr) = playback_sample_rate {
+            if config.sample_rate == 48000 {
+                config.sample_rate = sr as usize;
+            }
+        }
 
         // Loss type is always flat for room EQ
         config.loss_type = "flat".to_string();

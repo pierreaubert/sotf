@@ -4,6 +4,7 @@
 
 use crate::app::types::{ChannelRecordingState, RecordingResult, RecordingSignalType};
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -744,14 +745,23 @@ impl PlayerView {
                         .iter()
                         .any(|(_, s)| *s == ChannelRecordingState::Error);
 
-                    let (state_icon, state_text, state_color) = if any_recording {
-                        ("●", "Recording...", theme.warning)
+                    let (state_text, state_color) = if any_recording {
+                        ("Recording...", theme.warning)
                     } else if all_done {
-                        ("✓", "Complete", theme.success)
+                        ("Complete", theme.success)
                     } else if any_error {
-                        ("✗", "Error", theme.error)
+                        ("Error", theme.error)
                     } else {
-                        ("○", "Not recorded", theme.text_muted)
+                        ("Not recorded", theme.text_muted)
+                    };
+                    let state_icon: AnyElement = if any_recording {
+                        div().size(px(8.0)).rounded_full().bg(theme.warning).into_any_element()
+                    } else if all_done {
+                        Icon::new(IconName::Check).size(IconSize::Xs).color(theme.success).into_any_element()
+                    } else if any_error {
+                        Icon::new(IconName::X).size(IconSize::Xs).color(theme.error).into_any_element()
+                    } else {
+                        div().size(px(8.0)).rounded_full().border_1().border_color(theme.text_muted).into_any_element()
                     };
 
                     let button_label = if all_done { "Re-record" } else { "Record" };
@@ -781,11 +791,7 @@ impl PlayerView {
                                     HStack::new()
                                         .spacing(StackSpacing::Xs)
                                         .align(StackAlign::Center)
-                                        .child(
-                                            Text::new(state_icon)
-                                                .size(TextSize::Xs)
-                                                .color(state_color),
-                                        )
+                                        .child(state_icon)
                                         .child(
                                             Text::new(state_text)
                                                 .size(TextSize::Xs)
@@ -825,13 +831,19 @@ impl PlayerView {
                             row = row.child(div().pl_6().child(
                                 HStack::new().spacing(StackSpacing::Sm).children(
                                     mic_states.iter().map(|(mic_idx, mic_state)| {
-                                        let (icon, color) = match mic_state {
-                                            ChannelRecordingState::Empty => ("○", theme.text_muted),
-                                            ChannelRecordingState::Recording => {
-                                                ("●", theme.warning)
+                                        let icon_el: AnyElement = match mic_state {
+                                            ChannelRecordingState::Empty => {
+                                                div().size(px(8.0)).rounded_full().border_1().border_color(theme.text_muted).into_any_element()
                                             }
-                                            ChannelRecordingState::Done => ("✓", theme.success),
-                                            ChannelRecordingState::Error => ("✗", theme.error),
+                                            ChannelRecordingState::Recording => {
+                                                div().size(px(8.0)).rounded_full().bg(theme.warning).into_any_element()
+                                            }
+                                            ChannelRecordingState::Done => {
+                                                Icon::new(IconName::Check).size(IconSize::Xs).color(theme.success).into_any_element()
+                                            }
+                                            ChannelRecordingState::Error => {
+                                                Icon::new(IconName::X).size(IconSize::Xs).color(theme.error).into_any_element()
+                                            }
                                         };
                                         HStack::new()
                                             .spacing(StackSpacing::Xs)
@@ -841,7 +853,7 @@ impl PlayerView {
                                                     .size(TextSize::Xs)
                                                     .color(theme.text_secondary),
                                             )
-                                            .child(Text::new(icon).size(TextSize::Xs).color(color))
+                                            .child(icon_el)
                                             .into_any_element()
                                     }),
                                 ),

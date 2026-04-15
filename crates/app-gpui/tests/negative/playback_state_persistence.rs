@@ -33,6 +33,12 @@ fn make_album(title: &str, track_count: usize) -> Album {
     }
 }
 
+/// Add album directly to the underlying queue, bypassing file-existence
+/// validation (test paths are fake).
+fn add_test_album(ctrl: &mut QueueController, album: Album) {
+    ctrl.add(album);
+}
+
 /// Test: Volume is preserved when advancing to next track within album
 #[test]
 fn test_volume_preserved_on_next_track_same_album() {
@@ -40,7 +46,7 @@ fn test_volume_preserved_on_next_track_same_album() {
     playback.set_volume(0.42);
 
     let mut queue = QueueController::new();
-    queue.add_album(make_album("Test Album", 3));
+    add_test_album(&mut queue, make_album("Test Album", 3));
     queue.start();
 
     // Advance to next track
@@ -62,8 +68,8 @@ fn test_volume_preserved_on_next_album() {
     playback.set_volume(0.73);
 
     let mut queue = QueueController::new();
-    queue.add_album(make_album("Album 1", 1));
-    queue.add_album(make_album("Album 2", 1));
+    add_test_album(&mut queue, make_album("Album 1", 1));
+    add_test_album(&mut queue, make_album("Album 2", 1));
     queue.start();
 
     // Advance past Album 1's only track into Album 2
@@ -83,7 +89,7 @@ fn test_volume_preserved_across_multiple_tracks() {
     playback.set_volume(0.55);
 
     let mut queue = QueueController::new();
-    queue.add_album(make_album("Long Album", 10));
+    add_test_album(&mut queue, make_album("Long Album", 10));
     queue.start();
 
     // Advance through all tracks
@@ -113,7 +119,7 @@ fn test_volume_preserved_at_edge_values() {
         playback.set_volume(0.0);
 
         let mut queue = QueueController::new();
-        queue.add_album(make_album("Album", 2));
+        add_test_album(&mut queue, make_album("Album", 2));
         queue.start();
         queue.next_track();
 
@@ -126,7 +132,7 @@ fn test_volume_preserved_at_edge_values() {
         playback.set_volume(1.0);
 
         let mut queue = QueueController::new();
-        queue.add_album(make_album("Album", 2));
+        add_test_album(&mut queue, make_album("Album", 2));
         queue.start();
         queue.next_track();
 
@@ -141,7 +147,7 @@ fn test_muted_state_preserved() {
     playback.muted = true;
 
     let mut queue = QueueController::new();
-    queue.add_album(make_album("Album", 2));
+    add_test_album(&mut queue, make_album("Album", 2));
     queue.start();
     queue.next_track();
 
@@ -158,7 +164,7 @@ fn test_queue_end_returns_stop() {
     playback.set_volume(0.8);
 
     let mut queue = QueueController::new();
-    queue.add_album(make_album("Album", 1));
+    add_test_album(&mut queue, make_album("Album", 1));
     queue.start();
 
     // Try to advance past end

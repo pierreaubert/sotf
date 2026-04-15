@@ -201,6 +201,7 @@ pub struct Theme {
     pub plugin_colors: PluginColorMap,
     pub graph_colors: GraphLineColors,
     pub band_colors: Vec<Rgba>,
+    pub channel_colors: Vec<Rgba>,
     pub eq_curve_colors: EQCurveColors,
     pub spectrum_colors: SpectrumColors,
     pub meter_colors: MeterColors,

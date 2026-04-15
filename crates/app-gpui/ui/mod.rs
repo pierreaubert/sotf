@@ -206,10 +206,9 @@ impl PlayerView {
                         state.app.playback.position_secs = playback_state.position_secs;
                         state.app.playback.duration_secs = state.app.get_current_track_duration();
 
-                        // Read analyzer data from the shared cache (no audio pipeline blocking).
-                        // Read unconditionally (like TUI) — when no engine is running,
-                        // get_cached_plugin_data returns None harmlessly.
-                        {
+                        // Read analyzer data from the shared cache only when playing.
+                        // Skipping these reads when idle reduces CPU usage significantly.
+                        if state.app.playback.is_playing {
                             let graph = &state.app.plugin_state.graph;
 
                             state.app.playback.input_loudness_info = graph
@@ -245,8 +244,10 @@ impl PlayerView {
 
                         drop(player);
 
-                        state.app.update_level_meter_groups();
-                        state.app.update_level_meter_peak_hold();
+                        if state.app.playback.is_playing {
+                            state.app.update_level_meter_groups();
+                            state.app.update_level_meter_peak_hold();
+                        }
 
                         if let Some(update_type) =
                             state.app.plugin_state.pending_plugin_update.take()

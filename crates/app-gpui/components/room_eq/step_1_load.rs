@@ -1,3 +1,4 @@
+use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -200,9 +201,8 @@ impl PlayerView {
                                     .spacing(StackSpacing::Xs)
                                     .align(StackAlign::Center)
                                     .child(
-                                        Text::new("✓")
-                                            .weight(TextWeight::Bold)
-                                            .size(TextSize::Xs)
+                                        Icon::new(IconName::Check)
+                                            .size(IconSize::Xs)
                                             .color(theme.success),
                                     )
                                     .child(

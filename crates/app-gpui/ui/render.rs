@@ -303,6 +303,9 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::select_band_3))
             .on_action(cx.listener(Self::select_band_4))
             .on_action(cx.listener(Self::select_band_5))
+            // EQ band navigation
+            .on_action(cx.listener(Self::select_next_eq_band))
+            .on_action(cx.listener(Self::select_prev_eq_band))
             // Level meter actions
             .on_action(cx.listener(Self::select_next_meter_group))
             .on_action(cx.listener(Self::select_prev_meter_group))

@@ -1,5 +1,6 @@
 use crate::components::design::Ds;
-use crate::components::graphs::common::{colors, rgba_to_u32, theme_to_chart_theme};
+use crate::components::graphs::common::{colors, render_empty_state, rgba_to_u32, theme_to_chart_theme};
+use crate::components::icons::IconName;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -276,7 +277,7 @@ pub fn render_spinorama_cea2034_graph(
     height: f32,
 ) -> Div {
     if !curves.is_valid() {
-        return div().child("No data available");
+        return div().child(render_empty_state(IconName::AudioWaveform, "No data available", theme));
     }
 
     let chart_theme = theme_to_chart_theme(theme);
@@ -632,7 +633,7 @@ fn render_tonal_balance_plot(
     };
 
     if original_curve.is_empty() {
-        return div().child("No data");
+        return div().child(render_empty_state(IconName::AudioWaveform, "No data", theme));
     }
 
     // Manual linear regression helper

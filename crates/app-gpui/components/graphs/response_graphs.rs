@@ -3,14 +3,14 @@
 //! Shared plotting functions for Frequency Response, Phase, etc.
 //! Used by Recording Evaluation and Room EQ Review.
 
-use crate::components::graphs::common::theme_to_chart_theme;
+use crate::components::graphs::common::{render_empty_state, rgba_to_u32, theme_to_chart_theme};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{LegendPosition, ScaleType, line};
 
-/// Channel colors for plotting (standard CEA2034 / common convention)
-pub const CHANNEL_COLORS: [u32; 6] = [
+/// Fallback channel colors when no theme is available.
+const CHANNEL_COLORS_FALLBACK: [u32; 6] = [
     0x4285f4, // Blue
     0xea4335, // Red
     0x34a853, // Green
@@ -18,6 +18,15 @@ pub const CHANNEL_COLORS: [u32; 6] = [
     0x9c27b0, // Purple
     0x00bcd4, // Cyan
 ];
+
+/// Get a channel color as u32 from the theme, with fallback.
+pub fn channel_color(theme: &Theme, idx: usize) -> u32 {
+    if theme.channel_colors.is_empty() {
+        CHANNEL_COLORS_FALLBACK[idx % CHANNEL_COLORS_FALLBACK.len()]
+    } else {
+        rgba_to_u32(theme.channel_colors[idx % theme.channel_colors.len()])
+    }
+}
 
 /// Data series for plotting
 #[derive(Clone)]
@@ -95,7 +104,11 @@ pub fn render_line_chart(
         .collect();
 
     if series.is_empty() {
-        return div().child("No data").into_any_element();
+        return render_empty_state(
+            crate::components::icons::IconName::AudioWaveform,
+            "No data",
+            theme,
+        );
     }
 
     let chart_theme = theme_to_chart_theme(theme);
@@ -154,7 +167,11 @@ pub fn render_line_chart(
         Ok(c) => c.into_any_element(),
         Err(e) => {
             log::warn!("Chart build failed: {:?}", e);
-            return div().child("No data available").into_any_element();
+            return render_empty_state(
+                crate::components::icons::IconName::AudioWaveform,
+                "Unable to render chart",
+                theme,
+            );
         }
     };
 

@@ -6,6 +6,7 @@
 //! - Interactive editing
 
 use super::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
+use crate::components::graphs::common::rgba_to_u32;
 use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
@@ -28,7 +29,7 @@ use std::rc::Rc;
 pub const SAMPLE_RATE: f64 = sotf_plugins::DEFAULT_PREVIEW_SAMPLE_RATE;
 
 /// Wrapper element to capture bounds for coordinate transformation
-struct EqChartWrapper {
+pub(crate) struct EqChartWrapper {
     child: AnyElement,
     bounds_ref: Rc<RefCell<Option<Bounds<Pixels>>>>,
 }
@@ -121,7 +122,7 @@ pub fn drag_delta_to_q_change(delta_px: f32) -> f64 {
 
 /// Drag data for EQ control point manipulation (frequency/gain)
 #[derive(Clone)]
-struct EqControlPointDrag {
+pub(crate) struct EqControlPointDrag {
     band_idx: usize,
     plugin_idx: usize,
     color: u32,
@@ -151,7 +152,7 @@ impl Render for EqControlPointDrag {
 
 /// Drag data for Q handle manipulation
 #[derive(Clone)]
-struct EqQHandleDrag {
+pub(crate) struct EqQHandleDrag {
     band_idx: usize,
     plugin_idx: usize,
     #[allow(dead_code)]
@@ -216,19 +217,8 @@ pub fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
         .sum()
 }
 
-/// Band colors for EQ visualization
-const BAND_COLORS: [u32; 10] = [
-    0xef4444, // Red
-    0xf97316, // Orange
-    0xeab308, // Yellow
-    0x22c55e, // Green
-    0x14b8a6, // Teal
-    0x3b82f6, // Blue
-    0x8b5cf6, // Violet
-    0xec4899, // Pink
-    0x6366f1, // Indigo
-    0x06b6d4, // Cyan
-];
+/// Fallback band color (gray) when theme band_colors is exhausted.
+pub(crate) const BAND_COLOR_FALLBACK: u32 = 0x9ca3af;
 
 /// Calculate single band response at a frequency
 pub fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
@@ -434,7 +424,11 @@ fn render_eq_visualization(
             .map(|&freq| calculate_band_response(filter, freq))
             .collect();
 
-        let color = BAND_COLORS.get(i).copied().unwrap_or(0x9ca3af);
+        let color = theme
+            .band_colors
+            .get(i)
+            .map(|c| rgba_to_u32(*c))
+            .unwrap_or(BAND_COLOR_FALLBACK);
         let is_selected = selected_band == Some(i);
         let is_muted = filter.muted;
         let is_soloed = filter.solo;
@@ -473,8 +467,12 @@ fn render_eq_visualization(
 
     for (i, filter) in filters.iter().enumerate() {
         let is_selected = selected_band == Some(i);
-        let color = BAND_COLORS.get(i).copied().unwrap_or(0x9ca3af);
-        let rgba_color = gpui::rgba(color * 256 + 0xFF);
+        let rgba_color = theme
+            .band_colors
+            .get(i)
+            .copied()
+            .unwrap_or(gpui::rgba(BAND_COLOR_FALLBACK * 256 + 0xFF));
+        let color = rgba_to_u32(rgba_color);
 
         // Calculate position
         let x = freq_to_x(filter.frequency, plot_width);
@@ -840,9 +838,10 @@ pub fn render_eq_plugin(
 ) -> impl IntoElement {
     let ds = Ds::from_cx(cx);
 
-    // Read selected channel from AppState
+    // Read selected channel and window width from AppState
     let app_state = entity.read(cx);
     let selected_eq_channel = app_state.app.plugin_state.selected_eq_channel;
+    let window_width = app_state.app.ui_state.window_width;
     let _ = app_state;
 
     // Determine which filters to display based on mode
@@ -871,10 +870,6 @@ pub fn render_eq_plugin(
         .min(display_filters.len().saturating_sub(1));
     let num_bands = display_filters.len();
 
-    // Determine layout mode based on available width
-    // For now, we'll default to vertical layout
-    let use_horizontal_layout = false;
-
     // Get the selected filter
     let selected_filter = if num_bands > 0 {
         Some(&display_filters[selected_band_idx])
@@ -896,8 +891,8 @@ pub fn render_eq_plugin(
     const LEGEND_PADDING_PX: f32 = 60.0; // margins, color swatch, etc.
     let estimated_legend_width = LEGEND_LABEL_CHARS * CHAR_WIDTH_PX + LEGEND_PADDING_PX;
 
-    // Base available width (typical window sizes)
-    let base_available_width = if use_horizontal_layout { 900.0 } else { 1500.0 };
+    // Use window width as chart width upper bound (GPUI flex constrains to actual container)
+    let base_available_width = window_width.max(800.0);
     let graph_width = base_available_width - estimated_legend_width;
 
     // Build the UI - graph uses most of the horizontal space
@@ -923,8 +918,7 @@ pub fn render_eq_plugin(
         .flex_col()
         .items_center() // Center band selector and knob box
         .gap(ds.section)
-        .when(use_horizontal_layout, |d| d.min_w(rems(18.75)))
-        .when(!use_horizontal_layout, |d| d.w_full())
+        .w_full()
         // Channel Mode Toggle and Channel Selector
         .child({
             let entity_clone = entity.clone();
@@ -1245,7 +1239,9 @@ pub fn render_eq_plugin(
         .when(
             state.midi_overlay.is_some_and(|o| o.has_controller()),
             |d| {
-                let overlay = state.midi_overlay.unwrap();
+                let Some(overlay) = state.midi_overlay else {
+                    return d;
+                };
                 d.child(
                     div()
                         .flex()
@@ -1270,7 +1266,9 @@ pub fn render_eq_plugin(
         )
         // Selected band controls
         .when(selected_filter.is_some(), |d| {
-            let filter = selected_filter.unwrap();
+            let Some(filter) = selected_filter else {
+                return d;
+            };
             let base_param_idx = selected_band_idx * 4;
             let midi_overlay = state.midi_overlay;
 
@@ -1362,24 +1360,13 @@ pub fn render_eq_plugin(
 
     // Combine sections based on layout mode
 
-    if use_horizontal_layout {
-        // Horizontal: graph on left, controls on right
-        div()
-            .flex()
-            .flex_row()
-            .gap(ds.gap_md)
-            .child(graph_section)
-            .child(controls_section)
-    } else {
-        // Vertical: graph on top, controls below (centered)
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(ds.section_xl) // Increased gap between graph and controls
-            .child(graph_section)
-            .child(controls_section)
-    }
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(ds.section_xl)
+        .child(graph_section)
+        .child(controls_section)
 }
 
 /// Calculate the actual plot width based on chart width and legend configuration.

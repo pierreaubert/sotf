@@ -6,6 +6,9 @@
 use gpui::{Pixels, px};
 use gpui_design::DesignExt;
 
+/// Scale factor for extra-small text (axis ticks, badges) relative to `small_size`.
+const TEXT_XS_SCALE: f32 = 0.85;
+
 /// Pre-computed design system values as `Pixels` for direct use in GPUI method chains.
 ///
 /// # Example
@@ -71,7 +74,8 @@ impl Ds {
             r_md: px(ds.corners.md),
             r_lg: px(ds.corners.lg),
             r_xl: px(ds.corners.xl),
-            text_xs: px(ds.typography.small_size * 0.85),
+            // 85% of small_size for extra-small labels (axis ticks, badges)
+            text_xs: px(ds.typography.small_size * TEXT_XS_SCALE),
             text_sm: px(ds.typography.small_size),
             text_base: px(ds.typography.base_size),
             text_lg: px(ds.typography.large_size),

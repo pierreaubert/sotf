@@ -109,7 +109,9 @@ impl PlayerView {
                         let new_volume: f32 = (volume_start_value + volume_delta).clamp(0.0, 1.0);
                         view.state.update(cx, |state, _cx| {
                             state.app.playback.volume = new_volume;
-                            let _ = state.player.lock().set_volume(new_volume);
+                            if let Err(e) = state.player.lock().set_volume(new_volume) {
+                                log::warn!("Player set_volume failed: {e}");
+                            }
                         });
                         cx.notify();
                     }
@@ -211,7 +213,9 @@ impl PlayerView {
                             state_handle.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.queue_panel_ratio = if collapsed { 0.95 } else { 0.35 };
-                                    let _ = state.app.save_config(layout);
+                                    if let Err(e) = state.app.save_config(layout) {
+                                        log::debug!("Config save failed: {e}");
+                                    }
                                 });
                             });
                         }

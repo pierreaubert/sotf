@@ -151,6 +151,9 @@ actions!(
         SelectBand3,
         SelectBand4,
         SelectBand5,
+        // EQ band navigation
+        SelectNextEqBand,
+        SelectPrevEqBand,
         // Design system switching
         SetDesignNeutral,
         SetDesignAppleHig,

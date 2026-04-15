@@ -15,8 +15,8 @@ impl ParamLimits {
         step: 1.0,
     };
     pub const SAMPLE_RATE: Self = Self {
-        min: 8000.0,
-        max: 192000.0,
+        min: 44100.0,
+        max: 384000.0,
         step: 1000.0,
     };
     pub const DB: Self = Self {

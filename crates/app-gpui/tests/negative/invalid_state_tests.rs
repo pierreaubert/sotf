@@ -147,7 +147,7 @@ fn test_next_track_at_end() {
     use sotf_audio_player::controllers::queue::QueuePlaybackEffect;
 
     let mut ctrl = QueueController::new();
-    ctrl.add_album(make_album("Album", "Artist", 1));
+    ctrl.add_album(make_album("Album", "Artist", 1)).unwrap();
     ctrl.start();
 
     let effect = ctrl.next_track();
@@ -171,7 +171,7 @@ fn test_jump_to_invalid_index() {
     use sotf_audio_player::controllers::queue::QueuePlaybackEffect;
 
     let mut ctrl = QueueController::new();
-    ctrl.add_album(make_album("Album", "Artist", 2));
+    ctrl.add_album(make_album("Album", "Artist", 2)).unwrap();
     ctrl.start();
 
     let effect = ctrl.jump_to(99);

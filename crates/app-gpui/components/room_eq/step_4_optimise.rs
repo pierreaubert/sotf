@@ -1,5 +1,6 @@
 use crate::app::types::room_eq::InteractiveChartStateWrapper;
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::graphs::common::theme_to_chart_theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -7,8 +8,8 @@ use gpui::*;
 use gpui_px::line;
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonVariant, Card, Column, HStack, Progress, ProgressSize,
-    ProgressVariant, StackAlign, StackSpacing, Table, TableTheme, Text, TextSize, TextWeight,
-    VStack,
+    ProgressVariant, Spinner, SpinnerSize, StackAlign, StackSpacing, Table, TableTheme, Text,
+    TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -131,9 +132,8 @@ impl PlayerView {
                                         .spacing(StackSpacing::Xs)
                                         .align(StackAlign::Center)
                                         .child(
-                                            Text::new("✓")
-                                                .weight(TextWeight::Bold)
-                                                .size(TextSize::Sm)
+                                            Icon::new(IconName::Check)
+                                                .size(IconSize::Sm)
                                                 .color(theme.success),
                                         )
                                         .child(
@@ -222,6 +222,9 @@ impl PlayerView {
                                             .flex_row()
                                             .items_center()
                                             .gap(d.gap)
+                                            .when(is_running, |el| {
+                                                el.child(Spinner::new().size(SpinnerSize::Sm))
+                                            })
                                             .child(
                                                 Text::new(if is_running {
                                                     format!(

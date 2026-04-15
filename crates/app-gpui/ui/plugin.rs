@@ -223,6 +223,31 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn select_next_eq_band(
+        &mut self,
+        _: &SelectNextEqBand,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.plugin_state.selected_eq_band += 1;
+        });
+        cx.notify();
+    }
+
+    fn select_prev_eq_band(
+        &mut self,
+        _: &SelectPrevEqBand,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.plugin_state.selected_eq_band =
+                state.app.plugin_state.selected_eq_band.saturating_sub(1);
+        });
+        cx.notify();
+    }
+
     fn toggle_simple_view(&mut self, _: &ToggleSimpleView, _: &mut Window, cx: &mut Context<Self>) {
         use crate::app::state::plugin::PluginUiView;
         self.state.update(cx, |state, _cx| {

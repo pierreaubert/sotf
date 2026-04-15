@@ -12,8 +12,8 @@ use gpui_ui_kit::{
 };
 use std::sync::Arc;
 
-/// Breakpoint below which the sort/filter bar switches to vertical layout
-const BREAKPOINT_NARROW_LAYOUT: f32 = 600.0;
+/// Breakpoint below which the sort/filter bar switches to vertical layout (in rems).
+const BREAKPOINT_NARROW_LAYOUT_REMS: f32 = 37.5; // ~600px at 16px rem
 
 /// Selection action types for the library filter UI (Genre only)
 /// Note: Artist, Composer, Tracks now use filter bars like Year/Album
@@ -56,6 +56,15 @@ impl PlayerView {
 
         // Selection filters and counts for each category
         let window_width = state.app.ui_state.window_width;
+        let window_height = state.app.ui_state.window_height;
+        let responsive_scale =
+            crate::ui::compute_responsive_scale(window_width, window_height);
+        let effective_rem = 16.0 * (state.app.ui_state.font_scale * responsive_scale)
+            .clamp(
+                crate::ui::DEFAULT_MIN_FONT_SIZE_PX / 16.0,
+                crate::ui::DEFAULT_MAX_FONT_SIZE_PX / 16.0,
+            );
+        let window_width_rems = window_width / effective_rem;
 
         let selected_genre = state.app.library_state.selected_genre.clone();
         let selected_decade = state.app.library_state.selected_decade;
@@ -224,8 +233,8 @@ impl PlayerView {
                 el.child(
                     div()
                         .flex()
-                        .when(window_width < BREAKPOINT_NARROW_LAYOUT, |el| el.flex_col())
-                        .when(window_width >= BREAKPOINT_NARROW_LAYOUT, |el| {
+                        .when(window_width_rems < BREAKPOINT_NARROW_LAYOUT_REMS, |el| el.flex_col())
+                        .when(window_width_rems >= BREAKPOINT_NARROW_LAYOUT_REMS, |el| {
                             el.flex_wrap()
                         })
                         .items_center()

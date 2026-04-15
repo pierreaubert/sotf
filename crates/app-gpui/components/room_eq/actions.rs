@@ -36,11 +36,12 @@ impl PlayerView {
                 .measurement_state
                 .room_eq_state
                 .init_speaker_configs();
+            let playback_sr = state.app.playback.sample_rate;
             state
                 .app
                 .measurement_state
                 .room_eq_state
-                .apply_smart_defaults();
+                .apply_smart_defaults(playback_sr);
             // Detect multi-mic recordings and set multi-position data
             let has_multi_mic = state
                 .app
@@ -366,7 +367,8 @@ impl PlayerView {
                                     }
                                 }
 
-                                state.app.measurement_state.room_eq_state.apply_smart_defaults();
+                                let playback_sr = state.app.playback.sample_rate;
+                                state.app.measurement_state.room_eq_state.apply_smart_defaults(playback_sr);
                             });
                             return;
                         }
@@ -497,7 +499,8 @@ impl PlayerView {
                                     // Legacy format: no multi-position data
                                     state.app.measurement_state.room_eq_state.has_multi_position_data = false;
                                     state.app.measurement_state.room_eq_state.multi_position_counts = Vec::new();
-                                    state.app.measurement_state.room_eq_state.apply_smart_defaults();
+                                    let playback_sr = state.app.playback.sample_rate;
+                                    state.app.measurement_state.room_eq_state.apply_smart_defaults(playback_sr);
                                 });
                             }
                             Err(e) => {

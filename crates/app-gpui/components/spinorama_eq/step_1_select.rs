@@ -8,7 +8,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Input, InputSize, Progress,
-    ProgressSize, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
+    ProgressSize, Spinner, SpinnerSize, StackAlign, StackSpacing, Text, TextSize, TextWeight,
+    VStack,
 };
 
 impl PlayerView {
@@ -133,11 +134,13 @@ impl PlayerView {
                                             ),
                                     )
                                     .when(is_loading, |hstack| {
-                                        hstack.child(
-                                            Text::new("Loading...")
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                        )
+                                        hstack
+                                            .child(Spinner::new().size(SpinnerSize::Sm))
+                                            .child(
+                                                Text::new("Loading...")
+                                                    .size(TextSize::Xs)
+                                                    .color(theme.text_muted),
+                                            )
                                     })
                                     .when(
                                         !is_loading && !spinorama.available_speakers.is_empty(),
@@ -185,9 +188,18 @@ impl PlayerView {
                             .overflow_y_scroll()
                             .when(suggestions.is_empty() && is_loading, |el| {
                                 el.child(
-                                    Text::new("Loading speakers from spinorama.org...")
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_muted),
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap(px(8.0))
+                                        .py(px(16.0))
+                                        .child(Spinner::new().size(SpinnerSize::Md))
+                                        .child(
+                                            Text::new("Loading speakers from spinorama.org...")
+                                                .size(TextSize::Xs)
+                                                .color(theme.text_muted),
+                                        ),
                                 )
                             })
                             .when(suggestions.is_empty() && !is_loading, |el| {
