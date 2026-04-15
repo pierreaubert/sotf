@@ -1869,9 +1869,25 @@ impl PluginGraph {
         }
 
         for plugin in user_plugins {
-            let pos_x = self
+            // Compute linear order and predecessor BEFORE inserting the unconnected node,
+            // otherwise linear_order() fails due to the disconnected node.
+            let matrix_id = self
                 .node_id_for_role(NodeRole::Matrix)
-                .and_then(|id| self.node_position(id))
+                .ok_or_else(|| "No Matrix node in graph".to_string())?;
+            let order = self
+                .linear_order()
+                .ok_or_else(|| "Graph is not linear during plugin load".to_string())?;
+            let matrix_pos = order
+                .iter()
+                .position(|&id| id == matrix_id)
+                .ok_or_else(|| "Matrix not in linear order".to_string())?;
+            if matrix_pos == 0 {
+                return Err("Matrix cannot be the first node in the chain".into());
+            }
+            let pred_id = order[matrix_pos - 1];
+
+            let pos_x = self
+                .node_position(matrix_id)
                 .map(|p| p.x - 10.0)
                 .unwrap_or(400.0);
             let node =
@@ -1879,11 +1895,6 @@ impl PluginGraph {
             let node_id = node.id;
             self.nodes.insert(node_id, node);
 
-            // Wire into the chain before Matrix
-            let matrix_id = self.node_id_for_role(NodeRole::Matrix).unwrap();
-            let order = self.linear_order().unwrap();
-            let matrix_pos = order.iter().position(|&id| id == matrix_id).unwrap();
-            let pred_id = order[matrix_pos - 1];
             self.rewire_insert(pred_id, matrix_id, node_id);
         }
 

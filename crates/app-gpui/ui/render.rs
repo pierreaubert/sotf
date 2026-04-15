@@ -125,6 +125,8 @@ impl Render for PlayerView {
             show_studio_menu,
             show_device_popup,
             playback_output_devices,
+            min_font_size_px,
+            max_font_size_px,
         ) = {
             let state = self.state.read(cx);
             (
@@ -140,14 +142,16 @@ impl Render for PlayerView {
                 state.app.ui_state.show_studio_menu,
                 state.app.ui_state.show_device_popup,
                 state.app.ui_state.translations.playback_output_devices,
+                state.app.ui_state.min_font_size_px,
+                state.app.ui_state.max_font_size_px,
             )
         };
 
         // Apply combined font scale (user preference × responsive auto-scale) to rem size.
         // All rem-based sizes (text, padding, gaps) scale automatically.
         let responsive_scale = compute_responsive_scale(window_width, window_height);
-        let combined_scale =
-            (font_scale * responsive_scale).clamp(COMBINED_SCALE_MIN, COMBINED_SCALE_MAX);
+        let (scale_min, scale_max) = combined_scale_bounds(min_font_size_px, max_font_size_px);
+        let combined_scale = (font_scale * responsive_scale).clamp(scale_min, scale_max);
         window.set_rem_size(px(16.0 * combined_scale));
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.

@@ -434,6 +434,7 @@ fn probe_number_row(
         )
         .child(
             Button::new(format!("{label}_minus"), "−")
+                .aria_label(format!("Decrease {label}"))
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
@@ -450,6 +451,7 @@ fn probe_number_row(
         )
         .child(
             Button::new(format!("{label}_plus"), "+")
+                .aria_label(format!("Increase {label}"))
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())

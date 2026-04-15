@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use comrak::nodes::{AstNode, ListType, NodeValue};
 use gpui::*;
+use gpui_ui_kit::accessibility::{AccessibilityNode, AriaProps, AriaRole};
 
 use super::source_map::{SourceMap, SourceSpan};
 use super::text_layout::layout_paragraph;
@@ -11,6 +12,9 @@ use super::theme_colors::MdThemeColors;
 ///
 /// When `max_width_px` is provided (> 0), paragraph text is justified using
 /// Knuth-Plass optimal line breaking with accurate font measurement.
+///
+/// Returns `(elements, accessibility_nodes)` — the caller is responsible for
+/// registering the accessibility nodes via `cx.register_accessible()`.
 pub fn render_markdown<'a>(
     root: &'a AstNode<'a>,
     source_map: &mut SourceMap,
@@ -18,23 +22,25 @@ pub fn render_markdown<'a>(
     max_width_px: f32,
     text_system: Option<&Arc<WindowTextSystem>>,
     font_size: f32,
-) -> Vec<AnyElement> {
+) -> (Vec<AnyElement>, Vec<AccessibilityNode>) {
     let mut elements = Vec::new();
+    let mut a11y_nodes = Vec::new();
     let mut block_counter: usize = 0;
 
     for child in root.children() {
-        if let Some(el) = render_node(child, source_map, &mut block_counter, colors, max_width_px, text_system, font_size) {
+        if let Some(el) = render_node(child, source_map, &mut block_counter, &mut a11y_nodes, colors, max_width_px, text_system, font_size) {
             elements.push(el);
         }
     }
 
-    elements
+    (elements, a11y_nodes)
 }
 
 fn render_node<'a>(
     node: &'a AstNode<'a>,
     source_map: &mut SourceMap,
     counter: &mut usize,
+    a11y_nodes: &mut Vec<AccessibilityNode>,
     colors: &MdThemeColors,
     max_width_px: f32,
     text_system: Option<&Arc<WindowTextSystem>>,
@@ -98,6 +104,13 @@ fn render_node<'a>(
             let block_id = next_id(counter);
             source_map.insert(block_id.clone(), SourceSpan::from_comrak(sourcepos));
 
+            let heading_text_for_a11y = collect_text(node);
+            a11y_nodes.push(AccessibilityNode {
+                element_id: ElementId::Name(block_id.clone().into()),
+                label: heading_text_for_a11y.into(),
+                props: AriaProps::with_role(AriaRole::Heading).level(level as u8),
+            });
+
             let font_size = match level {
                 1 => 28.0_f32,
                 2 => 24.0,
@@ -128,6 +141,18 @@ fn render_node<'a>(
             let literal = code_block.literal.clone();
             let block_id = next_id(counter);
             source_map.insert(block_id.clone(), SourceSpan::from_comrak(sourcepos));
+
+            let lang = &code_block.info;
+            let code_label: SharedString = if lang.is_empty() {
+                "Code block".into()
+            } else {
+                format!("Code block ({lang})").into()
+            };
+            a11y_nodes.push(AccessibilityNode {
+                element_id: ElementId::Name(block_id.clone().into()),
+                label: code_label,
+                props: AriaProps::with_role(AriaRole::Region),
+            });
 
             Some(
                 div()
@@ -241,6 +266,12 @@ fn render_node<'a>(
         NodeValue::Table(_) => {
             let block_id = next_id(counter);
             source_map.insert(block_id.clone(), SourceSpan::from_comrak(sourcepos));
+
+            a11y_nodes.push(AccessibilityNode {
+                element_id: ElementId::Name(block_id.clone().into()),
+                label: "Table".into(),
+                props: AriaProps::with_role(AriaRole::Table),
+            });
 
             let mut rows = Vec::new();
             let mut body_row_count = 0usize;

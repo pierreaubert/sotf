@@ -559,6 +559,7 @@ impl PlayerView {
             // Cancel button
             .child(
                 Button::new("cancel-federation-scan", "x")
+                    .aria_label("Cancel federation scan")
                     .variant(ButtonVariant::Ghost)
                     .size(ButtonSize::Xs)
                     .theme(theme.to_button_theme())

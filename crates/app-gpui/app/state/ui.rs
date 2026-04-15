@@ -96,6 +96,10 @@ pub struct UIState {
     pub scanner_threads: Option<u8>,
     /// Maximum number of CPU cores SotF is allowed to use (None = all available)
     pub max_cpu_cores: Option<u8>,
+    /// Minimum font size in pixels (None = default 8px)
+    pub min_font_size_px: Option<f32>,
+    /// Maximum font size in pixels (None = default 32px)
+    pub max_font_size_px: Option<f32>,
     /// Selected design system language (None = platform default)
     pub design_language: Option<String>,
     /// Current tutorial screen index (0-6)
@@ -132,6 +136,8 @@ impl Default for UIState {
             release_channel: ReleaseChannel::default(),
             scanner_threads: None,
             max_cpu_cores: None,
+            min_font_size_px: None,
+            max_font_size_px: None,
             design_language: None,
             tutorial_screen: 0,
             tutorial_dont_show: false,

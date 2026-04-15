@@ -262,6 +262,7 @@ impl PlayerView {
                                     .gap(d.grid)
                                     .child(
                                         Button::new("preview-primary", "Pri")
+                                            .aria_label("Primary variant preview")
                                             .variant(ButtonVariant::Primary)
                                             .size(ButtonSize::Xs)
                                             .theme(preview_theme.to_button_theme())
@@ -269,6 +270,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         Button::new("preview-secondary", "Sec")
+                                            .aria_label("Secondary variant preview")
                                             .variant(ButtonVariant::Secondary)
                                             .size(ButtonSize::Xs)
                                             .theme(preview_theme.to_button_theme())
@@ -276,6 +278,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         Button::new("preview-destructive", "Del")
+                                            .aria_label("Destructive variant preview")
                                             .variant(ButtonVariant::Destructive)
                                             .size(ButtonSize::Xs)
                                             .theme(preview_theme.to_button_theme())
@@ -283,6 +286,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         Button::new("preview-ghost", "Gho")
+                                            .aria_label("Ghost variant preview")
                                             .variant(ButtonVariant::Ghost)
                                             .size(ButtonSize::Xs)
                                             .theme(preview_theme.to_button_theme())
@@ -290,6 +294,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         Button::new("preview-outline", "Out")
+                                            .aria_label("Outline variant preview")
                                             .variant(ButtonVariant::Outline)
                                             .size(ButtonSize::Xs)
                                             .theme(preview_theme.to_button_theme())

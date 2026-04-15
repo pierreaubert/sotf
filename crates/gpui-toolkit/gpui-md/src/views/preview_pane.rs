@@ -1,6 +1,7 @@
 use comrak::Arena;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::accessibility::AccessibilityExt;
 use gpui_ui_kit::theme::ThemeExt;
 
 use crate::markdown::{MdThemeColors, SourceMap, SourceSpan, parse_markdown, render_markdown};
@@ -86,7 +87,10 @@ impl Render for PreviewPane {
             0.0
         };
         let text_system = window.text_system().clone();
-        let raw_elements = render_markdown(root, &mut source_map, &md_colors, justify_width, Some(&text_system), preview_font_size);
+        let (raw_elements, a11y_nodes) = render_markdown(root, &mut source_map, &md_colors, justify_width, Some(&text_system), preview_font_size);
+        for node in a11y_nodes {
+            cx.register_accessible(node);
+        }
 
         self.cached_show_line_numbers = show_line_numbers;
         if needs_source_map_update {

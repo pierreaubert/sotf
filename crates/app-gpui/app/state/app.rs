@@ -982,6 +982,10 @@ impl App {
         // Restore font scale
         self.ui_state.font_scale = config.font_scale;
 
+        // Restore font size bounds
+        self.ui_state.min_font_size_px = config.min_font_size_px;
+        self.ui_state.max_font_size_px = config.max_font_size_px;
+
         // Restore release channel
         self.ui_state.release_channel = config.release_channel;
 
@@ -1199,6 +1203,8 @@ impl App {
             release_channel: self.ui_state.release_channel,
             scanner_threads: self.ui_state.scanner_threads,
             max_cpu_cores: self.ui_state.max_cpu_cores,
+            min_font_size_px: self.ui_state.min_font_size_px,
+            max_font_size_px: self.ui_state.max_font_size_px,
             tutorial_completed: self.tutorial_completed,
             seen_hints: self.seen_hints.clone(),
             design_language: self.ui_state.design_language.clone(),

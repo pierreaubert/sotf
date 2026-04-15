@@ -80,6 +80,7 @@ impl PlayerView {
                                 let state_for_text = self.state.clone();
                                 let state_for_end = self.state.clone();
                                 Input::new("speaker-search")
+                                    .aria_label("Search speakers")
                                     .placeholder("Type to search speakers...")
                                     .value(SharedString::from(search_query.clone()))
                                     .size(InputSize::Sm)

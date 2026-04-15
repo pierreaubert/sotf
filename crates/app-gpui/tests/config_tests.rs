@@ -126,6 +126,8 @@ fn test_config_serialization() {
         tutorial_completed: false,
         seen_hints: Vec::new(),
         max_cpu_cores: None,
+        min_font_size_px: None,
+        max_font_size_px: None,
         design_language: None,
     };
     let json = serde_json::to_string(&config).unwrap();
@@ -401,21 +403,21 @@ fn test_compute_responsive_scale_uses_constraining_axis() {
 
 #[test]
 fn test_pagination_reference_window() {
-    let (cols, rows) = estimate_grid_dimensions(1200.0, 800.0, 1.0);
+    let (cols, rows) = estimate_grid_dimensions(1200.0, 800.0, 1.0, None, None);
     assert!((5..=8).contains(&cols), "expected 5-8 columns, got {cols}");
     assert!((1..=4).contains(&rows), "expected 1-4 rows, got {rows}");
 }
 
 #[test]
 fn test_pagination_phone_window() {
-    let (cols, rows) = estimate_grid_dimensions(375.0, 667.0, 1.0);
+    let (cols, rows) = estimate_grid_dimensions(375.0, 667.0, 1.0, None, None);
     assert!((1..=5).contains(&cols), "expected 1-5 columns, got {cols}");
     assert!(rows >= 1, "expected at least 1 row, got {rows}");
 }
 
 #[test]
 fn test_pagination_4k_window() {
-    let (cols, rows) = estimate_grid_dimensions(3840.0, 2160.0, 1.0);
+    let (cols, rows) = estimate_grid_dimensions(3840.0, 2160.0, 1.0, None, None);
     assert!(cols >= 8, "expected >=8 columns on 4K, got {cols}");
     assert!(rows >= 2, "expected >=2 rows on 4K, got {rows}");
 }

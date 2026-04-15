@@ -104,6 +104,7 @@ fn render_path_section(
             )
             .child(
                 Button::new(SharedString::from(format!("ab-add-{path}")), "+")
+                    .aria_label("Add plugin for comparison")
                     .variant(if add_menu_open {
                         ButtonVariant::Primary
                     } else {
@@ -234,6 +235,7 @@ fn render_sub_plugin_card(
                 SharedString::from(format!("ab-up-{path}-{sub_idx}")),
                 "\u{25B2}",
             )
+            .aria_label("Move plugin up")
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::Xs)
             .theme(theme.to_button_theme())
@@ -261,6 +263,7 @@ fn render_sub_plugin_card(
                 SharedString::from(format!("ab-down-{path}-{sub_idx}")),
                 "\u{25BC}",
             )
+            .aria_label("Move plugin down")
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::Xs)
             .theme(theme.to_button_theme())
@@ -285,6 +288,7 @@ fn render_sub_plugin_card(
             SharedString::from(format!("ab-rm-{path}-{sub_idx}")),
             "\u{2715}",
         )
+        .aria_label("Remove plugin")
         .variant(ButtonVariant::Ghost)
         .size(ButtonSize::Xs)
         .theme(theme.to_button_theme())

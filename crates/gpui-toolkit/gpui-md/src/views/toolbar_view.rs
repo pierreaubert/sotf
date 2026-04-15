@@ -1,5 +1,6 @@
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use gpui_ui_kit::theme::ThemeExt;
 
 use crate::state::MdAppState;
@@ -17,6 +18,32 @@ impl ToolbarView {
 
 impl Render for ToolbarView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Register toolbar accessibility
+        cx.register_accessible(AccessibilityNode {
+            element_id: "toolbar".into(),
+            label: "Formatting toolbar".into(),
+            props: AriaProps::with_role(AriaRole::Toolbar),
+        });
+        for (id, label) in [
+            ("md-tb-bold", "Bold"),
+            ("md-tb-italic", "Italic"),
+            ("md-tb-code", "Inline code"),
+            ("md-tb-strike", "Strikethrough"),
+            ("md-tb-h1", "Heading 1"),
+            ("md-tb-h2", "Heading 2"),
+            ("md-tb-h3", "Heading 3"),
+            ("md-tb-link", "Insert link"),
+            ("md-tb-codeblock", "Insert code block"),
+            ("md-tb-hr", "Horizontal rule"),
+            ("md-tb-task", "Insert task"),
+        ] {
+            cx.register_accessible(AccessibilityNode {
+                element_id: id.into(),
+                label: label.into(),
+                props: AriaProps::with_role(AriaRole::Button),
+            });
+        }
+
         let theme = cx.theme();
         let state = self.state.clone();
         let surface = theme.surface;

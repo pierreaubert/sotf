@@ -228,6 +228,12 @@ pub struct Config {
     /// Maximum number of CPU cores SotF is allowed to use (None = all available)
     #[serde(default)]
     pub max_cpu_cores: Option<u8>,
+    /// Minimum font size in pixels (None = default 8px)
+    #[serde(default)]
+    pub min_font_size_px: Option<f32>,
+    /// Maximum font size in pixels (None = default 32px)
+    #[serde(default)]
+    pub max_font_size_px: Option<f32>,
     /// Whether the tutorial has been completed/dismissed
     #[serde(default)]
     pub tutorial_completed: bool,
@@ -268,6 +274,8 @@ impl Config {
                 release_channel: ReleaseChannel::default(),
                 scanner_threads: None,
                 max_cpu_cores: None,
+                min_font_size_px: None,
+                max_font_size_px: None,
                 tutorial_completed: false,
                 seen_hints: Vec::new(),
                 design_language: None,

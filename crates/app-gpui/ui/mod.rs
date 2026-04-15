@@ -59,10 +59,12 @@ pub fn estimate_grid_dimensions(
     window_width: f32,
     window_height: f32,
     font_scale: f32,
+    min_font_size_px: Option<f32>,
+    max_font_size_px: Option<f32>,
 ) -> (usize, usize) {
     let responsive_scale = compute_responsive_scale(window_width, window_height);
-    let combined_scale =
-        (font_scale * responsive_scale).clamp(COMBINED_SCALE_MIN, COMBINED_SCALE_MAX);
+    let (scale_min, scale_max) = combined_scale_bounds(min_font_size_px, max_font_size_px);
+    let combined_scale = (font_scale * responsive_scale).clamp(scale_min, scale_max);
     let effective_rem = 16.0 * combined_scale;
 
     let card_with_gap = (ALBUM_CARD_WIDTH_REMS + ALBUM_CARD_GAP_REMS) * effective_rem;
@@ -78,13 +80,19 @@ pub fn estimate_grid_dimensions(
     (columns, rows)
 }
 
-/// Minimum combined scale (font_scale × responsive_scale). Prevents the UI from becoming
-/// unusably small even with minimum font_scale on a tiny window.
-const COMBINED_SCALE_MIN: f32 = 0.25;
+/// Default minimum font size in pixels.
+pub const DEFAULT_MIN_FONT_SIZE_PX: f32 = 8.0;
 
-/// Maximum combined scale (font_scale × responsive_scale). Caps the effective rem size so
-/// extreme combinations (e.g. font_scale=2.0 on a 4K display) don't blow out layout.
-const COMBINED_SCALE_MAX: f32 = 3.0;
+/// Default maximum font size in pixels.
+pub const DEFAULT_MAX_FONT_SIZE_PX: f32 = 32.0;
+
+/// Convert min/max font size in pixels to combined scale bounds.
+/// Uses defaults when `None` is provided.
+pub fn combined_scale_bounds(min_px: Option<f32>, max_px: Option<f32>) -> (f32, f32) {
+    let min = min_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX) / 16.0;
+    let max = max_px.unwrap_or(DEFAULT_MAX_FONT_SIZE_PX) / 16.0;
+    (min, max)
+}
 
 pub struct PlayerView {
     pub state: Entity<AppState>,
@@ -1355,16 +1363,19 @@ impl PlayerView {
     /// Recalculate library pagination based on current layout.
     /// Uses the responsive scale to compute card sizes that match rem-based rendering.
     pub(crate) fn recalculate_pagination(&self, cx: &mut Context<Self>, force_reset: bool) {
-        let (window_width, window_height, font_scale) = {
+        let (window_width, window_height, font_scale, min_font_px, max_font_px) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.window_width,
                 state.app.ui_state.window_height,
                 state.app.ui_state.font_scale,
+                state.app.ui_state.min_font_size_px,
+                state.app.ui_state.max_font_size_px,
             )
         };
 
-        let (columns, rows) = estimate_grid_dimensions(window_width, window_height, font_scale);
+        let (columns, rows) =
+            estimate_grid_dimensions(window_width, window_height, font_scale, min_font_px, max_font_px);
 
         self.state.update(cx, |state, _cx| {
             let app = &mut state.app;

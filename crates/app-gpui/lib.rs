@@ -71,7 +71,10 @@ pub use components::migration::{check_needs_migration, sanitize_filename};
 pub use components::home::image_cache::MAX_CACHE_SIZE;
 
 // Re-export UI functions for testing
-pub use ui::{compute_responsive_scale, estimate_grid_dimensions};
+pub use ui::{
+    combined_scale_bounds, compute_responsive_scale, estimate_grid_dimensions,
+    DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX,
+};
 
 // Re-export EQ chart functions and constants for testing
 pub use components::plugins::ui_eq::{
