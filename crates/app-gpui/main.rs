@@ -208,7 +208,7 @@ fn main() {
                 });
 
             // Apply saved design language if present
-            if let Some(ref dl) = config.as_ref().and_then(|c| c.design_language.as_ref()) {
+            if let Some(dl) = config.as_ref().and_then(|c| c.design_language.as_ref()) {
                 use gpui_design::{DesignSystem, DesignSystemState};
                 let system = match dl.as_str() {
                     "neutral" => DesignSystem::neutral(),

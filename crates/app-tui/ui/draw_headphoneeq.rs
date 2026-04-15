@@ -378,15 +378,15 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             ];
 
             // Show preset description in Simple mode
-            if detail == DetailLevel::Simple {
-                if let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
-                {
-                    lines.push(Line::from(Span::styled(
-                        format!("  {}", preset.description),
-                        Style::default().fg(app.theme.fg_secondary),
-                    )));
-                    lines.push(Line::from(""));
-                }
+            if detail == DetailLevel::Simple
+                && let Some(preset) =
+                    autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
+            {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", preset.description),
+                    Style::default().fg(app.theme.fg_secondary),
+                )));
+                lines.push(Line::from(""));
             }
 
             for (idx, label, value) in &rows {

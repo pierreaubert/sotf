@@ -11,13 +11,14 @@ use num_complex::Complex64;
 use std::f64::consts::PI;
 
 /// Crossover filter type for multi-driver optimization
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CrossoverType {
     /// 2nd order Butterworth (12 dB/octave)
     Butterworth2,
     /// 2nd order Linkwitz-Riley (12 dB/octave)
     LinkwitzRiley2,
     /// 4th order Linkwitz-Riley (24 dB/octave) — most common
+    #[default]
     #[serde(alias = "LR24")]
     LinkwitzRiley4,
     /// 8th order Linkwitz-Riley (48 dB/octave)
@@ -25,12 +26,6 @@ pub enum CrossoverType {
     LinkwitzRiley8,
     /// No crossover filter (for multi-sub optimization)
     None,
-}
-
-impl Default for CrossoverType {
-    fn default() -> Self {
-        CrossoverType::LinkwitzRiley4
-    }
 }
 
 impl CrossoverType {

@@ -56,7 +56,7 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         status_spans.push(Span::raw(" | "));
     }
 
-    if app.plugin_graph.len() > 0 {
+    if !app.plugin_graph.is_empty() {
         let plugin_status = if app.plugin_update_in_progress {
             format!("Plugins: {} [updating...] ", app.plugin_graph.len())
         } else {

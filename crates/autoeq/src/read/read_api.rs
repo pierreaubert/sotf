@@ -1071,12 +1071,11 @@ async fn fetch_headphone_csv_from_api(
 
     // Check for JSON error response (the API returns JSON errors even though
     // successful responses are CSV)
-    if body.trim_start().starts_with('{') {
-        if let Ok(json) = serde_json::from_str::<Value>(&body) {
-            if let Some(error_msg) = json.get("error").and_then(|e| e.as_str()) {
-                return Err(error_msg.to_string().into());
-            }
-        }
+    if body.trim_start().starts_with('{')
+        && let Ok(json) = serde_json::from_str::<Value>(&body)
+        && let Some(error_msg) = json.get("error").and_then(|e| e.as_str())
+    {
+        return Err(error_msg.to_string().into());
     }
 
     // Cache the raw CSV

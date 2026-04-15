@@ -62,13 +62,13 @@ impl App {
     }
 
     pub fn select_next_plugin(&mut self) {
-        if self.plugin_graph.len() > 0 {
+        if !self.plugin_graph.is_empty() {
             self.selected_plugin_index = (self.selected_plugin_index + 1) % self.plugin_graph.len();
         }
     }
 
     pub fn select_previous_plugin(&mut self) {
-        if self.plugin_graph.len() > 0 {
+        if !self.plugin_graph.is_empty() {
             if self.selected_plugin_index == 0 {
                 self.selected_plugin_index = self.plugin_graph.len() - 1;
             } else {

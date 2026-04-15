@@ -21,12 +21,12 @@ impl App {
             is_available: None,
         };
 
-        if let Some(db) = self.library_state.library.get_database() {
-            if let Err(e) = db.save_federation_source(&source) {
-                self.ui_state.toast_message =
-                    Some(ToastMessage::error(format!("Failed to save source: {e}")));
-                return;
-            }
+        if let Some(db) = self.library_state.library.get_database()
+            && let Err(e) = db.save_federation_source(&source)
+        {
+            self.ui_state.toast_message =
+                Some(ToastMessage::error(format!("Failed to save source: {e}")));
+            return;
         }
 
         self.federation_sources.push(source);

@@ -493,10 +493,11 @@ fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
     }
 }
 
-/// Kick off the tone-burst probe capture on a background thread. The
-/// shared-slot pattern mirrors `spawn_room_eq_optimization` (OnceLock
-/// + Arc<Mutex>), drained by [`poll_probe_capture`] on every main
-/// loop tick.
+/// Kick off the tone-burst probe capture on a background thread.
+///
+/// The shared-slot pattern mirrors `spawn_room_eq_optimization`
+/// (`OnceLock` + `Arc<Mutex>`), drained by [`poll_probe_capture`] on every
+/// main loop tick.
 #[allow(clippy::type_complexity)]
 static PROBE_CAPTURE_RESULT: std::sync::OnceLock<
     Arc<

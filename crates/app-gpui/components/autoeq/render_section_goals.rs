@@ -128,18 +128,18 @@
     section = section.child(target_curve_select);
 
     // Show "Edit" button when custom target curve is selected
-    if config.target_curve == "custom" {
-        if let Some(ref handler) = on_edit_custom_target_rc {
-            let h = handler.clone();
-            section = section.child(
-                Button::new("edit-custom-target", "Edit Target Curve")
-                    .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Xs)
-                    .on_click(move |w, cx| {
-                        h(w, cx);
-                    }),
-            );
-        }
+    if config.target_curve == "custom"
+        && let Some(ref handler) = on_edit_custom_target_rc
+    {
+        let h = handler.clone();
+        section = section.child(
+            Button::new("edit-custom-target", "Edit Target Curve")
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Xs)
+                .on_click(move |w, cx| {
+                    h(w, cx);
+                }),
+        );
     }
 
     Card::new().content(section)

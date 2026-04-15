@@ -33,10 +33,10 @@
 
     for (mode_id, label, latency, description, recommended) in &modes {
         // Skip modes not in allowed list
-        if let Some(ref allowed) = allowed_opt_modes {
-            if !allowed.contains(&mode_id.to_string()) {
-                continue;
-            }
+        if let Some(ref allowed) = allowed_opt_modes
+            && !allowed.contains(&mode_id.to_string())
+        {
+            continue;
         }
 
         let is_selected = config.opt_mode == *mode_id;

@@ -361,10 +361,10 @@ impl RoomEqState {
         let config = &mut self.optimizer_config;
 
         // Seed sample rate from playback device when still at default
-        if let Some(sr) = playback_sample_rate {
-            if config.sample_rate == 48000 {
-                config.sample_rate = sr as usize;
-            }
+        if let Some(sr) = playback_sample_rate
+            && config.sample_rate == 48000
+        {
+            config.sample_rate = sr as usize;
         }
 
         // Loss type is always flat for room EQ

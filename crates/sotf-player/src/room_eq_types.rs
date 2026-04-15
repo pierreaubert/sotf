@@ -1171,8 +1171,56 @@ fn default_room_smooth_n() -> usize {
 fn default_room_strategy() -> String {
     "lshade".to_string()
 }
+fn default_de_f() -> f64 {
+    0.8
+}
+fn default_de_cr() -> f64 {
+    0.9
+}
+fn default_adaptive_weight_f() -> f64 {
+    0.8
+}
+fn default_adaptive_weight_cr() -> f64 {
+    0.7
+}
+fn default_spacing_weight() -> f64 {
+    1.0
+}
+fn default_min_spacing_oct() -> f64 {
+    0.08
+}
+fn default_sample_rate() -> usize {
+    48000
+}
 fn default_room_tolerance() -> f64 {
     1e-5
+}
+
+/// Classical sample rates for audio (44.1k and 48k families, up to 8x).
+pub const CLASSICAL_SAMPLE_RATES: &[usize] = &[
+    44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000,
+];
+
+/// Given a raw sample-rate value, snap to the next classical rate above it.
+/// Returns the highest rate if already at or above the top.
+pub fn next_sample_rate(current: usize) -> usize {
+    for &rate in CLASSICAL_SAMPLE_RATES {
+        if rate > current {
+            return rate;
+        }
+    }
+    *CLASSICAL_SAMPLE_RATES.last().unwrap()
+}
+
+/// Given a raw sample-rate value, snap to the previous classical rate below it.
+/// Returns the lowest rate if already at or below the bottom.
+pub fn prev_sample_rate(current: usize) -> usize {
+    for &rate in CLASSICAL_SAMPLE_RATES.iter().rev() {
+        if rate < current {
+            return rate;
+        }
+    }
+    *CLASSICAL_SAMPLE_RATES.first().unwrap()
 }
 fn default_room_atolerance() -> f64 {
     1e-5
@@ -1189,6 +1237,20 @@ pub struct RoomEqOptimizerConfig {
     pub algorithm: String,
     #[serde(default = "default_room_strategy")]
     pub strategy: String,
+    #[serde(default = "default_de_f")]
+    pub de_f: f64,
+    #[serde(default = "default_de_cr")]
+    pub de_cr: f64,
+    #[serde(default = "default_adaptive_weight_f")]
+    pub adaptive_weight_f: f64,
+    #[serde(default = "default_adaptive_weight_cr")]
+    pub adaptive_weight_cr: f64,
+    #[serde(default = "default_spacing_weight")]
+    pub spacing_weight: f64,
+    #[serde(default = "default_min_spacing_oct")]
+    pub min_spacing_oct: f64,
+    #[serde(default = "default_sample_rate")]
+    pub sample_rate: usize,
     pub num_filters: usize,
     pub min_q: f64,
     pub max_q: f64,
@@ -1258,6 +1320,13 @@ impl Default for RoomEqOptimizerConfig {
             multi_speaker_mode: MultiSpeakerMode::Combined,
             algorithm: "autoeq:de".to_string(),
             strategy: "lshade".to_string(),
+            de_f: default_de_f(),
+            de_cr: default_de_cr(),
+            adaptive_weight_f: default_adaptive_weight_f(),
+            adaptive_weight_cr: default_adaptive_weight_cr(),
+            spacing_weight: default_spacing_weight(),
+            min_spacing_oct: default_min_spacing_oct(),
+            sample_rate: default_sample_rate(),
             num_filters: 7,
             min_q: 0.5,
             max_q: 6.0,

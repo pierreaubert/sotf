@@ -446,20 +446,20 @@ fn render_response_comparison_graph(
     let target_interpolated =
         target_curve.map(|target| interpolate_target_at_frequencies(&frequencies, target));
 
-    if normalize_to_target {
-        if let Some(ref target_vals) = target_interpolated {
-            // Normalize target with same 1-2kHz method, then subtract from
-            // original/corrected (which already had their own offset subtracted)
-            let target_offset = crate::app::types::RoomEqState::calculate_normalization_offset(
-                &frequencies,
-                target_vals,
-            );
-            for (i, v) in original_values.iter_mut().enumerate() {
-                *v -= target_vals[i] - target_offset;
-            }
-            for (i, v) in corrected_values.iter_mut().enumerate() {
-                *v -= target_vals[i] - target_offset;
-            }
+    if normalize_to_target
+        && let Some(ref target_vals) = target_interpolated
+    {
+        // Normalize target with same 1-2kHz method, then subtract from
+        // original/corrected (which already had their own offset subtracted)
+        let target_offset = crate::app::types::RoomEqState::calculate_normalization_offset(
+            &frequencies,
+            target_vals,
+        );
+        for (i, v) in original_values.iter_mut().enumerate() {
+            *v -= target_vals[i] - target_offset;
+        }
+        for (i, v) in corrected_values.iter_mut().enumerate() {
+            *v -= target_vals[i] - target_offset;
         }
     }
 

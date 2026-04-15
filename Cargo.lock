@@ -4298,6 +4298,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-elisp"
+version = "0.6.1"
+dependencies = [
+ "parking_lot",
+]
+
+[[package]]
 name = "gpui-ios"
 version = "0.6.1"
 dependencies = [
@@ -4331,15 +4338,17 @@ dependencies = [
 
 [[package]]
 name = "gpui-md"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "clap",
  "comrak",
+ "dirs 5.0.1",
  "docx",
  "genpdf",
  "gpui 0.2.2 (git+https://github.com/zed-industries/zed.git?rev=ebb451ec7b5bfdd60e7b70cf56f066c8f9a12293)",
  "gpui-builder",
  "gpui-design",
+ "gpui-elisp",
  "gpui-keybinding",
  "gpui-pretext",
  "gpui-ui-kit",

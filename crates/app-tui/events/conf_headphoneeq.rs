@@ -707,24 +707,24 @@ fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
         let new_id = super::cycle_string(&app.headphone_eq.selected_preset, &ids, delta);
         app.headphone_eq.selected_preset = new_id.clone();
         // Apply preset parameters (skip for "custom")
-        if let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &new_id) {
-            if let Some(params) = preset.apply() {
-                let c = &mut app.headphone_eq.config;
-                c.num_filters = params.num_filters;
-                c.min_freq = params.min_freq;
-                c.max_freq = params.max_freq;
-                c.min_db = params.min_db;
-                c.max_db = params.max_db;
-                c.min_q = params.min_q;
-                c.max_q = params.max_q;
-                c.peq_model = params.peq_model;
-                c.population = params.population;
-                c.max_iter = params.maxeval;
-                c.refine = params.refine;
-                c.smooth = params.smooth;
-                c.smooth_n = params.smooth_n;
-                c.loss = params.loss;
-            }
+        if let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &new_id)
+            && let Some(params) = preset.apply()
+        {
+            let c = &mut app.headphone_eq.config;
+            c.num_filters = params.num_filters;
+            c.min_freq = params.min_freq;
+            c.max_freq = params.max_freq;
+            c.min_db = params.min_db;
+            c.max_db = params.max_db;
+            c.min_q = params.min_q;
+            c.max_q = params.max_q;
+            c.peq_model = params.peq_model;
+            c.population = params.population;
+            c.max_iter = params.maxeval;
+            c.refine = params.refine;
+            c.smooth = params.smooth;
+            c.smooth_n = params.smooth_n;
+            c.loss = params.loss;
         }
         return;
     }
@@ -1020,6 +1020,7 @@ pub fn poll_headphone_list_load(app: &mut App) -> bool {
 // Headphone measurement download (spinorama.org)
 // ==========================================================================
 
+#[allow(clippy::type_complexity)]
 static HEADPHONE_DOWNLOAD_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<String, String>>>>> =
     std::sync::OnceLock::new();
 

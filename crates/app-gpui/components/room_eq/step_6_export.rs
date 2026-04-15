@@ -377,8 +377,8 @@ impl PlayerView {
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
                     .add_filter(format_name, &[ext])
-                    .set_title(&format!("Export Room EQ — {}", format_name))
-                    .set_file_name(&format!("room_eq.{}", ext))
+                    .set_title(format!("Export Room EQ — {}", format_name))
+                    .set_file_name(format!("room_eq.{}", ext))
                     .save_file()
                     .await;
 

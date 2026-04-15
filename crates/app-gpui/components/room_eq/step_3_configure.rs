@@ -1695,7 +1695,7 @@ impl PlayerView {
 
         // Build compact mode selector buttons (75px each)
         let current_mode = room_eq.optimizer_config.mode;
-        let mode_selector = {
+        let _mode_selector = {
             let modes: Vec<RoomEqOptimizationMode> = if has_phase_data {
                 RoomEqOptimizationMode::available(release_channel)
             } else {
@@ -1779,6 +1779,7 @@ impl PlayerView {
 
     /// Render slope recommendation based on L and R channel measurements.
     /// Shows computed slope and recommended range.
+    #[allow(dead_code)]
     fn render_slope_recommendation(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();

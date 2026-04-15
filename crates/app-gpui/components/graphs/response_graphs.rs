@@ -6,7 +6,6 @@
 use crate::components::graphs::common::{render_empty_state, rgba_to_u32, theme_to_chart_theme};
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
 use gpui_px::{LegendPosition, ScaleType, line};
 
 /// Fallback channel colors when no theme is available.

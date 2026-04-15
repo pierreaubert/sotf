@@ -130,14 +130,14 @@ impl PluginController {
 
     /// Select the next plugin in the chain.
     pub fn select_next_plugin(&mut self) {
-        if self.graph.len() > 0 {
+        if !self.graph.is_empty() {
             self.selected_plugin_index = (self.selected_plugin_index + 1) % self.graph.len();
         }
     }
 
     /// Select the previous plugin in the chain.
     pub fn select_previous_plugin(&mut self) {
-        if self.graph.len() > 0 {
+        if !self.graph.is_empty() {
             if self.selected_plugin_index == 0 {
                 self.selected_plugin_index = self.graph.len() - 1;
             } else {

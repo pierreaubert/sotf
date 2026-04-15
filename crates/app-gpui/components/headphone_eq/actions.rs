@@ -549,6 +549,7 @@ impl PlayerView {
 
         // Single thread: fetch versions → first version → measurements → first measurement → download curve → save CSV
         // Result contains (csv_path, curve_data)
+        #[allow(clippy::type_complexity)]
         static DOWNLOAD_RESULT: std::sync::Mutex<
             Option<Result<(String, Vec<(f64, f64)>), String>>,
         > = std::sync::Mutex::new(None);

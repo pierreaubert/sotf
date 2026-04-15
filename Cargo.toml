@@ -76,6 +76,7 @@ members = [
     "crates/gpui-toolkit/gpui-keybinding",
     "crates/gpui-toolkit/gpui-md",
     "crates/gpui-toolkit/gpui-pretext",
+    "crates/elisp",
     "crates/gpui-toolkit/gpui-themes",
     # iOS/tvOS app shells — compile on macOS (cargo check) but only link for iOS/tvOS targets
     "crates/gpui-toolkit/gpui-ui-kit/ios",
@@ -189,6 +190,9 @@ gpui-builder = { version = "0.6", path = "crates/gpui-toolkit/gpui-builder" }
 gpui-design = { version = "0.6", path = "crates/gpui-toolkit/gpui-design" }
 gpui-keybinding = { version = "0.6", path = "crates/gpui-toolkit/gpui-keybinding" }
 gpui-pretext = { version = "0.6", path = "crates/gpui-toolkit/gpui-pretext" }
+
+# Editor
+gpui-elisp = { version = "0.6", path = "crates/elisp" }
 
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }

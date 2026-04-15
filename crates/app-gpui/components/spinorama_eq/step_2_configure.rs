@@ -144,7 +144,7 @@ impl PlayerView {
                         "ON" => SpinoramaTargetCurve::OnAxis,
                         "LW" => SpinoramaTargetCurve::ListeningWindow,
                         "ER" => SpinoramaTargetCurve::EarlyReflections,
-                        "PIR" | _ => SpinoramaTargetCurve::EstimatedInRoom,
+                        _ => SpinoramaTargetCurve::EstimatedInRoom,
                     };
                     state.update(cx, |state, cx| {
                         state

@@ -34,6 +34,7 @@ pub(crate) fn is_narrow_default_layout(available_width: f32) -> bool {
     available_width > 0.0 && available_width < 720.0
 }
 
+#[allow(dead_code)]
 pub(crate) fn is_single_column_default_grid(available_width: f32) -> bool {
     available_width > 0.0 && available_width < 520.0
 }
@@ -213,6 +214,7 @@ pub struct AutoEqForm {
     pub(crate) on_multi_measurement_strategy_change: Option<StringCallback>,
     pub(crate) on_multi_measurement_strategy_toggle: Option<ToggleCallback>,
     pub(crate) on_multi_measurement_variance_lambda_change: Option<F64Callback>,
+    #[allow(clippy::type_complexity)]
     pub(crate) on_multi_measurement_weight_change:
         Option<Box<dyn Fn(usize, f64, &mut Window, &mut App)>>,
 

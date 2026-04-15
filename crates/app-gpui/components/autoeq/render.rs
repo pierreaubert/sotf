@@ -40,7 +40,7 @@ impl RenderOnce for AutoEqForm {
         let ui_state = self.ui_state;
         let disabled = self.disabled;
         let show_goals = self.show_goals;
-        let show_eq_design = self.show_eq_design;
+        let _show_eq_design = self.show_eq_design;
         let show_optimization_tuning = self.show_optimization_tuning;
         let optimization_type = self.optimization_type;
         let available_spinorama_curves = self.available_spinorama_curves;
@@ -52,7 +52,7 @@ impl RenderOnce for AutoEqForm {
         let hide_sample_rate = self.hide_sample_rate;
         let hide_phase_alignment = self.hide_phase_alignment;
         let hide_multi_seat = self.hide_multi_seat;
-        let hide_scenario_a_text = self.hide_scenario_a_text;
+        let _hide_scenario_a_text = self.hide_scenario_a_text;
         let hide_room_sections = self.hide_room_sections;
         let hide_multi_measurement = self.hide_multi_measurement;
         let hide_capability_section = self.hide_capability_section;
@@ -66,7 +66,7 @@ impl RenderOnce for AutoEqForm {
         let layout_mode = self.layout_mode;
         // Wrap callbacks in Rc for sharing
         let on_opt_mode_change_rc = self.on_opt_mode_change.map(std::rc::Rc::new);
-        let on_opt_mode_toggle_rc = self.on_opt_mode_toggle.map(std::rc::Rc::new);
+        let _on_opt_mode_toggle_rc = self.on_opt_mode_toggle.map(std::rc::Rc::new);
         let on_fir_taps_change_rc = self.on_fir_taps_change.map(std::rc::Rc::new);
         let on_fir_phase_change_rc = self.on_fir_phase_change.map(std::rc::Rc::new);
         let on_fir_phase_toggle_rc = self.on_fir_phase_toggle.map(std::rc::Rc::new);

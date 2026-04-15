@@ -276,7 +276,7 @@
             .max(ParamLimits::FIR_TAPS.max)
             .step(ParamLimits::FIR_TAPS.step)
             .decimals(0)
-            .label(&format!("Taps (latency: {fir_latency_ms:.1} ms)"))
+            .label(format!("Taps (latency: {fir_latency_ms:.1} ms)"))
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());

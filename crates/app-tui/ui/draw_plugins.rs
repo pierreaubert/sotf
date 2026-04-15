@@ -13,7 +13,7 @@ pub(crate) fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
     // Draw help box with contextual text
     if app.input_mode == InputMode::AddPlugin {
         draw_help_box_with_text(f, vchunks[0], app, "↑/↓=navigate  Enter=add  Esc=cancel");
-    } else if app.plugin_graph.len() == 0 {
+    } else if app.plugin_graph.is_empty() {
         draw_help_box_with_text(f, vchunks[0], app, "'a'=add plugins  's'=save  'l'=load");
     } else {
         draw_help_box(f, vchunks[0], app, Screen::Plugins);
@@ -63,7 +63,7 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let title = if app.plugin_graph.len() == 0 {
+    let title = if app.plugin_graph.is_empty() {
         "0 plugins".to_string()
     } else {
         format!(
@@ -83,7 +83,7 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
         );
 
     let mut state = ListState::default();
-    if app.plugin_graph.len() > 0 {
+    if !app.plugin_graph.is_empty() {
         state.select(Some(app.selected_plugin_index));
     }
 
