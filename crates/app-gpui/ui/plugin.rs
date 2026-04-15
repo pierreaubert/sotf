@@ -81,6 +81,8 @@ impl PlayerView {
                     state.app.plugin_state.graph.output_channels(),
                     sample_rate
                 );
+                // Invalidate the workflow canvas so the graph view rebuilds
+                state.app.plugin_state.workflow_canvas = None;
                 state.player.lock().update_plugins(plugins)
             }
         };

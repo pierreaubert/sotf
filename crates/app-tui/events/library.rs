@@ -131,11 +131,19 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
             None
         }
         KeyCode::Char('a') | KeyCode::Enter => {
-            let path = match app.library_view_mode {
+            let result = match app.library_view_mode {
                 LibraryViewMode::Flat => app.add_album_to_queue(),
-                LibraryViewMode::TreeView => app.add_tree_selection_to_queue(),
+                LibraryViewMode::TreeView => Ok(app.add_tree_selection_to_queue()),
             };
-            path.map(PlayerCommand::Play)
+            match result {
+                Ok(Some(source)) => Some(PlayerCommand::Play(source)),
+                Err(e) => {
+                    app.error_message = Some(e);
+                    app.enter_overlay_mode(InputMode::ShowError);
+                    None
+                }
+                _ => None,
+            }
         }
         KeyCode::Char('f') => {
             // Toggle favorite on selected album

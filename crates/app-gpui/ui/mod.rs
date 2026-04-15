@@ -766,10 +766,14 @@ impl PlayerView {
     fn add_to_queue(&mut self, _: &AddToQueue, _: &mut Window, cx: &mut Context<Self>) {
         log::info!("[UI] AddToQueue action handler triggered");
         self.state.update(cx, |state, _cx| {
-            // add_album_to_queue returns Some(path) only when playback should start
-            // (queue was empty or not playing). The method already handles the logic internally.
-            if let Some(path) = state.app.add_album_to_queue() {
-                Self::play_track(state, path);
+            match state.app.add_album_to_queue() {
+                Ok(Some(path)) => Self::play_track(state, path),
+                Err(e) => {
+                    log::warn!("[UI] Cannot add to queue: {}", e);
+                    state.app.ui_state.toast_message =
+                        Some(crate::app::ToastMessage::error(e));
+                }
+                _ => {}
             }
         });
         cx.notify();
@@ -778,9 +782,14 @@ impl PlayerView {
     fn play_now(&mut self, _: &PlayNow, _: &mut Window, cx: &mut Context<Self>) {
         log::info!("[UI] PlayNow action handler triggered");
         self.state.update(cx, |state, _cx| {
-            // Play album now (add to queue and start playing)
-            if let Some(path) = state.app.play_album_now() {
-                Self::play_track(state, path);
+            match state.app.play_album_now() {
+                Ok(Some(path)) => Self::play_track(state, path),
+                Err(e) => {
+                    log::warn!("[UI] Cannot play album: {}", e);
+                    state.app.ui_state.toast_message =
+                        Some(crate::app::ToastMessage::error(e));
+                }
+                _ => {}
             }
         });
         cx.notify();
@@ -1131,7 +1140,11 @@ impl PlayerView {
                     };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
-                        state.app.set_plugin_param_string(plugin_idx, 0, path);
+                        if let Err(e) = state.app.set_plugin_param_string(plugin_idx, 0, path) {
+                            log::error!("[GPUI] Invalid SOFA file path: {}", e);
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::error(e));
+                        }
                         cx.notify();
                     });
                 }
@@ -1163,7 +1176,11 @@ impl PlayerView {
                     };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
-                        state.app.set_plugin_param_string(plugin_idx, 0, path);
+                        if let Err(e) = state.app.set_plugin_param_string(plugin_idx, 0, path) {
+                            log::error!("[GPUI] Invalid IR file path: {}", e);
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::error(e));
+                        }
                         cx.notify();
                     });
                 }
@@ -1203,7 +1220,8 @@ impl PlayerView {
                             if serde_json::from_str::<serde_json::Value>(&content).is_ok() {
                                 let param_idx = if path_id == "a" { 9 } else { 10 };
                                 state_entity.update(&mut cx.clone(), |state, cx| {
-                                    state
+                                    // AB Compare configs are JSON, not file paths — error won't occur
+                                let _ = state
                                         .app
                                         .set_plugin_param_string(plugin_idx, param_idx, content);
                                     // Store the source file path for display
@@ -1248,7 +1266,8 @@ impl PlayerView {
             };
             add_path_plugin(plugins, &action.plugin_type);
             let json = encode_path_config(plugins);
-            state
+            // AB Compare configs are JSON, not file paths — validation won't reject
+            let _ = state
                 .app
                 .set_plugin_param_string(plugin_idx, param_idx, json);
             state.app.plugin_state.ab_add_menu_target = None;
@@ -1276,7 +1295,7 @@ impl PlayerView {
             };
             remove_path_plugin(plugins, action.sub_idx);
             let json = encode_path_config(plugins);
-            state
+            let _ = state
                 .app
                 .set_plugin_param_string(plugin_idx, param_idx, json);
         });
@@ -1303,7 +1322,7 @@ impl PlayerView {
             };
             move_path_plugin(plugins, action.from, action.to);
             let json = encode_path_config(plugins);
-            state
+            let _ = state
                 .app
                 .set_plugin_param_string(plugin_idx, param_idx, json);
         });

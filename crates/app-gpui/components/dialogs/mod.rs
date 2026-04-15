@@ -665,13 +665,23 @@ impl PlayerView {
                                 state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                 match (menu_type, id.as_ref()) {
                                     (crate::app::ContextMenuType::Album, "add-to-queue") => {
-                                        if let Some(path) = state.app.add_album_to_queue() {
-                                            Self::play_track(state, path);
+                                        match state.app.add_album_to_queue() {
+                                            Ok(Some(path)) => Self::play_track(state, path),
+                                            Err(e) => {
+                                                state.app.ui_state.toast_message =
+                                                    Some(crate::app::ToastMessage::error(e));
+                                            }
+                                            _ => {}
                                         }
                                     }
                                     (crate::app::ContextMenuType::Album, "play-now") => {
-                                        if let Some(path) = state.app.play_album_now() {
-                                            Self::play_track(state, path);
+                                        match state.app.play_album_now() {
+                                            Ok(Some(path)) => Self::play_track(state, path),
+                                            Err(e) => {
+                                                state.app.ui_state.toast_message =
+                                                    Some(crate::app::ToastMessage::error(e));
+                                            }
+                                            _ => {}
                                         }
                                     }
                                     (

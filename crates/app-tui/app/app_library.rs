@@ -198,13 +198,26 @@ impl App {
         self.needs_filter_update = true;
     }
 
-    pub fn add_album_to_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
+    pub fn add_album_to_queue(
+        &mut self,
+    ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.is_playing;
 
         // Use a local copy to avoid borrow issues while mutating queue
         let index = self.selected_album_index;
-        let album = self.filtered_albums().get(index)?.clone();
+        let album = match self.filtered_albums().get(index) {
+            Some(a) => a.clone(),
+            None => return Ok(None),
+        };
+
+        // Validate at least one track file exists on disk
+        if !album.tracks.is_empty() && !album.tracks.iter().any(|t| t.path.exists()) {
+            return Err(format!(
+                "None of the files for \"{}\" exist on disk",
+                album.title,
+            ));
+        }
 
         // Remove any existing entry for the same album (by artist + title)
         let artist = album.artist();
@@ -215,9 +228,9 @@ impl App {
 
         // Auto-play if queue was empty, nothing was playing, or we removed the currently playing album
         if was_empty || was_not_playing || removed_was_current {
-            return self.start_queue();
+            return Ok(self.start_queue());
         }
-        None
+        Ok(None)
     }
 
     /// Remove an album from the queue by artist + title match.

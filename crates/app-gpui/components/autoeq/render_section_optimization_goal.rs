@@ -82,7 +82,7 @@
                                 if let Some(ref h) = on_psycho { h(false, window, cx); }
                             }
                             "natural" => {
-                                if let Some(ref h) = on_loss { h("flat-asymmetric", window, cx); }
+                                if let Some(ref h) = on_loss { h("flat", window, cx); }
                                 if let Some(ref h) = on_asym { h(true, window, cx); }
                                 if let Some(ref h) = on_psycho { h(false, window, cx); }
                             }

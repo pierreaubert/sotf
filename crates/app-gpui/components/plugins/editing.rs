@@ -26,7 +26,12 @@ pub trait PluginEditingManager {
 
     // Additional methods
     fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64);
-    fn set_plugin_param_string(&mut self, plugin_idx: usize, param_idx: usize, value: String);
+    fn set_plugin_param_string(
+        &mut self,
+        plugin_idx: usize,
+        param_idx: usize,
+        value: String,
+    ) -> Result<(), String>;
     fn set_spectrum_tilt_correction(
         &mut self,
         plugin_idx: usize,
@@ -149,11 +154,17 @@ impl PluginEditingManager for App {
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
-    fn set_plugin_param_string(&mut self, plugin_idx: usize, param_idx: usize, value: String) {
+    fn set_plugin_param_string(
+        &mut self,
+        plugin_idx: usize,
+        param_idx: usize,
+        value: String,
+    ) -> Result<(), String> {
         let effect = self
             .plugin_state
-            .set_plugin_param_string(plugin_idx, param_idx, value);
+            .set_plugin_param_string(plugin_idx, param_idx, value)?;
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+        Ok(())
     }
 
     fn set_spectrum_tilt_correction(

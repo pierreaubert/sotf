@@ -2,6 +2,45 @@
 
 ## Fixes
 
+### Room EQ "save to rack" — EQ filters were applied flat (all 0 dB)
+
+- The `parse_filters` helper in `apply_room_eq_to_player` expected JSON
+  keys `"frequency"` and `"gain_db"`, but the autoeq optimizer outputs
+  `"freq"` and `"db_gain"`. Every filter silently fell through to the
+  defaults (freq=1000 Hz, gain=0.0 dB), producing a flat EQ curve.
+  The parser now accepts both key forms via `.or_else()` fallback.
+
+### Room EQ "save to rack" — workflow graph canvas not refreshed
+
+- The `WorkflowCanvas` entity was created once and never invalidated.
+  When plugins were added or removed (from room EQ, spinorama EQ,
+  headphone EQ, preset loading, or manual editing), the graph view
+  kept showing the stale topology. Fixed by setting
+  `workflow_canvas = None` on every structural plugin update so the
+  canvas rebuilds on the next render.
+
+### Room EQ "save to rack" — filter parser extracted for reuse
+
+- The inline `parse_filters` closure in `apply_room_eq_to_player` was
+  extracted to `sotf_audio_player::room_eq_types::parse_eq_filters_from_json`,
+  making it testable and available to all frontends.
+
+## Tests
+
+- Added 9 integration tests for the save-to-rack flow (stereo, 5.1 surround,
+  update existing EQ, no filters, missing channels, merged EQ plugins,
+  non-EQ plugins skipped, case-insensitive plugin type, multi-driver
+  rack incompatibility)
+
+## Fixes
+
+### Room EQ "save to rack" — silent failure on insert_plugin error
+
+- `insert_plugin` returned `Result` but the error was discarded with
+  `let _ =`. If graph insertion failed (e.g. non-linear topology), the
+  code silently continued and tried to configure a plugin at the wrong
+  index. Now uses `match` with proper error logging.
+
 ### Recording evaluation — magnitude plot was vertically flipped
 
 - The "MAGNITUDE (dB)" chart in the recording evaluation screen

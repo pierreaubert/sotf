@@ -1496,8 +1496,13 @@ impl PlayerView {
                     // Double-click adds to queue
                     if event.click_count() == 2 {
                         view.state.update(cx, |state, _cx| {
-                            if let Some(path) = state.app.add_album_to_queue() {
-                                Self::play_track(state, path);
+                            match state.app.add_album_to_queue() {
+                                Ok(Some(path)) => Self::play_track(state, path),
+                                Err(e) => {
+                                    state.app.ui_state.toast_message =
+                                        Some(crate::app::ToastMessage::error(e));
+                                }
+                                _ => {}
                             }
                         });
                     }

@@ -555,7 +555,7 @@ impl PlayerView {
     }
 
     fn apply_room_eq_to_player(&mut self, cx: &mut Context<Self>) {
-        use math_audio_iir_fir::BiquadFilterType;
+        use sotf_audio_player::room_eq_types::parse_eq_filters_from_json;
         use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
 
         // Get the DSP output and channel results from state.
@@ -590,38 +590,6 @@ impl PlayerView {
             return;
         };
 
-        // Helper to parse filters from JSON
-        let parse_filters = |filters_json: &[serde_json::Value]| -> Vec<EQFilter> {
-            filters_json
-                .iter()
-                .map(|filter| {
-                    let filter_type_str = filter
-                        .get("filter_type")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("peak");
-                    let filter_type = match filter_type_str.to_lowercase().as_str() {
-                        "peak" | "pk" => BiquadFilterType::Peak,
-                        "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
-                        "highshelf" | "hs" => BiquadFilterType::Highshelf,
-                        "lowpass" | "lp" => BiquadFilterType::Lowpass,
-                        "highpass" | "hp" => BiquadFilterType::Highpass,
-                        "notch" => BiquadFilterType::Notch,
-                        _ => BiquadFilterType::Peak,
-                    };
-                    let frequency = filter
-                        .get("frequency")
-                        .and_then(|f| f.as_f64())
-                        .unwrap_or(1000.0);
-                    let q = filter.get("q").and_then(|q| q.as_f64()).unwrap_or(1.0);
-                    let gain_db = filter
-                        .get("gain_db")
-                        .and_then(|g| g.as_f64())
-                        .unwrap_or(0.0);
-                    EQFilter::new(filter_type, frequency, q, gain_db)
-                })
-                .collect()
-        };
-
         // Collect EQ filters per channel in output channel order.
         // channel_result_names preserves the order from the recording config
         // (0=FL, 1=FR, 2=C, 3=LFE, 4=SL, 5=SR for 5.1).
@@ -634,7 +602,7 @@ impl PlayerView {
                         && let Some(filters) =
                             plugin.parameters.get("filters").and_then(|f| f.as_array())
                     {
-                        channel_eq_filters.extend(parse_filters(filters));
+                        channel_eq_filters.extend(parse_eq_filters_from_json(filters));
                     }
                 }
                 log::info!(
@@ -687,45 +655,61 @@ impl PlayerView {
         self.state.update(cx, |state, _| {
             let plugin_graph = &mut state.app.plugin_state.graph;
 
+            let new_settings = PluginSettings::EQ {
+                channels: num_channels,
+                filters: global_filters.clone(),
+                channel_filters: Some(per_channel_filters.clone()),
+                per_channel_mode: true,
+                max_filters: 10,
+                tdf2: false,
+                topology: 0.0,
+            };
+
             // Check if there's an existing EQ plugin
             if let Some(eq_idx) = plugin_graph.find_plugin_index(&PluginType::EQ) {
                 // Update existing EQ plugin
                 if let Some(eq_plugin) = plugin_graph.get_plugin_mut(eq_idx) {
-                    eq_plugin.settings = PluginSettings::EQ {
-                        channels: num_channels,
-                        filters: global_filters.clone(),
-                        channel_filters: Some(per_channel_filters.clone()),
-                        per_channel_mode: true,
-                        max_filters: 10,
-                        tdf2: false,
-                        topology: 0.0,
-                    };
+                    eq_plugin.settings = new_settings;
                     log::info!(
-                        "Updated existing EQ plugin at index {} with per-channel room EQ",
-                        eq_idx
+                        "Updated existing EQ plugin at index {} with per-channel room EQ ({} channels, {} global filters)",
+                        eq_idx,
+                        num_channels,
+                        global_filters.len(),
                     );
                 }
             } else {
                 // No EQ plugin exists, add one at the end before Matrix and Output Monitor
                 let insert_idx = plugin_graph.user_plugin_insert_index();
-                let _ = plugin_graph.insert_plugin(insert_idx, &PluginType::EQ);
-
-                // Configure the newly inserted plugin with per-channel room EQ
-                if let Some(eq_plugin) = plugin_graph.get_plugin_mut(insert_idx) {
-                    eq_plugin.settings = PluginSettings::EQ {
-                        channels: num_channels,
-                        filters: global_filters.clone(),
-                        channel_filters: Some(per_channel_filters.clone()),
-                        per_channel_mode: true,
-                        max_filters: 10,
-                        tdf2: false,
-                        topology: 0.0,
-                    };
+                match plugin_graph.insert_plugin(insert_idx, &PluginType::EQ) {
+                    Ok(_node_id) => {
+                        // Configure the newly inserted plugin with per-channel room EQ
+                        if let Some(eq_plugin) = plugin_graph.get_plugin_mut(insert_idx) {
+                            eq_plugin.settings = new_settings;
+                        } else {
+                            log::error!(
+                                "Failed to get plugin at index {} after insertion",
+                                insert_idx
+                            );
+                        }
+                        log::info!(
+                            "Inserted new EQ plugin at index {} with per-channel room EQ ({} channels, {} global filters)",
+                            insert_idx,
+                            num_channels,
+                            global_filters.len(),
+                        );
+                    }
+                    Err(e) => {
+                        log::error!("Failed to insert EQ plugin: {}", e);
+                        state.app.measurement_state.room_eq_state.error_message =
+                            Some(format!("Failed to insert EQ plugin: {}", e));
+                        state.app.ui_state.toast_message =
+                            Some(crate::app::ToastMessage::error(format!(
+                                "Failed to insert EQ plugin: {}",
+                                e
+                            )));
+                        return;
+                    }
                 }
-                log::info!(
-                    "Inserted new EQ plugin at index {} with per-channel room EQ",
-                    insert_idx
-                );
             }
 
             // Flush immediately to the engine — don't defer via
@@ -758,6 +742,8 @@ impl PlayerView {
                 }
             }
             state.app.plugin_state.plugin_graph_modified = true;
+            // Invalidate the workflow canvas so the graph view rebuilds
+            state.app.plugin_state.workflow_canvas = None;
         });
 
         cx.notify();

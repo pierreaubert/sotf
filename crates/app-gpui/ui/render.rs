@@ -357,8 +357,13 @@ impl Render for PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                     state.app.ui_state.context_menu = None;
-                                    if let Some(path) = state.app.add_album_to_queue() {
-                                        PlayerView::play_track(state, path);
+                                    match state.app.add_album_to_queue() {
+                                        Ok(Some(path)) => PlayerView::play_track(state, path),
+                                        Err(e) => {
+                                            state.app.ui_state.toast_message =
+                                                Some(crate::app::ToastMessage::error(e));
+                                        }
+                                        _ => {}
                                     }
                                 });
                             }
@@ -367,8 +372,13 @@ impl Render for PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                     state.app.ui_state.context_menu = None;
-                                    if let Some(path) = state.app.play_album_now() {
-                                        PlayerView::play_track(state, path);
+                                    match state.app.play_album_now() {
+                                        Ok(Some(path)) => PlayerView::play_track(state, path),
+                                        Err(e) => {
+                                            state.app.ui_state.toast_message =
+                                                Some(crate::app::ToastMessage::error(e));
+                                        }
+                                        _ => {}
                                     }
                                 });
                             }

@@ -27,7 +27,9 @@ impl App {
         self.playback.current_queue_index = self.queue.current_index();
     }
 
-    pub fn add_album_to_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
+    pub fn add_album_to_queue(
+        &mut self,
+    ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.playback.is_playing;
 
@@ -39,22 +41,22 @@ impl App {
                 .id
                 .is_some_and(|id| self.queue.iter().any(|item| item.album.id == Some(id)))
             {
-                return None;
+                return Ok(None);
             }
 
-            self.queue.add_album(album.clone());
+            self.queue.add_album(album.clone())?;
             self.expanded_queue_items.push(false);
             self.assert_queue_consistency();
 
             if was_empty || was_not_playing {
-                return self.start_queue();
+                return Ok(self.start_queue());
             }
         }
-        None
+        Ok(None)
     }
 
     /// Add album to queue and immediately jump to it and start playing
-    pub fn play_album_now(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
+    pub fn play_album_now(&mut self) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
         let albums = self.filtered_albums();
         let selected_album = albums.get(self.library_state.selected_index).copied();
 
@@ -68,22 +70,22 @@ impl App {
                 self.sync_queue_index();
                 if let Some(source) = self.queue.current_track_source() {
                     self.playback.is_playing = true;
-                    return Some(source);
+                    return Ok(Some(source));
                 }
-                return None;
+                return Ok(None);
             }
 
-            let effect = self.queue.play_album_now(album.clone());
+            let effect = self.queue.play_album_now(album.clone())?;
             self.expanded_queue_items.push(false);
             self.sync_queue_index();
             self.assert_queue_consistency();
 
             if let QueuePlaybackEffect::Play(source) = effect {
                 self.playback.is_playing = true;
-                return Some(source);
+                return Ok(Some(source));
             }
         }
-        None
+        Ok(None)
     }
 
     pub fn start_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {

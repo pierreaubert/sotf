@@ -912,6 +912,7 @@ fn update_media_controls(
         .current_queue_index
         .and_then(|idx| app.queue.get(idx))
         .and_then(|entry| entry.item.album.album_art_path.as_ref())
+        .filter(|path| path.exists())
         .map(|path| format!("file://{}", path.display()));
     let cover_url = cover_url_owned.as_deref();
 

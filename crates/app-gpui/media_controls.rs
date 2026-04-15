@@ -106,6 +106,7 @@ pub fn update_media_controls(
 
     let cover_url_owned = queue_item
         .and_then(|item| item.album.album_art_path.as_ref())
+        .filter(|path| path.exists())
         .map(|path| format!("file://{}", path.display()));
     let cover_url = cover_url_owned.as_deref();
 
