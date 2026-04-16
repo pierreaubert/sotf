@@ -1365,6 +1365,9 @@ fn eval_cond(
 /// the result is nil.  This is NOT standard Emacs Lisp (Emacs uses `while`
 /// and `cl-loop` instead), but it's a convenient built-in that doesn't
 /// conflict with any existing form.
+/// Infinite loop — only exits via `throw`, `signal`, or error.
+/// Matches `cl-loop` semantics. Use `(catch 'done (loop ...))` with
+/// `(throw 'done value)` to exit with a value.
 fn eval_loop(
     body: &LispObject,
     env: &Arc<RwLock<Environment>>,
@@ -1373,10 +1376,7 @@ fn eval_loop(
     state: &InterpreterState,
 ) -> ElispResult<LispObject> {
     loop {
-        let result = eval_progn(body, env, editor, macros, state)?;
-        if result.is_nil() {
-            return Ok(result);
-        }
+        eval_progn(body, env, editor, macros, state)?;
     }
 }
 

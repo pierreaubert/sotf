@@ -63,6 +63,8 @@ pub enum HashKey {
     String(String),
     /// For 'equal test: use prin1 representation as key
     Printed(String),
+    /// For 'eq test on non-immediate types: pointer identity
+    Identity(usize),
 }
 
 impl PartialEq for LispHashTable {
@@ -99,6 +101,10 @@ impl std::hash::Hash for HashKey {
                 state.write_u8(3);
                 s.hash(state);
             }
+            HashKey::Identity(addr) => {
+                state.write_u8(4);
+                addr.hash(state);
+            }
         }
     }
 }
@@ -110,6 +116,7 @@ impl PartialEq for HashKey {
             (HashKey::Integer(a), HashKey::Integer(b)) => a == b,
             (HashKey::String(a), HashKey::String(b)) => a == b,
             (HashKey::Printed(a), HashKey::Printed(b)) => a == b,
+            (HashKey::Identity(a), HashKey::Identity(b)) => a == b,
             _ => false,
         }
     }
@@ -127,9 +134,22 @@ impl LispHashTable {
 
     pub fn make_key(&self, obj: &LispObject) -> HashKey {
         match &self.test {
-            HashTableTest::Eq | HashTableTest::Eql => match obj {
+            HashTableTest::Eq => match obj {
+                // eq: identity for all non-immediate types
+                LispObject::Nil | LispObject::T => HashKey::Symbol(obj.prin1_to_string()),
                 LispObject::Symbol(s) => HashKey::Symbol(s.clone()),
                 LispObject::Integer(i) => HashKey::Integer(*i),
+                // Strings, cons, vectors: use pointer identity
+                LispObject::Cons(cell) => HashKey::Identity(std::sync::Arc::as_ptr(cell) as usize),
+                LispObject::Vector(v) => HashKey::Identity(std::sync::Arc::as_ptr(v) as usize),
+                LispObject::HashTable(ht) => HashKey::Identity(std::sync::Arc::as_ptr(ht) as usize),
+                _ => HashKey::Printed(obj.prin1_to_string()),
+            },
+            HashTableTest::Eql => match obj {
+                // eql: value equality for numbers, identity for rest
+                LispObject::Symbol(s) => HashKey::Symbol(s.clone()),
+                LispObject::Integer(i) => HashKey::Integer(*i),
+                LispObject::Float(f) => HashKey::Printed(format!("{:?}", f)),
                 LispObject::String(s) => HashKey::String(s.clone()),
                 _ => HashKey::Printed(obj.prin1_to_string()),
             },
