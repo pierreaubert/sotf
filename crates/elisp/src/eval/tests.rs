@@ -906,6 +906,10 @@ fn make_stdlib_interp() -> Interpreter {
     interp.define("process-attributes", LispObject::primitive("ignore"));
     interp.define("suspend-emacs", LispObject::nil());
     interp.define("emacs", LispObject::nil());
+
+    // Phase 7 stubs: simple.el / files.el / macroexp.el support
+    interp.define("propertize", LispObject::primitive("identity")); // return first arg (text sans properties)
+    interp.define("current-time-string", LispObject::primitive("ignore")); // return nil (fixed string not needed)
     interp
 }
 

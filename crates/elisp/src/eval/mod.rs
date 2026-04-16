@@ -332,6 +332,39 @@ fn eval_inner(
                     "while" => eval_while(&cdr, env, editor, macros, state),
                     "let*" => eval_let_star(&cdr, env, editor, macros, state),
                     "defvar" => eval_defvar(&cdr, env, editor, macros, state),
+                    "defcustom" => {
+                        // (defcustom NAME VALUE DOCSTRING &rest KEYWORD-ARGS)
+                        // Simplified: same as defvar
+                        eval_defvar(&cdr, env, editor, macros, state)
+                    }
+                    "defgroup" | "defface" => {
+                        // No-op: just return nil
+                        Ok(LispObject::nil())
+                    }
+                    "define-minor-mode" => {
+                        // (define-minor-mode NAME DOCSTRING &rest BODY)
+                        let name = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        if let Some(n) = name.as_symbol() {
+                            env.write().define(n, LispObject::nil());
+                        }
+                        Ok(name)
+                    }
+                    "define-derived-mode" => {
+                        // (define-derived-mode NAME PARENT DOCSTRING &rest BODY)
+                        let name = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        if let Some(n) = name.as_symbol() {
+                            env.write().define(n, LispObject::nil());
+                        }
+                        Ok(name)
+                    }
+                    "defvar-keymap" => {
+                        // (defvar-keymap NAME &rest ARGS)
+                        let name = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        if let Some(n) = name.as_symbol() {
+                            env.write().define(n, LispObject::nil());
+                        }
+                        Ok(name)
+                    }
                     "defconst" => eval_defconst(&cdr, env, editor, macros, state),
                     "defalias" => eval_defalias(&cdr, env, editor, macros, state),
                     "catch" => eval_catch(&cdr, env, editor, macros, state),

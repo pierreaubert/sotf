@@ -8,6 +8,7 @@ pub struct Reader {
 
 fn is_symbol_char(c: char) -> bool {
     c.is_alphanumeric()
+        || !c.is_ascii() // Allow non-ASCII characters in symbols (e.g. Unicode ellipsis)
         || matches!(
             c,
             '*' | '/'
@@ -32,6 +33,7 @@ fn is_symbol_char(c: char) -> bool {
 
 fn is_symbol_initial(c: char) -> bool {
     c.is_alphabetic()
+        || (!c.is_ascii() && !c.is_whitespace()) // Allow non-ASCII characters in symbols
         || matches!(
             c,
             '*' | '/'
