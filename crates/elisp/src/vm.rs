@@ -26,8 +26,14 @@ pub fn execute_bytecode(
 }
 
 struct Vm<'a> {
-    /// Operand stack
-    stack: Vec<LispObject>,
+    /// Operand stack — NaN-boxed Values (Copy, no Clone overhead).
+    /// Heap objects (String, Cons, Vector, etc.) are stored in `heap_objects`
+    /// and referenced via GC_PTR tag with an index payload.
+    stack: Vec<Value>,
+    /// Side-table for heap-allocated LispObjects that cannot be represented
+    /// as NaN-boxed immediates (strings, cons cells, vectors, bytecode fns, etc.).
+    /// The GC_PTR tag's payload is an index into this vector.
+    heap_objects: Vec<LispObject>,
     /// Program counter (index into bytecode)
     pc: usize,
     /// The bytecode bytes
@@ -60,11 +66,13 @@ impl<'a> Vm<'a> {
         // before execution begins. stack-ref 0 = topmost arg (last),
         // stack-ref N = Nth from top.
         let mut stack = Vec::with_capacity(func.maxdepth + args.len());
+        let mut heap_objects = Vec::new();
         for arg in args {
-            stack.push(arg.clone());
+            stack.push(Self::obj_to_value(arg, &mut heap_objects));
         }
         Vm {
             stack,
+            heap_objects,
             pc: 0,
             code: &func.bytecode,
             constants: &func.constants,
@@ -78,20 +86,83 @@ impl<'a> Vm<'a> {
         }
     }
 
-    fn push(&mut self, val: LispObject) {
+    fn push(&mut self, val: Value) {
         self.stack.push(val);
     }
 
-    fn pop(&mut self) -> ElispResult<LispObject> {
+    fn pop(&mut self) -> ElispResult<Value> {
         self.stack
             .pop()
             .ok_or_else(|| ElispError::EvalError("bytecode stack underflow".to_string()))
     }
 
-    fn top(&self) -> ElispResult<&LispObject> {
+    fn top(&self) -> ElispResult<&Value> {
         self.stack
             .last()
             .ok_or_else(|| ElispError::EvalError("bytecode stack underflow".to_string()))
+    }
+
+    /// Convert a LispObject to a Value, storing heap objects in the side-table.
+    /// Immediates (nil, t, integers, floats, symbols) become NaN-boxed Values directly.
+    /// Heap objects (String, Cons, Vector, etc.) get a GC_PTR tag with a table index.
+    fn obj_to_value(obj: &LispObject, heap: &mut Vec<LispObject>) -> Value {
+        match obj {
+            LispObject::Nil => Value::nil(),
+            LispObject::T => Value::t(),
+            LispObject::Integer(n) => {
+                if *n >= -(1_i64 << 47) && *n < (1_i64 << 47) {
+                    Value::fixnum(*n)
+                } else {
+                    Value::float(*n as f64)
+                }
+            }
+            LispObject::Float(f) => Value::float(*f),
+            LispObject::Symbol(id) => Value::symbol_id(id.0),
+            // Heap objects: store in side-table, return GC_PTR with index
+            _ => {
+                let idx = heap.len();
+                heap.push(obj.clone());
+                // Use from_raw to encode GC_PTR tag with index payload
+                Value::from_raw(0xFFF8_0000_0000_0000 | (1_u64 << 48) | (idx as u64))
+            }
+        }
+    }
+
+    /// Convert a Value back to a LispObject, looking up heap objects in the side-table.
+    fn value_to_obj(&self, val: Value) -> LispObject {
+        if val.is_nil() {
+            LispObject::Nil
+        } else if val.is_t() {
+            LispObject::T
+        } else if let Some(n) = val.as_fixnum() {
+            LispObject::Integer(n)
+        } else if val.is_ptr() {
+            // GC_PTR — index into heap_objects
+            let idx = (val.raw() & 0x0000_FFFF_FFFF_FFFF) as usize;
+            self.heap_objects
+                .get(idx)
+                .cloned()
+                .unwrap_or(LispObject::nil())
+        } else if let Some(id) = val.as_symbol_id() {
+            LispObject::Symbol(crate::obarray::SymbolId(id))
+        } else if let Some(f) = val.as_float() {
+            LispObject::Float(f)
+        } else {
+            LispObject::Nil
+        }
+    }
+
+    /// Push a LispObject onto the stack, converting to Value.
+    /// Heap objects are stored in the side-table for lossless round-tripping.
+    fn push_obj(&mut self, obj: LispObject) {
+        let val = Self::obj_to_value(&obj, &mut self.heap_objects);
+        self.stack.push(val);
+    }
+
+    /// Pop a Value from the stack and convert to LispObject.
+    fn pop_obj(&mut self) -> ElispResult<LispObject> {
+        let val = self.pop()?;
+        Ok(self.value_to_obj(val))
     }
 
     fn fetch_u8(&mut self) -> u8 {
@@ -112,8 +183,12 @@ impl<'a> Vm<'a> {
             let op = self.fetch_u8();
             self.dispatch(op)?;
         }
-        // Return top of stack, or nil
-        Ok(self.stack.pop().unwrap_or(LispObject::nil()))
+        // Return top of stack converted back to LispObject, or nil
+        Ok(self
+            .stack
+            .pop()
+            .map(|v| self.value_to_obj(v))
+            .unwrap_or(LispObject::nil()))
     }
 
     fn dispatch(&mut self, op: u8) -> ElispResult<()> {
@@ -122,21 +197,21 @@ impl<'a> Vm<'a> {
             0..=5 => {
                 let n = op as usize;
                 let idx = self.stack.len() - 1 - n;
-                let val = self.stack[idx].clone();
+                let val = self.stack[idx]; // Value is Copy
                 self.push(val);
             }
             6 => {
                 // stack-ref with 1-byte operand
                 let n = self.fetch_u8() as usize;
                 let idx = self.stack.len() - 1 - n;
-                let val = self.stack[idx].clone();
+                let val = self.stack[idx]; // Value is Copy
                 self.push(val);
             }
             7 => {
                 // stack-ref with 2-byte operand
                 let n = self.fetch_u16() as usize;
                 let idx = self.stack.len() - 1 - n;
-                let val = self.stack[idx].clone();
+                let val = self.stack[idx]; // Value is Copy
                 self.push(val);
             }
 
@@ -144,50 +219,50 @@ impl<'a> Vm<'a> {
             8..=13 => {
                 let n = (op - 8) as usize;
                 let val = self.local_ref(n);
-                self.push(val);
+                self.push_obj(val);
             }
             14 => {
                 let n = self.fetch_u8() as usize;
                 let val = self.local_ref(n);
-                self.push(val);
+                self.push_obj(val);
             }
             15 => {
                 let n = self.fetch_u16() as usize;
                 let val = self.local_ref(n);
-                self.push(val);
+                self.push_obj(val);
             }
 
             // varset (16-23): pop and set local variable N
             16..=21 => {
                 let n = (op - 16) as usize;
-                let val = self.pop()?;
+                let val = self.pop_obj()?;
                 self.local_set(n, val);
             }
             22 => {
                 let n = self.fetch_u8() as usize;
-                let val = self.pop()?;
+                let val = self.pop_obj()?;
                 self.local_set(n, val);
             }
             23 => {
                 let n = self.fetch_u16() as usize;
-                let val = self.pop()?;
+                let val = self.pop_obj()?;
                 self.local_set(n, val);
             }
 
             // varbind (24-31): bind local variable N to top of stack
             24..=29 => {
                 let n = (op - 24) as usize;
-                let val = self.pop()?;
+                let val = self.pop_obj()?;
                 self.varbind(n, val);
             }
             30 => {
                 let n = self.fetch_u8() as usize;
-                let val = self.pop()?;
+                let val = self.pop_obj()?;
                 self.varbind(n, val);
             }
             31 => {
                 let n = self.fetch_u16() as usize;
-                let val = self.pop()?;
+                let val = self.pop_obj()?;
                 self.varbind(n, val);
             }
 
@@ -221,43 +296,43 @@ impl<'a> Vm<'a> {
 
             // nth (56)
             56 => {
-                let list = self.pop()?;
-                let n = self.pop()?;
+                let list = self.pop_obj()?;
+                let n = self.pop_obj()?;
                 let n = n.as_integer().unwrap_or(0) as usize;
                 let val = list.nth(n).unwrap_or(LispObject::nil());
-                self.push(val);
+                self.push_obj(val);
             }
 
             // symbolp (57)
             57 => {
-                let val = self.pop()?;
-                self.push(LispObject::from(
+                let val = self.pop_obj()?;
+                self.push_obj(LispObject::from(
                     val.is_symbol() || val.is_nil() || val.is_t(),
                 ));
             }
 
             // consp (58)
             58 => {
-                let val = self.pop()?;
-                self.push(LispObject::from(val.is_cons()));
+                let val = self.pop_obj()?;
+                self.push_obj(LispObject::from(val.is_cons()));
             }
 
             // stringp (59)
             59 => {
-                let val = self.pop()?;
-                self.push(LispObject::from(val.is_string()));
+                let val = self.pop_obj()?;
+                self.push_obj(LispObject::from(val.is_string()));
             }
 
             // listp (60)
             60 => {
-                let val = self.pop()?;
-                self.push(LispObject::from(val.is_nil() || val.is_cons()));
+                let val = self.pop_obj()?;
+                self.push_obj(LispObject::from(val.is_nil() || val.is_cons()));
             }
 
             // eq (61)
             61 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
                 let result = match (&a, &b) {
                     (LispObject::Nil, LispObject::Nil) => true,
                     (LispObject::T, LispObject::T) => true,
@@ -265,13 +340,13 @@ impl<'a> Vm<'a> {
                     (LispObject::Symbol(x), LispObject::Symbol(y)) => x == y, // SymbolId comparison
                     _ => false,
                 };
-                self.push(LispObject::from(result));
+                self.push_obj(LispObject::from(result));
             }
 
             // memq (62)
             62 => {
-                let list = self.pop()?;
-                let elt = self.pop()?;
+                let list = self.pop_obj()?;
+                let elt = self.pop_obj()?;
                 let mut current = list;
                 let mut found = LispObject::nil();
                 while let Some((car, cdr)) = current.destructure_cons() {
@@ -281,53 +356,53 @@ impl<'a> Vm<'a> {
                     }
                     current = cdr;
                 }
-                self.push(found);
+                self.push_obj(found);
             }
 
             // not (63)
             63 => {
                 let val = self.pop()?;
-                self.push(LispObject::from(val.is_nil()));
+                self.push(Value::from_bool(val.is_nil()));
             }
 
             // car (64)
             64 => {
-                let val = self.pop()?;
-                self.push(val.first().unwrap_or(LispObject::nil()));
+                let val = self.pop_obj()?;
+                self.push_obj(val.first().unwrap_or(LispObject::nil()));
             }
 
             // cdr (65)
             65 => {
-                let val = self.pop()?;
-                self.push(val.rest().unwrap_or(LispObject::nil()));
+                let val = self.pop_obj()?;
+                self.push_obj(val.rest().unwrap_or(LispObject::nil()));
             }
 
             // cons (66)
             66 => {
-                let cdr = self.pop()?;
-                let car = self.pop()?;
-                self.push(LispObject::cons(car, cdr));
+                let cdr = self.pop_obj()?;
+                let car = self.pop_obj()?;
+                self.push_obj(LispObject::cons(car, cdr));
             }
 
             // list1 (67)
             67 => {
-                let a = self.pop()?;
-                self.push(LispObject::cons(a, LispObject::nil()));
+                let a = self.pop_obj()?;
+                self.push_obj(LispObject::cons(a, LispObject::nil()));
             }
 
             // list2 (68)
             68 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                self.push(LispObject::cons(a, LispObject::cons(b, LispObject::nil())));
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
+                self.push_obj(LispObject::cons(a, LispObject::cons(b, LispObject::nil())));
             }
 
             // list3 (69)
             69 => {
-                let c = self.pop()?;
-                let b = self.pop()?;
-                let a = self.pop()?;
-                self.push(LispObject::cons(
+                let c = self.pop_obj()?;
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
+                self.push_obj(LispObject::cons(
                     a,
                     LispObject::cons(b, LispObject::cons(c, LispObject::nil())),
                 ));
@@ -335,11 +410,11 @@ impl<'a> Vm<'a> {
 
             // list4 (70)
             70 => {
-                let d = self.pop()?;
-                let c = self.pop()?;
-                let b = self.pop()?;
-                let a = self.pop()?;
-                self.push(LispObject::cons(
+                let d = self.pop_obj()?;
+                let c = self.pop_obj()?;
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
+                self.push_obj(LispObject::cons(
                     a,
                     LispObject::cons(
                         b,
@@ -350,7 +425,7 @@ impl<'a> Vm<'a> {
 
             // length (71)
             71 => {
-                let val = self.pop()?;
+                let val = self.pop_obj()?;
                 let len = match &val {
                     LispObject::Nil => 0,
                     LispObject::String(s) => s.len() as i64,
@@ -366,13 +441,13 @@ impl<'a> Vm<'a> {
                     }
                     _ => 0,
                 };
-                self.push(LispObject::integer(len));
+                self.push_obj(LispObject::integer(len));
             }
 
             // aref (72)
             72 => {
-                let idx = self.pop()?;
-                let array = self.pop()?;
+                let idx = self.pop_obj()?;
+                let array = self.pop_obj()?;
                 let i = idx.as_integer().unwrap_or(0) as usize;
                 let val = match &array {
                     LispObject::Vector(v) => v.lock().get(i).cloned().unwrap_or(LispObject::nil()),
@@ -382,14 +457,14 @@ impl<'a> Vm<'a> {
                     }
                     _ => LispObject::nil(),
                 };
-                self.push(val);
+                self.push_obj(val);
             }
 
             // aset (73)
             73 => {
-                let val = self.pop()?;
-                let idx = self.pop()?;
-                let array = self.pop()?;
+                let val = self.pop_obj()?;
+                let idx = self.pop_obj()?;
+                let array = self.pop_obj()?;
                 let i = idx.as_integer().unwrap_or(0) as usize;
                 if let LispObject::Vector(v) = &array {
                     let mut v = v.lock();
@@ -397,55 +472,55 @@ impl<'a> Vm<'a> {
                         v[i] = val.clone();
                     }
                 }
-                self.push(val);
+                self.push_obj(val);
             }
 
             // symbol-value (74)
             74 => {
-                let sym = self.pop()?;
+                let sym = self.pop_obj()?;
                 if let Some(name) = sym.as_symbol() {
                     let val = self.env.read().get(&name).unwrap_or(LispObject::nil());
-                    self.push(val);
+                    self.push_obj(val);
                 } else {
-                    self.push(LispObject::nil());
+                    self.push(Value::nil());
                 }
             }
 
             // symbol-function (75)
             75 => {
-                let sym = self.pop()?;
+                let sym = self.pop_obj()?;
                 if let Some(name) = sym.as_symbol() {
                     let val = self.env.read().get(&name).unwrap_or(LispObject::nil());
-                    self.push(val);
+                    self.push_obj(val);
                 } else {
-                    self.push(LispObject::nil());
+                    self.push(Value::nil());
                 }
             }
 
             // set (76)
             76 => {
-                let val = self.pop()?;
-                let sym = self.pop()?;
+                let val = self.pop_obj()?;
+                let sym = self.pop_obj()?;
                 if let Some(name) = sym.as_symbol() {
                     self.env.write().set(&name, val.clone());
                 }
-                self.push(val);
+                self.push_obj(val);
             }
 
             // fset (77)
             77 => {
-                let def = self.pop()?;
-                let sym = self.pop()?;
+                let def = self.pop_obj()?;
+                let sym = self.pop_obj()?;
                 if let Some(name) = sym.as_symbol() {
                     self.env.write().define(&name, def.clone());
                 }
-                self.push(def);
+                self.push_obj(def);
             }
 
             // get (78)
             78 => {
-                let prop = self.pop()?;
-                let sym = self.pop()?;
+                let prop = self.pop_obj()?;
+                let sym = self.pop_obj()?;
                 if let (Some(sym_name), Some(prop_name)) = (sym.as_symbol(), prop.as_symbol()) {
                     let key = format!("{}:{}", sym_name, prop_name);
                     let val = self
@@ -455,17 +530,17 @@ impl<'a> Vm<'a> {
                         .get(&key)
                         .cloned()
                         .unwrap_or(LispObject::nil());
-                    self.push(val);
+                    self.push_obj(val);
                 } else {
-                    self.push(LispObject::nil());
+                    self.push(Value::nil());
                 }
             }
 
             // substring (79)
             79 => {
-                let end = self.pop()?;
-                let start = self.pop()?;
-                let string = self.pop()?;
+                let end = self.pop_obj()?;
+                let start = self.pop_obj()?;
+                let string = self.pop_obj()?;
                 if let (LispObject::String(s), LispObject::Integer(from)) = (&string, &start) {
                     let from = *from as usize;
                     let to = match &end {
@@ -473,42 +548,41 @@ impl<'a> Vm<'a> {
                         _ => s.chars().count(),
                     };
                     let result: String = s.chars().skip(from).take(to - from).collect();
-                    self.push(LispObject::string(&result));
+                    self.push_obj(LispObject::string(&result));
                 } else {
-                    self.push(LispObject::string(""));
+                    self.push_obj(LispObject::string(""));
                 }
             }
 
             // concat2 (80)
             80 => {
-                let b = self.pop()?.princ_to_string();
-                let a = self.pop()?.princ_to_string();
-                self.push(LispObject::string(&format!("{}{}", a, b)));
+                let b = self.pop_obj()?.princ_to_string();
+                let a = self.pop_obj()?.princ_to_string();
+                self.push_obj(LispObject::string(&format!("{}{}", a, b)));
             }
 
             // concat3 (81)
             81 => {
-                let c = self.pop()?.princ_to_string();
-                let b = self.pop()?.princ_to_string();
-                let a = self.pop()?.princ_to_string();
-                self.push(LispObject::string(&format!("{}{}{}", a, b, c)));
+                let c = self.pop_obj()?.princ_to_string();
+                let b = self.pop_obj()?.princ_to_string();
+                let a = self.pop_obj()?.princ_to_string();
+                self.push_obj(LispObject::string(&format!("{}{}{}", a, b, c)));
             }
 
             // concat4 (82)
             82 => {
-                let d = self.pop()?.princ_to_string();
-                let c = self.pop()?.princ_to_string();
-                let b = self.pop()?.princ_to_string();
-                let a = self.pop()?.princ_to_string();
-                self.push(LispObject::string(&format!("{}{}{}{}", a, b, c, d)));
+                let d = self.pop_obj()?.princ_to_string();
+                let c = self.pop_obj()?.princ_to_string();
+                let b = self.pop_obj()?.princ_to_string();
+                let a = self.pop_obj()?.princ_to_string();
+                self.push_obj(LispObject::string(&format!("{}{}{}{}", a, b, c, d)));
             }
 
             // sub1 (83)
             83 => {
-                let val = self.pop()?;
-                let v = Value::from_lisp_object(&val);
+                let v = self.pop()?;
                 if let Some(result) = v.sub1() {
-                    self.push(result.to_lisp_object());
+                    self.push(result);
                 } else {
                     return Err(ElispError::WrongTypeArgument("number".to_string()));
                 }
@@ -516,10 +590,9 @@ impl<'a> Vm<'a> {
 
             // add1 (84)
             84 => {
-                let val = self.pop()?;
-                let v = Value::from_lisp_object(&val);
+                let v = self.pop()?;
                 if let Some(result) = v.add1() {
-                    self.push(result.to_lisp_object());
+                    self.push(result);
                 } else {
                     return Err(ElispError::WrongTypeArgument("number".to_string()));
                 }
@@ -529,10 +602,8 @@ impl<'a> Vm<'a> {
             85 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let va = Value::from_lisp_object(&a);
-                let vb = Value::from_lisp_object(&b);
-                if let Some(result) = va.num_eq(vb) {
-                    self.push(result.to_lisp_object());
+                if let Some(result) = a.num_eq(b) {
+                    self.push(result);
                 } else {
                     return Err(ElispError::WrongTypeArgument("number".to_string()));
                 }
@@ -542,10 +613,8 @@ impl<'a> Vm<'a> {
             86 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let va = Value::from_lisp_object(&a);
-                let vb = Value::from_lisp_object(&b);
-                if let Some(result) = va.gt(vb) {
-                    self.push(result.to_lisp_object());
+                if let Some(result) = a.gt(b) {
+                    self.push(result);
                 } else {
                     return Err(ElispError::WrongTypeArgument("number".to_string()));
                 }
@@ -555,10 +624,8 @@ impl<'a> Vm<'a> {
             87 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let va = Value::from_lisp_object(&a);
-                let vb = Value::from_lisp_object(&b);
-                if let Some(result) = va.lt(vb) {
-                    self.push(result.to_lisp_object());
+                if let Some(result) = a.lt(b) {
+                    self.push(result);
                 } else {
                     return Err(ElispError::WrongTypeArgument("number".to_string()));
                 }
@@ -568,10 +635,8 @@ impl<'a> Vm<'a> {
             88 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let va = Value::from_lisp_object(&a);
-                let vb = Value::from_lisp_object(&b);
-                if let Some(result) = va.leq(vb) {
-                    self.push(result.to_lisp_object());
+                if let Some(result) = a.leq(b) {
+                    self.push(result);
                 } else {
                     return Err(ElispError::WrongTypeArgument("number".to_string()));
                 }
@@ -581,10 +646,8 @@ impl<'a> Vm<'a> {
             89 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let va = Value::from_lisp_object(&a);
-                let vb = Value::from_lisp_object(&b);
-                if let Some(result) = va.geq(vb) {
-                    self.push(result.to_lisp_object());
+                if let Some(result) = a.geq(b) {
+                    self.push(result);
                 } else {
                     return Err(ElispError::WrongTypeArgument("number".to_string()));
                 }
@@ -594,21 +657,20 @@ impl<'a> Vm<'a> {
             90 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let va = Value::from_lisp_object(&a);
-                let vb = Value::from_lisp_object(&b);
-                if let Some(result) = va.arith_sub(vb) {
-                    self.push(result.to_lisp_object());
+                if let Some(result) = a.arith_sub(b) {
+                    self.push(result);
                 } else {
-                    self.push(numeric_binop(&a, &b, |x, y| x - y, |x, y| x - y)?);
+                    let ao = self.value_to_obj(a);
+                    let bo = self.value_to_obj(b);
+                    self.push_obj(numeric_binop(&ao, &bo, |x, y| x - y, |x, y| x - y)?);
                 }
             }
 
             // negate (91)
             91 => {
-                let val = self.pop()?;
-                let v = Value::from_lisp_object(&val);
+                let v = self.pop()?;
                 if let Some(result) = v.negate() {
-                    self.push(result.to_lisp_object());
+                    self.push(result);
                 } else {
                     return Err(ElispError::WrongTypeArgument("number".to_string()));
                 }
@@ -618,12 +680,12 @@ impl<'a> Vm<'a> {
             92 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let va = Value::from_lisp_object(&a);
-                let vb = Value::from_lisp_object(&b);
-                if let Some(result) = va.arith_add(vb) {
-                    self.push(result.to_lisp_object());
+                if let Some(result) = a.arith_add(b) {
+                    self.push(result);
                 } else {
-                    self.push(numeric_binop(&a, &b, |x, y| x + y, |x, y| x + y)?);
+                    let ao = self.value_to_obj(a);
+                    let bo = self.value_to_obj(b);
+                    self.push_obj(numeric_binop(&ao, &bo, |x, y| x + y, |x, y| x + y)?);
                 }
             }
 
@@ -635,100 +697,100 @@ impl<'a> Vm<'a> {
             95 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let va = Value::from_lisp_object(&a);
-                let vb = Value::from_lisp_object(&b);
-                if let Some(result) = va.arith_mul(vb) {
-                    self.push(result.to_lisp_object());
+                if let Some(result) = a.arith_mul(b) {
+                    self.push(result);
                 } else {
-                    self.push(numeric_binop(&a, &b, |x, y| x * y, |x, y| x * y)?);
+                    let ao = self.value_to_obj(a);
+                    let bo = self.value_to_obj(b);
+                    self.push_obj(numeric_binop(&ao, &bo, |x, y| x * y, |x, y| x * y)?);
                 }
             }
 
             // quo (165)
             165 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
                 match (&a, &b) {
                     (LispObject::Integer(_), LispObject::Integer(0)) => {
                         return Err(ElispError::DivisionByZero);
                     }
                     (LispObject::Integer(x), LispObject::Integer(y)) => {
-                        self.push(LispObject::integer(x / y));
+                        self.push_obj(LispObject::integer(x / y));
                     }
                     _ => {
-                        self.push(numeric_binop(&a, &b, |x, y| x / y, |x, y| x / y)?);
+                        self.push_obj(numeric_binop(&a, &b, |x, y| x / y, |x, y| x / y)?);
                     }
                 }
             }
 
             // rem (166)
             166 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                self.push(numeric_binop(&a, &b, |x, y| x % y, |x, y| x % y)?);
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
+                self.push_obj(numeric_binop(&a, &b, |x, y| x % y, |x, y| x % y)?);
             }
 
             // point (98)
-            98 => self.push(LispObject::integer(0)), // stub
+            98 => self.push(Value::fixnum(0)), // stub
 
             // goto-char (99)
             99 => {
                 let _pos = self.pop()?;
-                self.push(LispObject::nil()); // stub
+                self.push(Value::nil()); // stub
             }
 
             // insert (100)
             100 => {
                 let _text = self.pop()?;
-                self.push(LispObject::nil()); // stub
+                self.push(Value::nil()); // stub
             }
 
             // point-max (101)
-            101 => self.push(LispObject::integer(0)), // stub
+            101 => self.push(Value::fixnum(0)), // stub
 
             // point-min (102)
-            102 => self.push(LispObject::integer(1)), // stub
+            102 => self.push(Value::fixnum(1)), // stub
 
             // char-after (103)
             103 => {
                 let _pos = self.pop()?;
-                self.push(LispObject::nil()); // stub
+                self.push(Value::nil()); // stub
             }
 
             // following-char (104)
-            104 => self.push(LispObject::nil()),
+            104 => self.push(Value::nil()),
 
             // preceding-char (105)
-            105 => self.push(LispObject::nil()),
+            105 => self.push(Value::nil()),
 
             // current-column (106)
-            106 => self.push(LispObject::integer(0)),
+            106 => self.push(Value::fixnum(0)),
 
             // indent-to (107)
             107 => {
                 let _col = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // eolp (109)
-            109 => self.push(LispObject::nil()),
+            109 => self.push(Value::nil()),
 
             // eobp (110)
-            110 => self.push(LispObject::nil()),
+            110 => self.push(Value::nil()),
 
             // bolp (111)
-            111 => self.push(LispObject::t()),
+            111 => self.push(Value::t()),
 
             // bobp (112)
-            112 => self.push(LispObject::t()),
+            112 => self.push(Value::t()),
 
             // current-buffer (113)
-            113 => self.push(LispObject::nil()),
+            113 => self.push(Value::nil()),
 
             // set-buffer (114)
             114 => {
                 let _buf = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // save-current-buffer (115) — like unwind-protect for buffer
@@ -737,60 +799,60 @@ impl<'a> Vm<'a> {
             }
 
             // interactive-p (118) — deprecated
-            118 => self.push(LispObject::nil()),
+            118 => self.push(Value::nil()),
 
             // forward-char (119)
             119 => {
                 let _n = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // forward-word (120)
             120 => {
                 let _n = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // forward-line (122)
             122 => {
                 let _n = self.pop()?;
-                self.push(LispObject::integer(0));
+                self.push(Value::fixnum(0));
             }
 
             // char-syntax (123)
             123 => {
                 let _ch = self.pop()?;
-                self.push(LispObject::integer(' ' as i64));
+                self.push(Value::fixnum(' ' as i64));
             }
 
             // buffer-substring (124)
             124 => {
                 let _end = self.pop()?;
                 let _start = self.pop()?;
-                self.push(LispObject::string(""));
+                self.push_obj(LispObject::string(""));
             }
 
             // delete-region (125)
             125 => {
                 let _end = self.pop()?;
                 let _start = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // narrow-to-region (126)
             126 => {
                 let _end = self.pop()?;
                 let _start = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // widen (127)
-            127 => self.push(LispObject::nil()),
+            127 => self.push(Value::nil()),
 
             // end-of-line (128)
             128 => {
                 let _n = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // goto (130)
@@ -849,19 +911,19 @@ impl<'a> Vm<'a> {
 
             // dup (137)
             137 => {
-                let val = self.top()?.clone();
+                let val = *self.top()?; // Value is Copy
                 self.push(val);
             }
 
             // save-excursion (138)
             138 => {
                 // stub: just push a marker
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // save-restriction (140)
             140 => {
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // catch (141): pop tag, read 2-byte jump target, execute body.
@@ -869,7 +931,7 @@ impl<'a> Vm<'a> {
             // the thrown value; otherwise re-throw.
             141 => {
                 let target = self.fetch_u16() as usize;
-                let tag = self.pop()?;
+                let tag = self.pop_obj()?;
                 let saved_stack_len = self.stack.len();
                 match self.run_until(target) {
                     Ok(()) => {
@@ -879,7 +941,7 @@ impl<'a> Vm<'a> {
                         if tag == throw_data.tag {
                             // Caught: restore stack depth and push thrown value
                             self.stack.truncate(saved_stack_len);
-                            self.push(throw_data.value);
+                            self.push_obj(throw_data.value);
                             self.pc = target;
                         } else {
                             // Not our tag — re-throw
@@ -896,7 +958,7 @@ impl<'a> Vm<'a> {
             // the unbind opcode can run it. Emacs encodes this as a special
             // entry in the specpdl that `unbind` later pops and executes.
             142 => {
-                let handler = self.pop()?;
+                let handler = self.pop_obj()?;
                 self.unwind_handlers.push(handler);
                 // Push a sentinel onto specpdl so that unbind knows to
                 // run the top unwind handler.
@@ -910,7 +972,7 @@ impl<'a> Vm<'a> {
             // the error data.
             143 => {
                 let target = self.fetch_u16() as usize;
-                let handler = self.pop()?;
+                let handler = self.pop_obj()?;
                 let saved_stack_len = self.stack.len();
                 match self.run_until(target) {
                     Ok(()) => {
@@ -939,7 +1001,7 @@ impl<'a> Vm<'a> {
                                 self.macros,
                                 self.state,
                             )?;
-                            self.push(result);
+                            self.push_obj(result);
                         } else {
                             // Non-bytecode handler — call via eval
                             let arg_list = LispObject::cons(err_value, LispObject::nil());
@@ -951,7 +1013,7 @@ impl<'a> Vm<'a> {
                                 self.macros,
                                 self.state,
                             )?;
-                            self.push(result);
+                            self.push_obj(result);
                         }
                         self.pc = target;
                     }
@@ -966,83 +1028,82 @@ impl<'a> Vm<'a> {
             // temp-output-buffer-show (145)
             145 => {
                 let _val = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // set-marker (147)
             147 => {
                 let _buf = self.pop()?;
                 let _pos = self.pop()?;
-                let marker = self.pop()?;
-                self.push(marker);
+                // marker passes through
             }
 
             // match-beginning (148)
             148 => {
                 let _n = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // match-end (149)
             149 => {
                 let _n = self.pop()?;
-                self.push(LispObject::nil());
+                self.push(Value::nil());
             }
 
             // string= (152)
             152 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
                 let result = match (&a, &b) {
                     (LispObject::String(s1), LispObject::String(s2)) => s1 == s2,
                     _ => false,
                 };
-                self.push(LispObject::from(result));
+                self.push(Value::from_bool(result));
             }
 
             // string< (153)
             153 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
                 let result = match (&a, &b) {
                     (LispObject::String(s1), LispObject::String(s2)) => s1 < s2,
                     _ => false,
                 };
-                self.push(LispObject::from(result));
+                self.push(Value::from_bool(result));
             }
 
             // equal (154)
             154 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                self.push(LispObject::from(a == b));
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
+                self.push(Value::from_bool(a == b));
             }
 
             // nthcdr (155)
             155 => {
-                let list = self.pop()?;
-                let n = self.pop()?;
+                let list = self.pop_obj()?;
+                let n = self.pop_obj()?;
                 let n = n.as_integer().unwrap_or(0) as usize;
                 let mut current = list;
                 for _ in 0..n {
                     current = current.rest().unwrap_or(LispObject::nil());
                 }
-                self.push(current);
+                self.push_obj(current);
             }
 
             // elt (156)
             156 => {
-                let idx = self.pop()?;
-                let seq = self.pop()?;
+                let idx = self.pop_obj()?;
+                let seq = self.pop_obj()?;
                 let i = idx.as_integer().unwrap_or(0) as usize;
                 let val = seq.nth(i).unwrap_or(LispObject::nil());
-                self.push(val);
+                self.push_obj(val);
             }
 
             // member (157)
             157 => {
-                let list = self.pop()?;
-                let elt = self.pop()?;
+                let list = self.pop_obj()?;
+                let elt = self.pop_obj()?;
                 let mut current = list;
                 let mut found = LispObject::nil();
                 while let Some((car, cdr)) = current.destructure_cons() {
@@ -1052,13 +1113,13 @@ impl<'a> Vm<'a> {
                     }
                     current = cdr;
                 }
-                self.push(found);
+                self.push_obj(found);
             }
 
             // assq (158)
             158 => {
-                let alist = self.pop()?;
-                let key = self.pop()?;
+                let alist = self.pop_obj()?;
+                let key = self.pop_obj()?;
                 let mut current = alist;
                 let mut found = LispObject::nil();
                 while let Some((entry, rest)) = current.destructure_cons() {
@@ -1070,41 +1131,41 @@ impl<'a> Vm<'a> {
                     }
                     current = rest;
                 }
-                self.push(found);
+                self.push_obj(found);
             }
 
             // setcar (160)
             160 => {
-                let newcar = self.pop()?;
-                let cons = self.pop()?;
+                let newcar = self.pop_obj()?;
+                let cons = self.pop_obj()?;
                 cons.set_car(newcar.clone());
-                self.push(newcar);
+                self.push_obj(newcar);
             }
 
             // setcdr (161)
             161 => {
-                let newcdr = self.pop()?;
-                let cons = self.pop()?;
+                let newcdr = self.pop_obj()?;
+                let cons = self.pop_obj()?;
                 cons.set_cdr(newcdr.clone());
-                self.push(newcdr);
+                self.push_obj(newcdr);
             }
 
             // car-safe (162)
             162 => {
-                let val = self.pop()?;
-                self.push(val.first().unwrap_or(LispObject::nil()));
+                let val = self.pop_obj()?;
+                self.push_obj(val.first().unwrap_or(LispObject::nil()));
             }
 
             // cdr-safe (163)
             163 => {
-                let val = self.pop()?;
-                self.push(val.rest().unwrap_or(LispObject::nil()));
+                let val = self.pop_obj()?;
+                self.push_obj(val.rest().unwrap_or(LispObject::nil()));
             }
 
             // nconc (164)
             164 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
                 // Non-destructive append
                 let mut items = Vec::new();
                 let mut cur = a;
@@ -1116,19 +1177,19 @@ impl<'a> Vm<'a> {
                 for item in items.into_iter().rev() {
                     result = LispObject::cons(item, result);
                 }
-                self.push(result);
+                self.push_obj(result);
             }
 
             // numberp (167)
             167 => {
                 let val = self.pop()?;
-                self.push(LispObject::from(val.is_integer() || val.is_float()));
+                self.push(Value::from_bool(val.is_fixnum() || val.is_float()));
             }
 
             // integerp (168)
             168 => {
                 let val = self.pop()?;
-                self.push(LispObject::from(val.is_integer()));
+                self.push(Value::from_bool(val.is_fixnum()));
             }
 
             // listN (175)
@@ -1137,12 +1198,12 @@ impl<'a> Vm<'a> {
                 let mut list = LispObject::nil();
                 let mut items: Vec<LispObject> = Vec::with_capacity(n);
                 for _ in 0..n {
-                    items.push(self.pop()?);
+                    items.push(self.pop_obj()?);
                 }
                 for item in items {
                     list = LispObject::cons(item, list);
                 }
-                self.push(list);
+                self.push_obj(list);
             }
 
             // concatN (176)
@@ -1150,10 +1211,10 @@ impl<'a> Vm<'a> {
                 let n = self.fetch_u8() as usize;
                 let mut parts: Vec<String> = Vec::with_capacity(n);
                 for _ in 0..n {
-                    parts.push(self.pop()?.princ_to_string());
+                    parts.push(self.pop_obj()?.princ_to_string());
                 }
                 parts.reverse();
-                self.push(LispObject::string(&parts.join("")));
+                self.push_obj(LispObject::string(&parts.join("")));
             }
 
             // insertN (177)
@@ -1162,13 +1223,13 @@ impl<'a> Vm<'a> {
                 for _ in 0..n {
                     self.pop()?;
                 }
-                self.push(LispObject::nil()); // stub
+                self.push(Value::nil()); // stub
             }
 
             // stack-set (178)
             178 => {
                 let n = self.fetch_u8() as usize;
-                let val = self.top()?.clone();
+                let val = *self.top()?; // Value is Copy
                 let idx = self.stack.len() - 1 - n;
                 self.stack[idx] = val;
             }
@@ -1176,7 +1237,7 @@ impl<'a> Vm<'a> {
             // stack-set2 (179)
             179 => {
                 let n = self.fetch_u16() as usize;
-                let val = self.top()?.clone();
+                let val = *self.top()?; // Value is Copy
                 let idx = self.stack.len() - 1 - n;
                 self.stack[idx] = val;
             }
@@ -1207,7 +1268,7 @@ impl<'a> Vm<'a> {
                     .get(idx)
                     .cloned()
                     .unwrap_or(LispObject::nil());
-                self.push(val);
+                self.push_obj(val);
             }
 
             _ => {
@@ -1316,10 +1377,10 @@ impl<'a> Vm<'a> {
     fn op_call(&mut self, nargs: usize) -> ElispResult<()> {
         let mut args = Vec::with_capacity(nargs);
         for _ in 0..nargs {
-            args.push(self.pop()?);
+            args.push(self.pop_obj()?);
         }
         args.reverse();
-        let func = self.pop()?;
+        let func = self.pop_obj()?;
 
         // Build args as a cons list for call_function
         let mut arg_list = LispObject::nil();
@@ -1335,7 +1396,7 @@ impl<'a> Vm<'a> {
             self.macros,
             self.state,
         )?;
-        self.push(result);
+        self.push_obj(result);
         Ok(())
     }
 }
