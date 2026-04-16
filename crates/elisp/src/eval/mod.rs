@@ -1585,6 +1585,440 @@ fn eval_inner(
                     &std::env::var("USER").unwrap_or_default(),
                 ))),
                 "emacs-pid" => Ok(obj_to_value(LispObject::integer(std::process::id() as i64))),
+                // -- Char-table primitives (P4 i18n stubs) --
+                "make-char-table" => {
+                    // (make-char-table PURPOSE &optional INIT)
+                    // Evaluate args for side-effects, return nil (no real char-table type)
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "set-char-table-range" => {
+                    // (set-char-table-range TABLE RANGE VALUE) → VALUE
+                    let mut vals = Vec::new();
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        vals.push(eval(obj_to_value(arg), env, editor, macros, state)?);
+                        cur = rest;
+                    }
+                    Ok(vals.into_iter().last().unwrap_or(Value::nil()))
+                }
+                "char-table-range" => {
+                    // (char-table-range TABLE CHAR) → nil
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "set-char-table-parent" => {
+                    // (set-char-table-parent TABLE PARENT) → no-op
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "char-table-parent" => {
+                    // (char-table-parent TABLE) → nil
+                    let _ = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(Value::nil())
+                }
+                "char-table-extra-slot" => {
+                    // (char-table-extra-slot TABLE N) → nil
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "set-char-table-extra-slot" => {
+                    // (set-char-table-extra-slot TABLE N VALUE) → VALUE
+                    let mut vals = Vec::new();
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        vals.push(eval(obj_to_value(arg), env, editor, macros, state)?);
+                        cur = rest;
+                    }
+                    Ok(vals.into_iter().last().unwrap_or(Value::nil()))
+                }
+                "map-char-table" => {
+                    // (map-char-table FUNCTION TABLE) → no-op
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "standard-case-table" | "standard-syntax-table" | "syntax-table" => {
+                    // No args, return nil
+                    Ok(Value::nil())
+                }
+                "set-standard-case-table" | "set-syntax-table" => {
+                    // (set-standard-case-table TABLE) → no-op
+                    let _ = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(Value::nil())
+                }
+                "char-syntax" => {
+                    // (char-syntax CHAR) → ?\s (space = word constituent, integer 32)
+                    let _ = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(obj_to_value(LispObject::integer(32))) // ?\s = space
+                }
+                // -- Coding system stubs (P4 i18n) --
+                "define-coding-system-alias" => {
+                    // (define-coding-system-alias ALIAS CODING-SYSTEM) → no-op
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "coding-system-p" => {
+                    // (coding-system-p OBJ) → nil
+                    let _ = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(Value::nil())
+                }
+                "check-coding-system" => {
+                    // (check-coding-system CODING-SYSTEM) → return arg
+                    eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )
+                }
+                "coding-system-list" => {
+                    // (coding-system-list) → nil
+                    Ok(Value::nil())
+                }
+                "find-coding-systems-region" => {
+                    // (find-coding-systems-region START END) → empty list
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "encode-coding-string" | "decode-coding-string" => {
+                    // (encode-coding-string STRING CODING-SYSTEM) → STRING
+                    // (decode-coding-string STRING CODING-SYSTEM) → STRING
+                    let string_val = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    // Eval remaining args for side effects
+                    if let Some(rest) = cdr.rest() {
+                        let mut cur = rest;
+                        while let Some((arg, r)) = cur.destructure_cons() {
+                            let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                            cur = r;
+                        }
+                    }
+                    Ok(string_val)
+                }
+                "set-keyboard-coding-system" | "set-terminal-coding-system" => {
+                    // (set-keyboard-coding-system CODING-SYSTEM) → no-op
+                    let _ = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(Value::nil())
+                }
+                "string-to-multibyte" | "string-to-unibyte" => {
+                    // (string-to-multibyte STRING) → STRING (identity)
+                    eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )
+                }
+                "unibyte-string" => {
+                    // (unibyte-string &rest BYTES) → construct string from byte values
+                    let mut bytes = Vec::new();
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let val =
+                            value_to_obj(eval(obj_to_value(arg), env, editor, macros, state)?);
+                        if let Some(n) = val.as_integer() {
+                            bytes.push(n as u8);
+                        }
+                        cur = rest;
+                    }
+                    Ok(obj_to_value(LispObject::string(&String::from_utf8_lossy(
+                        &bytes,
+                    ))))
+                }
+                "locale-coding-system" => {
+                    // Variable stub → nil
+                    Ok(Value::nil())
+                }
+                // -- Misc internationalization stubs (P4 i18n) --
+                "set-language-environment"
+                | "set-default-coding-systems"
+                | "prefer-coding-system" => {
+                    // (set-language-environment ENV) → no-op
+                    let _ = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(Value::nil())
+                }
+                "define-charset-internal" => {
+                    // (define-charset-internal &rest ARGS) → no-op, eval all args
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "put-charset-property" => {
+                    // (put-charset-property CHARSET PROPNAME VALUE) → no-op
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "charset-plist" => {
+                    // (charset-plist CHARSET) → nil
+                    let _ = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(Value::nil())
+                }
+                // -- locate-library --
+                "locate-library" => {
+                    let name_val = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let name_str = name_val
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?
+                        .clone();
+                    let load_path = state
+                        .global_env
+                        .read()
+                        .get("load-path")
+                        .unwrap_or(LispObject::nil());
+                    let mut load_dirs = Vec::new();
+                    let mut cur = load_path;
+                    while let Some((dir, rest)) = cur.destructure_cons() {
+                        if let Some(d) = dir.as_string() {
+                            load_dirs.push(d.clone());
+                        }
+                        cur = rest;
+                    }
+                    let suffixes = [".elc", ".el", ""];
+                    for suffix in &suffixes {
+                        let full = format!("{}{}", name_str, suffix);
+                        if std::path::Path::new(&full).exists() {
+                            return Ok(obj_to_value(LispObject::string(&full)));
+                        }
+                        for d in &load_dirs {
+                            let candidate = format!("{}/{}", d, full);
+                            if std::path::Path::new(&candidate).exists() {
+                                return Ok(obj_to_value(LispObject::string(&candidate)));
+                            }
+                        }
+                    }
+                    Ok(Value::nil())
+                }
+                // -- Text property primitives (P5 stubs) --
+                "propertize" => {
+                    // (propertize STRING &rest PROPERTIES) -> STRING
+                    let s = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    eval(obj_to_value(s), env, editor, macros, state)
+                }
+                "put-text-property"
+                | "set-text-properties"
+                | "add-text-properties"
+                | "remove-text-properties" => {
+                    // No-op: eval all args for side effects
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "get-text-property"
+                | "text-properties-at"
+                | "next-single-property-change"
+                | "previous-single-property-change"
+                | "text-property-any" => {
+                    // Eval args, return nil
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+
+                // -- Face primitives (P5 stubs) --
+                "make-face" => {
+                    // (make-face FACE) -> FACE symbol
+                    let face = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    eval(obj_to_value(face), env, editor, macros, state)
+                }
+                "face-list" => Ok(Value::nil()),
+                "set-face-attribute" | "internal-set-lisp-face-attribute" | "face-spec-set" => {
+                    // No-op: eval all args
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "face-attribute"
+                | "face-attribute-relative-p"
+                | "internal-lisp-face-attribute-values" => {
+                    // Eval args, return nil
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "display-supports-face-attributes-p" => {
+                    // Eval args, return t (we "support" everything)
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(obj_to_value(LispObject::t()))
+                }
+
+                // -- pcase stubs (P5) --
+                "pcase" => {
+                    // (pcase EXPR CLAUSES...)
+                    let expr_form = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let expr_val = eval(obj_to_value(expr_form), env, editor, macros, state)?;
+                    let clauses = cdr.rest().unwrap_or(LispObject::nil());
+                    let mut cur = clauses;
+                    while let Some((clause, rest)) = cur.destructure_cons() {
+                        let (pattern, body) = match clause.destructure_cons() {
+                            Some(pair) => pair,
+                            None => {
+                                cur = rest;
+                                continue;
+                            }
+                        };
+                        // _ or t matches everything (wildcard)
+                        if let Some(s) = pattern.as_symbol() {
+                            if s == "_" || s == "t" {
+                                return eval_progn(obj_to_value(body), env, editor, macros, state);
+                            }
+                        }
+                        // Quoted pattern: (quote VAL) matches if equal
+                        if let Some(quoted) = pattern.as_quote_content() {
+                            if value_to_obj(expr_val) == quoted {
+                                return eval_progn(obj_to_value(body), env, editor, macros, state);
+                            }
+                        }
+                        // Literal match
+                        match eval(obj_to_value(pattern), env, editor, macros, state) {
+                            Ok(pattern_val) if pattern_val == expr_val => {
+                                return eval_progn(obj_to_value(body), env, editor, macros, state);
+                            }
+                            _ => {}
+                        }
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+                "pcase-let" | "pcase-let*" => {
+                    // Treat as let/let*
+                    special_forms::eval_let(obj_to_value(cdr), env, editor, macros, state)
+                }
+                "pcase-dolist" => {
+                    // Treat as dolist
+                    builtins::eval_dolist(obj_to_value(cdr), env, editor, macros, state)
+                }
+
+                // -- Button stubs (P5) --
+                "define-button-type" => {
+                    // (define-button-type NAME &rest PROPERTIES) -> NAME
+                    let name = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    eval(obj_to_value(name), env, editor, macros, state)
+                }
+
+                // -- Misc stubs (P5) --
+                "make-local-variable" => {
+                    // (make-local-variable VAR) -> VAR
+                    let var = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    eval(obj_to_value(var), env, editor, macros, state)
+                }
+                "frame-list" | "window-list" => Ok(Value::nil()),
+                "selected-frame" | "selected-window" => Ok(Value::nil()),
+                "frame-parameter" => {
+                    // Eval args, return nil
+                    let mut cur = cdr.clone();
+                    while let Some((arg, rest)) = cur.destructure_cons() {
+                        let _ = eval(obj_to_value(arg), env, editor, macros, state)?;
+                        cur = rest;
+                    }
+                    Ok(Value::nil())
+                }
+
                 _ => {
                     if let Some(s) = car.as_symbol() {
                         let macro_table = macros.read();
