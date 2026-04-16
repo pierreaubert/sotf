@@ -306,6 +306,10 @@ impl Reader {
                     Err(ElispError::ReaderError("expected ( after #s".to_string()))
                 }
             }
+            '[' => {
+                self.advance();
+                self.read_bytecode_literal()
+            }
             _ => Err(ElispError::ReaderError(format!(
                 "unknown # dispatch: #{}",
                 c
@@ -328,6 +332,124 @@ impl Reader {
             elements.push(self.read()?);
         }
         Ok(elements)
+    }
+
+    fn read_bytecode_literal(&mut self) -> ElispResult<LispObject> {
+        use crate::object::BytecodeFunction;
+
+        // 1. Read arglist (an integer)
+        self.skip_whitespace();
+        let argdesc_obj = self.read()?;
+        let argdesc = argdesc_obj.as_integer().ok_or_else(|| {
+            ElispError::ReaderError(format!(
+                "bytecode arglist must be an integer, got {:?}",
+                argdesc_obj
+            ))
+        })?;
+
+        // 2. Read bytecode string (raw opcodes encoded as string chars)
+        self.skip_whitespace();
+        let bytecode_obj = self.read()?;
+        let bytecode_str = bytecode_obj
+            .as_string()
+            .ok_or_else(|| ElispError::ReaderError("bytecode must be a string".to_string()))?;
+        let bytecode: Vec<u8> = bytecode_str.chars().map(|c| c as u8).collect();
+
+        // 3. Read constants vector (elements until ']')
+        self.skip_whitespace();
+        let constants = if self.peek() == Some('[') {
+            self.advance(); // consume '['
+            let mut elems = Vec::new();
+            loop {
+                self.skip_whitespace();
+                match self.peek() {
+                    Some(']') => {
+                        self.advance();
+                        break;
+                    }
+                    None => {
+                        return Err(ElispError::ReaderError(
+                            "unterminated constants vector in bytecode literal".to_string(),
+                        ));
+                    }
+                    _ => elems.push(self.read()?),
+                }
+            }
+            elems
+        } else {
+            // Could also be nil for empty constants
+            let obj = self.read()?;
+            if obj.is_nil() {
+                Vec::new()
+            } else {
+                return Err(ElispError::ReaderError(format!(
+                    "bytecode constants must be a vector or nil, got {:?}",
+                    obj
+                )));
+            }
+        };
+
+        // 4. Read maxdepth (an integer)
+        self.skip_whitespace();
+        let maxdepth_obj = self.read()?;
+        let maxdepth = maxdepth_obj.as_integer().ok_or_else(|| {
+            ElispError::ReaderError(format!(
+                "bytecode maxdepth must be an integer, got {:?}",
+                maxdepth_obj
+            ))
+        })? as usize;
+
+        // 5. Optionally read docstring and interactive spec, then consume until ']'
+        let mut docstring: Option<String> = None;
+        let mut interactive: Option<Box<LispObject>> = None;
+
+        self.skip_whitespace();
+        if self.peek() != Some(']') {
+            let doc_obj = self.read()?;
+            if let Some(s) = doc_obj.as_string() {
+                docstring = Some(s.clone());
+            } else if doc_obj.as_integer().is_some() {
+                // Integer docstring reference (file offset) — store as string
+                docstring = Some(doc_obj.prin1_to_string());
+            }
+            // else: ignore non-string, non-integer doc slot
+
+            self.skip_whitespace();
+            if self.peek() != Some(']') {
+                let inter_obj = self.read()?;
+                if !inter_obj.is_nil() {
+                    interactive = Some(Box::new(inter_obj));
+                }
+            }
+        }
+
+        // 6. Discard any remaining elements until ']'
+        loop {
+            self.skip_whitespace();
+            match self.peek() {
+                Some(']') => {
+                    self.advance();
+                    break;
+                }
+                None => {
+                    return Err(ElispError::ReaderError(
+                        "unterminated bytecode literal".to_string(),
+                    ));
+                }
+                _ => {
+                    self.read()?; // discard
+                }
+            }
+        }
+
+        Ok(LispObject::BytecodeFn(BytecodeFunction {
+            argdesc,
+            bytecode,
+            constants,
+            maxdepth,
+            docstring,
+            interactive,
+        }))
     }
 
     fn read_char_literal(&mut self) -> ElispResult<LispObject> {
@@ -400,6 +522,34 @@ impl Reader {
                     '"' => s.push('"'),
                     '\\' => s.push('\\'),
                     '\n' => {} // backslash-newline: skip both
+                    'x' => {
+                        // Hex escape: \xNN
+                        let mut hex = String::new();
+                        while let Some(h) = self.peek() {
+                            if h.is_ascii_hexdigit() {
+                                hex.push(h);
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                        if hex.is_empty() {
+                            s.push('\\');
+                            s.push('x');
+                        } else {
+                            let code = u32::from_str_radix(&hex, 16).map_err(|_| {
+                                ElispError::ReaderError(format!("invalid hex escape: \\x{}", hex))
+                            })?;
+                            if let Some(ch) = char::from_u32(code) {
+                                s.push(ch);
+                            } else {
+                                return Err(ElispError::ReaderError(format!(
+                                    "invalid unicode code point: \\x{}",
+                                    hex
+                                )));
+                            }
+                        }
+                    }
                     _ => {
                         s.push('\\');
                         s.push(c);
@@ -853,6 +1003,81 @@ mod tests {
 "#;
         let forms = read_all(source).unwrap();
         assert_eq!(forms.len(), 9); // defun, defmacro, 2x defvar, 3x setq, mapcar
+    }
+
+    #[test]
+    fn test_read_bytecode_literal() {
+        // Simple: #[257 "\x54\x87" [] 2]
+        let result = read("#[257 \"\\x54\\x87\" [] 2]").unwrap();
+        assert!(matches!(result, LispObject::BytecodeFn(_)));
+        if let LispObject::BytecodeFn(bc) = result {
+            assert_eq!(bc.argdesc, 257);
+            assert_eq!(bc.bytecode, vec![0x54, 0x87]);
+            assert_eq!(bc.constants.len(), 0);
+            assert_eq!(bc.maxdepth, 2);
+            assert!(bc.docstring.is_none());
+            assert!(bc.interactive.is_none());
+        }
+    }
+
+    #[test]
+    fn test_read_bytecode_with_constants() {
+        // #[513 "\x01\x02" [foo bar] 4]
+        let result = read("#[513 \"\\x01\\x02\" [foo bar] 4]").unwrap();
+        if let LispObject::BytecodeFn(bc) = result {
+            assert_eq!(bc.argdesc, 513);
+            assert_eq!(bc.bytecode, vec![0x01, 0x02]);
+            assert_eq!(bc.constants.len(), 2);
+            assert_eq!(bc.constants[0], LispObject::symbol("foo"));
+            assert_eq!(bc.constants[1], LispObject::symbol("bar"));
+            assert_eq!(bc.maxdepth, 4);
+        } else {
+            panic!("expected BytecodeFn");
+        }
+    }
+
+    #[test]
+    fn test_read_bytecode_with_docstring() {
+        let result = read("#[257 \"\\x54\" [] 2 \"A docstring.\"]").unwrap();
+        if let LispObject::BytecodeFn(bc) = result {
+            assert_eq!(bc.argdesc, 257);
+            assert_eq!(bc.maxdepth, 2);
+            assert_eq!(bc.docstring, Some("A docstring.".to_string()));
+            assert!(bc.interactive.is_none());
+        } else {
+            panic!("expected BytecodeFn");
+        }
+    }
+
+    #[test]
+    fn test_read_bytecode_with_interactive() {
+        let result = read("#[257 \"\\x54\" [] 2 \"doc\" (interactive \"p\")]").unwrap();
+        if let LispObject::BytecodeFn(bc) = result {
+            assert_eq!(bc.docstring, Some("doc".to_string()));
+            assert!(bc.interactive.is_some());
+        } else {
+            panic!("expected BytecodeFn");
+        }
+    }
+
+    #[test]
+    fn test_read_bytecode_nil_constants() {
+        // Some bytecode uses nil instead of [] for empty constants
+        let result = read("#[0 \"\" nil 0]").unwrap();
+        if let LispObject::BytecodeFn(bc) = result {
+            assert_eq!(bc.argdesc, 0);
+            assert!(bc.bytecode.is_empty());
+            assert!(bc.constants.is_empty());
+            assert_eq!(bc.maxdepth, 0);
+        } else {
+            panic!("expected BytecodeFn");
+        }
+    }
+
+    #[test]
+    fn test_read_string_hex_escape() {
+        let result = read("\"\\x41\\x42\"").unwrap();
+        assert_eq!(result, LispObject::string("AB"));
     }
 
     #[test]

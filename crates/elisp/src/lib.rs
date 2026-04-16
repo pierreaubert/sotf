@@ -1,5 +1,7 @@
 mod error;
 mod eval;
+pub mod gc;
+pub mod jit;
 mod object;
 mod primitives;
 mod reader;
