@@ -58,8 +58,9 @@ macro_rules! eval_next {
 fn is_callable_value(obj: &LispObject) -> bool {
     match obj {
         LispObject::Primitive(_) | LispObject::BytecodeFn(_) => true,
-        LispObject::Cons(car, _) => {
-            matches!(car.as_ref(), LispObject::Symbol(s) if s == "lambda")
+        LispObject::Cons(cell) => {
+            let b = cell.lock();
+            matches!(&b.0, LispObject::Symbol(s) if s == "lambda")
         }
         _ => false,
     }
@@ -245,7 +246,7 @@ fn eval_inner(
             let env = env.read();
             env.get(&name).ok_or(ElispError::VoidVariable(name))
         }
-        LispObject::Cons(_, _) => {
+        LispObject::Cons(_) => {
             let (car, cdr) = expr.destructure();
             match &car {
                 LispObject::Symbol(s) => match s.as_str() {
@@ -358,8 +359,8 @@ fn eval_inner(
                             }
                             cur = rest;
                         }
-                        Ok(LispObject::HashTable(Box::new(
-                            crate::object::LispHashTable::new(test),
+                        Ok(LispObject::HashTable(std::sync::Arc::new(
+                            parking_lot::Mutex::new(crate::object::LispHashTable::new(test)),
                         )))
                     }
                     "gethash" => {
@@ -383,7 +384,7 @@ fn eval_inner(
                             LispObject::nil()
                         };
                         if let LispObject::HashTable(ht) = &table {
-                            Ok(ht.get(&key).cloned().unwrap_or(default))
+                            Ok(ht.lock().get(&key).cloned().unwrap_or(default))
                         } else {
                             Ok(default)
                         }
@@ -405,10 +406,8 @@ fn eval_inner(
                         )?;
                         let table_expr = cdr.nth(2).ok_or(ElispError::WrongNumberOfArguments)?;
                         let table = eval(table_expr, env, editor, macros, state)?;
-                        if let LispObject::HashTable(mut ht) = table {
-                            ht.put(&key, value.clone());
-                            // Note: mutation doesn't propagate to original binding
-                            // This is a known limitation of the immutable object model
+                        if let LispObject::HashTable(ht) = &table {
+                            ht.lock().put(&key, value.clone());
                         }
                         Ok(value)
                     }
@@ -432,7 +431,7 @@ fn eval_inner(
                             state,
                         )?;
                         if let LispObject::HashTable(ht) = &arg {
-                            Ok(LispObject::integer(ht.data.len() as i64))
+                            Ok(LispObject::integer(ht.lock().data.len() as i64))
                         } else {
                             Ok(LispObject::integer(0))
                         }
@@ -489,6 +488,7 @@ fn eval_inner(
                         let i = idx.as_integer().unwrap_or(0) as usize;
                         match &array {
                             LispObject::Vector(v) => {
+                                let v = v.lock();
                                 Ok(v.get(i).cloned().unwrap_or(LispObject::nil()))
                             }
                             LispObject::String(s) => Ok(LispObject::integer(
@@ -691,25 +691,45 @@ fn eval_inner(
                         Ok(result)
                     }
                     "nconc" => {
-                        // Evaluate all args, append them (non-destructive since immutable)
-                        let mut result = LispObject::nil();
-                        let mut all_items = Vec::new();
+                        // Destructive nconc: mutate the last cdr of each list
+                        // to point to the next list.
+                        let mut lists = Vec::new();
                         let mut current = cdr.clone();
                         while let Some((arg_expr, rest)) = current.destructure_cons() {
-                            let list = eval(arg_expr, env, editor, macros, state)?;
-                            let mut cur = list;
-                            while let Some((car, cdr_val)) = cur.destructure_cons() {
-                                all_items.push(car);
-                                cur = cdr_val;
-                            }
-                            // If last arg is non-nil atom, it becomes the tail
-                            if !cur.is_nil() && rest.is_nil() {
-                                result = cur;
-                            }
+                            lists.push(eval(arg_expr, env, editor, macros, state)?);
                             current = rest;
                         }
-                        for item in all_items.into_iter().rev() {
-                            result = LispObject::cons(item, result);
+                        if lists.is_empty() {
+                            return Ok(LispObject::nil());
+                        }
+                        // Find the first non-nil list as result
+                        let mut result_idx = None;
+                        for (i, l) in lists.iter().enumerate() {
+                            if !l.is_nil() {
+                                result_idx = Some(i);
+                                break;
+                            }
+                        }
+                        let result_idx = match result_idx {
+                            Some(i) => i,
+                            None => return Ok(lists.last().cloned().unwrap_or(LispObject::nil())),
+                        };
+                        let result = lists[result_idx].clone();
+                        // Chain: for each non-nil list, find its last cons and
+                        // set_cdr to the next non-nil list (or last arg).
+                        let mut prev = lists[result_idx].clone();
+                        for next in &lists[result_idx + 1..] {
+                            // Walk prev to its last cons
+                            let mut tail = prev.clone();
+                            loop {
+                                let cdr_val = tail.cdr().unwrap_or(LispObject::nil());
+                                if !cdr_val.is_cons() {
+                                    break;
+                                }
+                                tail = cdr_val;
+                            }
+                            tail.set_cdr(next.clone());
+                            prev = next.clone();
                         }
                         Ok(result)
                     }
@@ -758,7 +778,9 @@ fn eval_inner(
                             items.push(eval(arg, env, editor, macros, state)?);
                             current = rest;
                         }
-                        Ok(LispObject::Vector(items))
+                        Ok(LispObject::Vector(std::sync::Arc::new(
+                            parking_lot::Mutex::new(items),
+                        )))
                     }
                     "make-symbol" => {
                         let name = eval(
@@ -1128,7 +1150,7 @@ fn eval_macroexpand(
 ) -> ElispResult<LispObject> {
     let form = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
 
-    if let LispObject::Cons(_, _) = form {
+    if let LispObject::Cons(_) = form {
         let car = form.first().unwrap_or(LispObject::nil());
         if let LispObject::Symbol(ref s) = car {
             let macro_table = macros.read();
@@ -1399,7 +1421,7 @@ fn eval_list(
 ) -> ElispResult<LispObject> {
     match args {
         LispObject::Nil => Ok(LispObject::nil()),
-        LispObject::Cons(_, _) => {
+        LispObject::Cons(_) => {
             let (car, cdr) = args.clone().destructure();
             let car_eval = eval(car, env, editor, macros, state)?;
             let cdr_eval = eval_list(&cdr, env, editor, macros, state)?;
@@ -2259,11 +2281,15 @@ pub fn call_function(
     state: &InterpreterState,
 ) -> ElispResult<LispObject> {
     match func {
-        LispObject::Cons(car, cdr) => {
-            if let LispObject::Symbol(s) = car.as_ref() {
+        LispObject::Cons(cell) => {
+            let (car_val, cdr_val) = {
+                let b = cell.lock();
+                (b.0.clone(), b.1.clone())
+            };
+            if let LispObject::Symbol(s) = &car_val {
                 if s == "lambda" {
-                    let params = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
-                    let body = cdr.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let params = cdr_val.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let body = cdr_val.rest().ok_or(ElispError::WrongNumberOfArguments)?;
                     return apply_lambda(&params, &body, args, env, editor, macros, state);
                 }
             }
@@ -2811,7 +2837,7 @@ mod tests {
         let result = interp
             .eval(read("(function (lambda (x) (+ x 1)))").unwrap())
             .unwrap();
-        assert!(matches!(result, LispObject::Cons(_, _)));
+        assert!(matches!(result, LispObject::Cons(_)));
     }
 
     #[test]
@@ -3705,5 +3731,60 @@ mod tests {
         // Simple backquote on constant list
         let result = interp.eval(read("`(a b c)").unwrap()).unwrap();
         assert_eq!(result.princ_to_string(), "(a b c)");
+    }
+
+    #[test]
+    fn test_setcar_mutates_in_place() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // setcar should mutate the original cons cell
+        assert_eq!(
+            interp
+                .eval(read("(let ((x '(a b c))) (setcar x 'z) (car x))").unwrap())
+                .unwrap(),
+            LispObject::symbol("z")
+        );
+    }
+
+    #[test]
+    fn test_setcdr_mutates_in_place() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // setcdr should mutate the original cons cell
+        assert_eq!(
+            interp
+                .eval(read("(let ((x '(a b c))) (setcdr x '(y z)) (cdr x))").unwrap())
+                .unwrap(),
+            read("(y z)").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_nconc_destructive() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // nconc should destructively append: x itself should now be (1 2 3 4)
+        assert_eq!(
+            interp
+                .eval(read("(let ((x '(1 2)) (y '(3 4))) (nconc x y) x)").unwrap())
+                .unwrap(),
+            read("(1 2 3 4)").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_puthash_mutates_in_place() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // puthash should mutate the hash table in-place
+        assert_eq!(
+            interp
+                .eval(
+                    read("(let ((h (make-hash-table :test 'equal))) (puthash \"key\" 42 h) (gethash \"key\" h))")
+                        .unwrap()
+                )
+                .unwrap(),
+            LispObject::integer(42)
+        );
     }
 }

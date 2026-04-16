@@ -1,3 +1,11 @@
+use parking_lot::Mutex;
+use std::sync::Arc;
+
+/// Shared mutable cell used for cons, vector, and hash table mutation semantics.
+pub type ConsCell = Arc<Mutex<(LispObject, LispObject)>>;
+pub type SharedVec = Arc<Mutex<Vec<LispObject>>>;
+pub type SharedHashTable = Arc<Mutex<LispHashTable>>;
+
 /// Hash table test function type.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HashTableTest {
@@ -6,7 +14,7 @@ pub enum HashTableTest {
     Equal,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum LispObject {
     Nil,
     T,
@@ -14,11 +22,30 @@ pub enum LispObject {
     Integer(i64),
     Float(f64),
     String(String),
-    Cons(Box<LispObject>, Box<LispObject>),
+    Cons(ConsCell),
     Primitive(String),
-    Vector(Vec<LispObject>),
+    Vector(SharedVec),
     BytecodeFn(BytecodeFunction),
-    HashTable(Box<LispHashTable>),
+    HashTable(SharedHashTable),
+}
+
+impl PartialEq for LispObject {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (LispObject::Nil, LispObject::Nil) => true,
+            (LispObject::T, LispObject::T) => true,
+            (LispObject::Symbol(a), LispObject::Symbol(b)) => a == b,
+            (LispObject::Integer(a), LispObject::Integer(b)) => a == b,
+            (LispObject::Float(a), LispObject::Float(b)) => a == b,
+            (LispObject::String(a), LispObject::String(b)) => a == b,
+            (LispObject::Cons(a), LispObject::Cons(b)) => *a.lock() == *b.lock(),
+            (LispObject::Primitive(a), LispObject::Primitive(b)) => a == b,
+            (LispObject::Vector(a), LispObject::Vector(b)) => *a.lock() == *b.lock(),
+            (LispObject::BytecodeFn(a), LispObject::BytecodeFn(b)) => a == b,
+            (LispObject::HashTable(a), LispObject::HashTable(b)) => a.lock().test == b.lock().test,
+            _ => false,
+        }
+    }
 }
 
 /// An Emacs-style hash table.
@@ -168,7 +195,7 @@ impl LispObject {
     }
 
     pub fn cons(car: LispObject, cdr: LispObject) -> Self {
-        LispObject::Cons(Box::new(car), Box::new(cdr))
+        LispObject::Cons(Arc::new(Mutex::new((car, cdr))))
     }
 
     pub fn integer(i: i64) -> Self {
@@ -208,20 +235,32 @@ impl LispObject {
     }
 
     pub fn is_cons(&self) -> bool {
-        matches!(self, LispObject::Cons(_, _))
+        matches!(self, LispObject::Cons(_))
     }
 
-    pub fn car(&self) -> Option<&LispObject> {
+    pub fn car(&self) -> Option<LispObject> {
         match self {
-            LispObject::Cons(car, _) => Some(car),
+            LispObject::Cons(cell) => Some(cell.lock().0.clone()),
             _ => None,
         }
     }
 
-    pub fn cdr(&self) -> Option<&LispObject> {
+    pub fn cdr(&self) -> Option<LispObject> {
         match self {
-            LispObject::Cons(_, cdr) => Some(cdr),
+            LispObject::Cons(cell) => Some(cell.lock().1.clone()),
             _ => None,
+        }
+    }
+
+    pub fn set_car(&self, val: LispObject) {
+        if let LispObject::Cons(cell) = self {
+            cell.lock().0 = val;
+        }
+    }
+
+    pub fn set_cdr(&self, val: LispObject) {
+        if let LispObject::Cons(cell) = self {
+            cell.lock().1 = val;
         }
     }
 
@@ -255,28 +294,34 @@ impl LispObject {
 
     pub fn destructure(self) -> (LispObject, LispObject) {
         match self {
-            LispObject::Cons(car, cdr) => (*car, *cdr),
+            LispObject::Cons(cell) => {
+                let b = cell.lock();
+                (b.0.clone(), b.1.clone())
+            }
             _ => (LispObject::Nil, LispObject::Nil),
         }
     }
 
     pub fn destructure_cons(&self) -> Option<(LispObject, LispObject)> {
         match self {
-            LispObject::Cons(car, cdr) => Some(((**car).clone(), (**cdr).clone())),
+            LispObject::Cons(cell) => {
+                let b = cell.lock();
+                Some((b.0.clone(), b.1.clone()))
+            }
             _ => None,
         }
     }
 
     pub fn first(&self) -> Option<LispObject> {
         match self {
-            LispObject::Cons(car, _) => Some((**car).clone()),
+            LispObject::Cons(cell) => Some(cell.lock().0.clone()),
             _ => None,
         }
     }
 
     pub fn rest(&self) -> Option<LispObject> {
         match self {
-            LispObject::Cons(_, cdr) => Some((**cdr).clone()),
+            LispObject::Cons(cell) => Some(cell.lock().1.clone()),
             _ => None,
         }
     }
@@ -310,10 +355,11 @@ impl LispObject {
 
     pub fn as_quote_content(&self) -> Option<LispObject> {
         match self {
-            LispObject::Cons(car, cdr) => {
-                if let LispObject::Symbol(s) = &**car {
+            LispObject::Cons(cell) => {
+                let b = cell.lock();
+                if let LispObject::Symbol(s) = &b.0 {
                     if s == "quote" {
-                        return cdr.first();
+                        return b.1.first();
                     }
                 }
                 None
@@ -345,7 +391,7 @@ impl LispObject {
                     .replace('\t', "\\t");
                 format!("\"{}\"", escaped)
             }
-            LispObject::Cons(_, _) => {
+            LispObject::Cons(_) => {
                 let mut parts = Vec::new();
                 let mut current = self.clone();
                 while let Some((car, cdr)) = current.destructure_cons() {
@@ -360,6 +406,7 @@ impl LispObject {
             }
             LispObject::Primitive(name) => format!("#<subr {}>", name),
             LispObject::Vector(v) => {
+                let v = v.lock();
                 let parts: Vec<String> = v.iter().map(|e| e.prin1_to_string()).collect();
                 format!("[{}]", parts.join(" "))
             }
@@ -367,6 +414,7 @@ impl LispObject {
                 format!("#<bytecode {:p}>", bc as *const _)
             }
             LispObject::HashTable(ht) => {
+                let ht = ht.lock();
                 format!("#<hash-table count {} test {:?}>", ht.data.len(), ht.test)
             }
         }

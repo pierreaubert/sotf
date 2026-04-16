@@ -350,8 +350,8 @@ impl<'a> Vm<'a> {
                 let len = match &val {
                     LispObject::Nil => 0,
                     LispObject::String(s) => s.len() as i64,
-                    LispObject::Vector(v) => v.len() as i64,
-                    LispObject::Cons(_, _) => {
+                    LispObject::Vector(v) => v.lock().len() as i64,
+                    LispObject::Cons(_) => {
                         let mut n = 0i64;
                         let mut cur = val.clone();
                         while cur.is_cons() {
@@ -371,7 +371,7 @@ impl<'a> Vm<'a> {
                 let array = self.pop()?;
                 let i = idx.as_integer().unwrap_or(0) as usize;
                 let val = match &array {
-                    LispObject::Vector(v) => v.get(i).cloned().unwrap_or(LispObject::nil()),
+                    LispObject::Vector(v) => v.lock().get(i).cloned().unwrap_or(LispObject::nil()),
                     LispObject::String(s) => {
                         let ch = s.chars().nth(i).map(|c| c as i64).unwrap_or(0);
                         LispObject::integer(ch)

@@ -274,7 +274,9 @@ impl Reader {
             }
             elements.push(self.read()?);
         }
-        Ok(LispObject::Vector(elements))
+        Ok(LispObject::Vector(std::sync::Arc::new(
+            parking_lot::Mutex::new(elements),
+        )))
     }
 
     fn read_hash(&mut self) -> ElispResult<LispObject> {
@@ -1047,7 +1049,7 @@ mod tests {
         let result = read("[1 2 3]").unwrap();
         assert!(matches!(result, LispObject::Vector(_)));
         if let LispObject::Vector(v) = &result {
-            assert_eq!(v.len(), 3);
+            assert_eq!(v.lock().len(), 3);
         }
     }
 

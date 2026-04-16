@@ -473,9 +473,9 @@ fn prim_car(args: &LispObject) -> ElispResult<LispObject> {
         .clone()
         .first()
         .ok_or(ElispError::WrongNumberOfArguments)?;
-    match arg {
+    match &arg {
         LispObject::Nil => Ok(LispObject::nil()),
-        LispObject::Cons(car, _) => Ok((*car).clone()),
+        LispObject::Cons(cell) => Ok(cell.lock().0.clone()),
         _ => Err(ElispError::WrongTypeArgument("list".to_string())),
     }
 }
@@ -485,9 +485,9 @@ fn prim_cdr(args: &LispObject) -> ElispResult<LispObject> {
         .clone()
         .first()
         .ok_or(ElispError::WrongNumberOfArguments)?;
-    match arg {
+    match &arg {
         LispObject::Nil => Ok(LispObject::nil()),
-        LispObject::Cons(_, cdr) => Ok((*cdr).clone()),
+        LispObject::Cons(cell) => Ok(cell.lock().1.clone()),
         _ => Err(ElispError::WrongTypeArgument("list".to_string())),
     }
 }
@@ -503,7 +503,7 @@ fn prim_length(args: &LispObject) -> ElispResult<LispObject> {
         .ok_or(ElispError::WrongNumberOfArguments)?;
     match arg {
         LispObject::Nil => Ok(LispObject::integer(0)),
-        LispObject::Cons(_, _) => {
+        LispObject::Cons(_) => {
             let mut count = 0;
             let mut current = arg.clone();
             while let Some((_, rest)) = current.destructure_cons() {
@@ -777,8 +777,11 @@ fn prim_nthcdr(args: &LispObject) -> ElispResult<LispObject> {
 fn prim_setcar(args: &LispObject) -> ElispResult<LispObject> {
     let cell = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let new_car = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
-    match cell {
-        LispObject::Cons(_, cdr) => Ok(LispObject::cons(new_car, (*cdr).clone())),
+    match &cell {
+        LispObject::Cons(_) => {
+            cell.set_car(new_car.clone());
+            Ok(new_car)
+        }
         _ => Err(ElispError::WrongTypeArgument("cons".to_string())),
     }
 }
@@ -786,8 +789,11 @@ fn prim_setcar(args: &LispObject) -> ElispResult<LispObject> {
 fn prim_setcdr(args: &LispObject) -> ElispResult<LispObject> {
     let cell = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let new_cdr = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
-    match cell {
-        LispObject::Cons(car, _) => Ok(LispObject::cons((*car).clone(), new_cdr)),
+    match &cell {
+        LispObject::Cons(_) => {
+            cell.set_cdr(new_cdr.clone());
+            Ok(new_cdr)
+        }
         _ => Err(ElispError::WrongTypeArgument("cons".to_string())),
     }
 }
@@ -901,8 +907,8 @@ fn prim_cdar(args: &LispObject) -> ElispResult<LispObject> {
 
 fn prim_car_safe(args: &LispObject) -> ElispResult<LispObject> {
     let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    match arg {
-        LispObject::Cons(_, _) => {
+    match &arg {
+        LispObject::Cons(_) => {
             let wrapped = LispObject::cons(arg, LispObject::nil());
             prim_car(&wrapped)
         }
@@ -912,8 +918,8 @@ fn prim_car_safe(args: &LispObject) -> ElispResult<LispObject> {
 
 fn prim_cdr_safe(args: &LispObject) -> ElispResult<LispObject> {
     let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    match arg {
-        LispObject::Cons(_, _) => {
+    match &arg {
+        LispObject::Cons(_) => {
             let wrapped = LispObject::cons(arg, LispObject::nil());
             prim_cdr(&wrapped)
         }
@@ -987,7 +993,10 @@ fn prim_functionp(args: &LispObject) -> ElispResult<LispObject> {
     let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let result = match &arg {
         LispObject::Primitive(_) => true,
-        LispObject::Cons(car, _) => matches!(car.as_ref(), LispObject::Symbol(s) if s == "lambda"),
+        LispObject::Cons(cell) => {
+            let b = cell.lock();
+            matches!(&b.0, LispObject::Symbol(s) if s == "lambda")
+        }
         _ => false,
     };
     Ok(LispObject::from(result))
@@ -1280,7 +1289,7 @@ fn prim_type_of(args: &LispObject) -> ElispResult<LispObject> {
         LispObject::Integer(_) => "integer",
         LispObject::Float(_) => "float",
         LispObject::String(_) => "string",
-        LispObject::Cons(_, _) => "cons",
+        LispObject::Cons(_) => "cons",
         LispObject::Primitive(_) => "subr",
         LispObject::Vector(_) => "vector",
         LispObject::BytecodeFn(_) => "compiled-function",
