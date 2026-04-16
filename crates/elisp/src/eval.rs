@@ -451,7 +451,17 @@ fn eval_inner(
                         let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
                         eval(arg, env, editor, macros, state) // identity for us
                     }
-                    "vectorp" | "recordp" | "char-table-p" | "bool-vector-p" => {
+                    "vectorp" => {
+                        let arg = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(LispObject::from(matches!(arg, LispObject::Vector(_))))
+                    }
+                    "recordp" | "char-table-p" | "bool-vector-p" => {
                         let _arg = eval(
                             cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
                             env,
@@ -459,11 +469,58 @@ fn eval_inner(
                             macros,
                             state,
                         )?;
-                        Ok(LispObject::nil()) // no vector type yet
-                    }
-                    "aref" | "aset" => {
-                        // stub: return nil
                         Ok(LispObject::nil())
+                    }
+                    "aref" => {
+                        let array = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let idx = eval(
+                            cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let i = idx.as_integer().unwrap_or(0) as usize;
+                        match &array {
+                            LispObject::Vector(v) => {
+                                Ok(v.get(i).cloned().unwrap_or(LispObject::nil()))
+                            }
+                            LispObject::String(s) => Ok(LispObject::integer(
+                                s.chars().nth(i).map(|c| c as i64).unwrap_or(0),
+                            )),
+                            _ => Err(ElispError::WrongTypeArgument("array".to_string())),
+                        }
+                    }
+                    "aset" => {
+                        // stub: return the value (vectors are immutable in our impl)
+                        let _array = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let _idx = eval(
+                            cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let val = eval(
+                            cdr.nth(2).ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(val)
                     }
                     "with-suppressed-warnings" | "dont-compile" => {
                         // (with-suppressed-warnings WARNINGS BODY...) — just eval body
@@ -594,7 +651,6 @@ fn eval_inner(
                         }
                     }
                     "sort" => {
-                        // stub: return list as-is for now
                         let list = eval(
                             cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
                             env,
@@ -602,7 +658,37 @@ fn eval_inner(
                             macros,
                             state,
                         )?;
-                        Ok(list)
+                        let pred = eval(
+                            cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let mut items = Vec::new();
+                        let mut cur = list;
+                        while let Some((car, cdr_val)) = cur.destructure_cons() {
+                            items.push(car);
+                            cur = cdr_val;
+                        }
+                        // Sort using the predicate: (PRED A B) returns non-nil if A < B
+                        items.sort_by(|a, b| {
+                            let call_args = LispObject::cons(
+                                a.clone(),
+                                LispObject::cons(b.clone(), LispObject::nil()),
+                            );
+                            let result =
+                                call_function(&pred, &call_args, env, editor, macros, state);
+                            match result {
+                                Ok(val) if !val.is_nil() => std::cmp::Ordering::Less,
+                                _ => std::cmp::Ordering::Greater,
+                            }
+                        });
+                        let mut result = LispObject::nil();
+                        for item in items.into_iter().rev() {
+                            result = LispObject::cons(item, result);
+                        }
+                        Ok(result)
                     }
                     "nconc" => {
                         // Evaluate all args, append them (non-destructive since immutable)
@@ -643,9 +729,8 @@ fn eval_inner(
                                 items.push(car);
                                 cur = cdr_val;
                             }
-                            items.reverse();
                             let mut result = LispObject::nil();
-                            for item in items.into_iter().rev() {
+                            for item in items.into_iter() {
                                 result = LispObject::cons(item, result);
                             }
                             Ok(result)
@@ -1581,7 +1666,10 @@ fn eval_prog2(
     let second = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
     let _ = eval(first, env, editor, macros, state)?;
     let result = eval(second, env, editor, macros, state)?;
-    let rest = args.nth(2).unwrap_or(LispObject::nil());
+    let rest = args
+        .rest()
+        .and_then(|r| r.rest())
+        .unwrap_or(LispObject::nil());
     let _ = eval_progn(&rest, env, editor, macros, state)?;
     Ok(result)
 }
@@ -2386,48 +2474,80 @@ fn eval_format(
     while i < chars.len() {
         if chars[i] == '%' && i + 1 < chars.len() {
             i += 1;
-            // Skip field width/flags
-            while i < chars.len()
-                && (chars[i] == '-'
-                    || chars[i] == '+'
-                    || chars[i] == '0'
-                    || chars[i].is_ascii_digit())
-            {
+            // Parse flags
+            let mut left_align = false;
+            let mut zero_pad = false;
+            while i < chars.len() && (chars[i] == '-' || chars[i] == '+' || chars[i] == '0') {
+                match chars[i] {
+                    '-' => left_align = true,
+                    '0' => zero_pad = true,
+                    _ => {}
+                }
+                i += 1;
+            }
+            // Parse width
+            let mut width: usize = 0;
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                width = width * 10 + (chars[i] as usize - '0' as usize);
                 i += 1;
             }
             if i >= chars.len() {
                 break;
             }
+            // left-align overrides zero-pad
+            if left_align {
+                zero_pad = false;
+            }
+            let apply_width = |s: String| -> String {
+                if width == 0 || s.len() >= width {
+                    s
+                } else if left_align {
+                    format!("{:<width$}", s, width = width)
+                } else if zero_pad {
+                    // Only zero-pad numeric values; for strings just space-pad
+                    if let Some(stripped) = s.strip_prefix('-') {
+                        format!("-{:0>width$}", stripped, width = width - 1)
+                    } else {
+                        format!("{:0>width$}", s, width = width)
+                    }
+                } else {
+                    format!("{:>width$}", s, width = width)
+                }
+            };
             match chars[i] {
                 's' => {
                     if arg_idx < format_args.len() {
-                        result.push_str(&format_args[arg_idx].princ_to_string());
+                        let s = format_args[arg_idx].princ_to_string();
+                        result.push_str(&apply_width(s));
                         arg_idx += 1;
                     }
                 }
                 'S' => {
                     if arg_idx < format_args.len() {
-                        result.push_str(&format_args[arg_idx].prin1_to_string());
+                        let s = format_args[arg_idx].prin1_to_string();
+                        result.push_str(&apply_width(s));
                         arg_idx += 1;
                     }
                 }
                 'd' => {
                     if arg_idx < format_args.len() {
-                        match &format_args[arg_idx] {
-                            LispObject::Integer(n) => result.push_str(&n.to_string()),
-                            LispObject::Float(f) => result.push_str(&(*f as i64).to_string()),
-                            _ => result.push_str(&format_args[arg_idx].princ_to_string()),
-                        }
+                        let s = match &format_args[arg_idx] {
+                            LispObject::Integer(n) => n.to_string(),
+                            LispObject::Float(f) => (*f as i64).to_string(),
+                            _ => format_args[arg_idx].princ_to_string(),
+                        };
+                        result.push_str(&apply_width(s));
                         arg_idx += 1;
                     }
                 }
                 'f' => {
                     if arg_idx < format_args.len() {
-                        match &format_args[arg_idx] {
-                            LispObject::Float(f) => result.push_str(&format!("{:.6}", f)),
-                            LispObject::Integer(n) => result.push_str(&format!("{:.6}", *n as f64)),
-                            _ => result.push_str(&format_args[arg_idx].princ_to_string()),
-                        }
+                        let s = match &format_args[arg_idx] {
+                            LispObject::Float(f) => format!("{:.6}", f),
+                            LispObject::Integer(n) => format!("{:.6}", *n as f64),
+                            _ => format_args[arg_idx].princ_to_string(),
+                        };
+                        result.push_str(&apply_width(s));
                         arg_idx += 1;
                     }
                 }
@@ -2435,7 +2555,8 @@ fn eval_format(
                     if arg_idx < format_args.len() {
                         if let LispObject::Integer(n) = &format_args[arg_idx] {
                             if let Some(ch) = char::from_u32(*n as u32) {
-                                result.push(ch);
+                                let s = ch.to_string();
+                                result.push_str(&apply_width(s));
                             }
                         }
                         arg_idx += 1;
@@ -2444,7 +2565,8 @@ fn eval_format(
                 'x' => {
                     if arg_idx < format_args.len() {
                         if let LispObject::Integer(n) = &format_args[arg_idx] {
-                            result.push_str(&format!("{:x}", n));
+                            let s = format!("{:x}", n);
+                            result.push_str(&apply_width(s));
                         }
                         arg_idx += 1;
                     }
@@ -2452,7 +2574,8 @@ fn eval_format(
                 'o' => {
                     if arg_idx < format_args.len() {
                         if let LispObject::Integer(n) = &format_args[arg_idx] {
-                            result.push_str(&format!("{:o}", n));
+                            let s = format!("{:o}", n);
+                            result.push_str(&apply_width(s));
                         }
                         arg_idx += 1;
                     }

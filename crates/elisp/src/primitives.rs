@@ -365,9 +365,7 @@ fn prim_num_eq(args: &LispObject) -> ElispResult<LispObject> {
         return Err(ElispError::WrongNumberOfArguments);
     }
     let first = numbers[0];
-    Ok(LispObject::from(
-        numbers.iter().all(|&x| (x - first).abs() < 1e-10),
-    ))
+    Ok(LispObject::from(numbers.iter().all(|&x| x == first)))
 }
 
 fn prim_lt(args: &LispObject) -> ElispResult<LispObject> {
@@ -461,7 +459,7 @@ fn prim_ne(args: &LispObject) -> ElispResult<LispObject> {
     let b = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
     let na = get_number(&a).ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
     let nb = get_number(&b).ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-    Ok(LispObject::from((na - nb).abs() > f64::EPSILON))
+    Ok(LispObject::from(na != nb))
 }
 
 fn prim_cons(args: &LispObject) -> ElispResult<LispObject> {
@@ -514,7 +512,7 @@ fn prim_length(args: &LispObject) -> ElispResult<LispObject> {
             }
             Ok(LispObject::integer(count))
         }
-        LispObject::String(s) => Ok(LispObject::integer(s.len() as i64)),
+        LispObject::String(s) => Ok(LispObject::integer(s.chars().count() as i64)),
         _ => Err(ElispError::WrongTypeArgument("list or string".to_string())),
     }
 }
@@ -1014,14 +1012,20 @@ fn numeric_result(val: f64) -> LispObject {
 
 fn prim_1_plus(args: &LispObject) -> ElispResult<LispObject> {
     let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    let n = get_number(&arg).ok_or(ElispError::WrongTypeArgument("number".to_string()))?;
-    Ok(numeric_result(n + 1.0))
+    match arg {
+        LispObject::Integer(n) => Ok(LispObject::integer(n + 1)),
+        LispObject::Float(f) => Ok(LispObject::float(f + 1.0)),
+        _ => Err(ElispError::WrongTypeArgument("number".to_string())),
+    }
 }
 
 fn prim_1_minus(args: &LispObject) -> ElispResult<LispObject> {
     let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    let n = get_number(&arg).ok_or(ElispError::WrongTypeArgument("number".to_string()))?;
-    Ok(numeric_result(n - 1.0))
+    match arg {
+        LispObject::Integer(n) => Ok(LispObject::integer(n - 1)),
+        LispObject::Float(f) => Ok(LispObject::float(f - 1.0)),
+        _ => Err(ElispError::WrongTypeArgument("number".to_string())),
+    }
 }
 
 fn prim_mod(args: &LispObject) -> ElispResult<LispObject> {

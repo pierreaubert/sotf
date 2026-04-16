@@ -510,9 +510,11 @@ impl<'a> Vm<'a> {
                 let result = match (&a, &b) {
                     (LispObject::Integer(x), LispObject::Integer(y)) => x == y,
                     _ => {
-                        let fa = get_number(&a).unwrap_or(0.0);
-                        let fb = get_number(&b).unwrap_or(0.0);
-                        (fa - fb).abs() < 1e-10
+                        let fa = get_number(&a)
+                            .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
+                        let fb = get_number(&b)
+                            .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
+                        fa == fb
                     }
                 };
                 self.push(LispObject::from(result));
@@ -522,8 +524,10 @@ impl<'a> Vm<'a> {
             86 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let fa = get_number(&a).unwrap_or(0.0);
-                let fb = get_number(&b).unwrap_or(0.0);
+                let fa = get_number(&a)
+                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
+                let fb = get_number(&b)
+                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
                 self.push(LispObject::from(fa > fb));
             }
 
@@ -531,8 +535,10 @@ impl<'a> Vm<'a> {
             87 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let fa = get_number(&a).unwrap_or(0.0);
-                let fb = get_number(&b).unwrap_or(0.0);
+                let fa = get_number(&a)
+                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
+                let fb = get_number(&b)
+                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
                 self.push(LispObject::from(fa < fb));
             }
 
@@ -540,8 +546,10 @@ impl<'a> Vm<'a> {
             88 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let fa = get_number(&a).unwrap_or(0.0);
-                let fb = get_number(&b).unwrap_or(0.0);
+                let fa = get_number(&a)
+                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
+                let fb = get_number(&b)
+                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
                 self.push(LispObject::from(fa <= fb));
             }
 
@@ -549,8 +557,10 @@ impl<'a> Vm<'a> {
             89 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let fa = get_number(&a).unwrap_or(0.0);
-                let fb = get_number(&b).unwrap_or(0.0);
+                let fa = get_number(&a)
+                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
+                let fb = get_number(&b)
+                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
                 self.push(LispObject::from(fa >= fb));
             }
 
