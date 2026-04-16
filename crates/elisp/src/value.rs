@@ -267,7 +267,19 @@ impl Value {
         self.0 == other.0
     }
 
-    /// Raw bits (useful for hashing, debugging).
+    /// Raw bits (useful for hashing, debugging, JIT interop).
+    #[inline]
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// Construct from raw bits (JIT interop).
+    #[inline]
+    pub fn from_raw(bits: u64) -> Self {
+        Self(bits)
+    }
+
+    /// Alias for raw() — kept for backward compatibility.
     #[inline]
     pub fn to_bits(self) -> u64 {
         self.0

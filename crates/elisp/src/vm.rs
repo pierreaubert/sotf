@@ -1197,6 +1197,8 @@ mod tests {
             plists: Arc::new(RwLock::new(HashMap::new())),
             features: Arc::new(RwLock::new(Vec::new())),
             profiler: Arc::new(RwLock::new(crate::jit::Profiler::new(1000))),
+            #[cfg(feature = "jit")]
+            jit: Arc::new(RwLock::new(crate::jit::JitCompiler::new())),
         };
         (env, editor, macros, state)
     }

@@ -17,8 +17,14 @@ mod compiler;
 mod profiler;
 
 #[cfg(feature = "jit")]
-pub use compiler::JitCompiler;
+pub use compiler::{JitCompiler, NativeResult};
 pub use profiler::Profiler;
+
+#[cfg(not(feature = "jit"))]
+pub enum NativeResult {
+    Ok(u64),
+    Deoptimize,
+}
 
 /// No-op JIT compiler stub when the `jit` feature is disabled.
 /// Allows callers to unconditionally hold a `JitCompiler` without

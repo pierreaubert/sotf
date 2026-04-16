@@ -134,6 +134,8 @@ pub struct InterpreterState {
     pub plists: PlistTable,
     pub features: FeatureList,
     pub profiler: Arc<RwLock<crate::jit::Profiler>>,
+    #[cfg(feature = "jit")]
+    pub jit: Arc<RwLock<crate::jit::JitCompiler>>,
 }
 
 pub struct Interpreter {
@@ -156,6 +158,8 @@ impl Interpreter {
                 plists: Arc::new(RwLock::new(HashMap::new())),
                 features: Arc::new(RwLock::new(Vec::new())),
                 profiler: Arc::new(RwLock::new(crate::jit::Profiler::new(1000))),
+                #[cfg(feature = "jit")]
+                jit: Arc::new(RwLock::new(crate::jit::JitCompiler::new())),
             },
         }
     }
@@ -2180,15 +2184,46 @@ pub fn call_function(
         LispObject::Primitive(name) => crate::primitives::call_primitive(name, args),
         LispObject::BytecodeFn(bc) => {
             let func_id = bc as *const _ as usize;
-            let _should_jit = state.profiler.write().record_call(func_id);
-            // TODO: trigger JIT compilation when _should_jit is true
+            #[allow(unused_variables)]
+            let should_jit = state.profiler.write().record_call(func_id);
 
+            // Collect args
             let mut arg_vec = Vec::new();
             let mut current = args.clone();
             while let Some((car, cdr)) = current.destructure_cons() {
                 arg_vec.push(car);
                 current = cdr;
             }
+
+            // Try JIT execution if available
+            #[cfg(feature = "jit")]
+            {
+                let mut jit = state.jit.write();
+                if should_jit && !jit.is_compiled(func_id) {
+                    jit.compile(func_id, bc);
+                }
+                if let Some(id) = jit.get_compiled(func_id) {
+                    {
+                        // Convert args to i64 (NaN-boxed values)
+                        let jit_args: Vec<i64> = arg_vec
+                            .iter()
+                            .map(|a| crate::value::Value::from_lisp_object(a).raw() as i64)
+                            .collect();
+                        if let Some(native_result) = jit.call(id, &jit_args) {
+                            match native_result {
+                                crate::jit::NativeResult::Ok(raw) => {
+                                    let val = crate::value::Value::from_raw(raw);
+                                    return Ok(val.to_lisp_object());
+                                }
+                                crate::jit::NativeResult::Deoptimize => {
+                                    // Fall through to VM
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             crate::vm::execute_bytecode(bc, &arg_vec, env, editor, macros, state)
         }
         LispObject::Symbol(name) => {
