@@ -656,12 +656,14 @@ class DaemonManager {
         let possiblePaths = [
             // In app bundle's Helpers directory
             Bundle.main.bundlePath + "/Contents/Helpers/sotf-daemon",
-            // In same directory as app
+            // In same directory as the toolbar binary
+            (Bundle.main.bundlePath as NSString).appendingPathComponent("sotf-daemon"),
+            // One level up from bundle (e.g. running from within target/release/)
             (Bundle.main.bundlePath as NSString).deletingLastPathComponent + "/sotf-daemon",
             // System-wide installation
             "/usr/local/bin/sotf-daemon",
-            // Development build (cargo uses underscores)
-            FileManager.default.currentDirectoryPath + "/target/release/sotf_daemon"
+            // Development build (from project root)
+            FileManager.default.currentDirectoryPath + "/target/release/sotf-daemon",
         ]
 
         daemonPath = possiblePaths.first { FileManager.default.isExecutableFile(atPath: $0) } ?? possiblePaths[0]

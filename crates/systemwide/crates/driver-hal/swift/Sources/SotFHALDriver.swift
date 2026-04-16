@@ -402,15 +402,14 @@ private func driverGetPropertyDataSize(_ driver: AudioServerPlugInDriverRef, _ o
         case kPlugInObjectID:
             outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 device
         case kDeviceObjectID:
-            outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 stream (output only)
+            outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 stream (output)
         default:
             outDataSize.pointee = 0
         }
 
     case kSelector_Streams:
-        // Output-only device: no input streams
         if scope == kScope_Input {
-            outDataSize.pointee = 0
+            outDataSize.pointee = 0  // No input streams
         } else {
             outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 output stream
         }
@@ -621,9 +620,8 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
         outDataSize.pointee = UInt32(MemoryLayout<AudioValueRange>.size)
 
     case kSelector_Streams:
-        // Output-only device: no input streams
         if scope == kScope_Input {
-            outDataSize.pointee = 0
+            outDataSize.pointee = 0  // No input streams
         } else {
             outData.storeBytes(of: kOutputStreamObjectID, as: AudioObjectID.self)
             outDataSize.pointee = 4
@@ -877,8 +875,10 @@ private func ioOperationName(_ operationID: UInt32) -> String {
 private func driverWillDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ clientID: UInt32, _ operationID: UInt32, _ outWillDo: UnsafeMutablePointer<DarwinBoolean>, _ outWillDoInPlace: UnsafeMutablePointer<DarwinBoolean>) -> OSStatus {
     // We support:
     // - Cycle: IO timing notifications
+    // - ReadInput: Provide audio to clients (recording/loopback from virtual device)
     // - WriteMix: Receive audio from playback clients
     let willDo = (operationID == kIOOperation_Cycle ||
+                  operationID == kIOOperation_ReadInput ||
                   operationID == kIOOperation_WriteMix)
     outWillDo.pointee = DarwinBoolean(willDo)
     outWillDoInPlace.pointee = DarwinBoolean(true)

@@ -1,7 +1,7 @@
 [package]
 name = "sotf-daemon"
 description = "an audio player and recorder that support audio plugins"
-version = "0.1.34"
+version = "0.1.35"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
