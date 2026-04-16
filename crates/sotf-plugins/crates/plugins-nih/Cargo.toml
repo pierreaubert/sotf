@@ -51,6 +51,9 @@ aec = []
 beamformer = []
 linear-phase-eq = []
 spectral-compressor = []
+loudness-monitor = []
+spectrum-analyzer = []
+ambisonics = []
 
 [dependencies]
 plugins-bridge = { path = "../plugins-bridge" }

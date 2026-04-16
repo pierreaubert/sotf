@@ -269,6 +269,14 @@ pub fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "AmbisonicsDecoder" | "ambisonics_decoder" => {
+            let config: sotf_plugin_ambisonics::AmbisonicsDecoderConfig =
+                parse_params(config_json)?;
+            let mut plugin = sotf_plugin_ambisonics::AmbisonicsDecoderPlugin::new(&config)?;
+            plugin.initialize(sample_rate)?;
+            Ok(Box::new(plugin))
+        }
+
         _ => Err(format!("Unknown plugin type: {plugin_type}")),
     }
 }
@@ -308,6 +316,7 @@ pub fn available_plugin_types() -> &'static [&'static str] {
         "LinearPhaseEQ",
         "SpectralCompressor",
         "Dither",
+        "AmbisonicsDecoder",
     ]
 }
 

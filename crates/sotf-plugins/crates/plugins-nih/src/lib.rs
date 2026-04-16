@@ -285,3 +285,24 @@ mod plugin {
     nih_plug::nih_export_clap!(SotfSpectralCompressor);
     nih_plug::nih_export_vst3!(SotfSpectralCompressor);
 }
+
+#[cfg(feature = "loudness-monitor")]
+mod plugin {
+    sotf_nih_plugin!(SotfLoudnessMonitor, plugin_type: "LoudnessMonitor", name: "SOTF: Loudness Monitor", clap_id: "org.spinorama.sotf.loudness-monitor", vst3_class_id: *b"SotfLoudMon00001", channels: 2);
+    nih_plug::nih_export_clap!(SotfLoudnessMonitor);
+    nih_plug::nih_export_vst3!(SotfLoudnessMonitor);
+}
+
+#[cfg(feature = "spectrum-analyzer")]
+mod plugin {
+    sotf_nih_plugin!(SotfSpectrumAnalyzer, plugin_type: "SpectrumAnalyzer", name: "SOTF: Spectrum Analyzer", clap_id: "org.spinorama.sotf.spectrum-analyzer", vst3_class_id: *b"SotfSpecAnlz0001", channels: 2);
+    nih_plug::nih_export_clap!(SotfSpectrumAnalyzer);
+    nih_plug::nih_export_vst3!(SotfSpectrumAnalyzer);
+}
+
+#[cfg(feature = "ambisonics")]
+mod plugin {
+    sotf_nih_plugin!(SotfAmbisonics, plugin_type: "AmbisonicsDecoder", name: "SOTF: Ambisonics Decoder", clap_id: "org.spinorama.sotf.ambisonics", vst3_class_id: *b"SotfAmbisnic0001", channels: 2);
+    nih_plug::nih_export_clap!(SotfAmbisonics);
+    nih_plug::nih_export_vst3!(SotfAmbisonics);
+}

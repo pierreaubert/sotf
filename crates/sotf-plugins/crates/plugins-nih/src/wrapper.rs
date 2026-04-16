@@ -235,6 +235,7 @@ pub fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::P
         "Beamformer" => beamformer::PARAMS,
         "LinearPhaseEQ" => linear_phase_eq::PARAMS,
         "SpectralCompressor" => spectral_compressor::PARAMS,
+        "AmbisonicsDecoder" => ambisonics::PARAMS,
         _ => &[],
     }
 }

@@ -357,7 +357,6 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
-        #[cfg(feature = "iamf")]
         "ambisonics_decoder" => {
             let config: sotf_plugin_ambisonics::AmbisonicsDecoderConfig =
                 serde_json::from_value(parameters.clone())
@@ -366,9 +365,6 @@ pub fn create_plugin(
             plugin.initialize(sample_rate)?;
             Ok(Box::new(plugin))
         }
-
-        #[cfg(not(feature = "iamf"))]
-        "ambisonics_decoder" => Err("Ambisonics decoder requires the 'iamf' feature".to_string()),
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         "hal_input" => {

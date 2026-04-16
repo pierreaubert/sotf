@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>SOTF Linear-Phase EQ</string>
+	<string>SOTF Spectrum Analyzer</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -17,7 +17,7 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5.1</string>
+	<string>0.5.89</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
@@ -30,17 +30,17 @@
 			<array>
 				<dict>
 					<key>description</key>
-					<string>SOTF Linear-Phase EQ</string>
+					<string>SOTF Spectrum Analyzer</string>
 					<key>factoryFunction</key>
-					<string>LinearPhaseEQAudioUnit.LinearPhaseEQViewController</string>
+					<string>SpectrumAnalyzerAudioUnit.SpectrumAnalyzerViewController</string>
 					<key>manufacturer</key>
 					<string>SOTF</string>
 					<key>name</key>
-					<string>SOTF: Linear-Phase EQ</string>
+					<string>SOTF: Spectrum Analyzer</string>
 					<key>sandboxSafe</key>
 					<true/>
 					<key>subtype</key>
-					<string>SOLP</string>
+					<string>SOSa</string>
 					<key>tags</key>
 					<array>
 						<string>Effects</string>
@@ -55,7 +55,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.AudioUnit-UI</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>$(PRODUCT_MODULE_NAME).LinearPhaseEQViewController</string>
+		<string>$(PRODUCT_MODULE_NAME).SpectrumAnalyzerViewController</string>
 	</dict>
 </dict>
 </plist>

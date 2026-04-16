@@ -13,7 +13,7 @@ name = "sotf_plugins"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["iamf"]
 iamf = []
 onnx = ["dep:ort", "sotf-plugin-upmixer/onnx"]
 hal = ["sotf-plugin-hal-input", "sotf-plugin-hal-input/hal", "sotf-plugin-hal-output", "sotf-plugin-hal-output/hal", "driver-hal"]

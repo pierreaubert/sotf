@@ -415,9 +415,11 @@ fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::Param
         "AEC" | "aec" => aec::PARAMS,
         "Beamformer" | "beamformer" => beamformer::PARAMS,
         "SpectralCompressor" | "spectral_compressor" => spectral_compressor::PARAMS,
+        "AmbisonicsDecoder" | "ambisonics_decoder" => ambisonics::PARAMS,
         // Plugins without param_specs entries fall back to Plugin::parameters() in from_plugin()
         "Delay" | "delay" | "Matrix" | "matrix" | "Crossover" | "crossover" | "Resampler"
-        | "resampler" => &[],
+        | "resampler" | "LoudnessMonitor" | "loudness_monitor" | "SpectrumAnalyzer"
+        | "spectrum_analyzer" => &[],
         other => {
             panic!("get_param_specs: unknown plugin type \"{other}\" — add it to the match arm")
         }

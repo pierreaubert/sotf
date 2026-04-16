@@ -4,7 +4,7 @@
 # One crate, 29 feature-gated plugins. Build each with --features <name>.
 
 # All plugin features
-NIH_FEATURES := "eq compressor limiter gate gain delay expander crossfeed saturation denoiser downmix mono-to-stereo stereo-imager transient-shaper de-esser dynamic-eq multiband-compressor multiband-expander convolution fletcher-munson loudness-compensation channel-mute-solo upmixer xtc binaural matrix pnd ab-compare crossover"
+NIH_FEATURES := "eq compressor limiter gate gain delay expander crossfeed saturation denoiser downmix mono-to-stereo stereo-imager transient-shaper de-esser dynamic-eq multiband-compressor multiband-expander convolution fletcher-munson loudness-compensation channel-mute-solo upmixer aae xtc binaural matrix pnd ab-compare crossover band-split band-merge aec beamformer linear-phase-eq spectral-compressor loudness-monitor spectrum-analyzer ambisonics"
 
 _lib_name := "libplugins_nih"
 

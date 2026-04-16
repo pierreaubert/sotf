@@ -28,8 +28,8 @@ sync-au-versions:
 	echo "Syncing AU versions from Cargo.toml..."
 
 	# AU extension name → plugin crate name
-	AU_NAMES=(  EQAudioUnit         CompressorAudioUnit     LimiterAudioUnit     GateAudioUnit     GainAudioUnit     DelayAudioUnit)
-	CRATE_NAMES=(sotf-plugin-eq     sotf-plugin-multiband-compressor  sotf-plugin-limiter  sotf-plugin-gate  sotf-plugin-gain  sotf-plugin-delay)
+	AU_NAMES=(  EQAudioUnit         CompressorAudioUnit                LimiterAudioUnit     GateAudioUnit     GainAudioUnit     DelayAudioUnit     AAEAudioUnit       BandSplitAudioUnit     BandMergeAudioUnit     AECAudioUnit     BeamformerAudioUnit     LinearPhaseEQAudioUnit     SpectralCompressorAudioUnit     LoudnessMonitorAudioUnit  SpectrumAnalyzerAudioUnit  AmbisonicsAudioUnit)
+	CRATE_NAMES=(sotf-plugin-eq     sotf-plugin-multiband-compressor  sotf-plugin-limiter  sotf-plugin-gate  sotf-plugin-gain  sotf-plugin-delay  sotf-plugin-aae    sotf-plugin-band-split sotf-plugin-band-merge sotf-plugin-aec  sotf-plugin-beamformer  sotf-plugin-linear-phase-eq  sotf-plugin-spectral-compressor  sotf-host                 sotf-host                  sotf-plugin-ambisonics)
 
 	for i in "${!AU_NAMES[@]}"; do
 		au="${AU_NAMES[$i]}"
@@ -121,8 +121,8 @@ install-au-all: build-au-all
 validate-au-all:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	SUBTYPES=("SOEQ" "SOCP" "SOLM" "SOGT" "SOGN" "SODY")
-	NAMES=("EQ" "Compressor" "Limiter" "Gate" "Gain" "Delay")
+	SUBTYPES=("SOEQ" "SOCP" "SOLM" "SOGT" "SOGN" "SODY" "SOAE" "SOBS" "SOBM" "SOEc" "SOBF" "SOLP" "SOSC" "SOLu" "SOSa" "SOAm")
+	NAMES=("EQ" "Compressor" "Limiter" "Gate" "Gain" "Delay" "AAE" "BandSplit" "BandMerge" "AEC" "Beamformer" "LinearPhaseEQ" "SpectralCompressor" "LoudnessMonitor" "SpectrumAnalyzer" "Ambisonics")
 	FAILED=0
 	for i in "${!SUBTYPES[@]}"; do
 		echo "--- Validating ${NAMES[$i]} (${SUBTYPES[$i]}) ---"

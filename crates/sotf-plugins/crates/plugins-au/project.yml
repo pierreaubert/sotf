@@ -125,6 +125,26 @@ targets:
         embed: true
       - target: CrossoverAudioUnit
         embed: true
+      - target: AAEAudioUnit
+        embed: true
+      - target: BandSplitAudioUnit
+        embed: true
+      - target: BandMergeAudioUnit
+        embed: true
+      - target: AECAudioUnit
+        embed: true
+      - target: BeamformerAudioUnit
+        embed: true
+      - target: LinearPhaseEQAudioUnit
+        embed: true
+      - target: SpectralCompressorAudioUnit
+        embed: true
+      - target: LoudnessMonitorAudioUnit
+        embed: true
+      - target: SpectrumAnalyzerAudioUnit
+        embed: true
+      - target: AmbisonicsAudioUnit
+        embed: true
 
   # EQ Audio Unit
   EQAudioUnit:
@@ -502,3 +522,133 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.CrossoverAudioUnit
       INFOPLIST_FILE: CrossoverAudioUnit/Info.plist
       CODE_SIGN_ENTITLEMENTS: CrossoverAudioUnit/CrossoverAudioUnit.entitlements
+
+  # AAE (Active Acoustic Enhancement) Audio Unit
+  AAEAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: AAEAudioUnit
+        name: AAEAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.AAEAudioUnit
+      INFOPLIST_FILE: AAEAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: AAEAudioUnit/AAEAudioUnit.entitlements
+
+  # BandSplit Audio Unit
+  BandSplitAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: BandSplitAudioUnit
+        name: BandSplitAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.BandSplitAudioUnit
+      INFOPLIST_FILE: BandSplitAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: BandSplitAudioUnit/BandSplitAudioUnit.entitlements
+
+  # BandMerge Audio Unit
+  BandMergeAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: BandMergeAudioUnit
+        name: BandMergeAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.BandMergeAudioUnit
+      INFOPLIST_FILE: BandMergeAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: BandMergeAudioUnit/BandMergeAudioUnit.entitlements
+
+  # AEC (Acoustic Echo Cancellation) Audio Unit
+  AECAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: AECAudioUnit
+        name: AECAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.AECAudioUnit
+      INFOPLIST_FILE: AECAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: AECAudioUnit/AECAudioUnit.entitlements
+
+  # Beamformer Audio Unit
+  BeamformerAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: BeamformerAudioUnit
+        name: BeamformerAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.BeamformerAudioUnit
+      INFOPLIST_FILE: BeamformerAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: BeamformerAudioUnit/BeamformerAudioUnit.entitlements
+
+  # LinearPhaseEQ Audio Unit
+  LinearPhaseEQAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: LinearPhaseEQAudioUnit
+        name: LinearPhaseEQAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.LinearPhaseEQAudioUnit
+      INFOPLIST_FILE: LinearPhaseEQAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: LinearPhaseEQAudioUnit/LinearPhaseEQAudioUnit.entitlements
+
+  # SpectralCompressor Audio Unit
+  SpectralCompressorAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: SpectralCompressorAudioUnit
+        name: SpectralCompressorAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.SpectralCompressorAudioUnit
+      INFOPLIST_FILE: SpectralCompressorAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: SpectralCompressorAudioUnit/SpectralCompressorAudioUnit.entitlements
+
+  # LoudnessMonitor Audio Unit
+  LoudnessMonitorAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: LoudnessMonitorAudioUnit
+        name: LoudnessMonitorAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.LoudnessMonitorAudioUnit
+      INFOPLIST_FILE: LoudnessMonitorAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: LoudnessMonitorAudioUnit/LoudnessMonitorAudioUnit.entitlements
+
+  # SpectrumAnalyzer Audio Unit
+  SpectrumAnalyzerAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: SpectrumAnalyzerAudioUnit
+        name: SpectrumAnalyzerAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.SpectrumAnalyzerAudioUnit
+      INFOPLIST_FILE: SpectrumAnalyzerAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: SpectrumAnalyzerAudioUnit/SpectrumAnalyzerAudioUnit.entitlements
+
+  # Ambisonics Decoder Audio Unit
+  AmbisonicsAudioUnit:
+    templates:
+      - SOTFAudioUnitExtension
+    sources:
+      - path: AmbisonicsAudioUnit
+        name: AmbisonicsAudioUnit
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.AmbisonicsAudioUnit
+      INFOPLIST_FILE: AmbisonicsAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: AmbisonicsAudioUnit/AmbisonicsAudioUnit.entitlements
