@@ -54,6 +54,19 @@ impl Profiler {
     pub fn reset(&mut self, func_id: usize) {
         self.counters.remove(&func_id);
     }
+
+    /// Total number of recorded calls across all functions.
+    pub fn total_calls(&self) -> u64 {
+        self.counters.values().sum()
+    }
+
+    /// Number of functions that have reached the compilation threshold.
+    pub fn hot_function_count(&self) -> u64 {
+        self.counters
+            .values()
+            .filter(|&&c| c >= self.threshold)
+            .count() as u64
+    }
 }
 
 #[cfg(test)]

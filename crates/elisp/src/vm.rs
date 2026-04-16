@@ -390,19 +390,99 @@ impl<'a> Vm<'a> {
                 self.push(val);
             }
 
-            // add1 (84)
-            84 => {
-                let val = self.pop()?;
-                let result = match val {
-                    LispObject::Integer(n) => LispObject::integer(n + 1),
-                    LispObject::Float(f) => LispObject::float(f + 1.0),
-                    _ => return Err(ElispError::WrongTypeArgument("number".to_string())),
-                };
-                self.push(result);
+            // symbol-value (74)
+            74 => {
+                let sym = self.pop()?;
+                if let Some(name) = sym.as_symbol() {
+                    let val = self.env.read().get(name).unwrap_or(LispObject::nil());
+                    self.push(val);
+                } else {
+                    self.push(LispObject::nil());
+                }
             }
 
-            // sub1 (86)
-            86 => {
+            // symbol-function (75)
+            75 => {
+                let sym = self.pop()?;
+                if let Some(name) = sym.as_symbol() {
+                    let val = self.env.read().get(name).unwrap_or(LispObject::nil());
+                    self.push(val);
+                } else {
+                    self.push(LispObject::nil());
+                }
+            }
+
+            // set (76)
+            76 => {
+                let val = self.pop()?;
+                let sym = self.pop()?;
+                if let Some(name) = sym.as_symbol() {
+                    self.env.write().set(name, val.clone());
+                }
+                self.push(val);
+            }
+
+            // fset (77)
+            77 => {
+                let def = self.pop()?;
+                let sym = self.pop()?;
+                if let Some(name) = sym.as_symbol() {
+                    self.env.write().define(name, def.clone());
+                }
+                self.push(def);
+            }
+
+            // get (78)
+            78 => {
+                let _prop = self.pop()?;
+                let _sym = self.pop()?;
+                self.push(LispObject::nil()); // stub: no plist in VM yet
+            }
+
+            // substring (79)
+            79 => {
+                let end = self.pop()?;
+                let start = self.pop()?;
+                let string = self.pop()?;
+                if let (LispObject::String(s), LispObject::Integer(from)) = (&string, &start) {
+                    let from = *from as usize;
+                    let to = match &end {
+                        LispObject::Integer(n) => *n as usize,
+                        _ => s.chars().count(),
+                    };
+                    let result: String = s.chars().skip(from).take(to - from).collect();
+                    self.push(LispObject::string(&result));
+                } else {
+                    self.push(LispObject::string(""));
+                }
+            }
+
+            // concat2 (80)
+            80 => {
+                let b = self.pop()?.princ_to_string();
+                let a = self.pop()?.princ_to_string();
+                self.push(LispObject::string(&format!("{}{}", a, b)));
+            }
+
+            // concat3 (81)
+            81 => {
+                let c = self.pop()?.princ_to_string();
+                let b = self.pop()?.princ_to_string();
+                let a = self.pop()?.princ_to_string();
+                self.push(LispObject::string(&format!("{}{}{}", a, b, c)));
+            }
+
+            // concat4 (82)
+            82 => {
+                let d = self.pop()?.princ_to_string();
+                let c = self.pop()?.princ_to_string();
+                let b = self.pop()?.princ_to_string();
+                let a = self.pop()?.princ_to_string();
+                self.push(LispObject::string(&format!("{}{}{}{}", a, b, c, d)));
+            }
+
+            // sub1 (83)
+            83 => {
                 let val = self.pop()?;
                 let result = match val {
                     LispObject::Integer(n) => LispObject::integer(n - 1),
@@ -412,60 +492,15 @@ impl<'a> Vm<'a> {
                 self.push(result);
             }
 
-            // negate (88)
-            88 => {
+            // add1 (84)
+            84 => {
                 let val = self.pop()?;
                 let result = match val {
-                    LispObject::Integer(n) => LispObject::integer(-n),
-                    LispObject::Float(f) => LispObject::float(-f),
+                    LispObject::Integer(n) => LispObject::integer(n + 1),
+                    LispObject::Float(f) => LispObject::float(f + 1.0),
                     _ => return Err(ElispError::WrongTypeArgument("number".to_string())),
                 };
                 self.push(result);
-            }
-
-            // plus (92)
-            92 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                self.push(numeric_binop(&a, &b, |x, y| x + y, |x, y| x + y)?);
-            }
-
-            // diff (94)
-            94 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                self.push(numeric_binop(&a, &b, |x, y| x - y, |x, y| x - y)?);
-            }
-
-            // mult (95)
-            95 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                self.push(numeric_binop(&a, &b, |x, y| x * y, |x, y| x * y)?);
-            }
-
-            // quo (96)
-            96 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                match (&a, &b) {
-                    (LispObject::Integer(_), LispObject::Integer(0)) => {
-                        return Err(ElispError::DivisionByZero);
-                    }
-                    (LispObject::Integer(x), LispObject::Integer(y)) => {
-                        self.push(LispObject::integer(x / y));
-                    }
-                    _ => {
-                        self.push(numeric_binop(&a, &b, |x, y| x / y, |x, y| x / y)?);
-                    }
-                }
-            }
-
-            // rem (97)
-            97 => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                self.push(numeric_binop(&a, &b, |x, y| x % y, |x, y| x % y)?);
             }
 
             // eqlsign (85) =
@@ -483,8 +518,8 @@ impl<'a> Vm<'a> {
                 self.push(LispObject::from(result));
             }
 
-            // gtr (87) >
-            87 => {
+            // gtr (86) >
+            86 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
                 let fa = get_number(&a).unwrap_or(0.0);
@@ -492,8 +527,8 @@ impl<'a> Vm<'a> {
                 self.push(LispObject::from(fa > fb));
             }
 
-            // lss (89) <
-            89 => {
+            // lss (87) <
+            87 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
                 let fa = get_number(&a).unwrap_or(0.0);
@@ -501,8 +536,8 @@ impl<'a> Vm<'a> {
                 self.push(LispObject::from(fa < fb));
             }
 
-            // leq (90) <=
-            90 => {
+            // leq (88) <=
+            88 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
                 let fa = get_number(&a).unwrap_or(0.0);
@@ -510,13 +545,73 @@ impl<'a> Vm<'a> {
                 self.push(LispObject::from(fa <= fb));
             }
 
-            // geq (91) >=
-            91 => {
+            // geq (89) >=
+            89 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
                 let fa = get_number(&a).unwrap_or(0.0);
                 let fb = get_number(&b).unwrap_or(0.0);
                 self.push(LispObject::from(fa >= fb));
+            }
+
+            // diff (90)
+            90 => {
+                let b = self.pop()?;
+                let a = self.pop()?;
+                self.push(numeric_binop(&a, &b, |x, y| x - y, |x, y| x - y)?);
+            }
+
+            // negate (91)
+            91 => {
+                let val = self.pop()?;
+                let result = match val {
+                    LispObject::Integer(n) => LispObject::integer(-n),
+                    LispObject::Float(f) => LispObject::float(-f),
+                    _ => return Err(ElispError::WrongTypeArgument("number".to_string())),
+                };
+                self.push(result);
+            }
+
+            // plus (92)
+            92 => {
+                let b = self.pop()?;
+                let a = self.pop()?;
+                self.push(numeric_binop(&a, &b, |x, y| x + y, |x, y| x + y)?);
+            }
+
+            // 93 is unused in modern Emacs
+
+            // 94 is unused in modern Emacs
+
+            // mult (95)
+            95 => {
+                let b = self.pop()?;
+                let a = self.pop()?;
+                self.push(numeric_binop(&a, &b, |x, y| x * y, |x, y| x * y)?);
+            }
+
+            // quo (165)
+            165 => {
+                let b = self.pop()?;
+                let a = self.pop()?;
+                match (&a, &b) {
+                    (LispObject::Integer(_), LispObject::Integer(0)) => {
+                        return Err(ElispError::DivisionByZero);
+                    }
+                    (LispObject::Integer(x), LispObject::Integer(y)) => {
+                        self.push(LispObject::integer(x / y));
+                    }
+                    _ => {
+                        self.push(numeric_binop(&a, &b, |x, y| x / y, |x, y| x / y)?);
+                    }
+                }
+            }
+
+            // rem (166)
+            166 => {
+                let b = self.pop()?;
+                let a = self.pop()?;
+                self.push(numeric_binop(&a, &b, |x, y| x % y, |x, y| x % y)?);
             }
 
             // point (98)
@@ -1104,6 +1199,7 @@ mod tests {
         let state = InterpreterState {
             plists: Arc::new(RwLock::new(HashMap::new())),
             features: Arc::new(RwLock::new(Vec::new())),
+            profiler: Arc::new(RwLock::new(crate::jit::Profiler::new(1000))),
         };
         (env, editor, macros, state)
     }
@@ -1196,5 +1292,78 @@ fn numeric_binop(
                 get_number(b).ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
             Ok(LispObject::float(float_op(fa, fb)))
         }
+    }
+}
+
+#[cfg(test)]
+mod elc_tests {
+    use crate::object::LispObject;
+
+    #[test]
+    fn test_parse_subr_elc() {
+        let data = match std::fs::read("/opt/homebrew/share/emacs/30.2/lisp/subr.elc") {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        let source: String = data.iter().map(|&b| b as char).collect();
+        match crate::read_all(&source) {
+            Ok(forms) => {
+                eprintln!("subr.elc: parsed {} forms", forms.len());
+                let bc_count = forms
+                    .iter()
+                    .filter(|f| matches!(f, LispObject::BytecodeFn(_)))
+                    .count();
+                eprintln!("  bytecode functions at top level: {}", bc_count);
+                assert!(
+                    forms.len() > 100,
+                    "expected >100 forms, got {}",
+                    forms.len()
+                );
+            }
+            Err(e) => {
+                panic!("subr.elc parse failed: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_execute_compiled_functions() {
+        // Load the test .elc we compiled with Emacs
+        let data = match std::fs::read("/tmp/test-bytecode.elc") {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        let source: String = data.iter().map(|&b| b as char).collect();
+
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+
+        match interp.eval_source(&source) {
+            Ok(_) => {}
+            Err((i, e)) => eprintln!("test-bytecode.elc: form {} error: {}", i, e),
+        }
+
+        // Test all compiled functions
+        assert_eq!(
+            interp.eval(crate::read("(my-add 10 20)").unwrap()).unwrap(),
+            LispObject::integer(30)
+        );
+        assert_eq!(
+            interp.eval(crate::read("(my-double 21)").unwrap()).unwrap(),
+            LispObject::integer(42)
+        );
+        assert_eq!(
+            interp
+                .eval(crate::read("(my-greet \"world\")").unwrap())
+                .unwrap(),
+            LispObject::string("Hello, world!")
+        );
+        // Recursive factorial
+        assert_eq!(
+            interp
+                .eval(crate::read("(my-factorial 5)").unwrap())
+                .unwrap(),
+            LispObject::integer(120)
+        );
     }
 }

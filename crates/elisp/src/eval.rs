@@ -90,6 +90,7 @@ impl Environment {
 pub struct InterpreterState {
     pub plists: PlistTable,
     pub features: FeatureList,
+    pub profiler: Arc<RwLock<crate::jit::Profiler>>,
 }
 
 pub struct Interpreter {
@@ -111,6 +112,7 @@ impl Interpreter {
             state: InterpreterState {
                 plists: Arc::new(RwLock::new(HashMap::new())),
                 features: Arc::new(RwLock::new(Vec::new())),
+                profiler: Arc::new(RwLock::new(crate::jit::Profiler::new(1000))),
             },
         }
     }
@@ -143,6 +145,12 @@ impl Interpreter {
     /// Get a variable's value, or None if unbound.
     pub fn get(&self, name: &str) -> Option<LispObject> {
         self.env.read().get(name)
+    }
+
+    /// Returns `(total_calls, hot_functions_count)` from the JIT profiler.
+    pub fn profiler_stats(&self) -> (u64, u64) {
+        let profiler = self.state.profiler.read();
+        (profiler.total_calls(), profiler.hot_function_count())
     }
 }
 
@@ -933,6 +941,10 @@ fn eval_funcall(
         }
         LispObject::Primitive(name) => crate::primitives::call_primitive(&name, &args),
         LispObject::BytecodeFn(bc) => {
+            let func_id = &bc as *const _ as usize;
+            let _should_jit = state.profiler.write().record_call(func_id);
+            // TODO: trigger JIT compilation when _should_jit is true
+
             let mut arg_vec = Vec::new();
             let mut current = args;
             while let Some((car, cdr)) = current.destructure_cons() {
@@ -1898,7 +1910,10 @@ pub fn call_function(
         }
         LispObject::Primitive(name) => crate::primitives::call_primitive(name, args),
         LispObject::BytecodeFn(bc) => {
-            // Collect args into a Vec
+            let func_id = bc as *const _ as usize;
+            let _should_jit = state.profiler.write().record_call(func_id);
+            // TODO: trigger JIT compilation when _should_jit is true
+
             let mut arg_vec = Vec::new();
             let mut current = args.clone();
             while let Some((car, cdr)) = current.destructure_cons() {
@@ -3090,5 +3105,54 @@ mod tests {
             Ok(val) => assert_eq!(val, LispObject::integer(42), "my-double returned {:?}", val),
             Err(e) => eprintln!("my-double failed: {}", e),
         }
+    }
+
+    #[test]
+    fn test_profiler_detects_hot_bytecode_function() {
+        use crate::object::BytecodeFunction;
+
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        // Set the profiler threshold to a small value for testing.
+        {
+            let mut profiler = interp.state.profiler.write();
+            *profiler = crate::jit::Profiler::new(5);
+        }
+
+        // Create a simple bytecode function: (defun my-inc (n) (1+ n))
+        // Opcodes: add1(0x54) return(0x87)
+        let bc = BytecodeFunction {
+            argdesc: 257, // 1 required, max 1
+            bytecode: vec![0x54, 0x87],
+            constants: vec![],
+            maxdepth: 2,
+            docstring: None,
+            interactive: None,
+        };
+        interp.define("my-inc", LispObject::BytecodeFn(bc));
+
+        // Before any calls, the profiler should report zero.
+        let (total, hot) = interp.profiler_stats();
+        assert_eq!(total, 0);
+        assert_eq!(hot, 0);
+
+        // Call the bytecode function fewer times than the threshold.
+        for _ in 0..4 {
+            let result = interp.eval(read("(my-inc 10)").unwrap()).unwrap();
+            assert_eq!(result, LispObject::integer(11));
+        }
+
+        let (total, hot) = interp.profiler_stats();
+        assert_eq!(total, 4);
+        assert_eq!(hot, 0, "should not be hot yet");
+
+        // One more call to cross the threshold.
+        let result = interp.eval(read("(my-inc 10)").unwrap()).unwrap();
+        assert_eq!(result, LispObject::integer(11));
+
+        let (total, hot) = interp.profiler_stats();
+        assert_eq!(total, 5);
+        assert_eq!(hot, 1, "function should now be detected as hot");
     }
 }
