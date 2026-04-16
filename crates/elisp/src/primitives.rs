@@ -224,57 +224,78 @@ fn get_number(obj: &LispObject) -> Option<f64> {
 }
 
 fn prim_add(args: &LispObject) -> ElispResult<LispObject> {
-    let mut sum = 0.0;
+    let mut raw = Vec::new();
     let mut current = args.clone();
     while let Some((arg, rest)) = current.destructure_cons() {
-        let n =
-            get_number(&arg).ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-        sum += n;
+        raw.push(arg);
         current = rest;
     }
-    if sum == sum.floor() && sum.abs() < 1e15 {
-        Ok(LispObject::integer(sum as i64))
+    let all_int = raw.iter().all(|a| matches!(a, LispObject::Integer(_)));
+    if all_int {
+        let sum: i64 = raw.iter().map(|a| a.as_integer().unwrap()).sum();
+        Ok(LispObject::integer(sum))
     } else {
+        let sum: f64 = raw
+            .iter()
+            .map(|a| get_number(a).ok_or_else(|| ElispError::WrongTypeArgument("number".into())))
+            .collect::<ElispResult<Vec<_>>>()?
+            .into_iter()
+            .sum();
         Ok(LispObject::float(sum))
     }
 }
 
 fn prim_sub(args: &LispObject) -> ElispResult<LispObject> {
-    let mut numbers: Vec<f64> = Vec::new();
+    let mut raw = Vec::new();
     let mut current = args.clone();
     while let Some((arg, rest)) = current.destructure_cons() {
-        let n =
-            get_number(&arg).ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-        numbers.push(n);
+        raw.push(arg);
         current = rest;
     }
-    if numbers.is_empty() {
+    if raw.is_empty() {
         return Err(ElispError::WrongNumberOfArguments);
     }
-    let result = if numbers.len() == 1 {
-        -numbers[0]
+    let all_int = raw.iter().all(|a| matches!(a, LispObject::Integer(_)));
+    if all_int {
+        let ints: Vec<i64> = raw.iter().map(|a| a.as_integer().unwrap()).collect();
+        let result = if ints.len() == 1 {
+            -ints[0]
+        } else {
+            ints.iter().skip(1).fold(ints[0], |acc, &x| acc - x)
+        };
+        Ok(LispObject::integer(result))
     } else {
-        numbers.iter().skip(1).fold(numbers[0], |acc, &x| acc - x)
-    };
-    if result == result.floor() && result.abs() < 1e15 {
-        Ok(LispObject::integer(result as i64))
-    } else {
+        let nums: Vec<f64> = raw
+            .iter()
+            .map(|a| get_number(a).ok_or_else(|| ElispError::WrongTypeArgument("number".into())))
+            .collect::<ElispResult<Vec<_>>>()?;
+        let result = if nums.len() == 1 {
+            -nums[0]
+        } else {
+            nums.iter().skip(1).fold(nums[0], |acc, &x| acc - x)
+        };
         Ok(LispObject::float(result))
     }
 }
 
 fn prim_mul(args: &LispObject) -> ElispResult<LispObject> {
-    let mut product = 1.0;
+    let mut raw = Vec::new();
     let mut current = args.clone();
     while let Some((arg, rest)) = current.destructure_cons() {
-        let n =
-            get_number(&arg).ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-        product *= n;
+        raw.push(arg);
         current = rest;
     }
-    if product == product.floor() && product.abs() < 1e15 {
-        Ok(LispObject::integer(product as i64))
+    let all_int = raw.iter().all(|a| matches!(a, LispObject::Integer(_)));
+    if all_int {
+        let product: i64 = raw.iter().map(|a| a.as_integer().unwrap()).product();
+        Ok(LispObject::integer(product))
     } else {
+        let product: f64 = raw
+            .iter()
+            .map(|a| get_number(a).ok_or_else(|| ElispError::WrongTypeArgument("number".into())))
+            .collect::<ElispResult<Vec<_>>>()?
+            .into_iter()
+            .product();
         Ok(LispObject::float(product))
     }
 }

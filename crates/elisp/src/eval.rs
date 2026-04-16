@@ -385,8 +385,30 @@ fn eval_inner(
                         )?;
                         Ok(list)
                     }
-                    "nconc" | "nreverse" | "copy-sequence" | "seq-position" => {
-                        // delegate to primitives if available, else eval first arg
+                    "nconc" => {
+                        // Evaluate all args, append them (non-destructive since immutable)
+                        let mut result = LispObject::nil();
+                        let mut all_items = Vec::new();
+                        let mut current = cdr.clone();
+                        while let Some((arg_expr, rest)) = current.destructure_cons() {
+                            let list = eval(arg_expr, env, editor, macros, state)?;
+                            let mut cur = list;
+                            while let Some((car, cdr_val)) = cur.destructure_cons() {
+                                all_items.push(car);
+                                cur = cdr_val;
+                            }
+                            // If last arg is non-nil atom, it becomes the tail
+                            if !cur.is_nil() && rest.is_nil() {
+                                result = cur;
+                            }
+                            current = rest;
+                        }
+                        for item in all_items.into_iter().rev() {
+                            result = LispObject::cons(item, result);
+                        }
+                        Ok(result)
+                    }
+                    "nreverse" | "copy-sequence" => {
                         let arg = eval(
                             cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
                             env,
@@ -394,7 +416,45 @@ fn eval_inner(
                             macros,
                             state,
                         )?;
-                        Ok(arg)
+                        // nreverse: reverse list; copy-sequence: clone (already cloned)
+                        if s.as_str() == "nreverse" {
+                            let mut items = Vec::new();
+                            let mut cur = arg;
+                            while let Some((car, cdr_val)) = cur.destructure_cons() {
+                                items.push(car);
+                                cur = cdr_val;
+                            }
+                            items.reverse();
+                            let mut result = LispObject::nil();
+                            for item in items.into_iter().rev() {
+                                result = LispObject::cons(item, result);
+                            }
+                            Ok(result)
+                        } else {
+                            Ok(arg) // copy-sequence: already cloned
+                        }
+                    }
+                    "autoload" => {
+                        // (autoload FUNCTION FILE &optional DOCSTRING INTERACTIVE TYPE)
+                        // Stub: just register the function name as autoloaded (no-op for now)
+                        let func = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(func)
+                    }
+                    "vector" => {
+                        // (vector &rest ARGS) — create a vector from args
+                        let mut items = Vec::new();
+                        let mut current = cdr.clone();
+                        while let Some((arg, rest)) = current.destructure_cons() {
+                            items.push(eval(arg, env, editor, macros, state)?);
+                            current = rest;
+                        }
+                        Ok(LispObject::Vector(items))
                     }
                     "make-symbol" => {
                         let name = eval(
@@ -1009,25 +1069,61 @@ fn apply_lambda(
 
     let mut params_list = params.clone();
     let mut args_list = args.clone();
+    let mut optional = false;
+    let mut rest = false;
 
     loop {
-        match (params_list.clone(), args_list.clone()) {
-            (LispObject::Nil, LispObject::Nil) => break,
-            (LispObject::Cons(_, _), LispObject::Cons(_, _)) => {
-                let (param, params_rest) = params_list.destructure();
-                let (arg, args_rest) = args_list.destructure();
-                if let LispObject::Symbol(name) = param {
-                    new_env.write().define(&name, arg);
+        if params_list.is_nil() {
+            break;
+        }
+        let (param, params_rest) = match params_list.destructure_cons() {
+            Some((p, r)) => (p, r),
+            None => {
+                // Dotted rest param: (a b . rest)
+                if let LispObject::Symbol(name) = params_list {
+                    new_env.write().define(&name, args_list);
                 }
-                params_list = params_rest;
-                args_list = args_rest;
-            }
-            (LispObject::Symbol(name), _) => {
-                new_env.write().define(&name, args_list);
                 break;
             }
-            _ => return Err(ElispError::WrongNumberOfArguments),
+        };
+
+        if let LispObject::Symbol(ref name) = param {
+            match name.as_str() {
+                "&optional" => {
+                    optional = true;
+                    params_list = params_rest;
+                    continue;
+                }
+                "&rest" => {
+                    rest = true;
+                    params_list = params_rest;
+                    continue;
+                }
+                _ => {}
+            }
+
+            if rest {
+                // Bind remaining args as a list
+                new_env.write().define(name, args_list.clone());
+                args_list = LispObject::nil();
+                params_list = params_rest;
+                continue;
+            }
+
+            let (arg, args_rest) = match args_list.destructure_cons() {
+                Some((a, r)) => (a, r),
+                None => {
+                    if optional || rest {
+                        (LispObject::nil(), LispObject::nil())
+                    } else {
+                        return Err(ElispError::WrongNumberOfArguments);
+                    }
+                }
+            };
+            new_env.write().define(name, arg);
+            args_list = args_rest;
         }
+        params_list = params_rest;
     }
 
     eval_progn(body, &new_env, editor, macros, state)
@@ -2844,6 +2940,22 @@ mod tests {
         interp.define("standard-output", LispObject::t());
         interp.define("load-path", LispObject::nil());
         interp.define("data-directory", LispObject::string("/usr/share/emacs"));
+        // Additional stubs for subr.el
+        interp.define("autoload", LispObject::primitive("ignore"));
+        interp.define("default-boundp", LispObject::primitive("ignore"));
+        interp.define("minibuffer-local-map", LispObject::nil());
+        interp.define("minibuffer-local-ns-map", LispObject::nil());
+        interp.define("minibuffer-local-completion-map", LispObject::nil());
+        interp.define("minibuffer-local-must-match-map", LispObject::nil());
+        interp.define(
+            "minibuffer-local-filename-completion-map",
+            LispObject::nil(),
+        );
+        interp.define("C-@", LispObject::integer(0)); // NUL character
+        interp.define("set-default", LispObject::primitive("ignore"));
+        interp.define("remap", LispObject::nil());
+        interp.define("hash-table-p", LispObject::primitive("ignore"));
+        interp.define("\\`", LispObject::primitive("identity"));
         interp
     }
 
