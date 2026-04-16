@@ -10,6 +10,7 @@ jit = ["cranelift-codegen", "cranelift-frontend", "cranelift-module", "cranelift
 
 [dependencies]
 parking_lot = "0.12"
+regex = "1"
 cranelift-codegen = { version = "0.116", optional = true }
 cranelift-frontend = { version = "0.116", optional = true }
 cranelift-module = { version = "0.116", optional = true }

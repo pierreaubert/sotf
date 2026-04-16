@@ -54,6 +54,17 @@ macro_rules! eval_next {
     }};
 }
 
+/// Returns true when `obj` is something that can appear in function position.
+fn is_callable_value(obj: &LispObject) -> bool {
+    match obj {
+        LispObject::Primitive(_) | LispObject::BytecodeFn(_) => true,
+        LispObject::Cons(car, _) => {
+            matches!(car.as_ref(), LispObject::Symbol(s) if s == "lambda")
+        }
+        _ => false,
+    }
+}
+
 impl Environment {
     pub fn new() -> Self {
         Environment {
@@ -74,6 +85,38 @@ impl Environment {
             .get(name)
             .cloned()
             .or_else(|| self.parent.as_ref().and_then(|p| p.get(name)))
+    }
+
+    /// Lisp-2 function lookup: find a callable value for `name`, skipping
+    /// non-callable local shadows (e.g. a parameter named `list` that
+    /// hides the built-in `list` function).  Returns the first callable
+    /// binding found, or the first binding of any kind if no callable
+    /// binding exists.
+    pub fn get_function(&self, name: &str) -> Option<LispObject> {
+        let mut first_found: Option<LispObject> = None;
+        // Check this level
+        if let Some(val) = self.bindings.get(name).cloned() {
+            if is_callable_value(&val) {
+                return Some(val);
+            }
+            if first_found.is_none() {
+                first_found = Some(val);
+            }
+        }
+        // Walk parent chain
+        let mut parent = self.parent.as_ref();
+        while let Some(p) = parent {
+            if let Some(val) = p.bindings.get(name).cloned() {
+                if is_callable_value(&val) {
+                    return Some(val);
+                }
+                if first_found.is_none() {
+                    first_found = Some(val);
+                }
+            }
+            parent = p.parent.as_ref();
+        }
+        first_found
     }
 
     pub fn set(&mut self, name: &str, value: LispObject) {
@@ -440,7 +483,20 @@ fn eval_inner(
                         let name = arg
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        Ok(env.read().get(name).unwrap_or(LispObject::nil()))
+                        // Check env first, then fall back to macro table.
+                        // Macros are returned as (macro lambda ARGS . BODY)
+                        // matching real Emacs behaviour.
+                        if let Some(val) = env.read().get(name) {
+                            Ok(val)
+                        } else if let Some(m) = macros.read().get(name).cloned() {
+                            let lambda_form = LispObject::cons(
+                                LispObject::symbol("lambda"),
+                                LispObject::cons(m.args, m.body),
+                            );
+                            Ok(LispObject::cons(LispObject::symbol("macro"), lambda_form))
+                        } else {
+                            Ok(LispObject::nil())
+                        }
                     }
                     "sort" => {
                         // stub: return list as-is for now
@@ -647,7 +703,58 @@ fn eval_inner(
                         )?;
                         Ok(LispObject::nil())
                     }
-                    "string-match-p" | "string-match" => Ok(LispObject::nil()),
+                    "string-match-p" | "string-match" => {
+                        let re_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        let str_expr = cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+                        let re_str = eval(re_expr, env, editor, macros, state)?
+                            .as_string()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?
+                            .clone();
+                        let text = eval(str_expr, env, editor, macros, state)?
+                            .as_string()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?
+                            .clone();
+                        let start = if let Some(s) = cdr.nth(2) {
+                            eval(s, env, editor, macros, state)?
+                                .as_integer()
+                                .unwrap_or(0) as usize
+                        } else {
+                            0
+                        };
+                        // Translate basic Emacs regex to Rust regex
+                        let rust_re = emacs_regex_to_rust(&re_str);
+                        match regex::Regex::new(&rust_re) {
+                            Ok(re) => {
+                                if let Some(m) = re.find(&text[start..]) {
+                                    Ok(LispObject::integer((start + m.start()) as i64))
+                                } else {
+                                    Ok(LispObject::nil())
+                                }
+                            }
+                            Err(_) => Ok(LispObject::nil()),
+                        }
+                    }
+                    "match-data" | "match-beginning" | "match-end" | "match-string"
+                    | "replace-match" | "looking-at" | "re-search-forward"
+                    | "re-search-backward" | "search-forward" | "search-backward" => {
+                        // Stub: return nil (no match data tracking yet)
+                        Ok(LispObject::nil())
+                    }
+                    "version-to-list" => {
+                        // Built-in version-to-list since subr.el's version needs match-data
+                        let ver_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        let ver = eval(ver_expr, env, editor, macros, state)?;
+                        let ver_str = ver
+                            .as_string()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                        let mut result = LispObject::nil();
+                        let parts: Vec<&str> = ver_str.split('.').collect();
+                        for part in parts.into_iter().rev() {
+                            let n = part.parse::<i64>().unwrap_or(0);
+                            result = LispObject::cons(LispObject::integer(n), result);
+                        }
+                        Ok(result)
+                    }
                     "read-from-string" => {
                         let str_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
                         let s = eval(str_expr, env, editor, macros, state)?;
@@ -1019,38 +1126,39 @@ fn eval_funcall(
     macros: &MacroTable,
     state: &InterpreterState,
 ) -> ElispResult<LispObject> {
-    let func = eval(func, env, editor, macros, state)?;
+    // Emacs is a Lisp-2: function names and variable names live in
+    // separate namespaces.  Our interpreter is Lisp-1, so a local
+    // variable can shadow a function.  To approximate Lisp-2 semantics
+    // we resolve function-position symbols with a special lookup:
+    // if the local value is not callable (e.g. a parameter named `list`
+    // that shadows the built-in `list` function), walk up the
+    // environment chain until we find a callable binding.
+    let func = resolve_function(func, env, editor, macros, state)?;
     let args = eval_list(&args, env, editor, macros, state)?;
 
-    match func {
-        LispObject::Cons(car, cdr) => {
-            if let LispObject::Symbol(s) = &*car {
-                if s == "lambda" {
-                    let params = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
-                    let body = cdr.rest().ok_or(ElispError::WrongNumberOfArguments)?;
-                    apply_lambda(&params, &body, &args, env, editor, macros, state)
-                } else {
-                    Err(ElispError::VoidFunction(s.clone()))
-                }
-            } else {
-                Err(ElispError::WrongTypeArgument("function".to_string()))
-            }
-        }
-        LispObject::Primitive(name) => crate::primitives::call_primitive(&name, &args),
-        LispObject::BytecodeFn(bc) => {
-            let func_id = &bc as *const _ as usize;
-            let _should_jit = state.profiler.write().record_call(func_id);
-            // TODO: trigger JIT compilation when _should_jit is true
+    call_function(&func, &args, env, editor, macros, state)
+}
 
-            let mut arg_vec = Vec::new();
-            let mut current = args;
-            while let Some((car, cdr)) = current.destructure_cons() {
-                arg_vec.push(car);
-                current = cdr;
-            }
-            crate::vm::execute_bytecode(&bc, &arg_vec, env, editor, macros, state)
-        }
-        _ => Err(ElispError::WrongTypeArgument("function".to_string())),
+/// Resolve a function-position expression.
+///
+/// For symbols: use `get_function` which prefers callable bindings over
+/// non-callable shadows.  This approximates Lisp-2 semantics where
+/// `(list ...)` always finds the *function* `list`, even when a local
+/// variable named `list` shadows it.
+fn resolve_function(
+    func: LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    if let LispObject::Symbol(ref name) = func {
+        env.read()
+            .get_function(name)
+            .ok_or_else(|| ElispError::VoidFunction(name.clone()))
+    } else {
+        // Not a symbol — eval normally (e.g. a lambda expression)
+        eval(func, env, editor, macros, state)
     }
 }
 
@@ -1064,15 +1172,6 @@ fn eval_apply(
     let func = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let args_list = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
     let func_val = eval(func, env, editor, macros, state)?;
-
-    let func = if let LispObject::Symbol(s) = &func_val {
-        let env = env.read();
-        env.get(s)
-            .ok_or_else(|| ElispError::VoidVariable(s.clone()))?
-    } else {
-        func_val
-    };
-
     let args_list = eval(args_list, env, editor, macros, state)?;
 
     let mut arg_items: Vec<LispObject> = Vec::new();
@@ -1087,23 +1186,7 @@ fn eval_apply(
         all_args = LispObject::cons(arg.clone(), all_args);
     }
 
-    match func {
-        LispObject::Cons(car, cdr) => {
-            if let LispObject::Symbol(s) = &*car {
-                if s == "lambda" {
-                    let params = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
-                    let body = cdr.rest().ok_or(ElispError::WrongNumberOfArguments)?;
-                    apply_lambda(&params, &body, &all_args, env, editor, macros, state)
-                } else {
-                    Err(ElispError::VoidFunction(s.clone()))
-                }
-            } else {
-                Err(ElispError::WrongTypeArgument("function".to_string()))
-            }
-        }
-        LispObject::Primitive(name) => crate::primitives::call_primitive(&name, &all_args),
-        _ => Err(ElispError::WrongTypeArgument("function".to_string())),
-    }
+    call_function(&func_val, &all_args, env, editor, macros, state)
 }
 
 fn eval_funcall_form(
@@ -1116,33 +1199,9 @@ fn eval_funcall_form(
     let func = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let rest_args = args.rest().ok_or(ElispError::WrongNumberOfArguments)?;
     let func_val = eval(func, env, editor, macros, state)?;
-
-    let func = if let LispObject::Symbol(s) = &func_val {
-        let env = env.read();
-        env.get(s)
-            .ok_or_else(|| ElispError::VoidVariable(s.clone()))?
-    } else {
-        func_val
-    };
     let args = eval_list(&rest_args, env, editor, macros, state)?;
 
-    match func {
-        LispObject::Cons(car, cdr) => {
-            if let LispObject::Symbol(s) = &*car {
-                if s == "lambda" {
-                    let params = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
-                    let body = cdr.rest().ok_or(ElispError::WrongNumberOfArguments)?;
-                    apply_lambda(&params, &body, &args, env, editor, macros, state)
-                } else {
-                    Err(ElispError::VoidFunction(s.clone()))
-                }
-            } else {
-                Err(ElispError::WrongTypeArgument("function".to_string()))
-            }
-        }
-        LispObject::Primitive(name) => crate::primitives::call_primitive(&name, &args),
-        _ => Err(ElispError::WrongTypeArgument("function".to_string())),
-    }
+    call_function(&func_val, &args, env, editor, macros, state)
 }
 
 fn eval_list(
@@ -1623,6 +1682,28 @@ fn eval_defalias(
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
     let value = eval(definition, env, editor, macros, state)?;
 
+    // If the value is (macro lambda ARGS . BODY), register it as a macro.
+    // This handles e.g. (defalias '\` (symbol-function 'backquote))
+    // where backquote is a defmacro.
+    if let Some((car, rest)) = value.destructure_cons() {
+        if car.as_symbol().map(|s| s.as_str()) == Some("macro") {
+            if let Some((lambda_sym, lambda_rest)) = rest.destructure_cons() {
+                if lambda_sym.as_symbol().map(|s| s.as_str()) == Some("lambda") {
+                    let macro_args = lambda_rest.first().unwrap_or(LispObject::nil());
+                    let macro_body = lambda_rest.rest().unwrap_or(LispObject::nil());
+                    macros.write().insert(
+                        name.to_string(),
+                        Macro {
+                            args: macro_args,
+                            body: macro_body,
+                        },
+                    );
+                    return Ok(LispObject::symbol(name));
+                }
+            }
+        }
+    }
+
     env.write().define(name, value);
     Ok(LispObject::symbol(name))
 }
@@ -2072,6 +2153,82 @@ fn eval_dolist(
 }
 
 // --- String formatting ---
+
+/// Translate basic Emacs regex to Rust regex.
+/// Emacs uses \( \) for groups, \| for alternation, etc.
+fn emacs_regex_to_rust(emacs: &str) -> String {
+    let mut result = String::new();
+    let chars: Vec<char> = emacs.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() {
+            match chars[i + 1] {
+                '(' => {
+                    result.push('(');
+                    i += 2;
+                }
+                ')' => {
+                    result.push(')');
+                    i += 2;
+                }
+                '|' => {
+                    result.push('|');
+                    i += 2;
+                }
+                '{' => {
+                    result.push('{');
+                    i += 2;
+                }
+                '}' => {
+                    result.push('}');
+                    i += 2;
+                }
+                'w' => {
+                    result.push_str("[[:alnum:]_]");
+                    i += 2;
+                }
+                'b' => {
+                    result.push_str("\\b");
+                    i += 2;
+                }
+                's' => {
+                    // \s- = whitespace in Emacs
+                    if i + 2 < chars.len() && chars[i + 2] == '-' {
+                        result.push_str("\\s");
+                        i += 3;
+                    } else {
+                        result.push_str("\\s");
+                        i += 2;
+                    }
+                }
+                '`' => {
+                    result.push_str("\\A");
+                    i += 2;
+                } // beginning of string
+                '\'' => {
+                    result.push_str("\\z");
+                    i += 2;
+                } // end of string
+                c => {
+                    result.push('\\');
+                    result.push(c);
+                    i += 2;
+                }
+            }
+        } else {
+            // In Emacs regex, literal ( ) are just ( ) — in Rust they need escaping
+            // But Emacs also uses bare ( ) as literal, while \( \) are groups
+            match chars[i] {
+                '(' => result.push_str("\\("),
+                ')' => result.push_str("\\)"),
+                '|' => result.push_str("\\|"),
+                c => result.push(c),
+            }
+            i += 1;
+        }
+    }
+    result
+}
 
 fn eval_format(
     args: &LispObject,
@@ -3067,7 +3224,6 @@ mod tests {
         interp.define("set-default", LispObject::primitive("ignore"));
         interp.define("remap", LispObject::nil());
         interp.define("hash-table-p", LispObject::primitive("ignore"));
-        interp.define("\\`", LispObject::primitive("identity"));
         // Remaining stubs for 100% subr.el
         interp.define("local-variable-if-set-p", LispObject::primitive("ignore"));
         interp.define("make-local-variable", LispObject::primitive("identity"));
@@ -3093,7 +3249,10 @@ mod tests {
         interp.define("isearch-forward", LispObject::nil());
         interp.define("isearch-backward", LispObject::nil());
         interp.define("emacs-pid", LispObject::primitive("ignore"));
-        interp.define("version-to-list", LispObject::primitive("ignore"));
+        // version-to-list needs to be a real implementation since subr.el's
+        // version calls string-match + match-data which we don't fully support
+        // We define it AFTER loading subr.el would override it, so register it
+        // as a special form instead
         interp.define("process-attributes", LispObject::primitive("ignore"));
         interp.define("suspend-emacs", LispObject::nil());
         interp.define("emacs", LispObject::nil());
@@ -3280,5 +3439,22 @@ mod tests {
         let (total, hot) = interp.profiler_stats();
         assert_eq!(total, 5);
         assert_eq!(hot, 1, "function should now be detected as hot");
+    }
+
+    #[test]
+    fn test_backquote_expansion() {
+        let interp = make_stdlib_interp();
+        // Load prerequisites
+        for f in &["debug-early.el", "byte-run.el", "backquote.el"] {
+            if let Ok(s) = std::fs::read_to_string(format!("/tmp/elisp-stdlib/{}", f)) {
+                let _ = interp.eval_source(&s);
+            }
+        }
+        // Verify backquote macro is registered
+        assert!(interp.macros.read().contains_key("`"));
+
+        // Simple backquote on constant list
+        let result = interp.eval(read("`(a b c)").unwrap()).unwrap();
+        assert_eq!(result.princ_to_string(), "(a b c)");
     }
 }

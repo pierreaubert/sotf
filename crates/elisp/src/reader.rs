@@ -124,7 +124,7 @@ impl Reader {
             '`' => {
                 let form = self.read()?;
                 Ok(LispObject::cons(
-                    LispObject::symbol("\\`"),
+                    LispObject::symbol("`"),
                     LispObject::cons(form, LispObject::nil()),
                 ))
             }
@@ -133,13 +133,13 @@ impl Reader {
                     self.advance();
                     let form = self.read()?;
                     Ok(LispObject::cons(
-                        LispObject::symbol("\\,@"),
+                        LispObject::symbol(",@"),
                         LispObject::cons(form, LispObject::nil()),
                     ))
                 } else {
                     let form = self.read()?;
                     Ok(LispObject::cons(
-                        LispObject::symbol("\\,"),
+                        LispObject::symbol(","),
                         LispObject::cons(form, LispObject::nil()),
                     ))
                 }
@@ -898,7 +898,7 @@ mod tests {
     fn test_read_backquote() {
         let result = read("`foo").unwrap();
         let expected = LispObject::cons(
-            LispObject::symbol("\\`"),
+            LispObject::symbol("`"),
             LispObject::cons(LispObject::symbol("foo"), LispObject::nil()),
         );
         assert_eq!(result, expected);
@@ -908,7 +908,7 @@ mod tests {
     fn test_read_unquote() {
         let result = read(",foo").unwrap();
         let expected = LispObject::cons(
-            LispObject::symbol("\\,"),
+            LispObject::symbol(","),
             LispObject::cons(LispObject::symbol("foo"), LispObject::nil()),
         );
         assert_eq!(result, expected);
@@ -918,7 +918,7 @@ mod tests {
     fn test_read_unquote_splice() {
         let result = read(",@foo").unwrap();
         let expected = LispObject::cons(
-            LispObject::symbol("\\,@"),
+            LispObject::symbol(",@"),
             LispObject::cons(LispObject::symbol("foo"), LispObject::nil()),
         );
         assert_eq!(result, expected);
@@ -1039,7 +1039,7 @@ mod tests {
         let result = read("`(a ,b ,@c)").unwrap();
         // Should be (\` (a (\, b) (\,@ c)))
         assert!(result.is_cons());
-        assert_eq!(result.first().unwrap(), LispObject::symbol("\\`"));
+        assert_eq!(result.first().unwrap(), LispObject::symbol("`"));
     }
 
     #[test]

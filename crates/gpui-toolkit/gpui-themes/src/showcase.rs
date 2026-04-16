@@ -7,7 +7,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Alert, AlertVariant, Badge, BadgeVariant, BreadcrumbItem, Breadcrumbs, Button, ButtonSize,
-    ButtonVariant, Card, Code, ConfirmDialogVariant, EmptyState, HStack, Heading,
+    ButtonVariant, Card, Code, EmptyState, HStack, Heading,
     KeyboardShortcutLabel, KeyboardShortcutSize, SearchBar, SearchBarSize, StackSpacing, StatusBar,
     StatusBarPosition, Text, TextSize, TextWeight, VStack,
 };

@@ -11,6 +11,7 @@ pub fn add_primitives(interp: &mut crate::eval::Interpreter) {
     interp.define(">", LispObject::primitive(">"));
     interp.define("<=", LispObject::primitive("<="));
     interp.define(">=", LispObject::primitive(">="));
+    interp.define("/=", LispObject::primitive("/="));
     interp.define("cons", LispObject::primitive("cons"));
     interp.define("car", LispObject::primitive("car"));
     interp.define("cdr", LispObject::primitive("cdr"));
@@ -120,6 +121,7 @@ pub fn call_primitive(name: &str, args: &LispObject) -> ElispResult<LispObject> 
         ">" => prim_gt(args),
         "<=" => prim_le(args),
         ">=" => prim_ge(args),
+        "/=" => prim_ne(args),
         "cons" => prim_cons(args),
         "car" => prim_car(args),
         "cdr" => prim_cdr(args),
@@ -452,6 +454,14 @@ fn prim_ge(args: &LispObject) -> ElispResult<LispObject> {
         }
     }
     Ok(LispObject::t())
+}
+
+fn prim_ne(args: &LispObject) -> ElispResult<LispObject> {
+    let a = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let b = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let na = get_number(&a).ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
+    let nb = get_number(&b).ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
+    Ok(LispObject::from((na - nb).abs() > f64::EPSILON))
 }
 
 fn prim_cons(args: &LispObject) -> ElispResult<LispObject> {

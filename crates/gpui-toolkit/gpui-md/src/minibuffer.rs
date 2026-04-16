@@ -258,10 +258,10 @@ impl MiniBufferState {
 
     /// Return the selected candidate, or the typed input if none match.
     pub fn current_value(&self) -> String {
-        if let Some(&idx) = self.filtered.get(self.selected) {
-            if let Some(cand) = self.candidates.get(idx) {
-                return cand.clone();
-            }
+        if let Some(&idx) = self.filtered.get(self.selected)
+            && let Some(cand) = self.candidates.get(idx)
+        {
+            return cand.clone();
         }
         self.input.clone()
     }

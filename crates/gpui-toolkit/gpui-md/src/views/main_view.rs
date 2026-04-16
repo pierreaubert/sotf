@@ -280,11 +280,6 @@ impl Render for MainView {
         } else {
             None
         };
-        let palette_text = if state.command_palette.visible {
-            Some(format!("M-x: {}", state.command_palette.query))
-        } else {
-            None
-        };
         let macro_text = if state.macros.recording {
             Some("Def".to_string())
         } else {
@@ -324,28 +319,27 @@ impl Render for MainView {
                             )
                     }),
             )
-            // Mini-buffer (renders only when active)
-            .child(self.minibuffer.clone())
-            // Status bar
+            // Mode line (Emacs-style: always visible, above minibuffer)
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .justify_between()
                     .items_center()
-                    .px_3()
-                    .py_1()
+                    .px_2()
+                    .py(px(1.0))
                     .bg(theme.accent)
-                    .text_size(px(12.0))
+                    .text_size(px(11.0))
                     .text_color(theme.text_on_accent)
                     .child(format!("{}{}  [{} buffers]", buffer_name, dirty_marker, buffer_count))
                     .when_some(macro_text, |el, text| el.child(text))
                     .when_some(universal_arg_text, |el, text| el.child(text))
                     .when_some(isearch_text, |el, text| el.child(text))
-                    .when_some(palette_text, |el, text| el.child(text))
                     .child(format!("Ln {}", cursor_line))
                     .child(format!("{} words", word_count))
                     .child(keymap_name),
             )
+            // Mini-buffer / echo area (Emacs-style: below mode line)
+            .child(self.minibuffer.clone())
     }
 }

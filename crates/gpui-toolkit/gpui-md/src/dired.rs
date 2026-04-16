@@ -63,11 +63,11 @@ impl DiredState {
         self.entries = read_entries(&self.path)?;
         self.marks.clear();
         // Try to restore selection by name; fall back to clamping to length
-        if let Some(name) = prev_name {
-            if let Some(idx) = self.entries.iter().position(|e| e.name == name) {
-                self.selected = idx;
-                return Ok(());
-            }
+        if let Some(name) = prev_name
+            && let Some(idx) = self.entries.iter().position(|e| e.name == name)
+        {
+            self.selected = idx;
+            return Ok(());
         }
         if self.selected >= self.entries.len() && !self.entries.is_empty() {
             self.selected = self.entries.len() - 1;
@@ -149,10 +149,10 @@ impl DiredState {
     pub fn marked_paths(&self, mark: DiredMark) -> Vec<PathBuf> {
         let mut out = Vec::new();
         for (idx, m) in &self.marks {
-            if *m == mark {
-                if let Some(entry) = self.entries.get(*idx) {
-                    out.push(entry.path.clone());
-                }
+            if *m == mark
+                && let Some(entry) = self.entries.get(*idx)
+            {
+                out.push(entry.path.clone());
             }
         }
         out
@@ -220,11 +220,11 @@ fn read_entries(path: &Path) -> std::io::Result<Vec<DiredEntry>> {
         _ => a.name.cmp(&b.name),
     });
     // Keep ".." at the top
-    if let Some(idx) = entries.iter().position(|e| e.name == "..") {
-        if idx != 0 {
-            let dd = entries.remove(idx);
-            entries.insert(0, dd);
-        }
+    if let Some(idx) = entries.iter().position(|e| e.name == "..")
+        && idx != 0
+    {
+        let dd = entries.remove(idx);
+        entries.insert(0, dd);
     }
     Ok(entries)
 }

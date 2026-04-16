@@ -1,6 +1,6 @@
 [package]
 name = "gpui-md"
-version = "0.6.0"
+version = "0.6.1"
 authors.workspace = true
 edition.workspace = true
 description = "Markdown editor with live preview for GPUI applications"
@@ -23,6 +23,9 @@ gpui-keybinding = { workspace = true }
 gpui-pretext = { workspace = true }
 gpui-ui-kit = { workspace = true }
 
+# Editor
+gpui-elisp = { workspace = true }
+
 # Markdown
 comrak = "0.36"
 ropey = "1.6"
@@ -39,6 +42,9 @@ rfd = { workspace = true }
 
 # CLI
 clap = { workspace = true }
+
+# Home directory
+dirs = "5"
 
 # Logging
 log = { workspace = true }

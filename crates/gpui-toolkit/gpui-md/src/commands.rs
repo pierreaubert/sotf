@@ -540,6 +540,40 @@ pub fn register_builtin_commands(registry: &mut CommandRegistry) {
         InteractiveSpec::None,
         |s, args| s.macro_execute_last(args.count()),
     );
+    registry.register_fn(
+        "eval-expression",
+        "Evaluate an elisp expression",
+        Custom,
+        InteractiveSpec::String {
+            prompt: "Elisp expression:".into(),
+        },
+        |s, args| {
+            if let Some(expr) = &args.string
+                && let Ok(parsed) = gpui_elisp::read(expr)
+            {
+                match s.elisp.eval(parsed) {
+                    Ok(result) => {
+                        let result_str = format!("{:?}", result);
+                        if !result.is_nil() {
+                            s.insert_text(&result_str);
+                        }
+                        s.minibuffer_open(
+                            crate::minibuffer::MiniBufferPrompt::FreeText {
+                                label: format!("Result: {}", result_str),
+                            },
+                            vec![],
+                            crate::state::PendingMinibufferAction::RunCommandWithInput {
+                                name: "eval-expression".into(),
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        log::error!("Elisp error: {:?}", e);
+                    }
+                }
+            }
+        },
+    );
 }
 
 #[cfg(test)]

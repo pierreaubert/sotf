@@ -256,6 +256,13 @@ impl Render for PreviewPane {
             .overflow_y_scroll()
             .overflow_x_hidden()
             .track_scroll(&self.scroll_handle)
+            .on_scroll_wheel({
+                let state_scroll = state_entity.clone();
+                move |_ev, _window, cx| {
+                    // Poke state so MainView re-renders and sync_scroll fires.
+                    state_scroll.update(cx, |_s, _cx| {});
+                }
+            })
             .p_4()
             .text_color(theme.text_primary)
             .text_size(px(preview_font_size))

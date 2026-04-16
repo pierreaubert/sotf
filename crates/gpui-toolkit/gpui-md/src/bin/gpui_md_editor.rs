@@ -110,7 +110,7 @@ fn register_actions(cx: &mut App) {
                         rfd::AsyncMessageDialog::new()
                             .set_level(rfd::MessageLevel::Error)
                             .set_title("File Too Large")
-                            .set_description(&format!(
+                            .set_description(format!(
                                 "Cannot open '{}': file is {:.1} MB (limit is 50 MB).",
                                 path.file_name().unwrap_or_default().to_string_lossy(),
                                 meta.len() as f64 / (1024.0 * 1024.0),
@@ -124,7 +124,7 @@ fn register_actions(cx: &mut App) {
                         rfd::AsyncMessageDialog::new()
                             .set_level(rfd::MessageLevel::Error)
                             .set_title("Open Failed")
-                            .set_description(&format!("Cannot open '{}': {}", path.display(), e))
+                            .set_description(format!("Cannot open '{}': {}", path.display(), e))
                             .show()
                             .await;
                         return;
@@ -133,7 +133,7 @@ fn register_actions(cx: &mut App) {
                 }
                 match std::fs::read_to_string(&path) {
                     Ok(content) => {
-                        let _ = cx.update(|cx| {
+                        cx.update(|cx| {
                             state.update(cx, |s, _cx| {
                                 // Open as a new buffer (or switch to existing one)
                                 s.open_file_as_buffer(path.clone(), &content);
@@ -146,7 +146,7 @@ fn register_actions(cx: &mut App) {
                         rfd::AsyncMessageDialog::new()
                             .set_level(rfd::MessageLevel::Error)
                             .set_title("Open Failed")
-                            .set_description(&format!(
+                            .set_description(format!(
                                 "Cannot open '{}': {}",
                                 path.file_name().unwrap_or_default().to_string_lossy(),
                                 e,
@@ -414,7 +414,7 @@ fn register_actions(cx: &mut App) {
 
     cx.on_action::<actions::CommandPalette>(|_action, cx| {
         let state = cx.global::<MdGlobalState>().0.clone();
-        state.update(cx, |s, _cx| s.toggle_command_palette());
+        state.update(cx, |s, _cx| s.minibuffer_start_command());
     });
 
     cx.on_action::<actions::IsearchForward>(|_action, cx| {
@@ -466,7 +466,7 @@ fn register_actions(cx: &mut App) {
                         rfd::AsyncMessageDialog::new()
                             .set_level(rfd::MessageLevel::Error)
                             .set_title("Import Failed")
-                            .set_description(&format!(
+                            .set_description(format!(
                                 "Cannot import '{}': {}",
                                 path.file_name().unwrap_or_default().to_string_lossy(),
                                 e,

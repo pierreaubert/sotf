@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-
 use gpui_keybinding::KeymapPreset;
+use gpui_elisp::{Interpreter, add_primitives, EditorCallbacks};
 
 use crate::commands::{CommandArgs, CommandRegistry, InteractiveSpec, register_builtin_commands};
 use crate::dired::DiredState;
@@ -11,6 +11,89 @@ use crate::document::{DocumentBuffer, EditHistory, EditorCursor};
 use crate::macros::{MacroState, RecordedAction};
 use crate::markdown::SourceMap;
 use crate::minibuffer::{MiniBufferPrompt, MiniBufferResult, MiniBufferState};
+
+struct ElispEditorCallbacks {
+    state: *mut MdAppState,
+}
+
+unsafe impl Send for ElispEditorCallbacks {}
+unsafe impl Sync for ElispEditorCallbacks {}
+
+impl EditorCallbacks for ElispEditorCallbacks {
+    fn buffer_string(&self) -> String {
+        unsafe { (*self.state).document.text() }
+    }
+
+    fn buffer_size(&self) -> usize {
+        unsafe { (*self.state).document.len_chars() }
+    }
+
+    fn point(&self) -> usize {
+        unsafe { (*self.state).cursor.position }
+    }
+
+    fn insert(&mut self, text: &str) {
+        unsafe { (*self.state).insert_text(text) }
+    }
+
+    fn delete_char(&mut self, n: i64) {
+        unsafe {
+            if n > 0 {
+                for _ in 0..n as usize {
+                    (*self.state).delete_forward();
+                }
+            } else if n < 0 {
+                for _ in 0..(-n) as usize {
+                    (*self.state).backspace();
+                }
+            }
+        }
+    }
+
+    fn goto_char(&mut self, pos: usize) {
+        unsafe {
+            (*self.state).cursor.position = pos;
+            (*self.state).cursor.clear_selection();
+        }
+    }
+
+    fn forward_char(&mut self, n: i64) {
+        unsafe {
+            if n > 0 {
+                for _ in 0..n as usize {
+                    (*self.state).move_right(false);
+                }
+            } else if n < 0 {
+                for _ in 0..(-n) as usize {
+                    (*self.state).move_left(false);
+                }
+            }
+        }
+    }
+
+    fn find_file(&mut self, path: &str) -> bool {
+        unsafe {
+            let path_buf = std::path::PathBuf::from(path);
+            if let Ok(content) = std::fs::read_to_string(&path_buf) {
+                (*self.state).open_file_as_buffer(path_buf, &content);
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    fn save_buffer(&mut self) -> bool {
+        unsafe {
+            if let Some(path) = (*self.state).document.file_path() {
+                let content = (*self.state).document.text();
+                std::fs::write(path, content).is_ok()
+            } else {
+                false
+            }
+        }
+    }
+}
 
 // ---- Emacs subsystem types ----
 
@@ -194,6 +277,8 @@ pub struct MdAppState {
     pub macros: MacroState,
     /// Command registry — all user-visible commands.
     pub commands: CommandRegistry,
+    /// Elisp interpreter for extension and configuration.
+    pub elisp: Interpreter,
     /// When true, the next character input is consumed as the target for zap-to-char (M-z).
     pub zap_to_char_pending: bool,
     /// When true, the next keystroke is treated as if Alt/Meta were held.
@@ -218,7 +303,13 @@ impl MdAppState {
     }
 
     pub fn new() -> Self {
-        Self {
+        let mut commands = CommandRegistry::new();
+        register_builtin_commands(&mut commands);
+
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        let mut state = Self {
             document: DocumentBuffer::from_text(
                 "# Welcome to gpui-md\n\n\
                  Start typing your markdown here.\n\n\
@@ -270,15 +361,48 @@ impl MdAppState {
             pending_minibuffer_action: None,
             dired_states: HashMap::new(),
             macros: MacroState::default(),
-            commands: {
-                let mut r = CommandRegistry::new();
-                register_builtin_commands(&mut r);
-                r
-            },
+            commands,
+            elisp: interp,
             zap_to_char_pending: false,
             meta_pending: false,
             c_x_pending: false,
             c_x_r_pending: false,
+        };
+
+        let callbacks = Box::new(ElispEditorCallbacks {
+            state: &mut state as *mut MdAppState,
+        });
+        state.elisp.set_editor(callbacks);
+
+        Self::init_elisp(&mut state.elisp);
+
+        state
+    }
+
+    fn init_elisp(interp: &mut Interpreter) {
+        if let Some(home) = dirs::home_dir() {
+            let init_path = home.join(".gpui-md.el");
+            if init_path.exists() {
+                match std::fs::read_to_string(&init_path) {
+                    Ok(content) => {
+                        match gpui_elisp::read_all(&content) {
+                            Ok(exprs) => {
+                                for expr in exprs {
+                                    if let Err(e) = interp.eval(expr) {
+                                        log::error!("Error in {}: {:?}", init_path.display(), e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Failed to parse {}: {:?}", init_path.display(), e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to read {}: {:?}", init_path.display(), e);
+                    }
+                }
+            }
         }
     }
 
@@ -335,16 +459,16 @@ impl MdAppState {
 
     /// Return the id of an existing buffer backed by `path`, or None.
     pub fn find_buffer_by_path(&self, path: &Path) -> Option<BufferId> {
-        if let Some(p) = self.document.file_path() {
-            if p == path {
-                return Some(self.current_buffer_id);
-            }
+        if let Some(p) = self.document.file_path()
+            && p == path
+        {
+            return Some(self.current_buffer_id);
         }
         for b in &self.stored_buffers {
-            if let Some(p) = b.document.file_path() {
-                if p == path {
-                    return Some(b.id);
-                }
+            if let Some(p) = b.document.file_path()
+                && p == path
+            {
+                return Some(b.id);
             }
         }
         None
@@ -667,13 +791,12 @@ impl MdAppState {
         let canonical = std::fs::canonicalize(&path).unwrap_or(path);
 
         // If the current buffer is already dired on this path, just refresh.
-        if self.current_buffer_kind == BufferKind::Dired {
-            if let Some(state) = self.dired_states.get(&self.current_buffer_id) {
-                if state.path == canonical {
-                    let _ = self.dired_refresh();
-                    return;
-                }
-            }
+        if self.current_buffer_kind == BufferKind::Dired
+            && let Some(state) = self.dired_states.get(&self.current_buffer_id)
+            && state.path == canonical
+        {
+            let _ = self.dired_refresh();
+            return;
         }
         // Check stored dired buffers
         let existing_id = self
@@ -2057,7 +2180,6 @@ impl MdAppState {
         let pos = self.cursor.position;
 
         // Find end of current/next word (move forward past word boundary)
-        self.cursor.position = pos;
         self.move_word_right(false);
         let word2_end = self.cursor.position;
         self.move_word_left(false);
@@ -2398,10 +2520,9 @@ impl MdAppState {
             .command_palette
             .filtered_indices
             .get(self.command_palette.selected)
+            && let Some(cmd) = self.command_palette.commands.get(*idx)
         {
-            if let Some(cmd) = self.command_palette.commands.get(*idx) {
-                return Some(cmd.name.clone());
-            }
+            return Some(cmd.name.clone());
         }
         if !self.command_palette.query.is_empty() {
             Some(self.command_palette.query.clone())

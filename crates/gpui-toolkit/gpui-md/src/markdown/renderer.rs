@@ -108,7 +108,7 @@ fn render_node<'a>(
             a11y_nodes.push(AccessibilityNode {
                 element_id: ElementId::Name(block_id.clone().into()),
                 label: heading_text_for_a11y.into(),
-                props: AriaProps::with_role(AriaRole::Heading).level(level as u8),
+                props: AriaProps::with_role(AriaRole::Heading).level(level),
             });
 
             let font_size = match level {
@@ -679,7 +679,7 @@ fn collect_styled_run<'a>(
 
 /// Render styled runs as flat div elements (fallback when width is unknown).
 fn render_styled_runs_flat(runs: &[StyledRun]) -> Vec<AnyElement> {
-    runs.iter().map(|run| render_single_run(run)).collect()
+    runs.iter().map(render_single_run).collect()
 }
 
 /// Render a single styled run as a GPUI element.
@@ -766,7 +766,7 @@ fn render_justified_styled_paragraph(
         if is_last || justified_line.width >= max_width_px * 0.85 {
             // Left-align last line or lines that already fill the width
             let run_elements: Vec<AnyElement> =
-                line_runs.iter().map(|r| render_single_run(r)).collect();
+                line_runs.iter().map(render_single_run).collect();
             elements.push(
                 div()
                     .flex()
@@ -779,7 +779,7 @@ fn render_justified_styled_paragraph(
             let word_groups = split_runs_into_words(&line_runs);
             if word_groups.len() <= 1 {
                 let run_elements: Vec<AnyElement> =
-                    line_runs.iter().map(|r| render_single_run(r)).collect();
+                    line_runs.iter().map(render_single_run).collect();
                 elements.push(
                     div()
                         .flex()

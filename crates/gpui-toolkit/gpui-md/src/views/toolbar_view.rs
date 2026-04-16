@@ -62,23 +62,24 @@ impl Render for ToolbarView {
             .bg(surface)
             .border_b_1()
             .border_color(border)
-            .child(toolbar_button("B", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("**", "**")))
-            .child(toolbar_button("I", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("*", "*")))
-            .child(toolbar_button("`", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("`", "`")))
-            .child(toolbar_button("S\u{0336}", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("~~", "~~")))
+            .child(toolbar_button("md-tb-bold", "B", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("**", "**")))
+            .child(toolbar_button("md-tb-italic", "I", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("*", "*")))
+            .child(toolbar_button("md-tb-code", "`", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("`", "`")))
+            .child(toolbar_button("md-tb-strike", "S\u{0336}", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("~~", "~~")))
             .child(toolbar_separator(border))
-            .child(toolbar_button("H1", state.clone(), surface_hover, text_secondary, |s| s.insert_text("# ")))
-            .child(toolbar_button("H2", state.clone(), surface_hover, text_secondary, |s| s.insert_text("## ")))
-            .child(toolbar_button("H3", state.clone(), surface_hover, text_secondary, |s| s.insert_text("### ")))
+            .child(toolbar_button("md-tb-h1", "H1", state.clone(), surface_hover, text_secondary, |s| s.insert_text("# ")))
+            .child(toolbar_button("md-tb-h2", "H2", state.clone(), surface_hover, text_secondary, |s| s.insert_text("## ")))
+            .child(toolbar_button("md-tb-h3", "H3", state.clone(), surface_hover, text_secondary, |s| s.insert_text("### ")))
             .child(toolbar_separator(border))
-            .child(toolbar_button("Link", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("[", "](url)")))
-            .child(toolbar_button("Code", state.clone(), surface_hover, text_secondary, |s| s.insert_text("```\n\n```\n")))
-            .child(toolbar_button("---", state.clone(), surface_hover, text_secondary, |s| s.insert_text("\n---\n")))
-            .child(toolbar_button("Task", state, surface_hover, text_secondary, |s| s.insert_text("- [ ] ")))
+            .child(toolbar_button("md-tb-link", "Link", state.clone(), surface_hover, text_secondary, |s| s.toggle_format("[", "](url)")))
+            .child(toolbar_button("md-tb-codeblock", "Code", state.clone(), surface_hover, text_secondary, |s| s.insert_text("```\n\n```\n")))
+            .child(toolbar_button("md-tb-hr", "---", state.clone(), surface_hover, text_secondary, |s| s.insert_text("\n---\n")))
+            .child(toolbar_button("md-tb-task", "Task", state, surface_hover, text_secondary, |s| s.insert_text("- [ ] ")))
     }
 }
 
 fn toolbar_button(
+    id: &str,
     label: &str,
     state: Entity<MdAppState>,
     hover_bg: Rgba,
@@ -87,6 +88,7 @@ fn toolbar_button(
 ) -> AnyElement {
     let label = label.to_string();
     div()
+        .id(SharedString::from(id.to_string()))
         .px_2()
         .py_1()
         .rounded_sm()
@@ -95,7 +97,7 @@ fn toolbar_button(
         .text_color(text_color)
         .font_weight(FontWeight::MEDIUM)
         .hover(move |s| s.bg(hover_bg))
-        .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+        .on_click(move |_event, _window, cx| {
             state.update(cx, |s, _cx| action(s));
         })
         .child(label)

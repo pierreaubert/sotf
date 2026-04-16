@@ -52,7 +52,7 @@ pub fn render_legend(
     let mut best_cols = 1_usize;
 
     for cols in 1..=n {
-        let rows = (n + cols - 1) / cols;
+        let rows = n.div_ceil(cols);
         // Width of each column = max item width in that column
         let mut col_widths = vec![0.0_f32; cols];
         for (i, &w) in item_widths.iter().enumerate() {
@@ -73,7 +73,7 @@ pub fn render_legend(
     }
 
     let cols = best_cols;
-    let rows = (n + cols - 1) / cols;
+    let rows = n.div_ceil(cols);
 
     // Compute final column widths
     let mut col_widths = vec![0.0_f32; cols];
@@ -91,11 +91,11 @@ pub fn render_legend(
 
     for row in 0..rows {
         let mut row_div = div().flex().flex_row().gap(px(gap));
-        for col in 0..cols {
+        for (col, &col_w) in col_widths.iter().enumerate() {
             let idx = row * cols + col;
             if idx >= n {
                 // Empty cell — add spacer to keep alignment
-                row_div = row_div.child(div().w(px(col_widths[col])));
+                row_div = row_div.child(div().w(px(col_w)));
                 continue;
             }
             let item = &items[idx];
@@ -119,7 +119,7 @@ pub fn render_legend(
                     .flex_row()
                     .items_center()
                     .gap(px(symbol_gap))
-                    .w(px(col_widths[col]))
+                    .w(px(col_w))
                     .child(swatch)
                     .child(
                         div()

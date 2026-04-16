@@ -77,35 +77,6 @@ impl Render for EditorPane {
             String::new()
         };
 
-        let palette_visible = state.command_palette.visible;
-        let palette_query = if palette_visible {
-            let mode_label = match state.command_palette.mode {
-                crate::state::PaletteMode::GotoLine => "Goto line: ",
-                crate::state::PaletteMode::Command => "M-x ",
-                crate::state::PaletteMode::SwitchBuffer => "Switch to buffer: ",
-                crate::state::PaletteMode::KillBuffer => "Kill buffer: ",
-            };
-            format!("{}{}", mode_label, state.command_palette.query)
-        } else {
-            String::new()
-        };
-        let palette_items: Vec<(String, bool)> = if palette_visible {
-            state
-                .command_palette
-                .filtered_indices
-                .iter()
-                .enumerate()
-                .take(10)
-                .map(|(i, &cmd_idx)| {
-                    let cmd = &state.command_palette.commands[cmd_idx];
-                    let selected = i == state.command_palette.selected;
-                    (cmd.name.clone(), selected)
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
-
         let universal_arg_text = match state.universal_arg {
             Some(n) => format!("C-u {}", n),
             None => String::new(),
@@ -135,7 +106,6 @@ impl Render for EditorPane {
         let bg_color = theme.background;
         let surface_color = theme.surface;
         let text_muted = theme.text_muted;
-        let accent_color = theme.accent;
         let _accent_muted = theme.accent_muted; // kept for potential future use
         let border_color = theme.border;
         let text_color = theme.text_primary;
@@ -305,7 +275,7 @@ impl Render for EditorPane {
                 .on_mouse_move({
                     let text_layout = text_layout;
                     let state_drag = state_for_drag;
-                    move |ev, _window, cx| {
+                    move |ev, window, cx| {
                         if ev.pressed_button.is_none() {
                             return;
                         }
@@ -321,6 +291,7 @@ impl Render for EditorPane {
                                 s.cursor.position = char_pos;
                             }
                         });
+                        window.refresh();
                     }
                 });
 
@@ -354,6 +325,13 @@ impl Render for EditorPane {
             .track_focus(&self.focus_handle)
             .focusable()
             .p_2()
+            .on_scroll_wheel({
+                let state_scroll = self.state.clone();
+                move |_ev, _window, cx| {
+                    // Poke state so MainView re-renders and sync_scroll fires.
+                    state_scroll.update(cx, |_s, _cx| {});
+                }
+            })
             .on_mouse_move({
                 let vh = viewport_height_for_measure;
                 move |ev, window, _cx| {
@@ -473,55 +451,7 @@ impl Render for EditorPane {
                     return;
                 }
 
-                // ---- 2. Command palette intercept (when visible) ----
-                let palette_active = state_for_keys.read(cx).command_palette.visible;
-                if palette_active {
-                    match key {
-                        "g" if ctrl => {
-                            state_for_keys.update(cx, |s, _| s.command_palette_dismiss())
-                        }
-                        "escape" => state_for_keys.update(cx, |s, _| s.command_palette_dismiss()),
-                        "enter" => {
-                            let cmd_id =
-                                state_for_keys.update(cx, |s, _| s.command_palette_execute());
-                            if let Some(id) = cmd_id {
-                                state_for_keys.update(cx, |s, _| {
-                                    s.dispatch_palette_command(&id);
-                                });
-                            }
-                        }
-                        "n" if ctrl => {
-                            state_for_keys.update(cx, |s, _| s.command_palette_select_next())
-                        }
-                        "p" if ctrl => {
-                            state_for_keys.update(cx, |s, _| s.command_palette_select_prev())
-                        }
-                        "down" => {
-                            state_for_keys.update(cx, |s, _| s.command_palette_select_next())
-                        }
-                        "up" => {
-                            state_for_keys.update(cx, |s, _| s.command_palette_select_prev())
-                        }
-                        "backspace" => {
-                            state_for_keys.update(cx, |s, _| s.command_palette_backspace())
-                        }
-                        _ if !ctrl && !cmd && !alt => {
-                            if let Some(ch) = &event.keystroke.key_char {
-                                let ch = ch.clone();
-                                state_for_keys.update(cx, |s, _| {
-                                    for c in ch.chars() {
-                                        s.command_palette_add_char(c);
-                                    }
-                                });
-                            }
-                        }
-                        _ => {}
-                    }
-                    window.refresh();
-                    return;
-                }
-
-                // ---- 2.5. Dired key map (when current buffer is dired) ----
+                // ---- 2. Dired key map (when current buffer is dired) ----
                 let is_dired = state_for_keys.read(cx).current_buffer_kind
                     == crate::document::BufferKind::Dired;
                 if is_dired {
@@ -646,6 +576,14 @@ impl Render for EditorPane {
                 } else {
                     let page_lines = page_lines_for_height(viewport_height_for_keys.get());
                     state_for_keys.update(cx, |s, _cx| {
+                        // Esc as Meta prefix (classic Emacs terminal convention):
+                        // pressing Escape then a key is equivalent to Alt+key.
+                        let esc_meta = s.meta_pending;
+                        if esc_meta {
+                            s.meta_pending = false;
+                        }
+                        let alt = alt || esc_meta;
+
                         // Reset kill ring flags for non-kill operations
                         let is_kill_op = (key == "k" && ctrl)
                             || (key == "w" && (ctrl || alt))
@@ -905,9 +843,17 @@ impl Render for EditorPane {
                             // Select all
                             "a" if modifier => s.select_all(),
 
+                            // Escape — set meta_pending so next key acts as M-<key>
+                            "escape" if !ctrl && !cmd => {
+                                // Cancel any pending prefix first
+                                s.c_x_pending = false;
+                                s.c_x_r_pending = false;
+                                s.meta_pending = true;
+                            }
+
                             // Text input
                             _ => {
-                                if !modifier && !ctrl
+                                if !modifier && !ctrl && !esc_meta
                                     && let Some(ch) = &event.keystroke.key_char {
                                         if s.zap_to_char_pending {
                                             if let Some(c) = ch.chars().next() {
@@ -959,35 +905,6 @@ impl Render for EditorPane {
                         .text_color(text_color)
                         .child(isearch_text),
                 )
-            })
-            // Command palette
-            .when(palette_visible, |el| {
-                let mut palette_div = div()
-                    .flex()
-                    .flex_col()
-                    .px_3()
-                    .py_1()
-                    .bg(surface_color)
-                    .border_t_1()
-                    .border_color(border_color)
-                    .text_size(px(13.0))
-                    .font_family("monospace")
-                    .text_color(text_color)
-                    .child(palette_query);
-
-                for (name, selected) in &palette_items {
-                    let item = if *selected {
-                        div()
-                            .px_2()
-                            .bg(accent_color)
-                            .text_color(gpui::rgb(0xFFFFFF))
-                            .child(name.clone())
-                    } else {
-                        div().px_2().text_color(text_muted).child(name.clone())
-                    };
-                    palette_div = palette_div.child(item);
-                }
-                el.child(palette_div)
             })
             // Universal arg indicator
             .when(show_universal_arg, |el| {
@@ -1068,8 +985,8 @@ fn build_line_text_runs(
     for span in spans {
         let span_color = Hsla::from(span.color);
         let span_byte_len = span.text.len();
-        for b in byte_offset..(byte_offset + span_byte_len).min(text_bytes) {
-            fg_colors[b] = span_color;
+        for c in &mut fg_colors[byte_offset..(byte_offset + span_byte_len).min(text_bytes)] {
+            *c = span_color;
         }
         byte_offset += span_byte_len;
     }
@@ -1079,8 +996,8 @@ fn build_line_text_runs(
         let sel_start_byte = char_col_to_byte_offset(&text, sel_start_col);
         let sel_end_byte = char_col_to_byte_offset(&text, sel_end_col);
         let sel_bg = Hsla::from(colors.selection_bg);
-        for b in sel_start_byte..sel_end_byte.min(text_bytes) {
-            bg_colors[b] = Some(sel_bg);
+        for c in &mut bg_colors[sel_start_byte..sel_end_byte.min(text_bytes)] {
+            *c = Some(sel_bg);
         }
     }
 
