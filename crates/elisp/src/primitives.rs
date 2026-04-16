@@ -1280,6 +1280,7 @@ fn prim_type_of(args: &LispObject) -> ElispResult<LispObject> {
         LispObject::Primitive(_) => "subr",
         LispObject::Vector(_) => "vector",
         LispObject::BytecodeFn(_) => "compiled-function",
+        LispObject::HashTable(_) => "hash-table",
     };
     Ok(LispObject::symbol(type_name))
 }

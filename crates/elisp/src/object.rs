@@ -1,3 +1,11 @@
+/// Hash table test function type.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HashTableTest {
+    Eq,
+    Eql,
+    Equal,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LispObject {
     Nil,
@@ -10,6 +18,103 @@ pub enum LispObject {
     Primitive(String),
     Vector(Vec<LispObject>),
     BytecodeFn(BytecodeFunction),
+    HashTable(Box<LispHashTable>),
+}
+
+/// An Emacs-style hash table.
+#[derive(Debug, Clone)]
+pub struct LispHashTable {
+    pub test: HashTableTest,
+    pub data: std::collections::HashMap<HashKey, LispObject>,
+}
+
+/// Wrapper for hash table keys that implements Hash + Eq.
+#[derive(Debug, Clone)]
+pub enum HashKey {
+    Symbol(String),
+    Integer(i64),
+    String(String),
+    /// For 'equal test: use prin1 representation as key
+    Printed(String),
+}
+
+impl PartialEq for LispHashTable {
+    fn eq(&self, other: &Self) -> bool {
+        self.test == other.test && self.data.len() == other.data.len()
+    }
+}
+
+impl std::hash::Hash for HashKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            HashKey::Symbol(s) => {
+                state.write_u8(0);
+                s.hash(state);
+            }
+            HashKey::Integer(i) => {
+                state.write_u8(1);
+                i.hash(state);
+            }
+            HashKey::String(s) => {
+                state.write_u8(2);
+                s.hash(state);
+            }
+            HashKey::Printed(s) => {
+                state.write_u8(3);
+                s.hash(state);
+            }
+        }
+    }
+}
+
+impl PartialEq for HashKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (HashKey::Symbol(a), HashKey::Symbol(b)) => a == b,
+            (HashKey::Integer(a), HashKey::Integer(b)) => a == b,
+            (HashKey::String(a), HashKey::String(b)) => a == b,
+            (HashKey::Printed(a), HashKey::Printed(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for HashKey {}
+
+impl LispHashTable {
+    pub fn new(test: HashTableTest) -> Self {
+        LispHashTable {
+            test,
+            data: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn make_key(&self, obj: &LispObject) -> HashKey {
+        match &self.test {
+            HashTableTest::Eq | HashTableTest::Eql => match obj {
+                LispObject::Symbol(s) => HashKey::Symbol(s.clone()),
+                LispObject::Integer(i) => HashKey::Integer(*i),
+                LispObject::String(s) => HashKey::String(s.clone()),
+                _ => HashKey::Printed(obj.prin1_to_string()),
+            },
+            HashTableTest::Equal => HashKey::Printed(obj.prin1_to_string()),
+        }
+    }
+
+    pub fn get(&self, key: &LispObject) -> Option<&LispObject> {
+        let k = self.make_key(key);
+        self.data.get(&k)
+    }
+
+    pub fn put(&mut self, key: &LispObject, value: LispObject) {
+        let k = self.make_key(key);
+        self.data.insert(k, value);
+    }
+
+    pub fn remove(&mut self, key: &LispObject) -> bool {
+        let k = self.make_key(key);
+        self.data.remove(&k).is_some()
+    }
 }
 
 /// A compiled bytecode function object.
@@ -260,6 +365,9 @@ impl LispObject {
             }
             LispObject::BytecodeFn(bc) => {
                 format!("#<bytecode {:p}>", bc as *const _)
+            }
+            LispObject::HashTable(ht) => {
+                format!("#<hash-table count {} test {:?}>", ht.data.len(), ht.test)
             }
         }
     }

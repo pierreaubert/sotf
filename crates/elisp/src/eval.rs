@@ -231,7 +231,12 @@ fn eval_inner(
         | LispObject::String(_)
         | LispObject::Primitive(_)
         | LispObject::Vector(_)
-        | LispObject::BytecodeFn(_) => Ok(expr),
+        | LispObject::BytecodeFn(_)
+        | LispObject::HashTable(_) => Ok(expr),
+        LispObject::Symbol(ref name) if name.starts_with(':') => {
+            // Keyword symbols are self-evaluating
+            Ok(expr)
+        }
         LispObject::Symbol(name) => {
             let env = env.read();
             env.get(&name).ok_or(ElispError::VoidVariable(name))
@@ -324,24 +329,110 @@ fn eval_inner(
                     "defsubst" => eval_defun(&cdr, env, editor, macros, state), // same as defun for now
                     "define-error" => Ok(LispObject::nil()),                    // stub
                     "make-variable-buffer-local" => Ok(LispObject::nil()),      // stub
-                    "make-hash-table" => Ok(LispObject::nil()), // stub: hash tables not yet implemented
+                    "make-hash-table" => {
+                        // Parse :test keyword arg
+                        let mut test = crate::object::HashTableTest::Eql;
+                        let mut cur = cdr.clone();
+                        while let Some((key, rest)) = cur.destructure_cons() {
+                            let key = eval(key, env, editor, macros, state)?;
+                            if let LispObject::Symbol(s) = &key {
+                                if s == ":test" {
+                                    if let Some((val_expr, rest2)) = rest.destructure_cons() {
+                                        let val = eval(val_expr, env, editor, macros, state)?;
+                                        if let LispObject::Symbol(t) = &val {
+                                            test = match t.as_str() {
+                                                "eq" => crate::object::HashTableTest::Eq,
+                                                "eql" => crate::object::HashTableTest::Eql,
+                                                "equal" => crate::object::HashTableTest::Equal,
+                                                _ => crate::object::HashTableTest::Eql,
+                                            };
+                                        }
+                                        cur = rest2;
+                                        continue;
+                                    }
+                                }
+                            }
+                            cur = rest;
+                        }
+                        Ok(LispObject::HashTable(Box::new(
+                            crate::object::LispHashTable::new(test),
+                        )))
+                    }
                     "gethash" => {
-                        // stub: always nil (no hash table impl yet)
-                        let _key = eval(
+                        let key = eval(
                             cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
                             env,
                             editor,
                             macros,
                             state,
                         )?;
-                        Ok(LispObject::nil())
+                        let table = eval(
+                            cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let default = if let Some(d) = cdr.nth(2) {
+                            eval(d, env, editor, macros, state)?
+                        } else {
+                            LispObject::nil()
+                        };
+                        if let LispObject::HashTable(ht) = &table {
+                            Ok(ht.get(&key).cloned().unwrap_or(default))
+                        } else {
+                            Ok(default)
+                        }
                     }
                     "puthash" => {
-                        // stub: no-op
-                        let val = cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
-                        eval(val, env, editor, macros, state)
+                        let key = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let value = eval(
+                            cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let table_expr = cdr.nth(2).ok_or(ElispError::WrongNumberOfArguments)?;
+                        let table = eval(table_expr, env, editor, macros, state)?;
+                        if let LispObject::HashTable(mut ht) = table {
+                            ht.put(&key, value.clone());
+                            // Note: mutation doesn't propagate to original binding
+                            // This is a known limitation of the immutable object model
+                        }
+                        Ok(value)
                     }
                     "clrhash" => Ok(LispObject::nil()),
+                    "hash-table-p" => {
+                        let arg = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(LispObject::from(matches!(arg, LispObject::HashTable(_))))
+                    }
+                    "hash-table-count" => {
+                        let arg = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        if let LispObject::HashTable(ht) = &arg {
+                            Ok(LispObject::integer(ht.data.len() as i64))
+                        } else {
+                            Ok(LispObject::integer(0))
+                        }
+                    }
                     "symbol-with-pos-p" => {
                         let _arg = eval(
                             cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
@@ -774,7 +865,13 @@ fn eval_inner(
                                 let end_pos = start + sub.len(); // approximate
                                 Ok(LispObject::cons(obj, LispObject::Integer(end_pos as i64)))
                             }
-                            Err(e) => Err(e),
+                            Err(e) => Err(ElispError::Signal(Box::new(crate::error::SignalData {
+                                symbol: LispObject::symbol("invalid-read-syntax"),
+                                data: LispObject::cons(
+                                    LispObject::string(&e.to_string()),
+                                    LispObject::nil(),
+                                ),
+                            }))),
                         }
                     }
                     "split-string" => {
