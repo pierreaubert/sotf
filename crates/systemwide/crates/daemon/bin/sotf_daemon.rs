@@ -1204,6 +1204,7 @@ fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::EQ => "eq",
         PluginType::Gain => "gain",
         PluginType::Upmixer => "upmixer",
+        PluginType::AAE => "aae",
         PluginType::Compressor => "compressor",
         PluginType::Limiter => "limiter",
         PluginType::Gate => "gate",
@@ -1252,7 +1253,8 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
             "Dynamics"
         }
         PluginType::MultibandCompressor | PluginType::MultibandExpander => "Dynamics",
-        PluginType::Upmixer
+        PluginType::AAE
+        | PluginType::Upmixer
         | PluginType::Downmix
         | PluginType::MonoToStereo
         | PluginType::Matrix
