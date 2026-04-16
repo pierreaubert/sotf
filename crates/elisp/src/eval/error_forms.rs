@@ -87,7 +87,7 @@ pub(super) fn eval_condition_case(
                             } else {
                                 LispObject::nil()
                             };
-                            handler_env.write().define(var_name, err_value);
+                            handler_env.write().define(&var_name, err_value);
                         }
                     }
 

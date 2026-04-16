@@ -36,10 +36,11 @@ pub(super) fn resolve_function(
     macros: &MacroTable,
     state: &InterpreterState,
 ) -> ElispResult<LispObject> {
-    if let LispObject::Symbol(ref name) = func {
+    if let LispObject::Symbol(id) = func {
+        let name = crate::obarray::symbol_name(id);
         env.read()
-            .get_function(name)
-            .ok_or_else(|| ElispError::VoidFunction(name.clone()))
+            .get_function(&name)
+            .ok_or(ElispError::VoidFunction(name))
     } else {
         // Not a symbol — eval normally (e.g. a lambda expression)
         eval(func, env, editor, macros, state)
@@ -153,14 +154,14 @@ pub(super) fn apply_lambda(
             Some((p, r)) => (p, r),
             None => {
                 // Dotted rest param: (a b . rest)
-                if let LispObject::Symbol(name) = params_list {
+                if let Some(name) = params_list.as_symbol() {
                     bind_param_dynamic(&name, args_list, &new_env, state);
                 }
                 break;
             }
         };
 
-        if let LispObject::Symbol(ref name) = param {
+        if let Some(name) = param.as_symbol() {
             match name.as_str() {
                 "&optional" => {
                     optional = true;
@@ -176,7 +177,7 @@ pub(super) fn apply_lambda(
             }
 
             if rest {
-                bind_param_dynamic(name, args_list.clone(), &new_env, state);
+                bind_param_dynamic(&name, args_list.clone(), &new_env, state);
                 args_list = LispObject::nil();
                 params_list = params_rest;
                 continue;
@@ -193,7 +194,7 @@ pub(super) fn apply_lambda(
                     }
                 }
             };
-            bind_param_dynamic(name, arg, &new_env, state);
+            bind_param_dynamic(&name, arg, &new_env, state);
             args_list = args_rest;
         }
         params_list = params_rest;
@@ -217,7 +218,7 @@ pub fn call_function(
                 let b = cell.lock();
                 (b.0.clone(), b.1.clone())
             };
-            if let LispObject::Symbol(s) = &car_val {
+            if let Some(s) = car_val.as_symbol() {
                 if s == "lambda" {
                     let params = cdr_val.first().ok_or(ElispError::WrongNumberOfArguments)?;
                     let body = cdr_val.rest().ok_or(ElispError::WrongNumberOfArguments)?;
@@ -271,11 +272,12 @@ pub fn call_function(
 
             crate::vm::execute_bytecode(bc, &arg_vec, env, editor, macros, state)
         }
-        LispObject::Symbol(name) => {
+        LispObject::Symbol(id) => {
+            let name = crate::obarray::symbol_name(*id);
             let val = env
                 .read()
-                .get(name)
-                .ok_or_else(|| ElispError::VoidFunction(name.clone()))?;
+                .get(&name)
+                .ok_or(ElispError::VoidFunction(name))?;
             call_function(&val, args, env, editor, macros, state)
         }
         _ => Err(ElispError::WrongTypeArgument("function".to_string())),

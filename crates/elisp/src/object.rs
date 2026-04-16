@@ -1,3 +1,4 @@
+use crate::obarray::{self, SymbolId};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -18,7 +19,7 @@ pub enum HashTableTest {
 pub enum LispObject {
     Nil,
     T,
-    Symbol(String),
+    Symbol(SymbolId),
     Integer(i64),
     Float(f64),
     String(String),
@@ -137,7 +138,7 @@ impl LispHashTable {
             HashTableTest::Eq => match obj {
                 // eq: identity for all non-immediate types
                 LispObject::Nil | LispObject::T => HashKey::Symbol(obj.prin1_to_string()),
-                LispObject::Symbol(s) => HashKey::Symbol(s.clone()),
+                LispObject::Symbol(id) => HashKey::Symbol(obarray::symbol_name(*id)),
                 LispObject::Integer(i) => HashKey::Integer(*i),
                 // Strings, cons, vectors: use pointer identity
                 LispObject::Cons(cell) => HashKey::Identity(std::sync::Arc::as_ptr(cell) as usize),
@@ -147,7 +148,7 @@ impl LispHashTable {
             },
             HashTableTest::Eql => match obj {
                 // eql: value equality for numbers, identity for rest
-                LispObject::Symbol(s) => HashKey::Symbol(s.clone()),
+                LispObject::Symbol(id) => HashKey::Symbol(obarray::symbol_name(*id)),
                 LispObject::Integer(i) => HashKey::Integer(*i),
                 LispObject::Float(f) => HashKey::Printed(format!("{:?}", f)),
                 LispObject::String(s) => HashKey::String(s.clone()),
@@ -220,7 +221,7 @@ impl LispObject {
     }
 
     pub fn symbol(name: &str) -> Self {
-        LispObject::Symbol(name.to_string())
+        LispObject::Symbol(obarray::intern(name))
     }
 
     pub fn cons(car: LispObject, cdr: LispObject) -> Self {
@@ -293,9 +294,18 @@ impl LispObject {
         }
     }
 
-    pub fn as_symbol(&self) -> Option<&String> {
+    /// Returns the symbol name as an owned String, or None if not a symbol.
+    pub fn as_symbol(&self) -> Option<String> {
         match self {
-            LispObject::Symbol(s) => Some(s),
+            LispObject::Symbol(id) => Some(obarray::symbol_name(*id)),
+            _ => None,
+        }
+    }
+
+    /// Returns the SymbolId if this is a Symbol variant.
+    pub fn as_symbol_id(&self) -> Option<SymbolId> {
+        match self {
+            LispObject::Symbol(id) => Some(*id),
             _ => None,
         }
     }
@@ -386,8 +396,8 @@ impl LispObject {
         match self {
             LispObject::Cons(cell) => {
                 let b = cell.lock();
-                if let LispObject::Symbol(s) = &b.0 {
-                    if s == "quote" {
+                if let LispObject::Symbol(id) = &b.0 {
+                    if obarray::symbol_name(*id) == "quote" {
                         return b.1.first();
                     }
                 }
@@ -402,7 +412,7 @@ impl LispObject {
         match self {
             LispObject::Nil => "nil".to_string(),
             LispObject::T => "t".to_string(),
-            LispObject::Symbol(s) => s.clone(),
+            LispObject::Symbol(id) => obarray::symbol_name(*id),
             LispObject::Integer(i) => i.to_string(),
             LispObject::Float(f) => {
                 let s = f.to_string();

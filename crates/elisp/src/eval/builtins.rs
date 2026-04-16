@@ -102,8 +102,8 @@ pub(super) fn eval_provide(
         .as_symbol()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
     let mut features = state.features.write();
-    if !features.contains(name) {
-        features.push(name.clone());
+    if !features.contains(&name) {
+        features.push(name);
     }
     Ok(feature)
 }
@@ -125,7 +125,7 @@ pub(super) fn eval_featurep(
         .as_symbol()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
     let features = state.features.read();
-    Ok(LispObject::from(features.contains(name)))
+    Ok(LispObject::from(features.contains(&name)))
 }
 pub(super) fn eval_require(
     args: &LispObject,
@@ -145,7 +145,7 @@ pub(super) fn eval_require(
         .as_symbol()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
     let features = state.features.read();
-    if features.contains(name) {
+    if features.contains(&name) {
         return Ok(feature);
     }
     drop(features);
@@ -224,13 +224,13 @@ pub(super) fn eval_dolist(
 
     let mut current = list;
     while let Some((car, cdr)) = current.destructure_cons() {
-        loop_env.write().set(var_name, car);
+        loop_env.write().set(&var_name, car);
         eval_progn(&body, &loop_env, editor, macros, state)?;
         current = cdr;
     }
 
     // Set var to nil and eval result
-    loop_env.write().set(var_name, LispObject::nil());
+    loop_env.write().set(&var_name, LispObject::nil());
     if let Some(result_expr) = result_expr {
         eval(result_expr, &loop_env, editor, macros, state)
     } else {

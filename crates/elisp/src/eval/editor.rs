@@ -35,10 +35,10 @@ pub(super) fn eval_insert(
 ) -> ElispResult<LispObject> {
     let text_arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let text = eval(text_arg, env, editor, macros, state)?;
-    let text_str = match text {
+    let text_str = match &text {
         LispObject::String(s) => s.clone(),
         LispObject::Integer(i) => i.to_string(),
-        LispObject::Symbol(s) => s,
+        LispObject::Symbol(id) => crate::obarray::symbol_name(*id),
         _ => format!("{:?}", text),
     };
     let mut e = editor.write();
@@ -122,9 +122,9 @@ pub(super) fn eval_find_file(
 ) -> ElispResult<LispObject> {
     let path_arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let path = eval(path_arg, env, editor, macros, state)?;
-    let path_str = match path {
-        LispObject::String(s) => s,
-        LispObject::Symbol(s) => s,
+    let path_str = match &path {
+        LispObject::String(s) => s.clone(),
+        LispObject::Symbol(id) => crate::obarray::symbol_name(*id),
         _ => return Err(ElispError::WrongTypeArgument("string".to_string())),
     };
     let mut e = editor.write();

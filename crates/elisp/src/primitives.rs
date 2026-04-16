@@ -997,7 +997,11 @@ fn prim_functionp(args: &LispObject) -> ElispResult<LispObject> {
         LispObject::Primitive(_) => true,
         LispObject::Cons(cell) => {
             let b = cell.lock();
-            matches!(&b.0, LispObject::Symbol(s) if s == "lambda")
+            if let LispObject::Symbol(id) = &b.0 {
+                crate::obarray::symbol_name(*id) == "lambda"
+            } else {
+                false
+            }
         }
         _ => false,
     };
@@ -1192,7 +1196,7 @@ fn prim_lognot(args: &LispObject) -> ElispResult<LispObject> {
 fn prim_symbol_name(args: &LispObject) -> ElispResult<LispObject> {
     let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     match &arg {
-        LispObject::Symbol(s) => Ok(LispObject::string(s)),
+        LispObject::Symbol(id) => Ok(LispObject::string(&crate::obarray::symbol_name(*id))),
         LispObject::Nil => Ok(LispObject::string("nil")),
         LispObject::T => Ok(LispObject::string("t")),
         _ => Err(ElispError::WrongTypeArgument("symbol".to_string())),

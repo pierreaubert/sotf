@@ -48,10 +48,10 @@ pub(super) fn eval_setq(
         let val_expr = rest.first().ok_or(ElispError::WrongNumberOfArguments)?;
         let value = eval(val_expr, env, editor, macros, state)?;
         // Special variables are always set in the global env (current dynamic binding).
-        if state.special_vars.read().contains(name) {
-            state.global_env.write().set(name, value.clone());
+        if state.special_vars.read().contains(&name) {
+            state.global_env.write().set(&name, value.clone());
         } else {
-            env.write().set(name, value.clone());
+            env.write().set(&name, value.clone());
         }
         result = value;
         current = rest.rest().unwrap_or(LispObject::nil());
@@ -76,8 +76,8 @@ pub(super) fn eval_defun(
         rest.rest().unwrap_or(LispObject::nil()),
     );
     let mut env = env.write();
-    env.define(name, lambda);
-    Ok(LispObject::symbol(name))
+    env.define(&name, lambda);
+    Ok(LispObject::symbol(&name))
 }
 pub(super) fn eval_defmacro(args: &LispObject, macros: &MacroTable) -> ElispResult<LispObject> {
     let name = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
@@ -95,7 +95,7 @@ pub(super) fn eval_defmacro(args: &LispObject, macros: &MacroTable) -> ElispResu
     };
 
     macros.write().insert(name.clone(), macro_def);
-    Ok(LispObject::symbol(name))
+    Ok(LispObject::symbol(&name))
 }
 pub(super) fn eval_macroexpand(
     args: &LispObject,
@@ -108,9 +108,9 @@ pub(super) fn eval_macroexpand(
 
     if let LispObject::Cons(_) = form {
         let car = form.first().unwrap_or(LispObject::nil());
-        if let LispObject::Symbol(ref s) = car {
+        if let Some(s) = car.as_symbol() {
             let macro_table = macros.read();
-            if let Some(macro_) = macro_table.get(s) {
+            if let Some(macro_) = macro_table.get(&s) {
                 let macro_ = macro_.clone();
                 drop(macro_table);
                 let cdr = form.rest().unwrap_or(LispObject::nil());
@@ -165,13 +165,17 @@ pub(super) fn extract_param_names(params: &LispObject) -> ElispResult<Vec<String
     let mut current = Some(params.clone());
 
     while let Some(curr) = current {
-        if let Some((LispObject::Symbol(s), rest)) = curr.destructure_cons() {
-            if s == "&rest" || s == "&optional" {
+        if let Some((car, rest)) = curr.destructure_cons() {
+            if let Some(s) = car.as_symbol() {
+                if s == "&rest" || s == "&optional" {
+                    current = Some(rest);
+                    continue;
+                }
+                names.push(s);
                 current = Some(rest);
-                continue;
+            } else {
+                break;
             }
-            names.push(s);
-            current = Some(rest);
         } else {
             break;
         }
@@ -199,14 +203,14 @@ pub(super) fn eval_let(
     while let Some((binding, rest)) = bindings_list.destructure_cons() {
         // Support both (VAR VALUE) and bare VAR (binds to nil)
         let (name, value) = if let Some(name) = binding.as_symbol() {
-            (name.to_string(), LispObject::nil())
+            (name, LispObject::nil())
         } else if let Some((binding_name, binding_val_wrapper)) = binding.destructure_cons() {
             let binding_name = binding_name
                 .as_symbol()
                 .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
             let binding_val = binding_val_wrapper.first().unwrap_or(LispObject::nil());
             let binding_val = eval(binding_val, env, editor, macros, state)?;
-            (binding_name.to_string(), binding_val)
+            (binding_name, binding_val)
         } else {
             return Err(ElispError::WrongTypeArgument("symbol or list".to_string()));
         };
@@ -329,14 +333,14 @@ pub(super) fn eval_let_star(
     let mut bindings_list = bindings;
     while let Some((binding, rest)) = bindings_list.destructure_cons() {
         let (name, value) = if let Some(name) = binding.as_symbol() {
-            (name.to_string(), LispObject::nil())
+            (name, LispObject::nil())
         } else if let Some((binding_name, binding_val_wrapper)) = binding.destructure_cons() {
             let binding_name = binding_name
                 .as_symbol()
                 .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
             let binding_val = binding_val_wrapper.first().unwrap_or(LispObject::nil());
             let binding_val = eval(binding_val, &new_env, editor, macros, state)?;
-            (binding_name.to_string(), binding_val)
+            (binding_name, binding_val)
         } else {
             return Err(ElispError::WrongTypeArgument("symbol or list".to_string()));
         };
@@ -492,18 +496,18 @@ pub(super) fn eval_defvar(
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
 
     // Mark variable as special (dynamically bound).
-    state.special_vars.write().insert(name.to_string());
+    state.special_vars.write().insert(name.clone());
 
     // defvar only sets value if currently void (unbound)
-    let is_bound = env.read().get(name).is_some();
+    let is_bound = env.read().get(&name).is_some();
     if !is_bound {
         if let Some(value_expr) = args.nth(1) {
             let value = eval(value_expr, env, editor, macros, state)?;
-            env.write().define(name, value);
+            env.write().define(&name, value);
         }
     }
     // Ignore docstring (3rd arg) for now
-    Ok(LispObject::symbol(name))
+    Ok(LispObject::symbol(&name))
 }
 pub(super) fn eval_defconst(
     args: &LispObject,
@@ -518,14 +522,14 @@ pub(super) fn eval_defconst(
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
 
     // Mark variable as special (dynamically bound).
-    state.special_vars.write().insert(name.to_string());
+    state.special_vars.write().insert(name.clone());
 
     // defconst always sets the value
     if let Some(value_expr) = args.nth(1) {
         let value = eval(value_expr, env, editor, macros, state)?;
-        env.write().define(name, value);
+        env.write().define(&name, value);
     }
-    Ok(LispObject::symbol(name))
+    Ok(LispObject::symbol(&name))
 }
 pub(super) fn eval_defalias(
     args: &LispObject,
@@ -547,24 +551,24 @@ pub(super) fn eval_defalias(
     // This handles e.g. (defalias '\` (symbol-function 'backquote))
     // where backquote is a defmacro.
     if let Some((car, rest)) = value.destructure_cons() {
-        if car.as_symbol().map(|s| s.as_str()) == Some("macro") {
+        if car.as_symbol().as_deref() == Some("macro") {
             if let Some((lambda_sym, lambda_rest)) = rest.destructure_cons() {
-                if lambda_sym.as_symbol().map(|s| s.as_str()) == Some("lambda") {
+                if lambda_sym.as_symbol().as_deref() == Some("lambda") {
                     let macro_args = lambda_rest.first().unwrap_or(LispObject::nil());
                     let macro_body = lambda_rest.rest().unwrap_or(LispObject::nil());
                     macros.write().insert(
-                        name.to_string(),
+                        name.clone(),
                         Macro {
                             args: macro_args,
                             body: macro_body,
                         },
                     );
-                    return Ok(LispObject::symbol(name));
+                    return Ok(LispObject::symbol(&name));
                 }
             }
         }
     }
 
-    env.write().define(name, value);
-    Ok(LispObject::symbol(name))
+    env.write().define(&name, value);
+    Ok(LispObject::symbol(&name))
 }

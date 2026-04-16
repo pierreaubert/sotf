@@ -72,9 +72,9 @@ impl ElispError {
 
     /// Check if this error matches a condition name for condition-case.
     pub fn matches_condition(&self, condition: &LispObject) -> bool {
-        let sym = match condition {
-            LispObject::Symbol(s) => s.as_str(),
-            _ => return false,
+        let sym = match condition.as_symbol() {
+            Some(s) => s,
+            None => return false,
         };
         // 'error' matches everything (except throw)
         if sym == "error" {
@@ -83,7 +83,7 @@ impl ElispError {
         // Match specific error symbols
         let signal = self.to_signal();
         if let ElispError::Signal(sig) = &signal {
-            if let LispObject::Symbol(s) = &sig.symbol {
+            if let Some(s) = sig.symbol.as_symbol() {
                 return s == sym;
             }
         }

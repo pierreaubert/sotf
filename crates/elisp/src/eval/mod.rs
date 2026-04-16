@@ -60,7 +60,11 @@ fn is_callable_value(obj: &LispObject) -> bool {
         LispObject::Primitive(_) | LispObject::BytecodeFn(_) => true,
         LispObject::Cons(cell) => {
             let b = cell.lock();
-            matches!(&b.0, LispObject::Symbol(s) if s == "lambda")
+            if let LispObject::Symbol(id) = &b.0 {
+                crate::obarray::symbol_name(*id) == "lambda"
+            } else {
+                false
+            }
         }
         _ => false,
     }
@@ -275,11 +279,12 @@ fn eval_inner(
         | LispObject::Vector(_)
         | LispObject::BytecodeFn(_)
         | LispObject::HashTable(_) => Ok(expr),
-        LispObject::Symbol(ref name) if name.starts_with(':') => {
-            // Keyword symbols are self-evaluating
-            Ok(expr)
-        }
-        LispObject::Symbol(name) => {
+        LispObject::Symbol(id) => {
+            let name = crate::obarray::symbol_name(id);
+            if name.starts_with(':') {
+                // Keyword symbols are self-evaluating
+                return Ok(expr);
+            }
             // Special (dynamically bound) variables are always looked up in the global env.
             if state.special_vars.read().contains(&name) {
                 let global = state.global_env.read();
@@ -292,7 +297,7 @@ fn eval_inner(
         LispObject::Cons(_) => {
             let (car, cdr) = expr.destructure();
             match &car {
-                LispObject::Symbol(s) => match s.as_str() {
+                LispObject::Symbol(id) => { let sym_name = crate::obarray::symbol_name(*id); match sym_name.as_str() {
                     "quote" => {
                         let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
                         Ok(arg)
@@ -345,7 +350,7 @@ fn eval_inner(
                         // (define-minor-mode NAME DOCSTRING &rest BODY)
                         let name = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
                         if let Some(n) = name.as_symbol() {
-                            env.write().define(n, LispObject::nil());
+                            env.write().define(&n, LispObject::nil());
                         }
                         Ok(name)
                     }
@@ -353,7 +358,7 @@ fn eval_inner(
                         // (define-derived-mode NAME PARENT DOCSTRING &rest BODY)
                         let name = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
                         if let Some(n) = name.as_symbol() {
-                            env.write().define(n, LispObject::nil());
+                            env.write().define(&n, LispObject::nil());
                         }
                         Ok(name)
                     }
@@ -361,7 +366,7 @@ fn eval_inner(
                         // (defvar-keymap NAME &rest ARGS)
                         let name = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
                         if let Some(n) = name.as_symbol() {
-                            env.write().define(n, LispObject::nil());
+                            env.write().define(&n, LispObject::nil());
                         }
                         Ok(name)
                     }
@@ -416,11 +421,11 @@ fn eval_inner(
                         let mut cur = cdr.clone();
                         while let Some((key, rest)) = cur.destructure_cons() {
                             let key = eval(key, env, editor, macros, state)?;
-                            if let LispObject::Symbol(s) = &key {
+                            if let Some(s) = key.as_symbol() {
                                 if s == ":test" {
                                     if let Some((val_expr, rest2)) = rest.destructure_cons() {
                                         let val = eval(val_expr, env, editor, macros, state)?;
-                                        if let LispObject::Symbol(t) = &val {
+                                        if let Some(t) = val.as_symbol() {
                                             test = match t.as_str() {
                                                 "eq" => crate::object::HashTableTest::Eq,
                                                 "eql" => crate::object::HashTableTest::Eql,
@@ -624,9 +629,9 @@ fn eval_inner(
                         let place_name = place
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        let old = env.read().get(place_name).unwrap_or(LispObject::nil());
+                        let old = env.read().get(&place_name).unwrap_or(LispObject::nil());
                         let new = LispObject::cons(val, old);
-                        env.write().set(place_name, new.clone());
+                        env.write().set(&place_name, new.clone());
                         Ok(new)
                     }
                     "pop" => {
@@ -634,10 +639,10 @@ fn eval_inner(
                         let place_name = place
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        let list = env.read().get(place_name).unwrap_or(LispObject::nil());
+                        let list = env.read().get(&place_name).unwrap_or(LispObject::nil());
                         let car = list.first().unwrap_or(LispObject::nil());
                         let cdr_val = list.rest().unwrap_or(LispObject::nil());
-                        env.write().set(place_name, cdr_val);
+                        env.write().set(&place_name, cdr_val);
                         Ok(car)
                     }
                     "symbol-value" => {
@@ -651,7 +656,7 @@ fn eval_inner(
                         let name = arg
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        Ok(env.read().get(name).unwrap_or(LispObject::nil()))
+                        Ok(env.read().get(&name).unwrap_or(LispObject::nil()))
                     }
                     "default-value" => {
                         let arg = eval(
@@ -664,7 +669,7 @@ fn eval_inner(
                         let name = arg
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        Ok(env.read().get(name).unwrap_or(LispObject::nil()))
+                        Ok(env.read().get(&name).unwrap_or(LispObject::nil()))
                     }
                     "default-boundp" => {
                         let arg = eval(
@@ -677,7 +682,7 @@ fn eval_inner(
                         let name = arg
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        Ok(LispObject::from(env.read().get(name).is_some()))
+                        Ok(LispObject::from(env.read().get(&name).is_some()))
                     }
                     "set-default" => {
                         let sym = eval(
@@ -697,7 +702,7 @@ fn eval_inner(
                         let name = sym
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        env.write().set(name, val.clone());
+                        env.write().set(&name, val.clone());
                         Ok(val)
                     }
                     "symbol-function" => {
@@ -714,9 +719,9 @@ fn eval_inner(
                         // Check env first, then fall back to macro table.
                         // Macros are returned as (macro lambda ARGS . BODY)
                         // matching real Emacs behaviour.
-                        if let Some(val) = env.read().get(name) {
+                        if let Some(val) = env.read().get(&name) {
                             Ok(val)
-                        } else if let Some(m) = macros.read().get(name).cloned() {
+                        } else if let Some(m) = macros.read().get(&name).cloned() {
                             let lambda_form = LispObject::cons(
                                 LispObject::symbol("lambda"),
                                 LispObject::cons(m.args, m.body),
@@ -818,7 +823,7 @@ fn eval_inner(
                             state,
                         )?;
                         // nreverse: reverse list; copy-sequence: clone (already cloned)
-                        if s.as_str() == "nreverse" {
+                        if sym_name == "nreverse" {
                             let mut items = Vec::new();
                             let mut cur = arg;
                             while let Some((car, cdr_val)) = cur.destructure_cons() {
@@ -889,7 +894,7 @@ fn eval_inner(
                         let name = sym
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        env.write().define(name, def.clone());
+                        env.write().define(&name, def.clone());
                         Ok(def)
                     }
                     "purecopy" => {
@@ -920,7 +925,7 @@ fn eval_inner(
                         )?;
                         let name = match &arg {
                             LispObject::String(s) => s.clone(),
-                            LispObject::Symbol(s) => s.clone(),
+                            LispObject::Symbol(id) => crate::obarray::symbol_name(*id),
                             _ => return Ok(LispObject::nil()),
                         };
                         // Only return the symbol if it is already known
@@ -948,7 +953,7 @@ fn eval_inner(
                         let name = sym
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        env.write().set(name, val.clone());
+                        env.write().set(&name, val.clone());
                         Ok(val)
                     }
                     "boundp" => {
@@ -962,7 +967,7 @@ fn eval_inner(
                         let name = sym
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        Ok(LispObject::from(env.read().get(name).is_some()))
+                        Ok(LispObject::from(env.read().get(&name).is_some()))
                     }
                     "fboundp" => {
                         let sym = eval(
@@ -975,7 +980,7 @@ fn eval_inner(
                         let name = sym
                             .as_symbol()
                             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                        Ok(LispObject::from(env.read().get(name).is_some()))
+                        Ok(LispObject::from(env.read().get(&name).is_some()))
                     }
                     "symbol-plist" => {
                         let _sym = eval(
@@ -1161,7 +1166,7 @@ fn eval_inner(
                     "defmacro" => eval_defmacro(&cdr, macros),
                     "macroexpand" => eval_macroexpand(&cdr, env, editor, macros, state),
                     _ => {
-                        if let LispObject::Symbol(s) = &car {
+                        if let Some(s) = car.as_symbol() {
                             let macro_table = macros.read();
                             if let Some(macro_) = macro_table.get(s.as_str()) {
                                 let macro_ = macro_.clone();
@@ -1173,7 +1178,7 @@ fn eval_inner(
                         }
                         eval_funcall(car, cdr, env, editor, macros, state)
                     }
-                },
+                } },
                 _ => eval_funcall(car, cdr, env, editor, macros, state),
             }
         }

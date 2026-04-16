@@ -597,13 +597,8 @@ impl Value {
                 }
             }
             LispObject::Float(f) => Value::float(*f),
-            LispObject::Symbol(s) => {
-                // Use a simple hash as symbol ID
-                use std::hash::{Hash, Hasher};
-                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                s.hash(&mut hasher);
-                let id = hasher.finish() as u32;
-                Value::symbol_id(id)
+            LispObject::Symbol(id) => {
+                Value::symbol_id(id.0)
             }
             // Heap objects can't be converted without allocation
             _ => Value::nil(),
@@ -678,7 +673,7 @@ mod bridge_tests {
 
     #[test]
     fn bridge_symbol_to_value() {
-        let v = Value::from_lisp_object(&LispObject::Symbol("foo".to_string()));
+        let v = Value::from_lisp_object(&LispObject::symbol("foo"));
         assert!(v.is_symbol());
     }
 

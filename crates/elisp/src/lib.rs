@@ -2,6 +2,7 @@ mod error;
 mod eval;
 pub mod gc;
 pub mod jit;
+pub mod obarray;
 mod object;
 mod primitives;
 mod reader;

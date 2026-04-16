@@ -261,7 +261,7 @@ impl<'a> Vm<'a> {
                     (LispObject::Nil, LispObject::Nil) => true,
                     (LispObject::T, LispObject::T) => true,
                     (LispObject::Integer(x), LispObject::Integer(y)) => x == y,
-                    (LispObject::Symbol(x), LispObject::Symbol(y)) => x == y,
+                    (LispObject::Symbol(x), LispObject::Symbol(y)) => x == y, // SymbolId comparison
                     _ => false,
                 };
                 self.push(LispObject::from(result));
@@ -403,7 +403,7 @@ impl<'a> Vm<'a> {
             74 => {
                 let sym = self.pop()?;
                 if let Some(name) = sym.as_symbol() {
-                    let val = self.env.read().get(name).unwrap_or(LispObject::nil());
+                    let val = self.env.read().get(&name).unwrap_or(LispObject::nil());
                     self.push(val);
                 } else {
                     self.push(LispObject::nil());
@@ -414,7 +414,7 @@ impl<'a> Vm<'a> {
             75 => {
                 let sym = self.pop()?;
                 if let Some(name) = sym.as_symbol() {
-                    let val = self.env.read().get(name).unwrap_or(LispObject::nil());
+                    let val = self.env.read().get(&name).unwrap_or(LispObject::nil());
                     self.push(val);
                 } else {
                     self.push(LispObject::nil());
@@ -426,7 +426,7 @@ impl<'a> Vm<'a> {
                 let val = self.pop()?;
                 let sym = self.pop()?;
                 if let Some(name) = sym.as_symbol() {
-                    self.env.write().set(name, val.clone());
+                    self.env.write().set(&name, val.clone());
                 }
                 self.push(val);
             }
@@ -436,7 +436,7 @@ impl<'a> Vm<'a> {
                 let def = self.pop()?;
                 let sym = self.pop()?;
                 if let Some(name) = sym.as_symbol() {
-                    self.env.write().define(name, def.clone());
+                    self.env.write().define(&name, def.clone());
                 }
                 self.push(def);
             }
@@ -1243,7 +1243,7 @@ impl<'a> Vm<'a> {
             if let Some(name) = self.constants[n].as_symbol() {
                 // Check locals first (let-bound)
                 // Then check environment
-                return self.env.read().get(name).unwrap_or(LispObject::nil());
+                return self.env.read().get(&name).unwrap_or(LispObject::nil());
             }
         }
         // Fallback: direct local index
@@ -1253,7 +1253,7 @@ impl<'a> Vm<'a> {
     fn local_set(&mut self, n: usize, val: LispObject) {
         if n < self.constants.len() {
             if let Some(name) = self.constants[n].as_symbol() {
-                self.env.write().set(name, val);
+                self.env.write().set(&name, val);
                 return;
             }
         }
@@ -1266,9 +1266,9 @@ impl<'a> Vm<'a> {
     fn varbind(&mut self, n: usize, val: LispObject) {
         if n < self.constants.len() {
             if let Some(name) = self.constants[n].as_symbol() {
-                let old = self.env.read().get(name);
+                let old = self.env.read().get(&name);
                 self.specpdl.push((name.clone(), old));
-                self.env.write().set(name, val);
+                self.env.write().set(&name, val);
                 return;
             }
         }
