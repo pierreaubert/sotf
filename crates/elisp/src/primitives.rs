@@ -1233,7 +1233,7 @@ fn prim_make_string(args: &LispObject) -> ElispResult<LispObject> {
         return Ok(LispObject::string(""));
     }
     let c = char::from_u32(ch as u32).unwrap_or('?');
-    let s: String = std::iter::repeat(c).take(length as usize).collect();
+    let s: String = std::iter::repeat_n(c, length as usize).collect();
     Ok(LispObject::string(&s))
 }
 

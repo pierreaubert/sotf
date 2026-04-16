@@ -1133,11 +1133,8 @@ impl<'a> Vm<'a> {
 
     fn unbind(&mut self, n: usize) {
         for _ in 0..n {
-            if let Some((name, old_val)) = self.specpdl.pop() {
-                if let Some(val) = old_val {
-                    self.env.write().set(&name, val);
-                }
-                // If old_val is None, the variable was unbound before
+            if let Some((name, Some(val))) = self.specpdl.pop() {
+                self.env.write().set(&name, val);
             }
         }
     }

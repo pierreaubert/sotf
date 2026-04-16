@@ -240,7 +240,7 @@ impl Reader {
         if self.peek() == Some('.') {
             // Peek ahead to check it's a dot delimiter, not a symbol or number
             let after_dot = self.peek_ahead(1);
-            if after_dot.map(|c| Self::is_delimiter(c)).unwrap_or(true) {
+            if after_dot.map(Self::is_delimiter).unwrap_or(true) {
                 self.advance(); // consume '.'
                 let cdr = self.read()?;
                 self.skip_whitespace();

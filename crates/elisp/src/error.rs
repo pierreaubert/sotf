@@ -1,6 +1,18 @@
 use crate::object::LispObject;
 
 #[derive(Debug, Clone)]
+pub struct ThrowData {
+    pub tag: LispObject,
+    pub value: LispObject,
+}
+
+#[derive(Debug, Clone)]
+pub struct SignalData {
+    pub symbol: LispObject,
+    pub data: LispObject,
+}
+
+#[derive(Debug, Clone)]
 pub enum ElispError {
     VoidFunction(String),
     VoidVariable(String),
@@ -19,15 +31,9 @@ pub enum ElispError {
     StackOverflow,
     EvalError(String),
     /// Non-local exit via (throw TAG VALUE)
-    Throw {
-        tag: LispObject,
-        value: LispObject,
-    },
+    Throw(Box<ThrowData>),
     /// Emacs-style error signal via (signal ERROR-SYMBOL DATA)
-    Signal {
-        symbol: LispObject,
-        data: LispObject,
-    },
+    Signal(Box<SignalData>),
 }
 
 pub type ElispResult<T> = Result<T, ElispError>;
@@ -36,31 +42,31 @@ impl ElispError {
     /// Convert a Rust-side error into an Emacs signal with proper error symbol.
     pub fn to_signal(&self) -> ElispError {
         match self {
-            ElispError::Signal { .. } | ElispError::Throw { .. } => self.clone(),
-            ElispError::VoidFunction(name) => ElispError::Signal {
+            ElispError::Signal(..) | ElispError::Throw(..) => self.clone(),
+            ElispError::VoidFunction(name) => ElispError::Signal(Box::new(SignalData {
                 symbol: LispObject::symbol("void-function"),
                 data: LispObject::cons(LispObject::symbol(name), LispObject::nil()),
-            },
-            ElispError::VoidVariable(name) => ElispError::Signal {
+            })),
+            ElispError::VoidVariable(name) => ElispError::Signal(Box::new(SignalData {
                 symbol: LispObject::symbol("void-variable"),
                 data: LispObject::cons(LispObject::symbol(name), LispObject::nil()),
-            },
-            ElispError::WrongTypeArgument(expected) => ElispError::Signal {
+            })),
+            ElispError::WrongTypeArgument(expected) => ElispError::Signal(Box::new(SignalData {
                 symbol: LispObject::symbol("wrong-type-argument"),
                 data: LispObject::cons(LispObject::string(expected), LispObject::nil()),
-            },
-            ElispError::WrongNumberOfArguments => ElispError::Signal {
+            })),
+            ElispError::WrongNumberOfArguments => ElispError::Signal(Box::new(SignalData {
                 symbol: LispObject::symbol("wrong-number-of-arguments"),
                 data: LispObject::nil(),
-            },
-            ElispError::DivisionByZero => ElispError::Signal {
+            })),
+            ElispError::DivisionByZero => ElispError::Signal(Box::new(SignalData {
                 symbol: LispObject::symbol("arith-error"),
                 data: LispObject::nil(),
-            },
-            _ => ElispError::Signal {
+            })),
+            _ => ElispError::Signal(Box::new(SignalData {
                 symbol: LispObject::symbol("error"),
                 data: LispObject::cons(LispObject::string(&self.to_string()), LispObject::nil()),
-            },
+            })),
         }
     }
 
@@ -72,12 +78,12 @@ impl ElispError {
         };
         // 'error' matches everything (except throw)
         if sym == "error" {
-            return !matches!(self, ElispError::Throw { .. });
+            return !matches!(self, ElispError::Throw(..));
         }
         // Match specific error symbols
         let signal = self.to_signal();
-        if let ElispError::Signal { symbol, .. } = &signal {
-            if let LispObject::Symbol(s) = symbol {
+        if let ElispError::Signal(sig) = &signal {
+            if let LispObject::Symbol(s) = &sig.symbol {
                 return s == sym;
             }
         }
@@ -110,20 +116,20 @@ impl std::fmt::Display for ElispError {
             ElispError::DivisionByZero => write!(f, "division by zero"),
             ElispError::StackOverflow => write!(f, "stack overflow (possible infinite recursion)"),
             ElispError::EvalError(msg) => write!(f, "evaluation error: {}", msg),
-            ElispError::Throw { tag, value } => {
+            ElispError::Throw(throw_data) => {
                 write!(
                     f,
                     "no catch for tag: {} with value: {}",
-                    tag.prin1_to_string(),
-                    value.prin1_to_string()
+                    throw_data.tag.prin1_to_string(),
+                    throw_data.value.prin1_to_string()
                 )
             }
-            ElispError::Signal { symbol, data } => {
+            ElispError::Signal(signal_data) => {
                 write!(
                     f,
                     "{}: {}",
-                    symbol.prin1_to_string(),
-                    data.prin1_to_string()
+                    signal_data.symbol.prin1_to_string(),
+                    signal_data.data.prin1_to_string()
                 )
             }
         }

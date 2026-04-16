@@ -1,4 +1,4 @@
-use crate::error::{ElispError, ElispResult};
+use crate::error::{ElispError, ElispResult, SignalData, ThrowData};
 use crate::object::LispObject;
 use crate::EditorCallbacks;
 use parking_lot::RwLock;
@@ -1724,17 +1724,11 @@ fn eval_catch(
 
     match eval_progn(&body, env, editor, macros, state) {
         Ok(value) => Ok(value),
-        Err(ElispError::Throw {
-            tag: throw_tag,
-            value,
-        }) => {
-            if tag == throw_tag {
-                Ok(value)
+        Err(ElispError::Throw(throw_data)) => {
+            if tag == throw_data.tag {
+                Ok(throw_data.value)
             } else {
-                Err(ElispError::Throw {
-                    tag: throw_tag,
-                    value,
-                })
+                Err(ElispError::Throw(throw_data))
             }
         }
         Err(e) => Err(e),
@@ -1754,7 +1748,7 @@ fn eval_throw(
     let tag = eval(tag_expr, env, editor, macros, state)?;
     let value = eval(value_expr, env, editor, macros, state)?;
 
-    Err(ElispError::Throw { tag, value })
+    Err(ElispError::Throw(Box::new(ThrowData { tag, value })))
 }
 
 fn eval_condition_case(
@@ -1774,7 +1768,7 @@ fn eval_condition_case(
     // Evaluate bodyform
     match eval(bodyform, env, editor, macros, state) {
         Ok(value) => Ok(value),
-        Err(ref err @ ElispError::Throw { .. }) => Err(err.clone()),
+        Err(ref err @ ElispError::Throw(..)) => Err(err.clone()),
         Err(err) => {
             // Try to match a handler
             let mut handlers = rest;
@@ -1791,8 +1785,8 @@ fn eval_condition_case(
                         if let Some(var_name) = var.as_symbol() {
                             // Build error data as a cons: (symbol . data)
                             let signal = err.to_signal();
-                            let err_value = if let ElispError::Signal { symbol, data } = signal {
-                                LispObject::cons(symbol, data)
+                            let err_value = if let ElispError::Signal(sig) = signal {
+                                LispObject::cons(sig.symbol, sig.data)
                             } else {
                                 LispObject::nil()
                             };
@@ -1823,7 +1817,7 @@ fn eval_signal(
     let symbol = eval(symbol_expr, env, editor, macros, state)?;
     let data = eval(data_expr, env, editor, macros, state)?;
 
-    Err(ElispError::Signal { symbol, data })
+    Err(ElispError::Signal(Box::new(SignalData { symbol, data })))
 }
 
 fn eval_error_fn(
@@ -1837,10 +1831,10 @@ fn eval_error_fn(
     let formatted = eval_format(args, env, editor, macros, state)?;
     let msg_str = formatted.princ_to_string();
 
-    Err(ElispError::Signal {
+    Err(ElispError::Signal(Box::new(SignalData {
         symbol: LispObject::symbol("error"),
         data: LispObject::cons(LispObject::string(&msg_str), LispObject::nil()),
-    })
+    })))
 }
 
 fn eval_unwind_protect(
