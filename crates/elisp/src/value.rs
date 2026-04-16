@@ -303,6 +303,12 @@ impl Value {
         self.is_ptr() // tag 1 = GC pointer, which is the cons tag
     }
 
+    /// True when this Value is a proper list (nil or cons).
+    #[inline]
+    pub fn is_list(&self) -> bool {
+        self.is_nil() || self.is_cons()
+    }
+
     /// Get the car of a cons cell.
     ///
     /// # Safety
@@ -900,6 +906,14 @@ mod tests {
         assert!(Value::fixnum(1).gt(Value::nil()).is_none());
         assert!(Value::nil().num_eq(Value::nil()).is_none());
     }
+
+    #[test]
+    fn is_list_nil_and_fixnum() {
+        assert!(Value::nil().is_list());
+        assert!(!Value::fixnum(42).is_list());
+        assert!(!Value::t().is_list());
+        assert!(!Value::float(1.0).is_list());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -943,8 +957,10 @@ impl Value {
             LispObject::Float(f)
         } else if let Some(ch) = self.as_char() {
             LispObject::Integer(ch as i64)
+        } else if let Some(id) = self.as_symbol_id() {
+            LispObject::Symbol(crate::obarray::SymbolId(id))
         } else {
-            // GC pointers, symbols, subrs can't round-trip without context
+            // GC pointers, subrs can't round-trip without context
             LispObject::Nil
         }
     }

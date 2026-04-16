@@ -1690,3 +1690,70 @@ fn test_gc_preserves_live_data() {
         )
     );
 }
+
+// ---- eval_to_value / eval_value tests ----
+
+#[test]
+fn test_eval_to_value_self_evaluating() {
+    use crate::value::Value;
+    let interp = Interpreter::new();
+    // Fixnums are self-evaluating
+    assert_eq!(
+        interp.eval_value(Value::fixnum(42)).unwrap(),
+        Value::fixnum(42)
+    );
+    assert_eq!(interp.eval_value(Value::nil()).unwrap(), Value::nil());
+    assert_eq!(interp.eval_value(Value::t()).unwrap(), Value::t());
+    assert_eq!(
+        interp.eval_value(Value::float(3.14)).unwrap(),
+        Value::float(3.14)
+    );
+}
+
+#[test]
+fn test_eval_to_value_delegates_symbol() {
+    use crate::value::Value;
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Define a variable, then look it up through the Value path via symbol
+    interp.eval(read("(setq my-var 99)").unwrap()).unwrap();
+    let sym = LispObject::symbol("my-var");
+    let val = Value::from_lisp_object(&sym);
+    assert!(val.is_symbol());
+    let result = interp.eval_value(val).unwrap();
+    assert_eq!(result.as_fixnum(), Some(99));
+}
+
+#[test]
+fn test_eval_to_value_via_source() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // eval_source_value evaluates through LispObject and converts the result
+    let result = interp.eval_source_value("(+ 1 2)").unwrap();
+    assert_eq!(result.as_fixnum(), Some(3));
+}
+
+#[test]
+fn test_eval_source_value_basic() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp.eval_source_value("(+ 10 20)").unwrap();
+    assert_eq!(result.as_fixnum(), Some(30));
+}
+
+#[test]
+fn test_eval_source_value_multiple_forms() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Last form's result is returned
+    let result = interp.eval_source_value("(+ 1 2) (+ 3 4)").unwrap();
+    assert_eq!(result.as_fixnum(), Some(7));
+}
+
+#[test]
+fn test_eval_source_value_nil() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp.eval_source_value("nil").unwrap();
+    assert!(result.is_nil());
+}

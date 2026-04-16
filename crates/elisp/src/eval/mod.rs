@@ -1,5 +1,6 @@
 use crate::error::{ElispError, ElispResult};
 use crate::object::LispObject;
+use crate::value::Value;
 use crate::EditorCallbacks;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
@@ -237,6 +238,19 @@ impl Interpreter {
         Ok(result)
     }
 
+    /// Evaluate a Value expression, short-circuiting self-evaluating types.
+    pub fn eval_value(&self, expr: Value) -> ElispResult<Value> {
+        eval_to_value(expr, &self.env, &self.editor, &self.macros, &self.state)
+    }
+
+    /// Evaluate all forms in a source string and return a Value.
+    /// Forms are evaluated in LispObject land (since the reader produces
+    /// LispObject); only the final result is converted to Value.
+    pub fn eval_source_value(&self, source: &str) -> Result<Value, (usize, ElispError)> {
+        let result = self.eval_source(source)?;
+        Ok(Value::from_lisp_object(&result))
+    }
+
     /// Get a variable's value, or None if unbound.
     pub fn get(&self, name: &str) -> Option<LispObject> {
         self.env.read().get(name)
@@ -253,6 +267,32 @@ impl Default for Interpreter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Evaluate a NaN-boxed Value expression, short-circuiting self-evaluating
+/// immediate types (fixnum, float, nil, t) without converting to LispObject.
+/// Everything else delegates through the LispObject bridge.
+///
+/// NOTE: The current Value<->LispObject bridge is lossy for heap types
+/// (cons, string, vector, etc.), so this function can only fast-path
+/// immediate self-evaluating Values. For complex expressions, callers
+/// should use `eval()` with LispObject and convert the result.
+pub fn eval_to_value(
+    expr: Value,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<Value> {
+    // Self-evaluating Values don't need LispObject conversion
+    if expr.is_fixnum() || expr.is_float() || expr.is_nil() || expr.is_t() {
+        return Ok(expr);
+    }
+    // For everything else, delegate to existing eval via bridge.
+    // to_lisp_object can round-trip symbols but not heap types.
+    let obj = expr.to_lisp_object();
+    let result = eval(obj, env, editor, macros, state)?;
+    Ok(Value::from_lisp_object(&result))
 }
 
 fn eval(
