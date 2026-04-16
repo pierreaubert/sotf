@@ -1,6 +1,15 @@
 use crate::obarray::{self, SymbolId};
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+
+/// Global counter for total cons cell allocations. Monotonically increasing.
+static GLOBAL_CONS_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Read the global cons allocation counter.
+pub fn global_cons_count() -> u64 {
+    GLOBAL_CONS_COUNT.load(Ordering::Relaxed)
+}
 
 /// Shared mutable cell used for cons, vector, and hash table mutation semantics.
 pub type ConsCell = Arc<Mutex<(LispObject, LispObject)>>;
@@ -225,6 +234,7 @@ impl LispObject {
     }
 
     pub fn cons(car: LispObject, cdr: LispObject) -> Self {
+        GLOBAL_CONS_COUNT.fetch_add(1, Ordering::Relaxed);
         LispObject::Cons(Arc::new(Mutex::new((car, cdr))))
     }
 

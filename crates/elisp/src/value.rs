@@ -597,9 +597,7 @@ impl Value {
                 }
             }
             LispObject::Float(f) => Value::float(*f),
-            LispObject::Symbol(id) => {
-                Value::symbol_id(id.0)
-            }
+            LispObject::Symbol(id) => Value::symbol_id(id.0),
             // Heap objects can't be converted without allocation
             _ => Value::nil(),
         }

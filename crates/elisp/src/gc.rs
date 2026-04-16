@@ -337,6 +337,11 @@ impl Default for Heap {
     }
 }
 
+// SAFETY: Heap is single-threaded by design (uses raw pointers internally),
+// but it is safe to Send across threads when protected by a Mutex. All access
+// through InterpreterState goes through Arc<Mutex<Heap>>.
+unsafe impl Send for Heap {}
+
 // ---------------------------------------------------------------------------
 // Arena<T> — bump allocator with a free list
 // ---------------------------------------------------------------------------

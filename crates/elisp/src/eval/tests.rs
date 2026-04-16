@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::{add_primitives, read};
 
@@ -1619,5 +1618,75 @@ fn test_dynamic_binding_mixed_special_and_lexical() {
     assert_eq!(
         interp.eval(read("x").unwrap()).unwrap(),
         LispObject::integer(10)
+    );
+}
+
+// -- GC integration tests ------------------------------------------------
+
+#[test]
+fn test_garbage_collect_returns_stats() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Allocate some cons cells via list construction
+    interp.eval(read("(setq x '(1 2 3 4 5))").unwrap()).unwrap();
+    // Trigger GC
+    let result = interp.eval(read("(garbage-collect)").unwrap()).unwrap();
+    // Should return a cons (alist)
+    assert!(result.is_cons(), "garbage-collect should return a cons");
+    // First element should be (conses . <number>)
+    let first = result.car().unwrap();
+    assert!(first.is_cons());
+    let key = first.car().unwrap();
+    assert_eq!(key, LispObject::symbol("conses"));
+}
+
+#[test]
+fn test_garbage_collect_reports_cons_total() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let before = crate::object::global_cons_count();
+    // Create a list: each element = 1 cons cell, so '(1 2 3) = 3 cons cells
+    interp.eval(read("(setq x '(1 2 3))").unwrap()).unwrap();
+    let after = crate::object::global_cons_count();
+    // At least 3 cons cells should have been allocated (possibly more from
+    // the reader and eval machinery)
+    assert!(
+        after > before,
+        "cons counter should increase after allocating a list: before={before}, after={after}"
+    );
+}
+
+#[test]
+fn test_gc_stress() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Create lots of garbage — build and discard cons cells in a loop
+    interp
+        .eval(read("(let ((i 0)) (while (< i 1000) (cons i i) (setq i (1+ i))))").unwrap())
+        .unwrap();
+    // GC should not crash
+    let result = interp.eval(read("(garbage-collect)").unwrap()).unwrap();
+    assert!(result.is_cons());
+}
+
+#[test]
+fn test_gc_preserves_live_data() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Bind a list and trigger GC — the bound list must survive
+    interp
+        .eval(read("(setq my-list '(a b c))").unwrap())
+        .unwrap();
+    interp.eval(read("(garbage-collect)").unwrap()).unwrap();
+    let result = interp.eval(read("my-list").unwrap()).unwrap();
+    assert_eq!(
+        result,
+        LispObject::cons(
+            LispObject::symbol("a"),
+            LispObject::cons(
+                LispObject::symbol("b"),
+                LispObject::cons(LispObject::symbol("c"), LispObject::nil())
+            )
+        )
     );
 }

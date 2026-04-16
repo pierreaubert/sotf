@@ -1353,6 +1353,8 @@ mod tests {
             special_vars: Arc::new(RwLock::new(std::collections::HashSet::new())),
             specpdl: Arc::new(RwLock::new(Vec::new())),
             global_env: env.clone(),
+            heap: Arc::new(parking_lot::Mutex::new(crate::gc::Heap::new())),
+            cons_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         };
         (env, editor, macros, state)
     }
