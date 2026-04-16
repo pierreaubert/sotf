@@ -371,6 +371,16 @@ fn eval_inner(
                 "forward-char" => eval_forward_char(obj_to_value(cdr), env, editor, macros, state),
                 "find-file" => eval_find_file(obj_to_value(cdr), env, editor, macros, state),
                 "save-buffer" => eval_save_buffer(editor),
+                "save-excursion" => {
+                    eval_save_excursion(obj_to_value(cdr), env, editor, macros, state)
+                }
+                "save-current-buffer" => {
+                    eval_save_current_buffer(obj_to_value(cdr), env, editor, macros, state)
+                }
+                "save-restriction" => {
+                    // No narrowing support yet — treat as progn
+                    builtins::eval_progn_value(obj_to_value(cdr), env, editor, macros, state)
+                }
                 "insert" => eval_insert(obj_to_value(cdr), env, editor, macros, state),
                 "prog1" => eval_prog1(obj_to_value(cdr), env, editor, macros, state),
                 "prog2" => eval_prog2(obj_to_value(cdr), env, editor, macros, state),
@@ -416,11 +426,13 @@ fn eval_inner(
                     eval_unwind_protect(obj_to_value(cdr), env, editor, macros, state)
                 }
                 "error" => eval_error_fn(obj_to_value(cdr), env, editor, macros, state),
+                "user-error" => eval_user_error_fn(obj_to_value(cdr), env, editor, macros, state),
                 "put" => eval_put(obj_to_value(cdr), env, editor, macros, state),
                 "get" => eval_get(obj_to_value(cdr), env, editor, macros, state),
                 "provide" => eval_provide(obj_to_value(cdr), env, editor, macros, state),
                 "featurep" => eval_featurep(obj_to_value(cdr), env, editor, macros, state),
                 "require" => eval_require(obj_to_value(cdr), env, editor, macros, state),
+                "load" => builtins::eval_load(obj_to_value(cdr), env, editor, macros, state),
                 "mapcar" => eval_mapcar(obj_to_value(cdr), env, editor, macros, state),
                 "mapc" => eval_mapc(obj_to_value(cdr), env, editor, macros, state),
                 "dolist" => eval_dolist(obj_to_value(cdr), env, editor, macros, state),
@@ -1315,10 +1327,12 @@ use builtins::{
 };
 use editor::{
     eval_buffer_size, eval_buffer_string, eval_delete_char, eval_find_file, eval_forward_char,
-    eval_goto_char, eval_insert, eval_point, eval_save_buffer,
+    eval_goto_char, eval_insert, eval_point, eval_save_buffer, eval_save_current_buffer,
+    eval_save_excursion,
 };
 use error_forms::{
     eval_catch, eval_condition_case, eval_error_fn, eval_signal, eval_throw, eval_unwind_protect,
+    eval_user_error_fn,
 };
 use functions::{eval_apply, eval_funcall, eval_funcall_form};
 use special_forms::{

@@ -13,7 +13,7 @@ pub use error::{ElispError, ElispResult};
 pub use eval::Interpreter;
 pub use object::{global_cons_count, BytecodeFunction, LispObject};
 pub use primitives::add_primitives;
-pub use reader::{read, read_all};
+pub use reader::{detect_lexical_binding, read, read_all};
 
 pub trait EditorCallbacks: Send + Sync {
     fn buffer_string(&self) -> String;

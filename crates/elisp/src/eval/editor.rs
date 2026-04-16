@@ -7,7 +7,7 @@ use crate::EditorCallbacks;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-use super::{eval, Environment, InterpreterState, MacroTable};
+use super::{eval, eval_progn, Environment, InterpreterState, MacroTable};
 
 pub(super) fn eval_buffer_string(
     editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
@@ -151,4 +151,42 @@ pub(super) fn eval_save_buffer(
     } else {
         Ok(Value::nil())
     }
+}
+
+/// (save-excursion BODY...)
+/// Save point position, evaluate BODY, restore point. Returns result of last body form.
+pub(super) fn eval_save_excursion(
+    body: Value,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<Value> {
+    let saved_point = {
+        let e = editor.read();
+        e.as_ref().map(|cb| cb.point()).unwrap_or(0)
+    };
+    let result = eval_progn(body, env, editor, macros, state);
+    // Restore point even if body signaled an error
+    {
+        let mut e = editor.write();
+        if let Some(cb) = e.as_mut() {
+            cb.goto_char(saved_point);
+        }
+    }
+    result
+}
+
+/// (save-current-buffer BODY...)
+/// Save the current buffer, evaluate BODY, restore it. Since we only have a single buffer
+/// right now this is equivalent to progn, but the structure is here for future expansion.
+pub(super) fn eval_save_current_buffer(
+    body: Value,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<Value> {
+    // With a single-buffer model, save-current-buffer is just progn.
+    eval_progn(body, env, editor, macros, state)
 }

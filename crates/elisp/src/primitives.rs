@@ -1,5 +1,6 @@
-use crate::error::{ElispError, ElispResult};
+use crate::error::{ElispError, ElispResult, SignalData};
 use crate::object::LispObject;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 pub fn add_primitives(interp: &mut crate::eval::Interpreter) {
     interp.define("+", LispObject::primitive("+"));
@@ -107,6 +108,51 @@ pub fn add_primitives(interp: &mut crate::eval::Interpreter) {
     interp.define("identity", LispObject::primitive("identity"));
     interp.define("ignore", LispObject::primitive("ignore"));
     interp.define("type-of", LispObject::primitive("type-of"));
+
+    // String — extended
+    interp.define("upcase", LispObject::primitive("upcase"));
+    interp.define("downcase", LispObject::primitive("downcase"));
+    interp.define("string-replace", LispObject::primitive("string-replace"));
+    interp.define("string-trim", LispObject::primitive("string-trim"));
+    interp.define("string-prefix-p", LispObject::primitive("string-prefix-p"));
+    interp.define("string-suffix-p", LispObject::primitive("string-suffix-p"));
+    interp.define("string-join", LispObject::primitive("string-join"));
+    interp.define("char-to-string", LispObject::primitive("char-to-string"));
+    interp.define("string-to-char", LispObject::primitive("string-to-char"));
+    interp.define("string-width", LispObject::primitive("string-width"));
+    interp.define(
+        "multibyte-string-p",
+        LispObject::primitive("multibyte-string-p"),
+    );
+
+    // Sequence — extended
+    interp.define("elt", LispObject::primitive("elt"));
+    interp.define("copy-alist", LispObject::primitive("copy-alist"));
+    interp.define("plist-get", LispObject::primitive("plist-get"));
+    interp.define("plist-put", LispObject::primitive("plist-put"));
+    interp.define("plist-member", LispObject::primitive("plist-member"));
+    interp.define("remove", LispObject::primitive("remove"));
+    interp.define("remq", LispObject::primitive("remq"));
+    interp.define("number-sequence", LispObject::primitive("number-sequence"));
+
+    // Numeric — extended
+    interp.define("random", LispObject::primitive("random"));
+    interp.define("logxor", LispObject::primitive("logxor"));
+
+    // Type — extended
+    interp.define("sequencep", LispObject::primitive("sequencep"));
+    interp.define(
+        "char-or-string-p",
+        LispObject::primitive("char-or-string-p"),
+    );
+    interp.define("booleanp", LispObject::primitive("booleanp"));
+    interp.define("keywordp", LispObject::primitive("keywordp"));
+
+    // Misc — extended (apply/error/signal handled by eval dispatch, but registered for functionp)
+    interp.define("apply", LispObject::primitive("apply"));
+    interp.define("error", LispObject::primitive("error"));
+    interp.define("user-error", LispObject::primitive("user-error"));
+    interp.define("signal", LispObject::primitive("signal"));
 }
 
 pub fn call_primitive(name: &str, args: &LispObject) -> ElispResult<LispObject> {
@@ -210,6 +256,47 @@ pub fn call_primitive(name: &str, args: &LispObject) -> ElispResult<LispObject> 
         "identity" => prim_identity(args),
         "ignore" => prim_ignore(args),
         "type-of" => prim_type_of(args),
+
+        // String — extended
+        "upcase" => prim_upcase(args),
+        "downcase" => prim_downcase(args),
+        "string-replace" => prim_string_replace(args),
+        "string-trim" => prim_string_trim(args),
+        "string-prefix-p" => prim_string_prefix_p(args),
+        "string-suffix-p" => prim_string_suffix_p(args),
+        "string-join" => prim_string_join(args),
+        "char-to-string" => prim_char_to_string(args),
+        "string-to-char" => prim_string_to_char(args),
+        "string-width" => prim_string_width(args),
+        "multibyte-string-p" => prim_multibyte_string_p(args),
+
+        // Sequence — extended
+        "elt" => prim_elt(args),
+        "copy-alist" => prim_copy_alist(args),
+        "plist-get" => prim_plist_get(args),
+        "plist-put" => prim_plist_put(args),
+        "plist-member" => prim_plist_member(args),
+        "remove" => prim_remove(args),
+        "remq" => prim_remq(args),
+        "number-sequence" => prim_number_sequence(args),
+
+        // Numeric — extended
+        "random" => prim_random(args),
+        "logxor" => prim_logxor(args),
+
+        // Type — extended
+        "sequencep" => prim_sequencep(args),
+        "char-or-string-p" => prim_char_or_string_p(args),
+        "booleanp" => prim_booleanp(args),
+        "keywordp" => prim_keywordp(args),
+
+        // Misc — extended (apply/error/signal/user-error: normally handled by eval dispatch)
+        "apply" => Err(ElispError::EvalError(
+            "apply must be called through eval dispatch".to_string(),
+        )),
+        "error" => prim_error(args),
+        "user-error" => prim_user_error(args),
+        "signal" => prim_signal(args),
 
         _ => Err(ElispError::VoidFunction(name.to_string())),
     }
@@ -1302,6 +1389,467 @@ fn eq_test(a: &LispObject, b: &LispObject) -> bool {
         (LispObject::Symbol(x), LispObject::Symbol(y)) => x == y,
         _ => false,
     }
+}
+
+// ---------------------------------------------------------------------------
+// String — extended
+// ---------------------------------------------------------------------------
+
+fn prim_upcase(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    match &arg {
+        LispObject::String(s) => Ok(LispObject::string(&s.to_uppercase())),
+        LispObject::Integer(c) => {
+            let ch = char::from_u32(*c as u32).unwrap_or('?');
+            let upper: String = ch.to_uppercase().collect();
+            Ok(LispObject::integer(
+                upper.chars().next().unwrap_or('?') as i64
+            ))
+        }
+        _ => Err(ElispError::WrongTypeArgument("string-or-char".to_string())),
+    }
+}
+
+fn prim_downcase(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    match &arg {
+        LispObject::String(s) => Ok(LispObject::string(&s.to_lowercase())),
+        LispObject::Integer(c) => {
+            let ch = char::from_u32(*c as u32).unwrap_or('?');
+            let lower: String = ch.to_lowercase().collect();
+            Ok(LispObject::integer(
+                lower.chars().next().unwrap_or('?') as i64
+            ))
+        }
+        _ => Err(ElispError::WrongTypeArgument("string-or-char".to_string())),
+    }
+}
+
+fn prim_string_replace(args: &LispObject) -> ElispResult<LispObject> {
+    let from = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let to = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let in_str = args.nth(2).ok_or(ElispError::WrongNumberOfArguments)?;
+    match (&from, &to, &in_str) {
+        (LispObject::String(f), LispObject::String(t), LispObject::String(s)) => {
+            Ok(LispObject::string(&s.replace(f.as_str(), t.as_str())))
+        }
+        _ => Err(ElispError::WrongTypeArgument("string".to_string())),
+    }
+}
+
+fn prim_string_trim(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    match &arg {
+        LispObject::String(s) => Ok(LispObject::string(s.trim())),
+        _ => Err(ElispError::WrongTypeArgument("string".to_string())),
+    }
+}
+
+fn prim_string_prefix_p(args: &LispObject) -> ElispResult<LispObject> {
+    let prefix = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let s = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    match (&prefix, &s) {
+        (LispObject::String(p), LispObject::String(s)) => {
+            Ok(LispObject::from(s.starts_with(p.as_str())))
+        }
+        _ => Err(ElispError::WrongTypeArgument("string".to_string())),
+    }
+}
+
+fn prim_string_suffix_p(args: &LispObject) -> ElispResult<LispObject> {
+    let suffix = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let s = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    match (&suffix, &s) {
+        (LispObject::String(sfx), LispObject::String(s)) => {
+            Ok(LispObject::from(s.ends_with(sfx.as_str())))
+        }
+        _ => Err(ElispError::WrongTypeArgument("string".to_string())),
+    }
+}
+
+fn prim_string_join(args: &LispObject) -> ElispResult<LispObject> {
+    let strings = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let separator = args
+        .nth(1)
+        .and_then(|a| a.as_string().cloned())
+        .unwrap_or_default();
+    let mut parts = Vec::new();
+    let mut current = strings;
+    while let Some((car, cdr)) = current.destructure_cons() {
+        match &car {
+            LispObject::String(s) => parts.push(s.clone()),
+            _ => return Err(ElispError::WrongTypeArgument("string".to_string())),
+        }
+        current = cdr;
+    }
+    Ok(LispObject::string(&parts.join(&separator)))
+}
+
+fn prim_char_to_string(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let code = arg
+        .as_integer()
+        .ok_or(ElispError::WrongTypeArgument("integer".to_string()))?;
+    let ch = char::from_u32(code as u32).unwrap_or('?');
+    Ok(LispObject::string(&ch.to_string()))
+}
+
+fn prim_string_to_char(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    match &arg {
+        LispObject::String(s) => {
+            let ch = s.chars().next().unwrap_or('\0');
+            Ok(LispObject::integer(ch as i64))
+        }
+        _ => Err(ElispError::WrongTypeArgument("string".to_string())),
+    }
+}
+
+fn prim_string_width(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    match &arg {
+        LispObject::String(s) => Ok(LispObject::integer(s.chars().count() as i64)),
+        _ => Err(ElispError::WrongTypeArgument("string".to_string())),
+    }
+}
+
+fn prim_multibyte_string_p(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    match &arg {
+        LispObject::String(_) => Ok(LispObject::t()),
+        _ => Err(ElispError::WrongTypeArgument("string".to_string())),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sequence — extended
+// ---------------------------------------------------------------------------
+
+fn prim_elt(args: &LispObject) -> ElispResult<LispObject> {
+    let seq = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let n = args
+        .nth(1)
+        .and_then(|a| a.as_integer())
+        .ok_or(ElispError::WrongTypeArgument("integer".to_string()))?;
+    if n < 0 {
+        return Err(ElispError::WrongTypeArgument("natnump".to_string()));
+    }
+    let idx = n as usize;
+    match &seq {
+        LispObject::String(s) => {
+            let ch = s.chars().nth(idx);
+            match ch {
+                Some(c) => Ok(LispObject::integer(c as i64)),
+                None => Err(ElispError::WrongTypeArgument(
+                    "args-out-of-range".to_string(),
+                )),
+            }
+        }
+        LispObject::Vector(v) => {
+            let v = v.lock();
+            v.get(idx).cloned().ok_or(ElispError::WrongTypeArgument(
+                "args-out-of-range".to_string(),
+            ))
+        }
+        LispObject::Nil | LispObject::Cons(_) => {
+            // Walk the list
+            let mut current = seq.clone();
+            for _ in 0..idx {
+                match current.destructure_cons() {
+                    Some((_, cdr)) => current = cdr,
+                    None => {
+                        return Err(ElispError::WrongTypeArgument(
+                            "args-out-of-range".to_string(),
+                        ))
+                    }
+                }
+            }
+            current.first().ok_or(ElispError::WrongTypeArgument(
+                "args-out-of-range".to_string(),
+            ))
+        }
+        _ => Err(ElispError::WrongTypeArgument("sequencep".to_string())),
+    }
+}
+
+fn prim_copy_alist(args: &LispObject) -> ElispResult<LispObject> {
+    let alist = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let mut items = Vec::new();
+    let mut current = alist;
+    while let Some((entry, rest)) = current.destructure_cons() {
+        let copied = if let Some((k, v)) = entry.destructure_cons() {
+            LispObject::cons(k, v)
+        } else {
+            entry
+        };
+        items.push(copied);
+        current = rest;
+    }
+    let mut result = LispObject::nil();
+    for item in items.into_iter().rev() {
+        result = LispObject::cons(item, result);
+    }
+    Ok(result)
+}
+
+fn prim_plist_get(args: &LispObject) -> ElispResult<LispObject> {
+    let plist = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let prop = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let mut current = plist;
+    while let Some((key, rest)) = current.destructure_cons() {
+        if eq_test(&key, &prop) {
+            return rest.first().ok_or(ElispError::WrongNumberOfArguments);
+        }
+        // Skip value
+        match rest.destructure_cons() {
+            Some((_, next)) => current = next,
+            None => return Ok(LispObject::nil()),
+        }
+    }
+    Ok(LispObject::nil())
+}
+
+fn prim_plist_put(args: &LispObject) -> ElispResult<LispObject> {
+    let plist = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let prop = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let value = args.nth(2).ok_or(ElispError::WrongNumberOfArguments)?;
+    // Build a new plist with the property set
+    let mut items = Vec::new();
+    let mut current = plist.clone();
+    let mut found = false;
+    while let Some((key, rest)) = current.destructure_cons() {
+        if let Some((val, next)) = rest.destructure_cons() {
+            if eq_test(&key, &prop) {
+                items.push((key, value.clone()));
+                found = true;
+                current = next;
+            } else {
+                items.push((key, val));
+                current = next;
+            }
+        } else {
+            break;
+        }
+    }
+    if !found {
+        items.push((prop, value));
+    }
+    let mut result = LispObject::nil();
+    for (k, v) in items.into_iter().rev() {
+        result = LispObject::cons(v, result);
+        result = LispObject::cons(k, result);
+    }
+    Ok(result)
+}
+
+fn prim_plist_member(args: &LispObject) -> ElispResult<LispObject> {
+    let plist = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let prop = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let mut current = plist;
+    while let Some((key, _rest)) = current.destructure_cons() {
+        if eq_test(&key, &prop) {
+            return Ok(current);
+        }
+        // Skip value, advance to next key
+        match _rest.destructure_cons() {
+            Some((_, next)) => current = next,
+            None => return Ok(LispObject::nil()),
+        }
+    }
+    Ok(LispObject::nil())
+}
+
+fn prim_remove(args: &LispObject) -> ElispResult<LispObject> {
+    let elt = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let list = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let mut items = Vec::new();
+    let mut current = list;
+    while let Some((car, cdr)) = current.destructure_cons() {
+        if car != elt {
+            items.push(car);
+        }
+        current = cdr;
+    }
+    let mut result = LispObject::nil();
+    for item in items.into_iter().rev() {
+        result = LispObject::cons(item, result);
+    }
+    Ok(result)
+}
+
+fn prim_remq(args: &LispObject) -> ElispResult<LispObject> {
+    let elt = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let list = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let mut items = Vec::new();
+    let mut current = list;
+    while let Some((car, cdr)) = current.destructure_cons() {
+        if !eq_test(&elt, &car) {
+            items.push(car);
+        }
+        current = cdr;
+    }
+    let mut result = LispObject::nil();
+    for item in items.into_iter().rev() {
+        result = LispObject::cons(item, result);
+    }
+    Ok(result)
+}
+
+fn prim_number_sequence(args: &LispObject) -> ElispResult<LispObject> {
+    let from = args
+        .first()
+        .and_then(|a| a.as_integer())
+        .ok_or(ElispError::WrongTypeArgument("integer".to_string()))?;
+    let to = args.nth(1).and_then(|a| a.as_integer());
+    let step = args.nth(2).and_then(|a| a.as_integer());
+
+    // (number-sequence FROM) => (FROM)
+    let to = match to {
+        Some(t) => t,
+        None => {
+            return Ok(LispObject::cons(
+                LispObject::integer(from),
+                LispObject::nil(),
+            ))
+        }
+    };
+    let step = step.unwrap_or(if from <= to { 1 } else { -1 });
+    if step == 0 {
+        return Err(ElispError::InvalidOperation(
+            "number-sequence step must be non-zero".to_string(),
+        ));
+    }
+    let mut items = Vec::new();
+    let mut i = from;
+    if step > 0 {
+        while i <= to {
+            items.push(LispObject::integer(i));
+            i += step;
+        }
+    } else {
+        while i >= to {
+            items.push(LispObject::integer(i));
+            i += step;
+        }
+    }
+    let mut result = LispObject::nil();
+    for item in items.into_iter().rev() {
+        result = LispObject::cons(item, result);
+    }
+    Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// Numeric — extended
+// ---------------------------------------------------------------------------
+
+/// Simple LCG-based pseudo-random number generator state.
+static RANDOM_STATE: AtomicI64 = AtomicI64::new(0);
+
+fn prim_random(args: &LispObject) -> ElispResult<LispObject> {
+    let limit = args.first();
+    // Advance the LCG state
+    let old = RANDOM_STATE.fetch_add(1, Ordering::Relaxed);
+    // LCG: a=6364136223846793005, c=1442695040888963407 (Knuth)
+    let raw = old
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
+    let raw = raw.unsigned_abs() as i64; // ensure non-negative
+    match limit {
+        Some(LispObject::Integer(n)) if n > 0 => Ok(LispObject::integer(raw % n)),
+        Some(LispObject::Integer(_)) => Err(ElispError::WrongTypeArgument(
+            "positive integer".to_string(),
+        )),
+        Some(LispObject::T) => {
+            // (random t) reseeds — use current time nanos
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as i64)
+                .unwrap_or(42);
+            RANDOM_STATE.store(seed, Ordering::Relaxed);
+            Ok(LispObject::integer(seed.unsigned_abs() as i64))
+        }
+        _ => Ok(LispObject::integer(raw)),
+    }
+}
+
+fn prim_logxor(args: &LispObject) -> ElispResult<LispObject> {
+    let mut result: i64 = 0;
+    let mut current = args.clone();
+    while let Some((arg, rest)) = current.destructure_cons() {
+        let n = arg
+            .as_integer()
+            .ok_or(ElispError::WrongTypeArgument("integer".to_string()))?;
+        result ^= n;
+        current = rest;
+    }
+    Ok(LispObject::integer(result))
+}
+
+// ---------------------------------------------------------------------------
+// Type — extended
+// ---------------------------------------------------------------------------
+
+fn prim_sequencep(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let result = matches!(
+        arg,
+        LispObject::Nil | LispObject::Cons(_) | LispObject::Vector(_) | LispObject::String(_)
+    );
+    Ok(LispObject::from(result))
+}
+
+fn prim_char_or_string_p(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let result = matches!(arg, LispObject::String(_) | LispObject::Integer(_));
+    Ok(LispObject::from(result))
+}
+
+fn prim_booleanp(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let result = matches!(arg, LispObject::Nil | LispObject::T);
+    Ok(LispObject::from(result))
+}
+
+fn prim_keywordp(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let result = match &arg {
+        LispObject::Symbol(id) => crate::obarray::symbol_name(*id).starts_with(':'),
+        _ => false,
+    };
+    Ok(LispObject::from(result))
+}
+
+// ---------------------------------------------------------------------------
+// Misc — extended
+// ---------------------------------------------------------------------------
+
+fn prim_error(args: &LispObject) -> ElispResult<LispObject> {
+    let msg = args
+        .first()
+        .map(|a| a.princ_to_string())
+        .unwrap_or_default();
+    Err(ElispError::Signal(Box::new(SignalData {
+        symbol: LispObject::symbol("error"),
+        data: LispObject::cons(LispObject::string(&msg), LispObject::nil()),
+    })))
+}
+
+fn prim_user_error(args: &LispObject) -> ElispResult<LispObject> {
+    let msg = args
+        .first()
+        .map(|a| a.princ_to_string())
+        .unwrap_or_default();
+    Err(ElispError::Signal(Box::new(SignalData {
+        symbol: LispObject::symbol("user-error"),
+        data: LispObject::cons(LispObject::string(&msg), LispObject::nil()),
+    })))
+}
+
+fn prim_signal(args: &LispObject) -> ElispResult<LispObject> {
+    let symbol = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let data = args.nth(1).unwrap_or(LispObject::nil());
+    Err(ElispError::Signal(Box::new(SignalData { symbol, data })))
 }
 
 impl From<bool> for LispObject {

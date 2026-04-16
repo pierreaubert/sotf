@@ -600,7 +600,18 @@ impl JitCompiler {
             pc += 1;
             match op {
                 // Opcodes with 2-byte jump target operand.
-                130..=134 => {
+                130..=134 | 141 | 143 => {
+                    if pc + 1 < bytecode.len() {
+                        let lo = bytecode[pc] as u16;
+                        let hi = bytecode[pc + 1] as u16;
+                        let target = (lo | (hi << 8)) as usize;
+                        targets.insert(target);
+                    }
+                    pc += 2;
+                }
+                // Opcodes with 2-byte operand that are also jump-like:
+                // pushconditioncase (49), pushcatch (50)
+                49 | 50 => {
                     if pc + 1 < bytecode.len() {
                         let lo = bytecode[pc] as u16;
                         let hi = bytecode[pc + 1] as u16;
@@ -610,11 +621,11 @@ impl JitCompiler {
                     pc += 2;
                 }
                 // Opcodes with 1-byte operand.
-                6 | 14 | 22 | 30 | 38 | 46 | 175..=177 | 178 | 182 => {
+                6 | 14 | 22 | 30 | 38 | 46 | 169..=174 | 175..=178 | 180 | 182 => {
                     pc += 1;
                 }
                 // Opcodes with 2-byte operand (non-jump).
-                7 | 15 | 23 | 31 | 39 | 47 | 179 => {
+                7 | 15 | 23 | 31 | 39 | 47 | 129 | 179 | 181 => {
                     pc += 2;
                 }
                 // All other opcodes: no operand bytes.

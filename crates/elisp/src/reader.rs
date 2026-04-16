@@ -839,6 +839,17 @@ pub fn read_all(source: &str) -> ElispResult<Vec<LispObject>> {
     reader.read_all()
 }
 
+/// Check the first line of an Emacs Lisp source file for `lexical-binding: t`.
+/// Returns `true` when the file-local variable annotation is present, e.g.:
+/// `;;; -*- lexical-binding: t; -*-`
+pub fn detect_lexical_binding(source: &str) -> bool {
+    if let Some(first_line) = source.lines().next() {
+        first_line.contains("lexical-binding: t")
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

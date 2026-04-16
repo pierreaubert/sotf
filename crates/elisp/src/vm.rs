@@ -294,6 +294,34 @@ impl<'a> Vm<'a> {
                 self.unbind(n);
             }
 
+            // pophandler (48): pop a condition-case/catch handler frame.
+            // In modern Emacs bytecode, this is emitted after the body of
+            // condition-case/catch completes normally to discard the handler.
+            // Our catch/condition-case opcodes (141/143) handle this inline,
+            // so this is effectively a no-op.
+            48 => {}
+
+            // pushconditioncase (49): push a condition-case handler.
+            // Operand: 2-byte jump target (handler entry point).
+            // Modern Emacs uses this instead of the older opcode 143 form.
+            // We treat it like condition-case: read target, pop handler tag.
+            49 => {
+                let target = self.fetch_u16() as usize;
+                let _handler_tag = self.pop_obj()?;
+                // For now, just skip to the body; errors will propagate
+                // normally through Rust's Result mechanism.
+                let _ = target;
+            }
+
+            // pushcatch (50): push a catch handler.
+            // Operand: 2-byte jump target (handler entry point).
+            // Modern Emacs uses this instead of the older opcode 141 form.
+            50 => {
+                let target = self.fetch_u16() as usize;
+                let _catch_tag = self.pop_obj()?;
+                let _ = target;
+            }
+
             // nth (56)
             56 => {
                 let list = self.pop_obj()?;
@@ -689,9 +717,47 @@ impl<'a> Vm<'a> {
                 }
             }
 
-            // 93 is unused in modern Emacs
+            // max (93)
+            93 => {
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
+                match (&a, &b) {
+                    (LispObject::Integer(x), LispObject::Integer(y)) => {
+                        self.push_obj(if x >= y { a } else { b });
+                    }
+                    _ => {
+                        let fa = get_number(&a);
+                        let fb = get_number(&b);
+                        match (fa, fb) {
+                            (Some(x), Some(y)) => {
+                                self.push_obj(if x >= y { a } else { b });
+                            }
+                            _ => return Err(ElispError::WrongTypeArgument("number".to_string())),
+                        }
+                    }
+                }
+            }
 
-            // 94 is unused in modern Emacs
+            // min (94)
+            94 => {
+                let b = self.pop_obj()?;
+                let a = self.pop_obj()?;
+                match (&a, &b) {
+                    (LispObject::Integer(x), LispObject::Integer(y)) => {
+                        self.push_obj(if x <= y { a } else { b });
+                    }
+                    _ => {
+                        let fa = get_number(&a);
+                        let fb = get_number(&b);
+                        match (fa, fb) {
+                            (Some(x), Some(y)) => {
+                                self.push_obj(if x <= y { a } else { b });
+                            }
+                            _ => return Err(ElispError::WrongTypeArgument("number".to_string())),
+                        }
+                    }
+                }
+            }
 
             // mult (95)
             95 => {
@@ -730,7 +796,16 @@ impl<'a> Vm<'a> {
                 self.push_obj(numeric_binop(&a, &b, |x, y| x % y, |x, y| x % y)?);
             }
 
-            // point (98)
+            // point (96) — correct Emacs opcode number
+            96 => self.push(Value::fixnum(1)), // stub: point defaults to 1
+
+            // goto-char (97) — correct Emacs opcode number
+            97 => {
+                let _pos = self.pop()?;
+                self.push(Value::nil()); // stub
+            }
+
+            // point (98) — legacy/alternate mapping
             98 => self.push(Value::fixnum(0)), // stub
 
             // goto-char (99)
@@ -772,6 +847,9 @@ impl<'a> Vm<'a> {
                 self.push(Value::nil());
             }
 
+            // eobp (108) — at correct Emacs opcode number
+            108 => self.push(Value::nil()),
+
             // eolp (109)
             109 => self.push(Value::nil()),
 
@@ -798,6 +876,20 @@ impl<'a> Vm<'a> {
                 // Simply proceed; proper save/restore needs more infra
             }
 
+            // skip-chars-forward (116) — stub, pop limit+string, push nil
+            116 => {
+                let _limit = self.pop()?;
+                let _chars = self.pop()?;
+                self.push(Value::nil());
+            }
+
+            // skip-chars-backward (117) — stub, pop limit+string, push nil
+            117 => {
+                let _limit = self.pop()?;
+                let _chars = self.pop()?;
+                self.push(Value::nil());
+            }
+
             // interactive-p (118) — deprecated
             118 => self.push(Value::nil()),
 
@@ -810,6 +902,14 @@ impl<'a> Vm<'a> {
             // forward-word (120)
             120 => {
                 let _n = self.pop()?;
+                self.push(Value::nil());
+            }
+
+            // skip-chars-forward at Emacs 118 mapping (121) — stub
+            // In some Emacs builds this is delete-region or char-syntax
+            121 => {
+                let _end = self.pop()?;
+                let _start = self.pop()?;
                 self.push(Value::nil());
             }
 
@@ -853,6 +953,19 @@ impl<'a> Vm<'a> {
             128 => {
                 let _n = self.pop()?;
                 self.push(Value::nil());
+            }
+
+            // constant2 (129): push constants[fetch_u16()]
+            // Used when a function has more than 64 constants (the 192-255
+            // range only covers indices 0-63). This is common in large .elc files.
+            129 => {
+                let idx = self.fetch_u16() as usize;
+                let val = self
+                    .constants
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or(LispObject::nil());
+                self.push_obj(val);
             }
 
             // goto (130)
@@ -919,6 +1032,12 @@ impl<'a> Vm<'a> {
             138 => {
                 // stub: just push a marker
                 self.push(Value::nil());
+            }
+
+            // save-excursion-restore (139): restore excursion state.
+            // In modern Emacs, unbind handles this. Stub: pop the marker.
+            139 => {
+                self.pop()?;
             }
 
             // save-restriction (140)
@@ -1031,6 +1150,9 @@ impl<'a> Vm<'a> {
                 self.push(Value::nil());
             }
 
+            // mark-marker (146) — stub nil (no mark in our buffer model)
+            146 => self.push(Value::nil()),
+
             // set-marker (147)
             147 => {
                 let _buf = self.pop()?;
@@ -1048,6 +1170,54 @@ impl<'a> Vm<'a> {
             149 => {
                 let _n = self.pop()?;
                 self.push(Value::nil());
+            }
+
+            // upcase (150): pop string/char, push uppercased version
+            150 => {
+                let val = self.pop_obj()?;
+                match val {
+                    LispObject::String(ref s) => {
+                        self.push_obj(LispObject::string(&s.to_uppercase()));
+                    }
+                    LispObject::Integer(ch) => {
+                        // Character upcase
+                        if let Some(c) = char::from_u32(ch as u32) {
+                            let upper: String = c.to_uppercase().collect();
+                            if let Some(uc) = upper.chars().next() {
+                                self.push_obj(LispObject::integer(uc as i64));
+                            } else {
+                                self.push_obj(LispObject::integer(ch));
+                            }
+                        } else {
+                            self.push_obj(LispObject::integer(ch));
+                        }
+                    }
+                    _ => self.push_obj(val),
+                }
+            }
+
+            // downcase (151): pop string/char, push lowercased version
+            151 => {
+                let val = self.pop_obj()?;
+                match val {
+                    LispObject::String(ref s) => {
+                        self.push_obj(LispObject::string(&s.to_lowercase()));
+                    }
+                    LispObject::Integer(ch) => {
+                        // Character downcase
+                        if let Some(c) = char::from_u32(ch as u32) {
+                            let lower: String = c.to_lowercase().collect();
+                            if let Some(lc) = lower.chars().next() {
+                                self.push_obj(LispObject::integer(lc as i64));
+                            } else {
+                                self.push_obj(LispObject::integer(ch));
+                            }
+                        } else {
+                            self.push_obj(LispObject::integer(ch));
+                        }
+                    }
+                    _ => self.push_obj(val),
+                }
             }
 
             // string= (152)
@@ -1134,6 +1304,23 @@ impl<'a> Vm<'a> {
                 self.push_obj(found);
             }
 
+            // nreverse (159): destructively reverse a list
+            159 => {
+                let list = self.pop_obj()?;
+                let mut items = Vec::new();
+                let mut cur = list;
+                while let Some((car, cdr)) = cur.destructure_cons() {
+                    items.push(car);
+                    cur = cdr;
+                }
+                items.reverse();
+                let mut result = LispObject::nil();
+                for item in items.into_iter().rev() {
+                    result = LispObject::cons(item, result);
+                }
+                self.push_obj(result);
+            }
+
             // setcar (160)
             160 => {
                 let newcar = self.pop_obj()?;
@@ -1192,6 +1379,65 @@ impl<'a> Vm<'a> {
                 self.push(Value::from_bool(val.is_fixnum()));
             }
 
+            // Rgoto (169): relative goto with 1-byte signed offset
+            169 => {
+                let offset = self.fetch_u8() as i8;
+                self.pc = (self.pc as isize + offset as isize) as usize;
+            }
+
+            // Rgotoifnil (170): relative goto-if-nil with 1-byte signed offset
+            170 => {
+                let offset = self.fetch_u8() as i8;
+                let val = self.pop()?;
+                if val.is_nil() {
+                    self.pc = (self.pc as isize + offset as isize) as usize;
+                }
+            }
+
+            // Rgotoifnonnil (171): relative goto-if-not-nil with 1-byte signed offset
+            171 => {
+                let offset = self.fetch_u8() as i8;
+                let val = self.pop()?;
+                if !val.is_nil() {
+                    self.pc = (self.pc as isize + offset as isize) as usize;
+                }
+            }
+
+            // Rgotoifnilelsepop (172): relative goto-if-nil-else-pop
+            172 => {
+                let offset = self.fetch_u8() as i8;
+                if self.top()?.is_nil() {
+                    self.pc = (self.pc as isize + offset as isize) as usize;
+                } else {
+                    self.pop()?;
+                }
+            }
+
+            // Rgotoifnonnilelsepop (173): relative goto-if-not-nil-else-pop
+            173 => {
+                let offset = self.fetch_u8() as i8;
+                if !self.top()?.is_nil() {
+                    self.pc = (self.pc as isize + offset as isize) as usize;
+                } else {
+                    self.pop()?;
+                }
+            }
+
+            // char-to-string (174): convert character (integer) to 1-char string
+            174 => {
+                let val = self.pop_obj()?;
+                match val {
+                    LispObject::Integer(ch) => {
+                        if let Some(c) = char::from_u32(ch as u32) {
+                            self.push_obj(LispObject::string(&c.to_string()));
+                        } else {
+                            self.push_obj(LispObject::string(""));
+                        }
+                    }
+                    _ => self.push_obj(LispObject::string("")),
+                }
+            }
+
             // listN (175)
             175 => {
                 let n = self.fetch_u8() as usize;
@@ -1242,6 +1488,45 @@ impl<'a> Vm<'a> {
                 self.stack[idx] = val;
             }
 
+            // vconcat (180): like concat but produces a vector
+            180 => {
+                let n = self.fetch_u8() as usize;
+                let mut items: Vec<LispObject> = Vec::with_capacity(n);
+                for _ in 0..n {
+                    items.push(self.pop_obj()?);
+                }
+                items.reverse();
+                let mut result = Vec::new();
+                for item in items {
+                    match item {
+                        LispObject::Vector(v) => {
+                            result.extend(v.lock().iter().cloned());
+                        }
+                        _ => result.push(item),
+                    }
+                }
+                self.push_obj(LispObject::Vector(Arc::new(parking_lot::Mutex::new(
+                    result,
+                ))));
+            }
+
+            // switch (181): table-based branch
+            // Emacs uses this for compiled `cond`/`pcase` with many branches.
+            // Format: fetch_u16 for table index in constants, pop value,
+            // look up in hash table → jump offset. If not found, skip.
+            181 => {
+                let table_idx = self.fetch_u16() as usize;
+                let val = self.pop_obj()?;
+                let table = self
+                    .constants
+                    .get(table_idx)
+                    .cloned()
+                    .unwrap_or(LispObject::nil());
+                // The table is a hash-table mapping values to byte offsets.
+                // Since we don't have hash-table objects yet, just fall through.
+                let _ = (val, table);
+            }
+
             // discardN (182)
             182 => {
                 let op2 = self.fetch_u8();
@@ -1259,6 +1544,25 @@ impl<'a> Vm<'a> {
                     }
                 }
             }
+
+            // Opcodes 183-191: extended operations with 1-byte sub-opcode.
+            // In Emacs 28+, these are used for sub-char-table-ref, char-table-range,
+            // and other extended operations. Stub them as no-ops pushing nil.
+            183 => {
+                // sub-char-table-ref: pop 2 args, push nil
+                let _idx = self.pop()?;
+                let _table = self.pop()?;
+                self.push(Value::nil());
+            }
+            184 => {
+                // sub-char-table-set: pop 3 args, push nil
+                let _val = self.pop()?;
+                let _idx = self.pop()?;
+                let _table = self.pop()?;
+                self.push(Value::nil());
+            }
+            // 185-191: reserved/unused in standard Emacs, stub as no-ops
+            185..=191 => {}
 
             // constant (192-255): push constants[N-192]
             192..=255 => {
@@ -1673,6 +1977,227 @@ mod tests {
             )
             .unwrap();
         assert_eq!(result, LispObject::integer(99));
+    }
+
+    /// Test constant2 (opcode 129): 2-byte constant index for functions with >64 constants.
+    #[test]
+    fn test_vm_constant2() {
+        // Build a bytecode function with 70 constants.
+        // Bytecode: constant2 idx=65 (129, 65, 0), return (135)
+        let mut constants = Vec::new();
+        for i in 0..70 {
+            constants.push(LispObject::integer(i));
+        }
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![
+                129, 65, 0,   // constant2: push constants[65]
+                135, // return
+            ],
+            constants,
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        assert_eq!(result, LispObject::integer(65));
+    }
+
+    /// Test max (opcode 93).
+    #[test]
+    fn test_vm_max() {
+        // Bytecode: stack-ref-1 (01), stack-ref-1 (01), max (93), return (135)
+        let bc = BytecodeFunction {
+            argdesc: 514,
+            bytecode: vec![0x01, 0x01, 93, 135],
+            constants: vec![],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(
+            &bc,
+            &[LispObject::integer(3), LispObject::integer(7)],
+            &env,
+            &editor,
+            &macros,
+            &state,
+        )
+        .unwrap();
+        assert_eq!(result, LispObject::integer(7));
+    }
+
+    /// Test min (opcode 94).
+    #[test]
+    fn test_vm_min() {
+        let bc = BytecodeFunction {
+            argdesc: 514,
+            bytecode: vec![0x01, 0x01, 94, 135],
+            constants: vec![],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(
+            &bc,
+            &[LispObject::integer(3), LispObject::integer(7)],
+            &env,
+            &editor,
+            &macros,
+            &state,
+        )
+        .unwrap();
+        assert_eq!(result, LispObject::integer(3));
+    }
+
+    /// Test upcase (opcode 150).
+    #[test]
+    fn test_vm_upcase() {
+        // Push constant[0] = "hello", upcase (150), return (135)
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![0xC0, 150, 135],
+            constants: vec![LispObject::string("hello")],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        assert_eq!(result, LispObject::string("HELLO"));
+    }
+
+    /// Test downcase (opcode 151).
+    #[test]
+    fn test_vm_downcase() {
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![0xC0, 151, 135],
+            constants: vec![LispObject::string("WORLD")],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        assert_eq!(result, LispObject::string("world"));
+    }
+
+    /// Test upcase on a character (integer).
+    #[test]
+    fn test_vm_upcase_char() {
+        // Push constant[0] = ?a (97), upcase (150), return (135)
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![0xC0, 150, 135],
+            constants: vec![LispObject::integer(97)], // 'a'
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        assert_eq!(result, LispObject::integer(65)); // 'A'
+    }
+
+    /// Test nreverse (opcode 159).
+    #[test]
+    fn test_vm_nreverse() {
+        // constant[0] = (1 2 3), nreverse (159), return (135)
+        let list = LispObject::cons(
+            LispObject::integer(1),
+            LispObject::cons(
+                LispObject::integer(2),
+                LispObject::cons(LispObject::integer(3), LispObject::nil()),
+            ),
+        );
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![0xC0, 159, 135],
+            constants: vec![list],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        // Expected: (3 2 1)
+        let expected = LispObject::cons(
+            LispObject::integer(3),
+            LispObject::cons(
+                LispObject::integer(2),
+                LispObject::cons(LispObject::integer(1), LispObject::nil()),
+            ),
+        );
+        assert_eq!(result, expected);
+    }
+
+    /// Test char-to-string (opcode 174).
+    #[test]
+    fn test_vm_char_to_string() {
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![0xC0, 174, 135],
+            constants: vec![LispObject::integer(65)], // 'A'
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        assert_eq!(result, LispObject::string("A"));
+    }
+
+    /// Test mark-marker (opcode 146) returns nil.
+    #[test]
+    fn test_vm_mark_marker_stub() {
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![146, 135],
+            constants: vec![],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        assert_eq!(result, LispObject::Nil);
+    }
+
+    /// Test pophandler (opcode 48) is a no-op.
+    #[test]
+    fn test_vm_pophandler() {
+        // Push 42, pophandler, return — pophandler should be no-op
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![0xC0, 48, 135],
+            constants: vec![LispObject::integer(42)],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        assert_eq!(result, LispObject::integer(42));
+    }
+
+    /// Test eobp at Emacs opcode 108.
+    #[test]
+    fn test_vm_eobp_108() {
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![108, 135],
+            constants: vec![],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        assert_eq!(result, LispObject::Nil);
     }
 }
 

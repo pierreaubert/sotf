@@ -136,6 +136,21 @@ pub(super) fn eval_error_fn(
         data: LispObject::cons(LispObject::string(&msg_str), LispObject::nil()),
     })))
 }
+pub(super) fn eval_user_error_fn(
+    args: Value,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<Value> {
+    let formatted = value_to_obj(eval_format(args, env, editor, macros, state)?);
+    let msg_str = formatted.princ_to_string();
+
+    Err(ElispError::Signal(Box::new(SignalData {
+        symbol: LispObject::symbol("user-error"),
+        data: LispObject::cons(LispObject::string(&msg_str), LispObject::nil()),
+    })))
+}
 pub(super) fn eval_unwind_protect(
     args: Value,
     env: &Arc<RwLock<Environment>>,

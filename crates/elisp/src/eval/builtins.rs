@@ -474,3 +474,95 @@ pub(super) fn eval_format(
     }
     Ok(obj_to_value(LispObject::string(&result)))
 }
+
+/// (load FILE &optional NOERROR NOMESSAGE NOSUFFIX MUST-SUFFIX)
+/// Search `load-path` for FILE with .elc / .el suffixes, read and eval all forms.
+pub(super) fn eval_load(
+    args: Value,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<Value> {
+    let args_obj = value_to_obj(args);
+    let file_expr = args_obj.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let file = value_to_obj(eval(obj_to_value(file_expr), env, editor, macros, state)?);
+    let file_str = file
+        .as_string()
+        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?
+        .clone();
+
+    // 4th arg (nosuffix): when non-nil, don't add .el / .elc suffixes
+    let nosuffix = args_obj.nth(3).map(|v| !v.is_nil()).unwrap_or(false);
+
+    let suffixes: &[&str] = if nosuffix {
+        &[""]
+    } else {
+        &[".elc", ".el", ""]
+    };
+
+    // Gather load-path directories
+    let load_path = state
+        .global_env
+        .read()
+        .get("load-path")
+        .unwrap_or(LispObject::nil());
+    let mut load_dirs = Vec::new();
+    let mut cur = load_path;
+    while let Some((dir, rest)) = cur.destructure_cons() {
+        if let Some(d) = dir.as_string() {
+            load_dirs.push(d.clone());
+        }
+        cur = rest;
+    }
+
+    // Build candidate paths
+    let mut paths_to_try = Vec::new();
+    for suffix in suffixes {
+        let full = format!("{}{}", file_str, suffix);
+        // Try as absolute/relative path first
+        paths_to_try.push(full.clone());
+        // Then try in each load-path directory
+        for d in &load_dirs {
+            paths_to_try.push(format!("{}/{}", d, full));
+        }
+    }
+
+    for path in &paths_to_try {
+        if let Ok(source) = std::fs::read_to_string(path) {
+            let forms = crate::read_all(&source).map_err(|_| ElispError::FileError {
+                operation: "load".into(),
+                path: path.clone(),
+                message: "read error".into(),
+            })?;
+            for form in forms {
+                eval(obj_to_value(form), env, editor, macros, state)?;
+            }
+            return Ok(Value::t());
+        }
+    }
+
+    // 2nd arg (noerror): when non-nil, return nil instead of signaling
+    let noerror = args_obj.nth(1).map(|v| !v.is_nil()).unwrap_or(false);
+    if noerror {
+        Ok(Value::nil())
+    } else {
+        Err(ElispError::FileError {
+            operation: "load".into(),
+            path: file_str,
+            message: "file not found".into(),
+        })
+    }
+}
+
+/// Evaluate body forms in sequence, returning the result of the last one.
+/// Used by save-excursion and save-restriction which wrap progn-style bodies.
+pub(super) fn eval_progn_value(
+    body: Value,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<Value> {
+    eval_progn(body, env, editor, macros, state)
+}

@@ -1757,3 +1757,122 @@ fn test_eval_source_value_nil() {
     let result = interp.eval_source_value("nil").unwrap();
     assert!(result.is_nil());
 }
+
+#[test]
+fn test_save_excursion_restores_point() {
+    use crate::EditorCallbacks;
+
+    struct FakeEditor {
+        text: String,
+        point: usize,
+    }
+    impl EditorCallbacks for FakeEditor {
+        fn buffer_string(&self) -> String {
+            self.text.clone()
+        }
+        fn buffer_size(&self) -> usize {
+            self.text.len()
+        }
+        fn point(&self) -> usize {
+            self.point
+        }
+        fn insert(&mut self, t: &str) {
+            self.text.insert_str(self.point, t);
+            self.point += t.len();
+        }
+        fn delete_char(&mut self, _n: i64) {}
+        fn goto_char(&mut self, pos: usize) {
+            self.point = pos;
+        }
+        fn forward_char(&mut self, n: i64) {
+            self.point = (self.point as i64 + n) as usize;
+        }
+        fn find_file(&mut self, _path: &str) -> bool {
+            false
+        }
+        fn save_buffer(&mut self) -> bool {
+            false
+        }
+    }
+
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    interp.set_editor(Box::new(FakeEditor {
+        text: "hello world".to_string(),
+        point: 5,
+    }));
+
+    // save-excursion should restore point to 5 after body moves it
+    let result = interp
+        .eval_source("(save-excursion (goto-char 0) (point))")
+        .unwrap();
+    // Body returned point=0
+    assert_eq!(result, LispObject::integer(0));
+    // But after save-excursion, point is restored to 5
+    let point_after = interp.eval_source("(point)").unwrap();
+    assert_eq!(point_after, LispObject::integer(5));
+}
+
+#[test]
+fn test_save_restriction_acts_as_progn() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp.eval_source("(save-restriction (+ 1 2))").unwrap();
+    assert_eq!(result, LispObject::integer(3));
+}
+
+#[test]
+fn test_load_file_not_found_noerror() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // With noerror=t, load returns nil for missing file
+    let result = interp
+        .eval_source("(load \"/nonexistent/path/file\" t)")
+        .unwrap();
+    assert_eq!(result, LispObject::nil());
+}
+
+#[test]
+fn test_load_file_not_found_error() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Without noerror, load signals a file error
+    let result = interp.eval_source("(load \"/nonexistent/path/file\")");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_load_real_file() {
+    let dir = std::env::temp_dir();
+    let path = dir.join("test_elisp_load.el");
+    std::fs::write(&path, "(setq test-load-var 42)").unwrap();
+
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval_source(&format!("(load \"{}\")", path.display()))
+        .unwrap();
+    assert_eq!(result, LispObject::t());
+
+    let var = interp.eval_source("test-load-var").unwrap();
+    assert_eq!(var, LispObject::integer(42));
+
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn test_detect_lexical_binding() {
+    use crate::reader::detect_lexical_binding;
+
+    assert!(detect_lexical_binding(
+        ";;; -*- lexical-binding: t; -*-\n(defun foo () 1)"
+    ));
+    assert!(detect_lexical_binding(
+        ";;; foo.el --- desc -*- lexical-binding: t -*-"
+    ));
+    assert!(!detect_lexical_binding(";;; no binding here\n(+ 1 2)"));
+    assert!(!detect_lexical_binding(""));
+    assert!(!detect_lexical_binding(
+        "(setq x 1)\n;;; -*- lexical-binding: t -*-"
+    ));
+}
