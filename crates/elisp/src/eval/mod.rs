@@ -139,6 +139,9 @@ type Specpdl = Arc<RwLock<Vec<(String, Option<LispObject>)>>>;
 /// Set of variable names declared special via `defvar`/`defconst`.
 type SpecialVars = Arc<RwLock<HashSet<String>>>;
 
+/// Autoload table: maps function names to the file that defines them.
+type AutoloadTable = Arc<RwLock<HashMap<String, String>>>;
+
 /// Shared interpreter state accessible during evaluation.
 #[derive(Clone)]
 pub struct InterpreterState {
@@ -157,6 +160,8 @@ pub struct InterpreterState {
     pub heap: Arc<parking_lot::Mutex<crate::gc::Heap>>,
     /// Counter for total cons cell allocations (monotonically increasing).
     pub cons_count: Arc<std::sync::atomic::AtomicU64>,
+    /// Autoload mappings: function-name -> file-to-load.
+    pub autoloads: AutoloadTable,
 }
 
 pub struct Interpreter {
@@ -209,6 +214,7 @@ impl Interpreter {
                 global_env: env,
                 heap: Arc::new(parking_lot::Mutex::new(crate::gc::Heap::new())),
                 cons_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+                autoloads: Arc::new(RwLock::new(HashMap::new())),
             },
         }
     }
@@ -343,8 +349,13 @@ fn eval_inner(
             let sym_name = crate::obarray::symbol_name(*id);
             match sym_name.as_str() {
                 "quote" => {
-                    let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
-                    Ok(obj_to_value(arg))
+                    // (quote x) -> x via first(), but also handle
+                    // dotted form (quote . x) where cdr is the atom itself.
+                    match cdr.first() {
+                        Some(arg) => Ok(obj_to_value(arg)),
+                        None if !cdr.is_nil() => Ok(obj_to_value(cdr)),
+                        _ => Err(ElispError::WrongNumberOfArguments),
+                    }
                 }
                 "if" => eval_if(obj_to_value(cdr), env, editor, macros, state),
                 "setq" => eval_setq(obj_to_value(cdr), env, editor, macros, state),
@@ -380,6 +391,111 @@ fn eval_inner(
                 "save-restriction" => {
                     // No narrowing support yet — treat as progn
                     builtins::eval_progn_value(obj_to_value(cdr), env, editor, macros, state)
+                }
+                // -- Buffer primitives (single-buffer model) --
+                "current-buffer" => {
+                    let e = editor.read();
+                    match e.as_ref() {
+                        Some(_) => Ok(obj_to_value(LispObject::string("*scratch*"))),
+                        None => Ok(Value::nil()),
+                    }
+                }
+                "set-buffer" => {
+                    let _buf = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(Value::nil())
+                }
+                "buffer-name" => Ok(obj_to_value(LispObject::string("*scratch*"))),
+                "get-buffer" => {
+                    let name = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(name)
+                }
+                "get-buffer-create" => {
+                    let name = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(name)
+                }
+                "buffer-list" => Ok(obj_to_value(LispObject::cons(
+                    LispObject::string("*scratch*"),
+                    LispObject::nil(),
+                ))),
+                "buffer-live-p" => {
+                    let _buf = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(obj_to_value(LispObject::t()))
+                }
+                "with-current-buffer" => {
+                    // (with-current-buffer BUFFER BODY...)
+                    let _buf = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    let body = cdr.rest().unwrap_or(LispObject::nil());
+                    eval_progn(obj_to_value(body), env, editor, macros, state)
+                }
+                "generate-new-buffer-name" => {
+                    let name = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    Ok(name)
+                }
+                // -- File-name quoting --
+                "file-name-quote" => {
+                    let name_val = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    let name_obj = value_to_obj(name_val);
+                    let s = name_obj
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    Ok(obj_to_value(LispObject::string(&format!("/:{}", s))))
+                }
+                "file-name-unquote" => {
+                    let name_val = eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?;
+                    let name_obj = value_to_obj(name_val);
+                    let s = name_obj
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    let unquoted = s.strip_prefix("/:").unwrap_or(s);
+                    Ok(obj_to_value(LispObject::string(unquoted)))
                 }
                 "insert" => eval_insert(obj_to_value(cdr), env, editor, macros, state),
                 "prog1" => eval_prog1(obj_to_value(cdr), env, editor, macros, state),
@@ -946,14 +1062,24 @@ fn eval_inner(
                     }
                 }
                 "autoload" => {
-                    let func = eval(
+                    let func_val = eval(
                         obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
                         env,
                         editor,
                         macros,
                         state,
                     )?;
-                    Ok(func)
+                    if let Some(file_expr) = cdr.nth(1) {
+                        let file_val = eval(obj_to_value(file_expr), env, editor, macros, state)?;
+                        let func_obj = value_to_obj(func_val);
+                        let file_obj = value_to_obj(file_val);
+                        if let (Some(func_name), Some(file_name)) =
+                            (func_obj.as_symbol(), file_obj.as_string())
+                        {
+                            state.autoloads.write().insert(func_name, file_name.clone());
+                        }
+                    }
+                    Ok(func_val)
                 }
                 "vector" => {
                     let mut items = Vec::new();
@@ -1280,6 +1406,185 @@ fn eval_inner(
                 }
                 "defmacro" => eval_defmacro(obj_to_value(cdr), macros),
                 "macroexpand" => eval_macroexpand(obj_to_value(cdr), env, editor, macros, state),
+                // eval-when-compile / eval-and-compile: at runtime, behave like progn
+                "eval-when-compile" | "eval-and-compile" => {
+                    eval_progn(obj_to_value(cdr), env, editor, macros, state)
+                }
+                // File operation primitives
+                "file-exists-p" => {
+                    let file = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let path = file
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    Ok(obj_to_value(LispObject::from(
+                        std::path::Path::new(path.as_str()).exists(),
+                    )))
+                }
+                "expand-file-name" => {
+                    let name_val = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let name_str = name_val
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?
+                        .clone();
+                    let expanded = if name_str.starts_with('/') || name_str.starts_with('~') {
+                        name_str
+                    } else {
+                        let dir = cdr
+                            .nth(1)
+                            .and_then(|d| {
+                                let v = value_to_obj(
+                                    eval(obj_to_value(d), env, editor, macros, state).ok()?,
+                                );
+                                v.as_string().map(|s| s.to_string())
+                            })
+                            .unwrap_or_else(|| {
+                                std::env::current_dir()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_default()
+                            });
+                        format!("{}/{}", dir.trim_end_matches('/'), name_str)
+                    };
+                    Ok(obj_to_value(LispObject::string(&expanded)))
+                }
+                "file-name-directory" => {
+                    let file = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let path = file
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    match std::path::Path::new(path.as_str()).parent() {
+                        Some(p) if !p.as_os_str().is_empty() => Ok(obj_to_value(
+                            LispObject::string(&format!("{}/", p.display())),
+                        )),
+                        _ => Ok(Value::nil()),
+                    }
+                }
+                "file-name-nondirectory" => {
+                    let file = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let path = file
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    let name = std::path::Path::new(path.as_str())
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    Ok(obj_to_value(LispObject::string(&name)))
+                }
+                "file-readable-p" | "file-directory-p" | "file-regular-p" => {
+                    let file = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let path = file
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    let p = std::path::Path::new(path.as_str());
+                    let result = match sym_name.as_str() {
+                        "file-readable-p" => p.exists(),
+                        "file-directory-p" => p.is_dir(),
+                        "file-regular-p" => p.is_file(),
+                        _ => false,
+                    };
+                    Ok(obj_to_value(LispObject::from(result)))
+                }
+                "file-truename" => {
+                    let file = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let path = file
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    let resolved = std::fs::canonicalize(path.as_str())
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| path.to_string());
+                    Ok(obj_to_value(LispObject::string(&resolved)))
+                }
+                "temporary-file-directory" => Ok(obj_to_value(LispObject::string("/tmp/"))),
+                "directory-file-name" => {
+                    let file = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let path = file
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    let trimmed = path.trim_end_matches('/');
+                    let result = if trimmed.is_empty() { "/" } else { trimmed };
+                    Ok(obj_to_value(LispObject::string(result)))
+                }
+                "file-name-as-directory" => {
+                    let file = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let path = file
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    let result = if path.ends_with('/') {
+                        path.to_string()
+                    } else {
+                        format!("{}/", path)
+                    };
+                    Ok(obj_to_value(LispObject::string(&result)))
+                }
+                // Environment / system primitives
+                "getenv" => {
+                    let var = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let name = var
+                        .as_string()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                    match std::env::var(name.as_str()) {
+                        Ok(val) => Ok(obj_to_value(LispObject::string(&val))),
+                        Err(_) => Ok(Value::nil()),
+                    }
+                }
+                "system-name" => Ok(obj_to_value(LispObject::string("localhost"))),
+                "user-login-name" | "user-real-login-name" => Ok(obj_to_value(LispObject::string(
+                    &std::env::var("USER").unwrap_or_default(),
+                ))),
+                "emacs-pid" => Ok(obj_to_value(LispObject::integer(std::process::id() as i64))),
                 _ => {
                     if let Some(s) = car.as_symbol() {
                         let macro_table = macros.read();

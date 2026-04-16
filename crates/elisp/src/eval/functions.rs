@@ -33,10 +33,21 @@ pub(super) fn resolve_function(
     let func_obj = value_to_obj(func);
     if let LispObject::Symbol(id) = func_obj {
         let name = crate::obarray::symbol_name(id);
-        env.read()
-            .get_function(&name)
-            .map(obj_to_value)
-            .ok_or(ElispError::VoidFunction(name))
+        if let Some(val) = env.read().get_function(&name) {
+            return Ok(obj_to_value(val));
+        }
+        // Check autoloads — load the file and retry
+        if let Some(file) = state.autoloads.read().get(&name).cloned() {
+            let load_args = LispObject::cons(
+                LispObject::string(&file),
+                LispObject::cons(LispObject::t(), LispObject::nil()),
+            );
+            let _ = super::builtins::eval_load(obj_to_value(load_args), env, editor, macros, state);
+            if let Some(val) = env.read().get_function(&name) {
+                return Ok(obj_to_value(val));
+            }
+        }
+        Err(ElispError::VoidFunction(name))
     } else {
         eval(func, env, editor, macros, state)
     }
@@ -276,11 +287,24 @@ pub fn call_function(
         }
         LispObject::Symbol(id) => {
             let name = crate::obarray::symbol_name(id);
-            let val = env
-                .read()
-                .get(&name)
-                .ok_or(ElispError::VoidFunction(name))?;
-            call_function(obj_to_value(val), args, env, editor, macros, state)
+            // Check env first
+            if let Some(val) = env.read().get(&name) {
+                return call_function(obj_to_value(val), args, env, editor, macros, state);
+            }
+            // Check autoloads — load the file and retry
+            if let Some(file) = state.autoloads.read().get(&name).cloned() {
+                let load_args = LispObject::cons(
+                    LispObject::string(&file),
+                    LispObject::cons(LispObject::t(), LispObject::nil()),
+                );
+                let _ =
+                    super::builtins::eval_load(obj_to_value(load_args), env, editor, macros, state);
+                // After loading, try env again
+                if let Some(val) = env.read().get(&name) {
+                    return call_function(obj_to_value(val), args, env, editor, macros, state);
+                }
+            }
+            Err(ElispError::VoidFunction(name))
         }
         _ => Err(ElispError::WrongTypeArgument("function".to_string())),
     }

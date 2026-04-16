@@ -152,11 +152,30 @@ pub(super) fn eval_require(
     let name = feature
         .as_symbol()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-    let features = state.features.read();
-    if features.contains(&name) {
+
+    // Already provided — nothing to do
+    if state.features.read().contains(&name) {
         return Ok(obj_to_value(feature));
     }
-    drop(features);
+
+    // Determine the file to load: use explicit filename arg if given, else the feature name
+    let file = args_obj
+        .nth(1)
+        .and_then(|f| {
+            let val = value_to_obj(eval(obj_to_value(f), env, editor, macros, state).ok()?);
+            val.as_string().map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| name.clone());
+
+    // Build (load FILE nil) — noerror=nil so missing files signal
+    let load_args = LispObject::cons(
+        LispObject::string(&file),
+        LispObject::cons(LispObject::nil(), LispObject::nil()),
+    );
+    eval_load(obj_to_value(load_args), env, editor, macros, state)?;
+
+    // Return the feature symbol regardless of whether `provide` was called.
+    // Some files don't call provide — that's OK for our purposes.
     Ok(obj_to_value(feature))
 }
 pub(super) fn eval_mapcar(

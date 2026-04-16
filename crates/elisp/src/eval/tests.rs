@@ -909,6 +909,30 @@ fn make_stdlib_interp() -> Interpreter {
     // Phase 7 stubs: simple.el / files.el / macroexp.el support
     interp.define("propertize", LispObject::primitive("identity")); // return first arg (text sans properties)
     interp.define("current-time-string", LispObject::primitive("ignore")); // return nil (fixed string not needed)
+
+    // Set load-path pointing to Emacs lisp directory so `require` can find files
+    let emacs_lisp_dir = "/opt/homebrew/share/emacs/30.2/lisp";
+    if std::path::Path::new(emacs_lisp_dir).exists() {
+        let mut path = LispObject::nil();
+        for subdir in &[
+            "emacs-lisp",
+            "international",
+            "language",
+            "progmodes",
+            "textmodes",
+            "vc",
+            "",
+        ] {
+            let dir = if subdir.is_empty() {
+                emacs_lisp_dir.to_string()
+            } else {
+                format!("{}/{}", emacs_lisp_dir, subdir)
+            };
+            path = LispObject::cons(LispObject::string(&dir), path);
+        }
+        interp.define("load-path", path);
+    }
+
     interp
 }
 
@@ -1875,4 +1899,376 @@ fn test_detect_lexical_binding() {
     assert!(!detect_lexical_binding(
         "(setq x 1)\n;;; -*- lexical-binding: t -*-"
     ));
+}
+
+// --- P1 file operation primitives tests ---
+
+#[test]
+fn test_file_exists_p() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // /tmp always exists on macOS/Linux
+    assert_eq!(
+        interp
+            .eval(read(r#"(file-exists-p "/tmp")"#).unwrap())
+            .unwrap(),
+        LispObject::t()
+    );
+    assert_eq!(
+        interp
+            .eval(read(r#"(file-exists-p "/nonexistent-path-12345")"#).unwrap())
+            .unwrap(),
+        LispObject::nil()
+    );
+}
+
+#[test]
+fn test_expand_file_name() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Absolute path stays absolute
+    assert_eq!(
+        interp
+            .eval(read(r#"(expand-file-name "/foo/bar")"#).unwrap())
+            .unwrap(),
+        LispObject::string("/foo/bar")
+    );
+    // Relative path with explicit directory
+    assert_eq!(
+        interp
+            .eval(read(r#"(expand-file-name "bar" "/foo")"#).unwrap())
+            .unwrap(),
+        LispObject::string("/foo/bar")
+    );
+    // Trailing slash on directory is handled
+    assert_eq!(
+        interp
+            .eval(read(r#"(expand-file-name "bar" "/foo/")"#).unwrap())
+            .unwrap(),
+        LispObject::string("/foo/bar")
+    );
+}
+
+#[test]
+fn test_file_name_directory() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    assert_eq!(
+        interp
+            .eval(read(r#"(file-name-directory "/foo/bar.el")"#).unwrap())
+            .unwrap(),
+        LispObject::string("/foo/")
+    );
+}
+
+#[test]
+fn test_file_name_nondirectory() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    assert_eq!(
+        interp
+            .eval(read(r#"(file-name-nondirectory "/foo/bar.el")"#).unwrap())
+            .unwrap(),
+        LispObject::string("bar.el")
+    );
+}
+
+#[test]
+fn test_file_directory_p() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    assert_eq!(
+        interp
+            .eval(read(r#"(file-directory-p "/tmp")"#).unwrap())
+            .unwrap(),
+        LispObject::t()
+    );
+    assert_eq!(
+        interp
+            .eval(read(r#"(file-directory-p "/nonexistent-12345")"#).unwrap())
+            .unwrap(),
+        LispObject::nil()
+    );
+}
+
+#[test]
+fn test_directory_file_name() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    assert_eq!(
+        interp
+            .eval(read(r#"(directory-file-name "/foo/bar/")"#).unwrap())
+            .unwrap(),
+        LispObject::string("/foo/bar")
+    );
+}
+
+#[test]
+fn test_file_name_as_directory() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    assert_eq!(
+        interp
+            .eval(read(r#"(file-name-as-directory "/foo/bar")"#).unwrap())
+            .unwrap(),
+        LispObject::string("/foo/bar/")
+    );
+    // Already has trailing slash
+    assert_eq!(
+        interp
+            .eval(read(r#"(file-name-as-directory "/foo/")"#).unwrap())
+            .unwrap(),
+        LispObject::string("/foo/")
+    );
+}
+
+#[test]
+fn test_getenv() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // HOME should be set on any Unix system
+    let result = interp.eval(read(r#"(getenv "HOME")"#).unwrap()).unwrap();
+    assert!(matches!(result, LispObject::String(_)));
+    // Nonexistent var returns nil
+    assert_eq!(
+        interp
+            .eval(read(r#"(getenv "ELISP_NONEXISTENT_VAR_12345")"#).unwrap())
+            .unwrap(),
+        LispObject::nil()
+    );
+}
+
+#[test]
+fn test_eval_when_compile() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // eval-when-compile behaves like progn at runtime
+    assert_eq!(
+        interp
+            .eval(read("(eval-when-compile 1 2 3)").unwrap())
+            .unwrap(),
+        LispObject::integer(3)
+    );
+    assert_eq!(
+        interp
+            .eval(read("(eval-and-compile (+ 1 2))").unwrap())
+            .unwrap(),
+        LispObject::integer(3)
+    );
+}
+
+#[test]
+fn test_system_name() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    assert_eq!(
+        interp.eval(read("(system-name)").unwrap()).unwrap(),
+        LispObject::string("localhost")
+    );
+}
+
+#[test]
+fn test_emacs_pid() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp.eval(read("(emacs-pid)").unwrap()).unwrap();
+    let pid = result
+        .as_integer()
+        .expect("emacs-pid should return integer");
+    assert!(pid > 0);
+}
+
+// --- Bootstrap loading test ---
+
+#[test]
+fn test_bootstrap_loading_chain() {
+    if !ensure_stdlib_files() {
+        return;
+    }
+    let interp = make_stdlib_interp();
+
+    let files = vec![
+        ("debug-early", "debug-early"),
+        ("byte-run", "byte-run"),
+        ("backquote", "backquote"),
+        ("subr", "subr"),
+    ];
+    for (file_name, label) in &files {
+        let path = format!("/tmp/elisp-stdlib/{}.el", file_name);
+        if let Ok(source) = std::fs::read_to_string(&path) {
+            match interp.eval_source(&source) {
+                Ok(_) => eprintln!("  [bootstrap] {} OK", label),
+                Err((i, e)) => eprintln!("  [bootstrap] {} form {}: {}", label, i, e),
+            }
+        } else {
+            eprintln!("  [bootstrap] {} not found at {}", label, path);
+        }
+    }
+}
+
+// -- P2: Buffer primitives --
+
+#[test]
+fn test_current_buffer_no_editor() {
+    let interp = Interpreter::new();
+    // No editor attached -> nil
+    let result = interp.eval(read("(current-buffer)").unwrap()).unwrap();
+    assert_eq!(result, LispObject::nil());
+}
+
+#[test]
+fn test_buffer_name() {
+    let interp = Interpreter::new();
+    let result = interp.eval(read("(buffer-name)").unwrap()).unwrap();
+    assert_eq!(result, LispObject::string("*scratch*"));
+}
+
+#[test]
+fn test_get_buffer() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp.eval(read("(get-buffer \"foo\")").unwrap()).unwrap();
+    assert_eq!(result, LispObject::string("foo"));
+}
+
+#[test]
+fn test_get_buffer_create() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(get-buffer-create \"test\")").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::string("test"));
+}
+
+#[test]
+fn test_buffer_list() {
+    let interp = Interpreter::new();
+    let result = interp.eval(read("(buffer-list)").unwrap()).unwrap();
+    assert_eq!(
+        result,
+        LispObject::cons(LispObject::string("*scratch*"), LispObject::nil())
+    );
+}
+
+#[test]
+fn test_buffer_live_p() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(buffer-live-p \"anything\")").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::t());
+}
+
+#[test]
+fn test_set_buffer_noop() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp.eval(read("(set-buffer \"foo\")").unwrap()).unwrap();
+    assert_eq!(result, LispObject::nil());
+}
+
+#[test]
+fn test_with_current_buffer() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(with-current-buffer \"buf\" (+ 1 2))").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::integer(3));
+}
+
+#[test]
+fn test_generate_new_buffer_name() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(generate-new-buffer-name \"test\")").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::string("test"));
+}
+
+// -- P3: file-name-quote / file-name-unquote --
+
+#[test]
+fn test_file_name_quote() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(file-name-quote \"/tmp/foo\")").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::string("/:/tmp/foo"));
+}
+
+#[test]
+fn test_file_name_unquote() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(file-name-unquote \"/:/tmp/foo\")").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::string("/tmp/foo"));
+}
+
+#[test]
+fn test_file_name_unquote_no_prefix() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(file-name-unquote \"/tmp/foo\")").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::string("/tmp/foo"));
+}
+
+// -- P3: autoload records and triggers loading --
+
+#[test]
+fn test_autoload_records_mapping() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    interp
+        .eval(read("(autoload 'my-func \"my-file\")").unwrap())
+        .unwrap();
+    let autoloads = interp.state.autoloads.read();
+    assert_eq!(autoloads.get("my-func"), Some(&"my-file".to_string()));
+}
+
+#[test]
+fn test_autoload_triggers_load() {
+    use std::io::Write;
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+
+    // Write a temp file that defines the function
+    let dir = std::env::temp_dir().join("elisp-autoload-test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file_path = dir.join("autoloaded.el");
+    let mut f = std::fs::File::create(&file_path).unwrap();
+    writeln!(f, "(defun autoloaded-fn (x) (+ x 10))").unwrap();
+
+    // Register autoload with full path
+    let expr = format!(
+        "(autoload 'autoloaded-fn \"{}\")",
+        file_path.to_string_lossy()
+    );
+    interp.eval(read(&expr).unwrap()).unwrap();
+
+    // Call the function — should trigger autoload
+    let result = interp.eval(read("(autoloaded-fn 5)").unwrap()).unwrap();
+    assert_eq!(result, LispObject::integer(15));
+
+    // Clean up
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// -- P3: quote dotted form --
+
+#[test]
+fn test_quote_dotted_form() {
+    let interp = Interpreter::new();
+    // (quote . foo) is rare but should not crash
+    let expr = LispObject::cons(LispObject::symbol("quote"), LispObject::symbol("foo"));
+    let result = interp.eval(expr).unwrap();
+    assert_eq!(result, LispObject::symbol("foo"));
 }

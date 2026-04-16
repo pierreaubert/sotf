@@ -1743,6 +1743,7 @@ mod tests {
             global_env: env.clone(),
             heap: Arc::new(parking_lot::Mutex::new(crate::gc::Heap::new())),
             cons_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            autoloads: Arc::new(RwLock::new(HashMap::new())),
         };
         (env, editor, macros, state)
     }
