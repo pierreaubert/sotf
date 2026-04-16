@@ -1,0 +1,9 @@
+[package]
+name = "gpui-elisp"
+version = "0.6.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Emacs Lisp interpreter for gpui-md"
+
+[dependencies]
+parking_lot = "0.12"

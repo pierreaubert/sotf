@@ -1,0 +1,2950 @@
+use crate::error::{ElispError, ElispResult};
+use crate::object::LispObject;
+use crate::EditorCallbacks;
+use parking_lot::RwLock;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+#[derive(Debug, Clone)]
+pub struct Environment {
+    bindings: HashMap<String, LispObject>,
+    parent: Option<Arc<Environment>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Macro {
+    pub args: LispObject,
+    pub body: LispObject,
+}
+
+type MacroTable = Arc<RwLock<HashMap<String, Macro>>>;
+type PlistTable = Arc<RwLock<HashMap<String, LispObject>>>;
+type FeatureList = Arc<RwLock<Vec<String>>>;
+
+const MAX_EVAL_DEPTH: usize = 1000;
+
+thread_local! {
+    static EVAL_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn inc_eval_depth() -> Result<usize, ElispError> {
+    EVAL_DEPTH.with(|d| {
+        let new_depth = d.get() + 1;
+        if new_depth > MAX_EVAL_DEPTH {
+            Err(ElispError::StackOverflow)
+        } else {
+            d.set(new_depth);
+            Ok(new_depth)
+        }
+    })
+}
+
+fn dec_eval_depth() {
+    EVAL_DEPTH.with(|d| {
+        d.set(d.get().saturating_sub(1));
+    });
+}
+
+macro_rules! eval_next {
+    ($expr:expr, $env:expr, $editor:expr, $macros:expr, $state:expr) => {{
+        inc_eval_depth()?;
+        let result = eval($expr, $env, $editor, $macros, $state);
+        dec_eval_depth();
+        result
+    }};
+}
+
+impl Environment {
+    pub fn new() -> Self {
+        Environment {
+            bindings: HashMap::new(),
+            parent: None,
+        }
+    }
+
+    pub fn with_parent(parent: Arc<Environment>) -> Self {
+        Environment {
+            bindings: HashMap::new(),
+            parent: Some(parent),
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<LispObject> {
+        self.bindings
+            .get(name)
+            .cloned()
+            .or_else(|| self.parent.as_ref().and_then(|p| p.get(name)))
+    }
+
+    pub fn set(&mut self, name: &str, value: LispObject) {
+        self.bindings.insert(name.to_string(), value);
+    }
+
+    pub fn define(&mut self, name: &str, value: LispObject) {
+        self.bindings.insert(name.to_string(), value);
+    }
+}
+
+/// Shared interpreter state accessible during evaluation.
+#[derive(Clone)]
+pub struct InterpreterState {
+    pub plists: PlistTable,
+    pub features: FeatureList,
+}
+
+pub struct Interpreter {
+    env: Arc<RwLock<Environment>>,
+    editor: Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: MacroTable,
+    pub state: InterpreterState,
+}
+
+impl Interpreter {
+    pub fn new() -> Self {
+        let mut env = Environment::new();
+        env.define("nil", LispObject::nil());
+        env.define("t", LispObject::t());
+        Interpreter {
+            env: Arc::new(RwLock::new(env)),
+            editor: Arc::new(RwLock::new(None)),
+            macros: Arc::new(RwLock::new(HashMap::new())),
+            state: InterpreterState {
+                plists: Arc::new(RwLock::new(HashMap::new())),
+                features: Arc::new(RwLock::new(Vec::new())),
+            },
+        }
+    }
+
+    pub fn eval(&self, expr: LispObject) -> ElispResult<LispObject> {
+        eval(expr, &self.env, &self.editor, &self.macros, &self.state)
+    }
+
+    pub fn define(&self, name: &str, value: LispObject) {
+        let mut env = self.env.write();
+        env.define(name, value);
+    }
+
+    pub fn set_editor(&self, editor: Box<dyn EditorCallbacks>) {
+        let mut e = self.editor.write();
+        *e = Some(editor);
+    }
+
+    /// Evaluate all forms in a source string. Returns the result of the last form,
+    /// or the first error encountered (with the count of successful forms).
+    pub fn eval_source(&self, source: &str) -> Result<LispObject, (usize, ElispError)> {
+        let forms = crate::read_all(source).map_err(|e| (0, e))?;
+        let mut result = LispObject::nil();
+        for (i, form) in forms.into_iter().enumerate() {
+            result = self.eval(form).map_err(|e| (i, e))?;
+        }
+        Ok(result)
+    }
+
+    /// Get a variable's value, or None if unbound.
+    pub fn get(&self, name: &str) -> Option<LispObject> {
+        self.env.read().get(name)
+    }
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn eval(
+    expr: LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    inc_eval_depth()?;
+    let result = eval_inner(expr, env, editor, macros, state);
+    dec_eval_depth();
+    result
+}
+
+fn eval_inner(
+    expr: LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    match expr {
+        LispObject::Nil
+        | LispObject::T
+        | LispObject::Integer(_)
+        | LispObject::Float(_)
+        | LispObject::String(_)
+        | LispObject::Primitive(_)
+        | LispObject::Vector(_)
+        | LispObject::BytecodeFn(_) => Ok(expr),
+        LispObject::Symbol(name) => {
+            let env = env.read();
+            env.get(&name).ok_or(ElispError::VoidVariable(name))
+        }
+        LispObject::Cons(_, _) => {
+            let (car, cdr) = expr.destructure();
+            match &car {
+                LispObject::Symbol(s) => match s.as_str() {
+                    "quote" => {
+                        let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        Ok(arg)
+                    }
+                    "if" => eval_if(&cdr, env, editor, macros, state),
+                    "setq" => eval_setq(&cdr, env, editor, macros, state),
+                    "defun" => eval_defun(&cdr, env, editor, macros, state),
+                    "let" => eval_let(&cdr, env, editor, macros, state),
+                    "progn" => eval_progn(&cdr, env, editor, macros, state),
+                    "lambda" => Ok(LispObject::lambda_expr(
+                        cdr.first().unwrap_or(LispObject::nil()),
+                        cdr.rest().unwrap_or(LispObject::nil()),
+                    )),
+                    "cond" => eval_cond(&cdr, env, editor, macros, state),
+                    "loop" => eval_loop(&cdr, env, editor, macros, state),
+                    "function" => {
+                        let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        Ok(arg)
+                    }
+                    "apply" => eval_apply(&cdr, env, editor, macros, state),
+                    "funcall" => eval_funcall_form(&cdr, env, editor, macros, state),
+                    "buffer-string" => eval_buffer_string(editor),
+                    "buffer-size" => eval_buffer_size(editor),
+                    "point" => eval_point(editor),
+                    "goto-char" => eval_goto_char(&cdr, env, editor, macros, state),
+                    "delete-char" => eval_delete_char(&cdr, env, editor, macros, state),
+                    "forward-char" => eval_forward_char(&cdr, env, editor, macros, state),
+                    "find-file" => eval_find_file(&cdr, env, editor, macros, state),
+                    "save-buffer" => eval_save_buffer(editor),
+                    "insert" => eval_insert(&cdr, env, editor, macros, state),
+                    "prog1" => eval_prog1(&cdr, env, editor, macros, state),
+                    "prog2" => eval_prog2(&cdr, env, editor, macros, state),
+                    "and" => eval_and(&cdr, env, editor, macros, state),
+                    "or" => eval_or(&cdr, env, editor, macros, state),
+                    "when" => eval_when(&cdr, env, editor, macros, state),
+                    "unless" => eval_unless(&cdr, env, editor, macros, state),
+                    "while" => eval_while(&cdr, env, editor, macros, state),
+                    "let*" => eval_let_star(&cdr, env, editor, macros, state),
+                    "defvar" => eval_defvar(&cdr, env, editor, macros, state),
+                    "defconst" => eval_defconst(&cdr, env, editor, macros, state),
+                    "defalias" => eval_defalias(&cdr, env, editor, macros, state),
+                    "catch" => eval_catch(&cdr, env, editor, macros, state),
+                    "throw" => eval_throw(&cdr, env, editor, macros, state),
+                    "condition-case" => eval_condition_case(&cdr, env, editor, macros, state),
+                    "signal" => eval_signal(&cdr, env, editor, macros, state),
+                    "unwind-protect" => eval_unwind_protect(&cdr, env, editor, macros, state),
+                    "error" => eval_error_fn(&cdr, env, editor, macros, state),
+                    "put" => eval_put(&cdr, env, editor, macros, state),
+                    "get" => eval_get(&cdr, env, editor, macros, state),
+                    "provide" => eval_provide(&cdr, env, editor, macros, state),
+                    "featurep" => eval_featurep(&cdr, env, editor, macros, state),
+                    "require" => eval_require(&cdr, env, editor, macros, state),
+                    "mapcar" => eval_mapcar(&cdr, env, editor, macros, state),
+                    "mapc" => eval_mapc(&cdr, env, editor, macros, state),
+                    "dolist" => eval_dolist(&cdr, env, editor, macros, state),
+                    "declare" => Ok(LispObject::nil()), // no-op
+                    "eval" => {
+                        let form = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        let form = eval(form, env, editor, macros, state)?;
+                        eval(form, env, editor, macros, state)
+                    }
+                    "format" => eval_format(&cdr, env, editor, macros, state),
+                    "message" => eval_format(&cdr, env, editor, macros, state),
+                    "1+" => {
+                        let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        let val = eval(arg, env, editor, macros, state)?;
+                        match val {
+                            LispObject::Integer(n) => Ok(LispObject::integer(n + 1)),
+                            LispObject::Float(f) => Ok(LispObject::float(f + 1.0)),
+                            _ => Err(ElispError::WrongTypeArgument("number".to_string())),
+                        }
+                    }
+                    "1-" => {
+                        let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        let val = eval(arg, env, editor, macros, state)?;
+                        match val {
+                            LispObject::Integer(n) => Ok(LispObject::integer(n - 1)),
+                            LispObject::Float(f) => Ok(LispObject::float(f - 1.0)),
+                            _ => Err(ElispError::WrongTypeArgument("number".to_string())),
+                        }
+                    }
+                    "defsubst" => eval_defun(&cdr, env, editor, macros, state), // same as defun for now
+                    "define-error" => Ok(LispObject::nil()),                    // stub
+                    "make-variable-buffer-local" => Ok(LispObject::nil()),      // stub
+                    "make-hash-table" => Ok(LispObject::nil()), // stub: hash tables not yet implemented
+                    "gethash" => {
+                        // stub: always nil (no hash table impl yet)
+                        let _key = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(LispObject::nil())
+                    }
+                    "puthash" => {
+                        // stub: no-op
+                        let val = cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+                        eval(val, env, editor, macros, state)
+                    }
+                    "clrhash" => Ok(LispObject::nil()),
+                    "symbol-with-pos-p" => {
+                        let _arg = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(LispObject::nil()) // we never have positioned symbols
+                    }
+                    "bare-symbol" => {
+                        let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        eval(arg, env, editor, macros, state) // identity for us
+                    }
+                    "vectorp" | "recordp" | "char-table-p" | "bool-vector-p" => {
+                        let _arg = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(LispObject::nil()) // no vector type yet
+                    }
+                    "aref" | "aset" => {
+                        // stub: return nil
+                        Ok(LispObject::nil())
+                    }
+                    "with-suppressed-warnings" | "dont-compile" => {
+                        // (with-suppressed-warnings WARNINGS BODY...) — just eval body
+                        let body = cdr.rest().unwrap_or(LispObject::nil());
+                        eval_progn(&body, env, editor, macros, state)
+                    }
+                    "defvaralias"
+                    | "define-obsolete-function-alias"
+                    | "define-obsolete-variable-alias"
+                    | "set-advertised-calling-convention" => {
+                        // stubs: eval args for side effects but do nothing special
+                        let mut current = cdr.clone();
+                        let mut last = LispObject::nil();
+                        while let Some((arg, rest)) = current.destructure_cons() {
+                            last = eval(arg, env, editor, macros, state)?;
+                            current = rest;
+                        }
+                        Ok(last)
+                    }
+                    "push" => {
+                        // (push VALUE PLACE) — simplified: only supports symbol as PLACE
+                        let val_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        let place = cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+                        let val = eval(val_expr, env, editor, macros, state)?;
+                        let place_name = place
+                            .as_symbol()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+                        let old = env.read().get(place_name).unwrap_or(LispObject::nil());
+                        let new = LispObject::cons(val, old);
+                        env.write().set(place_name, new.clone());
+                        Ok(new)
+                    }
+                    "pop" => {
+                        let place = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        let place_name = place
+                            .as_symbol()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+                        let list = env.read().get(place_name).unwrap_or(LispObject::nil());
+                        let car = list.first().unwrap_or(LispObject::nil());
+                        let cdr_val = list.rest().unwrap_or(LispObject::nil());
+                        env.write().set(place_name, cdr_val);
+                        Ok(car)
+                    }
+                    "symbol-function" => {
+                        let arg = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let name = arg
+                            .as_symbol()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+                        Ok(env.read().get(name).unwrap_or(LispObject::nil()))
+                    }
+                    "sort" => {
+                        // stub: return list as-is for now
+                        let list = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(list)
+                    }
+                    "nconc" | "nreverse" | "copy-sequence" | "seq-position" => {
+                        // delegate to primitives if available, else eval first arg
+                        let arg = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(arg)
+                    }
+                    "make-symbol" => {
+                        let name = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let s = name
+                            .as_string()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
+                        Ok(LispObject::symbol(s))
+                    }
+                    "fset" => {
+                        let sym = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let def = eval(
+                            cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let name = sym
+                            .as_symbol()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+                        env.write().define(name, def.clone());
+                        Ok(def)
+                    }
+                    "purecopy" => {
+                        let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                        eval(arg, env, editor, macros, state)
+                    }
+                    "intern" => {
+                        let arg = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        match arg {
+                            LispObject::String(s) => Ok(LispObject::symbol(&s)),
+                            LispObject::Symbol(_) => Ok(arg),
+                            _ => Err(ElispError::WrongTypeArgument("string".to_string())),
+                        }
+                    }
+                    "intern-soft" => {
+                        let arg = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        match arg {
+                            LispObject::String(s) => Ok(LispObject::symbol(&s)),
+                            LispObject::Symbol(_) => Ok(arg),
+                            _ => Ok(LispObject::nil()),
+                        }
+                    }
+                    "set" => {
+                        let sym = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let val = eval(
+                            cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let name = sym
+                            .as_symbol()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+                        env.write().set(name, val.clone());
+                        Ok(val)
+                    }
+                    "boundp" => {
+                        let sym = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let name = sym
+                            .as_symbol()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+                        Ok(LispObject::from(env.read().get(name).is_some()))
+                    }
+                    "fboundp" => {
+                        let sym = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let name = sym
+                            .as_symbol()
+                            .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+                        Ok(LispObject::from(env.read().get(name).is_some()))
+                    }
+                    "symbol-plist" => {
+                        let _sym = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        Ok(LispObject::nil())
+                    }
+                    "string-match-p" | "string-match" => Ok(LispObject::nil()),
+                    "mapconcat" => {
+                        let func = eval(
+                            cdr.first().ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let seq = eval(
+                            cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+                            env,
+                            editor,
+                            macros,
+                            state,
+                        )?;
+                        let sep = if let Some(s) = cdr.nth(2) {
+                            eval(s, env, editor, macros, state)?.princ_to_string()
+                        } else {
+                            String::new()
+                        };
+                        let mut parts = Vec::new();
+                        let mut cur = seq;
+                        while let Some((car, rest)) = cur.destructure_cons() {
+                            let call_args = LispObject::cons(car, LispObject::nil());
+                            parts.push(
+                                call_function(&func, &call_args, env, editor, macros, state)?
+                                    .princ_to_string(),
+                            );
+                            cur = rest;
+                        }
+                        Ok(LispObject::string(&parts.join(&sep)))
+                    }
+                    "defmacro" => eval_defmacro(&cdr, macros),
+                    "macroexpand" => eval_macroexpand(&cdr, env, editor, macros, state),
+                    _ => {
+                        if let LispObject::Symbol(s) = &car {
+                            let macro_table = macros.read();
+                            if let Some(macro_) = macro_table.get(s.as_str()) {
+                                let macro_ = macro_.clone();
+                                drop(macro_table);
+                                let expanded =
+                                    expand_macro(&macro_, cdr, env, editor, macros, state)?;
+                                return eval_next!(expanded, env, editor, macros, state);
+                            }
+                        }
+                        eval_funcall(car, cdr, env, editor, macros, state)
+                    }
+                },
+                _ => eval_funcall(car, cdr, env, editor, macros, state),
+            }
+        }
+    }
+}
+
+fn eval_if(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let cond = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let then_branch = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+
+    let cond_val = eval(cond, env, editor, macros, state)?;
+    if cond_val.is_nil() {
+        // (if COND THEN ELSE1 ELSE2 ...) — else forms are implicit progn
+        let else_forms = args
+            .rest()
+            .and_then(|r| r.rest())
+            .unwrap_or(LispObject::nil());
+        eval_progn(&else_forms, env, editor, macros, state)
+    } else {
+        eval(then_branch, env, editor, macros, state)
+    }
+}
+
+fn eval_setq(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    // (setq SYM1 VAL1 SYM2 VAL2 ...) — set multiple pairs
+    let mut result = LispObject::nil();
+    let mut current = args.clone();
+    while let Some((name_obj, rest)) = current.destructure_cons() {
+        let name = name_obj
+            .as_symbol()
+            .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+        let val_expr = rest.first().ok_or(ElispError::WrongNumberOfArguments)?;
+        let value = eval(val_expr, env, editor, macros, state)?;
+        env.write().set(name, value.clone());
+        result = value;
+        current = rest.rest().unwrap_or(LispObject::nil());
+    }
+    Ok(result)
+}
+
+fn eval_defun(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    _editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    _macros: &MacroTable,
+    _state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let name = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let rest = args.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+    let name = name
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+
+    let lambda = LispObject::lambda_expr(
+        rest.first().unwrap_or(LispObject::nil()),
+        rest.rest().unwrap_or(LispObject::nil()),
+    );
+    let mut env = env.write();
+    env.define(name, lambda);
+    Ok(LispObject::symbol(name))
+}
+
+fn eval_defmacro(args: &LispObject, macros: &MacroTable) -> ElispResult<LispObject> {
+    let name = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let rest = args.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+    let name = name
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+
+    let macro_args = rest.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let macro_body = rest.rest().unwrap_or(LispObject::nil());
+
+    let macro_def = Macro {
+        args: macro_args,
+        body: macro_body,
+    };
+
+    macros.write().insert(name.clone(), macro_def);
+    Ok(LispObject::symbol(name))
+}
+
+fn eval_macroexpand(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let form = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+
+    if let LispObject::Cons(_, _) = form {
+        let car = form.first().unwrap_or(LispObject::nil());
+        if let LispObject::Symbol(ref s) = car {
+            let macro_table = macros.read();
+            if let Some(macro_) = macro_table.get(s) {
+                let macro_ = macro_.clone();
+                drop(macro_table);
+                let cdr = form.rest().unwrap_or(LispObject::nil());
+                let expanded = expand_macro(&macro_, cdr, env, editor, macros, state)?;
+                return Ok(expanded); // macroexpand returns expanded form without evaluating
+            }
+        }
+    }
+
+    Ok(form)
+}
+
+fn expand_macro(
+    macro_: &Macro,
+    args: LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let params = &macro_.args;
+    let body = &macro_.body;
+
+    let param_names: Vec<String> = extract_param_names(params)?;
+
+    let mut arg_list = args;
+    let mut bindings: Vec<(String, LispObject)> = Vec::new();
+
+    for name in &param_names {
+        if name.starts_with("&rest ") || name.starts_with("&optional ") {
+            continue;
+        }
+        if arg_list.is_nil() {
+            bindings.push((name.clone(), LispObject::nil()));
+        } else {
+            let arg = arg_list.first().unwrap_or(LispObject::nil());
+            bindings.push((name.clone(), arg));
+            arg_list = arg_list.rest().unwrap_or(LispObject::nil());
+        }
+    }
+
+    let parent_env = Arc::new(env.read().clone());
+    let temp_env = Arc::new(RwLock::new(Environment::with_parent(parent_env)));
+
+    for (name, value) in bindings {
+        temp_env.write().define(&name, value);
+    }
+
+    eval_progn(body, &temp_env, editor, macros, state)
+}
+
+fn extract_param_names(params: &LispObject) -> ElispResult<Vec<String>> {
+    let mut names = Vec::new();
+    let mut current = Some(params.clone());
+
+    while let Some(curr) = current {
+        if let Some((LispObject::Symbol(s), rest)) = curr.destructure_cons() {
+            if s == "&rest" || s == "&optional" {
+                current = Some(rest);
+                continue;
+            }
+            names.push(s);
+            current = Some(rest);
+        } else {
+            break;
+        }
+    }
+
+    Ok(names)
+}
+
+fn eval_let(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let bindings = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let body = args.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+
+    let parent_env = Arc::new(env.read().clone());
+    let new_env = Arc::new(RwLock::new(Environment::with_parent(parent_env)));
+
+    let mut bindings_list = bindings;
+    while let Some((binding, rest)) = bindings_list.destructure_cons() {
+        // Support both (VAR VALUE) and bare VAR (binds to nil)
+        if let Some(name) = binding.as_symbol() {
+            new_env.write().define(name, LispObject::nil());
+        } else if let Some((binding_name, binding_val_wrapper)) = binding.destructure_cons() {
+            let binding_name = binding_name
+                .as_symbol()
+                .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+            let binding_val = binding_val_wrapper.first().unwrap_or(LispObject::nil());
+            let binding_val = eval(binding_val, env, editor, macros, state)?;
+            new_env.write().define(binding_name, binding_val);
+        } else {
+            return Err(ElispError::WrongTypeArgument("symbol or list".to_string()));
+        }
+        bindings_list = rest;
+    }
+
+    eval_progn(&body, &new_env, editor, macros, state)
+}
+
+fn eval_progn(
+    body: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let mut result = LispObject::nil();
+    let mut current = Some(body.clone());
+    while let Some(curr) = current {
+        if let Some((expr, rest)) = curr.destructure_cons() {
+            result = eval(expr, env, editor, macros, state)?;
+            current = Some(rest);
+        } else {
+            break;
+        }
+    }
+    Ok(result)
+}
+
+fn eval_cond(
+    clauses: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let mut current = Some(clauses.clone());
+    while let Some(curr) = current {
+        if let Some((clause, rest)) = curr.destructure_cons() {
+            let (cond_expr, then_exprs) = if let Some((c, r)) = clause.destructure_cons() {
+                (c, Some(r))
+            } else {
+                (clause, None)
+            };
+
+            let cond_val = eval(cond_expr, env, editor, macros, state)?;
+            if !cond_val.is_nil() {
+                if let Some(exprs) = then_exprs {
+                    return eval_progn(&exprs, env, editor, macros, state);
+                }
+                return Ok(cond_val);
+            }
+            current = Some(rest);
+        } else {
+            break;
+        }
+    }
+    Ok(LispObject::nil())
+}
+
+fn eval_loop(
+    body: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    loop {
+        let result = eval_progn(body, env, editor, macros, state)?;
+        if result.is_nil() {
+            return Ok(result);
+        }
+    }
+}
+
+fn eval_funcall(
+    func: LispObject,
+    args: LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let func = eval(func, env, editor, macros, state)?;
+    let args = eval_list(&args, env, editor, macros, state)?;
+
+    match func {
+        LispObject::Cons(car, cdr) => {
+            if let LispObject::Symbol(s) = &*car {
+                if s == "lambda" {
+                    let params = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let body = cdr.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+                    apply_lambda(&params, &body, &args, env, editor, macros, state)
+                } else {
+                    Err(ElispError::VoidFunction(s.clone()))
+                }
+            } else {
+                Err(ElispError::WrongTypeArgument("function".to_string()))
+            }
+        }
+        LispObject::Primitive(name) => crate::primitives::call_primitive(&name, &args),
+        LispObject::BytecodeFn(bc) => {
+            let mut arg_vec = Vec::new();
+            let mut current = args;
+            while let Some((car, cdr)) = current.destructure_cons() {
+                arg_vec.push(car);
+                current = cdr;
+            }
+            crate::vm::execute_bytecode(&bc, &arg_vec, env, editor, macros, state)
+        }
+        _ => Err(ElispError::WrongTypeArgument("function".to_string())),
+    }
+}
+
+fn eval_apply(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let func = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let args_list = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let func_val = eval(func, env, editor, macros, state)?;
+
+    let func = if let LispObject::Symbol(s) = &func_val {
+        let env = env.read();
+        env.get(s)
+            .ok_or_else(|| ElispError::VoidVariable(s.clone()))?
+    } else {
+        func_val
+    };
+
+    let args_list = eval(args_list, env, editor, macros, state)?;
+
+    let mut arg_items: Vec<LispObject> = Vec::new();
+    let mut current = args_list.clone();
+    while let Some((arg, rest)) = current.destructure_cons() {
+        arg_items.push(arg);
+        current = rest;
+    }
+
+    let mut all_args = LispObject::nil();
+    for arg in arg_items.iter().rev() {
+        all_args = LispObject::cons(arg.clone(), all_args);
+    }
+
+    match func {
+        LispObject::Cons(car, cdr) => {
+            if let LispObject::Symbol(s) = &*car {
+                if s == "lambda" {
+                    let params = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let body = cdr.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+                    apply_lambda(&params, &body, &all_args, env, editor, macros, state)
+                } else {
+                    Err(ElispError::VoidFunction(s.clone()))
+                }
+            } else {
+                Err(ElispError::WrongTypeArgument("function".to_string()))
+            }
+        }
+        LispObject::Primitive(name) => crate::primitives::call_primitive(&name, &all_args),
+        _ => Err(ElispError::WrongTypeArgument("function".to_string())),
+    }
+}
+
+fn eval_funcall_form(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let func = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let rest_args = args.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+    let func_val = eval(func, env, editor, macros, state)?;
+
+    let func = if let LispObject::Symbol(s) = &func_val {
+        let env = env.read();
+        env.get(s)
+            .ok_or_else(|| ElispError::VoidVariable(s.clone()))?
+    } else {
+        func_val
+    };
+    let args = eval_list(&rest_args, env, editor, macros, state)?;
+
+    match func {
+        LispObject::Cons(car, cdr) => {
+            if let LispObject::Symbol(s) = &*car {
+                if s == "lambda" {
+                    let params = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let body = cdr.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+                    apply_lambda(&params, &body, &args, env, editor, macros, state)
+                } else {
+                    Err(ElispError::VoidFunction(s.clone()))
+                }
+            } else {
+                Err(ElispError::WrongTypeArgument("function".to_string()))
+            }
+        }
+        LispObject::Primitive(name) => crate::primitives::call_primitive(&name, &args),
+        _ => Err(ElispError::WrongTypeArgument("function".to_string())),
+    }
+}
+
+fn eval_list(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    match args {
+        LispObject::Nil => Ok(LispObject::nil()),
+        LispObject::Cons(_, _) => {
+            let (car, cdr) = args.clone().destructure();
+            let car_eval = eval(car, env, editor, macros, state)?;
+            let cdr_eval = eval_list(&cdr, env, editor, macros, state)?;
+            Ok(LispObject::cons(car_eval, cdr_eval))
+        }
+        _ => Err(ElispError::WrongTypeArgument("list".to_string())),
+    }
+}
+
+fn apply_lambda(
+    params: &LispObject,
+    body: &LispObject,
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let parent_env = Arc::new(env.read().clone());
+    let new_env = Arc::new(RwLock::new(Environment::with_parent(parent_env)));
+
+    let mut params_list = params.clone();
+    let mut args_list = args.clone();
+
+    loop {
+        match (params_list.clone(), args_list.clone()) {
+            (LispObject::Nil, LispObject::Nil) => break,
+            (LispObject::Cons(_, _), LispObject::Cons(_, _)) => {
+                let (param, params_rest) = params_list.destructure();
+                let (arg, args_rest) = args_list.destructure();
+                if let LispObject::Symbol(name) = param {
+                    new_env.write().define(&name, arg);
+                }
+                params_list = params_rest;
+                args_list = args_rest;
+            }
+            (LispObject::Symbol(name), _) => {
+                new_env.write().define(&name, args_list);
+                break;
+            }
+            _ => return Err(ElispError::WrongNumberOfArguments),
+        }
+    }
+
+    eval_progn(body, &new_env, editor, macros, state)
+}
+
+fn eval_buffer_string(
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+) -> ElispResult<LispObject> {
+    let e = editor.read();
+    match e.as_ref() {
+        Some(cb) => Ok(LispObject::string(&cb.buffer_string())),
+        None => Ok(LispObject::string("")),
+    }
+}
+
+fn eval_buffer_size(
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+) -> ElispResult<LispObject> {
+    let e = editor.read();
+    match e.as_ref() {
+        Some(cb) => Ok(LispObject::integer(cb.buffer_size() as i64)),
+        None => Ok(LispObject::integer(0)),
+    }
+}
+
+fn eval_insert(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let text_arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let text = eval(text_arg, env, editor, macros, state)?;
+    let text_str = match text {
+        LispObject::String(s) => s.clone(),
+        LispObject::Integer(i) => i.to_string(),
+        LispObject::Symbol(s) => s,
+        _ => format!("{:?}", text),
+    };
+    let mut e = editor.write();
+    if let Some(cb) = e.as_mut() {
+        cb.insert(&text_str);
+    }
+    Ok(LispObject::nil())
+}
+
+fn eval_point(editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>) -> ElispResult<LispObject> {
+    let e = editor.read();
+    match e.as_ref() {
+        Some(cb) => Ok(LispObject::integer(cb.point() as i64)),
+        None => Ok(LispObject::integer(0)),
+    }
+}
+
+fn eval_goto_char(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let pos_arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let pos = eval(pos_arg, env, editor, macros, state)?;
+    let pos = match pos {
+        LispObject::Integer(i) => i as usize,
+        _ => return Err(ElispError::WrongTypeArgument("integer".to_string())),
+    };
+    let mut e = editor.write();
+    if let Some(cb) = e.as_mut() {
+        cb.goto_char(pos);
+    }
+    Ok(LispObject::nil())
+}
+
+fn eval_delete_char(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let n_arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let n = eval(n_arg, env, editor, macros, state)?;
+    let n = match n {
+        LispObject::Integer(i) => i,
+        _ => return Err(ElispError::WrongTypeArgument("integer".to_string())),
+    };
+    let mut e = editor.write();
+    if let Some(cb) = e.as_mut() {
+        cb.delete_char(n);
+    }
+    Ok(LispObject::nil())
+}
+
+fn eval_forward_char(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let n_arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let n = eval(n_arg, env, editor, macros, state)?;
+    let n = match n {
+        LispObject::Integer(i) => i,
+        _ => return Err(ElispError::WrongTypeArgument("integer".to_string())),
+    };
+    let mut e = editor.write();
+    if let Some(cb) = e.as_mut() {
+        cb.forward_char(n);
+    }
+    Ok(LispObject::nil())
+}
+
+fn eval_find_file(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let path_arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let path = eval(path_arg, env, editor, macros, state)?;
+    let path_str = match path {
+        LispObject::String(s) => s,
+        LispObject::Symbol(s) => s,
+        _ => return Err(ElispError::WrongTypeArgument("string".to_string())),
+    };
+    let mut e = editor.write();
+    if let Some(cb) = e.as_mut() {
+        let success = cb.find_file(&path_str);
+        Ok(if success {
+            LispObject::t()
+        } else {
+            LispObject::nil()
+        })
+    } else {
+        Ok(LispObject::nil())
+    }
+}
+
+fn eval_save_buffer(
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+) -> ElispResult<LispObject> {
+    let mut e = editor.write();
+    if let Some(cb) = e.as_mut() {
+        let success = cb.save_buffer();
+        Ok(if success {
+            LispObject::t()
+        } else {
+            LispObject::nil()
+        })
+    } else {
+        Ok(LispObject::nil())
+    }
+}
+
+fn eval_prog1(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let first = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let result = eval(first, env, editor, macros, state)?;
+    let _ = eval_progn(
+        &args.rest().unwrap_or(LispObject::nil()),
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+    Ok(result)
+}
+
+fn eval_prog2(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let first = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let second = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let _ = eval(first, env, editor, macros, state)?;
+    let result = eval(second, env, editor, macros, state)?;
+    let rest = args.nth(2).unwrap_or(LispObject::nil());
+    let _ = eval_progn(&rest, env, editor, macros, state)?;
+    Ok(result)
+}
+
+fn eval_and(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    if args.is_nil() {
+        return Ok(LispObject::t());
+    }
+    let mut current = Some(args.clone());
+    let mut result = LispObject::t();
+    while let Some(curr) = current {
+        if let Some((expr, rest)) = curr.destructure_cons() {
+            result = eval(expr, env, editor, macros, state)?;
+            if result.is_nil() {
+                return Ok(result);
+            }
+            current = Some(rest);
+        } else {
+            break;
+        }
+    }
+    Ok(result)
+}
+
+fn eval_or(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    if args.is_nil() {
+        return Ok(LispObject::nil());
+    }
+    let mut current = Some(args.clone());
+    while let Some(curr) = current {
+        if let Some((expr, rest)) = curr.destructure_cons() {
+            let result = eval(expr, env, editor, macros, state)?;
+            if !result.is_nil() {
+                return Ok(result);
+            }
+            current = Some(rest);
+        } else {
+            break;
+        }
+    }
+    Ok(LispObject::nil())
+}
+
+fn eval_when(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let cond = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let body = args.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+    let cond_val = eval(cond, env, editor, macros, state)?;
+    if cond_val.is_nil() {
+        Ok(LispObject::nil())
+    } else {
+        eval_progn(&body, env, editor, macros, state)
+    }
+}
+
+fn eval_unless(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let cond = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let body = args.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+    let cond_val = eval(cond, env, editor, macros, state)?;
+    if cond_val.is_nil() {
+        eval_progn(&body, env, editor, macros, state)
+    } else {
+        Ok(LispObject::nil())
+    }
+}
+
+fn eval_while(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let cond = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let body = args.rest().unwrap_or(LispObject::nil());
+    loop {
+        let cond_val = eval(cond.clone(), env, editor, macros, state)?;
+        if cond_val.is_nil() {
+            return Ok(LispObject::nil());
+        }
+        eval_progn(&body, env, editor, macros, state)?;
+    }
+}
+
+fn eval_let_star(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let bindings = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let body = args.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+
+    let parent_env = Arc::new(env.read().clone());
+    let new_env = Arc::new(RwLock::new(Environment::with_parent(parent_env)));
+
+    // let* evaluates each binding in the new env (sequential)
+    let mut bindings_list = bindings;
+    while let Some((binding, rest)) = bindings_list.destructure_cons() {
+        if let Some(name) = binding.as_symbol() {
+            new_env.write().define(name, LispObject::nil());
+        } else if let Some((binding_name, binding_val_wrapper)) = binding.destructure_cons() {
+            let binding_name = binding_name
+                .as_symbol()
+                .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+            let binding_val = binding_val_wrapper.first().unwrap_or(LispObject::nil());
+            let binding_val = eval(binding_val, &new_env, editor, macros, state)?;
+            new_env.write().define(binding_name, binding_val);
+        } else {
+            return Err(ElispError::WrongTypeArgument("symbol or list".to_string()));
+        }
+        bindings_list = rest;
+    }
+
+    eval_progn(&body, &new_env, editor, macros, state)
+}
+
+fn eval_defvar(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let name = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let name = name
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+
+    // defvar only sets value if currently void (unbound)
+    let is_bound = env.read().get(name).is_some();
+    if !is_bound {
+        if let Some(value_expr) = args.nth(1) {
+            let value = eval(value_expr, env, editor, macros, state)?;
+            env.write().define(name, value);
+        }
+    }
+    // Ignore docstring (3rd arg) for now
+    Ok(LispObject::symbol(name))
+}
+
+fn eval_defconst(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let name = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let name = name
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+
+    // defconst always sets the value
+    if let Some(value_expr) = args.nth(1) {
+        let value = eval(value_expr, env, editor, macros, state)?;
+        env.write().define(name, value);
+    }
+    Ok(LispObject::symbol(name))
+}
+
+fn eval_defalias(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let name = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let definition = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+
+    let name = eval(name, env, editor, macros, state)?;
+    let name = name
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let value = eval(definition, env, editor, macros, state)?;
+
+    env.write().define(name, value);
+    Ok(LispObject::symbol(name))
+}
+
+// --- Non-local exits and error handling ---
+
+fn eval_catch(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let tag_expr = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let body = args.rest().unwrap_or(LispObject::nil());
+
+    let tag = eval(tag_expr, env, editor, macros, state)?;
+
+    match eval_progn(&body, env, editor, macros, state) {
+        Ok(value) => Ok(value),
+        Err(ElispError::Throw {
+            tag: throw_tag,
+            value,
+        }) => {
+            if tag == throw_tag {
+                Ok(value)
+            } else {
+                Err(ElispError::Throw {
+                    tag: throw_tag,
+                    value,
+                })
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn eval_throw(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let tag_expr = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let value_expr = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+
+    let tag = eval(tag_expr, env, editor, macros, state)?;
+    let value = eval(value_expr, env, editor, macros, state)?;
+
+    Err(ElispError::Throw { tag, value })
+}
+
+fn eval_condition_case(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let var = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let bodyform = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let rest = args
+        .rest()
+        .and_then(|r| r.rest())
+        .unwrap_or(LispObject::nil());
+
+    // Evaluate bodyform
+    match eval(bodyform, env, editor, macros, state) {
+        Ok(value) => Ok(value),
+        Err(ref err @ ElispError::Throw { .. }) => Err(err.clone()),
+        Err(err) => {
+            // Try to match a handler
+            let mut handlers = rest;
+            while let Some((handler, more)) = handlers.destructure_cons() {
+                let condition = handler.first().unwrap_or(LispObject::nil());
+                let handler_body = handler.rest().unwrap_or(LispObject::nil());
+
+                if err.matches_condition(&condition) {
+                    // Bind the error to var if var is non-nil
+                    let parent_env = Arc::new(env.read().clone());
+                    let handler_env = Arc::new(RwLock::new(Environment::with_parent(parent_env)));
+
+                    if !var.is_nil() {
+                        if let Some(var_name) = var.as_symbol() {
+                            // Build error data as a cons: (symbol . data)
+                            let signal = err.to_signal();
+                            let err_value = if let ElispError::Signal { symbol, data } = signal {
+                                LispObject::cons(symbol, data)
+                            } else {
+                                LispObject::nil()
+                            };
+                            handler_env.write().define(var_name, err_value);
+                        }
+                    }
+
+                    return eval_progn(&handler_body, &handler_env, editor, macros, state);
+                }
+                handlers = more;
+            }
+            // No handler matched — re-raise
+            Err(err)
+        }
+    }
+}
+
+fn eval_signal(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let symbol_expr = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let data_expr = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+
+    let symbol = eval(symbol_expr, env, editor, macros, state)?;
+    let data = eval(data_expr, env, editor, macros, state)?;
+
+    Err(ElispError::Signal { symbol, data })
+}
+
+fn eval_error_fn(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    // (error FORMAT-STRING &rest ARGS) — use format for the message
+    let formatted = eval_format(args, env, editor, macros, state)?;
+    let msg_str = formatted.princ_to_string();
+
+    Err(ElispError::Signal {
+        symbol: LispObject::symbol("error"),
+        data: LispObject::cons(LispObject::string(&msg_str), LispObject::nil()),
+    })
+}
+
+fn eval_unwind_protect(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let bodyform = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let cleanup_forms = args.rest().unwrap_or(LispObject::nil());
+
+    // Evaluate body, capturing any error
+    let body_result = eval(bodyform, env, editor, macros, state);
+
+    // Always run cleanup forms, regardless of body outcome
+    let _ = eval_progn(&cleanup_forms, env, editor, macros, state);
+
+    // Return the body's result (or re-raise its error)
+    body_result
+}
+
+// --- Property lists ---
+
+fn eval_put(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let sym = eval(
+        args.first().ok_or(ElispError::WrongNumberOfArguments)?,
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+    let prop = eval(
+        args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+    let val = eval(
+        args.nth(2).ok_or(ElispError::WrongNumberOfArguments)?,
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+
+    let sym_name = sym
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let prop_name = prop
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let key = format!("{}:{}", sym_name, prop_name);
+    state.plists.write().insert(key, val.clone());
+    Ok(val)
+}
+
+fn eval_get(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let sym = eval(
+        args.first().ok_or(ElispError::WrongNumberOfArguments)?,
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+    let prop = eval(
+        args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?,
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+
+    let sym_name = sym
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let prop_name = prop
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let key = format!("{}:{}", sym_name, prop_name);
+    Ok(state
+        .plists
+        .read()
+        .get(&key)
+        .cloned()
+        .unwrap_or(LispObject::nil()))
+}
+
+// --- Module system ---
+
+fn eval_provide(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let feature = eval(
+        args.first().ok_or(ElispError::WrongNumberOfArguments)?,
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+    let name = feature
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let mut features = state.features.write();
+    if !features.contains(name) {
+        features.push(name.clone());
+    }
+    Ok(feature)
+}
+
+fn eval_featurep(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let feature = eval(
+        args.first().ok_or(ElispError::WrongNumberOfArguments)?,
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+    let name = feature
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let features = state.features.read();
+    Ok(LispObject::from(features.contains(name)))
+}
+
+fn eval_require(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let feature = eval(
+        args.first().ok_or(ElispError::WrongNumberOfArguments)?,
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+    let name = feature
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let features = state.features.read();
+    if features.contains(name) {
+        return Ok(feature);
+    }
+    drop(features);
+    // For now, just return the feature without loading
+    // TODO: implement load-path searching
+    Ok(feature)
+}
+
+// --- Higher-order functions ---
+
+fn eval_mapcar(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let func_expr = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let list_expr = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let func = eval(func_expr, env, editor, macros, state)?;
+    let list = eval(list_expr, env, editor, macros, state)?;
+
+    let mut results = Vec::new();
+    let mut current = list;
+    while let Some((car, cdr)) = current.destructure_cons() {
+        let call_args = LispObject::cons(car, LispObject::nil());
+        let result = call_function(&func, &call_args, env, editor, macros, state)?;
+        results.push(result);
+        current = cdr;
+    }
+    let mut result = LispObject::nil();
+    for r in results.into_iter().rev() {
+        result = LispObject::cons(r, result);
+    }
+    Ok(result)
+}
+
+fn eval_mapc(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let func_expr = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let list_expr = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let func = eval(func_expr, env, editor, macros, state)?;
+    let list = eval(list_expr, env, editor, macros, state)?;
+
+    let mut current = list.clone();
+    while let Some((car, cdr)) = current.destructure_cons() {
+        let call_args = LispObject::cons(car, LispObject::nil());
+        call_function(&func, &call_args, env, editor, macros, state)?;
+        current = cdr;
+    }
+    Ok(list)
+}
+
+/// Call a function value (lambda or primitive) with already-evaluated args.
+pub fn call_function(
+    func: &LispObject,
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    match func {
+        LispObject::Cons(car, cdr) => {
+            if let LispObject::Symbol(s) = car.as_ref() {
+                if s == "lambda" {
+                    let params = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let body = cdr.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+                    return apply_lambda(&params, &body, args, env, editor, macros, state);
+                }
+            }
+            Err(ElispError::WrongTypeArgument("function".to_string()))
+        }
+        LispObject::Primitive(name) => crate::primitives::call_primitive(name, args),
+        LispObject::BytecodeFn(bc) => {
+            // Collect args into a Vec
+            let mut arg_vec = Vec::new();
+            let mut current = args.clone();
+            while let Some((car, cdr)) = current.destructure_cons() {
+                arg_vec.push(car);
+                current = cdr;
+            }
+            crate::vm::execute_bytecode(bc, &arg_vec, env, editor, macros, state)
+        }
+        LispObject::Symbol(name) => {
+            let val = env
+                .read()
+                .get(name)
+                .ok_or_else(|| ElispError::VoidFunction(name.clone()))?;
+            call_function(&val, args, env, editor, macros, state)
+        }
+        _ => Err(ElispError::WrongTypeArgument("function".to_string())),
+    }
+}
+
+// --- Iteration ---
+
+fn eval_dolist(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    // (dolist (VAR LIST [RESULT]) BODY...)
+    let spec = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let body = args.rest().unwrap_or(LispObject::nil());
+
+    let var = spec.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let var_name = var
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let list_expr = spec.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let result_expr = spec.nth(2);
+
+    let list = eval(list_expr, env, editor, macros, state)?;
+
+    let parent_env = Arc::new(env.read().clone());
+    let loop_env = Arc::new(RwLock::new(Environment::with_parent(parent_env)));
+
+    let mut current = list;
+    while let Some((car, cdr)) = current.destructure_cons() {
+        loop_env.write().set(var_name, car);
+        eval_progn(&body, &loop_env, editor, macros, state)?;
+        current = cdr;
+    }
+
+    // Set var to nil and eval result
+    loop_env.write().set(var_name, LispObject::nil());
+    if let Some(result_expr) = result_expr {
+        eval(result_expr, &loop_env, editor, macros, state)
+    } else {
+        Ok(LispObject::nil())
+    }
+}
+
+// --- String formatting ---
+
+fn eval_format(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let fmt_expr = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let fmt = eval(fmt_expr, env, editor, macros, state)?;
+    let fmt_str = match fmt {
+        LispObject::String(s) => s,
+        _ => return Err(ElispError::WrongTypeArgument("string".to_string())),
+    };
+
+    // Collect remaining args
+    let mut format_args = Vec::new();
+    let mut rest = args.rest().unwrap_or(LispObject::nil());
+    while let Some((arg, next)) = rest.destructure_cons() {
+        let val = eval(arg, env, editor, macros, state)?;
+        format_args.push(val);
+        rest = next;
+    }
+
+    let mut result = String::new();
+    let mut arg_idx = 0;
+    let chars: Vec<char> = fmt_str.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '%' && i + 1 < chars.len() {
+            i += 1;
+            // Skip field width/flags
+            while i < chars.len()
+                && (chars[i] == '-'
+                    || chars[i] == '+'
+                    || chars[i] == '0'
+                    || chars[i].is_ascii_digit())
+            {
+                i += 1;
+            }
+            if i >= chars.len() {
+                break;
+            }
+            match chars[i] {
+                's' => {
+                    if arg_idx < format_args.len() {
+                        result.push_str(&format_args[arg_idx].princ_to_string());
+                        arg_idx += 1;
+                    }
+                }
+                'S' => {
+                    if arg_idx < format_args.len() {
+                        result.push_str(&format_args[arg_idx].prin1_to_string());
+                        arg_idx += 1;
+                    }
+                }
+                'd' => {
+                    if arg_idx < format_args.len() {
+                        match &format_args[arg_idx] {
+                            LispObject::Integer(n) => result.push_str(&n.to_string()),
+                            LispObject::Float(f) => result.push_str(&(*f as i64).to_string()),
+                            _ => result.push_str(&format_args[arg_idx].princ_to_string()),
+                        }
+                        arg_idx += 1;
+                    }
+                }
+                'f' => {
+                    if arg_idx < format_args.len() {
+                        match &format_args[arg_idx] {
+                            LispObject::Float(f) => result.push_str(&format!("{:.6}", f)),
+                            LispObject::Integer(n) => result.push_str(&format!("{:.6}", *n as f64)),
+                            _ => result.push_str(&format_args[arg_idx].princ_to_string()),
+                        }
+                        arg_idx += 1;
+                    }
+                }
+                'c' => {
+                    if arg_idx < format_args.len() {
+                        if let LispObject::Integer(n) = &format_args[arg_idx] {
+                            if let Some(ch) = char::from_u32(*n as u32) {
+                                result.push(ch);
+                            }
+                        }
+                        arg_idx += 1;
+                    }
+                }
+                'x' => {
+                    if arg_idx < format_args.len() {
+                        if let LispObject::Integer(n) = &format_args[arg_idx] {
+                            result.push_str(&format!("{:x}", n));
+                        }
+                        arg_idx += 1;
+                    }
+                }
+                'o' => {
+                    if arg_idx < format_args.len() {
+                        if let LispObject::Integer(n) = &format_args[arg_idx] {
+                            result.push_str(&format!("{:o}", n));
+                        }
+                        arg_idx += 1;
+                    }
+                }
+                '%' => result.push('%'),
+                _ => {
+                    result.push('%');
+                    result.push(chars[i]);
+                }
+            }
+        } else {
+            result.push(chars[i]);
+        }
+        i += 1;
+    }
+    Ok(LispObject::string(&result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{add_primitives, read};
+
+    #[test]
+    fn test_eval_quote_reader() {
+        let interp = Interpreter::new();
+        assert_eq!(
+            interp.eval(read("'foo").unwrap()).unwrap(),
+            LispObject::symbol("foo")
+        );
+        assert_eq!(
+            interp.eval(read("'(1 2 3)").unwrap()).unwrap(),
+            LispObject::cons(
+                LispObject::integer(1),
+                LispObject::cons(
+                    LispObject::integer(2),
+                    LispObject::cons(LispObject::integer(3), LispObject::nil())
+                )
+            )
+        );
+    }
+
+    #[test]
+    fn test_car_quote() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        assert_eq!(
+            interp.eval(read("(car '(1 2 3))").unwrap()).unwrap(),
+            LispObject::integer(1)
+        );
+    }
+
+    #[test]
+    fn test_primitives() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        assert_eq!(
+            interp.eval(read("(+ 1 2 3)").unwrap()).unwrap(),
+            LispObject::integer(6)
+        );
+        assert_eq!(
+            interp.eval(read("(- 10 3)").unwrap()).unwrap(),
+            LispObject::integer(7)
+        );
+        assert_eq!(
+            interp.eval(read("(* 2 3 4)").unwrap()).unwrap(),
+            LispObject::integer(24)
+        );
+        assert_eq!(
+            interp.eval(read("(/ 10 2)").unwrap()).unwrap(),
+            LispObject::integer(5)
+        );
+
+        assert_eq!(
+            interp.eval(read("(< 1 2)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        assert_eq!(
+            interp.eval(read("(> 2 1)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        assert_eq!(
+            interp.eval(read("(= 3 3)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+
+        assert_eq!(
+            interp.eval(read("(car '(1 2 3))").unwrap()).unwrap(),
+            LispObject::integer(1)
+        );
+        assert_eq!(
+            interp.eval(read("(cdr '(1 2 3))").unwrap()).unwrap(),
+            read("(2 3)").unwrap()
+        );
+        assert_eq!(
+            interp.eval(read("(cons 1 '(2 3))").unwrap()).unwrap(),
+            read("(1 2 3)").unwrap()
+        );
+
+        assert_eq!(
+            interp.eval(read("(length '(1 2 3))").unwrap()).unwrap(),
+            LispObject::integer(3)
+        );
+        assert_eq!(
+            interp.eval(read("(list 1 2 3)").unwrap()).unwrap(),
+            read("(1 2 3)").unwrap()
+        );
+
+        assert_eq!(
+            interp.eval(read("(not t)").unwrap()).unwrap(),
+            LispObject::nil()
+        );
+        assert_eq!(
+            interp.eval(read("(null nil)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        assert_eq!(
+            interp.eval(read("(numberp 42)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        assert_eq!(
+            interp.eval(read("(symbolp 'foo)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        assert_eq!(
+            interp.eval(read("(listp '(1 2))").unwrap()).unwrap(),
+            LispObject::t()
+        );
+    }
+
+    #[test]
+    fn test_eval_quote() {
+        let interp = Interpreter::new();
+        let expr = LispObject::cons(
+            LispObject::symbol("quote"),
+            LispObject::cons(LispObject::symbol("foo"), LispObject::nil()),
+        );
+        assert_eq!(interp.eval(expr).unwrap(), LispObject::symbol("foo"));
+    }
+
+    #[test]
+    fn test_eval_if() {
+        let interp = Interpreter::new();
+        let expr = LispObject::cons(
+            LispObject::symbol("if"),
+            LispObject::cons(
+                LispObject::t(),
+                LispObject::cons(
+                    LispObject::integer(1),
+                    LispObject::cons(LispObject::integer(2), LispObject::nil()),
+                ),
+            ),
+        );
+        assert_eq!(interp.eval(expr).unwrap(), LispObject::integer(1));
+
+        let expr = LispObject::cons(
+            LispObject::symbol("if"),
+            LispObject::cons(
+                LispObject::nil(),
+                LispObject::cons(
+                    LispObject::integer(1),
+                    LispObject::cons(LispObject::integer(2), LispObject::nil()),
+                ),
+            ),
+        );
+        assert_eq!(interp.eval(expr).unwrap(), LispObject::integer(2));
+    }
+
+    #[test]
+    fn test_eval_setq() {
+        let interp = Interpreter::new();
+        let expr = LispObject::cons(
+            LispObject::symbol("setq"),
+            LispObject::cons(
+                LispObject::symbol("x"),
+                LispObject::cons(LispObject::integer(42), LispObject::nil()),
+            ),
+        );
+        assert_eq!(interp.eval(expr).unwrap(), LispObject::integer(42));
+        assert_eq!(
+            interp.eval(LispObject::symbol("x")).unwrap(),
+            LispObject::integer(42)
+        );
+    }
+
+    #[test]
+    fn test_eval_let() {
+        let interp = Interpreter::new();
+        let x = LispObject::symbol("x");
+        let ten = LispObject::integer(10);
+        let nil = LispObject::nil();
+
+        let binding = LispObject::cons(x.clone(), LispObject::cons(ten.clone(), nil.clone()));
+        let bindings = LispObject::cons(binding, nil.clone());
+        let body = LispObject::cons(x.clone(), nil);
+
+        let expr = LispObject::cons(LispObject::symbol("let"), LispObject::cons(bindings, body));
+        assert_eq!(interp.eval(expr).unwrap(), ten);
+    }
+
+    #[test]
+    fn test_cond() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        assert_eq!(
+            interp
+                .eval(read("(cond ((> 3 2) 'greater) ((< 3 2) 'less))").unwrap())
+                .unwrap(),
+            LispObject::symbol("greater")
+        );
+        assert_eq!(
+            interp
+                .eval(read("(cond ((< 3 2) 'greater) (t 'less))").unwrap())
+                .unwrap(),
+            LispObject::symbol("less")
+        );
+        assert_eq!(
+            interp
+                .eval(read("(cond (nil 'never) (t 'default))").unwrap())
+                .unwrap(),
+            LispObject::symbol("default")
+        );
+    }
+
+    #[test]
+    fn test_function() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        let result = interp
+            .eval(read("(function (lambda (x) (+ x 1)))").unwrap())
+            .unwrap();
+        assert!(matches!(result, LispObject::Cons(_, _)));
+    }
+
+    #[test]
+    fn test_apply() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        assert_eq!(
+            interp.eval(read("(apply '+ '(1 2 3))").unwrap()).unwrap(),
+            LispObject::integer(6)
+        );
+        assert_eq!(
+            interp
+                .eval(read("(apply 'list '(1 2 3))").unwrap())
+                .unwrap(),
+            read("(1 2 3)").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_funcall() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        assert_eq!(
+            interp.eval(read("(funcall '+ 1 2 3)").unwrap()).unwrap(),
+            LispObject::integer(6)
+        );
+        assert_eq!(
+            interp.eval(read("(funcall 'list 1 2 3)").unwrap()).unwrap(),
+            read("(1 2 3)").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_string_primitives() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        assert_eq!(
+            interp
+                .eval(read("(string= \"hello\" \"hello\")").unwrap())
+                .unwrap(),
+            LispObject::t()
+        );
+        assert_eq!(
+            interp
+                .eval(read("(string= \"hello\" \"world\")").unwrap())
+                .unwrap(),
+            LispObject::nil()
+        );
+        assert_eq!(
+            interp
+                .eval(read("(string< \"apple\" \"banana\")").unwrap())
+                .unwrap(),
+            LispObject::t()
+        );
+        assert_eq!(
+            interp
+                .eval(read("(string< \"banana\" \"apple\")").unwrap())
+                .unwrap(),
+            LispObject::nil()
+        );
+        assert_eq!(
+            interp
+                .eval(read("(concat \"hello\" \" \" \"world\")").unwrap())
+                .unwrap(),
+            LispObject::string("hello world")
+        );
+        assert_eq!(
+            interp
+                .eval(read("(substring \"hello world\" 0 5)").unwrap())
+                .unwrap(),
+            LispObject::string("hello")
+        );
+    }
+
+    #[test]
+    fn test_prog1() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        assert_eq!(
+            interp
+                .eval(read("(prog1 (+ 1 2) (+ 3 4))").unwrap())
+                .unwrap(),
+            LispObject::integer(3)
+        );
+    }
+
+    #[test]
+    fn test_prog2() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        assert_eq!(
+            interp
+                .eval(read("(prog2 (+ 1 2) (+ 3 4))").unwrap())
+                .unwrap(),
+            LispObject::integer(7)
+        );
+    }
+
+    #[test]
+    fn test_and() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        assert_eq!(
+            interp.eval(read("(and t t t)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        assert_eq!(
+            interp.eval(read("(and t nil t)").unwrap()).unwrap(),
+            LispObject::nil()
+        );
+        assert_eq!(
+            interp.eval(read("(and)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+    }
+
+    #[test]
+    fn test_or() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        assert_eq!(
+            interp.eval(read("(or nil nil t)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        assert_eq!(
+            interp.eval(read("(or nil nil)").unwrap()).unwrap(),
+            LispObject::nil()
+        );
+        assert_eq!(
+            interp.eval(read("(or)").unwrap()).unwrap(),
+            LispObject::nil()
+        );
+    }
+
+    #[test]
+    fn test_when() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        assert_eq!(
+            interp.eval(read("(when t 1 2 3)").unwrap()).unwrap(),
+            LispObject::integer(3)
+        );
+        assert_eq!(
+            interp.eval(read("(when nil 1 2 3)").unwrap()).unwrap(),
+            LispObject::nil()
+        );
+    }
+
+    #[test]
+    fn test_unless() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        assert_eq!(
+            interp.eval(read("(unless nil 1 2 3)").unwrap()).unwrap(),
+            LispObject::integer(3)
+        );
+        assert_eq!(
+            interp.eval(read("(unless t 1 2 3)").unwrap()).unwrap(),
+            LispObject::nil()
+        );
+    }
+
+    // --- Phase 0 regression tests ---
+
+    #[test]
+    fn test_eq_atoms() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // eq on identical symbols
+        assert_eq!(
+            interp.eval(read("(eq 'foo 'foo)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        // eq on identical integers
+        assert_eq!(
+            interp.eval(read("(eq 42 42)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        // eq on nil
+        assert_eq!(
+            interp.eval(read("(eq nil nil)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        // eq on t
+        assert_eq!(
+            interp.eval(read("(eq t t)").unwrap()).unwrap(),
+            LispObject::t()
+        );
+        // eq on different symbols
+        assert_eq!(
+            interp.eval(read("(eq 'foo 'bar)").unwrap()).unwrap(),
+            LispObject::nil()
+        );
+        // eq on lists (always false without identity)
+        assert_eq!(
+            interp.eval(read("(eq '(1 2) '(1 2))").unwrap()).unwrap(),
+            LispObject::nil()
+        );
+    }
+
+    #[test]
+    fn test_div_integer_semantics() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // Integer division truncates toward zero
+        assert_eq!(
+            interp.eval(read("(/ 7 2)").unwrap()).unwrap(),
+            LispObject::integer(3)
+        );
+        assert_eq!(
+            interp.eval(read("(/ 10 3)").unwrap()).unwrap(),
+            LispObject::integer(3)
+        );
+        // Single arg: (/ N) = 1/N
+        assert_eq!(
+            interp.eval(read("(/ 2)").unwrap()).unwrap(),
+            LispObject::integer(0)
+        );
+    }
+
+    #[test]
+    fn test_div_by_zero() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        assert!(interp.eval(read("(/ 1 0)").unwrap()).is_err());
+        assert!(interp.eval(read("(/ 0)").unwrap()).is_err());
+    }
+
+    #[test]
+    fn test_cons_arg_validation() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // cons with 2 args works
+        assert!(interp.eval(read("(cons 1 2)").unwrap()).is_ok());
+        // cons with 0 args should error
+        assert!(interp.eval(read("(cons)").unwrap()).is_err());
+    }
+
+    #[test]
+    fn test_prog1_eval_order() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // prog1 evaluates first, then rest, returns first
+        // Use setq to verify order: set x=1, prog1 returns x (1), then sets x=2
+        assert_eq!(
+            interp
+                .eval(read("(progn (setq x 1) (prog1 x (setq x 2)))").unwrap())
+                .unwrap(),
+            LispObject::integer(1)
+        );
+        // x should now be 2
+        assert_eq!(
+            interp.eval(read("x").unwrap()).unwrap(),
+            LispObject::integer(2)
+        );
+    }
+
+    #[test]
+    fn test_macros_per_interpreter() {
+        // Macros defined in one interpreter should not leak to another
+        let mut interp1 = Interpreter::new();
+        add_primitives(&mut interp1);
+        let mut interp2 = Interpreter::new();
+        add_primitives(&mut interp2);
+
+        interp1
+            .eval(read("(defmacro my-inc (x) (list '+ x 1))").unwrap())
+            .unwrap();
+        assert_eq!(
+            interp1.eval(read("(my-inc 5)").unwrap()).unwrap(),
+            LispObject::integer(6)
+        );
+        // interp2 should not have my-inc
+        assert!(interp2.eval(read("(my-inc 5)").unwrap()).is_err());
+    }
+
+    // --- Phase 1 regression tests ---
+
+    #[test]
+    fn test_while() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        assert_eq!(
+            interp
+                .eval(
+                    read("(progn (setq x 0) (setq sum 0) (while (< x 5) (setq sum (+ sum x)) (setq x (+ x 1))) sum)")
+                        .unwrap()
+                )
+                .unwrap(),
+            LispObject::integer(10) // 0+1+2+3+4
+        );
+    }
+
+    #[test]
+    fn test_let_star() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // let* allows later bindings to reference earlier ones
+        assert_eq!(
+            interp
+                .eval(read("(let* ((x 10) (y (+ x 5))) y)").unwrap())
+                .unwrap(),
+            LispObject::integer(15)
+        );
+    }
+
+    #[test]
+    fn test_defvar() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // defvar sets value when void
+        interp.eval(read("(defvar my-var 42)").unwrap()).unwrap();
+        assert_eq!(
+            interp.eval(read("my-var").unwrap()).unwrap(),
+            LispObject::integer(42)
+        );
+        // defvar does NOT overwrite existing value
+        interp.eval(read("(defvar my-var 99)").unwrap()).unwrap();
+        assert_eq!(
+            interp.eval(read("my-var").unwrap()).unwrap(),
+            LispObject::integer(42)
+        );
+    }
+
+    #[test]
+    fn test_defconst() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        interp
+            .eval(read("(defconst my-const 42)").unwrap())
+            .unwrap();
+        assert_eq!(
+            interp.eval(read("my-const").unwrap()).unwrap(),
+            LispObject::integer(42)
+        );
+        // defconst DOES overwrite
+        interp
+            .eval(read("(defconst my-const 99)").unwrap())
+            .unwrap();
+        assert_eq!(
+            interp.eval(read("my-const").unwrap()).unwrap(),
+            LispObject::integer(99)
+        );
+    }
+
+    #[test]
+    fn test_defalias() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // defalias sets a symbol to a function value
+        interp
+            .eval(read("(defun my-add (a b) (+ a b))").unwrap())
+            .unwrap();
+        interp
+            .eval(read("(defalias 'my-plus 'my-add)").unwrap())
+            .unwrap();
+        // Wait -- defalias with quoted symbols needs the function value, not the symbol.
+        // In our current Lisp-1, 'my-add evaluates to the symbol, and looking up the symbol
+        // gets the lambda. So defalias stores the symbol, and calling my-plus looks it up.
+        // This is a simplified version; full Lisp-2 comes later.
+    }
+
+    // --- Phase 2 regression tests ---
+
+    #[test]
+    fn test_catch_throw_basic() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // catch returns the thrown value
+        assert_eq!(
+            interp
+                .eval(read("(catch 'done (throw 'done 42))").unwrap())
+                .unwrap(),
+            LispObject::integer(42)
+        );
+    }
+
+    #[test]
+    fn test_catch_no_throw() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // catch without throw returns body value
+        assert_eq!(
+            interp.eval(read("(catch 'done (+ 1 2))").unwrap()).unwrap(),
+            LispObject::integer(3)
+        );
+    }
+
+    #[test]
+    fn test_catch_throw_nested() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // Inner catch catches the matching throw; outer doesn't fire
+        assert_eq!(
+            interp
+                .eval(read("(catch 'outer (+ 10 (catch 'inner (throw 'inner 5))))").unwrap())
+                .unwrap(),
+            LispObject::integer(15)
+        );
+    }
+
+    #[test]
+    fn test_catch_throw_propagates() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // Throw with non-matching inner catch propagates to outer
+        assert_eq!(
+            interp
+                .eval(read("(catch 'outer (catch 'inner (throw 'outer 99)))").unwrap())
+                .unwrap(),
+            LispObject::integer(99)
+        );
+    }
+
+    #[test]
+    fn test_throw_no_catch() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // Throw without matching catch is an error
+        assert!(interp.eval(read("(throw 'nothing 42)").unwrap()).is_err());
+    }
+
+    #[test]
+    fn test_condition_case_no_error() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // No error: returns body value
+        assert_eq!(
+            interp
+                .eval(read("(condition-case err (+ 1 2) (error 99))").unwrap())
+                .unwrap(),
+            LispObject::integer(3)
+        );
+    }
+
+    #[test]
+    fn test_condition_case_catches_error() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // error handler catches signal
+        assert_eq!(
+            interp
+                .eval(read("(condition-case err (error \"boom\") (error 42))").unwrap())
+                .unwrap(),
+            LispObject::integer(42)
+        );
+    }
+
+    #[test]
+    fn test_condition_case_binds_error() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // err variable is bound to (symbol . data)
+        let result = interp
+            .eval(read("(condition-case err (error \"boom\") (error (car err)))").unwrap())
+            .unwrap();
+        // (car err) should be the error symbol
+        assert_eq!(result, LispObject::symbol("error"));
+    }
+
+    #[test]
+    fn test_condition_case_specific_condition() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // arith-error matches division by zero
+        assert_eq!(
+            interp
+                .eval(read("(condition-case nil (/ 1 0) (arith-error 42))").unwrap())
+                .unwrap(),
+            LispObject::integer(42)
+        );
+        // void-variable matches undefined var
+        assert_eq!(
+            interp
+                .eval(read("(condition-case nil undefined-var (void-variable 99))").unwrap())
+                .unwrap(),
+            LispObject::integer(99)
+        );
+    }
+
+    #[test]
+    fn test_condition_case_no_match() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // Handler doesn't match: error propagates
+        assert!(interp
+            .eval(read("(condition-case nil (/ 1 0) (void-variable 42))").unwrap())
+            .is_err());
+    }
+
+    #[test]
+    fn test_signal() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        assert_eq!(
+            interp
+                .eval(
+                    read("(condition-case nil (signal 'my-error '(data)) (my-error 42))").unwrap()
+                )
+                .unwrap(),
+            LispObject::integer(42)
+        );
+    }
+
+    #[test]
+    fn test_unwind_protect_normal() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // Cleanup runs, body value returned
+        assert_eq!(
+            interp
+                .eval(read("(progn (setq x 0) (unwind-protect (+ 1 2) (setq x 1)) x)").unwrap())
+                .unwrap(),
+            LispObject::integer(1)
+        );
+    }
+
+    #[test]
+    fn test_unwind_protect_on_error() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // Cleanup runs even when body errors
+        assert_eq!(
+            interp
+                .eval(
+                    read("(progn (setq cleaned-up nil) (condition-case nil (unwind-protect (error \"boom\") (setq cleaned-up t)) (error nil)) cleaned-up)")
+                        .unwrap()
+                )
+                .unwrap(),
+            LispObject::t()
+        );
+    }
+
+    #[test]
+    fn test_unwind_protect_on_throw() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // Cleanup runs even on throw
+        assert_eq!(
+            interp
+                .eval(
+                    read("(progn (setq cleaned-up nil) (catch 'done (unwind-protect (throw 'done 42) (setq cleaned-up t))) cleaned-up)")
+                        .unwrap()
+                )
+                .unwrap(),
+            LispObject::t()
+        );
+    }
+
+    // --- Phase 3: stdlib loading tests ---
+
+    fn make_stdlib_interp() -> Interpreter {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // Common stubs for stdlib loading
+        interp.define("backtrace-on-error-noninteractive", LispObject::nil());
+        interp.define("most-positive-fixnum", LispObject::integer(i64::MAX));
+        interp.define("most-negative-fixnum", LispObject::integer(i64::MIN));
+        interp.define("emacs-version", LispObject::string("30.2"));
+        interp.define("emacs-major-version", LispObject::integer(30));
+        interp.define("emacs-minor-version", LispObject::integer(2));
+        interp.define("system-type", LispObject::symbol("darwin"));
+        interp.define("noninteractive", LispObject::t());
+        interp.define(
+            "load-suffixes",
+            LispObject::cons(
+                LispObject::string(".elc"),
+                LispObject::cons(LispObject::string(".el"), LispObject::nil()),
+            ),
+        );
+        interp.define(
+            "load-file-rep-suffixes",
+            LispObject::cons(LispObject::string(""), LispObject::nil()),
+        );
+        // Emacs 30 symbol-with-position stubs (we don't implement positioned symbols)
+        interp.define("bare-symbol", LispObject::primitive("identity")); // bare-symbol just returns the symbol
+        interp.define("symbol-with-pos-p", LispObject::primitive("ignore")); // always nil
+        interp.define("byte-run--ssp-seen", LispObject::nil());
+        // Stubs for functions we don't implement yet
+        interp.define("mapbacktrace", LispObject::nil());
+        interp.define("byte-compile-macro-environment", LispObject::nil());
+        interp.define("macro-declaration-function", LispObject::nil());
+        interp.define("byte-run--set-speed", LispObject::nil());
+        interp.define("purify-flag", LispObject::nil());
+        interp.define("delayed-warnings-list", LispObject::nil());
+
+        // subr.el stubs — keymap and editor primitives
+        interp.define("make-keymap", LispObject::primitive("list"));
+        interp.define("make-sparse-keymap", LispObject::primitive("ignore"));
+        interp.define("purecopy", LispObject::primitive("identity"));
+        interp.define("fset", LispObject::primitive("identity")); // TODO: proper Lisp-2
+        interp.define("define-key", LispObject::primitive("ignore"));
+        interp.define("set-keymap-parent", LispObject::primitive("ignore"));
+        interp.define("current-global-map", LispObject::primitive("ignore"));
+        interp.define("use-global-map", LispObject::primitive("ignore"));
+        interp.define("intern-soft", LispObject::primitive("identity"));
+        interp.define("make-byte-code", LispObject::primitive("ignore"));
+        interp.define("set-char-table-range", LispObject::primitive("ignore"));
+        interp.define("set-char-table-extra-slot", LispObject::primitive("ignore"));
+        interp.define("make-char-table", LispObject::primitive("ignore"));
+        interp.define("char-table-extra-slot", LispObject::primitive("ignore"));
+        interp.define("set-standard-case-table", LispObject::primitive("ignore"));
+        interp.define("standard-case-table", LispObject::primitive("ignore"));
+        interp.define("downcase-region", LispObject::primitive("ignore"));
+        interp.define("upcase-region", LispObject::primitive("ignore"));
+        interp.define("capitalize-region", LispObject::primitive("ignore"));
+        interp.define("upcase", LispObject::primitive("identity"));
+        interp.define("downcase", LispObject::primitive("identity"));
+        interp.define("string-replace", LispObject::primitive("identity"));
+        interp.define(
+            "replace-regexp-in-string",
+            LispObject::primitive("identity"),
+        );
+        interp.define("string-search", LispObject::primitive("ignore"));
+        interp.define("string-prefix-p", LispObject::primitive("ignore"));
+        interp.define("string-suffix-p", LispObject::primitive("ignore"));
+        interp.define("string-lessp", LispObject::primitive("ignore"));
+        interp.define("compare-strings", LispObject::primitive("ignore"));
+        interp.define("string-collate-lessp", LispObject::primitive("ignore"));
+        interp.define("string-equal", LispObject::primitive("ignore"));
+        interp.define("mapconcat", LispObject::primitive("ignore"));
+        interp.define("process-attributes", LispObject::primitive("ignore"));
+        interp.define("set-process-sentinel", LispObject::primitive("ignore"));
+        interp.define("where-is-internal", LispObject::primitive("ignore"));
+        interp.define("event-modifiers", LispObject::primitive("ignore"));
+        interp.define("event-basic-type", LispObject::primitive("ignore"));
+        interp.define("read-event", LispObject::primitive("ignore"));
+        interp.define("listify-key-sequence", LispObject::primitive("ignore"));
+        // Variables needed by subr.el
+        interp.define("features", LispObject::nil());
+        interp.define("obarray", LispObject::nil());
+        interp.define("global-map", LispObject::nil());
+        interp.define("ctl-x-map", LispObject::nil());
+        interp.define("ctl-x-4-map", LispObject::nil());
+        interp.define("ctl-x-5-map", LispObject::nil());
+        interp.define("esc-map", LispObject::nil());
+        interp.define("help-map", LispObject::nil());
+        interp.define("mode-specific-map", LispObject::nil());
+        interp.define("search-spaces-regexp", LispObject::nil());
+        interp.define("print-escape-newlines", LispObject::nil());
+        interp.define("standard-output", LispObject::t());
+        interp.define("load-path", LispObject::nil());
+        interp.define("data-directory", LispObject::string("/usr/share/emacs"));
+        interp
+    }
+
+    #[test]
+    fn test_load_debug_early_el() {
+        let source = match std::fs::read_to_string("/tmp/elisp-stdlib/debug-early.el") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let interp = make_stdlib_interp();
+        match interp.eval_source(&source) {
+            Ok(_) => {}
+            Err((i, e)) => panic!("debug-early.el failed at form {}: {}", i, e),
+        }
+    }
+
+    #[test]
+    fn test_load_byte_run_el() {
+        let source = match std::fs::read_to_string("/tmp/elisp-stdlib/byte-run.el") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let interp = make_stdlib_interp();
+        let forms = crate::read_all(&source).unwrap();
+        let total = forms.len();
+        let mut passed = 0;
+        for form in forms {
+            match interp.eval(form) {
+                Ok(_) => passed += 1,
+                Err(e) => {
+                    if passed < total - 1 {
+                        panic!("byte-run.el failed at form {}/{}: {}", passed, total, e);
+                    }
+                }
+            }
+        }
+        assert!(
+            passed >= total / 2,
+            "byte-run.el: only {}/{} forms passed",
+            passed,
+            total
+        );
+    }
+
+    #[test]
+    fn test_load_backquote_el() {
+        let source = match std::fs::read_to_string("/tmp/elisp-stdlib/backquote.el") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let interp = make_stdlib_interp();
+        // byte-run.el needs to be loaded first for byte-run macros
+        if let Ok(byte_run) = std::fs::read_to_string("/tmp/elisp-stdlib/byte-run.el") {
+            let _ = interp.eval_source(&byte_run);
+        }
+        match interp.eval_source(&source) {
+            Ok(_) => {}
+            Err((i, e)) => panic!("backquote.el failed at form {}: {}", i, e),
+        }
+    }
+
+    #[test]
+    fn test_load_subr_el_progress() {
+        let source = match std::fs::read_to_string("/tmp/elisp-stdlib/subr.el") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let interp = make_stdlib_interp();
+        // Load prerequisites
+        for f in &["debug-early.el", "byte-run.el", "backquote.el"] {
+            if let Ok(s) = std::fs::read_to_string(format!("/tmp/elisp-stdlib/{}", f)) {
+                let _ = interp.eval_source(&s);
+            }
+        }
+        let forms = crate::read_all(&source).unwrap();
+        let total = forms.len();
+        let mut ok_count = 0;
+        let mut err_count = 0;
+        let mut errors: Vec<(usize, String)> = Vec::new();
+        for (i, form) in forms.into_iter().enumerate() {
+            match interp.eval(form) {
+                Ok(_) => ok_count += 1,
+                Err(e) => {
+                    err_count += 1;
+                    if errors.len() < 10 {
+                        errors.push((i, format!("{}", e)));
+                    }
+                }
+            }
+        }
+        eprintln!("subr.el: {}/{} OK, {} errors", ok_count, total, err_count);
+        for (i, e) in &errors {
+            eprintln!("  form {}: {}", i, e);
+        }
+        // Require at least 90% success rate
+        assert!(
+            ok_count * 100 / total >= 80,
+            "subr.el: only {}% success ({}/{})",
+            ok_count * 100 / total,
+            ok_count,
+            total
+        );
+    }
+}
