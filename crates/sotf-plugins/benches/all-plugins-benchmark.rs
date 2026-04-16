@@ -10,10 +10,10 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
-    ChannelMuteSoloPlugin, CrossoverPlugin, DelayPlugin, EqPlugin, ExpanderPlugin, GatePlugin,
-    InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
-    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MatrixPlugin,
-    MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
+    AaePlugin, AaePluginParams, ChannelMuteSoloPlugin, CrossoverPlugin, DelayPlugin, EqPlugin,
+    ExpanderPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin,
+    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
+    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
     SpectrumAnalyzerPlugin, SpectrumConfig,
 };
 use std::hint::black_box;
@@ -841,6 +841,109 @@ fn benchmark_multiband_expander(c: &mut Criterion) {
 }
 
 // ============================================================================
+// AAE (Active Acoustic Enhancement) Plugin Benchmarks
+// ============================================================================
+
+fn benchmark_aae(c: &mut Criterion) {
+    let mut group = c.benchmark_group("AaePlugin");
+
+    // Different buffer sizes (5.1 default)
+    for &buf_size in &[256, 512, 1024, 2048] {
+        let mut plugin = AaePlugin::from_params(AaePluginParams::default());
+        plugin.initialize(SAMPLE_RATE).unwrap();
+
+        let input = generate_test_buffer(buf_size, 2);
+        let out_ch = plugin.output_channels();
+        let mut output = vec![0.0f32; buf_size * out_ch];
+        let context = ProcessContext {
+            sample_rate: SAMPLE_RATE,
+            num_frames: buf_size,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        group.bench_function(format!("5.1_{}frames", buf_size), |b| {
+            b.iter(|| {
+                plugin
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
+                    .unwrap();
+            })
+        });
+    }
+
+    // 7.1.4 configuration (12 channels)
+    {
+        let params = AaePluginParams {
+            speaker_config: "7.1.4".to_string(),
+            ..AaePluginParams::default()
+        };
+        let mut plugin = AaePlugin::from_params(params);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+
+        let input = generate_test_buffer(BUFFER_SIZE, 2);
+        let out_ch = plugin.output_channels();
+        let mut output = vec![0.0f32; BUFFER_SIZE * out_ch];
+        let context = ProcessContext {
+            sample_rate: SAMPLE_RATE,
+            num_frames: BUFFER_SIZE,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        group.bench_function("7.1.4_512frames", |b| {
+            b.iter(|| {
+                plugin
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
+                    .unwrap();
+            })
+        });
+    }
+
+    // Cathedral preset (20 ER taps — heaviest)
+    {
+        let params = AaePluginParams {
+            room_preset: "cathedral".to_string(),
+            rt60: 4.0,
+            ..AaePluginParams::default()
+        };
+        let mut plugin = AaePlugin::from_params(params);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+
+        let input = generate_test_buffer(BUFFER_SIZE, 2);
+        let out_ch = plugin.output_channels();
+        let mut output = vec![0.0f32; BUFFER_SIZE * out_ch];
+        let context = ProcessContext {
+            sample_rate: SAMPLE_RATE,
+            num_frames: BUFFER_SIZE,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        group.bench_function("cathedral_rt60_4s", |b| {
+            b.iter(|| {
+                plugin
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
+                    .unwrap();
+            })
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
 // Benchmark Groups
 // ============================================================================
 
@@ -858,5 +961,6 @@ criterion_group!(
     benchmark_channel_mute_solo,
     benchmark_multiband_compressor,
     benchmark_multiband_expander,
+    benchmark_aae,
 );
 criterion_main!(benches);

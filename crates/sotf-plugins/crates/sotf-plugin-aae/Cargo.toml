@@ -1,0 +1,36 @@
+[package]
+name = "sotf-plugin-aae"
+description = "SOTF Active Acoustic Enhancement plugin - LARES-inspired multichannel reverb"
+version = "0.5.1"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "sotf_plugin_aae"
+path = "src/lib.rs"
+
+[features]
+default = []
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-aae"
+path = "bin/qa_aae.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+hound = { workspace = true }
+
+[[bench]]
+name = "aae-benchmark"
+harness = false

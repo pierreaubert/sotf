@@ -195,6 +195,13 @@ mod plugin {
     nih_plug::nih_export_vst3!(SotfUpmixer);
 }
 
+#[cfg(feature = "aae")]
+mod plugin {
+    sotf_nih_plugin!(SotfAAE, plugin_type: "AAE", name: "SOTF: Active Acoustic Enhancement", clap_id: "org.spinorama.sotf.aae", vst3_class_id: *b"SotfAAE000000001", channels: 2);
+    nih_plug::nih_export_clap!(SotfAAE);
+    nih_plug::nih_export_vst3!(SotfAAE);
+}
+
 #[cfg(feature = "xtc")]
 mod plugin {
     sotf_nih_plugin!(SotfXTC, plugin_type: "XTC", name: "SOTF: Crosstalk Cancellation", clap_id: "org.spinorama.sotf.xtc", vst3_class_id: *b"SotfXTC000000001", channels: 2);
@@ -235,4 +242,46 @@ mod plugin {
     sotf_nih_plugin!(SotfCrossover, plugin_type: "Crossover", name: "SOTF: Crossover", clap_id: "org.spinorama.sotf.crossover", vst3_class_id: *b"SotfCrossover001", channels: 2);
     nih_plug::nih_export_clap!(SotfCrossover);
     nih_plug::nih_export_vst3!(SotfCrossover);
+}
+
+#[cfg(feature = "band-split")]
+mod plugin {
+    sotf_nih_plugin!(SotfBandSplit, plugin_type: "BandSplit", name: "SOTF: Band Split", clap_id: "org.spinorama.sotf.band-split", vst3_class_id: *b"SotfBandSplt0001", channels: 2);
+    nih_plug::nih_export_clap!(SotfBandSplit);
+    nih_plug::nih_export_vst3!(SotfBandSplit);
+}
+
+#[cfg(feature = "band-merge")]
+mod plugin {
+    sotf_nih_plugin!(SotfBandMerge, plugin_type: "BandMerge", name: "SOTF: Band Merge", clap_id: "org.spinorama.sotf.band-merge", vst3_class_id: *b"SotfBandMrge0001", channels: 2);
+    nih_plug::nih_export_clap!(SotfBandMerge);
+    nih_plug::nih_export_vst3!(SotfBandMerge);
+}
+
+#[cfg(feature = "aec")]
+mod plugin {
+    sotf_nih_plugin!(SotfAEC, plugin_type: "AEC", name: "SOTF: Acoustic Echo Cancellation", clap_id: "org.spinorama.sotf.aec", vst3_class_id: *b"SotfAEC000000001", channels: 2);
+    nih_plug::nih_export_clap!(SotfAEC);
+    nih_plug::nih_export_vst3!(SotfAEC);
+}
+
+#[cfg(feature = "beamformer")]
+mod plugin {
+    sotf_nih_plugin!(SotfBeamformer, plugin_type: "Beamformer", name: "SOTF: Beamformer", clap_id: "org.spinorama.sotf.beamformer", vst3_class_id: *b"SotfBeamfrmr0001", channels: 2);
+    nih_plug::nih_export_clap!(SotfBeamformer);
+    nih_plug::nih_export_vst3!(SotfBeamformer);
+}
+
+#[cfg(feature = "linear-phase-eq")]
+mod plugin {
+    sotf_nih_plugin!(SotfLinearPhaseEQ, plugin_type: "LinearPhaseEQ", name: "SOTF: Linear-Phase EQ", clap_id: "org.spinorama.sotf.linear-phase-eq", vst3_class_id: *b"SotfLinPhsEq0001", channels: 2);
+    nih_plug::nih_export_clap!(SotfLinearPhaseEQ);
+    nih_plug::nih_export_vst3!(SotfLinearPhaseEQ);
+}
+
+#[cfg(feature = "spectral-compressor")]
+mod plugin {
+    sotf_nih_plugin!(SotfSpectralCompressor, plugin_type: "SpectralCompressor", name: "SOTF: Spectral Compressor", clap_id: "org.spinorama.sotf.spectral-compressor", vst3_class_id: *b"SotfSpecCmpr0001", channels: 2);
+    nih_plug::nih_export_clap!(SotfSpectralCompressor);
+    nih_plug::nih_export_vst3!(SotfSpectralCompressor);
 }

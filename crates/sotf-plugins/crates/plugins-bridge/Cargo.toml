@@ -16,6 +16,7 @@ sotf-host = { workspace = true }
 
 # Individual plugin crates (kept lean — no symphonia/cpal/tokio)
 sotf-plugin-ab-compare = { workspace = true }
+sotf-plugin-aae = { workspace = true }
 sotf-plugin-aec = { workspace = true }
 sotf-plugin-ambisonics = { workspace = true }
 sotf-plugin-band-merge = { workspace = true }

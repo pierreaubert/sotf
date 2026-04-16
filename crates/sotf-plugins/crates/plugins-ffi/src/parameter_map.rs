@@ -393,6 +393,7 @@ fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::Param
         "MultibandCompressor" | "multiband_compressor" => multiband_compressor::GLOBAL_PARAMS,
         "MultibandExpander" | "multiband_expander" => multiband_expander::GLOBAL_PARAMS,
         "Upmixer" | "upmixer" => upmixer::PARAMS,
+        "AAE" | "aae" => aae::PARAMS,
         "XTC" | "xtc" => xtc::PARAMS,
         "Binaural" | "binaural" => binaural::PARAMS,
         "ChannelMuteSolo" | "channel_mute_solo" => channel_mute_solo::PARAMS,
@@ -409,6 +410,11 @@ fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::Param
         "DynamicEQ" | "dynamic_eq" => dynamic_eq::PARAMS,
         "LinearPhaseEQ" | "linear_phase_eq" => linear_phase_eq::PARAMS,
         "Dither" | "dither" => dither::PARAMS,
+        "BandSplit" | "band_split" => band_split::PARAMS,
+        "BandMerge" | "band_merge" => band_merge::PARAMS,
+        "AEC" | "aec" => aec::PARAMS,
+        "Beamformer" | "beamformer" => beamformer::PARAMS,
+        "SpectralCompressor" | "spectral_compressor" => spectral_compressor::PARAMS,
         // Plugins without param_specs entries fall back to Plugin::parameters() in from_plugin()
         "Delay" | "delay" | "Matrix" | "matrix" | "Crossover" | "crossover" | "Resampler"
         | "resampler" => &[],

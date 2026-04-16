@@ -4,7 +4,7 @@
 //! Used by the audio engine and by the A/B Compare plugin's sub-rack builder.
 
 use crate::{
-    ABComparePlugin, ABComparePluginParams, AecPlugin, AecPluginParams, BandMergePlugin,
+    AaePlugin, AaePluginParams, ABComparePlugin, ABComparePluginParams, AecPlugin, AecPluginParams, BandMergePlugin,
     BandMergePluginParams, BandSplitPlugin, BandSplitPluginParams, BeamformerPlugin,
     BeamformerPluginParams, BinauralDecoderParams, BinauralDecoderPlugin, ChannelMuteSoloParams,
     ChannelMuteSoloPlugin, CompressorPlugin, CompressorPluginParams, ConvolutionPlugin,
@@ -99,6 +99,17 @@ pub fn create_plugin(
             let params: UpmixerPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse upmixer params: {e}"))?;
             let plugin = UpmixerPlugin::from_params(params);
+            Ok(Box::new(plugin))
+        }
+
+        "aae" | "active_acoustic_enhancement" => {
+            if channels != 2 {
+                return Err(format!("AAE requires 2 input channels, got {channels}"));
+            }
+            let params: AaePluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse AAE params: {e}"))?;
+            let mut plugin = AaePlugin::from_params(params);
+            plugin.initialize(sample_rate)?;
             Ok(Box::new(plugin))
         }
 

@@ -226,8 +226,15 @@ pub fn get_param_specs(plugin_type: &str) -> &'static [sotf_host::param_specs::P
         "MultibandCompressor" => multiband_compressor::GLOBAL_PARAMS,
         "MultibandExpander" => multiband_expander::GLOBAL_PARAMS,
         "Upmixer" => upmixer::PARAMS,
+        "AAE" => aae::PARAMS,
         "XTC" => xtc::PARAMS,
         "Binaural" => binaural::PARAMS,
+        "BandSplit" => band_split::PARAMS,
+        "BandMerge" => band_merge::PARAMS,
+        "AEC" => aec::PARAMS,
+        "Beamformer" => beamformer::PARAMS,
+        "LinearPhaseEQ" => linear_phase_eq::PARAMS,
+        "SpectralCompressor" => spectral_compressor::PARAMS,
         _ => &[],
     }
 }

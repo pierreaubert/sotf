@@ -166,6 +166,13 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
+        "AAE" | "aae" | "active_acoustic_enhancement" => {
+            let params: sotf_plugin_aae::params::AaePluginParams = parse_params(config_json)?;
+            let mut plugin = sotf_plugin_aae::AaePlugin::from_params(params);
+            plugin.initialize(sample_rate)?;
+            Ok(Box::new(plugin))
+        }
+
         "XTC" | "xtc" => {
             let params: sotf_plugin_xtc::XtcPluginParams = parse_params(config_json)?;
             let plugin = sotf_plugin_xtc::XtcPlugin::from_params(params, sample_rate)?;
@@ -285,6 +292,7 @@ pub fn available_plugin_types() -> &'static [&'static str] {
         "ChannelMuteSolo",
         "Downmix",
         "Upmixer",
+        "AAE",
         "XTC",
         "Binaural",
         "Matrix",

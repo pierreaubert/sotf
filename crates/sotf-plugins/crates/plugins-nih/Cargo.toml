@@ -14,7 +14,7 @@ license.workspace = true
 crate-type = ["cdylib"]
 
 [features]
-# Build one plugin per feature. The Justfile builds all 29 sequentially.
+# Build one plugin per feature. The Justfile builds all sequentially.
 eq = []
 compressor = []
 limiter = []
@@ -38,12 +38,19 @@ fletcher-munson = []
 loudness-compensation = []
 channel-mute-solo = []
 upmixer = []
+aae = []
 xtc = []
 binaural = []
 matrix = []
 pnd = []
 ab-compare = []
 crossover = []
+band-split = []
+band-merge = []
+aec = []
+beamformer = []
+linear-phase-eq = []
+spectral-compressor = []
 
 [dependencies]
 plugins-bridge = { path = "../plugins-bridge" }

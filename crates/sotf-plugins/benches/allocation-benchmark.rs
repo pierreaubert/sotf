@@ -21,12 +21,12 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
-    ABComparePlugin, AecPlugin, AecPluginParams, AutoGain, AutoGainParams, BandMergePlugin,
-    BandSplitPlugin, BeamformerPlugin, ChannelMuteSoloPlugin, CompressorPlugin, CrossoverPlugin,
-    DelayPlugin, DenoiserPlugin, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin, InPlacePlugin,
-    InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
-    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MatrixPlugin,
-    MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
+    AaePlugin, AaePluginParams, ABComparePlugin, AecPlugin, AecPluginParams, AutoGain,
+    AutoGainParams, BandMergePlugin, BandSplitPlugin, BeamformerPlugin, ChannelMuteSoloPlugin,
+    CompressorPlugin, CrossoverPlugin, DelayPlugin, DenoiserPlugin, EqPlugin, ExpanderPlugin,
+    GainPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin,
+    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
+    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
     SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams, XtcPlugin,
     XtcPluginParams,
 };
@@ -557,6 +557,28 @@ fn test_aec_zero_alloc() {
     });
 }
 
+fn test_aae_zero_alloc() {
+    let mut plugin = AaePlugin::from_params(AaePluginParams::default());
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let input = generate_test_buffer(BUFFER_SIZE, 2);
+    let out_ch = plugin.output_channels();
+    let mut output = vec![0.0f32; BUFFER_SIZE * out_ch];
+    let ctx = ProcessContext {
+        sample_rate: SAMPLE_RATE,
+        num_frames: BUFFER_SIZE,
+    };
+
+    // Warm up
+    for _ in 0..5 {
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    }
+
+    assert_no_allocs("AaePlugin", || {
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    });
+}
+
 fn test_beamformer_zero_alloc() {
     let mut plugin = BeamformerPlugin::new(2, SAMPLE_RATE);
     plugin.initialize(SAMPLE_RATE).unwrap();
@@ -632,6 +654,7 @@ fn benchmark_zero_allocation(c: &mut Criterion) {
     group.bench_function("auto_gain", |b| b.iter(test_auto_gain_zero_alloc));
     group.bench_function("aec", |b| b.iter(test_aec_zero_alloc));
     group.bench_function("beamformer", |b| b.iter(test_beamformer_zero_alloc));
+    group.bench_function("aae", |b| b.iter(test_aae_zero_alloc));
 
     group.finish();
 }

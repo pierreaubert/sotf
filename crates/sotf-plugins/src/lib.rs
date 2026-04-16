@@ -43,6 +43,9 @@ pub mod param_specs {
     pub mod band_merge {
         pub use sotf_plugin_band_merge::params::*;
     }
+    pub mod aae {
+        pub use sotf_plugin_aae::params::*;
+    }
     pub mod aec {
         pub use sotf_plugin_aec::params::*;
     }
@@ -167,6 +170,7 @@ pub use sotf_host::test_utils;
 
 // Re-export all plugin crates
 pub use sotf_plugin_ab_compare as plugin_ab_compare;
+pub use sotf_plugin_aae as plugin_aae;
 pub use sotf_plugin_aec as plugin_aec;
 pub use sotf_plugin_band_merge as plugin_band_merge;
 pub use sotf_plugin_band_split as plugin_band_split;
@@ -212,6 +216,7 @@ pub use sotf_plugin_hal_output as plugin_hal_output;
 
 // Re-export all public types for backward compatibility
 pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
+pub use plugin_aae::{AaePlugin, params::AaePluginParams};
 pub use plugin_aec::{AecPlugin, AecPluginParams};
 pub use plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
 pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};
