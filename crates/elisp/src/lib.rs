@@ -5,6 +5,7 @@ pub mod jit;
 mod object;
 mod primitives;
 mod reader;
+pub mod value;
 pub mod vm;
 
 pub use error::{ElispError, ElispResult};
