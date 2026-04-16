@@ -67,7 +67,16 @@ pub enum HashKey {
 
 impl PartialEq for LispHashTable {
     fn eq(&self, other: &Self) -> bool {
-        self.test == other.test && self.data.len() == other.data.len()
+        if self.test != other.test || self.data.len() != other.data.len() {
+            return false;
+        }
+        for (key, val) in &self.data {
+            match other.data.get(key) {
+                Some(other_val) if val == other_val => {}
+                _ => return false,
+            }
+        }
+        true
     }
 }
 

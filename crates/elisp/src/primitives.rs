@@ -63,8 +63,7 @@ pub fn add_primitives(interp: &mut crate::eval::Interpreter) {
     interp.define("floatp", LispObject::primitive("floatp"));
     interp.define("zerop", LispObject::primitive("zerop"));
     interp.define("natnump", LispObject::primitive("natnump"));
-    interp.define("boundp", LispObject::primitive("boundp"));
-    interp.define("fboundp", LispObject::primitive("fboundp"));
+    // boundp and fboundp are handled by the eval dispatch (they need env access).
     interp.define("functionp", LispObject::primitive("functionp"));
     interp.define("subrp", LispObject::primitive("subrp"));
 
@@ -87,7 +86,7 @@ pub fn add_primitives(interp: &mut crate::eval::Interpreter) {
 
     // New primitives — symbol
     interp.define("symbol-name", LispObject::primitive("symbol-name"));
-    interp.define("symbol-function", LispObject::primitive("symbol-function"));
+    // symbol-function is handled by the eval dispatch (needs env + macro table access).
 
     // New primitives — string
     interp.define(
@@ -99,7 +98,7 @@ pub fn add_primitives(interp: &mut crate::eval::Interpreter) {
         LispObject::primitive("number-to-string"),
     );
     interp.define("make-string", LispObject::primitive("make-string"));
-    interp.define("string-match", LispObject::primitive("string-match"));
+    // string-match is handled by the eval dispatch (has regex support).
 
     // New primitives — I/O
     interp.define("prin1-to-string", LispObject::primitive("prin1-to-string"));
@@ -173,8 +172,7 @@ pub fn call_primitive(name: &str, args: &LispObject) -> ElispResult<LispObject> 
         "floatp" => prim_floatp(args),
         "zerop" => prim_zerop(args),
         "natnump" => prim_natnump(args),
-        "boundp" => prim_boundp(args),
-        "fboundp" => prim_fboundp(args),
+        // boundp/fboundp handled by eval dispatch (need env access)
         "functionp" => prim_functionp(args),
         "subrp" => prim_subrp(args),
 
@@ -197,13 +195,13 @@ pub fn call_primitive(name: &str, args: &LispObject) -> ElispResult<LispObject> 
 
         // Symbol
         "symbol-name" => prim_symbol_name(args),
-        "symbol-function" => prim_symbol_function(args),
+        // symbol-function handled by eval dispatch (needs env + macro table)
 
         // String
         "string-to-number" => prim_string_to_number(args),
         "number-to-string" => prim_number_to_string(args),
         "make-string" => prim_make_string(args),
-        "string-match" => prim_string_match(args),
+        // string-match handled by eval dispatch (has regex support)
 
         // I/O
         "prin1-to-string" => prim_prin1_to_string(args),
@@ -518,17 +516,33 @@ fn prim_length(args: &LispObject) -> ElispResult<LispObject> {
 }
 
 fn prim_append(args: &LispObject) -> ElispResult<LispObject> {
-    let mut result = LispObject::nil();
+    // Collect all arguments into a vec
+    let mut all_args = Vec::new();
     let mut current = args.clone();
     while let Some((arg, rest)) = current.destructure_cons() {
-        let mut arg_list = arg;
-        while let Some((car, cdr)) = arg_list.destructure_cons() {
-            result = LispObject::cons(car, result);
-            arg_list = cdr;
-        }
+        all_args.push(arg);
         current = rest;
     }
-    prim_reverse(&LispObject::cons(result, LispObject::nil()))
+    if all_args.is_empty() {
+        return Ok(LispObject::nil());
+    }
+    // The last argument becomes the tail directly (even if non-list)
+    let tail = all_args.pop().unwrap();
+    // Collect elements from all but the last arg in reverse order
+    let mut items = Vec::new();
+    for arg in &all_args {
+        let mut cur = arg.clone();
+        while let Some((car, cdr)) = cur.destructure_cons() {
+            items.push(car);
+            cur = cdr;
+        }
+    }
+    // Build result by consing items onto the tail in reverse
+    let mut result = tail;
+    for item in items.into_iter().rev() {
+        result = LispObject::cons(item, result);
+    }
+    Ok(result)
 }
 
 fn prim_reverse(args: &LispObject) -> ElispResult<LispObject> {
@@ -546,7 +560,8 @@ fn prim_reverse(args: &LispObject) -> ElispResult<LispObject> {
 }
 
 fn prim_member(args: &LispObject) -> ElispResult<LispObject> {
-    let (obj, list) = args.clone().destructure();
+    let obj = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let list = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
     let mut current = list;
     while let Some((car, cdr)) = current.destructure_cons() {
         if obj == car {
@@ -558,7 +573,8 @@ fn prim_member(args: &LispObject) -> ElispResult<LispObject> {
 }
 
 fn prim_assoc(args: &LispObject) -> ElispResult<LispObject> {
-    let (key, alist) = args.clone().destructure();
+    let key = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let alist = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
     let mut current = alist;
     while let Some((entry, rest)) = current.destructure_cons() {
         if let Some((k, _)) = entry.destructure_cons() {
@@ -690,8 +706,6 @@ fn prim_concat(args: &LispObject) -> ElispResult<LispObject> {
     while let Some((arg, rest)) = current.destructure_cons() {
         match arg {
             LispObject::String(s) => result.push_str(&s),
-            LispObject::Integer(i) => result.push_str(&i.to_string()),
-            LispObject::Symbol(s) => result.push_str(&s),
             _ => return Err(ElispError::WrongTypeArgument("string".to_string())),
         }
         current = rest;
@@ -977,18 +991,6 @@ fn prim_natnump(args: &LispObject) -> ElispResult<LispObject> {
     Ok(LispObject::from(result))
 }
 
-fn prim_boundp(args: &LispObject) -> ElispResult<LispObject> {
-    let _arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    // Stub: always true (we don't have void distinction yet)
-    Ok(LispObject::t())
-}
-
-fn prim_fboundp(args: &LispObject) -> ElispResult<LispObject> {
-    let _arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    // Stub: always true
-    Ok(LispObject::t())
-}
-
 fn prim_functionp(args: &LispObject) -> ElispResult<LispObject> {
     let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let result = match &arg {
@@ -1197,13 +1199,6 @@ fn prim_symbol_name(args: &LispObject) -> ElispResult<LispObject> {
     }
 }
 
-fn prim_symbol_function(args: &LispObject) -> ElispResult<LispObject> {
-    // Stub: in our Lisp-1, just return the argument itself.
-    // A real Lisp-2 would look up the function cell.
-    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    Ok(arg)
-}
-
 // ---------------------------------------------------------------------------
 // String
 // ---------------------------------------------------------------------------
@@ -1248,13 +1243,6 @@ fn prim_make_string(args: &LispObject) -> ElispResult<LispObject> {
     let c = char::from_u32(ch as u32).unwrap_or('?');
     let s: String = std::iter::repeat_n(c, length as usize).collect();
     Ok(LispObject::string(&s))
-}
-
-fn prim_string_match(args: &LispObject) -> ElispResult<LispObject> {
-    // Stub: always returns nil
-    let _regexp = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    let _string = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
-    Ok(LispObject::nil())
 }
 
 // ---------------------------------------------------------------------------

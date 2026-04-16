@@ -842,10 +842,16 @@ fn eval_inner(
                             macros,
                             state,
                         )?;
-                        match arg {
-                            LispObject::String(s) => Ok(LispObject::symbol(&s)),
-                            LispObject::Symbol(_) => Ok(arg),
-                            _ => Ok(LispObject::nil()),
+                        let name = match &arg {
+                            LispObject::String(s) => s.clone(),
+                            LispObject::Symbol(s) => s.clone(),
+                            _ => return Ok(LispObject::nil()),
+                        };
+                        // Only return the symbol if it is already known
+                        if env.read().get(&name).is_some() {
+                            Ok(LispObject::symbol(&name))
+                        } else {
+                            Ok(LispObject::nil())
                         }
                     }
                     "set" => {
@@ -971,9 +977,10 @@ fn eval_inner(
                             0
                         };
                         let sub = &text[start..];
-                        match crate::read(sub) {
+                        let mut reader = crate::reader::Reader::new(sub);
+                        match reader.read() {
                             Ok(obj) => {
-                                let end_pos = start + sub.len(); // approximate
+                                let end_pos = start + reader.position();
                                 Ok(LispObject::cons(obj, LispObject::Integer(end_pos as i64)))
                             }
                             Err(e) => Err(ElispError::Signal(Box::new(crate::error::SignalData {
@@ -986,16 +993,59 @@ fn eval_inner(
                         }
                     }
                     "split-string" => {
-                        // Simplified: split on whitespace, return list of strings
                         let str_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
                         let s = eval(str_expr, env, editor, macros, state)?;
                         let text = s
                             .as_string()
                             .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?
                             .clone();
-                        let parts: Vec<&str> = text.split_whitespace().collect();
+
+                        // Evaluate optional separator (2nd arg)
+                        let separator = if let Some(sep_expr) = cdr.nth(1) {
+                            let sep_val = eval(sep_expr, env, editor, macros, state)?;
+                            if sep_val.is_nil() {
+                                None // nil means split on whitespace
+                            } else {
+                                sep_val.as_string().map(|s| s.to_string())
+                            }
+                        } else {
+                            None
+                        };
+
+                        // Evaluate optional OMIT-NULLS (3rd arg)
+                        let omit_nulls = if let Some(omit_expr) = cdr.nth(2) {
+                            let omit_val = eval(omit_expr, env, editor, macros, state)?;
+                            !omit_val.is_nil()
+                        } else {
+                            // Emacs default: when no separator is given, omit nulls
+                            separator.is_none()
+                        };
+
+                        let parts: Vec<String> = match &separator {
+                            None => {
+                                // Default: split on whitespace (always omits nulls)
+                                text.split_whitespace().map(|s| s.to_string()).collect()
+                            }
+                            Some(sep) => {
+                                // Try as regex first, fall back to literal split
+                                let rust_re = emacs_regex_to_rust(sep);
+                                match regex::Regex::new(&rust_re) {
+                                    Ok(re) => re.split(&text).map(|s| s.to_string()).collect(),
+                                    Err(_) => {
+                                        text.split(sep.as_str()).map(|s| s.to_string()).collect()
+                                    }
+                                }
+                            }
+                        };
+
+                        let parts: Vec<String> = if omit_nulls {
+                            parts.into_iter().filter(|s| !s.is_empty()).collect()
+                        } else {
+                            parts
+                        };
+
                         let mut result = LispObject::nil();
-                        for p in parts.into_iter().rev() {
+                        for p in parts.iter().rev() {
                             result = LispObject::cons(LispObject::string(p), result);
                         }
                         Ok(result)
@@ -1311,6 +1361,10 @@ fn eval_cond(
     Ok(LispObject::nil())
 }
 
+/// Custom extension: `(loop BODY...)` — repeatedly evaluates BODY until
+/// the result is nil.  This is NOT standard Emacs Lisp (Emacs uses `while`
+/// and `cl-loop` instead), but it's a convenient built-in that doesn't
+/// conflict with any existing form.
 fn eval_loop(
     body: &LispObject,
     env: &Arc<RwLock<Environment>>,
@@ -1377,20 +1431,43 @@ fn eval_apply(
     macros: &MacroTable,
     state: &InterpreterState,
 ) -> ElispResult<LispObject> {
+    // (apply FN ARG1 ARG2 ... LAST-LIST)
+    // All args except the last are individual values; the last must be a list
+    // whose elements are spread. The combined args are passed to FN.
     let func = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    let args_list = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
     let func_val = eval(func, env, editor, macros, state)?;
-    let args_list = eval(args_list, env, editor, macros, state)?;
 
-    let mut arg_items: Vec<LispObject> = Vec::new();
-    let mut current = args_list.clone();
-    while let Some((arg, rest)) = current.destructure_cons() {
-        arg_items.push(arg);
-        current = rest;
+    // Collect all remaining arg expressions
+    let mut raw_args: Vec<LispObject> = Vec::new();
+    let mut cur = args.rest().ok_or(ElispError::WrongNumberOfArguments)?;
+    while let Some((car, rest)) = cur.destructure_cons() {
+        raw_args.push(car);
+        cur = rest;
+    }
+    if raw_args.is_empty() {
+        return Err(ElispError::WrongNumberOfArguments);
     }
 
+    // Evaluate all arg expressions
+    let mut evaled: Vec<LispObject> = Vec::new();
+    for a in &raw_args {
+        evaled.push(eval(a.clone(), env, editor, macros, state)?);
+    }
+
+    // All except the last are individual args; the last is a list to spread
+    let last = evaled.pop().unwrap(); // safe: checked non-empty above
+    let mut combined: Vec<LispObject> = evaled;
+
+    // Spread the last argument (must be a list or nil)
+    let mut tail = last;
+    while let Some((car, rest)) = tail.destructure_cons() {
+        combined.push(car);
+        tail = rest;
+    }
+
+    // Build the args list
     let mut all_args = LispObject::nil();
-    for arg in arg_items.iter().rev() {
+    for arg in combined.iter().rev() {
         all_args = LispObject::cons(arg.clone(), all_args);
     }
 
@@ -3785,6 +3862,139 @@ mod tests {
                 )
                 .unwrap(),
             LispObject::integer(42)
+        );
+    }
+
+    #[test]
+    fn test_apply_variadic() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        // Classic 2-arg form still works
+        assert_eq!(
+            interp.eval(read("(apply '+ '(1 2 3))").unwrap()).unwrap(),
+            LispObject::integer(6)
+        );
+
+        // Variadic: (apply FN ARG1 ARG2 LAST-LIST)
+        assert_eq!(
+            interp
+                .eval(read("(apply '+ 10 20 '(1 2 3))").unwrap())
+                .unwrap(),
+            LispObject::integer(36)
+        );
+
+        // Single individual arg + list
+        assert_eq!(
+            interp.eval(read("(apply '+ 100 '(1 2))").unwrap()).unwrap(),
+            LispObject::integer(103)
+        );
+
+        // Last arg is nil (empty list)
+        assert_eq!(
+            interp.eval(read("(apply '+ 5 '())").unwrap()).unwrap(),
+            LispObject::integer(5)
+        );
+
+        // With list function
+        assert_eq!(
+            interp
+                .eval(read("(apply 'list 1 2 '(3 4))").unwrap())
+                .unwrap(),
+            read("(1 2 3 4)").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_split_string_with_separator() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        // Default: split on whitespace
+        assert_eq!(
+            interp
+                .eval(read(r#"(split-string "hello world")"#).unwrap())
+                .unwrap(),
+            read(r#"("hello" "world")"#).unwrap()
+        );
+
+        // Split on comma
+        assert_eq!(
+            interp
+                .eval(read(r#"(split-string "a,b,c" ",")"#).unwrap())
+                .unwrap(),
+            read(r#"("a" "b" "c")"#).unwrap()
+        );
+
+        // Split on separator with omit-nulls
+        assert_eq!(
+            interp
+                .eval(read(r#"(split-string ",a,,b," "," t)"#).unwrap())
+                .unwrap(),
+            read(r#"("a" "b")"#).unwrap()
+        );
+
+        // Split on separator without omit-nulls
+        assert_eq!(
+            interp
+                .eval(read(r#"(split-string "a::b" ":")"#).unwrap())
+                .unwrap(),
+            read(r#"("a" "" "b")"#).unwrap()
+        );
+
+        // nil separator means whitespace
+        assert_eq!(
+            interp
+                .eval(read(r#"(split-string "  foo  bar  " nil)"#).unwrap())
+                .unwrap(),
+            read(r#"("foo" "bar")"#).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_read_from_string_position() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        // Reading "42" from "42 rest" should return (42 . 2), not (42 . 7)
+        let result = interp
+            .eval(read(r#"(read-from-string "42 rest")"#).unwrap())
+            .unwrap();
+        assert_eq!(result.first().unwrap(), LispObject::integer(42));
+        // Position should be 2 (right after "42"), not len of entire string
+        let end_pos = result.rest().unwrap().as_integer().unwrap();
+        assert_eq!(end_pos, 2);
+
+        // Reading with start offset
+        let result = interp
+            .eval(read(r#"(read-from-string "  hello world" 2)"#).unwrap())
+            .unwrap();
+        assert_eq!(result.first().unwrap(), LispObject::symbol("hello"));
+        // Position is relative to original string: start(2) + reader.position(5) = 7
+        let end_pos = result.rest().unwrap().as_integer().unwrap();
+        assert_eq!(end_pos, 7);
+    }
+
+    #[test]
+    fn test_intern_soft_returns_nil_for_unknown() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+
+        // Unknown symbol returns nil
+        assert_eq!(
+            interp
+                .eval(read(r#"(intern-soft "nonexistent-symbol")"#).unwrap())
+                .unwrap(),
+            LispObject::nil()
+        );
+
+        // Known symbol returns the symbol
+        interp.define("my-var", LispObject::integer(42));
+        assert_eq!(
+            interp
+                .eval(read(r#"(intern-soft "my-var")"#).unwrap())
+                .unwrap(),
+            LispObject::symbol("my-var")
         );
     }
 }

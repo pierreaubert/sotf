@@ -384,9 +384,15 @@ impl<'a> Vm<'a> {
             // aset (73)
             73 => {
                 let val = self.pop()?;
-                let _idx = self.pop()?;
-                let _array = self.pop()?;
-                // TODO: mutation
+                let idx = self.pop()?;
+                let array = self.pop()?;
+                let i = idx.as_integer().unwrap_or(0) as usize;
+                if let LispObject::Vector(v) = &array {
+                    let mut v = v.lock();
+                    if i < v.len() {
+                        v[i] = val.clone();
+                    }
+                }
                 self.push(val);
             }
 
@@ -434,9 +440,21 @@ impl<'a> Vm<'a> {
 
             // get (78)
             78 => {
-                let _prop = self.pop()?;
-                let _sym = self.pop()?;
-                self.push(LispObject::nil()); // stub: no plist in VM yet
+                let prop = self.pop()?;
+                let sym = self.pop()?;
+                if let (Some(sym_name), Some(prop_name)) = (sym.as_symbol(), prop.as_symbol()) {
+                    let key = format!("{}:{}", sym_name, prop_name);
+                    let val = self
+                        .state
+                        .plists
+                        .read()
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or(LispObject::nil());
+                    self.push(val);
+                } else {
+                    self.push(LispObject::nil());
+                }
             }
 
             // substring (79)
@@ -956,22 +974,16 @@ impl<'a> Vm<'a> {
             160 => {
                 let newcar = self.pop()?;
                 let cons = self.pop()?;
-                if let Some((_old_car, cdr)) = cons.destructure_cons() {
-                    self.push(LispObject::cons(newcar, cdr));
-                } else {
-                    self.push(LispObject::nil());
-                }
+                cons.set_car(newcar.clone());
+                self.push(newcar);
             }
 
             // setcdr (161)
             161 => {
                 let newcdr = self.pop()?;
                 let cons = self.pop()?;
-                if let Some((car, _old_cdr)) = cons.destructure_cons() {
-                    self.push(LispObject::cons(car, newcdr));
-                } else {
-                    self.push(LispObject::nil());
-                }
+                cons.set_cdr(newcdr.clone());
+                self.push(newcdr);
             }
 
             // car-safe (162)
@@ -1096,8 +1108,10 @@ impl<'a> Vm<'a> {
             }
 
             _ => {
-                // Unknown opcode — skip it
-                // In a production VM we'd error, but for bootstrapping, ignore
+                return Err(ElispError::EvalError(format!(
+                    "unknown bytecode opcode: {}",
+                    op
+                )));
             }
         }
         Ok(())

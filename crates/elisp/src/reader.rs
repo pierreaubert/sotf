@@ -99,6 +99,13 @@ impl Reader {
         c.is_whitespace() || c == '(' || c == ')' || c == '"' || c == ';' || c == '\''
     }
 
+    /// Return the current byte-offset into the source (in chars).
+    /// Useful for `read-from-string` which needs to report where
+    /// the reader stopped.
+    pub fn position(&self) -> usize {
+        self.pos
+    }
+
     pub fn read(&mut self) -> ElispResult<LispObject> {
         self.skip_whitespace();
 
