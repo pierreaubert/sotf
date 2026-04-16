@@ -6,7 +6,7 @@
 use crate::error::{ElispError, ElispResult};
 use crate::eval::InterpreterState;
 use crate::object::{BytecodeFunction, LispObject};
-use crate::value::Value;
+use crate::value::{obj_to_value, value_to_obj, Value};
 use crate::EditorCallbacks;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -1006,14 +1006,14 @@ impl<'a> Vm<'a> {
                             // Non-bytecode handler — call via eval
                             let arg_list = LispObject::cons(err_value, LispObject::nil());
                             let result = crate::eval::call_function(
-                                &handler,
-                                &arg_list,
+                                obj_to_value(handler.clone()),
+                                obj_to_value(arg_list),
                                 self.env,
                                 self.editor,
                                 self.macros,
                                 self.state,
                             )?;
-                            self.push_obj(result);
+                            self.push_obj(value_to_obj(result));
                         }
                         self.pc = target;
                     }
@@ -1311,8 +1311,8 @@ impl<'a> Vm<'a> {
             // For non-bytecode handlers (e.g. lambda), try calling via eval
             let arg_list = LispObject::nil();
             let _ = crate::eval::call_function(
-                handler,
-                &arg_list,
+                obj_to_value(handler.clone()),
+                obj_to_value(arg_list),
                 self.env,
                 self.editor,
                 self.macros,
@@ -1389,14 +1389,14 @@ impl<'a> Vm<'a> {
         }
 
         let result = crate::eval::call_function(
-            &func,
-            &arg_list,
+            obj_to_value(func),
+            obj_to_value(arg_list),
             self.env,
             self.editor,
             self.macros,
             self.state,
         )?;
-        self.push_obj(result);
+        self.push_obj(value_to_obj(result));
         Ok(())
     }
 }

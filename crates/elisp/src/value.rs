@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fmt;
 
 /// Prefix for all NaN-boxed tagged values: negative quiet NaN.
@@ -917,8 +918,91 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
-// Bridge: LispObject ↔ Value conversion
+// Bridge: LispObject ↔ Value conversion via thread-local heap side-table
 // ---------------------------------------------------------------------------
+
+thread_local! {
+    /// Side-table storing LispObject heap values (cons, string, vector, etc.)
+    /// that cannot be encoded inline in a 64-bit NaN-boxed Value.
+    /// Values are indexed by their position in this vector.
+    static HEAP_OBJECTS: RefCell<Vec<crate::object::LispObject>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Convert a LispObject into a NaN-boxed Value.
+///
+/// Immediate types (nil, t, fixnum, float, symbol) are encoded directly.
+/// Heap types (cons, string, vector, primitive, bytecode, hash-table) are stored
+/// in the thread-local `HEAP_OBJECTS` side-table and represented as a GC pointer
+/// whose payload is the side-table index.
+pub fn obj_to_value(obj: LispObject) -> Value {
+    use crate::object::LispObject;
+    match &obj {
+        LispObject::Nil => Value::nil(),
+        LispObject::T => Value::t(),
+        LispObject::Integer(n) => {
+            if *n >= FIXNUM_MIN && *n <= FIXNUM_MAX {
+                Value::fixnum(*n)
+            } else {
+                // Store large integers in the side-table to avoid lossy float conversion
+                store_heap_object(obj)
+            }
+        }
+        LispObject::Float(f) => Value::float(*f),
+        LispObject::Symbol(id) => Value::symbol_id(id.0),
+        // All heap types go into the side-table
+        LispObject::Cons(_)
+        | LispObject::String(_)
+        | LispObject::Primitive(_)
+        | LispObject::Vector(_)
+        | LispObject::BytecodeFn(_)
+        | LispObject::HashTable(_) => store_heap_object(obj),
+    }
+}
+
+/// Recover a LispObject from a NaN-boxed Value.
+///
+/// Immediate types are reconstructed directly; heap types are looked up
+/// in the thread-local side-table.
+pub fn value_to_obj(val: Value) -> LispObject {
+    use crate::object::LispObject;
+    if val.is_nil() {
+        return LispObject::Nil;
+    }
+    if val.is_t() {
+        return LispObject::T;
+    }
+    if let Some(n) = val.as_fixnum() {
+        return LispObject::Integer(n);
+    }
+    if let Some(f) = val.as_float() {
+        return LispObject::Float(f);
+    }
+    if let Some(id) = val.as_symbol_id() {
+        return LispObject::Symbol(crate::obarray::SymbolId(id));
+    }
+    // GC pointer tag: look up in the side-table
+    if val.is_ptr() {
+        let idx = val.payload() as usize;
+        return HEAP_OBJECTS.with(|h| h.borrow().get(idx).cloned().unwrap_or(LispObject::Nil));
+    }
+    LispObject::Nil
+}
+
+fn store_heap_object(obj: LispObject) -> Value {
+    HEAP_OBJECTS.with(|h| {
+        let mut h = h.borrow_mut();
+        let idx = h.len();
+        h.push(obj);
+        // Use TAG_GC_PTR (1) with the index as payload
+        Value::from_raw(NANBOX_PREFIX | (TAG_GC_PTR << TAG_SHIFT) | idx as u64)
+    })
+}
+
+/// Clear the thread-local heap side-table. Call between top-level eval
+/// invocations to avoid unbounded growth.
+pub fn clear_heap_objects() {
+    HEAP_OBJECTS.with(|h| h.borrow_mut().clear());
+}
 
 impl Value {
     /// Convert a LispObject to a Value (lossy for heap objects).
@@ -965,6 +1049,8 @@ impl Value {
         }
     }
 }
+
+use crate::object::LispObject;
 
 #[cfg(test)]
 mod bridge_tests {
