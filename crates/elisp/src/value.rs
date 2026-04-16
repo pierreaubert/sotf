@@ -284,6 +284,194 @@ impl Value {
     pub fn to_bits(self) -> u64 {
         self.0
     }
+
+    /// Construct nil or t from a boolean.
+    #[inline]
+    pub fn from_bool(b: bool) -> Self {
+        if b {
+            Self::t()
+        } else {
+            Self::nil()
+        }
+    }
+
+    // ---- cons cell access (GC pointer tag 1) ----
+
+    /// True when this Value is a GC cons pointer.
+    #[inline]
+    pub fn is_cons(&self) -> bool {
+        self.is_ptr() // tag 1 = GC pointer, which is the cons tag
+    }
+
+    /// Get the car of a cons cell.
+    ///
+    /// # Safety
+    /// The Value must be a live GC cons pointer allocated from a `Heap`.
+    /// The caller must ensure the pointer has not been collected.
+    #[inline]
+    pub unsafe fn cons_car(self) -> Option<Value> {
+        if !self.is_cons() {
+            return None;
+        }
+        let ptr = self.as_ptr()? as *const crate::gc::ConsCell;
+        Some(Value::from_raw((*ptr).car))
+    }
+
+    /// Get the cdr of a cons cell.
+    ///
+    /// # Safety
+    /// The Value must be a live GC cons pointer allocated from a `Heap`.
+    /// The caller must ensure the pointer has not been collected.
+    #[inline]
+    pub unsafe fn cons_cdr(self) -> Option<Value> {
+        if !self.is_cons() {
+            return None;
+        }
+        let ptr = self.as_ptr()? as *const crate::gc::ConsCell;
+        Some(Value::from_raw((*ptr).cdr))
+    }
+
+    // ---- arithmetic fast path ----
+    //
+    // These methods operate directly on NaN-boxed values without converting
+    // through LispObject. They handle the fixnum x fixnum hot path inline
+    // and promote to float when either operand is a float. Returns None
+    // for non-numeric operands so the caller can fall back to the full
+    // LispObject path.
+
+    /// Extract a numeric value as f64 (works for both fixnum and float).
+    #[inline]
+    fn as_number(self) -> Option<f64> {
+        if let Some(n) = self.as_fixnum() {
+            Some(n as f64)
+        } else {
+            self.as_float()
+        }
+    }
+
+    /// Add two Values. Returns `Some(result)` for numeric operands.
+    #[inline]
+    pub fn arith_add(self, other: Value) -> Option<Value> {
+        if let (Some(a), Some(b)) = (self.as_fixnum(), other.as_fixnum()) {
+            return Some(Value::fixnum(a.wrapping_add(b)));
+        }
+        let a = self.as_number()?;
+        let b = other.as_number()?;
+        Some(Value::float(a + b))
+    }
+
+    /// Subtract `other` from `self`.
+    #[inline]
+    pub fn arith_sub(self, other: Value) -> Option<Value> {
+        if let (Some(a), Some(b)) = (self.as_fixnum(), other.as_fixnum()) {
+            return Some(Value::fixnum(a.wrapping_sub(b)));
+        }
+        let a = self.as_number()?;
+        let b = other.as_number()?;
+        Some(Value::float(a - b))
+    }
+
+    /// Multiply two Values.
+    #[inline]
+    pub fn arith_mul(self, other: Value) -> Option<Value> {
+        if let (Some(a), Some(b)) = (self.as_fixnum(), other.as_fixnum()) {
+            return Some(Value::fixnum(a.wrapping_mul(b)));
+        }
+        let a = self.as_number()?;
+        let b = other.as_number()?;
+        Some(Value::float(a * b))
+    }
+
+    /// Negate a numeric Value.
+    #[inline]
+    pub fn negate(self) -> Option<Value> {
+        if let Some(n) = self.as_fixnum() {
+            return Some(Value::fixnum(-n));
+        }
+        if let Some(f) = self.as_float() {
+            return Some(Value::float(-f));
+        }
+        None
+    }
+
+    /// Increment by 1 (add1).
+    #[inline]
+    pub fn add1(self) -> Option<Value> {
+        if let Some(n) = self.as_fixnum() {
+            return Some(Value::fixnum(n.wrapping_add(1)));
+        }
+        if let Some(f) = self.as_float() {
+            return Some(Value::float(f + 1.0));
+        }
+        None
+    }
+
+    /// Decrement by 1 (sub1).
+    #[inline]
+    pub fn sub1(self) -> Option<Value> {
+        if let Some(n) = self.as_fixnum() {
+            return Some(Value::fixnum(n.wrapping_sub(1)));
+        }
+        if let Some(f) = self.as_float() {
+            return Some(Value::float(f - 1.0));
+        }
+        None
+    }
+
+    /// Numeric equality (Lisp `=`).
+    #[inline]
+    pub fn num_eq(self, other: Value) -> Option<Value> {
+        if let (Some(a), Some(b)) = (self.as_fixnum(), other.as_fixnum()) {
+            return Some(Value::from_bool(a == b));
+        }
+        let a = self.as_number()?;
+        let b = other.as_number()?;
+        Some(Value::from_bool(a == b))
+    }
+
+    /// Less than (Lisp `<`).
+    #[inline]
+    pub fn lt(self, other: Value) -> Option<Value> {
+        if let (Some(a), Some(b)) = (self.as_fixnum(), other.as_fixnum()) {
+            return Some(Value::from_bool(a < b));
+        }
+        let a = self.as_number()?;
+        let b = other.as_number()?;
+        Some(Value::from_bool(a < b))
+    }
+
+    /// Greater than (Lisp `>`).
+    #[inline]
+    pub fn gt(self, other: Value) -> Option<Value> {
+        if let (Some(a), Some(b)) = (self.as_fixnum(), other.as_fixnum()) {
+            return Some(Value::from_bool(a > b));
+        }
+        let a = self.as_number()?;
+        let b = other.as_number()?;
+        Some(Value::from_bool(a > b))
+    }
+
+    /// Less than or equal (Lisp `<=`).
+    #[inline]
+    pub fn leq(self, other: Value) -> Option<Value> {
+        if let (Some(a), Some(b)) = (self.as_fixnum(), other.as_fixnum()) {
+            return Some(Value::from_bool(a <= b));
+        }
+        let a = self.as_number()?;
+        let b = other.as_number()?;
+        Some(Value::from_bool(a <= b))
+    }
+
+    /// Greater than or equal (Lisp `>=`).
+    #[inline]
+    pub fn geq(self, other: Value) -> Option<Value> {
+        if let (Some(a), Some(b)) = (self.as_fixnum(), other.as_fixnum()) {
+            return Some(Value::from_bool(a >= b));
+        }
+        let a = self.as_number()?;
+        let b = other.as_number()?;
+        Some(Value::from_bool(a >= b))
+    }
 }
 
 impl PartialEq for Value {
@@ -572,6 +760,145 @@ mod tests {
         let b = a; // copy
         let c = a; // still valid
         assert!(b.lisp_eq(c));
+    }
+
+    // -- Arithmetic fast path tests --
+
+    #[test]
+    fn add_fixnums() {
+        let r = Value::fixnum(3).arith_add(Value::fixnum(4));
+        assert_eq!(r, Some(Value::fixnum(7)));
+    }
+
+    #[test]
+    fn add_fixnum_negative() {
+        let r = Value::fixnum(10).arith_add(Value::fixnum(-3));
+        assert_eq!(r, Some(Value::fixnum(7)));
+    }
+
+    #[test]
+    fn add_floats() {
+        let r = Value::float(1.5).arith_add(Value::float(2.5));
+        assert_eq!(r.unwrap().as_float(), Some(4.0));
+    }
+
+    #[test]
+    fn add_fixnum_float_promotes() {
+        let r = Value::fixnum(1).arith_add(Value::float(2.5));
+        assert_eq!(r.unwrap().as_float(), Some(3.5));
+    }
+
+    #[test]
+    fn add_non_numeric_returns_none() {
+        assert!(Value::nil().arith_add(Value::fixnum(1)).is_none());
+        assert!(Value::fixnum(1).arith_add(Value::t()).is_none());
+    }
+
+    #[test]
+    fn sub_fixnums() {
+        let r = Value::fixnum(10).arith_sub(Value::fixnum(3));
+        assert_eq!(r, Some(Value::fixnum(7)));
+    }
+
+    #[test]
+    fn mul_fixnums() {
+        let r = Value::fixnum(6).arith_mul(Value::fixnum(7));
+        assert_eq!(r, Some(Value::fixnum(42)));
+    }
+
+    #[test]
+    fn mul_fixnum_zero() {
+        let r = Value::fixnum(12345).arith_mul(Value::fixnum(0));
+        assert_eq!(r, Some(Value::fixnum(0)));
+    }
+
+    #[test]
+    fn negate_fixnum() {
+        assert_eq!(Value::fixnum(5).negate(), Some(Value::fixnum(-5)));
+        assert_eq!(Value::fixnum(-5).negate(), Some(Value::fixnum(5)));
+        assert_eq!(Value::fixnum(0).negate(), Some(Value::fixnum(0)));
+    }
+
+    #[test]
+    fn negate_float() {
+        assert_eq!(Value::float(3.14).negate().unwrap().as_float(), Some(-3.14));
+    }
+
+    #[test]
+    fn negate_non_numeric() {
+        assert!(Value::nil().negate().is_none());
+    }
+
+    #[test]
+    fn add1_fixnum() {
+        assert_eq!(Value::fixnum(41).add1(), Some(Value::fixnum(42)));
+        assert_eq!(Value::fixnum(-1).add1(), Some(Value::fixnum(0)));
+    }
+
+    #[test]
+    fn add1_float() {
+        assert_eq!(Value::float(1.5).add1().unwrap().as_float(), Some(2.5));
+    }
+
+    #[test]
+    fn sub1_fixnum() {
+        assert_eq!(Value::fixnum(42).sub1(), Some(Value::fixnum(41)));
+        assert_eq!(Value::fixnum(0).sub1(), Some(Value::fixnum(-1)));
+    }
+
+    #[test]
+    fn num_eq_fixnums() {
+        assert_eq!(Value::fixnum(5).num_eq(Value::fixnum(5)), Some(Value::t()));
+        assert_eq!(
+            Value::fixnum(5).num_eq(Value::fixnum(6)),
+            Some(Value::nil())
+        );
+    }
+
+    #[test]
+    fn num_eq_mixed() {
+        // 5 == 5.0 should be true
+        assert_eq!(Value::fixnum(5).num_eq(Value::float(5.0)), Some(Value::t()));
+    }
+
+    #[test]
+    fn lt_fixnums() {
+        assert_eq!(Value::fixnum(3).lt(Value::fixnum(5)), Some(Value::t()));
+        assert_eq!(Value::fixnum(5).lt(Value::fixnum(3)), Some(Value::nil()));
+        assert_eq!(Value::fixnum(5).lt(Value::fixnum(5)), Some(Value::nil()));
+    }
+
+    #[test]
+    fn gt_fixnums() {
+        assert_eq!(Value::fixnum(5).gt(Value::fixnum(3)), Some(Value::t()));
+        assert_eq!(Value::fixnum(3).gt(Value::fixnum(5)), Some(Value::nil()));
+    }
+
+    #[test]
+    fn leq_fixnums() {
+        assert_eq!(Value::fixnum(3).leq(Value::fixnum(5)), Some(Value::t()));
+        assert_eq!(Value::fixnum(5).leq(Value::fixnum(5)), Some(Value::t()));
+        assert_eq!(Value::fixnum(6).leq(Value::fixnum(5)), Some(Value::nil()));
+    }
+
+    #[test]
+    fn geq_fixnums() {
+        assert_eq!(Value::fixnum(5).geq(Value::fixnum(3)), Some(Value::t()));
+        assert_eq!(Value::fixnum(5).geq(Value::fixnum(5)), Some(Value::t()));
+        assert_eq!(Value::fixnum(4).geq(Value::fixnum(5)), Some(Value::nil()));
+    }
+
+    #[test]
+    fn from_bool_values() {
+        assert!(Value::from_bool(true).is_t());
+        assert!(Value::from_bool(false).is_nil());
+    }
+
+    #[test]
+    fn comparison_non_numeric_returns_none() {
+        assert!(Value::nil().lt(Value::fixnum(1)).is_none());
+        assert!(Value::fixnum(1).gt(Value::nil()).is_none());
+        assert!(Value::nil().num_eq(Value::nil()).is_none());
     }
 }
 

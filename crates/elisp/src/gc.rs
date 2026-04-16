@@ -152,6 +152,16 @@ impl Heap {
         cell
     }
 
+    /// Allocate a cons cell with Value car/cdr and return a Value
+    /// tagged as a GC pointer (tag 1).
+    ///
+    /// This is the preferred allocation path for code that works with
+    /// `Value` directly, avoiding the LispObject round-trip.
+    pub fn cons_value(&mut self, car: u64, cdr: u64) -> crate::value::Value {
+        let cell = self.cons(car, cdr);
+        crate::value::Value::from_ptr(1, cell as *const u8)
+    }
+
     /// Trigger a GC cycle if the allocation threshold has been exceeded.
     fn maybe_gc(&mut self) {
         if self.should_gc() {

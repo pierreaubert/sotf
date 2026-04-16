@@ -6,6 +6,7 @@
 use crate::error::{ElispError, ElispResult};
 use crate::eval::InterpreterState;
 use crate::object::{BytecodeFunction, LispObject};
+use crate::value::Value;
 use crate::EditorCallbacks;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -505,109 +506,125 @@ impl<'a> Vm<'a> {
             // sub1 (83)
             83 => {
                 let val = self.pop()?;
-                let result = match val {
-                    LispObject::Integer(n) => LispObject::integer(n - 1),
-                    LispObject::Float(f) => LispObject::float(f - 1.0),
-                    _ => return Err(ElispError::WrongTypeArgument("number".to_string())),
-                };
-                self.push(result);
+                let v = Value::from_lisp_object(&val);
+                if let Some(result) = v.sub1() {
+                    self.push(result.to_lisp_object());
+                } else {
+                    return Err(ElispError::WrongTypeArgument("number".to_string()));
+                }
             }
 
             // add1 (84)
             84 => {
                 let val = self.pop()?;
-                let result = match val {
-                    LispObject::Integer(n) => LispObject::integer(n + 1),
-                    LispObject::Float(f) => LispObject::float(f + 1.0),
-                    _ => return Err(ElispError::WrongTypeArgument("number".to_string())),
-                };
-                self.push(result);
+                let v = Value::from_lisp_object(&val);
+                if let Some(result) = v.add1() {
+                    self.push(result.to_lisp_object());
+                } else {
+                    return Err(ElispError::WrongTypeArgument("number".to_string()));
+                }
             }
 
             // eqlsign (85) =
             85 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let result = match (&a, &b) {
-                    (LispObject::Integer(x), LispObject::Integer(y)) => x == y,
-                    _ => {
-                        let fa = get_number(&a)
-                            .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                        let fb = get_number(&b)
-                            .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                        fa == fb
-                    }
-                };
-                self.push(LispObject::from(result));
+                let va = Value::from_lisp_object(&a);
+                let vb = Value::from_lisp_object(&b);
+                if let Some(result) = va.num_eq(vb) {
+                    self.push(result.to_lisp_object());
+                } else {
+                    return Err(ElispError::WrongTypeArgument("number".to_string()));
+                }
             }
 
             // gtr (86) >
             86 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let fa = get_number(&a)
-                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                let fb = get_number(&b)
-                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                self.push(LispObject::from(fa > fb));
+                let va = Value::from_lisp_object(&a);
+                let vb = Value::from_lisp_object(&b);
+                if let Some(result) = va.gt(vb) {
+                    self.push(result.to_lisp_object());
+                } else {
+                    return Err(ElispError::WrongTypeArgument("number".to_string()));
+                }
             }
 
             // lss (87) <
             87 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let fa = get_number(&a)
-                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                let fb = get_number(&b)
-                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                self.push(LispObject::from(fa < fb));
+                let va = Value::from_lisp_object(&a);
+                let vb = Value::from_lisp_object(&b);
+                if let Some(result) = va.lt(vb) {
+                    self.push(result.to_lisp_object());
+                } else {
+                    return Err(ElispError::WrongTypeArgument("number".to_string()));
+                }
             }
 
             // leq (88) <=
             88 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let fa = get_number(&a)
-                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                let fb = get_number(&b)
-                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                self.push(LispObject::from(fa <= fb));
+                let va = Value::from_lisp_object(&a);
+                let vb = Value::from_lisp_object(&b);
+                if let Some(result) = va.leq(vb) {
+                    self.push(result.to_lisp_object());
+                } else {
+                    return Err(ElispError::WrongTypeArgument("number".to_string()));
+                }
             }
 
             // geq (89) >=
             89 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                let fa = get_number(&a)
-                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                let fb = get_number(&b)
-                    .ok_or_else(|| ElispError::WrongTypeArgument("number".to_string()))?;
-                self.push(LispObject::from(fa >= fb));
+                let va = Value::from_lisp_object(&a);
+                let vb = Value::from_lisp_object(&b);
+                if let Some(result) = va.geq(vb) {
+                    self.push(result.to_lisp_object());
+                } else {
+                    return Err(ElispError::WrongTypeArgument("number".to_string()));
+                }
             }
 
             // diff (90)
             90 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                self.push(numeric_binop(&a, &b, |x, y| x - y, |x, y| x - y)?);
+                let va = Value::from_lisp_object(&a);
+                let vb = Value::from_lisp_object(&b);
+                if let Some(result) = va.arith_sub(vb) {
+                    self.push(result.to_lisp_object());
+                } else {
+                    self.push(numeric_binop(&a, &b, |x, y| x - y, |x, y| x - y)?);
+                }
             }
 
             // negate (91)
             91 => {
                 let val = self.pop()?;
-                let result = match val {
-                    LispObject::Integer(n) => LispObject::integer(-n),
-                    LispObject::Float(f) => LispObject::float(-f),
-                    _ => return Err(ElispError::WrongTypeArgument("number".to_string())),
-                };
-                self.push(result);
+                let v = Value::from_lisp_object(&val);
+                if let Some(result) = v.negate() {
+                    self.push(result.to_lisp_object());
+                } else {
+                    return Err(ElispError::WrongTypeArgument("number".to_string()));
+                }
             }
 
             // plus (92)
             92 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                self.push(numeric_binop(&a, &b, |x, y| x + y, |x, y| x + y)?);
+                let va = Value::from_lisp_object(&a);
+                let vb = Value::from_lisp_object(&b);
+                if let Some(result) = va.arith_add(vb) {
+                    self.push(result.to_lisp_object());
+                } else {
+                    self.push(numeric_binop(&a, &b, |x, y| x + y, |x, y| x + y)?);
+                }
             }
 
             // 93 is unused in modern Emacs
@@ -618,7 +635,13 @@ impl<'a> Vm<'a> {
             95 => {
                 let b = self.pop()?;
                 let a = self.pop()?;
-                self.push(numeric_binop(&a, &b, |x, y| x * y, |x, y| x * y)?);
+                let va = Value::from_lisp_object(&a);
+                let vb = Value::from_lisp_object(&b);
+                if let Some(result) = va.arith_mul(vb) {
+                    self.push(result.to_lisp_object());
+                } else {
+                    self.push(numeric_binop(&a, &b, |x, y| x * y, |x, y| x * y)?);
+                }
             }
 
             // quo (165)
