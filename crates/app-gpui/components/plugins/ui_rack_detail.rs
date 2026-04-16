@@ -16,7 +16,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
-use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
+use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP, aae::PARAMS as AAE_P};
 
 use crate::components::themed_tooltip as make_tooltip;
 use super::ui_rack::{build_controller_overlay, plugin_description, short_name, speaker_config_to_channels};
@@ -544,6 +544,8 @@ impl PlayerView {
                     // Output config dropdown (Upmixer and AAE) — next to View, left-aligned
                     .when(matches!(plugin_type, PluginType::Upmixer | PluginType::AAE), |el| {
                         let state_c = state_for_toggle.clone();
+                        let is_aae = matches!(plugin_type, PluginType::AAE);
+                        let specs = if is_aae { AAE_P } else { UP };
                         let upmixer_speaker_config = {
                             let st = state_c.read(cx);
                             if let Some(p) = st.app.plugin_state.graph.get_plugin(selected_idx) {
@@ -566,7 +568,7 @@ impl PlayerView {
                                     div().w(px(80.0)).child(
                                         gpui_ui_kit::Select::new("rack-config-select")
                                             .options(
-                                                pk(UP, "speaker_config").choice_labels()
+                                                pk(specs, "speaker_config").choice_labels()
                                                     .iter()
                                                     .map(|c| gpui_ui_kit::SelectOption::new(c.to_string(), c.to_string()))
                                                     .collect(),
@@ -587,7 +589,7 @@ impl PlayerView {
                                             .on_change({
                                                 let state_c = state_c.clone();
                                                 move |value, _, cx| {
-                                                    let configs = pk(UP, "speaker_config").choice_labels();
+                                                    let configs = pk(specs, "speaker_config").choice_labels();
                                                     let idx = configs.iter().position(|c| *c == value.as_ref()).unwrap_or(0);
                                                     state_c.update(cx, |state, _| {
                                                         state.app.set_plugin_param(selected_idx, 0, idx as f64); // param 0 = speaker_config
