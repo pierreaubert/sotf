@@ -2,7 +2,7 @@ use crate::error::{ElispError, ElispResult, SignalData, ThrowData};
 use crate::object::LispObject;
 use crate::EditorCallbacks;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -129,6 +129,11 @@ impl Environment {
     }
 }
 
+/// Dynamic binding stack entry: (variable name, previous value or None if unbound).
+type Specpdl = Arc<RwLock<Vec<(String, Option<LispObject>)>>>;
+/// Set of variable names declared special via `defvar`/`defconst`.
+type SpecialVars = Arc<RwLock<HashSet<String>>>;
+
 /// Shared interpreter state accessible during evaluation.
 #[derive(Clone)]
 pub struct InterpreterState {
@@ -137,6 +142,12 @@ pub struct InterpreterState {
     pub profiler: Arc<RwLock<crate::jit::Profiler>>,
     #[cfg(feature = "jit")]
     pub jit: Arc<RwLock<crate::jit::JitCompiler>>,
+    /// Variables declared special (dynamically bound) via `defvar`/`defconst`.
+    pub special_vars: SpecialVars,
+    /// Dynamic binding stack — saves/restores old values of special variables.
+    pub specpdl: Specpdl,
+    /// The root (global) environment. Special variables are always read/written here.
+    pub global_env: Arc<RwLock<Environment>>,
 }
 
 pub struct Interpreter {
@@ -151,8 +162,31 @@ impl Interpreter {
         let mut env = Environment::new();
         env.define("nil", LispObject::nil());
         env.define("t", LispObject::t());
+
+        // Standard special variables (always dynamically bound).
+        let special_vars: HashSet<String> = [
+            "load-path",
+            "features",
+            "standard-output",
+            "standard-input",
+            "print-escape-newlines",
+            "print-length",
+            "print-level",
+            "debug-on-error",
+            "inhibit-quit",
+            "case-fold-search",
+            "default-directory",
+            "buffer-file-name",
+            "last-command",
+            "this-command",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        let env = Arc::new(RwLock::new(env));
         Interpreter {
-            env: Arc::new(RwLock::new(env)),
+            env: env.clone(),
             editor: Arc::new(RwLock::new(None)),
             macros: Arc::new(RwLock::new(HashMap::new())),
             state: InterpreterState {
@@ -161,6 +195,9 @@ impl Interpreter {
                 profiler: Arc::new(RwLock::new(crate::jit::Profiler::new(1000))),
                 #[cfg(feature = "jit")]
                 jit: Arc::new(RwLock::new(crate::jit::JitCompiler::new())),
+                special_vars: Arc::new(RwLock::new(special_vars)),
+                specpdl: Arc::new(RwLock::new(Vec::new())),
+                global_env: env,
             },
         }
     }
@@ -243,8 +280,14 @@ fn eval_inner(
             Ok(expr)
         }
         LispObject::Symbol(name) => {
-            let env = env.read();
-            env.get(&name).ok_or(ElispError::VoidVariable(name))
+            // Special (dynamically bound) variables are always looked up in the global env.
+            if state.special_vars.read().contains(&name) {
+                let global = state.global_env.read();
+                global.get(&name).ok_or(ElispError::VoidVariable(name))
+            } else {
+                let env = env.read();
+                env.get(&name).ok_or(ElispError::VoidVariable(name))
+            }
         }
         LispObject::Cons(_) => {
             let (car, cdr) = expr.destructure();
@@ -1143,7 +1186,12 @@ fn eval_setq(
             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
         let val_expr = rest.first().ok_or(ElispError::WrongNumberOfArguments)?;
         let value = eval(val_expr, env, editor, macros, state)?;
-        env.write().set(name, value.clone());
+        // Special variables are always set in the global env (current dynamic binding).
+        if state.special_vars.read().contains(name) {
+            state.global_env.write().set(name, value.clone());
+        } else {
+            env.write().set(name, value.clone());
+        }
         result = value;
         current = rest.rest().unwrap_or(LispObject::nil());
     }
@@ -1276,6 +1324,35 @@ fn extract_param_names(params: &LispObject) -> ElispResult<Vec<String>> {
     Ok(names)
 }
 
+/// Unwind dynamic bindings back to `depth`, restoring previous values in the global env.
+fn unwind_specpdl(state: &InterpreterState, depth: usize) {
+    let global = &state.global_env;
+    let mut specpdl = state.specpdl.write();
+    while specpdl.len() > depth {
+        if let Some((name, Some(val))) = specpdl.pop() {
+            global.write().set(&name, val);
+        }
+    }
+}
+
+/// Bind a parameter: if special, save old value on specpdl and set in global env;
+/// otherwise bind in the local scope.
+fn bind_param_dynamic(
+    name: &str,
+    value: LispObject,
+    new_env: &Arc<RwLock<Environment>>,
+    state: &InterpreterState,
+) {
+    if state.special_vars.read().contains(name) {
+        let global = &state.global_env;
+        let old = global.read().get(name);
+        state.specpdl.write().push((name.to_string(), old));
+        global.write().set(name, value);
+    } else {
+        new_env.write().define(name, value);
+    }
+}
+
 fn eval_let(
     args: &LispObject,
     env: &Arc<RwLock<Environment>>,
@@ -1289,25 +1366,45 @@ fn eval_let(
     let parent_env = Arc::new(env.read().clone());
     let new_env = Arc::new(RwLock::new(Environment::with_parent(parent_env)));
 
+    // Record specpdl depth so we can unwind special bindings on exit.
+    let specpdl_depth = state.specpdl.read().len();
+
     let mut bindings_list = bindings;
     while let Some((binding, rest)) = bindings_list.destructure_cons() {
         // Support both (VAR VALUE) and bare VAR (binds to nil)
-        if let Some(name) = binding.as_symbol() {
-            new_env.write().define(name, LispObject::nil());
+        let (name, value) = if let Some(name) = binding.as_symbol() {
+            (name.to_string(), LispObject::nil())
         } else if let Some((binding_name, binding_val_wrapper)) = binding.destructure_cons() {
             let binding_name = binding_name
                 .as_symbol()
                 .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
             let binding_val = binding_val_wrapper.first().unwrap_or(LispObject::nil());
             let binding_val = eval(binding_val, env, editor, macros, state)?;
-            new_env.write().define(binding_name, binding_val);
+            (binding_name.to_string(), binding_val)
         } else {
             return Err(ElispError::WrongTypeArgument("symbol or list".to_string()));
+        };
+
+        if state.special_vars.read().contains(&name) {
+            // Dynamic binding: save old value and set in the global env.
+            let global = &state.global_env;
+            let old = global.read().get(&name);
+            state.specpdl.write().push((name.clone(), old));
+            global.write().set(&name, value);
+        } else {
+            // Lexical binding: bind in the new local scope.
+            new_env.write().define(&name, value);
         }
+
         bindings_list = rest;
     }
 
-    eval_progn(&body, &new_env, editor, macros, state)
+    let result = eval_progn(&body, &new_env, editor, macros, state);
+
+    // Always unwind special bindings, even if body signaled/threw.
+    unwind_specpdl(state, specpdl_depth);
+
+    result
 }
 
 fn eval_progn(
@@ -1520,6 +1617,8 @@ fn apply_lambda(
     let parent_env = Arc::new(env.read().clone());
     let new_env = Arc::new(RwLock::new(Environment::with_parent(parent_env)));
 
+    let specpdl_depth = state.specpdl.read().len();
+
     let mut params_list = params.clone();
     let mut args_list = args.clone();
     let mut optional = false;
@@ -1534,7 +1633,7 @@ fn apply_lambda(
             None => {
                 // Dotted rest param: (a b . rest)
                 if let LispObject::Symbol(name) = params_list {
-                    new_env.write().define(&name, args_list);
+                    bind_param_dynamic(&name, args_list, &new_env, state);
                 }
                 break;
             }
@@ -1556,8 +1655,7 @@ fn apply_lambda(
             }
 
             if rest {
-                // Bind remaining args as a list
-                new_env.write().define(name, args_list.clone());
+                bind_param_dynamic(name, args_list.clone(), &new_env, state);
                 args_list = LispObject::nil();
                 params_list = params_rest;
                 continue;
@@ -1569,17 +1667,20 @@ fn apply_lambda(
                     if optional || rest {
                         (LispObject::nil(), LispObject::nil())
                     } else {
+                        unwind_specpdl(state, specpdl_depth);
                         return Err(ElispError::WrongNumberOfArguments);
                     }
                 }
             };
-            new_env.write().define(name, arg);
+            bind_param_dynamic(name, arg, &new_env, state);
             args_list = args_rest;
         }
         params_list = params_rest;
     }
 
-    eval_progn(body, &new_env, editor, macros, state)
+    let result = eval_progn(body, &new_env, editor, macros, state);
+    unwind_specpdl(state, specpdl_depth);
+    result
 }
 
 fn eval_buffer_string(
@@ -1889,25 +1990,45 @@ fn eval_let_star(
     let parent_env = Arc::new(env.read().clone());
     let new_env = Arc::new(RwLock::new(Environment::with_parent(parent_env)));
 
+    // Record specpdl depth so we can unwind special bindings on exit.
+    let specpdl_depth = state.specpdl.read().len();
+
     // let* evaluates each binding in the new env (sequential)
     let mut bindings_list = bindings;
     while let Some((binding, rest)) = bindings_list.destructure_cons() {
-        if let Some(name) = binding.as_symbol() {
-            new_env.write().define(name, LispObject::nil());
+        let (name, value) = if let Some(name) = binding.as_symbol() {
+            (name.to_string(), LispObject::nil())
         } else if let Some((binding_name, binding_val_wrapper)) = binding.destructure_cons() {
             let binding_name = binding_name
                 .as_symbol()
                 .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
             let binding_val = binding_val_wrapper.first().unwrap_or(LispObject::nil());
             let binding_val = eval(binding_val, &new_env, editor, macros, state)?;
-            new_env.write().define(binding_name, binding_val);
+            (binding_name.to_string(), binding_val)
         } else {
             return Err(ElispError::WrongTypeArgument("symbol or list".to_string()));
+        };
+
+        if state.special_vars.read().contains(&name) {
+            // Dynamic binding: save old value and set in the global env.
+            let global = &state.global_env;
+            let old = global.read().get(&name);
+            state.specpdl.write().push((name.clone(), old));
+            global.write().set(&name, value);
+        } else {
+            // Lexical binding: bind in the new local scope.
+            new_env.write().define(&name, value);
         }
+
         bindings_list = rest;
     }
 
-    eval_progn(&body, &new_env, editor, macros, state)
+    let result = eval_progn(&body, &new_env, editor, macros, state);
+
+    // Always unwind special bindings, even if body signaled/threw.
+    unwind_specpdl(state, specpdl_depth);
+
+    result
 }
 
 fn eval_defvar(
@@ -1921,6 +2042,9 @@ fn eval_defvar(
     let name = name
         .as_symbol()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+
+    // Mark variable as special (dynamically bound).
+    state.special_vars.write().insert(name.to_string());
 
     // defvar only sets value if currently void (unbound)
     let is_bound = env.read().get(name).is_some();
@@ -1945,6 +2069,9 @@ fn eval_defconst(
     let name = name
         .as_symbol()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+
+    // Mark variable as special (dynamically bound).
+    state.special_vars.write().insert(name.to_string());
 
     // defconst always sets the value
     if let Some(value_expr) = args.nth(1) {
@@ -3995,6 +4122,336 @@ mod tests {
                 .eval(read(r#"(intern-soft "my-var")"#).unwrap())
                 .unwrap(),
             LispObject::symbol("my-var")
+        );
+    }
+
+    /// Ensure all required stdlib files are decompressed to /tmp/elisp-stdlib/.
+    /// Returns false if Emacs lisp directory is not available (skip tests).
+    fn ensure_stdlib_files() -> bool {
+        let emacs_lisp_dir = "/opt/homebrew/share/emacs/30.2/lisp";
+        if !std::path::Path::new(emacs_lisp_dir).exists() {
+            return false;
+        }
+
+        let files = [
+            "debug-early",
+            "byte-run",
+            "backquote",
+            "subr",
+            "emacs-lisp/macroexp",
+            "emacs-lisp/cconv",
+            "simple",
+            "files",
+        ];
+
+        for f in &files {
+            let dest = format!("/tmp/elisp-stdlib/{}.el", f);
+            if std::path::Path::new(&dest).exists() {
+                continue;
+            }
+            if let Some(parent) = std::path::Path::new(&dest).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let plain = format!("{}/{}.el", emacs_lisp_dir, f);
+            let gz = format!("{}/{}.el.gz", emacs_lisp_dir, f);
+            if std::path::Path::new(&plain).exists() {
+                let _ = std::fs::copy(&plain, &dest);
+            } else if std::path::Path::new(&gz).exists() {
+                let output = std::process::Command::new("gunzip")
+                    .args(["-c", &gz])
+                    .output();
+                if let Ok(out) = output {
+                    if out.status.success() {
+                        let _ = std::fs::write(&dest, &out.stdout);
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// Load the standard prerequisite files into an interpreter.
+    fn load_prerequisites(interp: &Interpreter) {
+        for f in &["debug-early.el", "byte-run.el", "backquote.el", "subr.el"] {
+            let path = format!("/tmp/elisp-stdlib/{}", f);
+            if let Ok(s) = std::fs::read_to_string(&path) {
+                let _ = interp.eval_source(&s);
+            }
+        }
+    }
+
+    /// Run a stdlib loading test: parse all forms, eval each, count successes.
+    /// If the reader fails to parse the source, returns the reader error.
+    fn load_file_progress(
+        interp: &Interpreter,
+        source: &str,
+    ) -> (usize, usize, Vec<(usize, String)>) {
+        let forms = match crate::read_all(source) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("  READER ERROR: {}", e);
+                return (0, 0, vec![(0, format!("reader: {}", e))]);
+            }
+        };
+        let total = forms.len();
+        let mut ok_count = 0;
+        let mut errors: Vec<(usize, String)> = Vec::new();
+        for (i, form) in forms.into_iter().enumerate() {
+            match interp.eval(form) {
+                Ok(_) => ok_count += 1,
+                Err(e) => {
+                    if errors.len() < 20 {
+                        errors.push((i, format!("{}", e)));
+                    }
+                }
+            }
+        }
+        (ok_count, total, errors)
+    }
+
+    #[test]
+    fn test_load_macroexp_el() {
+        if !ensure_stdlib_files() {
+            return;
+        }
+        let source = match std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/macroexp.el") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let interp = make_stdlib_interp();
+        load_prerequisites(&interp);
+
+        let (ok, total, errors) = load_file_progress(&interp, &source);
+        let pct = if total > 0 { ok * 100 / total } else { 0 };
+        eprintln!("macroexp.el: {}/{} OK ({}%)", ok, total, pct);
+        for (i, e) in &errors {
+            eprintln!("  form {}: {}", i, e);
+        }
+    }
+
+    #[test]
+    fn test_load_cconv_el() {
+        if !ensure_stdlib_files() {
+            return;
+        }
+        let source = match std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/cconv.el") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let interp = make_stdlib_interp();
+        load_prerequisites(&interp);
+        if let Ok(s) = std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/macroexp.el") {
+            let _ = interp.eval_source(&s);
+        }
+
+        let (ok, total, errors) = load_file_progress(&interp, &source);
+        let pct = if total > 0 { ok * 100 / total } else { 0 };
+        eprintln!("cconv.el: {}/{} OK ({}%)", ok, total, pct);
+        for (i, e) in &errors {
+            eprintln!("  form {}: {}", i, e);
+        }
+    }
+
+    #[test]
+    fn test_load_simple_el() {
+        if !ensure_stdlib_files() {
+            return;
+        }
+        let source = match std::fs::read_to_string("/tmp/elisp-stdlib/simple.el") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let interp = make_stdlib_interp();
+        load_prerequisites(&interp);
+
+        let (ok, total, errors) = load_file_progress(&interp, &source);
+        let pct = if total > 0 { ok * 100 / total } else { 0 };
+        eprintln!("simple.el: {}/{} OK ({}%)", ok, total, pct);
+        for (i, e) in &errors {
+            eprintln!("  form {}: {}", i, e);
+        }
+    }
+
+    #[test]
+    fn test_load_files_el() {
+        if !ensure_stdlib_files() {
+            return;
+        }
+        let source = match std::fs::read_to_string("/tmp/elisp-stdlib/files.el") {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let interp = make_stdlib_interp();
+        load_prerequisites(&interp);
+
+        let (ok, total, errors) = load_file_progress(&interp, &source);
+        let pct = if total > 0 { ok * 100 / total } else { 0 };
+        eprintln!("files.el: {}/{} OK ({}%)", ok, total, pct);
+        for (i, e) in &errors {
+            eprintln!("  form {}: {}", i, e);
+        }
+    }
+
+    // --- Dynamic binding (specpdl) tests ---
+
+    #[test]
+    fn test_dynamic_binding_basic() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // defvar makes x special
+        interp.eval(read("(defvar x 10)").unwrap()).unwrap();
+        // Define a function that reads x dynamically
+        interp.eval(read("(defun get-x () x)").unwrap()).unwrap();
+        // Global value visible
+        assert_eq!(
+            interp.eval(read("(get-x)").unwrap()).unwrap(),
+            LispObject::integer(10)
+        );
+        // Dynamic binding: let binds x for called functions too
+        assert_eq!(
+            interp
+                .eval(read("(let ((x 20)) (get-x))").unwrap())
+                .unwrap(),
+            LispObject::integer(20)
+        );
+        // After let exits, x is restored
+        assert_eq!(
+            interp.eval(read("(get-x)").unwrap()).unwrap(),
+            LispObject::integer(10)
+        );
+    }
+
+    #[test]
+    fn test_dynamic_binding_nested() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        interp.eval(read("(defvar x 1)").unwrap()).unwrap();
+        interp.eval(read("(defun get-x () x)").unwrap()).unwrap();
+        // Nested let forms
+        assert_eq!(
+            interp
+                .eval(
+                    read("(let ((x 10)) (let ((x 100)) (get-x)))")
+                        .unwrap()
+                )
+                .unwrap(),
+            LispObject::integer(100)
+        );
+        // After both lets exit, original value is restored
+        assert_eq!(
+            interp.eval(read("(get-x)").unwrap()).unwrap(),
+            LispObject::integer(1)
+        );
+    }
+
+    #[test]
+    fn test_dynamic_binding_setq() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        interp.eval(read("(defvar x 5)").unwrap()).unwrap();
+        interp.eval(read("(defun get-x () x)").unwrap()).unwrap();
+        // setq inside a dynamic let modifies the current binding
+        assert_eq!(
+            interp
+                .eval(read("(let ((x 10)) (setq x 99) (get-x))").unwrap())
+                .unwrap(),
+            LispObject::integer(99)
+        );
+        // After let exits, original value is restored
+        assert_eq!(
+            interp.eval(read("(get-x)").unwrap()).unwrap(),
+            LispObject::integer(5)
+        );
+    }
+
+    #[test]
+    fn test_dynamic_binding_let_star() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        interp.eval(read("(defvar x 1)").unwrap()).unwrap();
+        interp.eval(read("(defun get-x () x)").unwrap()).unwrap();
+        // let* with special variable
+        assert_eq!(
+            interp
+                .eval(read("(let* ((x 42)) (get-x))").unwrap())
+                .unwrap(),
+            LispObject::integer(42)
+        );
+        assert_eq!(
+            interp.eval(read("(get-x)").unwrap()).unwrap(),
+            LispObject::integer(1)
+        );
+    }
+
+    #[test]
+    fn test_dynamic_binding_lambda_params() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        interp.eval(read("(defvar x 0)").unwrap()).unwrap();
+        interp.eval(read("(defun get-x () x)").unwrap()).unwrap();
+        // Function parameter that is a special var binds dynamically
+        interp
+            .eval(read("(defun set-x-via-param (x) (get-x))").unwrap())
+            .unwrap();
+        assert_eq!(
+            interp
+                .eval(read("(set-x-via-param 77)").unwrap())
+                .unwrap(),
+            LispObject::integer(77)
+        );
+        // After function returns, x is restored
+        assert_eq!(
+            interp.eval(read("(get-x)").unwrap()).unwrap(),
+            LispObject::integer(0)
+        );
+    }
+
+    #[test]
+    fn test_dynamic_binding_defconst() {
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        // defconst also makes the variable special
+        interp
+            .eval(read("(defconst my-const 42)").unwrap())
+            .unwrap();
+        interp
+            .eval(read("(defun get-my-const () my-const)").unwrap())
+            .unwrap();
+        assert_eq!(
+            interp
+                .eval(read("(let ((my-const 99)) (get-my-const))").unwrap())
+                .unwrap(),
+            LispObject::integer(99)
+        );
+        assert_eq!(
+            interp.eval(read("(get-my-const)").unwrap()).unwrap(),
+            LispObject::integer(42)
+        );
+    }
+
+    #[test]
+    fn test_dynamic_binding_mixed_special_and_lexical() {
+        // Test that special vars use global env while non-special use caller's scope
+        let mut interp = Interpreter::new();
+        add_primitives(&mut interp);
+        interp.eval(read("(defvar x 10)").unwrap()).unwrap();
+        interp
+            .eval(read("(defun read-both () (+ x y))").unwrap())
+            .unwrap();
+        // Set up non-special y in global scope
+        interp.eval(read("(setq y 1)").unwrap()).unwrap();
+        // x is special: let binding is visible dynamically through global env
+        // y is non-special: let binding is visible through caller's scope chain
+        assert_eq!(
+            interp
+                .eval(read("(let ((x 100) (y 200)) (read-both))").unwrap())
+                .unwrap(),
+            LispObject::integer(300)
+        );
+        // After let, x is restored to 10 (special), y stays as 1 in global
+        assert_eq!(
+            interp.eval(read("x").unwrap()).unwrap(),
+            LispObject::integer(10)
         );
     }
 }

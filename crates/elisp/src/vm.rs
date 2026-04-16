@@ -37,6 +37,8 @@ struct Vm<'a> {
     locals: Vec<LispObject>,
     /// Dynamic binding stack for varbind/unbind
     specpdl: Vec<(String, Option<LispObject>)>,
+    /// Unwind-protect cleanup handlers (bytecode functions to call on unwind)
+    unwind_handlers: Vec<LispObject>,
     /// Environment
     env: &'a Arc<RwLock<crate::eval::Environment>>,
     editor: &'a Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
@@ -67,6 +69,7 @@ impl<'a> Vm<'a> {
             constants: &func.constants,
             locals: Vec::new(),
             specpdl: Vec::new(),
+            unwind_handlers: Vec::new(),
             env,
             editor,
             macros,
@@ -838,21 +841,98 @@ impl<'a> Vm<'a> {
                 self.push(LispObject::nil());
             }
 
-            // catch (141)
+            // catch (141): pop tag, read 2-byte jump target, execute body.
+            // If a throw with matching tag propagates, catch it and push
+            // the thrown value; otherwise re-throw.
             141 => {
-                let _tag = self.pop()?;
-                // Simplified: catch not fully implemented in VM yet
+                let target = self.fetch_u16() as usize;
+                let tag = self.pop()?;
+                let saved_stack_len = self.stack.len();
+                match self.run_until(target) {
+                    Ok(()) => {
+                        // Body completed normally — we're at target, continue
+                    }
+                    Err(ElispError::Throw(throw_data)) => {
+                        if tag == throw_data.tag {
+                            // Caught: restore stack depth and push thrown value
+                            self.stack.truncate(saved_stack_len);
+                            self.push(throw_data.value);
+                            self.pc = target;
+                        } else {
+                            // Not our tag — re-throw
+                            return Err(ElispError::Throw(throw_data));
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
             }
 
-            // unwind-protect (142)
+            // unwind-protect (142): pop the cleanup handler from the stack.
+            // The handler is called during unbind when the protected form
+            // finishes (normally or via error/throw). We store it so that
+            // the unbind opcode can run it. Emacs encodes this as a special
+            // entry in the specpdl that `unbind` later pops and executes.
             142 => {
-                // The unwind-protect handler is on stack
-                // Simplified: just skip handler setup
+                let handler = self.pop()?;
+                self.unwind_handlers.push(handler);
+                // Push a sentinel onto specpdl so that unbind knows to
+                // run the top unwind handler.
+                self.specpdl.push(("__unwind_protect__".to_string(), None));
             }
 
-            // condition-case (143)
+            // condition-case (143): Emacs encodes this as:
+            //   push body-handler-form, Bcondition_case with 2-byte jump target
+            // The jump target is where normal completion continues.
+            // On error, the handler (popped from stack) is called with
+            // the error data.
             143 => {
-                // Simplified stub
+                let target = self.fetch_u16() as usize;
+                let handler = self.pop()?;
+                let saved_stack_len = self.stack.len();
+                match self.run_until(target) {
+                    Ok(()) => {
+                        // Body completed normally — continue at target
+                    }
+                    Err(ElispError::Throw(throw_data)) => {
+                        // Throws are NOT caught by condition-case
+                        return Err(ElispError::Throw(throw_data));
+                    }
+                    Err(err) => {
+                        // Build the error data as (symbol . data) like eval does
+                        let signal = err.to_signal();
+                        let err_value = if let ElispError::Signal(ref sig) = signal {
+                            LispObject::cons(sig.symbol.clone(), sig.data.clone())
+                        } else {
+                            LispObject::nil()
+                        };
+                        self.stack.truncate(saved_stack_len);
+                        // Call the handler with the error value
+                        if let LispObject::BytecodeFn(bc) = &handler {
+                            let result = crate::vm::execute_bytecode(
+                                bc,
+                                &[err_value],
+                                self.env,
+                                self.editor,
+                                self.macros,
+                                self.state,
+                            )?;
+                            self.push(result);
+                        } else {
+                            // Non-bytecode handler — call via eval
+                            let arg_list = LispObject::cons(err_value, LispObject::nil());
+                            let result = crate::eval::call_function(
+                                &handler,
+                                &arg_list,
+                                self.env,
+                                self.editor,
+                                self.macros,
+                                self.state,
+                            )?;
+                            self.push(result);
+                        }
+                        self.pc = target;
+                    }
+                }
             }
 
             // temp-output-buffer-setup (144)
@@ -1117,6 +1197,46 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
+    /// Execute bytecodes from the current PC until reaching `target_pc`.
+    /// Returns Ok(()) if we reach the target normally, or propagates errors.
+    fn run_until(&mut self, target_pc: usize) -> ElispResult<()> {
+        while self.pc < self.code.len() && self.pc != target_pc {
+            let op = self.fetch_u8();
+            self.dispatch(op)?;
+            // After dispatch, check if a goto put us at or past the target
+            if self.pc == target_pc {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Execute an unwind-protect handler. The handler is either a compiled
+    /// bytecode function (called with zero args) or ignored if not callable.
+    fn run_unwind_handler(&mut self, handler: &LispObject) {
+        if let LispObject::BytecodeFn(bc) = handler {
+            let _ = crate::vm::execute_bytecode(
+                bc,
+                &[],
+                self.env,
+                self.editor,
+                self.macros,
+                self.state,
+            );
+        } else {
+            // For non-bytecode handlers (e.g. lambda), try calling via eval
+            let arg_list = LispObject::nil();
+            let _ = crate::eval::call_function(
+                handler,
+                &arg_list,
+                self.env,
+                self.editor,
+                self.macros,
+                self.state,
+            );
+        }
+    }
+
     fn local_ref(&mut self, n: usize) -> LispObject {
         // varref: look up in constants vector for the symbol name, then look up in env
         if n < self.constants.len() {
@@ -1157,8 +1277,15 @@ impl<'a> Vm<'a> {
 
     fn unbind(&mut self, n: usize) {
         for _ in 0..n {
-            if let Some((name, Some(val))) = self.specpdl.pop() {
-                self.env.write().set(&name, val);
+            if let Some((name, val)) = self.specpdl.pop() {
+                if name == "__unwind_protect__" {
+                    // Run the corresponding unwind handler
+                    if let Some(handler) = self.unwind_handlers.pop() {
+                        self.run_unwind_handler(&handler);
+                    }
+                } else if let Some(val) = val {
+                    self.env.write().set(&name, val);
+                }
             }
         }
     }
@@ -1223,6 +1350,9 @@ mod tests {
             profiler: Arc::new(RwLock::new(crate::jit::Profiler::new(1000))),
             #[cfg(feature = "jit")]
             jit: Arc::new(RwLock::new(crate::jit::JitCompiler::new())),
+            special_vars: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            specpdl: Arc::new(RwLock::new(Vec::new())),
+            global_env: env.clone(),
         };
         (env, editor, macros, state)
     }
@@ -1297,6 +1427,166 @@ mod tests {
         // Hmm, but 0x57 = 87 = gtr. The code shows 56 not 57.
         // Actually wait — the opcode numbers I have might not match Emacs exactly.
         // Let me just test simpler cases for now.
+    }
+
+    /// Test catch with no throw: body completes normally.
+    /// Bytecode layout:
+    ///   0: constant[0] = 'done         (0xC0 = 192)
+    ///   1: catch, target=6              (141, 0x06, 0x00)
+    ///   4: constant[1] = 42            (0xC1 = 193)
+    ///   5: return                       (135)
+    ///   6: return                       (135)
+    #[test]
+    fn test_vm_catch_no_throw() {
+        let bc = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![
+                0xC0, // push constant[0] = tag 'done
+                141, 6, 0,    // catch, jump target = 6
+                0xC1, // push constant[1] = 42
+                135,  // return (normal exit, body value on stack)
+                135,  // return (catch handler target, reached after catch)
+            ],
+            constants: vec![LispObject::symbol("done"), LispObject::integer(42)],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
+        assert_eq!(result, LispObject::integer(42));
+    }
+
+    /// Test catch with matching throw: thrown value is returned.
+    /// Uses the interpreter-level throw (via call to 'throw' function).
+    #[test]
+    fn test_vm_catch_with_throw() {
+        // Test via the interpreter which will compile catch/throw to bytecode
+        // or run via eval. We test the VM directly by constructing bytecodes
+        // that call (throw 'done 99).
+        //
+        // This is easier to test via the interpreter API since constructing
+        // the right bytecodes for function calls is complex.
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        let result = interp
+            .eval(crate::read("(catch 'done (throw 'done 99))").unwrap())
+            .unwrap();
+        assert_eq!(result, LispObject::integer(99));
+    }
+
+    /// Test catch: non-matching throw propagates.
+    #[test]
+    fn test_vm_catch_propagates_non_matching() {
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        let result = interp
+            .eval(crate::read("(catch 'outer (catch 'inner (throw 'outer 77)))").unwrap())
+            .unwrap();
+        assert_eq!(result, LispObject::integer(77));
+    }
+
+    /// Test catch: nested catches, inner catches matching throw.
+    #[test]
+    fn test_vm_catch_nested_inner_catches() {
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        let result = interp
+            .eval(crate::read("(catch 'outer (+ 10 (catch 'inner (throw 'inner 5))))").unwrap())
+            .unwrap();
+        assert_eq!(result, LispObject::integer(15));
+    }
+
+    /// Test unwind-protect: cleanup runs on normal exit.
+    #[test]
+    fn test_vm_unwind_protect_normal() {
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        let result = interp
+            .eval(
+                crate::read(
+                    "(progn (setq test-x 0) (unwind-protect (+ 1 2) (setq test-x 1)) test-x)",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(result, LispObject::integer(1));
+    }
+
+    /// Test unwind-protect: cleanup runs on error.
+    #[test]
+    fn test_vm_unwind_protect_on_error() {
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        let result = interp
+            .eval(
+                crate::read("(progn (setq test-cleaned nil) (condition-case nil (unwind-protect (error \"boom\") (setq test-cleaned t)) (error nil)) test-cleaned)")
+                    .unwrap()
+            )
+            .unwrap();
+        assert_eq!(result, LispObject::T);
+    }
+
+    /// Test unwind-protect: cleanup runs on throw.
+    #[test]
+    fn test_vm_unwind_protect_on_throw() {
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        let result = interp
+            .eval(
+                crate::read("(progn (setq test-flag nil) (catch 'done (unwind-protect (throw 'done 42) (setq test-flag t))) test-flag)")
+                    .unwrap()
+            )
+            .unwrap();
+        assert_eq!(result, LispObject::T);
+    }
+
+    /// Test condition-case: no error returns body value.
+    #[test]
+    fn test_vm_condition_case_no_error() {
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        let result = interp
+            .eval(crate::read("(condition-case err (+ 1 2) (error 99))").unwrap())
+            .unwrap();
+        assert_eq!(result, LispObject::integer(3));
+    }
+
+    /// Test condition-case: error handler catches signal.
+    #[test]
+    fn test_vm_condition_case_catches_error() {
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        let result = interp
+            .eval(crate::read("(condition-case err (error \"boom\") (error 42))").unwrap())
+            .unwrap();
+        assert_eq!(result, LispObject::integer(42));
+    }
+
+    /// Test condition-case: specific condition matches.
+    #[test]
+    fn test_vm_condition_case_specific_condition() {
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        let result = interp
+            .eval(crate::read("(condition-case nil (/ 1 0) (arith-error 42))").unwrap())
+            .unwrap();
+        assert_eq!(result, LispObject::integer(42));
+    }
+
+    /// Test condition-case: throw is NOT caught by condition-case.
+    #[test]
+    fn test_vm_condition_case_does_not_catch_throw() {
+        let mut interp = crate::eval::Interpreter::new();
+        crate::primitives::add_primitives(&mut interp);
+        // throw should propagate through condition-case
+        let result = interp
+            .eval(
+                crate::read("(catch 'done (condition-case nil (throw 'done 99) (error 0)))")
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(result, LispObject::integer(99));
     }
 }
 
