@@ -22,6 +22,7 @@ pub const ALLOWED_PLUGIN_TYPES: &[(&str, &str)] = &[
     ("delay", "Delay"),
     ("convolution", "Convolution"),
     ("upmixer", "Upmixer"),
+    ("aae", "AAE Reverb"),
     ("downmix", "Downmix"),
     ("mono_to_stereo", "Mono to Stereo"),
     ("matrix", "Matrix"),

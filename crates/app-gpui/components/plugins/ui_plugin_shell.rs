@@ -17,6 +17,7 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     match plugin_type {
         PluginType::EQ => theme.plugin_colors.eq,
         PluginType::Gain => theme.plugin_colors.gain,
+        PluginType::AAE => theme.plugin_colors.upmixer,
         PluginType::Upmixer => theme.plugin_colors.upmixer,
         PluginType::Compressor => theme.plugin_colors.compressor,
         PluginType::Limiter => theme.plugin_colors.limiter,
@@ -67,6 +68,7 @@ pub fn plugin_icon(
     match plugin_type {
         PluginType::EQ => "≈",
         PluginType::Gain => "▲",
+        PluginType::AAE => "♬",
         PluginType::Upmixer => "◈",
         PluginType::Compressor => "◉",
         PluginType::Limiter => "█",
@@ -129,6 +131,7 @@ pub fn plugin_short_name(
                 "Gain"
             }
         }
+        PluginType::AAE => "AAE Reverb",
         PluginType::Upmixer => "Upmixer",
         PluginType::Compressor => "Compressor",
         PluginType::Limiter => "Limiter",

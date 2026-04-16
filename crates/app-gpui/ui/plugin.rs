@@ -125,6 +125,7 @@ impl PlayerView {
     quick_add_plugin_handler!(quick_add_eq, QuickAddEQ, sotf_audio_player::PluginType::EQ);
     quick_add_plugin_handler!(quick_add_gain, QuickAddGain, sotf_audio_player::PluginType::Gain);
     quick_add_plugin_handler!(quick_add_upmixer, QuickAddUpmixer, sotf_audio_player::PluginType::Upmixer);
+    quick_add_plugin_handler!(quick_add_aae, QuickAddAAE, sotf_audio_player::PluginType::AAE);
     quick_add_plugin_handler!(quick_add_compressor, QuickAddCompressor, sotf_audio_player::PluginType::Compressor);
     quick_add_plugin_handler!(quick_add_gate, QuickAddGate, sotf_audio_player::PluginType::Gate);
     quick_add_plugin_handler!(quick_add_limiter, QuickAddLimiter, sotf_audio_player::PluginType::Limiter);

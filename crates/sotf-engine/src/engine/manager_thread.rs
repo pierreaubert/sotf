@@ -753,8 +753,12 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
         ThreadEvent::PlaybackUnderrun(underruns) => {
             let mut new_state = (**state.load()).clone();
             new_state.underruns = underruns;
-            if underruns == 1 || underruns.is_multiple_of(100) {
+            if underruns == 1 {
                 log::warn!("[Manager Thread] Playback underrun count: {}", underruns);
+            } else if underruns <= 1000 && underruns.is_multiple_of(100) {
+                log::warn!("[Manager Thread] Playback underrun count: {}", underruns);
+            } else if underruns.is_multiple_of(10000) {
+                log::debug!("[Manager Thread] Playback underrun count: {}", underruns);
             }
             state.store(Arc::new(new_state));
         }
@@ -892,6 +896,10 @@ fn estimate_update_timeout(plugins: &[super::PluginConfig]) -> std::time::Durati
             "upmixer" => {
                 // FFT setup and buffer allocation
                 300
+            }
+            "aae" => {
+                // FDN + early reflection setup
+                200
             }
             "crossover" => {
                 // Multiple filter banks
@@ -1282,6 +1290,7 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "saturation",
             "linear_phase_eq",
             "spectral_compressor",
+            "aae",
         ];
 
         let plugin_type_lower = config.plugin_type.to_lowercase();

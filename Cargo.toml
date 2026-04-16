@@ -3,6 +3,7 @@ members = [
     "crates/sotf-plugins/crates/sotf-host",
     "crates/sotf-plugins/crates/sotf-plugin-ambisonics",
     "crates/sotf-plugins/crates/sotf-plugin-ab-compare",
+    "crates/sotf-plugins/crates/sotf-plugin-aae",
     "crates/sotf-plugins/crates/sotf-plugin-aec",
     "crates/sotf-plugins/crates/sotf-plugin-band-merge",
     "crates/sotf-plugins/crates/sotf-plugin-beamformer",
@@ -197,6 +198,7 @@ gpui-elisp = { version = "0.6", path = "crates/elisp" }
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }
 sotf-plugin-ab-compare = { path = "crates/sotf-plugins/crates/sotf-plugin-ab-compare" }
+sotf-plugin-aae = { path = "crates/sotf-plugins/crates/sotf-plugin-aae" }
 sotf-plugin-aec = { path = "crates/sotf-plugins/crates/sotf-plugin-aec" }
 sotf-plugin-ambisonics = { path = "crates/sotf-plugins/crates/sotf-plugin-ambisonics" }
 sotf-plugin-band-merge = { path = "crates/sotf-plugins/crates/sotf-plugin-band-merge" }

@@ -110,7 +110,7 @@ impl PluginGraphNode {
     /// Get default channel counts based on plugin type
     fn channel_counts_for(plugin: &Plugin) -> (usize, usize) {
         match plugin.plugin_type() {
-            PluginType::Upmixer => (2, 6),         // Stereo to 5.1
+            PluginType::Upmixer | PluginType::AAE => (2, 6), // Stereo to 5.1
             PluginType::BinauralDecoder => (6, 2), // Surround to stereo
             _ => (2, 2),                           // Most plugins are stereo in/out
         }
@@ -605,9 +605,8 @@ impl PluginGraph {
                     // Only enabled plugins affect channel count
                     if plugin_node.plugin.enabled {
                         match plugin_node.plugin.plugin_type() {
-                            PluginType::Upmixer => {
-                                // Upmixer increases channels (stereo to surround)
-                                // Default to 6 channels (5.1), but could be configured
+                            PluginType::Upmixer | PluginType::AAE => {
+                                // Upmixer/AAE increases channels (stereo to surround)
                                 current_channels = plugin_node.output_channels;
                             }
                             PluginType::BinauralDecoder => {
@@ -1221,7 +1220,8 @@ impl PluginGraph {
 
             // Track output channel changes
             match &node.plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. } => {
+                PluginSettings::Upmixer { speaker_config, .. }
+                | PluginSettings::AAE { speaker_config, .. } => {
                     current_channels = upmixer_output_channels(speaker_config);
                 }
                 PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
@@ -1305,7 +1305,8 @@ impl PluginGraph {
                 continue;
             }
             match &node.plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. } => {
+                PluginSettings::Upmixer { speaker_config, .. }
+                | PluginSettings::AAE { speaker_config, .. } => {
                     return upmixer_output_channels(speaker_config);
                 }
                 PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
@@ -1331,7 +1332,8 @@ impl PluginGraph {
                 continue;
             }
             match &node.plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. } => {
+                PluginSettings::Upmixer { speaker_config, .. }
+                | PluginSettings::AAE { speaker_config, .. } => {
                     return Some(speaker_config.clone());
                 }
                 PluginSettings::BinauralDecoder { .. } => return Some("2.0".to_string()),
@@ -1354,6 +1356,7 @@ impl PluginGraph {
             }
             match &node.plugin.settings {
                 PluginSettings::Upmixer { speaker_config, .. }
+                | PluginSettings::AAE { speaker_config, .. }
                 | PluginSettings::AmbisonicsDecoder {
                     target_layout: speaker_config,
                     ..
@@ -1465,7 +1468,8 @@ impl PluginGraph {
                 continue;
             }
             match &node.plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. } => {
+                PluginSettings::Upmixer { speaker_config, .. }
+                | PluginSettings::AAE { speaker_config, .. } => {
                     running_channels = upmixer_output_channels(speaker_config);
                     continue;
                 }
@@ -1686,7 +1690,8 @@ impl PluginGraph {
             let node = &self.nodes[&node_id];
             if node.plugin.enabled && !node.plugin.suspended {
                 match &node.plugin.settings {
-                    PluginSettings::Upmixer { speaker_config, .. } => {
+                    PluginSettings::Upmixer { speaker_config, .. }
+                    | PluginSettings::AAE { speaker_config, .. } => {
                         current_channels = upmixer_output_channels(speaker_config);
                     }
                     PluginSettings::AmbisonicsDecoder { target_layout, .. } => {

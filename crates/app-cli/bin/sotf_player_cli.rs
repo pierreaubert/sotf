@@ -224,6 +224,49 @@ struct UpmixerArgs {
 }
 
 #[derive(Debug, Clone, clap::Args)]
+struct AaeArgs {
+    /// Enable AAE (Active Acoustic Enhancement) reverb
+    #[arg(id = "aae_enabled", long = "aae", default_value_t = false)]
+    enabled: bool,
+
+    /// AAE speaker configuration (5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6)
+    #[arg(long = "aae-config", default_value = "5.1")]
+    config: String,
+
+    /// AAE room preset (small, medium, large, cathedral)
+    #[arg(long = "aae-room", default_value = "medium")]
+    room_preset: String,
+
+    /// AAE room size scale (0.2-3.0)
+    #[arg(long = "aae-room-size", default_value = "1.0")]
+    room_size: f32,
+
+    /// AAE reverberation time in seconds (0.3-6.0)
+    #[arg(long = "aae-rt60", default_value = "1.8")]
+    rt60: f32,
+
+    /// AAE dry signal level (0.0-1.0)
+    #[arg(long = "aae-dry", default_value = "0.5")]
+    dry_level: f32,
+
+    /// AAE early reflection level (0.0-1.0)
+    #[arg(long = "aae-er", default_value = "0.3")]
+    er_level: f32,
+
+    /// AAE late reverb level (0.0-1.0)
+    #[arg(long = "aae-late", default_value = "0.2")]
+    late_level: f32,
+
+    /// AAE pre-delay in milliseconds (0-100)
+    #[arg(long = "aae-predelay", default_value = "20.0")]
+    pre_delay_ms: f32,
+
+    /// AAE modulation depth for time-variant processing (0.0-1.0)
+    #[arg(long = "aae-mod-depth", default_value = "0.5")]
+    mod_depth: f32,
+}
+
+#[derive(Debug, Clone, clap::Args)]
 struct BinauralArgs {
     /// Enable binaural decoder (converts multi-channel to binaural stereo using HRTFs)
     #[arg(id = "binaural_enabled", long = "binaural", default_value_t = false)]
@@ -1480,6 +1523,8 @@ struct PluginArgs {
     #[command(flatten)]
     upmixer: UpmixerArgs,
     #[command(flatten)]
+    aae: AaeArgs,
+    #[command(flatten)]
     binaural: BinauralArgs,
     #[command(flatten)]
     gain: GainArgs,
@@ -1609,6 +1654,29 @@ fn create_loudness_compensation_plugin_config(
 
     Ok(PluginConfig {
         plugin_type: "loudness_compensation".to_string(),
+        parameters,
+    })
+}
+
+fn create_aae_plugin_config(args: &AaeArgs) -> Result<PluginConfig, String> {
+    use serde_json::json;
+
+    let _ = get_speaker_config_channels(&args.config)?;
+
+    let parameters = json!({
+        "speaker_config": args.config,
+        "room_preset": args.room_preset,
+        "room_size": args.room_size,
+        "rt60": args.rt60,
+        "dry_level": args.dry_level,
+        "er_level": args.er_level,
+        "late_level": args.late_level,
+        "pre_delay_ms": args.pre_delay_ms,
+        "mod_depth": args.mod_depth,
+    });
+
+    Ok(PluginConfig {
+        plugin_type: "aae".to_string(),
         parameters,
     })
 }
@@ -2946,6 +3014,43 @@ fn build_rack_mode_plugins(
                 }
                 log::info!("Rack: Added Upmixer plugin ({})", plugins.upmixer.config);
             }
+            "aae" => {
+                if audio_info.spec.channels != 2 {
+                    return Err(format!(
+                        "AAE requires stereo input, got {} channels",
+                        audio_info.spec.channels
+                    ));
+                }
+
+                let idx = chain.add_plugin(&PluginType::AAE);
+                if let Some(plugin) = chain.get_plugin_mut(idx) {
+                    plugin.settings = PluginSettings::AAE {
+                        speaker_config: plugins.aae.config.clone(),
+                        room_size: plugins.aae.room_size as f64,
+                        rt60: plugins.aae.rt60 as f64,
+                        bass_ratio: 1.2,
+                        treble_ratio: 0.5,
+                        pre_delay_ms: plugins.aae.pre_delay_ms as f64,
+                        room_preset: plugins.aae.room_preset.clone(),
+                        dry_level: plugins.aae.dry_level as f64,
+                        er_level: plugins.aae.er_level as f64,
+                        late_level: plugins.aae.late_level as f64,
+                        lfe_level: 0.2,
+                        mod_depth: plugins.aae.mod_depth as f64,
+                        er_mod_depth: 0.3,
+                        input_diffusion: 0.7,
+                        envelopment: 0.7,
+                        height_amount: 0.5,
+                        content_aware: true,
+                        dialogue_attenuation_db: 6.0,
+                        safety_limit_db: 6.0,
+                        bypass: false,
+                        solo_early: false,
+                        solo_late: false,
+                    };
+                }
+                log::info!("Rack: Added AAE reverb plugin ({})", plugins.aae.config);
+            }
             "binaural" => {
                 let sofa_path = plugins
                     .binaural
@@ -3594,7 +3699,30 @@ fn build_traditional_mode_plugins(
         output_channels
     };
 
-    // 3. Binaural decoder (if enabled, must come after upmixer)
+    // 2b. AAE reverb (if enabled, alternative to upmixer — also stereo to surround)
+    let output_channels = if plugins.aae.enabled {
+        if output_channels != 2 {
+            return Err(format!(
+                "AAE requires stereo input, got {} channels",
+                output_channels
+            ));
+        }
+
+        let output_channel_count = get_speaker_config_channels(&plugins.aae.config)?;
+
+        log::info!(
+            "Enabling AAE reverb (stereo-to-{})",
+            plugins.aae.config
+        );
+
+        let aae_plugin = create_aae_plugin_config(&plugins.aae)?;
+        plugin_configs.push(aae_plugin);
+        output_channel_count
+    } else {
+        output_channels
+    };
+
+    // 3. Binaural decoder (if enabled, must come after upmixer/AAE)
     let output_channels = if plugins.binaural.enabled {
         let binaural_plugin =
             create_binaural_decoder_plugin_config(&plugins.binaural, output_channels)?;

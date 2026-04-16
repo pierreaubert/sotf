@@ -121,6 +121,7 @@ pub enum PluginType {
     EQ,
     Gain,
     Upmixer,
+    AAE,
     Compressor,
     Limiter,
     Gate,
@@ -163,6 +164,7 @@ impl PluginType {
             Self::EQ => "EQ",
             Self::Gain => "Gain",
             Self::Upmixer => "Upmixer",
+            Self::AAE => "AAE",
             Self::Compressor => "Compressor",
             Self::Gate => "Gate",
             Self::Limiter => "Limiter",
@@ -205,6 +207,7 @@ impl PluginType {
             Self::EQ => "Parametric Equalizer IIR",
             Self::Gain => "Simple Volume/Gain Control",
             Self::Upmixer => "Stereo to Surround 5.1 to 9.1.6",
+            Self::AAE => "Active Acoustic Enhancement (LARES-inspired reverb)",
             Self::Compressor => "Dynamic Range Compressor",
             Self::Limiter => "Peak Limiter",
             Self::Gate => "Noise Gate",
@@ -249,6 +252,7 @@ impl PluginType {
             Self::EQ,
             Self::Gain,
             Self::Upmixer,
+            Self::AAE,
             Self::Compressor,
             Self::Limiter,
             Self::Gate,
@@ -315,7 +319,8 @@ impl PluginType {
             | Self::Upmixer
             | Self::XTC => ReleaseChannel::Prod,
 
-            Self::ABCompare
+            Self::AAE
+            | Self::ABCompare
             | Self::BandSplit
             | Self::BandMerge
             | Self::Downmix
@@ -406,6 +411,31 @@ sotf_plugins::serde_param_default! {
     fn default_upmixer_enable_hr_direct() -> bool = "enable_hr_direct";
     fn default_upmixer_multi_source_threshold() -> f64 = "multi_source_threshold";
     fn default_upmixer_frequency_resolution() -> usize = "frequency_resolution";
+}
+
+use sotf_plugins::param_specs::aae as aae_specs;
+
+sotf_plugins::serde_param_default! {
+    aae_specs::PARAMS;
+    fn default_aae_speaker_config() -> String = "speaker_config";
+    fn default_aae_room_size() -> f64 = "room_size";
+    fn default_aae_rt60() -> f64 = "rt60";
+    fn default_aae_bass_ratio() -> f64 = "bass_ratio";
+    fn default_aae_treble_ratio() -> f64 = "treble_ratio";
+    fn default_aae_pre_delay_ms() -> f64 = "pre_delay_ms";
+    fn default_aae_room_preset() -> String = "room_preset";
+    fn default_aae_dry_level() -> f64 = "dry_level";
+    fn default_aae_er_level() -> f64 = "er_level";
+    fn default_aae_late_level() -> f64 = "late_level";
+    fn default_aae_lfe_level() -> f64 = "lfe_level";
+    fn default_aae_mod_depth() -> f64 = "mod_depth";
+    fn default_aae_er_mod_depth() -> f64 = "er_mod_depth";
+    fn default_aae_input_diffusion() -> f64 = "input_diffusion";
+    fn default_aae_envelopment() -> f64 = "envelopment";
+    fn default_aae_height_amount() -> f64 = "height_amount";
+    fn default_aae_content_aware() -> bool = "content_aware";
+    fn default_aae_dialogue_attenuation_db() -> f64 = "dialogue_attenuation_db";
+    fn default_aae_safety_limit_db() -> f64 = "safety_limit_db";
 }
 
 sotf_plugins::serde_param_default! {
@@ -940,6 +970,52 @@ pub enum PluginSettings {
         // Binaural preview (Phase 4G)
         #[serde(default)]
         binaural_preview: bool,
+    },
+    AAE {
+        #[serde(default = "default_aae_speaker_config")]
+        speaker_config: String,
+        #[serde(default = "default_aae_room_size")]
+        room_size: f64,
+        #[serde(default = "default_aae_rt60")]
+        rt60: f64,
+        #[serde(default = "default_aae_bass_ratio")]
+        bass_ratio: f64,
+        #[serde(default = "default_aae_treble_ratio")]
+        treble_ratio: f64,
+        #[serde(default = "default_aae_pre_delay_ms")]
+        pre_delay_ms: f64,
+        #[serde(default = "default_aae_room_preset")]
+        room_preset: String,
+        #[serde(default = "default_aae_dry_level")]
+        dry_level: f64,
+        #[serde(default = "default_aae_er_level")]
+        er_level: f64,
+        #[serde(default = "default_aae_late_level")]
+        late_level: f64,
+        #[serde(default = "default_aae_lfe_level")]
+        lfe_level: f64,
+        #[serde(default = "default_aae_mod_depth")]
+        mod_depth: f64,
+        #[serde(default = "default_aae_er_mod_depth")]
+        er_mod_depth: f64,
+        #[serde(default = "default_aae_input_diffusion")]
+        input_diffusion: f64,
+        #[serde(default = "default_aae_envelopment")]
+        envelopment: f64,
+        #[serde(default = "default_aae_height_amount")]
+        height_amount: f64,
+        #[serde(default = "default_aae_content_aware")]
+        content_aware: bool,
+        #[serde(default = "default_aae_dialogue_attenuation_db")]
+        dialogue_attenuation_db: f64,
+        #[serde(default = "default_aae_safety_limit_db")]
+        safety_limit_db: f64,
+        #[serde(default)]
+        bypass: bool,
+        #[serde(default)]
+        solo_early: bool,
+        #[serde(default)]
+        solo_late: bool,
     },
     Compressor {
         threshold_db: f64,
@@ -1824,6 +1900,7 @@ impl PluginSettings {
             Self::DynamicEq { .. } => PluginType::DynamicEq,
             Self::LinearPhaseEq { .. } => PluginType::LinearPhaseEq,
             Self::SpectralCompressor { .. } => PluginType::SpectralCompressor,
+            Self::AAE { .. } => PluginType::AAE,
         }
     }
 
@@ -1831,6 +1908,7 @@ impl PluginSettings {
     pub fn required_input_channels(&self) -> Option<usize> {
         match self {
             Self::Upmixer { .. } => Some(2),
+            Self::AAE { .. } => Some(2),
             Self::StereoImager { .. } => Some(2),
             Self::XTC { .. } => Some(2),
             Self::Crossfeed { .. } => Some(2),
@@ -2950,6 +3028,56 @@ impl PluginSettings {
                     "freq_dependent": freq_dependent,
                 }),
             ),
+            Self::AAE {
+                speaker_config,
+                room_size,
+                rt60,
+                bass_ratio,
+                treble_ratio,
+                pre_delay_ms,
+                room_preset,
+                dry_level,
+                er_level,
+                late_level,
+                lfe_level,
+                mod_depth,
+                er_mod_depth,
+                input_diffusion,
+                envelopment,
+                height_amount,
+                content_aware,
+                dialogue_attenuation_db,
+                safety_limit_db,
+                bypass,
+                solo_early,
+                solo_late,
+            } => PluginConfig::new(
+                "aae",
+                json!({
+                    "speaker_config": speaker_config,
+                    "room_size": room_size,
+                    "rt60": rt60,
+                    "bass_ratio": bass_ratio,
+                    "treble_ratio": treble_ratio,
+                    "pre_delay_ms": pre_delay_ms,
+                    "room_preset": room_preset,
+                    "dry_level": dry_level,
+                    "er_level": er_level,
+                    "late_level": late_level,
+                    "lfe_level": lfe_level,
+                    "mod_depth": mod_depth,
+                    "er_mod_depth": er_mod_depth,
+                    "input_diffusion": input_diffusion,
+                    "envelopment": envelopment,
+                    "height_amount": height_amount,
+                    "content_aware": content_aware,
+                    "dialogue_attenuation_db": dialogue_attenuation_db,
+                    "safety_limit_db": safety_limit_db,
+                    "bypass": bypass,
+                    "solo_early": solo_early,
+                    "solo_late": solo_late,
+                }),
+            ),
         }
     }
 
@@ -3537,6 +3665,33 @@ impl PluginSettings {
                     delta_listen: false,
                     adaptive_threshold: false,
                     adaptive_offset_db: 0.0,
+                }
+            }
+            PluginType::AAE => {
+                let a = aae_specs::PARAMS;
+                Self::AAE {
+                    speaker_config: p(a, "speaker_config").default_choice_label(),
+                    room_size: p(a, "room_size").default_f64(),
+                    rt60: p(a, "rt60").default_f64(),
+                    bass_ratio: p(a, "bass_ratio").default_f64(),
+                    treble_ratio: p(a, "treble_ratio").default_f64(),
+                    pre_delay_ms: p(a, "pre_delay_ms").default_f64(),
+                    room_preset: p(a, "room_preset").default_choice_label(),
+                    dry_level: p(a, "dry_level").default_f64(),
+                    er_level: p(a, "er_level").default_f64(),
+                    late_level: p(a, "late_level").default_f64(),
+                    lfe_level: p(a, "lfe_level").default_f64(),
+                    mod_depth: p(a, "mod_depth").default_f64(),
+                    er_mod_depth: p(a, "er_mod_depth").default_f64(),
+                    input_diffusion: p(a, "input_diffusion").default_f64(),
+                    envelopment: p(a, "envelopment").default_f64(),
+                    height_amount: p(a, "height_amount").default_f64(),
+                    content_aware: p(a, "content_aware").default_bool(),
+                    dialogue_attenuation_db: p(a, "dialogue_attenuation_db").default_f64(),
+                    safety_limit_db: p(a, "safety_limit_db").default_f64(),
+                    bypass: false,
+                    solo_early: false,
+                    solo_late: false,
                 }
             }
         }

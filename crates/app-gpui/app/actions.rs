@@ -83,6 +83,7 @@ actions!(
         QuickAddEQ,
         QuickAddGain,
         QuickAddUpmixer,
+        QuickAddAAE,
         QuickAddCompressor,
         QuickAddGate,
         QuickAddLimiter,

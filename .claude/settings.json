@@ -22,7 +22,6 @@
     ]
   },
   "enabledPlugins": {
-    "code-simplifier@claude-plugins-official": true,
-    "cli-anything@cli-anything": true
+    "code-simplifier@claude-plugins-official": true
   }
 }

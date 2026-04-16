@@ -255,6 +255,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quick_add_eq))
             .on_action(cx.listener(Self::quick_add_gain))
             .on_action(cx.listener(Self::quick_add_upmixer))
+            .on_action(cx.listener(Self::quick_add_aae))
             .on_action(cx.listener(Self::quick_add_compressor))
             .on_action(cx.listener(Self::quick_add_gate))
             .on_action(cx.listener(Self::quick_add_limiter))

@@ -382,6 +382,7 @@ impl PlayerView {
                 "Spatial",
                 vec![
                     (PluginType::Upmixer, "Upmix"),
+                    (PluginType::AAE, "AAE Reverb"),
                     (PluginType::Downmix, "Downmix"),
                     (PluginType::MonoToStereo, "Mono->2.0"),
                     (PluginType::BinauralDecoder, "Binaural"),
@@ -515,7 +516,8 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         | PluginType::Expander
         | PluginType::MultibandCompressor
         | PluginType::MultibandExpander => theme.warning,
-        PluginType::Upmixer
+        PluginType::AAE
+        | PluginType::Upmixer
         | PluginType::BinauralDecoder
         | PluginType::Convolution
         | PluginType::XTC => theme.accent,
@@ -566,8 +568,8 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         | PluginType::XTC
         | PluginType::Denoiser
         | PluginType::Pnd => (2, 2),
-        // Upmixer: stereo in, multi-channel out (5.0 = 5 channels, show up to 5)
-        PluginType::Upmixer => (2, 5),
+        // Upmixer/AAE: stereo in, multi-channel out
+        PluginType::Upmixer | PluginType::AAE => (2, 5),
         // Binaural decoder: multi-channel in, stereo out
         PluginType::BinauralDecoder => (5, 2),
         // Convolution: stereo in/out

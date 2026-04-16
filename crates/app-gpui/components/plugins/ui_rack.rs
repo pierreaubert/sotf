@@ -100,6 +100,7 @@ pub(crate) fn plugin_description(plugin_type: &PluginType) -> &'static str {
     match plugin_type {
         PluginType::EQ => "Parametric equalizer with biquad filters",
         PluginType::Gain => "Simple volume control",
+        PluginType::AAE => "Active acoustic enhancement (LARES-inspired reverb)",
         PluginType::Upmixer => "Stereo to surround upmixing (FFT-based)",
         PluginType::Compressor => "Dynamic range compression",
         PluginType::Limiter => "Peak limiter to prevent clipping",

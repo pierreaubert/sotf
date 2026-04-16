@@ -287,6 +287,7 @@ impl PlayerView {
                 "Spatial",
                 &[
                     PluginType::Upmixer,
+                    PluginType::AAE,
                     PluginType::Matrix,
                     PluginType::BinauralDecoder,
                     PluginType::Convolution,
@@ -327,7 +328,7 @@ impl PlayerView {
                     continue;
                 }
                 let is_single_instance =
-                    matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
+                    matches!(pt, PluginType::Upmixer | PluginType::AAE | PluginType::BinauralDecoder);
                 if is_single_instance && present_plugins.contains(&pt) {
                     continue;
                 }
@@ -540,15 +541,17 @@ impl PlayerView {
                                     )
                             })
                     }
-                    // Output config dropdown (only for Upmixer) — next to View, left-aligned
-                    .when(matches!(plugin_type, PluginType::Upmixer), |el| {
+                    // Output config dropdown (Upmixer and AAE) — next to View, left-aligned
+                    .when(matches!(plugin_type, PluginType::Upmixer | PluginType::AAE), |el| {
                         let state_c = state_for_toggle.clone();
                         let upmixer_speaker_config = {
                             let st = state_c.read(cx);
                             if let Some(p) = st.app.plugin_state.graph.get_plugin(selected_idx) {
-                                if let sotf_audio_player::PluginSettings::Upmixer { ref speaker_config, .. } = p.settings {
-                                    speaker_config.clone()
-                                } else { "5.1".to_string() }
+                                match &p.settings {
+                                    sotf_audio_player::PluginSettings::Upmixer { speaker_config, .. }
+                                    | sotf_audio_player::PluginSettings::AAE { speaker_config, .. } => speaker_config.clone(),
+                                    _ => "5.1".to_string(),
+                                }
                             } else { "5.1".to_string() }
                         };
                         let upmixer_config_open = state_c.read(cx).app.upmixer_config_open;
@@ -636,16 +639,13 @@ impl PlayerView {
                     for p in state.app.plugin_state.graph.plugins() {
                         if p.enabled {
                             match p.plugin_type() {
-                                PluginType::Upmixer => {
-                                    if let sotf_audio_player::PluginSettings::Upmixer {
-                                        speaker_config,
-                                        ..
-                                    } = &p.settings
-                                    {
-                                        output_channels =
-                                            speaker_config_to_channels(speaker_config);
-                                    } else {
-                                        output_channels = 6;
+                                PluginType::Upmixer | PluginType::AAE => {
+                                    match &p.settings {
+                                        sotf_audio_player::PluginSettings::Upmixer { speaker_config, .. }
+                                        | sotf_audio_player::PluginSettings::AAE { speaker_config, .. } => {
+                                            output_channels = speaker_config_to_channels(speaker_config);
+                                        }
+                                        _ => output_channels = 6,
                                     }
                                 }
                                 PluginType::BinauralDecoder => output_channels = 2,

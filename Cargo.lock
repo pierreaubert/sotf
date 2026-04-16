@@ -8420,6 +8420,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sotf-host",
+ "sotf-plugin-aae",
  "sotf-plugin-ab-compare",
  "sotf-plugin-aec",
  "sotf-plugin-ambisonics",
@@ -11236,6 +11237,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-plugin-aae"
+version = "0.5.1"
+dependencies = [
+ "criterion",
+ "hound",
+ "log",
+ "serde",
+ "serde_json",
+ "sotf-host",
+]
+
+[[package]]
 name = "sotf-plugin-ab-compare"
 version = "0.5.2"
 dependencies = [
@@ -11719,6 +11732,7 @@ dependencies = [
  "signal-hook 0.4.4",
  "sofa-reader",
  "sotf-host",
+ "sotf-plugin-aae",
  "sotf-plugin-ab-compare",
  "sotf-plugin-aec",
  "sotf-plugin-ambisonics",

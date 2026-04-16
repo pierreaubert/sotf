@@ -53,6 +53,41 @@ fn index_to_de_esser_mode(index: f64) -> String {
         .to_string()
 }
 
+fn aae_speaker_configs() -> &'static [&'static str] {
+    param_specs::find_by_key(param_specs::aae::PARAMS, "speaker_config").choice_labels()
+}
+
+fn aae_speaker_config_to_index(config: &str) -> f64 {
+    aae_speaker_configs()
+        .iter()
+        .position(|&c| c == config)
+        .unwrap_or(1) as f64 // default to 5.1
+}
+
+fn index_to_aae_speaker_config(index: f64) -> String {
+    let idx = index as usize;
+    aae_speaker_configs().get(idx).unwrap_or(&"5.1").to_string()
+}
+
+fn aae_room_presets() -> &'static [&'static str] {
+    param_specs::find_by_key(param_specs::aae::PARAMS, "room_preset").choice_labels()
+}
+
+fn aae_room_preset_to_index(preset: &str) -> f64 {
+    aae_room_presets()
+        .iter()
+        .position(|&p| p == preset)
+        .unwrap_or(1) as f64 // default to medium
+}
+
+fn index_to_aae_room_preset(index: f64) -> String {
+    let idx = index as usize;
+    aae_room_presets()
+        .get(idx)
+        .unwrap_or(&"medium")
+        .to_string()
+}
+
 fn crossfeed_mode_to_index(mode: &CrossfeedMode) -> f64 {
     match mode {
         CrossfeedMode::Off => 0.0,
@@ -686,6 +721,21 @@ impl_param_accessors! {
             num_filters: f64, fir_length: f64,
             auto_gain: bool, mix: f64,
         ]
+    },
+    AAE {
+        params: param_specs::aae::PARAMS,
+        layout: Some(&param_specs::aae::LAYOUT),
+        fields: [
+            speaker_config: [str aae_speaker_config_to_index, index_to_aae_speaker_config],
+            room_size: f64, rt60: f64, bass_ratio: f64, treble_ratio: f64,
+            pre_delay_ms: f64,
+            room_preset: [str aae_room_preset_to_index, index_to_aae_room_preset],
+            dry_level: f64, er_level: f64, late_level: f64, lfe_level: f64,
+            mod_depth: f64, er_mod_depth: f64, input_diffusion: f64,
+            envelopment: f64, height_amount: f64,
+            content_aware: bool, dialogue_attenuation_db: f64, safety_limit_db: f64,
+            bypass: bool, solo_early: bool, solo_late: bool,
+        ]
     }
     ;
     no_params_unit: [LoudnessMonitor];
@@ -745,6 +795,12 @@ impl PluginSettings {
                 match self {
                     Self::Upmixer { speaker_config, .. } if index == 0 => {
                         Some(speaker_config.clone())
+                    }
+                    Self::AAE { speaker_config, .. } if index == 0 => {
+                        Some(speaker_config.clone())
+                    }
+                    Self::AAE { room_preset, .. } if index == 6 => {
+                        Some(room_preset.clone())
                     }
                     Self::AmbisonicsDecoder { target_layout, .. } if index == 1 => {
                         Some(target_layout.clone())
