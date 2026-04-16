@@ -287,8 +287,9 @@ pub fn call_function(
         }
         LispObject::Symbol(id) => {
             let name = crate::obarray::symbol_name(id);
-            // Check env first
-            if let Some(val) = env.read().get(&name) {
+            // Function-position lookup: env chain for callable, then
+            // the symbol's function cell.
+            if let Some(val) = env.read().get_function(&name) {
                 return call_function(obj_to_value(val), args, env, editor, macros, state);
             }
             // Check autoloads — load the file and retry
@@ -299,8 +300,7 @@ pub fn call_function(
                 );
                 let _ =
                     super::builtins::eval_load(obj_to_value(load_args), env, editor, macros, state);
-                // After loading, try env again
-                if let Some(val) = env.read().get(&name) {
+                if let Some(val) = env.read().get_function(&name) {
                     return call_function(obj_to_value(val), args, env, editor, macros, state);
                 }
             }

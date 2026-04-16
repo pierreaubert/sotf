@@ -1,6 +1,7 @@
 // Builtin functions: put, get, provide, featurep, require, mapcar, mapc, dolist, format.
 
 use crate::error::{ElispError, ElispResult};
+use crate::obarray;
 use crate::object::LispObject;
 use crate::value::{obj_to_value, value_to_obj, Value};
 use crate::EditorCallbacks;
@@ -40,14 +41,14 @@ pub(super) fn eval_put(
         state,
     )?);
 
-    let sym_name = sym
-        .as_symbol()
+    let sym_id = sym
+        .as_symbol_id()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-    let prop_name = prop
-        .as_symbol()
+    let prop_id = prop
+        .as_symbol_id()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-    let key = format!("{}:{}", sym_name, prop_name);
-    state.plists.write().insert(key, val.clone());
+    obarray::put_plist(sym_id, prop_id, val.clone());
+    let _ = state; // state no longer needed for plist ops
     Ok(obj_to_value(val))
 }
 pub(super) fn eval_get(
@@ -73,21 +74,14 @@ pub(super) fn eval_get(
         state,
     )?);
 
-    let sym_name = sym
-        .as_symbol()
+    let sym_id = sym
+        .as_symbol_id()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-    let prop_name = prop
-        .as_symbol()
+    let prop_id = prop
+        .as_symbol_id()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-    let key = format!("{}:{}", sym_name, prop_name);
-    Ok(obj_to_value(
-        state
-            .plists
-            .read()
-            .get(&key)
-            .cloned()
-            .unwrap_or(LispObject::nil()),
-    ))
+    let _ = state;
+    Ok(obj_to_value(obarray::get_plist(sym_id, prop_id)))
 }
 pub(super) fn eval_provide(
     args: Value,

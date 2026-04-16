@@ -1,3 +1,119 @@
+# 0.6.3
+
+## Phase 1b — Environment keyed by SymbolId + function/value cells wired
+
+The Environment now stores `HashMap<SymbolId, LispObject>` instead of
+`HashMap<String, LispObject>`; special variables and the specpdl
+dynamic-binding stack are keyed by `SymbolId`; `HashKey::Symbol(SymbolId)`
+replaces `HashKey::Symbol(String)`. Public Environment API (`get`, `set`,
+`define`, `get_function`) still accepts `&str` and interns at the boundary
+— no existing call site needed to change.
+
+**Full Lisp-2 flip for global bindings**: `Interpreter::define`,
+`defun`, `defalias`, `fset` now write the symbol's function cell
+directly (when the value is callable) instead of the global environment.
+`defvar` / `defconst` / `set` write the value cell. Global env keeps
+only the bootstrap bindings `nil` and `t`.
+
+### Read fallback order
+
+- `Environment::get(name)`: walks the lexical env chain; falls back to
+  the symbol's **value cell**. Used by `symbol-value`, `boundp`, varref.
+- `Environment::get_function(name)`: walks the lexical env chain for a
+  callable binding; falls back to the symbol's **function cell**. Used
+  by function-position dispatch in `call_function`, `resolve_function`,
+  `symbol-function`, `fboundp`.
+- `Environment::get_id_local(id)`: env-only, no cell fallback. Used by
+  `defvar`'s already-bound check so process-global value cells don't
+  prevent interpreter-local initialisation.
+
+### Behaviour changes
+
+- `boundp` / `symbol-value` return t / the value for any symbol with a
+  populated value cell globally — matches Emacs.
+- `fboundp` / `symbol-function` report the function cell for any symbol
+  with one anywhere in the process. Tests that define functions need
+  unique names to avoid cross-talk.
+- `set` now writes the value cell directly instead of the environment.
+  Lexical shadows in lambdas / let are not touched by `set`, matching
+  Emacs semantics more closely.
+
+### Added
+
+- `Environment::get_id`, `set_id`, `define_id`, `get_function_id`,
+  `get_id_local` — SymbolId-keyed hot paths.
+- `obarray::{get_value_cell, set_value_cell, get_function_cell,
+  set_function_cell, get_flags, mark_special}` module-level helpers.
+- `obarray::intern` gains a read-lock fast-path (uses read-lock to find
+  an existing symbol; only upgrades to write-lock to create a new one).
+- Four new Phase 1b tests: `test_defun_writes_function_cell`,
+  `test_defvar_writes_value_cell_and_mirrored_in_env`,
+  `test_fset_writes_function_cell`, `test_hashkey_symbol_with_eq_test`.
+
+### Deferred
+
+- Function-position dispatch that checks the function cell **first**
+  (before walking env chain). Currently lexical bindings shadow the
+  function cell, which is correct for let/lambda but slower than a
+  direct cell read in the common case.
+- Replacing `LispObject::Cons(Arc<Mutex<…>>)` with GC pointers (Phase 2).
+- Migrating `autoloads` / `macros` / `features` tables to `SymbolId`.
+
+---
+
+# 0.6.2
+
+## Phase 1a — Symbol cells + plist migration
+
+Property lists now live on `SymbolData` in the global obarray instead of
+a separate `InterpreterState.plists` table keyed by `"sym:prop"` string
+concatenation. Value-cell and function-cell slots are added to
+`SymbolData` for Phase 1b; eval and VM do not yet read them.
+
+### Behaviour change
+
+- Property lists are now **process-global** (one obarray, shared across
+  all `Interpreter` instances in a process) rather than
+  per-interpreter. This matches Emacs' actual symbol semantics but is a
+  change from prior per-instance isolation. Tests that set symbol
+  properties should use unique symbol names to avoid cross-talk.
+- `(garbage-collect)` now returns `(bytes-allocated . N)` as its first
+  pair instead of the misleading `(conses . N)` label — the value was
+  always `bytes_allocated()` from the heap, not a cons count.
+  `(cons-total . N)` continues to report the true allocation count.
+
+### Added
+
+- `SymbolData` fields: `value: Option<LispObject>`,
+  `function: Option<LispObject>`, `plist: Vec<(SymbolId, LispObject)>`.
+- `SymbolTable` methods: `get_plist`, `put_plist`, `full_plist`,
+  `set_value_cell`, `get_value_cell`, `set_function_cell`,
+  `get_function_cell`.
+- Module-level `obarray::{get_plist, put_plist, full_plist}` wrappers
+  that take `GLOBAL_OBARRAY`'s RwLock.
+- Real `symbol-plist` — returns the plist as a `(prop val prop val ...)`
+  cons list, preserving insertion order.
+- Three new tests in `eval/tests.rs`:
+  `test_plist_put_get_roundtrip`,
+  `test_plist_put_replaces_in_place`,
+  `test_symbol_plist_returns_full_list`.
+
+### Removed
+
+- `InterpreterState.plists` field.
+- `PlistTable` type alias (`Arc<RwLock<HashMap<String, LispObject>>>`).
+
+### Deferred to Phase 1b
+
+- `Environment.bindings` / `special_vars` keyed by `SymbolId` instead
+  of `String`.
+- Value cell / function cell wired into evaluator and VM (currently
+  unused storage).
+- Fast-path read-lock in `obarray::intern`.
+- `HashKey::Symbol(String)` → `SymbolId` migration.
+
+---
+
 # 0.6.1
 
 ## Full Emacs Lisp Interpreter with Bytecode VM and Cranelift JIT

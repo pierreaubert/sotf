@@ -2073,11 +2073,11 @@ fn test_garbage_collect_returns_stats() {
     let result = interp.eval(read("(garbage-collect)").unwrap()).unwrap();
     // Should return a cons (alist)
     assert!(result.is_cons(), "garbage-collect should return a cons");
-    // First element should be (conses . <number>)
+    // First element should be (bytes-allocated . <number>)
     let first = result.car().unwrap();
     assert!(first.is_cons());
     let key = first.car().unwrap();
-    assert_eq!(key, LispObject::symbol("conses"));
+    assert_eq!(key, LispObject::symbol("bytes-allocated"));
 }
 
 #[test]
@@ -2776,4 +2776,154 @@ fn test_quote_dotted_form() {
     let expr = LispObject::cons(LispObject::symbol("quote"), LispObject::symbol("foo"));
     let result = interp.eval(expr).unwrap();
     assert_eq!(result, LispObject::symbol("foo"));
+}
+
+// -- Phase 1a: plist on symbol --
+
+#[test]
+fn test_plist_put_get_roundtrip() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Unique symbol name to avoid cross-talk with other tests
+    // (obarray is process-global).
+    interp
+        .eval(read("(put 'plist-test-sym-a 'bar 42)").unwrap())
+        .unwrap();
+    assert_eq!(
+        interp
+            .eval(read("(get 'plist-test-sym-a 'bar)").unwrap())
+            .unwrap(),
+        LispObject::integer(42)
+    );
+    // Unknown property returns nil.
+    assert_eq!(
+        interp
+            .eval(read("(get 'plist-test-sym-a 'missing)").unwrap())
+            .unwrap(),
+        LispObject::nil()
+    );
+}
+
+#[test]
+fn test_plist_put_replaces_in_place() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    interp
+        .eval(read("(put 'plist-test-sym-b 'k 1)").unwrap())
+        .unwrap();
+    interp
+        .eval(read("(put 'plist-test-sym-b 'k 2)").unwrap())
+        .unwrap();
+    assert_eq!(
+        interp
+            .eval(read("(get 'plist-test-sym-b 'k)").unwrap())
+            .unwrap(),
+        LispObject::integer(2)
+    );
+}
+
+// -- Phase 1b: Environment keyed by SymbolId + function/value cells --
+
+#[test]
+fn test_defun_writes_function_cell() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    interp
+        .eval(read("(defun phase1b-fn-a (x) (* x 2))").unwrap())
+        .unwrap();
+    // fboundp consults env + function-cell fallback
+    assert_eq!(
+        interp
+            .eval(read("(fboundp 'phase1b-fn-a)").unwrap())
+            .unwrap(),
+        LispObject::t()
+    );
+    // Call via function-position dispatch
+    assert_eq!(
+        interp.eval(read("(phase1b-fn-a 21)").unwrap()).unwrap(),
+        LispObject::integer(42)
+    );
+}
+
+#[test]
+fn test_defvar_writes_value_cell_and_mirrored_in_env() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    interp
+        .eval(read("(defvar phase1b-var-a 123)").unwrap())
+        .unwrap();
+    assert_eq!(
+        interp.eval(read("phase1b-var-a").unwrap()).unwrap(),
+        LispObject::integer(123)
+    );
+    // boundp should return t
+    assert_eq!(
+        interp
+            .eval(read("(boundp 'phase1b-var-a)").unwrap())
+            .unwrap(),
+        LispObject::t()
+    );
+}
+
+#[test]
+fn test_fset_writes_function_cell() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    interp
+        .eval(read("(defun phase1b-fset-target (y) (+ y 1))").unwrap())
+        .unwrap();
+    interp
+        .eval(read("(fset 'phase1b-fset-alias (symbol-function 'phase1b-fset-target))").unwrap())
+        .unwrap();
+    assert_eq!(
+        interp
+            .eval(read("(phase1b-fset-alias 10)").unwrap())
+            .unwrap(),
+        LispObject::integer(11)
+    );
+}
+
+#[test]
+fn test_hashkey_symbol_with_eq_test() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    interp
+        .eval(read("(setq h (make-hash-table :test 'eq))").unwrap())
+        .unwrap();
+    interp
+        .eval(read("(puthash 'phase1b-ht-key 99 h)").unwrap())
+        .unwrap();
+    assert_eq!(
+        interp
+            .eval(read("(gethash 'phase1b-ht-key h)").unwrap())
+            .unwrap(),
+        LispObject::integer(99)
+    );
+}
+
+#[test]
+fn test_symbol_plist_returns_full_list() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    interp
+        .eval(read("(put 'plist-test-sym-c 'a 1)").unwrap())
+        .unwrap();
+    interp
+        .eval(read("(put 'plist-test-sym-c 'b 2)").unwrap())
+        .unwrap();
+    // Expected: (a 1 b 2), preserving insertion order.
+    let result = interp
+        .eval(read("(symbol-plist 'plist-test-sym-c)").unwrap())
+        .unwrap();
+    let expected = LispObject::cons(
+        LispObject::symbol("a"),
+        LispObject::cons(
+            LispObject::integer(1),
+            LispObject::cons(
+                LispObject::symbol("b"),
+                LispObject::cons(LispObject::integer(2), LispObject::nil()),
+            ),
+        ),
+    );
+    assert_eq!(result, expected);
 }

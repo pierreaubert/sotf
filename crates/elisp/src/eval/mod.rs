@@ -1,4 +1,5 @@
 use crate::error::{ElispError, ElispResult};
+use crate::obarray::{self, SymbolId};
 use crate::object::LispObject;
 use crate::value::{obj_to_value, value_to_obj, Value};
 use crate::EditorCallbacks;
@@ -8,7 +9,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    bindings: HashMap<String, LispObject>,
+    bindings: HashMap<SymbolId, LispObject>,
     parent: Option<Arc<Environment>>,
 }
 
@@ -19,7 +20,6 @@ pub struct Macro {
 }
 
 type MacroTable = Arc<RwLock<HashMap<String, Macro>>>;
-type PlistTable = Arc<RwLock<HashMap<String, LispObject>>>;
 type FeatureList = Arc<RwLock<Vec<String>>>;
 
 const MAX_EVAL_DEPTH: usize = 1000;
@@ -86,33 +86,61 @@ impl Environment {
         }
     }
 
+    /// Look up `name` in value position.
+    ///
+    /// Walks the lexical env chain first; if the name is unbound there,
+    /// falls back to the symbol's value cell. This implements Lisp-2
+    /// value-position semantics: global vars live in the value cell, but
+    /// lexical bindings from `let`/`lambda` shadow them.
     pub fn get(&self, name: &str) -> Option<LispObject> {
-        self.bindings
-            .get(name)
-            .cloned()
-            .or_else(|| self.parent.as_ref().and_then(|p| p.get(name)))
+        let id = obarray::intern(name);
+        self.get_id(id)
     }
 
-    /// Lisp-2 function lookup: find a callable value for `name`, skipping
-    /// non-callable local shadows (e.g. a parameter named `list` that
-    /// hides the built-in `list` function).  Returns the first callable
-    /// binding found, or the first binding of any kind if no callable
-    /// binding exists.
+    pub fn get_id(&self, id: SymbolId) -> Option<LispObject> {
+        if let Some(val) = self.bindings.get(&id).cloned() {
+            return Some(val);
+        }
+        if let Some(p) = self.parent.as_ref() {
+            if let Some(val) = p.get_id(id) {
+                return Some(val);
+            }
+        }
+        // Fallback: symbol's value cell (global binding).
+        obarray::get_value_cell(id)
+    }
+
+    /// Env-only lookup: does NOT fall back to the value cell.
+    /// Use for `boundp`-style checks and `defvar` initialization.
+    pub fn get_id_local(&self, id: SymbolId) -> Option<LispObject> {
+        if let Some(val) = self.bindings.get(&id).cloned() {
+            return Some(val);
+        }
+        self.parent.as_ref().and_then(|p| p.get_id_local(id))
+    }
+
+    /// Look up `name` in function position.
+    ///
+    /// Walks the lexical env chain for a callable binding (so lexical
+    /// shadowing of functions by lambdas works); falls back to the
+    /// symbol's function cell. If a lexical binding exists but isn't
+    /// callable, we still prefer it — matches prior behaviour.
     pub fn get_function(&self, name: &str) -> Option<LispObject> {
+        let id = obarray::intern(name);
+        self.get_function_id(id)
+    }
+
+    pub fn get_function_id(&self, id: SymbolId) -> Option<LispObject> {
         let mut first_found: Option<LispObject> = None;
-        // Check this level
-        if let Some(val) = self.bindings.get(name).cloned() {
+        if let Some(val) = self.bindings.get(&id).cloned() {
             if is_callable_value(&val) {
                 return Some(val);
             }
-            if first_found.is_none() {
-                first_found = Some(val);
-            }
+            first_found = Some(val);
         }
-        // Walk parent chain
         let mut parent = self.parent.as_ref();
         while let Some(p) = parent {
-            if let Some(val) = p.bindings.get(name).cloned() {
+            if let Some(val) = p.bindings.get(&id).cloned() {
                 if is_callable_value(&val) {
                     return Some(val);
                 }
@@ -122,22 +150,36 @@ impl Environment {
             }
             parent = p.parent.as_ref();
         }
+        // Function-cell fallback.
+        if let Some(fn_cell) = obarray::get_function_cell(id) {
+            return Some(fn_cell);
+        }
         first_found
     }
 
     pub fn set(&mut self, name: &str, value: LispObject) {
-        self.bindings.insert(name.to_string(), value);
+        let id = obarray::intern(name);
+        self.bindings.insert(id, value);
+    }
+
+    pub fn set_id(&mut self, id: SymbolId, value: LispObject) {
+        self.bindings.insert(id, value);
     }
 
     pub fn define(&mut self, name: &str, value: LispObject) {
-        self.bindings.insert(name.to_string(), value);
+        let id = obarray::intern(name);
+        self.bindings.insert(id, value);
+    }
+
+    pub fn define_id(&mut self, id: SymbolId, value: LispObject) {
+        self.bindings.insert(id, value);
     }
 }
 
-/// Dynamic binding stack entry: (variable name, previous value or None if unbound).
-type Specpdl = Arc<RwLock<Vec<(String, Option<LispObject>)>>>;
-/// Set of variable names declared special via `defvar`/`defconst`.
-type SpecialVars = Arc<RwLock<HashSet<String>>>;
+/// Dynamic binding stack entry: (variable, previous value or None if unbound).
+type Specpdl = Arc<RwLock<Vec<(SymbolId, Option<LispObject>)>>>;
+/// Set of variables declared special (dynamically bound) via `defvar`/`defconst`.
+type SpecialVars = Arc<RwLock<HashSet<SymbolId>>>;
 
 /// Autoload table: maps function names to the file that defines them.
 type AutoloadTable = Arc<RwLock<HashMap<String, String>>>;
@@ -145,7 +187,6 @@ type AutoloadTable = Arc<RwLock<HashMap<String, String>>>;
 /// Shared interpreter state accessible during evaluation.
 #[derive(Clone)]
 pub struct InterpreterState {
-    pub plists: PlistTable,
     pub features: FeatureList,
     pub profiler: Arc<RwLock<crate::jit::Profiler>>,
     #[cfg(feature = "jit")]
@@ -183,7 +224,7 @@ impl Interpreter {
         env.define("t", LispObject::t());
 
         // Standard special variables (always dynamically bound).
-        let special_vars: HashSet<String> = [
+        let special_vars: HashSet<SymbolId> = [
             "load-path",
             "features",
             "standard-output",
@@ -200,7 +241,11 @@ impl Interpreter {
             "this-command",
         ]
         .iter()
-        .map(|s| s.to_string())
+        .map(|s| {
+            let id = obarray::intern(s);
+            obarray::mark_special(id);
+            id
+        })
         .collect();
 
         let env = Arc::new(RwLock::new(env));
@@ -209,7 +254,6 @@ impl Interpreter {
             editor: Arc::new(RwLock::new(None)),
             macros: Arc::new(RwLock::new(HashMap::new())),
             state: InterpreterState {
-                plists: Arc::new(RwLock::new(HashMap::new())),
                 features: Arc::new(RwLock::new(Vec::new())),
                 profiler: Arc::new(RwLock::new(crate::jit::Profiler::new(1000))),
                 #[cfg(feature = "jit")]
@@ -235,8 +279,22 @@ impl Interpreter {
     }
 
     pub fn define(&self, name: &str, value: LispObject) {
-        let mut env = self.env.write();
-        env.define(name, value);
+        let id = obarray::intern(name);
+        // Route to the symbol's value or function cell depending on
+        // callability. This is Lisp-2 semantics: functions and variables
+        // live in separate slots on the symbol.
+        //
+        // Keep nil/t in the env (bootstrap) so legacy `env.get("nil")`
+        // paths keep working until every call site moves to SymbolId.
+        if name == "nil" || name == "t" {
+            self.env.write().define_id(id, value);
+            return;
+        }
+        if is_callable_value(&value) {
+            obarray::set_function_cell(id, value);
+        } else {
+            obarray::set_value_cell(id, value);
+        }
     }
 
     pub fn set_editor(&self, editor: Box<dyn EditorCallbacks>) {
@@ -345,21 +403,22 @@ fn eval_inner(
     }
 
     // Symbol lookup
-    if let Some(id) = expr.as_symbol_id() {
-        let name = crate::obarray::symbol_name(crate::obarray::SymbolId(id));
+    if let Some(raw) = expr.as_symbol_id() {
+        let sym_id = SymbolId(raw);
+        let name = crate::obarray::symbol_name(sym_id);
         if name.starts_with(':') {
             return Ok(expr);
         }
-        if state.special_vars.read().contains(&name) {
+        if state.special_vars.read().contains(&sym_id) {
             let global = state.global_env.read();
             return global
-                .get(&name)
+                .get_id(sym_id)
                 .map(obj_to_value)
                 .ok_or(ElispError::VoidVariable(name));
         } else {
             let env = env.read();
             return env
-                .get(&name)
+                .get_id(sym_id)
                 .map(obj_to_value)
                 .ok_or(ElispError::VoidVariable(name));
         }
@@ -627,7 +686,7 @@ fn eval_inner(
                     drop(heap);
                     Ok(obj_to_value(LispObject::cons(
                         LispObject::cons(
-                            LispObject::symbol("conses"),
+                            LispObject::symbol("bytes-allocated"),
                             LispObject::integer(allocated),
                         ),
                         LispObject::cons(
@@ -997,7 +1056,8 @@ fn eval_inner(
                     let name = arg
                         .as_symbol()
                         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                    if let Some(val) = env.read().get(&name) {
+                    // symbol-function: function-position lookup (env + function cell).
+                    if let Some(val) = env.read().get_function(&name) {
                         Ok(obj_to_value(val))
                     } else if let Some(m) = macros.read().get(&name).cloned() {
                         let lambda_form = LispObject::cons(
@@ -1249,10 +1309,11 @@ fn eval_inner(
                         macros,
                         state,
                     )?);
-                    let name = sym
-                        .as_symbol()
+                    let sym_id = sym
+                        .as_symbol_id()
                         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                    env.write().define(&name, def.clone());
+                    // fset writes the function cell.
+                    crate::obarray::set_function_cell(sym_id, def.clone());
                     Ok(obj_to_value(def))
                 }
                 "purecopy" => {
@@ -1307,10 +1368,13 @@ fn eval_inner(
                         macros,
                         state,
                     )?);
-                    let name = sym
-                        .as_symbol()
+                    let sym_id = sym
+                        .as_symbol_id()
                         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
-                    env.write().set(&name, val.clone());
+                    // set writes the value cell (Emacs `set` sets the global
+                    // value). Environment is not touched so lexical shadows
+                    // don't interfere with global set.
+                    crate::obarray::set_value_cell(sym_id, val.clone());
                     Ok(obj_to_value(val))
                 }
                 "boundp" => {
@@ -1339,19 +1403,24 @@ fn eval_inner(
                     let name = sym
                         .as_symbol()
                         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+                    // fboundp uses function-position lookup (env chain +
+                    // function-cell fallback).
                     Ok(obj_to_value(LispObject::from(
-                        env.read().get(&name).is_some(),
+                        env.read().get_function(&name).is_some(),
                     )))
                 }
                 "symbol-plist" => {
-                    let _sym = eval(
+                    let sym = value_to_obj(eval(
                         obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
                         env,
                         editor,
                         macros,
                         state,
-                    )?;
-                    Ok(Value::nil())
+                    )?);
+                    let sym_id = sym
+                        .as_symbol_id()
+                        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+                    Ok(obj_to_value(crate::obarray::full_plist(sym_id)))
                 }
                 "string-match-p" | "string-match" => {
                     let re_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;

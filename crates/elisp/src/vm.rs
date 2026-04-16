@@ -549,16 +549,8 @@ impl<'a> Vm<'a> {
             78 => {
                 let prop = self.pop_obj()?;
                 let sym = self.pop_obj()?;
-                if let (Some(sym_name), Some(prop_name)) = (sym.as_symbol(), prop.as_symbol()) {
-                    let key = format!("{}:{}", sym_name, prop_name);
-                    let val = self
-                        .state
-                        .plists
-                        .read()
-                        .get(&key)
-                        .cloned()
-                        .unwrap_or(LispObject::nil());
-                    self.push_obj(val);
+                if let (Some(sym_id), Some(prop_id)) = (sym.as_symbol_id(), prop.as_symbol_id()) {
+                    self.push_obj(crate::obarray::get_plist(sym_id, prop_id));
                 } else {
                     self.push(Value::nil());
                 }
@@ -1733,7 +1725,6 @@ mod tests {
         let editor = Arc::new(RwLock::new(None));
         let macros = Arc::new(RwLock::new(HashMap::new()));
         let state = InterpreterState {
-            plists: Arc::new(RwLock::new(HashMap::new())),
             features: Arc::new(RwLock::new(Vec::new())),
             profiler: Arc::new(RwLock::new(crate::jit::Profiler::new(1000))),
             #[cfg(feature = "jit")]

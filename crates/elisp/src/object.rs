@@ -68,7 +68,7 @@ pub struct LispHashTable {
 /// Wrapper for hash table keys that implements Hash + Eq.
 #[derive(Debug, Clone)]
 pub enum HashKey {
-    Symbol(String),
+    Symbol(SymbolId),
     Integer(i64),
     String(String),
     /// For 'equal test: use prin1 representation as key
@@ -146,8 +146,9 @@ impl LispHashTable {
         match &self.test {
             HashTableTest::Eq => match obj {
                 // eq: identity for all non-immediate types
-                LispObject::Nil | LispObject::T => HashKey::Symbol(obj.prin1_to_string()),
-                LispObject::Symbol(id) => HashKey::Symbol(obarray::symbol_name(*id)),
+                LispObject::Nil => HashKey::Symbol(obarray::intern("nil")),
+                LispObject::T => HashKey::Symbol(obarray::intern("t")),
+                LispObject::Symbol(id) => HashKey::Symbol(*id),
                 LispObject::Integer(i) => HashKey::Integer(*i),
                 // Strings, cons, vectors: use pointer identity
                 LispObject::Cons(cell) => HashKey::Identity(std::sync::Arc::as_ptr(cell) as usize),
@@ -157,7 +158,7 @@ impl LispHashTable {
             },
             HashTableTest::Eql => match obj {
                 // eql: value equality for numbers, identity for rest
-                LispObject::Symbol(id) => HashKey::Symbol(obarray::symbol_name(*id)),
+                LispObject::Symbol(id) => HashKey::Symbol(*id),
                 LispObject::Integer(i) => HashKey::Integer(*i),
                 LispObject::Float(f) => HashKey::Printed(format!("{:?}", f)),
                 LispObject::String(s) => HashKey::String(s.clone()),

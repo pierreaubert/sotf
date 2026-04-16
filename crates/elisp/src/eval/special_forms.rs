@@ -43,16 +43,16 @@ pub(super) fn eval_setq(
     let mut result = Value::nil();
     let mut current = args_obj;
     while let Some((name_obj, rest)) = current.destructure_cons() {
-        let name = name_obj
-            .as_symbol()
+        let id = name_obj
+            .as_symbol_id()
             .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
         let val_expr = rest.first().ok_or(ElispError::WrongNumberOfArguments)?;
         let value_val = eval(obj_to_value(val_expr), env, editor, macros, state)?;
         let value = value_to_obj(value_val);
-        if state.special_vars.read().contains(&name) {
-            state.global_env.write().set(&name, value);
+        if state.special_vars.read().contains(&id) {
+            state.global_env.write().set_id(id, value);
         } else {
-            env.write().set(&name, value);
+            env.write().set_id(id, value);
         }
         result = value_val;
         current = rest.rest().unwrap_or(LispObject::nil());
@@ -61,25 +61,25 @@ pub(super) fn eval_setq(
 }
 pub(super) fn eval_defun(
     args: Value,
-    env: &Arc<RwLock<Environment>>,
+    _env: &Arc<RwLock<Environment>>,
     _editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
     _macros: &MacroTable,
     _state: &InterpreterState,
 ) -> ElispResult<Value> {
     let args_obj = value_to_obj(args);
-    let name = args_obj.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let name_obj = args_obj.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let rest = args_obj.rest().ok_or(ElispError::WrongNumberOfArguments)?;
-    let name = name
-        .as_symbol()
+    let id = name_obj
+        .as_symbol_id()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
 
     let lambda = LispObject::lambda_expr(
         rest.first().unwrap_or(LispObject::nil()),
         rest.rest().unwrap_or(LispObject::nil()),
     );
-    let mut env = env.write();
-    env.define(&name, lambda);
-    Ok(obj_to_value(LispObject::symbol(&name)))
+    // defun writes the function cell directly.
+    crate::obarray::set_function_cell(id, lambda);
+    Ok(obj_to_value(LispObject::Symbol(id)))
 }
 pub(super) fn eval_defmacro(args: Value, macros: &MacroTable) -> ElispResult<Value> {
     let args_obj = value_to_obj(args);
@@ -206,27 +206,27 @@ pub(super) fn eval_let(
 
     let mut bindings_list = bindings;
     while let Some((binding, rest)) = bindings_list.destructure_cons() {
-        let (name, value) = if let Some(name) = binding.as_symbol() {
-            (name, LispObject::nil())
+        let (id, value) = if let Some(id) = binding.as_symbol_id() {
+            (id, LispObject::nil())
         } else if let Some((binding_name, binding_val_wrapper)) = binding.destructure_cons() {
-            let binding_name = binding_name
-                .as_symbol()
+            let binding_id = binding_name
+                .as_symbol_id()
                 .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
             let binding_val = binding_val_wrapper.first().unwrap_or(LispObject::nil());
             let binding_val =
                 value_to_obj(eval(obj_to_value(binding_val), env, editor, macros, state)?);
-            (binding_name, binding_val)
+            (binding_id, binding_val)
         } else {
             return Err(ElispError::WrongTypeArgument("symbol or list".to_string()));
         };
 
-        if state.special_vars.read().contains(&name) {
+        if state.special_vars.read().contains(&id) {
             let global = &state.global_env;
-            let old = global.read().get(&name);
-            state.specpdl.write().push((name.clone(), old));
-            global.write().set(&name, value);
+            let old = global.read().get_id(id);
+            state.specpdl.write().push((id, old));
+            global.write().set_id(id, value);
         } else {
-            new_env.write().define(&name, value);
+            new_env.write().define_id(id, value);
         }
 
         bindings_list = rest;
@@ -337,11 +337,11 @@ pub(super) fn eval_let_star(
 
     let mut bindings_list = bindings;
     while let Some((binding, rest)) = bindings_list.destructure_cons() {
-        let (name, value) = if let Some(name) = binding.as_symbol() {
-            (name, LispObject::nil())
+        let (id, value) = if let Some(id) = binding.as_symbol_id() {
+            (id, LispObject::nil())
         } else if let Some((binding_name, binding_val_wrapper)) = binding.destructure_cons() {
-            let binding_name = binding_name
-                .as_symbol()
+            let binding_id = binding_name
+                .as_symbol_id()
                 .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
             let binding_val = binding_val_wrapper.first().unwrap_or(LispObject::nil());
             let binding_val = value_to_obj(eval(
@@ -351,18 +351,18 @@ pub(super) fn eval_let_star(
                 macros,
                 state,
             )?);
-            (binding_name, binding_val)
+            (binding_id, binding_val)
         } else {
             return Err(ElispError::WrongTypeArgument("symbol or list".to_string()));
         };
 
-        if state.special_vars.read().contains(&name) {
+        if state.special_vars.read().contains(&id) {
             let global = &state.global_env;
-            let old = global.read().get(&name);
-            state.specpdl.write().push((name.clone(), old));
-            global.write().set(&name, value);
+            let old = global.read().get_id(id);
+            state.specpdl.write().push((id, old));
+            global.write().set_id(id, value);
         } else {
-            new_env.write().define(&name, value);
+            new_env.write().define_id(id, value);
         }
 
         bindings_list = rest;
@@ -505,21 +505,29 @@ pub(super) fn eval_defvar(
     state: &InterpreterState,
 ) -> ElispResult<Value> {
     let args_obj = value_to_obj(args);
-    let name = args_obj.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    let name = name
-        .as_symbol()
+    let name_obj = args_obj.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let id = name_obj
+        .as_symbol_id()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
 
-    state.special_vars.write().insert(name.clone());
+    state.special_vars.write().insert(id);
+    crate::obarray::mark_special(id);
 
-    let is_bound = env.read().get(&name).is_some();
+    // defvar only initializes when the variable has no existing local
+    // binding. We use get_id_local (env-only, no value-cell fallback)
+    // because process-global value cells may hold a concurrent test's
+    // value — that must NOT block initialization of this interpreter's
+    // binding.
+    let is_bound = env.read().get_id_local(id).is_some();
     if !is_bound {
         if let Some(value_expr) = args_obj.nth(1) {
             let value = value_to_obj(eval(obj_to_value(value_expr), env, editor, macros, state)?);
-            env.write().define(&name, value);
+            env.write().define_id(id, value.clone());
+            // Mirror to the value cell so fresh envs elsewhere can see it.
+            crate::obarray::set_value_cell(id, value);
         }
     }
-    Ok(obj_to_value(LispObject::symbol(&name)))
+    Ok(obj_to_value(LispObject::Symbol(id)))
 }
 pub(super) fn eval_defconst(
     args: Value,
@@ -529,18 +537,20 @@ pub(super) fn eval_defconst(
     state: &InterpreterState,
 ) -> ElispResult<Value> {
     let args_obj = value_to_obj(args);
-    let name = args_obj.first().ok_or(ElispError::WrongNumberOfArguments)?;
-    let name = name
-        .as_symbol()
+    let name_obj = args_obj.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let id = name_obj
+        .as_symbol_id()
         .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
 
-    state.special_vars.write().insert(name.clone());
+    state.special_vars.write().insert(id);
+    crate::obarray::mark_special(id);
 
     if let Some(value_expr) = args_obj.nth(1) {
         let value = value_to_obj(eval(obj_to_value(value_expr), env, editor, macros, state)?);
-        env.write().define(&name, value);
+        env.write().define_id(id, value.clone());
+        crate::obarray::set_value_cell(id, value);
     }
-    Ok(obj_to_value(LispObject::symbol(&name)))
+    Ok(obj_to_value(LispObject::Symbol(id)))
 }
 pub(super) fn eval_defalias(
     args: Value,
@@ -578,6 +588,8 @@ pub(super) fn eval_defalias(
         }
     }
 
-    env.write().define(&name, value);
-    Ok(obj_to_value(LispObject::symbol(&name)))
+    // defalias writes the function cell — value is a function definition.
+    let id = crate::obarray::intern(&name);
+    crate::obarray::set_function_cell(id, value);
+    Ok(obj_to_value(LispObject::Symbol(id)))
 }
