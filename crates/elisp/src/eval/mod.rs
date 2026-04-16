@@ -162,6 +162,11 @@ pub struct InterpreterState {
     pub cons_count: Arc<std::sync::atomic::AtomicU64>,
     /// Autoload mappings: function-name -> file-to-load.
     pub autoloads: AutoloadTable,
+    /// Per-eval operation counter. Incremented on every eval call.
+    /// When `eval_ops_limit` is > 0 and ops exceeds it, eval returns an error.
+    pub eval_ops: Arc<std::sync::atomic::AtomicU64>,
+    /// Maximum number of eval operations before aborting (0 = unlimited).
+    pub eval_ops_limit: Arc<std::sync::atomic::AtomicU64>,
 }
 
 pub struct Interpreter {
@@ -215,6 +220,8 @@ impl Interpreter {
                 heap: Arc::new(parking_lot::Mutex::new(crate::gc::Heap::new())),
                 cons_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
                 autoloads: Arc::new(RwLock::new(HashMap::new())),
+                eval_ops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+                eval_ops_limit: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             },
         }
     }
@@ -235,6 +242,21 @@ impl Interpreter {
     pub fn set_editor(&self, editor: Box<dyn EditorCallbacks>) {
         let mut e = self.editor.write();
         *e = Some(editor);
+    }
+
+    /// Set a maximum number of eval operations. 0 means unlimited.
+    /// When the limit is reached, eval returns an error.
+    pub fn set_eval_ops_limit(&self, limit: u64) {
+        self.state
+            .eval_ops_limit
+            .store(limit, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Reset the eval operation counter to zero.
+    pub fn reset_eval_ops(&self) {
+        self.state
+            .eval_ops
+            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Evaluate all forms in a source string. Returns the result of the last form,
@@ -290,6 +312,20 @@ fn eval(
     macros: &MacroTable,
     state: &InterpreterState,
 ) -> ElispResult<Value> {
+    // Check operation limit (if set)
+    let limit = state
+        .eval_ops_limit
+        .load(std::sync::atomic::Ordering::Relaxed);
+    if limit > 0 {
+        let ops = state
+            .eval_ops
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if ops >= limit {
+            return Err(ElispError::EvalError(
+                "eval operation limit exceeded".into(),
+            ));
+        }
+    }
     inc_eval_depth()?;
     let result = eval_inner(expr, env, editor, macros, state);
     dec_eval_depth();
@@ -552,7 +588,36 @@ fn eval_inner(
                 "mapcar" => eval_mapcar(obj_to_value(cdr), env, editor, macros, state),
                 "mapc" => eval_mapc(obj_to_value(cdr), env, editor, macros, state),
                 "dolist" => eval_dolist(obj_to_value(cdr), env, editor, macros, state),
-                "declare" => Ok(Value::nil()),
+                "declare" | "interactive" | "eval-after-load" | "make-help-screen" => {
+                    Ok(Value::nil())
+                }
+                "fmakunbound" => {
+                    // Remove a function definition
+                    let sym = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    if let Some(name) = sym.as_symbol() {
+                        // Remove from macros table
+                        macros.write().remove(&name);
+                        // We don't have a way to truly remove from env,
+                        // but we can set it to nil
+                    }
+                    Ok(obj_to_value(sym))
+                }
+                "makunbound" => {
+                    let sym = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    Ok(obj_to_value(sym))
+                }
                 "garbage-collect" => {
                     let mut heap = state.heap.lock();
                     heap.collect();
@@ -585,7 +650,9 @@ fn eval_inner(
                     let form = eval(obj_to_value(form), env, editor, macros, state)?;
                     eval(form, env, editor, macros, state)
                 }
-                "format" => eval_format(obj_to_value(cdr), env, editor, macros, state),
+                "format" | "format-message" => {
+                    eval_format(obj_to_value(cdr), env, editor, macros, state)
+                }
                 "message" => eval_format(obj_to_value(cdr), env, editor, macros, state),
                 "1+" => {
                     let arg = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
@@ -1098,6 +1165,62 @@ fn eval_inner(
                         parking_lot::Mutex::new(items),
                     ))))
                 }
+                "make-vector" => {
+                    let len_val = value_to_obj(eval(
+                        obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let init_val = value_to_obj(eval(
+                        obj_to_value(cdr.nth(1).ok_or(ElispError::WrongNumberOfArguments)?),
+                        env,
+                        editor,
+                        macros,
+                        state,
+                    )?);
+                    let len = len_val.as_integer().unwrap_or(0).max(0) as usize;
+                    let items = vec![init_val; len];
+                    Ok(obj_to_value(LispObject::Vector(std::sync::Arc::new(
+                        parking_lot::Mutex::new(items),
+                    ))))
+                }
+                "vconcat" => {
+                    // Concatenate sequences into a vector
+                    let mut items = Vec::new();
+                    let mut current = cdr.clone();
+                    while let Some((arg_expr, rest)) = current.destructure_cons() {
+                        let arg =
+                            value_to_obj(eval(obj_to_value(arg_expr), env, editor, macros, state)?);
+                        match &arg {
+                            LispObject::Vector(v) => {
+                                items.extend(v.lock().iter().cloned());
+                            }
+                            LispObject::String(s) => {
+                                for c in s.chars() {
+                                    items.push(LispObject::integer(c as i64));
+                                }
+                            }
+                            _ => {
+                                let mut cur = arg;
+                                while let Some((car, cdr_v)) = cur.destructure_cons() {
+                                    items.push(car);
+                                    cur = cdr_v;
+                                }
+                            }
+                        }
+                        current = rest;
+                    }
+                    Ok(obj_to_value(LispObject::Vector(std::sync::Arc::new(
+                        parking_lot::Mutex::new(items),
+                    ))))
+                }
+                "byte-code" => {
+                    // Stub: we don't have a bytecode interpreter.
+                    // Return nil to let files that contain byte-compiled forms continue loading.
+                    Ok(Value::nil())
+                }
                 "make-symbol" => {
                     let name_val = value_to_obj(eval(
                         obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
@@ -1406,7 +1529,7 @@ fn eval_inner(
                 }
                 "defmacro" => eval_defmacro(obj_to_value(cdr), macros),
                 "macroexpand" => eval_macroexpand(obj_to_value(cdr), env, editor, macros, state),
-                // eval-when-compile / eval-and-compile: at runtime, behave like progn
+                // eval-when-compile / eval-and-compile: at load time, behave like progn
                 "eval-when-compile" | "eval-and-compile" => {
                     eval_progn(obj_to_value(cdr), env, editor, macros, state)
                 }

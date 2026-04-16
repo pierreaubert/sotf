@@ -598,7 +598,11 @@ fn prim_length(args: &LispObject) -> ElispResult<LispObject> {
             Ok(LispObject::integer(count))
         }
         LispObject::String(s) => Ok(LispObject::integer(s.chars().count() as i64)),
-        _ => Err(ElispError::WrongTypeArgument("list or string".to_string())),
+        LispObject::Vector(v) => Ok(LispObject::integer(v.lock().len() as i64)),
+        LispObject::HashTable(ht) => Ok(LispObject::integer(ht.lock().data.len() as i64)),
+        _ => Err(ElispError::WrongTypeArgument(
+            "sequence (list, string, vector)".to_string(),
+        )),
     }
 }
 
@@ -1298,6 +1302,8 @@ fn prim_string_to_number(args: &LispObject) -> ElispResult<LispObject> {
     let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
     let s = match &arg {
         LispObject::String(s) => s.clone(),
+        // Emacs returns 0 for non-string args; tolerate nil gracefully
+        _ if arg.is_nil() => return Ok(LispObject::integer(0)),
         _ => return Err(ElispError::WrongTypeArgument("string".to_string())),
     };
     // Try integer first, then float, default to 0

@@ -515,9 +515,9 @@ pub(super) fn eval_load(
     let nosuffix = args_obj.nth(3).map(|v| !v.is_nil()).unwrap_or(false);
 
     let suffixes: &[&str] = if nosuffix {
-        &[""]
+        &["", ".gz"]
     } else {
-        &[".elc", ".el", ""]
+        &[".elc", ".el", ".el.gz", ""]
     };
 
     // Gather load-path directories
@@ -548,7 +548,27 @@ pub(super) fn eval_load(
     }
 
     for path in &paths_to_try {
-        if let Ok(source) = std::fs::read_to_string(path) {
+        let source = if path.ends_with(".gz") {
+            // Decompress gzipped files via gunzip
+            if std::path::Path::new(path).exists() {
+                std::process::Command::new("gunzip")
+                    .args(["-c", path])
+                    .output()
+                    .ok()
+                    .and_then(|out| {
+                        if out.status.success() {
+                            String::from_utf8(out.stdout).ok()
+                        } else {
+                            None
+                        }
+                    })
+            } else {
+                None
+            }
+        } else {
+            std::fs::read_to_string(path).ok()
+        };
+        if let Some(source) = source {
             let forms = crate::read_all(&source).map_err(|_| ElispError::FileError {
                 operation: "load".into(),
                 path: path.clone(),

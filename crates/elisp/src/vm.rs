@@ -1744,6 +1744,8 @@ mod tests {
             heap: Arc::new(parking_lot::Mutex::new(crate::gc::Heap::new())),
             cons_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             autoloads: Arc::new(RwLock::new(HashMap::new())),
+            eval_ops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            eval_ops_limit: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         };
         (env, editor, macros, state)
     }

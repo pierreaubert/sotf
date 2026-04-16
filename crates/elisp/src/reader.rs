@@ -360,6 +360,24 @@ impl Reader {
                 self.advance();
                 Ok(LispObject::nil()) // stub: no file context
             }
+            '<' => {
+                // #<...> — unreadable object notation. In real Emacs this
+                // always signals invalid-read-syntax, but we skip to the
+                // matching '>' so we can continue parsing the rest of the
+                // file (the notation occasionally appears in docstrings
+                // or comments that leak into read_all).
+                self.advance(); // consume '<'
+                let mut depth = 1u32;
+                while depth > 0 {
+                    match self.advance() {
+                        Some('<') => depth += 1,
+                        Some('>') => depth -= 1,
+                        None => break,
+                        _ => {}
+                    }
+                }
+                Ok(LispObject::nil())
+            }
             _ => Err(ElispError::ReaderError(format!(
                 "unknown # dispatch: #{}",
                 c
@@ -513,7 +531,7 @@ impl Reader {
             })?;
             let ch = match esc {
                 'M' => {
-                    // Meta modifier: \M-X adds 0x8000000 (or 128 for byte)
+                    // Meta modifier: \M-X adds 0x8000000
                     self.advance(); // skip '-'
                     let inner = self.read_char_literal()?;
                     let val = inner.as_integer().unwrap_or(0);
@@ -535,6 +553,31 @@ impl Reader {
                     let val = inner.as_integer().unwrap_or(0);
                     return Ok(LispObject::Integer(val | 0x2000000));
                 }
+                'A' => {
+                    // Alt modifier: \A-X adds 0x400000
+                    self.advance(); // skip '-'
+                    let inner = self.read_char_literal()?;
+                    let val = inner.as_integer().unwrap_or(0);
+                    return Ok(LispObject::Integer(val | 0x400000));
+                }
+                'H' => {
+                    // Hyper modifier: \H-X adds 0x1000000
+                    self.advance(); // skip '-'
+                    let inner = self.read_char_literal()?;
+                    let val = inner.as_integer().unwrap_or(0);
+                    return Ok(LispObject::Integer(val | 0x1000000));
+                }
+                's' => {
+                    // Super modifier when followed by '-': \s-X adds 0x800000
+                    // Otherwise: space character
+                    if self.peek() == Some('-') {
+                        self.advance(); // skip '-'
+                        let inner = self.read_char_literal()?;
+                        let val = inner.as_integer().unwrap_or(0);
+                        return Ok(LispObject::Integer(val | 0x800000));
+                    }
+                    ' ' // space
+                }
                 'n' => '\n',
                 't' => '\t',
                 'r' => '\r',
@@ -542,7 +585,6 @@ impl Reader {
                 'b' => '\x08', // backspace
                 'f' => '\x0C', // form feed
                 'e' => '\x1B', // escape
-                's' => ' ',    // space
                 'd' => '\x7F', // delete
                 '\\' => '\\',
                 '\'' => '\'',
@@ -568,6 +610,37 @@ impl Reader {
                     char::from_u32(code).ok_or_else(|| {
                         ElispError::ReaderError(format!("invalid unicode: \\x{}", hex))
                     })?
+                }
+                'u' | 'U' => {
+                    // Unicode character: \uNNNN or \U00NNNNNN
+                    let mut hex = String::new();
+                    let limit = if esc == 'u' { 4 } else { 8 };
+                    for _ in 0..limit {
+                        match self.peek() {
+                            Some(c) if c.is_ascii_hexdigit() => {
+                                hex.push(c);
+                                self.advance();
+                            }
+                            _ => break,
+                        }
+                    }
+                    let code = u32::from_str_radix(&hex, 16).unwrap_or(0);
+                    char::from_u32(code).unwrap_or('\0')
+                }
+                '0'..='7' => {
+                    // Octal character: \NNN
+                    let mut oct = String::new();
+                    oct.push(esc);
+                    while let Some(c) = self.peek() {
+                        if ('0'..='7').contains(&c) {
+                            oct.push(c);
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    let code = i64::from_str_radix(&oct, 8).unwrap_or(0);
+                    return Ok(LispObject::Integer(code));
                 }
                 c => c, // ?\X for any other X is just X
             };
