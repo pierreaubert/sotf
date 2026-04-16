@@ -25,6 +25,17 @@ private func fourCC(_ value: UInt32) -> String {
     return String(chars)
 }
 
+// TEMP DEBUG: REMOVE AFTER DIAGNOSIS — used by [PROBE] logs in property handlers
+private func scopeName(_ scope: UInt32) -> String {
+    switch scope {
+    case 0x676C6F62: return "glob"
+    case 0x696E7074: return "inpt"
+    case 0x6F757470: return "outp"
+    case 0x2A2A2A2A: return "****"
+    default: return fourCC(scope)
+    }
+}
+
 // MARK: - Object IDs
 
 private let kPlugInObjectID: AudioObjectID = 1
@@ -291,6 +302,7 @@ private func driverAbortDeviceConfigurationChange(_ driver: AudioServerPlugInDri
 
 private func driverHasProperty(_ driver: AudioServerPlugInDriverRef, _ objectID: AudioObjectID, _ clientPID: pid_t, _ address: UnsafePointer<AudioObjectPropertyAddress>) -> DarwinBoolean {
     let sel = address.pointee.mSelector
+    let scope = address.pointee.mScope
 
     // Common properties for all objects
     let commonProps: Set<UInt32> = [
@@ -298,14 +310,14 @@ private func driverHasProperty(_ driver: AudioServerPlugInDriverRef, _ objectID:
         kSelector_Name, kSelector_Manufacturer, kSelector_OwnedObjects
     ]
 
+    let result: Bool
     switch objectID {
     case kPlugInObjectID:
         let pluginProps: Set<UInt32> = [
             kSelector_DeviceList, kSelector_ResourceBundle, kSelector_BundleID,
             kSelector_TranslateUID, kSelector_BoxList, kSelector_CustomPropertyInfo
         ]
-        let hasIt = commonProps.contains(sel) || pluginProps.contains(sel)
-        return DarwinBoolean(hasIt)
+        result = commonProps.contains(sel) || pluginProps.contains(sel)
 
     case kDeviceObjectID:
         let deviceProps: Set<UInt32> = [
@@ -319,8 +331,7 @@ private func driverHasProperty(_ driver: AudioServerPlugInDriverRef, _ objectID:
             kSelector_BufferFrameSize, kSelector_BufferSizeRange, kSelector_StreamConfig,
             kSelector_ControlList, kSelector_ConfigApp, kSelector_Identify
         ]
-        let hasIt = commonProps.contains(sel) || deviceProps.contains(sel)
-        return DarwinBoolean(hasIt)
+        result = commonProps.contains(sel) || deviceProps.contains(sel)
 
     case kInputStreamObjectID, kOutputStreamObjectID:
         let streamProps: Set<UInt32> = [
@@ -328,18 +339,22 @@ private func driverHasProperty(_ driver: AudioServerPlugInDriverRef, _ objectID:
             kSelector_StartingChannel, kSelector_Latency, kSelector_VirtualFormat,
             kSelector_AvailableVirtualFmts, kSelector_PhysicalFormat, kSelector_AvailablePhysicalFmts
         ]
-        let hasIt = commonProps.contains(sel) || streamProps.contains(sel)
-        return DarwinBoolean(hasIt)
+        result = commonProps.contains(sel) || streamProps.contains(sel)
 
     default:
-        return DarwinBoolean(false)
+        result = false
     }
+
+    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
+    halLog("[PROBE] HasProp sel='\(fourCC(sel))' scope=\(scopeName(scope)) obj=\(getObjectType(objectID)) pid=\(clientPID) -> \(result)")
+    return DarwinBoolean(result)
 }
 
 // MARK: - IsPropertySettable
 
 private func driverIsPropertySettable(_ driver: AudioServerPlugInDriverRef, _ objectID: AudioObjectID, _ clientPID: pid_t, _ address: UnsafePointer<AudioObjectPropertyAddress>, _ outIsSettable: UnsafeMutablePointer<DarwinBoolean>) -> OSStatus {
     let sel = address.pointee.mSelector
+    let scope = address.pointee.mScope
 
     let settableProps: Set<UInt32> = [
         kSelector_NominalSampleRate,
@@ -348,7 +363,10 @@ private func driverIsPropertySettable(_ driver: AudioServerPlugInDriverRef, _ ob
         kSelector_PhysicalFormat
     ]
 
-    outIsSettable.pointee = DarwinBoolean(settableProps.contains(sel))
+    let settable = settableProps.contains(sel)
+    outIsSettable.pointee = DarwinBoolean(settable)
+    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
+    halLog("[PROBE] IsSettable sel='\(fourCC(sel))' scope=\(scopeName(scope)) obj=\(getObjectType(objectID)) pid=\(clientPID) -> \(settable)")
     return noErr
 }
 
@@ -357,6 +375,9 @@ private func driverIsPropertySettable(_ driver: AudioServerPlugInDriverRef, _ ob
 private func driverGetPropertyDataSize(_ driver: AudioServerPlugInDriverRef, _ objectID: AudioObjectID, _ clientPID: pid_t, _ address: UnsafePointer<AudioObjectPropertyAddress>, _ qualifierDataSize: UInt32, _ qualifierData: UnsafeRawPointer?, _ outDataSize: UnsafeMutablePointer<UInt32>) -> OSStatus {
     let sel = address.pointee.mSelector
     let scope = address.pointee.mScope
+    let element = address.pointee.mElement
+    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
+    halLog("[PROBE] GetSize sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID)")
 
     // UInt32 properties
     let uint32Props: Set<UInt32> = [
@@ -438,7 +459,13 @@ private func driverGetPropertyDataSize(_ driver: AudioServerPlugInDriverRef, _ o
     case kSelector_PreferredStereo:
         outDataSize.pointee = UInt32(MemoryLayout<UInt32>.size * 2)
 
-    case kSelector_PreferredLayout, kSelector_Icon:
+    case kSelector_PreferredLayout:
+        // AudioChannelLayout header: mChannelLayoutTag(4) + mChannelBitmap(4) +
+        // mNumberChannelDescriptions(4) = 12 bytes. We use a known tag so no
+        // per-channel descriptions are needed.
+        outDataSize.pointee = 12
+
+    case kSelector_Icon:
         outDataSize.pointee = 0  // Not implemented
 
     default:
@@ -454,7 +481,10 @@ private func driverGetPropertyDataSize(_ driver: AudioServerPlugInDriverRef, _ o
 private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objectID: AudioObjectID, _ clientPID: pid_t, _ address: UnsafePointer<AudioObjectPropertyAddress>, _ qualifierDataSize: UInt32, _ qualifierData: UnsafeRawPointer?, _ inDataSize: UInt32, _ outDataSize: UnsafeMutablePointer<UInt32>, _ outData: UnsafeMutableRawPointer) -> OSStatus {
     let sel = address.pointee.mSelector
     let scope = address.pointee.mScope
+    let element = address.pointee.mElement
     let state = DriverState.shared
+    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
+    halLog("[PROBE] GetData sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID) inSize=\(inDataSize)")
 
     switch sel {
     // Class IDs
@@ -704,7 +734,27 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
         outDataSize.pointee = UInt32(MemoryLayout<AudioStreamRangedDescription>.size * kSupportedSampleRates.count)
 
     // Empty lists
-    case kSelector_ControlList, kSelector_CustomPropertyInfo, kSelector_BoxList, kSelector_TranslateUID, kSelector_PreferredLayout, kSelector_Icon:
+    case kSelector_PreferredLayout:
+        // Return an AudioChannelLayout describing the current channel count.
+        // Header is 12 bytes (tag + bitmap + numDescriptions) and we use a
+        // known layout tag so no per-channel descriptions are required.
+        // - 1 channel  → Mono                   = (100 << 16) | 1
+        // - 2 channels → Stereo                 = (101 << 16) | 2
+        // - N channels → DiscreteInOrder | N    = (147 << 16) | N
+        let channels = state.channelCount
+        let layoutTag: UInt32
+        switch channels {
+        case 1: layoutTag = (UInt32(100) << 16) | 1
+        case 2: layoutTag = (UInt32(101) << 16) | 2
+        default: layoutTag = (UInt32(147) << 16) | channels
+        }
+        let layoutPtr = outData.assumingMemoryBound(to: UInt32.self)
+        layoutPtr[0] = layoutTag      // mChannelLayoutTag
+        layoutPtr[1] = 0              // mChannelBitmap (unused with named tag)
+        layoutPtr[2] = 0              // mNumberChannelDescriptions
+        outDataSize.pointee = 12
+
+    case kSelector_ControlList, kSelector_CustomPropertyInfo, kSelector_BoxList, kSelector_TranslateUID, kSelector_Icon:
         outDataSize.pointee = 0
 
     default:
@@ -719,7 +769,11 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
 
 private func driverSetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objectID: AudioObjectID, _ clientPID: pid_t, _ address: UnsafePointer<AudioObjectPropertyAddress>, _ qualifierDataSize: UInt32, _ qualifierData: UnsafeRawPointer?, _ dataSize: UInt32, _ data: UnsafeRawPointer) -> OSStatus {
     let sel = address.pointee.mSelector
+    let scope = address.pointee.mScope
+    let element = address.pointee.mElement
     let state = DriverState.shared
+    // TEMP DEBUG: REMOVE AFTER DIAGNOSIS
+    halLog("[PROBE] SetData sel='\(fourCC(sel))' scope=\(scopeName(scope)) elem=\(element) obj=\(getObjectType(objectID)) pid=\(clientPID) dataSize=\(dataSize)")
 
     switch sel {
     case kSelector_NominalSampleRate:
@@ -963,6 +1017,21 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
 
         let isConnected = state.sharedAudio.isConnected
         let engineReady = state.sharedAudio.engineReady
+
+        // TEMP DEBUG: REMOVE AFTER DIAGNOSIS — log the moment engineReady changes
+        struct EngineReadyTracker {
+            static var lastValue: Bool = false
+            static var initialized: Bool = false
+        }
+        if !EngineReadyTracker.initialized || engineReady != EngineReadyTracker.lastValue {
+            os_log("[ENGINE_READY FLIP] %{public}d -> %{public}d (isConnected=%{public}d)",
+                   log: logger, type: .error,
+                   EngineReadyTracker.lastValue ? 1 : 0,
+                   engineReady ? 1 : 0,
+                   isConnected ? 1 : 0)
+            EngineReadyTracker.lastValue = engineReady
+            EngineReadyTracker.initialized = true
+        }
 
         // Compute RMS and peak of the incoming CoreAudio buffer to verify data is non-zero
         if shouldLogDiag {

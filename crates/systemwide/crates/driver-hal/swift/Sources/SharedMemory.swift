@@ -203,43 +203,54 @@ final class SharedAudioBuffer {
         // Initialize header
         guard let header = header else { return false }
 
-        // Check if already initialized by another process
-        if header.pointee.magic == kSharedMemoryMagic {
-            halLog("SharedMemory: already initialized, updating")
+        // If shared memory was already initialized by the daemon (running before
+        // coreaudiod was respawned), preserve its runtime state — engineReady,
+        // ring positions, encryption session, config-negotiation state. Wiping
+        // those silently flips engineReady from 1 → 0 behind the daemon's back
+        // and stops the audio path. Only fresh memory should be zeroed.
+        let alreadyInitialized = (header.pointee.magic == kSharedMemoryMagic)
+
+        if alreadyInitialized {
+            halLog("SharedMemory: already initialized, preserving daemon state")
         } else {
-            // Clear the memory
+            // Fresh memory — clear everything, then write the full header.
             memset(sharedMemory!, 0, memorySize)
+
+            header.pointee.writePosition = 0
+            header.pointee.readPosition = 0
+            header.pointee.active = 0
+            header.pointee.configChanged = 0
+            header.pointee.engineReady = 0
+
+            // Encryption fields (version 2+)
+            header.pointee.encrypted = 0
+            header.pointee.keyFingerprint = (0, 0, 0, 0, 0, 0, 0, 0)
+            header.pointee.frameCounter = 0
+
+            // Config negotiation fields (version 3+)
+            header.pointee.requestedSampleRate = 0
+            header.pointee.requestedBufferFrames = 0
+            header.pointee.configStatus = 0
+            header.pointee.configSource = 0
+            header.pointee.configErrorCode = 0
         }
 
+        // Always set: identifying fields and structural geometry.
+        // Geometry can legitimately change across coreaudiod re-spawns even
+        // when the daemon was running (different sample rate, different buffer
+        // size). The daemon tolerates this through its config-negotiation path.
         header.pointee.magic = kSharedMemoryMagic
         header.pointee.version = kSharedMemoryVersion
         header.pointee.sampleRate = sampleRate
         header.pointee.bufferFrames = bufferFrames
         header.pointee.channelCount = channelCount
-        header.pointee.writePosition = 0
-        header.pointee.readPosition = 0
-        header.pointee.active = 0
-        header.pointee.configChanged = 0
-        header.pointee.driverReady = 1
-        header.pointee.engineReady = 0
-
-        // Encryption fields (version 2+)
-        header.pointee.encrypted = 0
-        header.pointee.keyFingerprint = (0, 0, 0, 0, 0, 0, 0, 0)
-        header.pointee.frameCounter = 0
-
-        // Config negotiation fields (version 3+)
-        header.pointee.requestedSampleRate = 0
-        header.pointee.requestedBufferFrames = 0
         header.pointee.actualSampleRate = sampleRate
         header.pointee.actualBufferFrames = bufferFrames
-        header.pointee.configStatus = 0
-        header.pointee.configSource = 0
-        header.pointee.configErrorCode = 0
+        header.pointee.driverReady = 1
 
         OSMemoryBarrier()
 
-        halLog("SharedMemory: initialized successfully (version \(kSharedMemoryVersion))")
+        halLog("SharedMemory: initialized (version \(kSharedMemoryVersion), fresh=\(!alreadyInitialized), engineReady=\(header.pointee.engineReady))")
         return true
     }
 
