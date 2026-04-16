@@ -177,7 +177,26 @@ impl Reader {
                     Ok(LispObject::symbol(&s))
                 }
             }
-            c if c.is_ascii_digit() => self.read_number_from(c),
+            c if c.is_ascii_digit() => {
+                // Check if this is a number or a symbol starting with digits (e.g. 1value, 1+)
+                // Peek ahead to see if the token ends with non-numeric symbol chars
+                let saved_pos = self.pos;
+                let result = self.read_number_from(c);
+                // If the next char is a symbol char (not delimiter/whitespace), it's a symbol
+                if let Some(next) = self.peek() {
+                    if is_symbol_char(next)
+                        && !next.is_ascii_digit()
+                        && next != '.'
+                        && next != 'e'
+                        && next != 'E'
+                    {
+                        // Rewind and read as symbol
+                        self.pos = saved_pos;
+                        return self.read_symbol(c);
+                    }
+                }
+                result
+            }
             '.' => {
                 // Could be a float like .5 or a symbol starting with .
                 if self.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
@@ -255,12 +274,7 @@ impl Reader {
             }
             elements.push(self.read()?);
         }
-        // Build as a list tagged with 'vector for now (proper Vector type comes in 1B)
-        let mut list = LispObject::nil();
-        for e in elements.into_iter().rev() {
-            list = LispObject::cons(e, list);
-        }
-        Ok(LispObject::cons(LispObject::symbol("vector"), list))
+        Ok(LispObject::Vector(elements))
     }
 
     fn read_hash(&mut self) -> ElispResult<LispObject> {
@@ -487,6 +501,29 @@ impl Reader {
                 ElispError::ReaderError("unexpected end of input in char escape".to_string())
             })?;
             let ch = match esc {
+                'M' => {
+                    // Meta modifier: \M-X adds 0x8000000 (or 128 for byte)
+                    self.advance(); // skip '-'
+                    let inner = self.read_char_literal()?;
+                    let val = inner.as_integer().unwrap_or(0);
+                    return Ok(LispObject::Integer(val | 0x8000000));
+                }
+                'C' | '^' => {
+                    // Control modifier: \C-X or \^X
+                    if esc == 'C' {
+                        self.advance(); // skip '-'
+                    }
+                    let inner = self.read_char_literal()?;
+                    let val = inner.as_integer().unwrap_or(0);
+                    return Ok(LispObject::Integer(val & 0x1F));
+                }
+                'S' => {
+                    // Shift modifier: \S-X adds 0x2000000
+                    self.advance(); // skip '-'
+                    let inner = self.read_char_literal()?;
+                    let val = inner.as_integer().unwrap_or(0);
+                    return Ok(LispObject::Integer(val | 0x2000000));
+                }
                 'n' => '\n',
                 't' => '\t',
                 'r' => '\r',
@@ -1008,8 +1045,10 @@ mod tests {
     #[test]
     fn test_read_vector_literal() {
         let result = read("[1 2 3]").unwrap();
-        // Currently represented as (vector 1 2 3)
-        assert_eq!(result.first().unwrap(), LispObject::symbol("vector"));
+        assert!(matches!(result, LispObject::Vector(_)));
+        if let LispObject::Vector(v) = &result {
+            assert_eq!(v.len(), 3);
+        }
     }
 
     #[test]
