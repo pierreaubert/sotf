@@ -31,6 +31,17 @@ expression: plan
         1.0
       ],
       "read_only": false
+    },
+    {
+      "param_index": 7,
+      "param_name": "ITU-R BS.775 Mode",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
     }
   ],
   "main_groups": [

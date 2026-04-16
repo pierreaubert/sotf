@@ -54,6 +54,17 @@ expression: plan
         0.12
       ],
       "read_only": false
+    },
+    {
+      "param_index": 26,
+      "param_name": "Head Model",
+      "control_type": "selector",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
     }
   ],
   "main_groups": [

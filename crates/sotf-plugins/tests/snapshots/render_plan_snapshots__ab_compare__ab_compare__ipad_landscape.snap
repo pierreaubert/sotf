@@ -69,6 +69,17 @@ expression: plan
           "read_only": false
         },
         {
+          "param_index": 13,
+          "param_name": "Difference Mode",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
           "param_index": 8,
           "param_name": "Mix Transition",
           "control_type": "knob",
@@ -76,6 +87,33 @@ expression: plan
           "range": [
             1.0,
             500.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "title": "PHASE",
+      "controls": [
+        {
+          "param_index": 11,
+          "param_name": "Phase Invert A",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 12,
+          "param_name": "Phase Invert B",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
           ],
           "read_only": false
         }

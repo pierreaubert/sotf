@@ -34,6 +34,17 @@ expression: plan
             20.0
           ],
           "read_only": false
+        },
+        {
+          "param_index": 1,
+          "param_name": "Smoothing",
+          "control_type": "knob",
+          "unit": "ms",
+          "range": [
+            0.0,
+            100.0
+          ],
+          "read_only": false
         }
       ]
     }

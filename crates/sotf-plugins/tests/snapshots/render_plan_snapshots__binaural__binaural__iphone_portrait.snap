@@ -1,5 +1,6 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 52
 expression: plan
 ---
 {
@@ -94,7 +95,73 @@ expression: plan
     }
   ],
   "output_controls": [],
-  "tabs": [],
+  "tabs": [
+    {
+      "name": "Reverb",
+      "controls": [
+        {
+          "param_index": 6,
+          "param_name": "Late Reverb",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 7,
+          "param_name": "Reverb Mix",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 8,
+          "param_name": "Reverb Time",
+          "control_type": "knob",
+          "unit": "s",
+          "range": [
+            0.1,
+            5.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 9,
+          "param_name": "Reverb Damping",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "name": "Headphone",
+      "controls": [
+        {
+          "param_index": 10,
+          "param_name": "Headphone EQ",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    }
+  ],
   "viz_slots": [],
   "dynamic_sections": []
 }

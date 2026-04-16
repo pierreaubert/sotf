@@ -1,5 +1,6 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 78
 expression: plan
 ---
 {
@@ -39,6 +40,17 @@ expression: plan
           "param_index": 4,
           "param_name": "Confidence Threshold",
           "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 5,
+          "param_name": "Phase Vocoder",
+          "control_type": "toggle",
           "unit": "",
           "range": [
             0.0,

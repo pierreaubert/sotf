@@ -65,6 +65,17 @@ expression: plan
         1.0
       ],
       "read_only": false
+    },
+    {
+      "param_index": 10,
+      "param_name": "Ext Sidechain",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
     }
   ],
   "main_groups": [
@@ -90,6 +101,39 @@ expression: plan
           "range": [
             1.0,
             100.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 11,
+          "param_name": "Range",
+          "control_type": "vertical_slider",
+          "unit": "dB",
+          "range": [
+            0.0,
+            120.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 12,
+          "param_name": "Hysteresis",
+          "control_type": "vertical_slider",
+          "unit": "dB",
+          "range": [
+            0.0,
+            12.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 13,
+          "param_name": "Knee",
+          "control_type": "vertical_slider",
+          "unit": "dB",
+          "range": [
+            0.0,
+            20.0
           ],
           "read_only": false
         }
@@ -128,6 +172,17 @@ expression: plan
           "range": [
             10.0,
             2000.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 14,
+          "param_name": "Lookahead",
+          "control_type": "knob",
+          "unit": "ms",
+          "range": [
+            0.0,
+            20.0
           ],
           "read_only": false
         }

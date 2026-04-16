@@ -45,6 +45,17 @@ expression: plan
             1.0
           ],
           "read_only": false
+        },
+        {
+          "param_index": 5,
+          "param_name": "Phase Vocoder",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
         }
       ]
     },

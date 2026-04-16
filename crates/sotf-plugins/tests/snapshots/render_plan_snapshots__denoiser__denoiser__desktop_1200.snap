@@ -406,6 +406,66 @@ expression: plan
           "read_only": false
         }
       ]
+    },
+    {
+      "name": "Advanced",
+      "controls": [
+        {
+          "param_index": 29,
+          "param_name": "Algorithm",
+          "control_type": "selector",
+          "unit": "",
+          "range": [
+            0.0,
+            3.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 32,
+          "param_name": "Multi-Res",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 33,
+          "param_name": "Harmonic/Percussive",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 34,
+          "param_name": "Spatial Denoise",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 35,
+          "param_name": "Spatial Strength",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
     }
   ],
   "viz_slots": [],

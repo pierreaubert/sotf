@@ -46,6 +46,17 @@ expression: plan
             0.95
           ],
           "read_only": false
+        },
+        {
+          "param_index": 5,
+          "param_name": "Allpass Feedback",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
         }
       ]
     }
@@ -63,7 +74,35 @@ expression: plan
       "read_only": false
     }
   ],
-  "tabs": [],
+  "tabs": [
+    {
+      "name": "Modulation",
+      "controls": [
+        {
+          "param_index": 3,
+          "param_name": "LFO Rate",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            0.0,
+            20.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 4,
+          "param_name": "LFO Depth",
+          "control_type": "knob",
+          "unit": "ms",
+          "range": [
+            0.0,
+            10.0
+          ],
+          "read_only": false
+        }
+      ]
+    }
+  ],
   "viz_slots": [],
   "dynamic_sections": []
 }

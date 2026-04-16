@@ -33,6 +33,17 @@ expression: plan
         9.0
       ],
       "read_only": false
+    },
+    {
+      "param_index": 43,
+      "param_name": "Binaural Preview",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
     }
   ],
   "main_groups": [
@@ -444,6 +455,60 @@ expression: plan
           "range": [
             500.0,
             5000.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "name": "Analysis",
+      "controls": [
+        {
+          "param_index": 35,
+          "param_name": "Low Latency",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 36,
+          "param_name": "Freq Resolution",
+          "control_type": "selector",
+          "unit": "",
+          "range": [
+            0.0,
+            2.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "name": "Source",
+      "controls": [
+        {
+          "param_index": 41,
+          "param_name": "Multi-Source Extraction",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 42,
+          "param_name": "Multi-Source Threshold",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.05,
+            0.5
           ],
           "read_only": false
         }

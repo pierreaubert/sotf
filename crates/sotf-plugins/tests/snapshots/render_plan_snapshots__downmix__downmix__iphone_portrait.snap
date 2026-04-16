@@ -1,5 +1,6 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 62
 expression: plan
 ---
 {
@@ -25,6 +26,17 @@ expression: plan
     {
       "param_index": 4,
       "param_name": "Phase Coherence",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 7,
+      "param_name": "ITU-R BS.775 Mode",
       "control_type": "toggle",
       "unit": "",
       "range": [
