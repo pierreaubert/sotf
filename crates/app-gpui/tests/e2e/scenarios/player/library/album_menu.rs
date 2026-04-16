@@ -217,13 +217,17 @@ impl TestScenario for AlbumNoDuplicateScenario {
     ) -> Result<(), Box<dyn Error>> {
         let mut driver = AppDriver::new(cx, view);
 
-        // Inject test album
+        // Inject test album — use a real temp file so validate_album_has_files passes
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let track_path = tmp_dir.path().join("track.flac");
+        std::fs::write(&track_path, b"fake").unwrap();
+
         let album = Album {
             id: Some(1),
             title: "Test Album".to_string(),
             year: Some(2024),
             tracks: vec![Track {
-                path: std::path::PathBuf::from("/test/track.flac"),
+                path: track_path,
                 title: Some("Test Track".to_string()),
                 ..Default::default()
             }],

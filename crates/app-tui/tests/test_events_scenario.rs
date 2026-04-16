@@ -162,16 +162,19 @@ mod tests {
                     assert_eq!(app.spinorama_eq.step, SpinoramaStep::Configure);
                 },
             ),
-            // 6. '+' → loss_function cycles from default to next value
+            // 6. '+' → loss_function cycles from default ("flat") to next value
             step(
                 "Plus cycles loss function forward",
                 vec![Input::Key(KeyCode::Char('+'))],
                 |app| {
                     // loss_function is field 0 and is a selectable field;
-                    // the exact value depends on the default cycle order
+                    // default is "flat", cycling forward gives "flat-asymmetric"
                     assert_ne!(
-                        app.spinorama_eq.config.loss_function, "flat-asymmetric",
+                        app.spinorama_eq.config.loss_function, "flat",
                         "loss_function should have changed from default"
+                    );
+                    assert_eq!(
+                        app.spinorama_eq.config.loss_function, "flat-asymmetric",
                     );
                 },
             ),

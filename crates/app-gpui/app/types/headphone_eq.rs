@@ -115,7 +115,7 @@ impl Default for HeadphoneEqState {
             loading_download: false,
             headphones_cached_at: None,
             downloaded_curve: None,
-            loss_type: "score".to_string(),
+            loss_type: "flat".to_string(),
             target_preset: "harman-over-ear-2018".to_string(),
             custom_target_path: None,
             optimizer_config: HeadphoneEqOptimizerConfig::default(),

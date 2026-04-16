@@ -49,8 +49,8 @@ fn test_screen_copy_clone() {
 #[test]
 fn test_headphone_eq_ui_loss_type_uses_optimizer_source_of_truth() {
     let state = HeadphoneEqState::default();
-    assert_eq!(state.ui_loss_type(), "score");
-    assert_eq!(state.optimizer_config.loss, "headphone-score");
+    assert_eq!(state.ui_loss_type(), "flat");
+    assert_eq!(state.optimizer_config.loss, "flat");
 }
 
 #[test]

@@ -890,7 +890,8 @@ mod tests {
     #[test]
     fn test_supported_formats() {
         let formats = AudioFormat::supported_formats();
-        assert_eq!(formats.len(), 6);
+        let expected_count = if cfg!(feature = "iamf") { 7 } else { 6 };
+        assert_eq!(formats.len(), expected_count);
         assert!(formats.contains(&AudioFormat::Flac));
         assert!(formats.contains(&AudioFormat::Mp3));
         assert!(formats.contains(&AudioFormat::Aac));

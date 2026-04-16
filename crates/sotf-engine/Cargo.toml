@@ -13,7 +13,7 @@ name = "sotf_audio"
 path = "src/lib.rs"
 
 [features]
-default = ["streaming"]
+default = ["streaming", "iamf"]
 hal = ["driver-hal", "sotf-plugins/hal"]
 asio = ["cpal/asio"]
 iamf = ["dep:sotf-iamf", "dep:sotf-plugin-ambisonics"]
