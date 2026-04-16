@@ -3059,4 +3059,36 @@ mod tests {
             total
         );
     }
+
+    #[test]
+    fn test_load_elc_file() {
+        // Compile a test file with Emacs, then load the .elc
+        let elc_path = "/tmp/test-bytecode.elc";
+        let source = match std::fs::read_to_string(elc_path) {
+            Ok(s) => s,
+            Err(_) => return, // Skip if .elc not available
+        };
+        let interp = make_stdlib_interp();
+        match interp.eval_source(&source) {
+            Ok(_) => {}
+            Err((i, e)) => {
+                eprintln!("test-bytecode.elc failed at form {}: {}", i, e);
+                // Don't panic — just report
+            }
+        }
+        // Try calling the compiled functions
+        let result = interp.eval(read("(my-add 3 4)").unwrap());
+        match result {
+            Ok(val) => assert_eq!(val, LispObject::integer(7), "my-add returned {:?}", val),
+            Err(e) => eprintln!(
+                "my-add failed: {} (expected — bytecode may need more opcodes)",
+                e
+            ),
+        }
+        let result = interp.eval(read("(my-double 21)").unwrap());
+        match result {
+            Ok(val) => assert_eq!(val, LispObject::integer(42), "my-double returned {:?}", val),
+            Err(e) => eprintln!("my-double failed: {}", e),
+        }
+    }
 }

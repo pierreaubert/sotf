@@ -310,6 +310,31 @@ impl Reader {
                 self.advance();
                 self.read_bytecode_literal()
             }
+            '@' => {
+                // #@NN — skip NN bytes (doc string reference in .elc files)
+                self.advance();
+                let mut n_str = String::new();
+                while let Some(c) = self.peek() {
+                    if c.is_ascii_digit() {
+                        n_str.push(c);
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+                let n: usize = n_str.parse().unwrap_or(0);
+                // Skip n bytes (characters) including the newline
+                for _ in 0..n {
+                    self.advance();
+                }
+                // After skipping, read the next form
+                self.read()
+            }
+            '$' => {
+                // #$ — current load file name (used in .elc for lazy docstrings)
+                self.advance();
+                Ok(LispObject::nil()) // stub: no file context
+            }
             _ => Err(ElispError::ReaderError(format!(
                 "unknown # dispatch: #{}",
                 c
@@ -548,6 +573,25 @@ impl Reader {
                                     hex
                                 )));
                             }
+                        }
+                    }
+                    c if c.is_ascii_digit() && c < '8' => {
+                        // Octal escape: \NNN (up to 3 octal digits)
+                        let mut oct = String::new();
+                        oct.push(c);
+                        for _ in 0..2 {
+                            if let Some(d) = self.peek() {
+                                if d.is_ascii_digit() && d < '8' {
+                                    oct.push(d);
+                                    self.advance();
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        let code = u32::from_str_radix(&oct, 8).unwrap_or(0);
+                        if let Some(ch) = char::from_u32(code) {
+                            s.push(ch);
                         }
                     }
                     _ => {
