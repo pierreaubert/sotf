@@ -445,7 +445,7 @@ coreaudio-rs = { path = "crates/3rdparties/coreaudio-rs" }
 mach2 = { path = "crates/3rdparties/mach2" }
 
 [profile.release]
-lto = true
-codegen-units = 1
+lto = "thin"
+codegen-units = 14
 panic = "unwind"  # Changed from "abort" to allow tests to run
 # debug = true # Keeps debug symbols for profiling
