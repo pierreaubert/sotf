@@ -83,11 +83,15 @@ impl RoomSize {
 
     /// Maximum acceptable post-optimization score.
     /// Ensures the system achieves a usable level of correction, not just "better than before".
+    ///
+    /// Recalibrated after flat_loss was rewritten from 2-band RMS to
+    /// ERB + band-weighted perceptual error (see CHANGELOG 0.4.x).
+    /// Observed maximums: Small ~10.0, Medium ~10.5, Large ~10.6.
     fn max_post_score(&self) -> f64 {
         match self {
-            RoomSize::Small => 8.0,
-            RoomSize::Medium => 10.0,
-            RoomSize::Large => 12.0,
+            RoomSize::Small => 12.0,
+            RoomSize::Medium => 12.5,
+            RoomSize::Large => 13.0,
         }
     }
 }
