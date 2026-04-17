@@ -79,10 +79,6 @@
 //! 4. Verify each sequence maintains valid state
 //! 5. Test that invalid transitions are rejected
 
-#[path = "../common/mod.rs"]
-#[allow(dead_code)]
-mod common;
-
 // =============================================================================
 // Playback State Machine
 // =============================================================================

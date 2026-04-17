@@ -1,274 +1,99 @@
 //! Common test helpers for GPUI component tests
 //!
-//! Provides test fixtures and utilities for testing component logic.
+//! Provides shared test utilities. For test data builders that produce
+//! real `Album`/`Track` types, see `factories`.
+//!
+//! NOTE: This module contains ONLY:
+//! - Shared factories for building real production types
+//! - Pure math utilities for parameter normalization (no production equivalent)
+//! - EQ filter validation utilities (test-only boundary checking)
+//!
+//! All production types should be imported directly from `sotf_audio_player_gpui`
+//! or `sotf_audio_player`. Do NOT add mirror types here.
+
+pub mod factories;
 pub mod state_builder;
 
 use std::path::{Path, PathBuf};
 
-/// Test helper: Create a minimal Track for testing album card logic
-pub fn create_test_track(
-    path: &str,
-    bit_depth: Option<u32>,
-    sample_rate: Option<u32>,
-) -> TestTrack {
-    TestTrack {
-        path: PathBuf::from(path),
-        bit_depth,
-        sample_rate,
-    }
-}
-
-/// Minimal track structure for testing (mirrors sotf_audio_player::Track)
-#[derive(Debug, Clone)]
-pub struct TestTrack {
-    pub path: PathBuf,
-    pub bit_depth: Option<u32>,
-    pub sample_rate: Option<u32>,
-}
-
-/// Test helper: Create a minimal Album for testing album card logic
-pub fn create_test_album(
-    title: &str,
-    tracks: Vec<TestTrack>,
-    dynamic_range: Option<f64>,
-) -> TestAlbum {
-    TestAlbum {
-        title: title.to_string(),
-        tracks,
-        dynamic_range,
-    }
-}
-
-/// Minimal album structure for testing (mirrors sotf_audio_player::Album)
-#[derive(Debug, Clone)]
-pub struct TestAlbum {
-    pub title: String,
-    pub tracks: Vec<TestTrack>,
-    pub dynamic_range: Option<f64>,
-}
-
 // ============================================================================
-// Pure function tests (mirrors logic from album_card.rs)
+// Test File System Utilities
 // ============================================================================
 
-/// Format the sample rate and bit depth for display (e.g., "24/44.1k", "16/48k")
-/// This is a pure function extracted for testing.
-pub fn format_sample_info(bit_depth: Option<u32>, sample_rate: Option<u32>) -> Option<String> {
-    match (bit_depth, sample_rate) {
-        (Some(bits), Some(rate)) => {
-            // Format sample rate: 44100 -> "44.1k", 48000 -> "48k", 96000 -> "96k"
-            let rate_str = if rate % 1000 == 0 {
-                format!("{}k", rate / 1000)
-            } else {
-                format!("{:.1}k", rate as f64 / 1000.0)
-            };
-            Some(format!("{}/{}", bits, rate_str))
-        }
-        (Some(bits), None) => Some(format!("{}bit", bits)),
-        (None, Some(rate)) => {
-            let rate_str = if rate % 1000 == 0 {
-                format!("{}k", rate / 1000)
-            } else {
-                format!("{:.1}k", rate as f64 / 1000.0)
-            };
-            Some(rate_str)
-        }
-        (None, None) => None,
-    }
+/// RAII temporary directory for tests that need file system fixtures.
+/// Automatically cleaned up on drop via `tempfile::TempDir`.
+pub struct TestTempDir {
+    dir: tempfile::TempDir,
 }
 
-/// Get the audio format (e.g., "FLAC", "MP3") from a file extension
-pub fn get_format_from_path(path: &Path) -> Option<String> {
-    path.extension()
-        .and_then(|ext| ext.to_str().map(|s| s.to_uppercase()))
-}
-
-/// Format the dynamic range for display
-pub fn format_dr(dr: Option<f64>) -> Option<String> {
-    dr.map(|d| format!("{:.0}", d))
-}
-
-/// Album card display mode (mirrors the enum in album_card.rs)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AlbumCardMode {
-    Grid,
-    List,
-    Compact,
-}
-
-/// Render height in pixels for a given album card mode
-pub fn album_card_height(mode: AlbumCardMode) -> f32 {
-    match mode {
-        AlbumCardMode::Grid => 180.0,
-        AlbumCardMode::List => 80.0,
-        AlbumCardMode::Compact => 56.0,
-    }
-}
-
-/// Format a label with keyboard shortcut indicator
-/// e.g., "Threshold" with key 't' -> "[T]hreshold"
-pub fn format_shortcut_label(label: &str, shortcut_key: Option<char>) -> String {
-    match shortcut_key {
-        Some(key) => {
-            let key_lower = key.to_ascii_lowercase();
-            let label_lower = label.to_lowercase();
-            if let Some(pos) = label_lower.find(key_lower) {
-                format!(
-                    "{}[{}]{}",
-                    &label[..pos],
-                    label.chars().nth(pos).unwrap().to_ascii_uppercase(),
-                    &label[pos + 1..]
-                )
-            } else {
-                format!("[{}] {}", key.to_ascii_uppercase(), label)
-            }
-        }
-        None => label.to_string(),
-    }
-}
-
-// ============================================================================
-// Transfer Curve Logic (mirrors plugins/common.rs)
-// ============================================================================
-
-/// Calculate compressor/limiter output dB given input dB
-/// Pure function for testing transfer curve logic
-pub fn calculate_transfer_output(
-    input_db: f64,
-    threshold_db: f64,
-    ratio: f64,
-    knee_db: f64,
-    is_limiter: bool,
-) -> f64 {
-    if is_limiter {
-        // Limiter: hard clip at threshold
-        input_db.min(threshold_db)
-    } else {
-        // Compressor: soft knee compression
-        if input_db < threshold_db - knee_db / 2.0 {
-            input_db
-        } else if input_db > threshold_db + knee_db / 2.0 {
-            threshold_db + (input_db - threshold_db) / ratio
-        } else {
-            // Knee region
-            let knee_input = input_db - (threshold_db - knee_db / 2.0);
-            let knee_ratio = knee_input / knee_db;
-            input_db + (knee_ratio * knee_ratio / 2.0) * (1.0 / ratio - 1.0) * knee_db
-        }
-    }
-}
-
-// ============================================================================
-// Theme Validation Logic
-// ============================================================================
-
-/// Represents theme identifiers (mirrors theme::ThemeId)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThemeId {
-    Dark,
-    Light,
-    Nord,
-    Catppuccin,
-    Solarized,
-    Dracula,
-    Gruvbox,
-    TokyoNight,
-    OneDark,
-    Monokai,
-}
-
-impl ThemeId {
-    pub fn all() -> &'static [ThemeId] {
-        &[
-            ThemeId::Dark,
-            ThemeId::Light,
-            ThemeId::Nord,
-            ThemeId::Catppuccin,
-            ThemeId::Solarized,
-            ThemeId::Dracula,
-            ThemeId::Gruvbox,
-            ThemeId::TokyoNight,
-            ThemeId::OneDark,
-            ThemeId::Monokai,
-        ]
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            ThemeId::Dark => "Dark",
-            ThemeId::Light => "Light",
-            ThemeId::Nord => "Nord",
-            ThemeId::Catppuccin => "Catppuccin",
-            ThemeId::Solarized => "Solarized",
-            ThemeId::Dracula => "Dracula",
-            ThemeId::Gruvbox => "Gruvbox",
-            ThemeId::TokyoNight => "Tokyo Night",
-            ThemeId::OneDark => "One Dark",
-            ThemeId::Monokai => "Monokai",
-        }
-    }
-}
-
-// ============================================================================
-// Language Validation Logic
-// ============================================================================
-
-/// Represents language identifiers (mirrors i18n::Language)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Language {
-    English,
-    French,
-    German,
-    Spanish,
-    Italian,
-    Japanese,
-    Korean,
-    Chinese,
-}
-
-impl Language {
-    pub fn all() -> &'static [Language] {
-        &[
-            Language::English,
-            Language::French,
-            Language::German,
-            Language::Spanish,
-            Language::Italian,
-            Language::Japanese,
-            Language::Korean,
-            Language::Chinese,
-        ]
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            Language::English => "English",
-            Language::French => "Français",
-            Language::German => "Deutsch",
-            Language::Spanish => "Español",
-            Language::Italian => "Italiano",
-            Language::Japanese => "日本語",
-            Language::Korean => "한국어",
-            Language::Chinese => "中文",
+impl TestTempDir {
+    pub fn new() -> Self {
+        Self {
+            dir: tempfile::tempdir().expect("create temp dir"),
         }
     }
 
-    pub fn code(&self) -> &'static str {
-        match self {
-            Language::English => "en",
-            Language::French => "fr",
-            Language::German => "de",
-            Language::Spanish => "es",
-            Language::Italian => "it",
-            Language::Japanese => "ja",
-            Language::Korean => "ko",
-            Language::Chinese => "zh",
+    pub fn path(&self) -> &Path {
+        self.dir.path()
+    }
+
+    /// Create an empty file at the given relative path, creating parent dirs as needed.
+    pub fn create_file(&self, relative_path: &str) -> PathBuf {
+        let full_path = self.dir.path().join(relative_path);
+        if let Some(parent) = full_path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent dirs");
         }
+        std::fs::write(&full_path, b"").expect("create file");
+        full_path
+    }
+
+    /// Create a minimal WAV file at the given relative path (for tests that need
+    /// a parseable audio file rather than just a path).
+    pub fn create_fake_audio(&self, relative_path: &str) -> PathBuf {
+        let full_path = self.dir.path().join(relative_path);
+        if let Some(parent) = full_path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent dirs");
+        }
+        // Minimal 44-byte WAV header (silent, 0 samples)
+        let header: [u8; 44] = [
+            0x52, 0x49, 0x46, 0x46, // "RIFF"
+            0x24, 0x00, 0x00, 0x00, // file size - 8
+            0x57, 0x41, 0x56, 0x45, // "WAVE"
+            0x66, 0x6D, 0x74, 0x20, // "fmt "
+            0x10, 0x00, 0x00, 0x00, // chunk size (16)
+            0x01, 0x00, // PCM format
+            0x02, 0x00, // 2 channels
+            0x44, 0xAC, 0x00, 0x00, // 44100 Hz
+            0x10, 0xB1, 0x02, 0x00, // byte rate
+            0x04, 0x00, // block align
+            0x10, 0x00, // 16 bits per sample
+            0x64, 0x61, 0x74, 0x61, // "data"
+            0x00, 0x00, 0x00, 0x00, // data size (0)
+        ];
+        std::fs::write(&full_path, header).expect("create fake audio");
+        full_path
+    }
+
+    /// Create an album directory structure with N fake tracks.
+    pub fn create_album_dir(&self, album_name: &str, track_count: usize) -> PathBuf {
+        let album_dir = self.dir.path().join(album_name);
+        std::fs::create_dir_all(&album_dir).expect("create album dir");
+        for i in 1..=track_count {
+            let track_path = album_dir.join(format!("track_{:02}.wav", i));
+            self.create_fake_audio(
+                track_path
+                    .strip_prefix(self.dir.path())
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+            );
+        }
+        album_dir
     }
 }
 
 // ============================================================================
-// Plugin Parameter Range Helpers
+// Pure Math Utilities (test-only — no production equivalent)
 // ============================================================================
 
 /// Verify a parameter value is within valid range
@@ -306,107 +131,10 @@ pub fn denormalize_parameter_log(normalized: f64, min: f64, max: f64) -> f64 {
 }
 
 // ============================================================================
-// Graph Color Utilities (mirrors graphs/common.rs)
+// EQ Filter Validation (test-only boundary checking)
 // ============================================================================
 
-/// RGBA color representation for testing
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Rgba {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
-}
-
-impl Rgba {
-    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self { r, g, b, a }
-    }
-
-    pub fn rgb(r: f32, g: f32, b: f32) -> Self {
-        Self { r, g, b, a: 1.0 }
-    }
-}
-
-/// Convert Rgba to u32 color value (mirrors graphs/common.rs)
-pub fn rgba_to_u32(rgba: Rgba) -> u32 {
-    let r = (rgba.r * 255.0) as u32;
-    let g = (rgba.g * 255.0) as u32;
-    let b = (rgba.b * 255.0) as u32;
-    (r << 16) | (g << 8) | b
-}
-
-/// Create a new Rgba with modified alpha
-pub fn with_alpha(rgba: Rgba, alpha: f32) -> Rgba {
-    Rgba {
-        r: rgba.r,
-        g: rgba.g,
-        b: rgba.b,
-        a: alpha,
-    }
-}
-
-// ============================================================================
-// Settings Tab Logic (mirrors app/mod.rs)
-// ============================================================================
-
-/// Settings tab identifiers (mirrors app::SettingsTab)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsTab {
-    Library,
-    Theme,
-    Language,
-    Keybindings,
-    AudioDevice,
-}
-
-impl SettingsTab {
-    pub fn all() -> &'static [SettingsTab] {
-        &[
-            SettingsTab::Library,
-            SettingsTab::Theme,
-            SettingsTab::Language,
-            SettingsTab::Keybindings,
-            SettingsTab::AudioDevice,
-        ]
-    }
-}
-
-// ============================================================================
-// Screen Logic (mirrors app/mod.rs)
-// ============================================================================
-
-/// Screen identifiers (mirrors app::Screen)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Screen {
-    Library,
-    Settings,
-    HeadphoneEQ,
-    SpinoramaEQ,
-    RoomEQ,
-    Recording,
-    Plugins,
-}
-
-impl Screen {
-    pub fn all() -> &'static [Screen] {
-        &[
-            Screen::Library,
-            Screen::Settings,
-            Screen::HeadphoneEQ,
-            Screen::SpinoramaEQ,
-            Screen::RoomEQ,
-            Screen::Recording,
-            Screen::Plugins,
-        ]
-    }
-}
-
-// ============================================================================
-// EQ Band Logic (mirrors plugins/editing.rs)
-// ============================================================================
-
-/// Filter type for EQ bands (mirrors math_audio_iir_fir::BiquadFilterType)
+/// Filter type for EQ bands (test-only, used by validation utilities)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterType {
     Peak,
@@ -418,7 +146,7 @@ pub enum FilterType {
     Notch,
 }
 
-/// EQ Filter representation (mirrors sotf_audio_engine::EQFilter)
+/// EQ Filter representation for test validation
 #[derive(Debug, Clone)]
 pub struct TestEQFilter {
     pub filter_type: FilterType,
@@ -443,15 +171,14 @@ impl TestEQFilter {
     }
 }
 
-/// Add a new EQ band to the filter list
-/// Returns the new filter count
+/// Add a new EQ band to the filter list. Returns the new filter count.
 pub fn add_eq_band(filters: &mut Vec<TestEQFilter>) -> usize {
     filters.push(TestEQFilter::default_peak());
     filters.len()
 }
 
-/// Remove an EQ band at the given index
-/// Returns Ok(new count) if successful, Err if index out of bounds
+/// Remove an EQ band at the given index.
+/// Returns Ok(new count) if successful, Err if index out of bounds.
 pub fn remove_eq_band(filters: &mut Vec<TestEQFilter>, index: usize) -> Result<usize, String> {
     if index >= filters.len() {
         return Err(format!(
@@ -469,34 +196,26 @@ pub fn remove_eq_band(filters: &mut Vec<TestEQFilter>, index: usize) -> Result<u
 
 /// Validate EQ filter parameters are within acceptable ranges
 pub fn validate_eq_filter(filter: &TestEQFilter) -> Result<(), String> {
-    // Frequency must be in audible range
     if filter.frequency < 20.0 || filter.frequency > 20000.0 {
         return Err(format!(
             "Frequency {} Hz is outside valid range (20-20000 Hz)",
             filter.frequency
         ));
     }
-
-    // Q must be positive
     if filter.q <= 0.0 {
         return Err(format!("Q factor {} must be positive", filter.q));
     }
-
-    // Q should be reasonable (0.1 to 10)
     if filter.q < 0.1 || filter.q > 10.0 {
         return Err(format!(
             "Q factor {} is outside reasonable range (0.1-10.0)",
             filter.q
         ));
     }
-
-    // Gain should be within reasonable limits (-24 to +24 dB)
     if filter.gain_db < -24.0 || filter.gain_db > 24.0 {
         return Err(format!(
             "Gain {} dB is outside valid range (-24 to +24 dB)",
             filter.gain_db
         ));
     }
-
     Ok(())
 }
