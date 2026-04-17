@@ -15,11 +15,6 @@ use sotf_audio_player::{PluginGraph, PluginSettings, PluginType, SpecialNodeType
 use crate::app::types::Screen;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
-use crate::components::plugins::{
-    render_compressor_plugin, render_downmix_plugin, render_eq_plugin, render_gain_plugin,
-    render_gate_plugin, render_limiter_plugin, render_mono_to_stereo_plugin, render_upmixer_plugin,
-    ui_compressor, ui_downmix, ui_eq, ui_gain, ui_gate, ui_limiter, ui_mono_to_stereo, ui_upmixer,
-};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 
@@ -1074,6 +1069,12 @@ impl PlayerView {
             node_name.clone()
         };
 
+        // Compute modal dimensions: 85% of window, clamped to reasonable bounds
+        let window_w = state.app.ui_state.window_width.max(400.0);
+        let window_h = state.app.ui_state.window_height.max(300.0);
+        let modal_w = (window_w * 0.85).clamp(400.0, 1600.0);
+        let modal_h = (window_h * 0.85).clamp(300.0, 1200.0);
+
         // Create the modal
         div()
             .absolute()
@@ -1095,8 +1096,8 @@ impl PlayerView {
             .child(
                 div()
                     .id("plugin-node-modal")
-                    .w(rems(43.75))
-                    .max_h(rems(37.5))
+                    .w(px(modal_w))
+                    .max_h(px(modal_h))
                     .bg(theme.surface)
                     .rounded(d.r_lg)
                     .border_1()
@@ -1345,9 +1346,8 @@ impl PlayerView {
 
     /// Render the actual plugin UI based on settings.
     ///
-    /// `plugin_idx` is the linear index in the plugin graph (used to dispatch
-    /// parameter changes back to the engine). `is_editing` controls whether
-    /// the UI is interactive or read-only.
+    /// Delegates to `render_plugin_content` which already handles all plugin
+    /// types via the custom view registry and layout renderer fallback.
     fn render_plugin_settings_ui(
         &self,
         settings: &PluginSettings,
@@ -1356,316 +1356,48 @@ impl PlayerView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let d = Ds::from_cx(cx);
-        let entity = self.state.clone();
-
-        match settings {
-            PluginSettings::EQ {
-                channels,
-                filters,
-                channel_filters,
-                per_channel_mode,
-                ..
-            } => render_eq_plugin(
-                entity,
-                plugin_idx,
-                ui_eq::EqRenderState {
-                    channels: *channels,
-                    filters,
-                    channel_filters,
-                    per_channel_mode: *per_channel_mode,
-                    is_editing,
-                    selected_param: 0,
-                    selected_band_idx: 0,
-                    midi_overlay: None,
-                },
-                theme,
-                cx,
+        let (plugin_graph, loudness, selected_eq_band, spectrum_tilt_open, spectrum_ref_open, param_selection, plugin_data) = {
+            let state = self.state.read(cx);
+            let pd: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>> = match settings {
+                PluginSettings::SpectrumAnalyzer { .. } => {
+                    state.app.playback.spectrum_info.clone().map(|s| {
+                        std::sync::Arc::new(s) as std::sync::Arc<dyn std::any::Any + Send + Sync>
+                    })
+                }
+                PluginSettings::Compressor { .. } => {
+                    state.app.playback.compressor_info.clone().map(|c| {
+                        std::sync::Arc::new(c) as std::sync::Arc<dyn std::any::Any + Send + Sync>
+                    })
+                }
+                _ => None,
+            };
+            (
+                state.app.plugin_state.graph.clone(),
+                state.app.playback.loudness_info.clone(),
+                state.app.plugin_state.selected_eq_band,
+                state.app.spectrum_tilt_select_open,
+                state.app.spectrum_reference_select_open,
+                if is_editing { state.app.plugin_state.plugin_param_selection } else { 0 },
+                pd,
             )
-            .into_any_element(),
+        };
 
-            PluginSettings::Gain { gain_db, .. } => render_gain_plugin(
-                &d,
-                entity,
-                plugin_idx,
-                ui_gain::GainRenderState {
-                    gain_db: *gain_db,
-                    is_editing,
-                    selected_param: 0,
-                },
-                theme,
-            )
-            .into_any_element(),
-
-            PluginSettings::Compressor {
-                threshold_db,
-                ratio,
-                attack_ms,
-                release_ms,
-                knee_db,
-                makeup_gain_db,
-                mix,
-                auto_makeup,
-                link_channels,
-                sidechain_hpf_hz,
-                ..
-            } => render_compressor_plugin(
-                &d,
-                entity,
-                plugin_idx,
-                ui_compressor::CompressorRenderState {
-                    threshold_db: *threshold_db,
-                    ratio: *ratio,
-                    attack_ms: *attack_ms,
-                    release_ms: *release_ms,
-                    knee_db: *knee_db,
-                    makeup_gain_db: *makeup_gain_db,
-                    mix: *mix,
-                    auto_makeup: *auto_makeup,
-                    link_channels: *link_channels,
-                    sidechain_hpf_hz: *sidechain_hpf_hz,
-                    is_editing,
-                    selected_param: 0,
-                    data: None,
-                },
-                theme,
-            )
-            .into_any_element(),
-
-            PluginSettings::Limiter {
-                threshold_db,
-                release_ms,
-                lookahead_ms,
-                soft,
-                mix,
-                ..
-            } => render_limiter_plugin(
-                &d,
-                entity,
-                plugin_idx,
-                ui_limiter::LimiterRenderState {
-                    threshold_db: *threshold_db,
-                    release_ms: *release_ms,
-                    lookahead_ms: *lookahead_ms,
-                    soft: *soft,
-                    mix: *mix,
-                    is_editing,
-                    selected_param: 0,
-                    data: None,
-                },
-                theme,
-            )
-            .into_any_element(),
-
-            PluginSettings::Gate {
-                threshold_db,
-                ratio,
-                attack_ms,
-                hold_ms,
-                release_ms,
-                mix,
-                link_channels,
-                sidechain_hpf_hz,
-                ..
-            } => render_gate_plugin(
-                &d,
-                entity,
-                plugin_idx,
-                ui_gate::GateRenderState {
-                    threshold_db: *threshold_db,
-                    ratio: *ratio,
-                    attack_ms: *attack_ms,
-                    hold_ms: *hold_ms,
-                    release_ms: *release_ms,
-                    mix: *mix,
-                    link_channels: *link_channels,
-                    sidechain_hpf_hz: *sidechain_hpf_hz,
-                    is_editing,
-                    selected_param: 0,
-                    data: None,
-                },
-                theme,
-            )
-            .into_any_element(),
-
-            PluginSettings::Upmixer {
-                speaker_config,
-                gain_front_direct,
-                gain_front_ambient,
-                gain_rear_ambient,
-                height_gain,
-                stereo_width,
-                center_spread,
-                surround_direct_bleed,
-                rear_late_reflection,
-                lfe_cutoff_hz,
-                lfe_gain,
-                bandpass_hz,
-                enable_subharmonic_synth,
-                subharmonic_gain,
-                subharmonic_freq_hz,
-                subharmonic_attack_ms,
-                subharmonic_release_ms,
-                decorrelation_mode,
-                decorrelation_lfo_rate_hz,
-                velvet_noise_duration_ms,
-                velvet_noise_density,
-                enable_hr_direct,
-                hr_sharpen,
-                height_hf_cap_hz,
-                height_transient_reduction,
-                height_direct_leak,
-                ambient_boost,
-                safety_cap_db,
-                rear_ambient_boost,
-                dialogue_weight,
-                voice_freq_min_hz,
-                voice_freq_max_hz,
-                dialogue_centroid_weight,
-                dialogue_variance_weight,
-                dialogue_coherence_weight,
-                bypass_decorrelation,
-                bypass_transient_detection,
-                bypass_all_processing,
-                enable_ml_detection,
-                low_latency,
-                frequency_resolution,
-                multi_source_extraction,
-                multi_source_threshold,
-                ..
-            } => render_upmixer_plugin(
-                &d,
-                entity,
-                plugin_idx,
-                ui_upmixer::UpmixerRenderState {
-                    speaker_config,
-                    gain_front_direct: *gain_front_direct,
-                    gain_front_ambient: *gain_front_ambient,
-                    gain_rear_ambient: *gain_rear_ambient,
-                    height_gain: *height_gain,
-                    stereo_width: *stereo_width,
-                    center_spread: *center_spread,
-                    surround_direct_bleed: *surround_direct_bleed,
-                    rear_late_reflection: *rear_late_reflection,
-                    lfe_cutoff_hz: *lfe_cutoff_hz,
-                    lfe_gain: *lfe_gain,
-                    bandpass_hz: *bandpass_hz,
-                    enable_subharmonic_synth: *enable_subharmonic_synth,
-                    subharmonic_gain: *subharmonic_gain,
-                    subharmonic_freq_hz: *subharmonic_freq_hz,
-                    subharmonic_attack_ms: *subharmonic_attack_ms,
-                    subharmonic_release_ms: *subharmonic_release_ms,
-                    decorrelation_mode: *decorrelation_mode,
-                    decorrelation_lfo_rate_hz: *decorrelation_lfo_rate_hz,
-                    velvet_noise_duration_ms: *velvet_noise_duration_ms,
-                    velvet_noise_density: *velvet_noise_density,
-                    enable_hr_direct: *enable_hr_direct,
-                    hr_sharpen: *hr_sharpen,
-                    height_hf_cap_hz: *height_hf_cap_hz,
-                    height_transient_reduction: *height_transient_reduction,
-                    height_direct_leak: *height_direct_leak,
-                    ambient_boost: *ambient_boost,
-                    safety_cap_db: *safety_cap_db,
-                    rear_ambient_boost: *rear_ambient_boost,
-                    dialogue_weight: *dialogue_weight,
-                    voice_freq_min_hz: *voice_freq_min_hz,
-                    voice_freq_max_hz: *voice_freq_max_hz,
-                    dialogue_centroid_weight: *dialogue_centroid_weight,
-                    dialogue_variance_weight: *dialogue_variance_weight,
-                    dialogue_coherence_weight: *dialogue_coherence_weight,
-                    bypass_decorrelation: *bypass_decorrelation,
-                    bypass_transient_detection: *bypass_transient_detection,
-                    bypass_all_processing: *bypass_all_processing,
-                    enable_ml_detection: *enable_ml_detection,
-                    low_latency: *low_latency,
-                    frequency_resolution: *frequency_resolution,
-                    multi_source_extraction: *multi_source_extraction,
-                    multi_source_threshold: *multi_source_threshold,
-                    is_editing,
-                    selected_param: 0,
-                    config_open: false,
-                    upmixer_tab: 0,
-                },
-                theme,
-            )
-            .into_any_element(),
-
-            PluginSettings::Downmix {
-                center_gain_db,
-                surround_gain_db,
-                height_gain_db,
-                lfe_gain_db,
-                phase_coherence,
-                phase_blend_low_hz,
-                phase_blend_high_hz,
-                ..
-            } => render_downmix_plugin(
-                &d,
-                entity,
-                plugin_idx,
-                ui_downmix::DownmixRenderState {
-                    center_gain_db: *center_gain_db,
-                    surround_gain_db: *surround_gain_db,
-                    height_gain_db: *height_gain_db,
-                    lfe_gain_db: *lfe_gain_db,
-                    phase_coherence: *phase_coherence,
-                    phase_blend_low_hz: *phase_blend_low_hz,
-                    phase_blend_high_hz: *phase_blend_high_hz,
-                    is_editing,
-                    selected_param: 0,
-                },
-                theme,
-            )
-            .into_any_element(),
-
-            PluginSettings::MonoToStereo {
-                stereo_width,
-                haas_delay_ms,
-                enable_comp_eq,
-                comp_eq_depth_db,
-                decor_low_hz,
-                decor_high_hz,
-                ..
-            } => render_mono_to_stereo_plugin(
-                &d,
-                entity,
-                plugin_idx,
-                ui_mono_to_stereo::MonoToStereoRenderState {
-                    stereo_width: *stereo_width,
-                    haas_delay_ms: *haas_delay_ms,
-                    enable_comp_eq: *enable_comp_eq,
-                    comp_eq_depth_db: *comp_eq_depth_db,
-                    decor_low_hz: *decor_low_hz,
-                    decor_high_hz: *decor_high_hz,
-                    is_editing,
-                    selected_param: 0,
-                },
-                theme,
-            )
-            .into_any_element(),
-
-            // For other plugins, show a simple description
-            _ => {
-                let name = settings.plugin_type().name().to_string();
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(d.section)
-                    .child(
-                        div()
-                            .text_size(d.text_lg)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .child(name),
-                    )
-                    .child(
-                        div()
-                            .text_size(d.text_sm)
-                            .text_color(theme.text_muted)
-                            .child("Plugin controls not yet implemented for this type"),
-                    )
-                    .into_any_element()
-            }
-        }
+        super::render_plugin_content(
+            self.state.clone(),
+            plugin_idx,
+            settings,
+            is_editing,
+            param_selection,
+            theme,
+            false,
+            selected_eq_band,
+            loudness,
+            plugin_data,
+            spectrum_tilt_open,
+            spectrum_ref_open,
+            &plugin_graph,
+            None,
+            cx,
+        )
     }
 }

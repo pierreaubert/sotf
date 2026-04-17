@@ -616,7 +616,8 @@ impl PluginChain {
             }
 
             match &plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. } => {
+                PluginSettings::Upmixer { speaker_config, .. }
+                | PluginSettings::AAE { speaker_config, .. } => {
                     return upmixer_output_channels(speaker_config);
                 }
                 PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
@@ -656,7 +657,8 @@ impl PluginChain {
             }
             // Track channel changes from plugins before the matrix
             match &plugin.settings {
-                PluginSettings::Upmixer { speaker_config, .. } => {
+                PluginSettings::Upmixer { speaker_config, .. }
+                | PluginSettings::AAE { speaker_config, .. } => {
                     running_channels = upmixer_output_channels(speaker_config);
                     continue;
                 }
@@ -1186,7 +1188,8 @@ impl PluginChain {
             // Update output channels for next plugin
             if self.plugins[i].enabled && !self.plugins[i].suspended {
                 match &self.plugins[i].settings {
-                    PluginSettings::Upmixer { speaker_config, .. } => {
+                    PluginSettings::Upmixer { speaker_config, .. }
+                    | PluginSettings::AAE { speaker_config, .. } => {
                         current_channels = upmixer_output_channels(speaker_config);
                     }
                     PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
