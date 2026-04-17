@@ -75,7 +75,7 @@ pub fn update_media_controls(
     let queue_item = app
         .playback
         .current_queue_index
-        .and_then(|idx| app.queue.get(idx));
+        .and_then(|idx| app.queue_state.get(idx));
 
     let track = queue_item.and_then(|item| item.current_track());
     let album_title = queue_item.map(|item| item.album.title.as_str());

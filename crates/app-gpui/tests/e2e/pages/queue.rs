@@ -10,7 +10,7 @@ impl<'a, 'b> QueuePage<'a, 'b> {
     }
 
     pub fn get_queue_length(&mut self) -> usize {
-        self.driver.read_app(|app| app.queue.len())
+        self.driver.read_app(|app| app.queue_state.len())
     }
 
     pub fn is_empty(&mut self) -> bool {
@@ -27,7 +27,7 @@ impl<'a, 'b> QueuePage<'a, 'b> {
 
     pub fn clear_queue(&mut self) {
         self.driver.update_app(|app, _| {
-            app.queue.clear();
+            app.queue_state.clear();
         });
         self.driver.run_until_parked();
     }

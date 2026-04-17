@@ -1,6 +1,7 @@
 //! Common utilities for plugin UI components
 
 use crate::app::AppState;
+use crate::app::state::app::KnobDragState;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
@@ -545,13 +546,14 @@ pub fn render_vertical_slider_sized(
             let entity = entity.clone();
             move |start_y, start_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.is_dragging_knob = true;
-                    state.app.knob_drag_plugin_idx = plugin_idx;
-                    state.app.knob_drag_param_idx = idx;
-                    state.app.knob_drag_start_y = Some(start_y);
-                    state.app.knob_drag_start_value = start_value;
-                    state.app.knob_drag_min = min;
-                    state.app.knob_drag_max = max;
+                    state.app.knob_drag = Some(KnobDragState {
+                        plugin_idx,
+                        param_idx: idx,
+                        start_y,
+                        start_value,
+                        min,
+                        max,
+                    });
                 });
             }
         })
@@ -623,13 +625,14 @@ pub fn render_vertical_slider_with_ticks(
             let entity = entity.clone();
             move |start_y, start_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.is_dragging_knob = true;
-                    state.app.knob_drag_plugin_idx = plugin_idx;
-                    state.app.knob_drag_param_idx = idx;
-                    state.app.knob_drag_start_y = Some(start_y);
-                    state.app.knob_drag_start_value = start_value;
-                    state.app.knob_drag_min = min;
-                    state.app.knob_drag_max = max;
+                    state.app.knob_drag = Some(KnobDragState {
+                        plugin_idx,
+                        param_idx: idx,
+                        start_y,
+                        start_value,
+                        min,
+                        max,
+                    });
                 });
             }
         })
@@ -1195,14 +1198,14 @@ pub fn render_interactive_transfer_curve(
                         let start_x: f32 = event.position.x.into();
                         let start_y: f32 = event.position.y.into();
                         entity.update(cx, |state, _| {
-                            state.app.is_dragging_knob = true;
-                            state.app.knob_drag_plugin_idx = plugin_idx;
-                            state.app.knob_drag_start_y = Some(start_y);
-                            state.app.knob_drag_start_value = threshold_db;
-                            // Reuse knob_drag fields as scratch storage for the drag:
-                            // knob_drag_min = start_x, knob_drag_max = start ratio
-                            state.app.knob_drag_min = start_x as f64;
-                            state.app.knob_drag_max = ratio;
+                            state.app.knob_drag = Some(KnobDragState {
+                                plugin_idx,
+                                param_idx: 0,
+                                start_y,
+                                start_value: threshold_db,
+                                min: start_x as f64,
+                                max: ratio,
+                            });
                         });
                     }
                 })
@@ -1211,15 +1214,14 @@ pub fn render_interactive_transfer_curve(
                         return;
                     }
                     entity_drag.update(cx, |state, _| {
-                        if !state.app.is_dragging_knob
-                            || state.app.knob_drag_plugin_idx != plugin_idx
-                        {
+                        let Some(ref drag) = state.app.knob_drag else { return };
+                        if drag.plugin_idx != plugin_idx {
                             return;
                         }
-                        let start_y = state.app.knob_drag_start_y.unwrap_or(0.0);
-                        let start_x = state.app.knob_drag_min as f32;
-                        let start_threshold = state.app.knob_drag_start_value;
-                        let start_ratio = state.app.knob_drag_max;
+                        let start_y = drag.start_y;
+                        let start_x = drag.min as f32;
+                        let start_threshold = drag.start_value;
+                        let start_ratio = drag.max;
 
                         let current_x: f32 = event.position.x.into();
                         let current_y: f32 = event.position.y.into();
@@ -1249,7 +1251,7 @@ pub fn render_interactive_transfer_curve(
                     let entity = entity.clone();
                     move |_, _, cx| {
                         entity.update(cx, |state, _| {
-                            state.app.is_dragging_knob = false;
+                            state.app.knob_drag = None;
                         });
                     }
                 })
@@ -1423,13 +1425,14 @@ pub fn render_knob_sized(
             let entity = entity.clone();
             move |start_y, start_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.is_dragging_knob = true;
-                    state.app.knob_drag_plugin_idx = plugin_idx;
-                    state.app.knob_drag_param_idx = idx;
-                    state.app.knob_drag_start_y = Some(start_y);
-                    state.app.knob_drag_start_value = start_value;
-                    state.app.knob_drag_min = min;
-                    state.app.knob_drag_max = max;
+                    state.app.knob_drag = Some(KnobDragState {
+                        plugin_idx,
+                        param_idx: idx,
+                        start_y,
+                        start_value,
+                        min,
+                        max,
+                    });
                 });
             }
         })

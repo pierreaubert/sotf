@@ -211,7 +211,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                     album,
                     current_track_index: 0,
                 });
-            app.selected_queue_index = 0;
+            app.queue_state.selected_index = 0;
         });
     }
 

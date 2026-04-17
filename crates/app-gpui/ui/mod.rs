@@ -191,63 +191,8 @@ impl PlayerView {
                     // Consolidate all state updates into a single update call
                     // to avoid multiple observer triggers
                     view.state.update(cx, |state, _cx| {
-                        // Playback state update (inlined from update_playback_state)
-                        let frame_count = view.update_frame_count;
-                        let should_update_spectrum = frame_count % 2 == 0;
-                        let include_spectrum = should_update_spectrum
-                            && (state.app.spectrum_visible
-                                || state.app.ui_state.current_screen == Screen::Spectrum);
-
-                        let mut player = state.player.lock();
-                        let playback_state = player.get_playback_state();
-
-                        let was_playing = state.app.playback.is_playing;
-                        state.app.playback.is_playing = playback_state.is_playing;
-                        state.app.playback.position_secs = playback_state.position_secs;
-                        state.app.playback.duration_secs = state.app.get_current_track_duration();
-
-                        // Read analyzer data from the shared cache only when playing.
-                        // Skipping these reads when idle reduces CPU usage significantly.
-                        if state.app.playback.is_playing {
-                            let graph = &state.app.plugin_state.graph;
-
-                            state.app.playback.input_loudness_info = graph
-                                .input_monitor_engine_index()
-                                .and_then(|idx| player.get_cached_plugin_data(idx))
-                                .and_then(|d| {
-                                    d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned()
-                                });
-
-                            state.app.playback.loudness_info = graph
-                                .output_monitor_engine_index()
-                                .and_then(|idx| player.get_cached_plugin_data(idx))
-                                .and_then(|d| {
-                                    d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned()
-                                });
-
-                            if include_spectrum {
-                                state.app.playback.spectrum_info = graph
-                                    .spectrum_engine_index()
-                                    .and_then(|idx| player.get_cached_plugin_data(idx))
-                                    .and_then(|d| {
-                                        d.downcast_ref::<sotf_audio_player::SpectrumData>().cloned()
-                                    });
-                            }
-
-                            state.app.playback.compressor_info = graph
-                                .compressor_engine_index()
-                                .and_then(|idx| player.get_cached_plugin_data(idx))
-                                .and_then(|d| {
-                                    d.downcast_ref::<sotf_plugins::CompressorData>().cloned()
-                                });
-                        }
-
-                        drop(player);
-
-                        if state.app.playback.is_playing {
-                            state.app.update_level_meter_groups();
-                            state.app.update_level_meter_peak_hold();
-                        }
+                        let (playback_state, was_playing) =
+                            Self::sync_playback_data(state, view.update_frame_count);
 
                         if let Some(update_type) =
                             state.app.plugin_state.pending_plugin_update.take()
@@ -256,108 +201,18 @@ impl PlayerView {
                             Self::apply_plugin_update(state, update_type);
                         }
 
-                        // Handle OS media control events (MPRIS, etc.)
                         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                         for event in &media_events {
                             Self::handle_media_control_event(state, event);
                         }
 
-                        // Check and record play history (30s threshold)
                         if state.app.playback.is_playing && playback_state.is_playing {
                             state.app.check_and_record_play();
                         }
 
-                        // Engine crash handling (priority: fatal > error > restarted > auto-advance)
-                        if playback_state.engine_fatal {
-                            log::error!("[GPUI] Engine crashed fatally, cannot auto-restart");
-                            state.app.playback.is_playing = false;
-                            state.app.ui_state.toast_message =
-                                Some(crate::app::ToastMessage::error(
-                                    "Audio engine crashed. Please play a new track to restart.",
-                                ));
-                        } else if let Some(ref err) = playback_state.last_error {
-                            log::error!("[GPUI] Playback error: {}", err);
-                            state.app.playback.is_playing = false;
-                            state.app.ui_state.toast_message = Some(
-                                crate::app::ToastMessage::error(format!("Playback error: {}", err)),
-                            );
-                        } else if playback_state.engine_restarted {
-                            log::info!(
-                                "[GPUI] Engine auto-restarted after crash, resuming playback"
-                            );
-                            state.app.ui_state.toast_message =
-                                Some(crate::app::ToastMessage::info(
-                                    "Engine restarted, resuming playback",
-                                ));
-                        } else if let Some(_transition_source) = playback_state.gapless_transition {
-                            // Gapless transition — engine already playing the new file,
-                            // just advance the queue UI to match.
-                            state.app.stop_track_tracking();
-                            let _ = state.app.next_track();
-                            if let Some(path) = state.app.get_current_track_path() {
-                                state.app.start_track_tracking(path);
-                            }
-                        } else if (playback_state.track_ended
-                            || (was_playing && !playback_state.is_playing))
-                            && state.app.playback.current_queue_index.is_some()
-                        {
-                            // Track ended — auto-advance to next in queue
-                            state.app.stop_track_tracking();
-                            if let Some(path) = state.app.next_track() {
-                                Self::play_track_auto_advance(state, path);
-                            } else {
-                                state.app.playback.is_playing = false;
-                            }
-                        }
-
-                        // Gapless pre-queuing: when near end of track, queue the next file
-                        if playback_state.is_playing
-                            && state.app.playback.current_queue_index.is_some()
-                        {
-                            let position = playback_state.position_secs;
-                            let duration = state.app.playback.duration_secs;
-                            let near_end =
-                                duration > 0.0 && position > 0.0 && (duration - position) < 10.0;
-
-                            if near_end && let Some(next_track) = state.app.queue.peek_next_track()
-                            {
-                                let next_ch = next_track.channels.unwrap_or(2) as usize;
-                                let current_ch = state
-                                    .app
-                                    .playback
-                                    .current_queue_index
-                                    .and_then(|idx| state.app.queue.get(idx))
-                                    .and_then(|item| item.current_track())
-                                    .and_then(|t| t.channels)
-                                    .unwrap_or(2)
-                                    as usize;
-
-                                // Only gapless when channel count matches (engine constraint)
-                                if next_ch == current_ch {
-                                    let _ = state.player.lock().queue_next(next_track.path.clone());
-                                }
-                            }
-                        }
-
-                        // Startup database check
-                        state.app.check_library_on_startup();
-
-                        // Managers update
-                        state.app.scan_ctrl.update_all();
-                        state.app.update_library_scan();
-                        state.app.update_federation_scan();
-                        state.app.update_cast_discovery();
-                        state.app.update_toast();
-
-                        // Ensure library cache is valid (recomputes if invalidated by events)
-                        state.app.library_state.ensure_cache_valid();
-
-                        // Check for pending stats from background task
-                        let pending = state.app.pending_library_stats.lock().take();
-                        if let Some(stats) = pending {
-                            state.app.library_stats = stats;
-                            state.app.library_stats_computing = false;
-                        }
+                        Self::handle_engine_state(state, &playback_state, was_playing);
+                        Self::handle_gapless_prequeue(state, &playback_state);
+                        Self::tick_background_tasks(state);
                     });
 
                     // Background stats computation (outside state update)
@@ -447,6 +302,168 @@ impl PlayerView {
                 *pending_stats.lock() = Some(stats);
             })
             .detach();
+    }
+
+    /// Sync playback position, duration, and analyzer data from the audio engine.
+    ///
+    /// Locks the player, reads the engine's `PlaybackState`, copies position/duration
+    /// into app state, reads cached analyzer plugin data (loudness, spectrum, compressor),
+    /// drops the player lock, then updates level meters.
+    ///
+    /// Returns `(engine_playback_state, was_playing)` for use by downstream methods.
+    fn sync_playback_data(
+        state: &mut AppState,
+        frame_count: u64,
+    ) -> (sotf_audio_player::PlaybackState, bool) {
+        let should_update_spectrum = frame_count.is_multiple_of(2);
+        let include_spectrum = should_update_spectrum
+            && (state.app.spectrum_visible
+                || state.app.ui_state.current_screen == Screen::Spectrum);
+
+        let mut player = state.player.lock();
+        let playback_state = player.get_playback_state();
+
+        let was_playing = state.app.playback.is_playing;
+        state.app.playback.is_playing = playback_state.is_playing;
+        state.app.playback.position_secs = playback_state.position_secs;
+        state.app.playback.duration_secs = state.app.get_current_track_duration();
+
+        // Read analyzer data from the shared cache (no audio pipeline blocking).
+        // Read unconditionally (like TUI) — when no engine is running,
+        // get_cached_plugin_data returns None harmlessly.
+        {
+            let graph = &state.app.plugin_state.graph;
+
+            state.app.playback.input_loudness_info = graph
+                .input_monitor_engine_index()
+                .and_then(|idx| player.get_cached_plugin_data(idx))
+                .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
+
+            state.app.playback.loudness_info = graph
+                .output_monitor_engine_index()
+                .and_then(|idx| player.get_cached_plugin_data(idx))
+                .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
+
+            if include_spectrum {
+                state.app.playback.spectrum_info = graph
+                    .spectrum_engine_index()
+                    .and_then(|idx| player.get_cached_plugin_data(idx))
+                    .and_then(|d| d.downcast_ref::<sotf_audio_player::SpectrumData>().cloned());
+            }
+
+            state.app.playback.compressor_info = graph
+                .compressor_engine_index()
+                .and_then(|idx| player.get_cached_plugin_data(idx))
+                .and_then(|d| d.downcast_ref::<sotf_plugins::CompressorData>().cloned());
+        }
+
+        drop(player);
+
+        state.app.update_level_meter_groups();
+        state.app.update_level_meter_peak_hold();
+
+        (playback_state, was_playing)
+    }
+
+    /// Handle engine crash, errors, gapless transitions, and track auto-advance.
+    ///
+    /// Priority: fatal crash > playback error > engine restart > gapless transition > track end.
+    fn handle_engine_state(
+        state: &mut AppState,
+        playback_state: &sotf_audio_player::PlaybackState,
+        was_playing: bool,
+    ) {
+        if playback_state.engine_fatal {
+            log::error!("[GPUI] Engine crashed fatally, cannot auto-restart");
+            state.app.playback.is_playing = false;
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
+                "Audio engine crashed. Please play a new track to restart.",
+            ));
+        } else if let Some(ref err) = playback_state.last_error {
+            log::error!("[GPUI] Playback error: {}", err);
+            state.app.playback.is_playing = false;
+            state.app.ui_state.toast_message =
+                Some(crate::app::ToastMessage::error(format!("Playback error: {}", err)));
+        } else if playback_state.engine_restarted {
+            log::info!("[GPUI] Engine auto-restarted after crash, resuming playback");
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::info(
+                "Engine restarted, resuming playback",
+            ));
+        } else if playback_state.gapless_transition.is_some() {
+            // Gapless transition — engine already playing the new file,
+            // just advance the queue UI to match.
+            state.app.stop_track_tracking();
+            let _ = state.app.next_track();
+            if let Some(path) = state.app.get_current_track_path() {
+                state.app.start_track_tracking(path);
+            }
+        } else if (playback_state.track_ended
+            || (was_playing && !playback_state.is_playing))
+            && state.app.playback.current_queue_index.is_some()
+        {
+            // Track ended — auto-advance to next in queue
+            state.app.stop_track_tracking();
+            if let Some(path) = state.app.next_track() {
+                Self::play_track_auto_advance(state, path);
+            } else {
+                state.app.playback.is_playing = false;
+            }
+        }
+    }
+
+    /// Queue the next file for gapless playback when near the end of the current track.
+    ///
+    /// Only queues when channel counts match (engine constraint for gapless transitions).
+    fn handle_gapless_prequeue(
+        state: &mut AppState,
+        playback_state: &sotf_audio_player::PlaybackState,
+    ) {
+        if !playback_state.is_playing || state.app.playback.current_queue_index.is_none() {
+            return;
+        }
+
+        let position = playback_state.position_secs;
+        let duration = state.app.playback.duration_secs;
+        let near_end = duration > 0.0 && position > 0.0 && (duration - position) < 10.0;
+
+        if near_end
+            && let Some(next_track) = state.app.queue_state.peek_next_track()
+        {
+            let next_ch = next_track.channels.unwrap_or(2) as usize;
+            let current_ch = state
+                .app
+                .playback
+                .current_queue_index
+                .and_then(|idx| state.app.queue_state.get(idx))
+                .and_then(|item| item.current_track())
+                .and_then(|t| t.channels)
+                .unwrap_or(2) as usize;
+
+            // Only gapless when channel count matches (engine constraint)
+            if next_ch == current_ch {
+                let _ = state.player.lock().queue_next(next_track.path.clone());
+            }
+        }
+    }
+
+    /// Run periodic background housekeeping: startup DB check, scan updates,
+    /// toast updates, library cache validation, and pending stats pickup.
+    fn tick_background_tasks(state: &mut AppState) {
+        state.app.check_library_on_startup();
+
+        state.app.scan_ctrl.update_all();
+        state.app.update_library_scan();
+        state.app.update_federation_scan();
+        state.app.update_cast_discovery();
+        state.app.update_toast();
+
+        state.app.library_state.ensure_cache_valid();
+
+        let pending = state.app.pending_library_stats.lock().take();
+        if let Some(stats) = pending {
+            state.app.library_stats = stats;
+            state.app.library_stats_computing = false;
+        }
     }
 
     fn open_config(&mut self, _: &OpenConfig, _: &mut Window, cx: &mut Context<Self>) {
@@ -745,7 +762,7 @@ impl PlayerView {
                 return;
             }
             if state.app.ui_state.current_screen == Screen::Queue {
-                state.app.remove_from_queue(state.app.selected_queue_index);
+                state.app.remove_from_queue(state.app.queue_state.selected_index);
             }
         });
         cx.notify();
@@ -891,7 +908,7 @@ impl PlayerView {
             .app
             .playback
             .current_queue_index
-            .and_then(|idx| state.app.queue.get(idx))
+            .and_then(|idx| state.app.queue_state.get(idx))
             .and_then(|item| item.current_track())
             .and_then(|track| track.channels)
             .unwrap_or(2) as usize;
@@ -936,7 +953,7 @@ impl PlayerView {
             .app
             .playback
             .current_queue_index
-            .and_then(|idx| state.app.queue.get(idx))
+            .and_then(|idx| state.app.queue_state.get(idx))
             .and_then(|item| item.current_track())
             .and_then(|track| track.channels)
             .unwrap_or(2) as usize;
@@ -983,7 +1000,7 @@ impl PlayerView {
             .app
             .playback
             .current_queue_index
-            .and_then(|idx| state.app.queue.get(idx))
+            .and_then(|idx| state.app.queue_state.get(idx))
             .and_then(|item| item.current_track())
             .and_then(|track| track.sample_rate)
             .unwrap_or(48000);
@@ -1035,7 +1052,7 @@ impl PlayerView {
             .app
             .playback
             .current_queue_index
-            .and_then(|idx| state.app.queue.get(idx))
+            .and_then(|idx| state.app.queue_state.get(idx))
             .and_then(|item| item.current_track())
             .and_then(|track| state.app.playback.get_replay_gain_adjustment(track));
         state.app.plugin_state.graph.set_replay_gain(rg_gain);
@@ -1059,9 +1076,9 @@ impl PlayerView {
             if let Some(queue_index) = state.app.playback.current_queue_index {
                 state
                     .app
-                    .record_playback_started(queue_index, state.app.queue.current_track_path());
+                    .record_playback_started(queue_index, state.app.queue_state.current_track_path());
             }
-            if let Some(path) = state.app.queue.current_track_path() {
+            if let Some(path) = state.app.queue_state.current_track_path() {
                 state.app.start_track_tracking(path);
             }
         }
@@ -1115,13 +1132,14 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
-            state.app.is_dragging_knob = true;
-            state.app.knob_drag_plugin_idx = action.plugin_idx;
-            state.app.knob_drag_param_idx = action.param_idx;
-            state.app.knob_drag_start_y = Some(action.start_y);
-            state.app.knob_drag_start_value = action.start_value;
-            state.app.knob_drag_min = action.min;
-            state.app.knob_drag_max = action.max;
+            state.app.knob_drag = Some(crate::app::state::app::KnobDragState {
+                plugin_idx: action.plugin_idx,
+                param_idx: action.param_idx,
+                start_y: action.start_y,
+                start_value: action.start_value,
+                min: action.min,
+                max: action.max,
+            });
         });
         cx.notify();
     }

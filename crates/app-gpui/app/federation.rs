@@ -29,17 +29,17 @@ impl App {
             return;
         }
 
-        self.federation_sources.push(source);
+        self.federation.sources.push(source);
         self.ui_state.toast_message = Some(ToastMessage::success("Source added."));
     }
 
     /// Remove a federation source by index and delete from database.
     pub fn remove_federation_source(&mut self, index: usize) {
-        if index >= self.federation_sources.len() {
+        if index >= self.federation.sources.len() {
             return;
         }
 
-        let source_id = self.federation_sources[index].source_id.clone();
+        let source_id = self.federation.sources[index].source_id.clone();
 
         if let Some(db) = self.library_state.library.get_database()
             && let Err(e) = db.delete_federation_source(&source_id)
@@ -49,17 +49,17 @@ impl App {
             return;
         }
 
-        self.federation_sources.remove(index);
+        self.federation.sources.remove(index);
         self.ui_state.toast_message = Some(ToastMessage::success("Source removed."));
     }
 
     /// Toggle the enabled state of a federation source by index.
     pub fn toggle_federation_source(&mut self, index: usize) {
-        if index >= self.federation_sources.len() {
+        if index >= self.federation.sources.len() {
             return;
         }
 
-        let source = &mut self.federation_sources[index];
+        let source = &mut self.federation.sources[index];
         source.is_enabled = !source.is_enabled;
 
         if let Some(db) = self.library_state.library.get_database() {
@@ -74,11 +74,11 @@ impl App {
         field_index: usize,
         value: &str,
     ) {
-        if source_index >= self.federation_sources.len() {
+        if source_index >= self.federation.sources.len() {
             return;
         }
 
-        let source = &mut self.federation_sources[source_index];
+        let source = &mut self.federation.sources[source_index];
         source.connection.set_field_value(field_index, value);
 
         if let Some(db) = self.library_state.library.get_database() {
@@ -88,49 +88,49 @@ impl App {
 
     /// Update the display name of a federation source.
     pub fn update_federation_source_name(&mut self, index: usize, name: &str) {
-        if index >= self.federation_sources.len() {
+        if index >= self.federation.sources.len() {
             return;
         }
 
-        self.federation_sources[index].display_name = name.to_string();
+        self.federation.sources[index].display_name = name.to_string();
 
         if let Some(db) = self.library_state.library.get_database() {
-            let _ = db.save_federation_source(&self.federation_sources[index]);
+            let _ = db.save_federation_source(&self.federation.sources[index]);
         }
     }
 
     /// Toggle MPD server enabled state and persist.
     pub fn toggle_mpd_server(&mut self) {
-        self.server_config.mpd.enabled = !self.server_config.mpd.enabled;
+        self.federation.server_config.mpd.enabled = !self.federation.server_config.mpd.enabled;
         self.save_server_config();
     }
 
     /// Toggle DLNA server enabled state and persist.
     pub fn toggle_dlna_server(&mut self) {
-        self.server_config.dlna.enabled = !self.server_config.dlna.enabled;
+        self.federation.server_config.dlna.enabled = !self.federation.server_config.dlna.enabled;
         self.save_server_config();
     }
 
     /// Update an MPD server field and persist.
     pub fn update_mpd_field(&mut self, field: &str, value: &str) {
         match field {
-            "bind_address" => self.server_config.mpd.bind_address = value.to_string(),
+            "bind_address" => self.federation.server_config.mpd.bind_address = value.to_string(),
             "port" => {
                 if let Ok(p) = value.parse() {
-                    self.server_config.mpd.port = p;
+                    self.federation.server_config.mpd.port = p;
                 }
             }
-            "tls_enabled" => self.server_config.mpd.tls_enabled = value == "true",
+            "tls_enabled" => self.federation.server_config.mpd.tls_enabled = value == "true",
             "auth_mode" => {
                 use sotf_audio_player::federation_config::MpdAuthMode;
-                self.server_config.mpd.auth_mode = if value == "password" {
+                self.federation.server_config.mpd.auth_mode = if value == "password" {
                     MpdAuthMode::Password
                 } else {
                     MpdAuthMode::Certificate
                 };
             }
             "password" => {
-                self.server_config.mpd.password = if value.is_empty() {
+                self.federation.server_config.mpd.password = if value.is_empty() {
                     None
                 } else {
                     Some(value.to_string())
@@ -144,10 +144,10 @@ impl App {
     /// Update a DLNA server field and persist.
     pub fn update_dlna_field(&mut self, field: &str, value: &str) {
         match field {
-            "friendly_name" => self.server_config.dlna.friendly_name = value.to_string(),
+            "friendly_name" => self.federation.server_config.dlna.friendly_name = value.to_string(),
             "port" => {
                 if let Ok(p) = value.parse() {
-                    self.server_config.dlna.port = p;
+                    self.federation.server_config.dlna.port = p;
                 }
             }
             _ => return,
@@ -156,7 +156,7 @@ impl App {
     }
 
     fn save_server_config(&self) {
-        if let Err(e) = sotf_audio_player::config::save_server_config(&self.server_config) {
+        if let Err(e) = sotf_audio_player::config::save_server_config(&self.federation.server_config) {
             log::warn!("Failed to save server config: {e}");
         }
     }
@@ -167,14 +167,14 @@ impl App {
         &mut self,
         index: usize,
     ) -> Option<(String, FederationSourceEntry)> {
-        if index >= self.federation_sources.len() {
+        if index >= self.federation.sources.len() {
             return None;
         }
 
-        let source = self.federation_sources[index].clone();
+        let source = self.federation.sources[index].clone();
         let source_id = source.source_id.clone();
 
-        self.federation_source_statuses
+        self.federation.source_statuses
             .insert(source_id.clone(), ConnectionStatus::Testing);
 
         Some((source_id, source))
@@ -191,7 +191,7 @@ impl App {
 
         // Update in-memory source
         if let Some(source) = self
-            .federation_sources
+            .federation.sources
             .iter_mut()
             .find(|s| s.source_id == source_id)
         {
@@ -203,7 +203,7 @@ impl App {
             let _ = db.set_source_availability(source_id, available);
         }
 
-        self.federation_source_statuses
+        self.federation.source_statuses
             .insert(source_id.to_string(), status);
     }
 
@@ -212,32 +212,32 @@ impl App {
     /// all albums/tracks from the provider, and merges them into the local database.
     /// Sends progress messages so the UI can display a live progress row.
     pub fn scan_federation_source(&mut self, index: usize) {
-        if index >= self.federation_sources.len() {
+        if index >= self.federation.sources.len() {
             return;
         }
 
-        if self.federation_scan_receiver.is_some() {
+        if self.federation.scan_receiver.is_some() {
             self.ui_state.toast_message = Some(ToastMessage::warning(
                 "A federation scan is already running.",
             ));
             return;
         }
 
-        let source = self.federation_sources[index].clone();
+        let source = self.federation.sources[index].clone();
         let display_name = source.display_name.clone();
 
         let (tx, rx) = std::sync::mpsc::channel();
-        self.federation_scan_receiver = Some(rx);
-        self.federation_scan_cancel
+        self.federation.scan_receiver = Some(rx);
+        self.federation.scan_cancel
             .store(false, std::sync::atomic::Ordering::Relaxed);
-        self.federation_scan_progress = Some(FederationScanProgress {
+        self.federation.scan_progress = Some(FederationScanProgress {
             source_name: display_name,
             albums_total: 0,
             albums_merged: 0,
             tracks_merged: 0,
         });
 
-        let cancel = self.federation_scan_cancel.clone();
+        let cancel = self.federation.scan_cancel.clone();
 
         std::thread::Builder::new()
             .name("federation-scan".into())
@@ -250,13 +250,13 @@ impl App {
 
     /// Cancel the running federation scan.
     pub fn cancel_federation_scan(&mut self) {
-        self.federation_scan_cancel
+        self.federation.scan_cancel
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Poll for federation scan progress and completion. Call from the UI update loop.
     pub fn update_federation_scan(&mut self) {
-        let rx = match &self.federation_scan_receiver {
+        let rx = match &self.federation.scan_receiver {
             Some(rx) => rx,
             None => return,
         };
@@ -265,7 +265,7 @@ impl App {
         loop {
             match rx.try_recv() {
                 Ok(FederationScanMessage::FetchedAlbums { total }) => {
-                    if let Some(p) = &mut self.federation_scan_progress {
+                    if let Some(p) = &mut self.federation.scan_progress {
                         p.albums_total = total;
                     }
                 }
@@ -273,21 +273,21 @@ impl App {
                     albums_merged,
                     tracks_merged,
                 }) => {
-                    if let Some(p) = &mut self.federation_scan_progress {
+                    if let Some(p) = &mut self.federation.scan_progress {
                         p.albums_merged = albums_merged;
                         p.tracks_merged = tracks_merged;
                     }
                 }
                 Ok(FederationScanMessage::Done(result)) => {
-                    self.federation_scan_receiver = None;
-                    self.federation_scan_progress = None;
+                    self.federation.scan_receiver = None;
+                    self.federation.scan_progress = None;
                     self.handle_scan_result(result);
                     return;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.federation_scan_receiver = None;
-                    self.federation_scan_progress = None;
+                    self.federation.scan_receiver = None;
+                    self.federation.scan_progress = None;
                     return;
                 }
             }
@@ -298,7 +298,7 @@ impl App {
         if let Some(ref err) = result.error {
             self.ui_state.toast_message = Some(ToastMessage::error(format!("Scan failed: {err}",)));
             if let Some(source) = self
-                .federation_sources
+                .federation.sources
                 .iter_mut()
                 .find(|s| s.source_id == result.source_id)
             {
@@ -313,7 +313,7 @@ impl App {
                 result.albums, result.tracks
             )));
             if let Some(source) = self
-                .federation_sources
+                .federation.sources
                 .iter_mut()
                 .find(|s| s.source_id == result.source_id)
             {
@@ -327,7 +327,7 @@ impl App {
                 log::error!("Failed to reload library after federation scan: {e}");
             }
         }
-        self.federation_source_statuses.insert(
+        self.federation.source_statuses.insert(
             result.source_id.clone(),
             match result.error {
                 Some(err) => ConnectionStatus::Error(err),
@@ -338,7 +338,7 @@ impl App {
 
     /// Get the connection status for a federation source.
     pub fn get_federation_source_status(&self, source_id: &str) -> Option<&ConnectionStatus> {
-        self.federation_source_statuses.get(source_id)
+        self.federation.source_statuses.get(source_id)
     }
 }
 

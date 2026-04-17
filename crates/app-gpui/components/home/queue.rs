@@ -31,7 +31,7 @@ impl PlayerView {
         // Use ratios for panel widths (layout will compute actual sizes)
         let queue_list_ratio = layout.queue_list_ratio;
         let meters_ratio = layout.meters_panel_ratio;
-        let meter_display_mode = state.app.meter_display_mode;
+        let meter_display_mode = state.app.level_meters.display_mode;
         let window_height = state.app.ui_state.window_height;
         let window_width = state.app.ui_state.window_width;
         let hide_meters_for_rack = state.app.hide_queue_meters_for_rack;
@@ -126,7 +126,7 @@ impl PlayerView {
                             Text::new(format!(
                                 "{} ({} {})",
                                 translations.queue_title,
-                                state.app.queue.len(),
+                                state.app.queue_state.len(),
                                 translations.queue_albums
                             ))
                             .size(TextSize::Md)
@@ -143,7 +143,7 @@ impl PlayerView {
                                 .gap(d.gap)
                                 .flex_1()
                                 .overflow_y_scroll()
-                                .children(state.app.queue.iter().enumerate().map(|(idx, item)| {
+                                .children(state.app.queue_state.iter().enumerate().map(|(idx, item)| {
                                     let is_current = state.app.playback.current_queue_index == Some(idx);
                                     let theme = theme.clone();
                                     let theme_hover = theme.clone();
@@ -167,7 +167,7 @@ impl PlayerView {
                                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.playback.current_queue_index = Some(idx);
-                                                    if let Some(source) = state.app.queue[idx]
+                                                    if let Some(source) = state.app.queue_state[idx]
                                                         .current_track()
                                                         .map(|t| t.audio_source())
                                                     {
@@ -403,7 +403,7 @@ impl PlayerView {
                                                             let state = state_entity.clone();
                                                             move |_view, _: &MouseUpEvent, _window, cx| {
                                                                 state.update(cx, |state, _| {
-                                                                    state.app.meter_display_mode =
+                                                                    state.app.level_meters.display_mode =
                                                                         MeterDisplayMode::Lufs;
                                                                 });
                                                                 cx.notify();
@@ -434,7 +434,7 @@ impl PlayerView {
                                                             let state = state_entity.clone();
                                                             move |_view, _: &MouseUpEvent, _window, cx| {
                                                                 state.update(cx, |state, _| {
-                                                                    state.app.meter_display_mode =
+                                                                    state.app.level_meters.display_mode =
                                                                         MeterDisplayMode::Levels;
                                                                     // Ensure meter groups are initialized
                                                                     state.app.update_level_meter_groups();
@@ -507,7 +507,7 @@ impl PlayerView {
             .app
             .playback
             .current_queue_index
-            .and_then(|idx| state.app.queue.get(idx));
+            .and_then(|idx| state.app.queue_state.get(idx));
 
         let content: AnyElement = if let Some(item) = queue_item {
             let album = &item.album;
@@ -896,7 +896,7 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     // Update the track index in the current queue item
                                     if let Some(queue_idx) = state.app.playback.current_queue_index
-                                        && let Some(item) = state.app.queue.get_mut(queue_idx)
+                                        && let Some(item) = state.app.queue_state.get_mut(queue_idx)
                                     {
                                         item.current_track_index = idx;
                                     }

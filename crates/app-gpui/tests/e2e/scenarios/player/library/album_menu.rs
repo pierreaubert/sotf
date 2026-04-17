@@ -115,7 +115,7 @@ impl TestScenario for AlbumContextMenuScenario {
         driver.run_until_parked();
 
         // Verify album was added to queue
-        let queue_len = driver.read_app(|app| app.queue.len());
+        let queue_len = driver.read_app(|app| app.queue_state.len());
         if queue_len == 0 {
             return Err("Album should be added to queue via context menu".into());
         }
@@ -134,8 +134,8 @@ impl TestScenario for AlbumContextMenuScenario {
 
         // ===== Test 4: Clear queue and test Play Now via context menu flow =====
         driver.update_app(|app, _| {
-            app.queue.clear();
-            app.expanded_queue_items.clear();
+            app.queue_state.clear();
+            app.queue_state.expanded.clear();
             app.playback.is_playing = false;
             app.playback.current_queue_index = None;
         });
@@ -164,7 +164,7 @@ impl TestScenario for AlbumContextMenuScenario {
         driver.run_until_parked();
 
         // Verify album was added
-        let queue_len = driver.read_app(|app| app.queue.len());
+        let queue_len = driver.read_app(|app| app.queue_state.len());
         if queue_len == 0 {
             return Err("Album should be added to queue after Play Now".into());
         }
@@ -259,7 +259,7 @@ impl TestScenario for AlbumNoDuplicateScenario {
         driver.run_until_parked();
 
         // Verify album was added
-        let queue_len = driver.read_app(|app| app.queue.len());
+        let queue_len = driver.read_app(|app| app.queue_state.len());
         println!("Queue length after first add: {}", queue_len);
         assert_eq!(queue_len, 1, "Expected 1 album in queue, got {}", queue_len);
 
@@ -271,7 +271,7 @@ impl TestScenario for AlbumNoDuplicateScenario {
         driver.run_until_parked();
 
         // BUG: Album is added again - this should fail until we fix it
-        let queue_len_after = driver.read_app(|app| app.queue.len());
+        let queue_len_after = driver.read_app(|app| app.queue_state.len());
         println!("Queue length after second add: {}", queue_len_after);
         assert_eq!(
             queue_len_after, 1,

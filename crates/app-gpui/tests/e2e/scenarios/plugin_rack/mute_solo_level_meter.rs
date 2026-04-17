@@ -27,14 +27,14 @@ impl TestScenario for MuteSoloLevelMeterScenario {
         println!("Checking initial state...");
         let group_count = meter_page
             .driver
-            .read_app(|app| app.level_meter_groups.len());
+            .read_app(|app| app.level_meters.groups.len());
         assert!(
             group_count >= 1,
             "Should have at least 1 meter group (L/R). Got {}",
             group_count
         );
         let channel_count = meter_page.driver.read_app(|app| {
-            app.level_meter_groups
+            app.level_meters.groups
                 .first()
                 .map(|g| g.channels.len())
                 .unwrap_or(0)

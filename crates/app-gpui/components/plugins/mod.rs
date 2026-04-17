@@ -32,7 +32,6 @@ mod ui_mono_to_stereo;
 mod ui_mute_solo;
 pub mod ui_plugin_shell;
 mod ui_rack;
-mod ui_rack_detail;
 mod ui_simple;
 mod ui_spectrum;
 mod ui_upmixer;

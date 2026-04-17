@@ -3,11 +3,12 @@
 //! Contains the main App struct and AppState wrapper.
 
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use gpui::Entity;
 use gpui_ui_kit::workflow::NodeId;
-use sotf_audio_player::Player;
+use sotf_audio_player::{Player, QueueController, QueuePlaybackEffect};
 
 use crate::i18n::{Language, Translations};
 use crate::keybindings::KeymapPreset;
@@ -43,6 +44,67 @@ pub struct WorkflowNodeMapping {
     pub output_node_id: Option<NodeId>,
 }
 
+/// Level meter display and peak hold state
+#[derive(Debug, Default)]
+pub struct LevelMeterState {
+    pub groups: Vec<ChannelGroup>,
+    pub selected_group: usize,
+    pub control_selection: usize, // 0 = Mute, 1 = Solo, 2 = Dim
+    /// Cached channel count to avoid rebuilding meter groups every frame
+    pub last_channel_count: usize,
+    /// Cached speaker config to avoid rebuilding meter groups every frame
+    pub last_speaker_config: Option<String>,
+    /// Peak hold values per channel (linear scale, 0.0 to 1.0+)
+    pub peak_hold: Vec<f64>,
+    /// Last update time for peak hold decay
+    pub peak_hold_last_update: Option<std::time::Instant>,
+    pub display_mode: MeterDisplayMode,
+}
+
+/// Speaker optimization workflow state
+#[derive(Debug)]
+pub struct SpeakerOptState {
+    pub model: String,
+    pub params: sotf_audio_player::autoeq::OptimizationParams,
+    pub running: bool,
+    pub progress: Vec<(usize, f64)>,
+    pub result: Option<sotf_audio_player::autoeq::SpeakerOptimizationResult>,
+    pub export_format: String,
+    pub ui: OptimizationUiState,
+}
+
+impl Default for SpeakerOptState {
+    fn default() -> Self {
+        Self {
+            model: String::new(),
+            params: sotf_audio_player::autoeq::OptimizationParams::speaker_defaults(),
+            running: false,
+            progress: Vec::new(),
+            result: None,
+            export_format: String::from("json"),
+            ui: OptimizationUiState::default(),
+        }
+    }
+}
+
+/// Active knob/slider drag operation
+#[derive(Debug, Clone, Copy)]
+pub struct KnobDragState {
+    pub plugin_idx: usize,
+    pub param_idx: usize,
+    pub start_y: f32,
+    pub start_value: f64,
+    pub min: f64,
+    pub max: f64,
+}
+
+/// Active volume slider drag operation
+#[derive(Debug, Clone, Copy)]
+pub struct VolumeDragState {
+    pub start_y: f32,
+    pub start_value: f32,
+}
+
 /// Which divider is being dragged
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DividerType {
@@ -58,6 +120,110 @@ pub struct DividerDragState {
     pub start_width: f32,
 }
 
+/// Queue state — wraps `QueueController` with per-item UI expansion tracking.
+///
+/// Deref/DerefMut to `QueueController` so `.len()`, `.iter()`, `.current_index`,
+/// `.peek_next_track()`, etc. work transparently. Mutations that change item count
+/// (add, remove, clear, fill_magic) are shadowed to keep `expanded` in sync.
+#[derive(Debug)]
+pub struct QueueState {
+    ctrl: QueueController,
+    /// Per-queue-item UI expansion state (true = expanded to show tracks)
+    pub expanded: Vec<bool>,
+    /// Currently selected queue item index in the UI
+    pub selected_index: usize,
+}
+
+impl Deref for QueueState {
+    type Target = QueueController;
+    fn deref(&self) -> &Self::Target {
+        &self.ctrl
+    }
+}
+
+impl DerefMut for QueueState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.ctrl
+    }
+}
+
+impl Default for QueueState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl QueueState {
+    pub fn new() -> Self {
+        Self {
+            ctrl: QueueController::new(),
+            expanded: Vec::new(),
+            selected_index: 0,
+        }
+    }
+
+    /// Add an album to the queue, tracking its expansion state.
+    pub fn add_album(&mut self, album: sotf_audio_player::Album) -> Result<usize, String> {
+        let idx = self.ctrl.add_album(album)?;
+        self.expanded.push(false);
+        Ok(idx)
+    }
+
+    /// Add album and immediately jump to it for playback.
+    pub fn play_album_now(
+        &mut self,
+        album: sotf_audio_player::Album,
+    ) -> Result<QueuePlaybackEffect, String> {
+        let effect = self.ctrl.play_album_now(album)?;
+        self.expanded.push(false);
+        Ok(effect)
+    }
+
+    /// Remove the album at `index`, keeping expansion in sync.
+    pub fn remove(&mut self, index: usize) -> (QueuePlaybackEffect, bool) {
+        if index >= self.ctrl.len() {
+            return (QueuePlaybackEffect::None, false);
+        }
+        let result = self.ctrl.remove(index);
+        if index < self.expanded.len() {
+            self.expanded.remove(index);
+        } else {
+            self.expanded.resize(self.ctrl.len(), false);
+        }
+        if self.selected_index >= self.ctrl.len() && self.selected_index > 0 {
+            self.selected_index = self.ctrl.len() - 1;
+        }
+        result
+    }
+
+    /// Clear all items from the queue.
+    pub fn clear(&mut self) {
+        self.ctrl.clear();
+        self.expanded.clear();
+        self.selected_index = 0;
+    }
+
+    /// Fill queue with "magic" recommendations.
+    pub fn fill_magic(
+        &mut self,
+        db: &sotf_audio_player::MusicDatabase,
+        library_albums: &[sotf_audio_player::Album],
+    ) -> Result<Vec<sotf_audio_player::Album>, String> {
+        let added = self.ctrl.fill_magic(db, library_albums)?;
+        for _ in &added {
+            self.expanded.push(false);
+        }
+        Ok(added)
+    }
+
+    /// Toggle expansion of the currently selected queue item.
+    pub fn toggle_expansion(&mut self) {
+        if self.selected_index < self.expanded.len() {
+            self.expanded[self.selected_index] = !self.expanded[self.selected_index];
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct App {
     // Library state - now managed via library_state
@@ -67,36 +233,17 @@ pub struct App {
     pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
 
     // Queue state
-    pub queue: sotf_audio_player::QueueController,
-    pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
+    pub queue_state: QueueState,
 
     // Speaker Optimization State
-    pub speaker_model: String, // Selected speaker model name (e.g. "KEF LS50 Meta")
-    pub speaker_params: sotf_audio_player::autoeq::OptimizationParams,
-    pub speaker_optimization_running: bool,
-    pub speaker_optimization_progress: Vec<(usize, f64)>,
-    pub speaker_optimization_result: Option<sotf_audio_player::autoeq::SpeakerOptimizationResult>,
-    pub speaker_export_format: String,
-    pub speaker_opt_ui: OptimizationUiState, // UI state (dropdowns)
+    pub speaker_opt: SpeakerOptState,
 
     // Selection indices
     pub selected_directory_index: usize,
-    pub selected_queue_index: usize,
     pub album_list_offset: usize,
 
     // Level meters
-    pub level_meter_groups: Vec<ChannelGroup>,
-    pub selected_level_meter_group: usize,
-    pub level_meter_control_selection: usize, // 0 = Mute, 1 = Solo, 2 = Dim
-    /// Cached channel count to avoid rebuilding meter groups every frame
-    pub level_meter_last_channel_count: usize,
-    /// Cached speaker config to avoid rebuilding meter groups every frame
-    pub level_meter_last_speaker_config: Option<String>,
-    /// Peak hold values per channel (linear scale, 0.0 to 1.0+)
-    pub level_meter_peak_hold: Vec<f64>,
-    /// Last update time for peak hold decay
-    pub level_meter_peak_hold_last_update: Option<std::time::Instant>,
-    pub meter_display_mode: MeterDisplayMode, // Which meter to show (LUFS or Levels)
+    pub level_meters: LevelMeterState,
 
     // Spectrum analyzer
     pub spectrum_visible: bool,
@@ -122,19 +269,9 @@ pub struct App {
     // Scan progress for threaded scanning
     pub scan_total_files: usize,
 
-    // Volume drag state
-    pub is_dragging_volume: bool,
-    pub volume_drag_start_y: Option<f32>,
-    pub volume_drag_start_value: f32,
-
-    // Plugin knob/slider drag state
-    pub is_dragging_knob: bool,
-    pub knob_drag_plugin_idx: usize,
-    pub knob_drag_param_idx: usize,
-    pub knob_drag_start_y: Option<f32>,
-    pub knob_drag_start_value: f64,
-    pub knob_drag_min: f64,
-    pub knob_drag_max: f64,
+    // Drag states (None = not dragging)
+    pub volume_drag: Option<VolumeDragState>,
+    pub knob_drag: Option<KnobDragState>,
 
     // Settings accordion expanded sections
     pub expanded_settings_sections: Vec<String>,
@@ -192,9 +329,7 @@ pub struct App {
     pub playback_events: super::playback_events::PlaybackEventStore,
 
     // Play tracking for statistics (30s threshold)
-    pub current_track_path: Option<std::path::PathBuf>,
-    pub current_track_start_time: Option<std::time::Instant>,
-    pub current_track_already_recorded: bool,
+    pub track_tracking: TrackTrackingState,
 
     // Channel conflict dialog state
     pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>,
@@ -210,20 +345,46 @@ pub struct App {
     /// Currently displayed contextual hint (None if no hint active).
     pub current_hint: Option<crate::components::dialogs::tutorial::ContextualHint>,
 
+    /// Cached window geometry to avoid re-reading config from disk on every save
+    pub last_saved_geometry: Option<crate::config::WindowGeometry>,
+
     // Federation & Server configuration
-    pub federation_sources: Vec<sotf_audio_player::federation_config::FederationSourceEntry>,
-    pub federation_source_statuses:
-        HashMap<String, sotf_audio_player::federation_config::ConnectionStatus>,
+    pub federation: FederationState,
+}
+
+/// Play tracking for statistics — records a play after 30s threshold
+#[derive(Debug, Default)]
+pub struct TrackTrackingState {
+    pub path: Option<std::path::PathBuf>,
+    pub start_time: Option<std::time::Instant>,
+    pub already_recorded: bool,
+}
+
+/// Federation & server configuration and background scan state
+#[derive(Debug)]
+pub struct FederationState {
+    pub sources: Vec<sotf_audio_player::federation_config::FederationSourceEntry>,
+    pub source_statuses: HashMap<String, sotf_audio_player::federation_config::ConnectionStatus>,
     pub server_config: sotf_audio_player::federation_config::ServerConfig,
-    /// Receiver for background federation scan messages (progress + final result).
-    pub federation_scan_receiver: Option<std::sync::mpsc::Receiver<FederationScanMessage>>,
-    /// Cancel flag for federation scan (set to true to abort).
-    pub federation_scan_cancel: Arc<std::sync::atomic::AtomicBool>,
-    /// Current federation scan progress (for rendering the progress bar).
-    pub federation_scan_progress: Option<FederationScanProgress>,
-    /// Receiver for Cast device discovery results.
+    pub scan_receiver: Option<std::sync::mpsc::Receiver<FederationScanMessage>>,
+    pub scan_cancel: Arc<std::sync::atomic::AtomicBool>,
+    pub scan_progress: Option<FederationScanProgress>,
     pub cast_discovery_receiver:
         Option<std::sync::mpsc::Receiver<Vec<crate::app::state::audio_device::CastDeviceInfo>>>,
+}
+
+impl Default for FederationState {
+    fn default() -> Self {
+        Self {
+            sources: Vec::new(),
+            source_statuses: HashMap::new(),
+            server_config: sotf_audio_player::federation_config::ServerConfig::default(),
+            scan_receiver: None,
+            scan_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            scan_progress: None,
+            cast_discovery_receiver: None,
+        }
+    }
 }
 
 /// Progress state shown in the UI during a federation scan.
@@ -269,29 +430,13 @@ impl App {
         let mut app = Self {
             library_stats: LibraryStats::default(),
             library_scanner: None,
-            queue: sotf_audio_player::QueueController::new(),
-            expanded_queue_items: Vec::new(),
+            queue_state: QueueState::new(),
 
-            // Speaker State Init
-            speaker_model: String::new(),
-            speaker_params: sotf_audio_player::autoeq::OptimizationParams::speaker_defaults(),
-            speaker_optimization_running: false,
-            speaker_optimization_progress: Vec::new(),
-            speaker_optimization_result: None,
-            speaker_export_format: String::from("json"),
-            speaker_opt_ui: OptimizationUiState::default(),
+            speaker_opt: SpeakerOptState::default(),
 
             selected_directory_index: 0,
-            selected_queue_index: 0,
             album_list_offset: 0,
-            level_meter_groups: Vec::new(),
-            selected_level_meter_group: 0,
-            level_meter_control_selection: 0,
-            level_meter_last_channel_count: 0,
-            level_meter_last_speaker_config: None,
-            level_meter_peak_hold: Vec::new(),
-            level_meter_peak_hold_last_update: None,
-            meter_display_mode: MeterDisplayMode::default(),
+            level_meters: LevelMeterState::default(),
             spectrum_visible: false,
             needs_rescan: false,
             is_loading_initial_data: true,
@@ -304,16 +449,8 @@ impl App {
             rack_display_mode: RackDisplayMode::default(),
             hide_queue_meters_for_rack: false,
             scan_total_files: 0,
-            is_dragging_volume: false,
-            volume_drag_start_y: None,
-            volume_drag_start_value: 0.0,
-            is_dragging_knob: false,
-            knob_drag_plugin_idx: 0,
-            knob_drag_param_idx: 0,
-            knob_drag_start_y: None,
-            knob_drag_start_value: 0.0,
-            knob_drag_min: 0.0,
-            knob_drag_max: 1.0,
+            volume_drag: None,
+            knob_drag: None,
             expanded_settings_sections: vec!["library".to_string()],
             playlist_controller: sotf_audio_player::PlaylistController::new(),
             scan_ctrl: sotf_audio_player::ScanController::new(),
@@ -340,9 +477,7 @@ impl App {
             shared_state: Arc::new(super::SharedState::new()),
             state_history: StateHistory::new(),
             playback_events: super::playback_events::PlaybackEventStore::new(),
-            current_track_path: None,
-            current_track_start_time: None,
-            current_track_already_recorded: false,
+            track_tracking: TrackTrackingState::default(),
             channel_conflict_path: None,
             channel_conflicts: Vec::new(),
             channel_conflict_track_channels: 2,
@@ -350,13 +485,9 @@ impl App {
             seen_hints: Vec::new(),
             current_hint: None,
 
-            federation_sources: Vec::new(),
-            federation_source_statuses: HashMap::new(),
-            server_config: sotf_audio_player::federation_config::ServerConfig::default(),
-            federation_scan_receiver: None,
-            federation_scan_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            federation_scan_progress: None,
-            cast_discovery_receiver: None,
+            last_saved_geometry: None,
+
+            federation: FederationState::default(),
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
@@ -639,19 +770,19 @@ impl App {
 
     /// Start tracking a new track for play statistics
     pub fn start_track_tracking(&mut self, track_path: std::path::PathBuf) {
-        self.current_track_path = Some(track_path);
-        self.current_track_start_time = Some(std::time::Instant::now());
-        self.current_track_already_recorded = false;
+        self.track_tracking.path = Some(track_path);
+        self.track_tracking.start_time = Some(std::time::Instant::now());
+        self.track_tracking.already_recorded = false;
     }
 
     /// Check if current track has been played for 30+ seconds and record it
     pub fn check_and_record_play(&mut self) {
-        if self.current_track_already_recorded {
+        if self.track_tracking.already_recorded {
             return;
         }
 
         if let (Some(path), Some(start_time)) =
-            (&self.current_track_path, self.current_track_start_time)
+            (&self.track_tracking.path, self.track_tracking.start_time)
         {
             let elapsed = start_time.elapsed().as_secs();
             if elapsed >= 30
@@ -662,11 +793,11 @@ impl App {
                     log::error!("Failed to record play: {}", e);
                 } else {
                     log::info!("Recorded play for {:?} ({}s)", path, duration);
-                    self.current_track_already_recorded = true;
+                    self.track_tracking.already_recorded = true;
 
                     // Update in-memory play_count so UI reflects immediately
                     let path = path.clone();
-                    for item in &mut self.queue {
+                    for item in self.queue_state.items_mut() {
                         for track in &mut item.album.tracks {
                             if track.path == path {
                                 track.play_count += 1;
@@ -687,9 +818,9 @@ impl App {
 
     /// Stop tracking the current track (called when track changes or stops)
     pub fn stop_track_tracking(&mut self) {
-        self.current_track_path = None;
-        self.current_track_start_time = None;
-        self.current_track_already_recorded = false;
+        self.track_tracking.path = None;
+        self.track_tracking.start_time = None;
+        self.track_tracking.already_recorded = false;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -711,7 +842,7 @@ impl App {
         };
 
         // Update in queue
-        for item in &mut self.queue {
+        for item in self.queue_state.items_mut() {
             for track in &mut item.album.tracks {
                 if track.path == track_path {
                     track.is_favorite = new_state;
@@ -744,7 +875,7 @@ impl App {
         };
 
         // Update in queue
-        for item in &mut self.queue {
+        for item in self.queue_state.items_mut() {
             if item.album.id == Some(album_id) {
                 item.album.is_favorite = new_state;
             }
@@ -965,6 +1096,9 @@ impl App {
         &mut self,
         config: crate::config::Config,
     ) -> Result<LayoutState, Box<dyn std::error::Error>> {
+        // Cache window geometry so save_config doesn't need to re-read from disk
+        self.last_saved_geometry = Some(config.window_geometry.clone());
+
         // Restore directories
         self.library_state.library.directories = config.directories;
 
@@ -1125,17 +1259,22 @@ impl App {
         Ok(layout_state)
     }
 
-    pub fn save_config(&self, layout: &LayoutState) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_config(&mut self, layout: &LayoutState) -> Result<(), Box<dyn std::error::Error>> {
         self.save_config_with_geometry(layout, None)
     }
 
     /// Save config with optional window geometry
     pub fn save_config_with_geometry(
-        &self,
+        &mut self,
         layout: &LayoutState,
         window_geometry: Option<crate::config::WindowGeometry>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::config::{Config, PanelLayout};
+        let geometry = window_geometry.unwrap_or_else(|| {
+            self.last_saved_geometry.clone().unwrap_or_default()
+        });
+        // Update cache so future saves without geometry don't need disk I/O
+        self.last_saved_geometry = Some(geometry.clone());
         let config = Config {
             directories: self.library_state.library.directories.clone(),
             last_loaded_plugin_preset: self.plugin_state.last_loaded_preset.clone(),
@@ -1155,13 +1294,7 @@ impl App {
                 queue_v_ratio: layout.queue_v_ratio,
                 rack_v_ratio: layout.rack_v_ratio,
             },
-            window_geometry: window_geometry.unwrap_or_else(|| {
-                // If no geometry provided, use current saved value or default
-                Config::load()
-                    .ok()
-                    .map(|c| c.window_geometry)
-                    .unwrap_or_default()
-            }),
+            window_geometry: geometry,
             volume: self.playback.volume,
             muted: self.playback.muted,
             recording_config: crate::app::config::RecordingConfigState {
