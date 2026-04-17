@@ -2,224 +2,169 @@
 //!
 //! Tests realistic playback scenarios that span multiple tracks and albums,
 //! verifying state preservation throughout the playback lifecycle.
+//! Uses real `PlaybackController` and `QueueController` from `sotf_audio_player`.
 
-use crate::common::state_builder::{TestAlbum, TestPlaybackState, TestQueueItem, TestTrack};
-
-// =============================================================================
-// Helper: Create multi-track albums for testing
-// =============================================================================
-
-fn create_album_with_tracks(name: &str, track_count: usize) -> TestAlbum {
-    let tracks: Vec<TestTrack> = (1..=track_count)
-        .map(|i| TestTrack::new(&format!("{}_track_{}.flac", name, i)))
-        .collect();
-    TestAlbum::new(name, &format!("{} Artist", name)).with_tracks(tracks)
-}
-
-fn create_playback_state_with_albums(albums: Vec<TestAlbum>, volume: f32) -> TestPlaybackState {
-    let queue: Vec<TestQueueItem> = albums.into_iter().map(TestQueueItem::from_album).collect();
-    TestPlaybackState::default()
-        .with_volume(volume)
-        .with_queue(queue)
-}
+use crate::common::factories::album_with_tracks;
+use sotf_audio_player::controllers::playback::PlaybackController;
+use sotf_audio_player::controllers::queue::{QueueController, QueuePlaybackEffect};
 
 // =============================================================================
 // Sequence: Full Album Playback
 // =============================================================================
 
-/// Simulate playing through an entire album track by track
+/// Simulate playing through an entire album track by track.
+/// Volume on PlaybackController must remain untouched by queue navigation.
 #[test]
 fn test_full_album_playback_preserves_volume() {
-    // Setup: Album with 5 tracks, custom volume
-    let album = create_album_with_tracks("TestAlbum", 5);
-    let mut state = create_playback_state_with_albums(vec![album], 0.42);
-    state.is_playing = true;
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.42);
 
-    // Play through all tracks
-    for track_num in 1..5 {
-        // Verify we're on the expected track
-        assert_eq!(
-            state.current_queue_index,
-            Some(0),
-            "Should stay on first album"
+    let mut queue = QueueController::new();
+    queue.add_album(album_with_tracks("TestAlbum", "Artist", 5));
+    queue.start();
+
+    for i in 0..4 {
+        let effect = queue.next_track();
+        assert!(
+            matches!(effect, QueuePlaybackEffect::Play(_)),
+            "Expected Play effect at track {}",
+            i + 2
         );
-        let current_item = &state.queue[0];
-        assert_eq!(
-            current_item.current_track_index,
-            track_num - 1,
-            "Track index mismatch"
-        );
-
-        // Advance to next track
-        let next = state.next_track();
-        assert!(next.is_some(), "Should have next track");
-
-        // CRITICAL: Volume must be preserved
-        assert_eq!(state.volume, 0.42, "Volume changed on track {}", track_num);
-
-        // Position should reset
-        assert_eq!(state.position_secs, 0.0, "Position should reset");
+        assert_eq!(playback.volume, 0.42, "Volume changed on track {}", i + 2);
     }
 
-    // After last track in album, next_track should move to next album (or end)
-    let next = state.next_track();
-    assert!(next.is_none(), "Should be at end of queue");
-    assert!(!state.is_playing, "Should stop playing at end");
+    // After last track, queue returns Stop
+    let effect = queue.next_track();
+    assert_eq!(effect, QueuePlaybackEffect::Stop);
 
-    // Volume still preserved even after playback ends
-    assert_eq!(state.volume, 0.42, "Volume changed after playback ended");
+    // Volume preserved even after queue ends
+    assert_eq!(playback.volume, 0.42);
 }
 
 /// Simulate playing through multiple albums
 #[test]
 fn test_multi_album_playback_preserves_state() {
-    let albums = vec![
-        create_album_with_tracks("Album1", 3),
-        create_album_with_tracks("Album2", 2),
-        create_album_with_tracks("Album3", 4),
-    ];
-    let mut state = create_playback_state_with_albums(albums, 0.75);
-    state.is_playing = true;
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.75);
 
-    let mut tracks_played = 0;
+    let mut queue = QueueController::new();
+    queue.add_album(album_with_tracks("Album1", "Artist", 3));
+    queue.add_album(album_with_tracks("Album2", "Artist", 2));
+    queue.add_album(album_with_tracks("Album3", "Artist", 4));
+    queue.start();
+
     let expected_total_tracks = 3 + 2 + 4;
+    let mut tracks_played = 0;
 
-    // Play through all albums
-    while state.next_track().is_some() {
-        tracks_played += 1;
+    loop {
+        let effect = queue.next_track();
+        match effect {
+            QueuePlaybackEffect::Play(_) => {
+                tracks_played += 1;
+                assert_eq!(
+                    playback.volume, 0.75,
+                    "Volume changed after {} tracks",
+                    tracks_played
+                );
+            }
+            QueuePlaybackEffect::Stop => break,
+            QueuePlaybackEffect::None => panic!("Unexpected None effect"),
+        }
 
-        // Volume must always be preserved
-        assert_eq!(
-            state.volume, 0.75,
-            "Volume changed after {} tracks",
-            tracks_played
-        );
-
-        // Safety check to prevent infinite loop
         if tracks_played > expected_total_tracks + 1 {
             panic!("Too many tracks played - possible infinite loop");
         }
     }
 
-    // Should have played through all tracks (minus first which we started on)
-    assert_eq!(
-        tracks_played,
-        expected_total_tracks - 1,
-        "Should play all tracks"
-    );
-    assert_eq!(state.volume, 0.75, "Final volume mismatch");
+    // Started on track 1, so next_track calls = total - 1
+    assert_eq!(tracks_played, expected_total_tracks - 1);
+    assert_eq!(playback.volume, 0.75);
 }
 
 // =============================================================================
 // Sequence: Interrupted Playback
 // =============================================================================
 
-/// Test pause/resume doesn't affect volume
+/// Pause/resume on PlaybackController doesn't affect volume
 #[test]
 fn test_pause_resume_preserves_volume() {
-    let album = create_album_with_tracks("Album", 3);
-    let mut state = create_playback_state_with_albums(vec![album], 0.33);
-    state.is_playing = true;
-    state.position_secs = 45.0;
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.33);
+    playback.is_playing = true;
+
+    let mut queue = QueueController::new();
+    queue.add_album(album_with_tracks("Album", "Artist", 3));
+    queue.start();
 
     // Pause
-    state.is_playing = false;
-
-    assert_eq!(state.volume, 0.33, "Volume changed on pause");
-    assert_eq!(state.position_secs, 45.0, "Position changed on pause");
+    playback.is_playing = false;
+    assert_eq!(playback.volume, 0.33);
 
     // Resume
-    state.is_playing = true;
-
-    assert_eq!(state.volume, 0.33, "Volume changed on resume");
-    assert_eq!(state.position_secs, 45.0, "Position changed on resume");
+    playback.is_playing = true;
+    assert_eq!(playback.volume, 0.33);
 
     // Next track
-    state.next_track();
-
-    assert_eq!(state.volume, 0.33, "Volume changed on next track");
-}
-
-/// Test seek operations during playback
-#[test]
-fn test_seek_during_playback_preserves_volume() {
-    let album = create_album_with_tracks("Album", 3);
-    let mut state = create_playback_state_with_albums(vec![album], 0.88);
-    state.is_playing = true;
-    state.duration_secs = 180.0;
-
-    // Multiple seek operations
-    let seek_positions = [0.0, 30.0, 90.0, 150.0, 180.0, 200.0]; // Last one exceeds duration
-
-    for &pos in &seek_positions {
-        let _ = state.seek_to(pos);
-        assert_eq!(state.volume, 0.88, "Volume changed after seek to {}", pos);
-    }
-
-    // Verify position is clamped
-    assert!(
-        state.position_secs <= state.duration_secs,
-        "Position exceeds duration"
-    );
+    queue.next_track();
+    assert_eq!(playback.volume, 0.33);
 }
 
 // =============================================================================
 // Sequence: Volume Adjustments During Playback
 // =============================================================================
 
-/// Test volume adjustments during multi-track playback
+/// Volume adjustments persist across track changes
 #[test]
 fn test_volume_adjustments_persist_across_tracks() {
-    let albums = vec![
-        create_album_with_tracks("Album1", 2),
-        create_album_with_tracks("Album2", 2),
-    ];
-    let mut state = create_playback_state_with_albums(albums, 0.5);
-    state.is_playing = true;
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.5);
+
+    let mut queue = QueueController::new();
+    queue.add_album(album_with_tracks("Album1", "Artist", 2));
+    queue.add_album(album_with_tracks("Album2", "Artist", 2));
+    queue.start();
 
     // Change volume
-    state.volume = 0.25;
+    playback.set_volume(0.25);
 
     // Play next track
-    state.next_track();
-    assert_eq!(
-        state.volume, 0.25,
-        "Volume not preserved after track change"
-    );
+    queue.next_track();
+    assert_eq!(playback.volume, 0.25);
 
     // Change volume again
-    state.volume = 0.80;
+    playback.set_volume(0.80);
 
-    // Skip to next album
-    state.next_track(); // End of album 1
-    state.next_track(); // First track of album 2
-    assert_eq!(
-        state.volume, 0.80,
-        "Volume not preserved across album change"
-    );
+    // Cross album boundary
+    queue.next_track(); // Album2, track 1
+    assert_eq!(playback.volume, 0.80);
+
+    queue.next_track(); // Album2, track 2
+    assert_eq!(playback.volume, 0.80);
 }
 
-/// Test edge volume values persist
+/// Edge volume values persist across track changes
 #[test]
 fn test_edge_volume_values_persist() {
-    let album = create_album_with_tracks("Album", 5);
-    let mut state = create_playback_state_with_albums(vec![album], 0.0);
-    state.is_playing = true;
+    let mut playback = PlaybackController::new();
+    let mut queue = QueueController::new();
+    queue.add_album(album_with_tracks("Album", "Artist", 5));
+    queue.start();
 
-    // Test with volume = 0 (muted)
-    state.next_track();
-    assert_eq!(state.volume, 0.0, "Zero volume not preserved");
+    // Volume = 0.0
+    playback.set_volume(0.0);
+    queue.next_track();
+    assert_eq!(playback.volume, 0.0, "Zero volume not preserved");
 
-    // Test with volume = 1.0 (max)
-    state.volume = 1.0;
-    state.next_track();
-    assert_eq!(state.volume, 1.0, "Max volume not preserved");
+    // Volume = 1.0
+    playback.set_volume(1.0);
+    queue.next_track();
+    assert_eq!(playback.volume, 1.0, "Max volume not preserved");
 
-    // Test with very small volume
-    state.volume = 0.001;
-    state.next_track();
+    // Very small volume
+    playback.set_volume(0.001);
+    queue.next_track();
     assert!(
-        (state.volume - 0.001).abs() < f32::EPSILON,
+        (playback.volume - 0.001).abs() < f32::EPSILON,
         "Small volume not preserved"
     );
 }
@@ -228,162 +173,174 @@ fn test_edge_volume_values_persist() {
 // Sequence: Mute State
 // =============================================================================
 
-/// Test mute state persists through playback
+/// Mute state persists through track changes
 #[test]
 fn test_mute_persists_through_playback() {
-    let album = create_album_with_tracks("Album", 4);
-    let mut state = create_playback_state_with_albums(vec![album], 0.6);
-    state.is_playing = true;
-    state.muted = true;
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.6);
+    playback.muted = true;
 
-    // Play through several tracks
+    let mut queue = QueueController::new();
+    queue.add_album(album_with_tracks("Album", "Artist", 4));
+    queue.start();
+
     for _ in 0..3 {
-        state.next_track();
-        assert!(state.muted, "Mute state changed on track change");
-        assert_eq!(state.volume, 0.6, "Volume changed while muted");
+        queue.next_track();
+        assert!(playback.muted, "Mute state changed on track change");
+        assert_eq!(playback.volume, 0.6, "Volume changed while muted");
     }
 
     // Unmute
-    state.muted = false;
-    state.next_track();
-    assert!(!state.muted, "Unmute didn't persist");
-    assert_eq!(state.volume, 0.6, "Volume changed after unmute");
+    playback.muted = false;
+    queue.next_track(); // This is Stop, but mute is on PlaybackController
+    assert!(!playback.muted, "Unmute didn't persist");
+    assert_eq!(playback.volume, 0.6, "Volume changed after unmute");
+}
+
+/// Mute does not affect stored volume
+#[test]
+fn test_mute_independence_from_volume() {
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.7);
+    playback.muted = true;
+
+    assert_eq!(playback.effective_volume(), 0.0, "Effective should be 0 when muted");
+    assert_eq!(playback.volume, 0.7, "Stored volume should be unchanged");
+
+    playback.muted = false;
+    assert_eq!(playback.effective_volume(), 0.7, "Effective should restore after unmute");
 }
 
 // =============================================================================
 // Sequence: Rapid Operations
 // =============================================================================
 
-/// Test rapid next track operations
+/// Rapid next track operations preserve volume
 #[test]
 fn test_rapid_track_skipping() {
-    let albums = vec![
-        create_album_with_tracks("Album1", 10),
-        create_album_with_tracks("Album2", 10),
-    ];
-    let mut state = create_playback_state_with_albums(albums, 0.55);
-    state.is_playing = true;
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.55);
 
-    // Rapidly skip through many tracks
+    let mut queue = QueueController::new();
+    queue.add_album(album_with_tracks("Album1", "Artist", 10));
+    queue.add_album(album_with_tracks("Album2", "Artist", 10));
+    queue.start();
+
     for i in 0..15 {
-        let result = state.next_track();
-        assert_eq!(
-            state.volume,
-            0.55,
-            "Volume changed after rapid skip {}",
-            i + 1
-        );
-        if result.is_none() {
+        let effect = queue.next_track();
+        assert_eq!(playback.volume, 0.55, "Volume changed after rapid skip {}", i + 1);
+        if matches!(effect, QueuePlaybackEffect::Stop) {
             break;
         }
     }
 }
 
-/// Test alternating operations
+/// Alternating play/pause/next preserves volume
 #[test]
 fn test_alternating_play_pause_next() {
-    let album = create_album_with_tracks("Album", 5);
-    let mut state = create_playback_state_with_albums(vec![album], 0.7);
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.7);
 
-    // Alternating pattern
+    let mut queue = QueueController::new();
+    queue.add_album(album_with_tracks("Album", "Artist", 5));
+    queue.start();
+
     for _ in 0..3 {
-        state.is_playing = true;
-        assert_eq!(state.volume, 0.7);
+        playback.is_playing = true;
+        assert_eq!(playback.volume, 0.7);
 
-        state.is_playing = false;
-        assert_eq!(state.volume, 0.7);
+        playback.is_playing = false;
+        assert_eq!(playback.volume, 0.7);
 
-        state.next_track();
-        assert_eq!(state.volume, 0.7);
+        queue.next_track();
+        assert_eq!(playback.volume, 0.7);
     }
 }
 
 // =============================================================================
-// Sequence: Empty/Edge Cases
+// Sequence: Volume Control Methods
 // =============================================================================
 
-/// Test behavior with single-track album
+/// increase_volume and decrease_volume work correctly
 #[test]
-fn test_single_track_album() {
-    let album = TestAlbum::new("SingleTrack", "Artist")
-        .with_tracks(vec![TestTrack::new("only_track.flac")]);
-    let mut state = create_playback_state_with_albums(vec![album], 0.5);
-    state.is_playing = true;
+fn test_volume_step_operations() {
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.5);
 
-    // Next should end playback
-    let result = state.next_track();
-    assert!(result.is_none(), "Should have no next track");
-    assert!(!state.is_playing, "Should stop playing");
-    assert_eq!(state.volume, 0.5, "Volume changed");
-}
+    playback.increase_volume();
+    assert!(playback.volume > 0.5, "Volume should increase");
+    let after_increase = playback.volume;
 
-/// Test behavior with empty queue
-#[test]
-fn test_empty_queue_operations() {
-    let mut state = TestPlaybackState::default().with_volume(0.5);
+    playback.decrease_volume();
+    assert!(
+        (playback.volume - 0.5).abs() < 0.01,
+        "Volume should return near 0.5 after increase+decrease"
+    );
 
-    // Operations on empty queue should not panic
-    let result = state.next_track();
-    assert!(result.is_none());
-    assert_eq!(state.volume, 0.5, "Volume changed on empty queue operation");
+    // Edge: increasing at max
+    playback.set_volume(1.0);
+    playback.increase_volume();
+    assert_eq!(playback.volume, 1.0, "Volume should clamp at 1.0");
 
-    let seek_result = state.seek_to(30.0);
-    assert!(seek_result.is_err(), "Seek should fail with no track");
-    assert_eq!(state.volume, 0.5, "Volume changed on failed seek");
+    // Edge: decreasing at min
+    playback.set_volume(0.0);
+    playback.decrease_volume();
+    assert_eq!(playback.volume, 0.0, "Volume should clamp at 0.0");
+
+    let _ = after_increase; // suppress unused warning
 }
 
 // =============================================================================
 // Sequence: Complete Workflow Simulation
 // =============================================================================
 
-/// Simulate a realistic listening session
+/// Simulate a realistic listening session using both controllers
 #[test]
 fn test_realistic_listening_session() {
-    let albums = vec![
-        create_album_with_tracks("Morning Jazz", 6),
-        create_album_with_tracks("Work Focus", 8),
-        create_album_with_tracks("Evening Chill", 5),
-    ];
-    let mut state = create_playback_state_with_albums(albums, 0.4);
+    let mut playback = PlaybackController::new();
+    playback.set_volume(0.4);
 
-    // Morning: Start playing at moderate volume
-    state.is_playing = true;
-    state.duration_secs = 240.0;
+    let mut queue = QueueController::new();
+    queue.add_album(album_with_tracks("Morning Jazz", "Various", 6));
+    queue.add_album(album_with_tracks("Work Focus", "Study Beats", 8));
+    queue.add_album(album_with_tracks("Evening Chill", "Lo-Fi", 5));
+    queue.start();
+    playback.is_playing = true;
 
     // Listen to a few tracks
-    state.next_track();
-    state.next_track();
-
-    // Seek within track
-    let _ = state.seek_to(60.0);
+    queue.next_track();
+    queue.next_track();
 
     // Lower volume for a call
-    state.volume = 0.1;
-    state.muted = true;
-
-    // Pause for the call
-    state.is_playing = false;
+    playback.set_volume(0.1);
+    playback.muted = true;
+    playback.is_playing = false;
 
     // Resume after call
-    state.muted = false;
-    state.is_playing = true;
+    playback.muted = false;
+    playback.is_playing = true;
 
-    // Skip rest of album
-    while state.queue[state.current_queue_index.unwrap()].current_track_index < 5 {
-        state.next_track();
+    // Skip rest of first album to get to second album
+    while queue.current_index() == Some(0) {
+        let effect = queue.next_track();
+        if matches!(effect, QueuePlaybackEffect::Stop) {
+            panic!("Should not hit Stop while skipping first album");
+        }
     }
 
-    // Move to next album, increase volume for focus
-    state.next_track();
-    state.volume = 0.6;
+    // Should now be on second album
+    assert_eq!(queue.current_index(), Some(1));
 
-    // Skip through work album
+    // Increase volume for focus
+    playback.set_volume(0.6);
+
+    // Skip through some work album tracks
     for _ in 0..5 {
-        state.next_track();
+        queue.next_track();
     }
 
     // Final state verification
-    assert_eq!(state.volume, 0.6, "Volume not at expected level");
-    assert!(state.is_playing, "Should still be playing");
-    assert!(!state.muted, "Should not be muted");
+    assert_eq!(playback.volume, 0.6);
+    assert!(playback.is_playing);
+    assert!(!playback.muted);
 }

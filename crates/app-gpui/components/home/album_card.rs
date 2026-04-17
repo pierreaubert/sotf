@@ -109,46 +109,58 @@ impl RenderOnce for AlbumCard {
     }
 }
 
+/// Format sample rate and bit depth for display (e.g., "24/44.1k", "16/48k")
+pub fn format_sample_info(bit_depth: Option<u32>, sample_rate: Option<u32>) -> Option<String> {
+    match (bit_depth, sample_rate) {
+        (Some(bits), Some(rate)) => {
+            let rate_str = if rate % 1000 == 0 {
+                format!("{}k", rate / 1000)
+            } else {
+                format!("{:.1}k", rate as f64 / 1000.0)
+            };
+            Some(format!("{}/{}", bits, rate_str))
+        }
+        (Some(bits), None) => Some(format!("{}bit", bits)),
+        (None, Some(rate)) => {
+            let rate_str = if rate % 1000 == 0 {
+                format!("{}k", rate / 1000)
+            } else {
+                format!("{:.1}k", rate as f64 / 1000.0)
+            };
+            Some(rate_str)
+        }
+        (None, None) => None,
+    }
+}
+
+/// Get the audio format (e.g., "FLAC", "MP3") from a file path extension
+pub fn get_format_from_path(path: &std::path::Path) -> Option<String> {
+    path.extension()
+        .and_then(|ext| ext.to_str().map(|s| s.to_uppercase()))
+}
+
+/// Format the dynamic range for display
+pub fn format_dr(dr: Option<f64>) -> Option<String> {
+    dr.map(|d| format!("{:.0}", d))
+}
+
 impl AlbumCard {
-    /// Get the audio format (e.g., "FLAC", "MP3") from the first track
     fn get_format(album: &Album) -> Option<String> {
-        album.tracks.first().and_then(|t| {
-            t.path
-                .extension()
-                .and_then(|ext| ext.to_str().map(|s| s.to_uppercase()))
-        })
+        album
+            .tracks
+            .first()
+            .and_then(|t| get_format_from_path(&t.path))
     }
 
-    /// Format the sample rate and bit depth for display (e.g., "24/44.1k", "16/48k")
     fn format_sample_info(album: &Album) -> Option<String> {
-        album.tracks.first().and_then(|t| {
-            match (t.bit_depth, t.sample_rate) {
-                (Some(bits), Some(rate)) => {
-                    // Format sample rate: 44100 -> "44.1k", 48000 -> "48k", 96000 -> "96k"
-                    let rate_str = if rate % 1000 == 0 {
-                        format!("{}k", rate / 1000)
-                    } else {
-                        format!("{:.1}k", rate as f64 / 1000.0)
-                    };
-                    Some(format!("{}/{}", bits, rate_str))
-                }
-                (Some(bits), None) => Some(format!("{}bit", bits)),
-                (None, Some(rate)) => {
-                    let rate_str = if rate % 1000 == 0 {
-                        format!("{}k", rate / 1000)
-                    } else {
-                        format!("{:.1}k", rate as f64 / 1000.0)
-                    };
-                    Some(rate_str)
-                }
-                (None, None) => None,
-            }
-        })
+        album
+            .tracks
+            .first()
+            .and_then(|t| format_sample_info(t.bit_depth, t.sample_rate))
     }
 
-    /// Format the dynamic range for display
     fn format_dr(dr: Option<f64>) -> Option<String> {
-        dr.map(|d| format!("{:.0}", d))
+        format_dr(dr)
     }
 
     /// Build a clickable heart icon for favorite toggling

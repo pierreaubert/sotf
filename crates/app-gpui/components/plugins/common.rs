@@ -673,8 +673,12 @@ pub fn render_transfer_curve(
     render_transfer_curve_sized(d, threshold_db, ratio, knee_db, is_limiter, 200.0, theme)
 }
 
-/// Compute the output dB for a given input dB on the transfer curve
-fn compute_transfer(
+/// Compute the output dB for a given input dB on the transfer curve.
+///
+/// Models compressor/limiter behavior:
+/// - Limiter: hard clip at threshold
+/// - Compressor: soft knee compression with the given ratio
+pub fn compute_transfer(
     input_db: f64,
     threshold_db: f64,
     ratio: f64,
