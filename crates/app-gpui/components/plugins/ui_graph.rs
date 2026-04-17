@@ -133,22 +133,32 @@ impl PlayerView {
                 canvas.set_theme(workflow_theme);
                 canvas.set_menu_items(menu_items);
 
-                // Set double-click callback to open node editor modal
+                // Set double-click callback to open node editor modal.
+                // We defer the body because this callback runs while the
+                // WorkflowCanvas entity is mutably borrowed by
+                // handle_double_click.  Reading the canvas inside the
+                // callback would trigger a "cannot read while being
+                // updated" panic.  cx.defer() schedules the work after
+                // the current entity update completes.
                 canvas.set_on_node_double_click(move |node_id, _window, cx| {
-                    // Resolve the GraphNodeId UUID from the workflow node's user_data
-                    let graph_node_uuid = canvas_for_callback
-                        .read(cx)
-                        .graph()
-                        .nodes
-                        .get(&node_id)
-                        .and_then(|n| n.user_data.get("plugin_node_id"))
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
+                    let canvas = canvas_for_callback.clone();
+                    let state = state_for_callback.clone();
+                    cx.defer(move |cx| {
+                        let graph_node_uuid = canvas
+                            .read(cx)
+                            .graph()
+                            .nodes
+                            .get(&node_id)
+                            .and_then(|n| n.user_data.get("plugin_node_id"))
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
 
-                    state_for_callback.update(cx, |state, _cx| {
-                        state.app.plugin_state.editing_plugin_node = Some(node_id);
-                        state.app.plugin_state.editing_graph_node_uuid = graph_node_uuid;
-                        state.app.ui_state.input_mode = crate::app::InputMode::EditingPluginNode;
+                        state.update(cx, |state, _cx| {
+                            state.app.plugin_state.editing_plugin_node = Some(node_id);
+                            state.app.plugin_state.editing_graph_node_uuid = graph_node_uuid;
+                            state.app.ui_state.input_mode =
+                                crate::app::InputMode::EditingPluginNode;
+                        });
                     });
                 });
             });

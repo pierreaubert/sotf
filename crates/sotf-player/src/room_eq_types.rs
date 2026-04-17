@@ -228,23 +228,13 @@ impl SimplePresetConfig {
             SimpleLossChoice::Epa => "epa".to_string(),
         };
 
-        // --- Target tilt based on listening distance ---
-        // Near-field: flat (no tilt). Mid-field: gentle -0.5 dB/oct.
-        // Far-field: steeper -1.0 dB/oct (compensates for room gain).
-        match self.target {
-            SpeakerTier::NearField => {
-                config.target_tilt.enabled = false;
-                config.target_tilt.slope = 0.0;
-            }
-            SpeakerTier::MidField => {
-                config.target_tilt.enabled = true;
-                config.target_tilt.slope = -0.5;
-            }
-            SpeakerTier::FarField => {
-                config.target_tilt.enabled = true;
-                config.target_tilt.slope = -1.0;
-            }
-        }
+        // --- Target tilt derived from measurement ---
+        // All tiers use the measurement's own broadband slope as the
+        // optimization target. This preserves the speaker's natural
+        // response characteristic while correcting room anomalies.
+        config.target_tilt.enabled = true;
+        config.target_tilt.tilt_type = "from_measurement".to_string();
+        config.target_tilt.slope = 0.0; // resolved at optimization time
 
         // --- Crossover (2.1+ only) ---
         if !self.bass_management.is_empty() || matches!(self.crossover, SimpleCrossoverChoice::Lr48)
@@ -1438,6 +1428,7 @@ impl RoomEqOptimizerConfig {
                 autoeq::roomeq::TiltType::Harman => "harman".to_string(),
                 autoeq::roomeq::TiltType::Custom => "custom".to_string(),
                 autoeq::roomeq::TiltType::Flat => "custom".to_string(),
+                autoeq::roomeq::TiltType::FromMeasurement => "from_measurement".to_string(),
             };
             self.target_tilt.slope = tilt.slope_db_per_octave;
             self.target_tilt.reference_freq = tilt.reference_freq;

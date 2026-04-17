@@ -206,7 +206,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                 uuid: None,
             };
 
-            app.queue
+            app.queue_state
                 .push(sotf_audio_player_gpui::app::types::QueueItem {
                     album,
                     current_track_index: 0,

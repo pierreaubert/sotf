@@ -1,3 +1,14 @@
+# 0.5.117
+
+## Features
+
+- Simple Wizard: all speaker tiers (NearField, MidField, FarField) now
+  use `from_measurement` target tilt instead of hardcoded slopes. The
+  optimizer derives the target slope from the measurement curve at
+  optimization time, preserving the speaker's natural response.
+- `import_from_backend()` handles the new `TiltType::FromMeasurement`
+  variant.
+
 # 0.5.116
 
 ## Code changes

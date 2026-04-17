@@ -2554,6 +2554,61 @@ fn test_backquote_without_stdlib_backquote_el() {
 }
 
 #[test]
+fn test_bisect_backquote_state_pollution() {
+    // Load each bootstrap file one at a time, and after each, evaluate
+    // the exact failing form from format.el (form 2). The first file
+    // after which this fails is the one that poisoned the interpreter
+    // state.
+    if !ensure_stdlib_files() {
+        return;
+    }
+    let interp = make_stdlib_interp();
+    // The probe — copy of what format.el form 2 shape evaluates to
+    // under backquote expansion. If this fails with "void variable:
+    // list" or similar, the state is polluted.
+    let probe = r#"`((foo ,(identity "a")) (bar ,(identity "b")))"#;
+    // Bootstrap sequence, through files that come before format.el
+    // plus a few after (to see pollution progression).
+    let files: &[&str] = &[
+        "emacs-lisp/debug-early",
+        "emacs-lisp/byte-run",
+        "emacs-lisp/backquote",
+        "subr",
+        "keymap",
+        "version",
+        "widget",
+        "custom",
+        "emacs-lisp/map-ynp",
+        "international/mule",
+        "international/mule-conf",
+        "env",
+    ];
+    // Baseline probe before any files
+    let baseline = interp.eval_source(probe);
+    eprintln!("[baseline] probe result: {:?}", baseline.is_ok());
+
+    for f in files {
+        let path = format!("/tmp/elisp-stdlib/{}.el", f);
+        let source = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => {
+                eprintln!("[{}] SKIP (not found)", f);
+                continue;
+            }
+        };
+        interp.set_eval_ops_limit(5_000_000);
+        interp.reset_eval_ops();
+        let _ = interp.eval_source(&source);
+        interp.set_eval_ops_limit(0);
+        let probe_result = interp.eval_source(probe);
+        match probe_result {
+            Ok(_) => eprintln!("[{}] probe OK", f),
+            Err((_, e)) => eprintln!("[{}] probe FAIL: {}", f, e),
+        }
+    }
+}
+
+#[test]
 fn test_defvar_with_backquote_purecopy() {
     // Exact shape from format.el form 2 — defvar with a backquoted
     // value containing `,(purecopy ...)` unquotes.

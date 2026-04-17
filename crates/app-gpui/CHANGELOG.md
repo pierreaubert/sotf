@@ -1,3 +1,11 @@
+# 0.5.15
+
+## Features
+
+- Room EQ: `to_room_config()` now maps `"from_measurement"` tilt type
+  to `TiltType::FromMeasurement`, enabling measurement-derived target
+  tilt from the Simple Wizard.
+
 # 0.5.14
 
 ## Fixes

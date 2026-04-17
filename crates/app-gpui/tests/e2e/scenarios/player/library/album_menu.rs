@@ -122,7 +122,7 @@ impl TestScenario for AlbumContextMenuScenario {
 
         // ===== Test 3: Verify queue has album =====
         let queue_tracks = driver.read_app(|app| {
-            app.queue
+            app.queue_state
                 .iter()
                 .map(|item| item.album.title.clone())
                 .collect::<Vec<_>>()
