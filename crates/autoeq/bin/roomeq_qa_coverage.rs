@@ -651,6 +651,19 @@ fn validate_result(
 }
 
 // ---------------------------------------------------------------------------
+// EPA helpers
+// ---------------------------------------------------------------------------
+
+fn avg_epa_preference(result: &RoomOptimizationResult) -> Option<f64> {
+    let epa = result.metadata.epa_per_channel.as_ref()?;
+    if epa.is_empty() {
+        return None;
+    }
+    let sum: f64 = epa.values().map(|m| m.post.preference).sum();
+    Some(sum / epa.len() as f64)
+}
+
+// ---------------------------------------------------------------------------
 // Test Result
 // ---------------------------------------------------------------------------
 
@@ -663,6 +676,7 @@ struct TestResult {
     method: String,
     pre_score: f64,
     post_score: f64,
+    epa_preference: Option<f64>,
     passed: bool,
     error: Option<String>,
     duration_ms: u64,
@@ -676,6 +690,7 @@ impl TestResult {
         method: &str,
         pre: f64,
         post: f64,
+        epa_preference: Option<f64>,
         validation_failures: Vec<String>,
         dur: u64,
     ) -> Self {
@@ -692,6 +707,7 @@ impl TestResult {
             method: method.to_string(),
             pre_score: pre,
             post_score: post,
+            epa_preference,
             passed,
             error,
             duration_ms: dur,
@@ -713,6 +729,7 @@ impl TestResult {
             method: method.to_string(),
             pre_score: 0.0,
             post_score: 0.0,
+            epa_preference: None,
             passed: false,
             error: Some(err),
             duration_ms: dur,
@@ -810,6 +827,7 @@ fn run_test_case(tc: &TestCase, maxeval: usize) -> TestResult {
 
     let pre = result.combined_pre_score;
     let post = result.combined_post_score;
+    let epa_pref = avg_epa_preference(&result);
     let dur = start.elapsed().as_millis() as u64;
 
     let validation_failures = validate_result(&result, tc.room_size(), tc.method, &config);
@@ -821,6 +839,7 @@ fn run_test_case(tc: &TestCase, maxeval: usize) -> TestResult {
         &method,
         pre,
         post,
+        epa_pref,
         validation_failures,
         dur,
     )
@@ -994,25 +1013,30 @@ fn main() -> Result<()> {
 
     for result in &results {
         let status = if result.passed { "PASS" } else { "FAIL" };
+        let epa_str = match result.epa_preference {
+            Some(v) => format!("epa={:.3}", v),
+            None => "epa=n/a".to_string(),
+        };
         if result.passed {
             passed += 1;
             println!(
-                "[{}] {} ({}ms): {:.4} -> {:.4} ({:.1}% improvement)",
+                "[{}] {} ({}ms): {:.4} -> {:.4} ({:.1}% improvement) {}",
                 status,
                 result.name,
                 result.duration_ms,
                 result.pre_score,
                 result.post_score,
-                (1.0 - result.post_score / result.pre_score.max(0.001)) * 100.0
+                (1.0 - result.post_score / result.pre_score.max(0.001)) * 100.0,
+                epa_str,
             );
         } else {
             failed += 1;
             if let Some(ref err) = result.error {
-                eprintln!("[{}] {}: {}", status, result.name, err);
+                eprintln!("[{}] {} {}: {}", status, result.name, epa_str, err);
             } else {
                 eprintln!(
-                    "[{}] {}: pre={:.4}, post={:.4}",
-                    status, result.name, result.pre_score, result.post_score
+                    "[{}] {}: pre={:.4}, post={:.4} {}",
+                    status, result.name, result.pre_score, result.post_score, epa_str,
                 );
             }
         }

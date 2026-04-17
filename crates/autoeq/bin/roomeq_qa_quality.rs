@@ -366,8 +366,19 @@ struct TestResult {
     label: String,
     pre_score: f64,
     post_score: f64,
+    epa_preference: Option<f64>,
     pass: bool,
     reason: String,
+}
+
+/// Compute average EPA post-preference across channels.
+fn avg_epa_preference(result: &RoomOptimizationResult) -> Option<f64> {
+    let epa = result.metadata.epa_per_channel.as_ref()?;
+    if epa.is_empty() {
+        return None;
+    }
+    let sum: f64 = epa.values().map(|m| m.post.preference).sum();
+    Some(sum / epa.len() as f64)
 }
 
 // ---------------------------------------------------------------------------
@@ -1212,6 +1223,7 @@ fn run_stereo_workflow_tests(
             label: format!("{} IIR {}", name, mutation),
             pre_score: pre,
             post_score: post,
+            epa_preference: avg_epa_preference(&result),
             pass,
             reason,
         });
@@ -1301,6 +1313,7 @@ fn run_generic_path_tests(
                 label: format!("{} generic {} {}", name, mode_name, mutation),
                 pre_score: pre,
                 post_score: post,
+                epa_preference: avg_epa_preference(&result),
                 pass,
                 reason,
             });
@@ -1337,6 +1350,7 @@ fn run_generic_path_tests(
             label: format!("{} cross-mode", name),
             pre_score: 0.0,
             post_score: 0.0,
+            epa_preference: None,
             pass,
             reason: format!("ratio={:.2}x (limit={:.1}x)", ratio, CROSS_MODE_RATIO_LIMIT),
         });
@@ -1436,6 +1450,7 @@ fn run_cross_mode_convergence_tests(
             label: format!("{} CM-1 FR convergence", name),
             pre_score: 0.0,
             post_score: cm1_max_diff,
+            epa_preference: None,
             pass: cm1_pass,
             reason: format!(
                 "max_diff={:.2}dB (limit={:.1}dB)",
@@ -1490,6 +1505,7 @@ fn run_cross_mode_convergence_tests(
                 label: format!("{} CM-2 GD flatness", name),
                 pre_score: iir_gd_max,
                 post_score: fir_gd_max.max(mixed_gd_max),
+                epa_preference: None,
                 pass: cm2_pass,
                 reason: format!(
                     "IIR={:.2}ms FIR={:.2}ms Mixed={:.2}ms",
@@ -1534,6 +1550,7 @@ fn run_cross_mode_convergence_tests(
             label: format!("{} CM-3 score convergence", name),
             pre_score: 0.0,
             post_score: ratio,
+            epa_preference: None,
             pass: cm3_pass,
             reason: format!(
                 "{} ratio={:.2}x (limit={:.1}x)",
@@ -1670,6 +1687,7 @@ fn run_option_effect_test(
                 label: format!("{} [{}]", name, option),
                 pre_score: baseline_result.combined_post_score,
                 post_score: option_result.combined_post_score,
+                epa_preference: avg_epa_preference(&option_result),
                 pass: false,
                 reason,
             });
@@ -1698,6 +1716,7 @@ fn run_option_effect_test(
             label: format!("{} [convergence]", name),
             pre_score: option_result.combined_pre_score,
             post_score: option_result.combined_post_score,
+            epa_preference: avg_epa_preference(&option_result),
             pass: false,
             reason,
         });
@@ -1709,6 +1728,7 @@ fn run_option_effect_test(
             label: name.to_string(),
             pre_score: baseline_result.combined_post_score,
             post_score: option_result.combined_post_score,
+            epa_preference: avg_epa_preference(&option_result),
             pass: true,
             reason: format!(
                 "all {} invariants pass, post={:.4}",
@@ -2631,9 +2651,13 @@ fn main() -> Result<()> {
         println!("\nFailed tests:");
         for r in &all_results {
             if !r.pass {
+                let epa_str = match r.epa_preference {
+                    Some(v) => format!("{:.3}", v),
+                    None => "n/a".to_string(),
+                };
                 println!(
-                    "  - {} (pre={:.4}, post={:.4}): {}",
-                    r.label, r.pre_score, r.post_score, r.reason
+                    "  - {} (pre={:.4}, post={:.4}, epa={}): {}",
+                    r.label, r.pre_score, r.post_score, epa_str, r.reason
                 );
             }
         }

@@ -486,7 +486,24 @@ struct TestResult {
     passed: bool,
     pre_score: f64,
     post_score: f64,
+    epa_preference: Option<f64>,
     reason: String,
+}
+
+fn avg_epa_preference(result: &autoeq::roomeq::RoomOptimizationResult) -> Option<f64> {
+    let epa = result.metadata.epa_per_channel.as_ref()?;
+    if epa.is_empty() {
+        return None;
+    }
+    let sum: f64 = epa.values().map(|m| m.post.preference).sum();
+    Some(sum / epa.len() as f64)
+}
+
+fn fmt_epa(epa: Option<f64>) -> String {
+    match epa {
+        Some(v) => format!("{:.3}", v),
+        None => "n/a".to_string(),
+    }
 }
 
 fn run_single_test(
@@ -532,6 +549,7 @@ fn run_single_test(
                 passed: false,
                 pre_score: 0.0,
                 post_score: 0.0,
+                epa_preference: None,
                 reason: format!("Optimization failed: {}", e),
             };
         }
@@ -543,6 +561,7 @@ fn run_single_test(
     // freedom). Allow up to 20% regression as acceptable.
     let pre = result.combined_pre_score;
     let post = result.combined_post_score;
+    let epa = avg_epa_preference(&result);
     let regression_tolerance = 1.20; // 20% worse is acceptable
 
     if post > pre * regression_tolerance {
@@ -551,6 +570,7 @@ fn run_single_test(
             passed: false,
             pre_score: pre,
             post_score: post,
+            epa_preference: epa,
             reason: format!(
                 "Severe regression: pre={:.3}, post={:.3} ({:.1}% worse, limit {:.0}%)",
                 pre,
@@ -566,6 +586,7 @@ fn run_single_test(
         passed: true,
         pre_score: pre,
         post_score: post,
+        epa_preference: epa,
         reason: format!(
             "OK: {:.3} -> {:.3} ({:+.1}%)",
             pre,
@@ -689,6 +710,7 @@ fn run_multisub_test(
                 passed: false,
                 pre_score: 0.0,
                 post_score: 0.0,
+                epa_preference: None,
                 reason: format!("Optimization failed: {}", e),
             };
         }
@@ -696,6 +718,7 @@ fn run_multisub_test(
 
     let pre = result.combined_pre_score;
     let post = result.combined_post_score;
+    let epa = avg_epa_preference(&result);
 
     if post > pre * 1.20 {
         return TestResult {
@@ -703,6 +726,7 @@ fn run_multisub_test(
             passed: false,
             pre_score: pre,
             post_score: post,
+            epa_preference: epa,
             reason: format!(
                 "Severe regression: pre={:.3}, post={:.3} ({:.1}% worse)",
                 pre,
@@ -717,6 +741,7 @@ fn run_multisub_test(
         passed: true,
         pre_score: pre,
         post_score: post,
+        epa_preference: epa,
         reason: format!(
             "OK: {:.3} -> {:.3} ({:+.1}%)",
             pre,
@@ -990,6 +1015,7 @@ fn run_multichannel_test(
                 passed: false,
                 pre_score: 0.0,
                 post_score: 0.0,
+                epa_preference: None,
                 reason: format!("Optimization failed: {}", e),
             };
         }
@@ -997,6 +1023,7 @@ fn run_multichannel_test(
 
     let pre = result.combined_pre_score;
     let post = result.combined_post_score;
+    let epa = avg_epa_preference(&result);
 
     if post > pre * 1.20 {
         return TestResult {
@@ -1004,6 +1031,7 @@ fn run_multichannel_test(
             passed: false,
             pre_score: pre,
             post_score: post,
+            epa_preference: epa,
             reason: format!(
                 "Severe regression: pre={:.3}, post={:.3} ({:.1}% worse)",
                 pre,
@@ -1018,6 +1046,7 @@ fn run_multichannel_test(
         passed: true,
         pre_score: pre,
         post_score: post,
+        epa_preference: epa,
         reason: format!(
             "OK: {:.3} -> {:.3} ({:.1}% reduction)",
             pre,
@@ -1220,7 +1249,7 @@ fn main() -> Result<()> {
                         passed += 1;
                     } else {
                         failed += 1;
-                        println!("  FAIL: {} -- {}", result.name, result.reason);
+                        println!("  FAIL: {} -- {} (epa={})", result.name, result.reason, fmt_epa(result.epa_preference));
                     }
 
                     all_results.push(result);
@@ -1269,7 +1298,7 @@ fn main() -> Result<()> {
                     passed += 1;
                 } else {
                     failed += 1;
-                    println!("  FAIL: {} -- {}", result.name, result.reason);
+                    println!("  FAIL: {} -- {} (epa={})", result.name, result.reason, fmt_epa(result.epa_preference));
                 }
 
                 all_results.push(result);
@@ -1294,7 +1323,7 @@ fn main() -> Result<()> {
                     passed += 1;
                 } else {
                     failed += 1;
-                    println!("  FAIL: {} -- {}", result.name, result.reason);
+                    println!("  FAIL: {} -- {} (epa={})", result.name, result.reason, fmt_epa(result.epa_preference));
                 }
                 all_results.push(result);
             }
@@ -1313,7 +1342,7 @@ fn main() -> Result<()> {
                         passed += 1;
                     } else {
                         failed += 1;
-                        println!("  FAIL: {} -- {}", result.name, result.reason);
+                        println!("  FAIL: {} -- {} (epa={})", result.name, result.reason, fmt_epa(result.epa_preference));
                     }
                     all_results.push(result);
                 }
@@ -1394,7 +1423,7 @@ fn main() -> Result<()> {
         println!("\nFailed tests:");
         for r in &all_results {
             if !r.passed {
-                println!("  {} -- {}", r.name, r.reason);
+                println!("  {} -- {} (epa={})", r.name, r.reason, fmt_epa(r.epa_preference));
             }
         }
         std::process::exit(1);

@@ -20,6 +20,14 @@
 - Added `qa-roomeq-features` recipe to `crates/autoeq/Justfile` and
   wired it into the `qa-roomeq` aggregate target.
 
+### EPA preference tracking in all roomeq QA binaries
+
+- `roomeq-qa-coverage`, `roomeq-qa-quality`, and `roomeq-qa-synthetic`
+  now track and display the average EPA `preference` score (higher =
+  better) alongside flat-score metrics. EPA preference appears in both
+  pass/fail output lines and failure summaries, giving visibility into
+  perceptual quality across all QA runs.
+
 ## Features
 
 ### Measurement-derived target tilt (`TargetShape::FromMeasurement`)
