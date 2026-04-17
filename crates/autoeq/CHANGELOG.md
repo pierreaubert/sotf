@@ -1,3 +1,19 @@
+# 0.4.26
+
+## Features
+
+### Measurement-derived target tilt (`TargetShape::FromMeasurement`)
+
+- New `roomeq::slope` module with `estimate_slope_db_per_octave()`:
+  OLS regression of SPL vs log₂(freq) within a configurable frequency
+  window (default 200–10 kHz).
+- New `FromMeasurement` variant on `TiltType` and `TargetShape` enums.
+  When configured, the optimizer extracts the broadband slope from the
+  input measurement curve at optimization time and uses it as the target
+  tilt, preserving the speaker's natural response characteristic.
+- `speaker_eq.rs` resolves `FromMeasurement` before building the target
+  curve in both the `target_response` and legacy `target_tilt` paths.
+
 # 0.4.25
 
 ## Features

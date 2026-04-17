@@ -191,6 +191,9 @@ pub enum TiltType {
     Harman,
     /// Custom tilt with user-specified parameters
     Custom,
+    /// Derive slope from the input measurement curve at optimization time
+    #[serde(alias = "from_measurement")]
+    FromMeasurement,
 }
 
 /// Target response shape preset
@@ -206,6 +209,9 @@ pub enum TargetShape {
     Custom,
     /// Load target curve from external CSV file (`curve_path` must be set)
     File,
+    /// Derive slope from the input measurement curve at optimization time
+    #[serde(alias = "from_measurement")]
+    FromMeasurement,
 }
 
 /// Highpass filter type for excursion protection
@@ -1703,6 +1709,9 @@ impl OptimizerConfig {
             Some(t) if t.tilt_type == TiltType::Harman => (TargetShape::Harman, -0.8),
             Some(t) if t.tilt_type == TiltType::Custom => {
                 (TargetShape::Custom, t.slope_db_per_octave)
+            }
+            Some(t) if t.tilt_type == TiltType::FromMeasurement => {
+                (TargetShape::FromMeasurement, 0.0)
             }
             Some(t)
                 if t.tilt_type == TiltType::Flat

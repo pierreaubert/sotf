@@ -695,11 +695,26 @@ With custom tilt and bass shelf:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `tilt_type` | string | `"flat"` | Tilt type: `"flat"` (no tilt), `"harman"` (-0.8 dB/oct), `"custom"` |
-| `slope_db_per_octave` | number | `-0.8` | Slope in dB/octave (negative = downward tilt). Used with `"custom"`. |
+| `tilt_type` | string | `"flat"` | Tilt type: `"flat"` (no tilt), `"harman"` (-0.8 dB/oct), `"custom"`, `"from_measurement"` (auto-derive slope from input curve) |
+| `slope_db_per_octave` | number | `-0.8` | Slope in dB/octave (negative = downward tilt). Used with `"custom"`. Ignored when `"from_measurement"`. |
 | `reference_freq` | number (Hz) | `1000` | Reference frequency where tilt equals 0 dB |
 | `bass_shelf_db` | number (dB) | `0.0` | Bass shelf boost in dB (applied below `bass_shelf_freq`) |
 | `bass_shelf_freq` | number (Hz) | `200` | Bass shelf frequency |
+
+**Auto-derive from measurement** (`"from_measurement"`): The optimizer fits
+a least-squares line through the input measurement curve (200–10 kHz by
+default) and uses the resulting slope as the target tilt. This preserves
+the speaker's natural broadband response while correcting room anomalies.
+
+```json
+{
+  "optimizer": {
+    "target_tilt": {
+      "tilt_type": "from_measurement"
+    }
+  }
+}
+```
 
 ---
 

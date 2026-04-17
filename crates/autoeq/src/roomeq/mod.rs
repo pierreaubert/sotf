@@ -134,6 +134,9 @@ pub use time_align::{
 // Perceptual temporal decay thresholds for modal ringing
 pub mod temporal_targets;
 
+// Broadband slope estimation from measurement curves
+pub mod slope;
+
 // Advanced room correction features (Scenario A & B)
 pub mod excursion;
 pub mod multiseat;

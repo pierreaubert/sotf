@@ -27,6 +27,11 @@ pub fn build_target_curve_with_tilt(freqs: &Array1<f64>, config: &TargetTiltConf
         TiltType::Flat => 0.0,
         TiltType::Harman => -0.8, // Standard Harman room curve tilt
         TiltType::Custom => config.slope_db_per_octave,
+        TiltType::FromMeasurement => {
+            // Should have been resolved to a concrete slope by the caller.
+            log::warn!("build_target_curve_with_tilt called with FromMeasurement; falling back to flat");
+            0.0
+        }
     };
 
     let ref_freq = config.reference_freq;
@@ -107,6 +112,13 @@ pub fn build_complete_target_curve(freqs: &Array1<f64>, config: &TargetResponseC
             // File loading is handled by the caller; if we get here, fall back to flat
             log::warn!(
                 "build_complete_target_curve called with File shape but no curve provided; falling back to flat"
+            );
+            0.0
+        }
+        TargetShape::FromMeasurement => {
+            // Should have been resolved to a concrete slope by the caller.
+            log::warn!(
+                "build_complete_target_curve called with FromMeasurement; falling back to flat"
             );
             0.0
         }

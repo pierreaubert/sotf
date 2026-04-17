@@ -18,6 +18,7 @@ use super::eq;
 use super::excursion;
 use super::fir;
 use super::output;
+use super::slope;
 use super::target_tilt;
 use super::types::{
     ChannelDspChain, MeasurementSource, OptimizerConfig, ProcessingMode, RoomConfig, TargetShape,
@@ -228,13 +229,29 @@ pub(super) fn process_single_speaker(
     let target_tilt_curve = if let Some(ref target_resp) = room_config.optimizer.target_response {
         // When 3-pass is active, strip preferences from the target
         // (they become Pass 3 output filters instead)
-        let effective_target = if cea2034_active {
+        let mut effective_target = if cea2034_active {
             let mut stripped = target_resp.clone();
             stripped.preference = super::types::UserPreference::default();
             stripped
         } else {
             target_resp.clone()
         };
+
+        // Resolve FromMeasurement: extract slope from input curve
+        if effective_target.shape == TargetShape::FromMeasurement {
+            let measured_slope = slope::estimate_slope_db_per_octave(
+                &curve,
+                slope::DEFAULT_SLOPE_MIN_FREQ,
+                slope::DEFAULT_SLOPE_MAX_FREQ,
+            )
+            .unwrap_or(0.0);
+            info!(
+                "  FromMeasurement: estimated slope = {:.2} dB/octave from '{}'",
+                measured_slope, channel_name
+            );
+            effective_target.shape = TargetShape::Custom;
+            effective_target.slope_db_per_octave = measured_slope;
+        }
 
         if effective_target.shape != TargetShape::Flat
             || effective_target.preference.bass_shelf_db.abs() > 1e-6
@@ -265,7 +282,28 @@ pub(super) fn process_single_speaker(
         }
     } else if let Some(tilt_config) = &room_config.optimizer.target_tilt {
         // Legacy path: target_tilt without migration (shouldn't happen after migrate_target_config)
-        if tilt_config.tilt_type != TiltType::Flat {
+        if tilt_config.tilt_type == TiltType::FromMeasurement {
+            // Resolve FromMeasurement in legacy path too
+            let measured_slope = slope::estimate_slope_db_per_octave(
+                &curve,
+                slope::DEFAULT_SLOPE_MIN_FREQ,
+                slope::DEFAULT_SLOPE_MAX_FREQ,
+            )
+            .unwrap_or(0.0);
+            info!(
+                "  FromMeasurement (legacy): estimated slope = {:.2} dB/octave from '{}'",
+                measured_slope, channel_name
+            );
+            let resolved = super::types::TargetTiltConfig {
+                tilt_type: TiltType::Custom,
+                slope_db_per_octave: measured_slope,
+                ..tilt_config.clone()
+            };
+            Some(target_tilt::build_target_curve_with_tilt(
+                &curve.freq,
+                &resolved,
+            ))
+        } else if tilt_config.tilt_type != TiltType::Flat {
             info!(
                 "  Building target curve with legacy {:?} tilt ({:.2} dB/octave)",
                 tilt_config.tilt_type, tilt_config.slope_db_per_octave
