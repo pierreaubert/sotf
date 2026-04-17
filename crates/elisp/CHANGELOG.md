@@ -1,5 +1,340 @@
 # Unreleased
 
+## Phase 7f — VM arg padding (optional-arg nil, rest-arg list)
+
+Root cause for the `stack-ref 3 underflow` in `cl-lib.elc` form 40
+(`cl--defalias`, `argdesc=770`, min=2, max=3): our VM pushed the
+caller's args verbatim onto the stack without Emacs's arg-count
+normalisation. The bytecode body uses `stack-ref 3` to peek at all
+three arg slots, so when called with 2 args the third slot is
+missing and every subsequent `stack-ref` reads off the bottom.
+
+### Fix
+
+`Vm::new` now mirrors Emacs's `exec_byte_code` contract:
+- Decode `argdesc` into `mandatory`, `nonrest`, `rest` per Emacs's
+  packed layout (bits 0-6, bits 8-14, bit 7).
+- Push `min(nonrest, nargs)` caller args.
+- If `rest=1`:
+  - `nargs > nonrest`: collect extras into a rest-list, push as
+    the top-of-stack slot.
+  - else: pad missing optional slots with nil, then push nil for
+    the rest slot.
+- If `rest=0`: pad missing optional slots with nil up to `nonrest`.
+
+`argdesc=0` (legacy / non-lexical binding header) bypasses padding
+so existing tests that don't declare arity keep working.
+
+### Regression tests
+
+Three new VM tests (total 293, up from 290):
+- `test_vm_pads_missing_optional_arg_with_nil` — argdesc=770,
+  2-arg call, `stack-ref 0` returns the padded nil slot. Would
+  underflow without the fix.
+- `test_vm_collects_rest_args_into_list` — argdesc=385 (min=1,
+  rest=1, nonrest=1), 4-arg call. Rest list = `(2 3 4)`.
+- `test_vm_rest_arg_empty_is_nil` — same signature, 1-arg call.
+  Rest slot = nil.
+
+### Verification
+
+- `cargo test -p gpui-elisp --lib` — **293/293 pass** sequentially
+  and in parallel (3 consecutive parallel runs, zero flakiness).
+- `cargo clippy -p gpui-elisp --lib -- -D warnings` — clean.
+- `cargo fmt` — applied.
+- Bootstrap: no more `stack-ref 3 underflow` errors on cl-lib.elc.
+  cl-preloaded and oclosure percentages unchanged (31% / 58%) —
+  now blocked by `cl-macs.elc` / `subr-x.elc` read errors (reader
+  limitation, not a VM bug).
+
+### Remaining Phase 7 work
+
+1. **Backquote "void variable: X" state pollution** — still
+   reproduces only under full bootstrap. Seven files blocked.
+2. **Reader limitations for `cl-macs.elc` / `subr-x.elc`** —
+   blocks cl-preloaded and oclosure from making further progress.
+3. **Emacs-specific features in `cl-macs.elc` / `subr-x.elc`** that
+   need reader extensions.
+
+## Phase 7 — Stdlib compatibility push
+
+Correctness-first push to raise compatibility with real Emacs stdlib
+files. Before this phase, 4 files (cl-preloaded, oclosure, abbrev,
+mule-cmds) were stuck at 24-98% because `defalias` wasn't callable
+from bytecode. Several more files tripped over missing primitives,
+macros, and variables.
+
+### 7a — State-aware primitive dispatch (defalias/fset/eval callable from VM)
+
+The VM's function call path looks up symbols in the obarray function
+cell, but `defalias`, `fset`, `eval`, `funcall`, `apply`, `put`,
+`get` were implemented only as source-level special forms in
+`eval_inner`'s string-dispatch. When `cl-preloaded.elc` called
+`(defalias ...)` from compiled bytecode, the function cell was
+empty — hence `void function: defalias`.
+
+- New `eval::functions::call_stateful_primitive(name, args, env,
+  editor, macros, state) -> Option<ElispResult<LispObject>>` —
+  secondary primitive table for functions that need env/macros/state
+  access but take evaluated arguments. `call_function` tries this
+  table first for `LispObject::Primitive`, falls back to the regular
+  stateless `primitives::call_primitive`.
+- Registered as stateful primitives on the function cell: `defalias`,
+  `fset`, `eval`, `funcall`, `apply`, `put`, `get`. Source-level
+  special-form dispatch still works unchanged — this is additive.
+- Stateless implementations (`stateful_defalias`, `stateful_fset`,
+  etc.) take pre-evaluated args and do the same work the special-form
+  path does, minus the internal `eval(arg)` re-evaluation.
+
+### 7 — Load tolerance
+
+`eval_load` now logs per-form errors to stderr and continues instead
+of aborting the whole load. Lets a stdlib file partially install its
+defs even when a few forms fail on unimplemented primitives. Diverges
+from Emacs semantics, but correctness of the rest of the interpreter
+is more important than fidelity during bootstrapping.
+
+### 7c — Macro stubs
+
+Added source-level stubs for CL-like and modern-minor-mode macros
+from files we don't load (`cl-macs.el`, `easy-mmode.el`, `gv.el`):
+- `cl-defun` / `cl-defmacro` — delegate to `defun` / `defmacro`.
+- `define-inline` — also delegate to `defun` (ignores inline hint).
+- `cl-defstruct`, `cl-defgeneric`, `cl-defmethod`,
+  `define-globalized-minor-mode`, `define-abbrev-table`, `defstruct`
+  — return `nil`.
+- `setf` — handles `(setf SYMBOL VALUE)` by delegating to `setq`;
+  other places fall through to `nil` (real `gv.el` semantics out of
+  scope).
+
+### 7d / 7e — Variable + primitive stubs
+
+Added to `make_stdlib_interp`:
+- Variables: `function-key-map` (empty vector), `exec-path`
+  (`("/usr/bin" "/bin")`), `pre-redisplay-function(s)`,
+  `window-size-change-functions`, `window-configuration-change-hook`,
+  `buffer-list-update-hook`.
+- Primitives: `make-overlay`, `custom-add-option`, `custom-add-version`,
+  `custom-declare-variable`, `custom-declare-face`,
+  `custom-declare-group` — all stubbed to `ignore`.
+
+### Also fixed
+
+- `VM::dispatch` stack-ref opcodes (0-6) now return a proper
+  `EvalError` on stack underflow instead of panicking with
+  `attempt to subtract with overflow`. Triggered once Phase 7a
+  progressed bytecode execution further into cl-preloaded.elc.
+
+### Bootstrap results
+
+Before Phase 7: **4 files stuck at 24-50%** due to `void function:
+defalias`. Several others stuck at 72-99%.
+
+After Phase 7: **no file is stuck on defalias or missing stubs
+anymore.** Remaining partials are listed below with the genuine
+root cause (not just "missing stub"):
+
+| File | After | Remaining |
+|------|-------|-----------|
+| cl-preloaded | 31% | VM bytecode `stack-ref 3 underflow` — real VM bug |
+| oclosure | 58% | Same VM bug (triggered from cl-preloaded) |
+| abbrev | 95% | `void variable: if-let` — macro not defined |
+| mule-cmds | 99% | `void variable: catch` — backquote expansion bug? |
+| help | 98% | `wrong type argument: expected string` |
+| characters | 88% | `void variable: list` — backquote expansion bug |
+| mule-conf | 72% | Same |
+| bindings | 97% | Same |
+| window | 99% | Same (`void variable: quote`) |
+| files | 99% | Same (`void variable: concat`) |
+| format | 97% | Same (`void variable: purecopy`) |
+
+### What's next (not in this phase)
+
+- **Backquote-related "void variable: X"** — still unexplained. In
+  isolation, the same forms evaluate correctly, but under the full
+  bootstrap sequence they trip. Points to state pollution between
+  files. Needs focused debugging.
+- **VM stack-ref underflow** in cl-preloaded.elc — likely an opcode
+  we implement wrong (leaves stack in an unexpected state before a
+  `stack-ref`). Disassembling the failing bytecode in sequence is
+  the next step.
+- **Emacs-specific .elc features** in `cl-macs.elc` and
+  `subr-x.elc` that our reader can't parse. Last-mile polish.
+
+### Verification
+
+- `cargo test -p gpui-elisp --lib -- --test-threads=1` —
+  **290/290 pass** (up from 286; +4 new regression tests for
+  backquote semantics and format.el-shape loads).
+- `cargo clippy -p gpui-elisp --lib -- -D warnings` — clean.
+- `cargo fmt` — applied.
+
+## Phase 4 — GC refinements (narrow is_cons + ConsArcCell arena)
+
+Two self-contained improvements off the Phase 3 follow-up list.
+
+### Changed
+
+- **`Value::is_cons` narrowed** (`value.rs`): previously returned
+  true for any `TAG_HEAP_PTR` Value (cons, string, vector, etc.).
+  Now dereferences the pointed-to `GcHeader.tag` and returns true
+  only for `ObjectTag::Cons` (native u64 car/cdr) or
+  `ObjectTag::ConsArc` (Arc-wrapping variant). Documented as
+  requiring a live Value — callers holding a stale, post-swept
+  Value would read UB. Every practical interpreter use site
+  satisfies liveness.
+- **`ConsArcCell` arena-pooled** (`gc.rs`): was individually
+  `Box::into_raw`-allocated; now bump-allocated from a typed
+  `Arena<ConsArcCell>` (new `Heap` field `cons_arc_arena`, sized
+  identically to `cons_arena`). Sweep `drop_in_place`s the inner
+  `Arc` before returning the slot to the arena's free list; the
+  next allocation writes via `ptr::write`, so the dropped state is
+  never read.
+
+### Deferred
+
+- **Small-string optimisation** (SSO): the naive enum-based
+  approach actually enlarges `StringObject` for strings longer than
+  15 bytes (enum discriminant + padding). A proper union-based SSO
+  would need manual `Drop` handling and unsafe field access.
+  Without benchmark data showing string allocation is a hot path,
+  speculative optimisation. Skipped pending profiling.
+- **Generational / incremental GC**: significant project, not a
+  narrow phase.
+- **Phase 7 stdlib**: `defcustom`/`defgroup`/`defface`/etc. work,
+  also multi-session.
+
+### Verification
+
+- `cargo test -p gpui-elisp --lib` — 286/286 pass, 5/5 consecutive
+  parallel runs, zero flakiness.
+- `cargo clippy -p gpui-elisp --lib -- -D warnings` — clean.
+- `cargo fmt` — applied.
+
+## Test hygiene — fix pre-existing flakiness and env-dependent failures
+
+Two latent bugs in the test suite were exposed repeatedly during
+Phase 2/3 work. Fixed together in one narrow patch so the test
+suite is deterministic green on first run, sequential or parallel.
+
+### Fixed
+
+- **Obarray pollution (`test_macros_per_interpreter` flake)**:
+  `test_load_elc_file` called `interp.define("my-inc",
+  LispObject::BytecodeFn(...))`, which writes the function cell of
+  the process-global `my-inc` symbol. `test_macros_per_interpreter`
+  also defines `my-inc` (as a macro in one of two interpreters) and
+  asserts the *other* interpreter can't find it. Depending on
+  parallel test scheduling, the bytecode-cell pollution could leak
+  into the macro test's `interp2` via the function-cell fallback,
+  causing `(my-inc 5)` to succeed when it should error.
+  Renamed the test's bytecode symbol to `profiler-hot-inc` — a
+  name no other test touches.
+
+- **Stdlib path bug (`test_backquote_expansion` always-fail)**:
+  several tests looked for `/tmp/elisp-stdlib/backquote.el`,
+  `/tmp/elisp-stdlib/byte-run.el`, and
+  `/tmp/elisp-stdlib/debug-early.el`. The decompression helper
+  (`ensure_stdlib_files`) actually puts those files under
+  `/tmp/elisp-stdlib/emacs-lisp/` (preserving the Emacs source tree
+  structure). Most tests silently skipped via `if let Ok(s) =
+  read_to_string(...)`; `test_backquote_expansion` asserted the
+  backquote macro ended up registered and failed hard when the load
+  silently no-op'd.
+  Fixed paths in `test_load_debug_early_el`, `test_load_byte_run_el`,
+  `test_load_backquote_el`, `test_backquote_expansion`,
+  `load_prerequisites`, and three reader.rs parse-only tests.
+  `subr.el` (top-level in the Emacs source) keeps its top-level
+  path.
+
+### Verification
+
+- `cargo test -p gpui-elisp --lib -- --test-threads=1` —
+  **286/286 pass** (was 285/286 with pre-existing env failure).
+- `cargo test -p gpui-elisp --lib` (default parallel) — **5/5 runs
+  286/286 pass**, zero flakiness (previously flaky with 1-2 failures
+  per 3 runs).
+- `cargo clippy -p gpui-elisp --lib -- -D warnings` — clean.
+- `cargo fmt` — applied.
+
+## Phase 3 — VM-side heap migration (delete the last side-table)
+
+The Emacs bytecode interpreter (`vm.rs`) previously maintained its
+own per-`Vm`-instance `heap_objects: Vec<LispObject>` side-table,
+independent of the main interpreter's GC heap. That side-table was
+the last user of `TAG_GC_PTR` / `Value::is_ptr` / `Value::as_ptr` /
+`Value::from_ptr`. Phase 3 migrates the VM to the same
+`HeapScope` + real-heap machinery the main interpreter adopted in
+Phase 2, unifying the whole system on one allocator.
+
+### Changed
+
+- **`vm.rs`**:
+  - `execute_bytecode` installs a `HeapScope::enter(state.heap.clone())`
+    at entry. Nested when called from `Interpreter::eval`; fresh in
+    VM unit tests. All VM conversions now route through the real GC
+    heap.
+  - Deleted `Vm::heap_objects` field, `Vm::obj_to_value`,
+    `Vm::value_to_obj`. ~70 LoC removed.
+  - `push_obj`/`pop_obj` delegate to the global `value::obj_to_value`
+    / `value::value_to_obj`.
+  - ~8 `self.value_to_obj(val)` call sites updated to bare
+    `value_to_obj(val)`.
+  - `Vm::new`'s argument-conversion loop now uses the global
+    `obj_to_value(arg.clone())`.
+  - Test-only `test_env` flips the heap to `GcMode::Manual` to match
+    `Interpreter::new` — bytecode tests never trigger an implicit
+    mid-execution sweep.
+
+- **`value.rs`**:
+  - Deleted `const TAG_GC_PTR: u64 = 1;` (comment records tag 1 is
+    reserved for future use).
+  - Deleted `Value::is_ptr`, `Value::as_ptr`, `Value::from_ptr`.
+  - Simplified `Value::is_cons` from `is_ptr() || is_heap_ptr()` to
+    just `is_heap_ptr()`. The predicate is still loose (matches any
+    heap type), but no longer pretends side-table indices are cons.
+    Narrowing to strictly Cons/ConsArc needs a `GcHeader.tag`
+    dereference, left for a future phase.
+  - `Display` impl replaces the `is_ptr` branch with `is_heap_ptr`
+    (`#<heap-ptr {:p}>` output).
+  - Removed the `!v.is_ptr()` assertion from the
+    `bridge_string_routes_to_heap_when_scope_active` test — `is_ptr`
+    no longer exists.
+
+- **`gc.rs`**: `cons_value_produces_tag_heap_ptr` test dropped the
+  `!heap_cons.is_ptr()` assertion for the same reason.
+
+### Verification
+
+- `cargo build -p gpui-elisp` — clean.
+- `cargo test -p gpui-elisp --lib -- --test-threads=1` — 285/286 pass;
+  the single failure is the pre-existing
+  `test_backquote_expansion` env-dependent path bug.
+- `cargo test -p gpui-elisp --lib` (parallel) — flaky with the same
+  profile as master: `test_macros_per_interpreter` and
+  `test_load_subr_el_progress` occasionally fail due to pre-existing
+  test-isolation issues around obarray pollution, not introduced by
+  this phase.
+- `cargo clippy -p gpui-elisp --lib -- -D warnings` — clean.
+- `cargo fmt` — applied.
+- All Phase 2 regression guards still green
+  (`test_setcar_mutates_in_place`,
+  `test_setcdr_mutates_in_place`, `test_puthash_mutates_in_place`,
+  `test_cons_setcar_after_heap_round_trip`,
+  `test_cons_setcdr_after_heap_round_trip`,
+  `test_hashtable_identity_preserved_under_heap_scope`).
+- VM-specific guards green: `test_vm_add`, `test_vm_cons`,
+  `test_vm_nreverse`, `test_vm_unwind_protect_*`, etc.
+
+### Outcome
+
+The elisp interpreter now has exactly one allocation path (`Heap`
+via `HeapScope`), one decoder (`value_to_obj` dispatching on
+`GcHeader.tag`), and one encoding tag for heap pointers
+(`TAG_HEAP_PTR = 6`). No per-subsystem side-tables remain. The
+unused `TAG_GC_PTR = 1` slot is reclaimed for future use (likely a
+dedicated Bignum tag if inline bignum encoding becomes worthwhile).
+
 ## Phase 2o — Kill the side-table
 
 Final structural step of Phase 2. The thread-local `HEAP_OBJECTS`

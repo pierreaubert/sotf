@@ -241,8 +241,14 @@ pub struct Heap {
     /// Explicit root stack. Entries are raw pointers to GcHeaders that the
     /// mutator considers live. Managed via `RootGuard` RAII handles.
     root_stack: Vec<*const GcHeader>,
-    /// Typed arena for fixed-size cons cells.
+    /// Typed arena for fixed-size cons cells (u64 car/cdr).
     cons_arena: Arena<ConsCell>,
+    /// Typed arena for identity-preserving `ConsArcCell`s. Sweep
+    /// `drop_in_place`s the contained `Arc` before returning the
+    /// slot to the arena's free list; the next allocation
+    /// overwrites the slot via `ptr::write` without reading its
+    /// (dropped) contents first.
+    cons_arc_arena: Arena<ConsArcCell>,
     /// Prevent Send/Sync.
     _not_send: PhantomData<*mut ()>,
 }
@@ -264,6 +270,11 @@ impl Heap {
             gc_mode: GcMode::Auto,
             root_stack: Vec::new(),
             cons_arena: Arena::new(Self::CONS_PAGE_SIZE),
+            // Phase 4b: ConsArcCells also get a typed arena. Sized a
+            // bit smaller than the cons_arena since they're less
+            // frequent (only created by `obj_to_value(LispObject::Cons)`
+            // migrations, not native list-building).
+            cons_arc_arena: Arena::new(Self::CONS_PAGE_SIZE),
             _not_send: PhantomData,
         }
     }
@@ -346,18 +357,25 @@ impl Heap {
     ///
     /// Phase 2n-cons chokepoint for migrating `LispObject::Cons(arc)`
     /// through `obj_to_value` while preserving `setcar`/`setcdr`
-    /// identity. `value_to_obj` decodes via `Arc::clone` — the
-    /// decoded LispObject and the allocation site's Arc share the
-    /// same inner `Mutex`.
+    /// identity.
+    ///
+    /// Phase 4b: the cell is bump-allocated from a typed `Arena`
+    /// (matching the `ConsCell` path) rather than individually
+    /// `Box`-allocated. Sweep `drop_in_place`s the Arc before
+    /// returning the slot to the free list.
     pub fn cons_arc_value(&mut self, arc: crate::object::ConsCell) -> crate::value::Value {
         self.maybe_gc();
-        let boxed = Box::new(ConsArcCell {
-            header: GcHeader::new(ObjectTag::ConsArc),
-            arc,
-        });
-        let ptr: *mut ConsArcCell = Box::into_raw(boxed);
-        // SAFETY: fresh Box::into_raw produces a valid pointer.
+        let ptr = self.cons_arc_arena.alloc();
+        // SAFETY: `ptr` points at uninitialised memory from the arena.
+        // `ptr::write` initialises the slot before any read happens.
         unsafe {
+            std::ptr::write(
+                ptr,
+                ConsArcCell {
+                    header: GcHeader::new(ObjectTag::ConsArc),
+                    arc,
+                },
+            );
             (*ptr).header.next = self.all_objects;
             self.all_objects = &mut (*ptr).header;
         }
@@ -741,13 +759,18 @@ impl Heap {
                             // test via `register`, so we just unlink.
                         }
                         ObjectTag::ConsArc => {
-                            // SAFETY: Box::into_raw-allocated in
-                            // `Heap::cons_arc_value`. Reconstituting
-                            // and dropping the Box drops the inner
-                            // `Arc` reference; if no other references
-                            // survive, the Arc's content is freed too.
+                            // SAFETY: arena-allocated in
+                            // `Heap::cons_arc_value`. Explicitly
+                            // `drop_in_place` runs the `Arc`'s
+                            // destructor, decrementing the refcount
+                            // (and freeing the inner data if we held
+                            // the last reference). The arena then
+                            // recycles the slot; its next allocation
+                            // overwrites with `ptr::write`, so the
+                            // dropped state is never read.
                             let arc_ptr = current as *mut ConsArcCell;
-                            let _ = Box::from_raw(arc_ptr);
+                            std::ptr::drop_in_place(arc_ptr);
+                            self.cons_arc_arena.free(arc_ptr);
                         }
                         ObjectTag::Primitive => {
                             // SAFETY: Box::into_raw-allocated in
@@ -1296,16 +1319,12 @@ mod tests {
 
     #[test]
     fn cons_value_produces_tag_heap_ptr() {
-        // Phase 2o: the legacy `TAG_GC_PTR` side-table path is gone
-        // from the main interpreter. `Heap::cons_value` still
-        // produces `TAG_HEAP_PTR` — this test now just confirms that
-        // single property (was previously paired with a side-table
-        // distinctness check which is no longer meaningful).
+        // Phase 3: `TAG_GC_PTR` / `is_ptr` are gone entirely.
+        // `Heap::cons_value` produces `TAG_HEAP_PTR`, period.
         use crate::value::Value;
         let mut heap = Heap::new();
         let heap_cons = heap.cons_value(Value::fixnum(1).raw(), Value::fixnum(2).raw());
         assert!(heap_cons.is_heap_ptr());
-        assert!(!heap_cons.is_ptr());
     }
 
     // -- Phase 2f: String objects on the heap -----------------------------

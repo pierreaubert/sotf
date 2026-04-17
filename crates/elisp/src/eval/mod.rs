@@ -918,7 +918,37 @@ fn eval_inner(
                     }
                 }
                 "defsubst" => eval_defun(obj_to_value(cdr), env, editor, macros, state),
+                "define-inline" => eval_defun(obj_to_value(cdr), env, editor, macros, state),
+                "cl-defun" => eval_defun(obj_to_value(cdr), env, editor, macros, state),
+                "cl-defmacro" => eval_defmacro(obj_to_value(cdr), macros),
                 "define-error" => Ok(Value::nil()),
+                // Phase 7c: stub CL-like and modern-minor-mode macros
+                // that live in cl-macs.el / easy-mmode.el / gv.el etc.
+                // — files we don't load. Returning nil lets the
+                // surrounding code parse past them even when the
+                // definition they'd install isn't available.
+                "cl-defstruct"
+                | "cl-defgeneric"
+                | "cl-defmethod"
+                | "define-globalized-minor-mode"
+                | "define-abbrev-table"
+                | "defstruct" => Ok(Value::nil()),
+                // Basic `setf`: only simple-symbol `(setf sym val)`,
+                // delegate to setq. Everything else is a no-op (real
+                // gv.el semantics is out of scope for Phase 7).
+                "setf" => {
+                    if let (Some(place), Some(value)) = (cdr.first(), cdr.nth(1)) {
+                        if place.as_symbol().is_some() {
+                            // Build (setq PLACE VALUE) and eval it.
+                            let form = LispObject::cons(
+                                LispObject::symbol("setq"),
+                                LispObject::cons(place, LispObject::cons(value, LispObject::nil())),
+                            );
+                            return eval(obj_to_value(form), env, editor, macros, state);
+                        }
+                    }
+                    Ok(Value::nil())
+                }
                 "make-variable-buffer-local" => Ok(Value::nil()),
                 "make-hash-table" => {
                     let mut test = crate::object::HashTableTest::Eql;

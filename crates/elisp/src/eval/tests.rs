@@ -910,6 +910,32 @@ fn make_stdlib_interp() -> Interpreter {
     interp.define("propertize", LispObject::primitive("identity")); // return first arg (text sans properties)
     interp.define("current-time-string", LispObject::primitive("ignore")); // return nil (fixed string not needed)
 
+    // Phase 7d — variables referenced by various stdlib files.
+    interp.define(
+        "function-key-map",
+        LispObject::Vector(std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()))),
+    );
+    interp.define(
+        "exec-path",
+        LispObject::cons(
+            LispObject::string("/usr/bin"),
+            LispObject::cons(LispObject::string("/bin"), LispObject::nil()),
+        ),
+    );
+    interp.define("pre-redisplay-function", LispObject::nil());
+    interp.define("pre-redisplay-functions", LispObject::nil());
+    interp.define("window-size-change-functions", LispObject::nil());
+    interp.define("window-configuration-change-hook", LispObject::nil());
+    interp.define("buffer-list-update-hook", LispObject::nil());
+
+    // Phase 7e — missing primitive stubs.
+    interp.define("make-overlay", LispObject::primitive("ignore"));
+    interp.define("custom-add-option", LispObject::primitive("ignore"));
+    interp.define("custom-add-version", LispObject::primitive("ignore"));
+    interp.define("custom-declare-variable", LispObject::primitive("ignore"));
+    interp.define("custom-declare-face", LispObject::primitive("ignore"));
+    interp.define("custom-declare-group", LispObject::primitive("ignore"));
+
     // Bootstrap chain stubs: functions and variables needed by loadup.el files
     // keymap.el
     interp.define("keymapp", LispObject::primitive("ignore"));
@@ -1326,7 +1352,7 @@ fn make_stdlib_interp() -> Interpreter {
 
 #[test]
 fn test_load_debug_early_el() {
-    let source = match std::fs::read_to_string("/tmp/elisp-stdlib/debug-early.el") {
+    let source = match std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/debug-early.el") {
         Ok(s) => s,
         Err(_) => return,
     };
@@ -1339,7 +1365,7 @@ fn test_load_debug_early_el() {
 
 #[test]
 fn test_load_byte_run_el() {
-    let source = match std::fs::read_to_string("/tmp/elisp-stdlib/byte-run.el") {
+    let source = match std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/byte-run.el") {
         Ok(s) => s,
         Err(_) => return,
     };
@@ -1367,13 +1393,13 @@ fn test_load_byte_run_el() {
 
 #[test]
 fn test_load_backquote_el() {
-    let source = match std::fs::read_to_string("/tmp/elisp-stdlib/backquote.el") {
+    let source = match std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/backquote.el") {
         Ok(s) => s,
         Err(_) => return,
     };
     let interp = make_stdlib_interp();
     // byte-run.el needs to be loaded first for byte-run macros
-    if let Ok(byte_run) = std::fs::read_to_string("/tmp/elisp-stdlib/byte-run.el") {
+    if let Ok(byte_run) = std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/byte-run.el") {
         let _ = interp.eval_source(&byte_run);
     }
     match interp.eval_source(&source) {
@@ -1391,7 +1417,7 @@ fn test_load_subr_el_progress() {
     let interp = make_stdlib_interp();
     // Load prerequisites
     for f in &["debug-early.el", "byte-run.el", "backquote.el"] {
-        if let Ok(s) = std::fs::read_to_string(format!("/tmp/elisp-stdlib/{}", f)) {
+        if let Ok(s) = std::fs::read_to_string(format!("/tmp/elisp-stdlib/emacs-lisp/{}", f)) {
             let _ = interp.eval_source(&s);
         }
     }
@@ -1470,8 +1496,13 @@ fn test_profiler_detects_hot_bytecode_function() {
         *profiler = crate::jit::Profiler::new(5);
     }
 
-    // Create a simple bytecode function: (defun my-inc (n) (1+ n))
+    // Create a simple bytecode function.
     // Opcodes: add1(0x54) return(0x87)
+    //
+    // Use a test-unique symbol name to avoid polluting the
+    // process-global obarray — `interp.define` writes to the
+    // symbol's function cell, which other parallel tests can
+    // observe if we use a common name like `my-inc`.
     let bc = BytecodeFunction {
         argdesc: 257, // 1 required, max 1
         bytecode: vec![0x54, 0x87],
@@ -1480,7 +1511,7 @@ fn test_profiler_detects_hot_bytecode_function() {
         docstring: None,
         interactive: None,
     };
-    interp.define("my-inc", LispObject::BytecodeFn(bc));
+    interp.define("profiler-hot-inc", LispObject::BytecodeFn(bc));
 
     // Before any calls, the profiler should report zero.
     let (total, hot) = interp.profiler_stats();
@@ -1489,7 +1520,7 @@ fn test_profiler_detects_hot_bytecode_function() {
 
     // Call the bytecode function fewer times than the threshold.
     for _ in 0..4 {
-        let result = interp.eval(read("(my-inc 10)").unwrap()).unwrap();
+        let result = interp.eval(read("(profiler-hot-inc 10)").unwrap()).unwrap();
         assert_eq!(result, LispObject::integer(11));
     }
 
@@ -1498,7 +1529,7 @@ fn test_profiler_detects_hot_bytecode_function() {
     assert_eq!(hot, 0, "should not be hot yet");
 
     // One more call to cross the threshold.
-    let result = interp.eval(read("(my-inc 10)").unwrap()).unwrap();
+    let result = interp.eval(read("(profiler-hot-inc 10)").unwrap()).unwrap();
     assert_eq!(result, LispObject::integer(11));
 
     let (total, hot) = interp.profiler_stats();
@@ -1511,7 +1542,7 @@ fn test_backquote_expansion() {
     let interp = make_stdlib_interp();
     // Load prerequisites
     for f in &["debug-early.el", "byte-run.el", "backquote.el"] {
-        if let Ok(s) = std::fs::read_to_string(format!("/tmp/elisp-stdlib/{}", f)) {
+        if let Ok(s) = std::fs::read_to_string(format!("/tmp/elisp-stdlib/emacs-lisp/{}", f)) {
             let _ = interp.eval_source(&s);
         }
     }
@@ -1786,11 +1817,17 @@ fn ensure_stdlib_files() -> bool {
 
 /// Load the standard prerequisite files into an interpreter.
 fn load_prerequisites(interp: &Interpreter) {
-    for f in &["debug-early.el", "byte-run.el", "backquote.el", "subr.el"] {
-        let path = format!("/tmp/elisp-stdlib/{}", f);
+    // First three files live under the `emacs-lisp/` subdir in the
+    // Emacs distribution; subr.el is at the top level.
+    let emacs_lisp_files = &["debug-early.el", "byte-run.el", "backquote.el"];
+    for f in emacs_lisp_files {
+        let path = format!("/tmp/elisp-stdlib/emacs-lisp/{}", f);
         if let Ok(s) = std::fs::read_to_string(&path) {
             let _ = interp.eval_source(&s);
         }
+    }
+    if let Ok(s) = std::fs::read_to_string("/tmp/elisp-stdlib/subr.el") {
+        let _ = interp.eval_source(&s);
     }
 }
 
@@ -2451,6 +2488,84 @@ fn test_getenv() {
             .eval(read(r#"(getenv "ELISP_NONEXISTENT_VAR_12345")"#).unwrap())
             .unwrap(),
         LispObject::nil()
+    );
+}
+
+#[test]
+fn test_backquote_unquote_function_call() {
+    // Regression for Phase 7: backquote-with-unquote expansion that
+    // uses a FUNCTION as the unquoted value — not a variable.
+    // Pattern used all over the stdlib:
+    //   `((foo ,(some-function ARG)))
+    // This should evaluate (some-function ARG) and splice the result,
+    // not look up `some-function` as a variable.
+    let interp = make_stdlib_interp();
+    // Load backquote support.
+    load_prerequisites(&interp);
+    // purecopy IS a special form that returns its arg verbatim.
+    let result = interp.eval_source(r#"(list (purecopy "hello"))"#).unwrap();
+    assert_eq!(
+        result,
+        LispObject::cons(LispObject::string("hello"), LispObject::nil())
+    );
+    // Now the backquote version — same result expected.
+    let result = interp.eval_source(r#"`(,(purecopy "hello"))"#).unwrap();
+    assert_eq!(
+        result,
+        LispObject::cons(LispObject::string("hello"), LispObject::nil())
+    );
+}
+
+#[test]
+fn test_format_el_form_2_isolated() {
+    // Reproduce format.el's form 2 in isolation with the same
+    // prerequisites test_full_bootstrap_chain uses.
+    let interp = make_stdlib_interp();
+    // Load the same bootstrap files format.el comes after.
+    for f in &[
+        "emacs-lisp/debug-early.el",
+        "emacs-lisp/byte-run.el",
+        "emacs-lisp/backquote.el",
+        "subr.el",
+    ] {
+        let path = format!("/tmp/elisp-stdlib/{}", f);
+        if let Ok(s) = std::fs::read_to_string(&path) {
+            let _ = interp.eval_source(&s);
+        }
+    }
+    let form = r#"(defvar format-alist
+  `((text/enriched ,(purecopy "Extended MIME text/enriched format.")
+                   ,(purecopy "Content-[Tt]ype:[ \t]*text/enriched"))))"#;
+    let result = interp.eval_source(form);
+    eprintln!("format.el form 2 isolated: {:?}", result);
+}
+
+#[test]
+fn test_backquote_without_stdlib_backquote_el() {
+    // Does `(,EXPR) work WITHOUT backquote.el loaded? If it does,
+    // our reader is desugaring the backquote syntax itself. If not,
+    // we depend on backquote.el. Understanding this tells us where
+    // the `void variable: <fn>` bug originates.
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // NO load_prerequisites — raw interpreter.
+    let result = interp.eval_source(r#"`(,(car '(42 43)))"#);
+    eprintln!("bare backquote result: {:?}", result);
+}
+
+#[test]
+fn test_defvar_with_backquote_purecopy() {
+    // Exact shape from format.el form 2 — defvar with a backquoted
+    // value containing `,(purecopy ...)` unquotes.
+    let interp = make_stdlib_interp();
+    load_prerequisites(&interp);
+    let result = interp.eval_source(
+        r#"(defvar tbq-test
+             `((a ,(purecopy "foo")) (b ,(purecopy "bar"))))"#,
+    );
+    assert!(
+        result.is_ok(),
+        "defvar+backquote+purecopy failed: {result:?}"
     );
 }
 

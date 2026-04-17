@@ -568,8 +568,16 @@ pub(super) fn eval_load(
                 path: path.clone(),
                 message: "read error".into(),
             })?;
-            for form in forms {
-                eval(obj_to_value(form), env, editor, macros, state)?;
+            // Phase 7: be tolerant of per-form errors during load.
+            // Emacs's own behaviour is to propagate; we diverge because
+            // our interpreter is incomplete (missing primitives, some
+            // bytecode bugs) and most stdlib files are useful even when
+            // a few forms fail. Errors are surfaced via stderr so
+            // debugging still works.
+            for (i, form) in forms.into_iter().enumerate() {
+                if let Err(e) = eval(obj_to_value(form), env, editor, macros, state) {
+                    eprintln!("load {path}: form {i}: {e}");
+                }
             }
             return Ok(Value::t());
         }

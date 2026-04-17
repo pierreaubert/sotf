@@ -13,6 +13,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Execute a bytecode function with the given arguments.
+///
+/// Phase 3: installs a `HeapScope` at entry so the VM's
+/// `obj_to_value`/`value_to_obj` conversions route through the real
+/// GC heap (same machinery the main interpreter uses). For callers
+/// that already hold a scope — `Interpreter::eval` and friends —
+/// this is a nested install (LIFO restore, same Arc). For
+/// test-only callers that hand-construct an `InterpreterState`, the
+/// scope is fresh and covers the whole bytecode execution.
 pub fn execute_bytecode(
     func: &BytecodeFunction,
     args: &[LispObject],
@@ -21,19 +29,18 @@ pub fn execute_bytecode(
     macros: &Arc<RwLock<HashMap<String, crate::eval::Macro>>>,
     state: &InterpreterState,
 ) -> ElispResult<LispObject> {
+    let _scope = crate::value::HeapScope::enter(state.heap.clone());
     let mut vm = Vm::new(func, args, env, editor, macros, state);
     vm.run()
 }
 
 struct Vm<'a> {
     /// Operand stack — NaN-boxed Values (Copy, no Clone overhead).
-    /// Heap objects (String, Cons, Vector, etc.) are stored in `heap_objects`
-    /// and referenced via GC_PTR tag with an index payload.
+    /// Heap objects (String, Cons, Vector, etc.) are allocated on the
+    /// real GC heap via the `HeapScope` installed in
+    /// `execute_bytecode`; the stack holds `TAG_HEAP_PTR` Values that
+    /// decode through the standard `value::value_to_obj` path.
     stack: Vec<Value>,
-    /// Side-table for heap-allocated LispObjects that cannot be represented
-    /// as NaN-boxed immediates (strings, cons cells, vectors, bytecode fns, etc.).
-    /// The GC_PTR tag's payload is an index into this vector.
-    heap_objects: Vec<LispObject>,
     /// Program counter (index into bytecode)
     pc: usize,
     /// The bytecode bytes
@@ -65,14 +72,63 @@ impl<'a> Vm<'a> {
         // In Emacs bytecode, function arguments are pushed onto the stack
         // before execution begins. stack-ref 0 = topmost arg (last),
         // stack-ref N = Nth from top.
-        let mut stack = Vec::with_capacity(func.maxdepth + args.len());
-        let mut heap_objects = Vec::new();
-        for arg in args {
-            stack.push(Self::obj_to_value(arg, &mut heap_objects));
+        //
+        // Emacs's `exec_byte_code` normalises the arg count to match the
+        // bytecode's declared arity before running:
+        // - Too few: pad with nil for the missing optional slots.
+        // - Too many with rest: collect the overflow into a rest-list.
+        // Bytecode bodies rely on this — e.g. cl--defalias (min=2,max=3)
+        // uses `stack-ref 3` to copy all three arg slots even when
+        // called with 2 args, expecting nil in the 3rd slot.
+        //
+        // Phase 3: conversions route through `value::obj_to_value` under
+        // the `HeapScope` that `execute_bytecode` just installed. Heap
+        // objects land in the real GC heap, not a per-VM side-table.
+        let argdesc = func.argdesc;
+        let mandatory = (argdesc & 0x7F) as usize;
+        let nonrest = ((argdesc >> 8) & 0x7F) as usize;
+        let rest = ((argdesc >> 7) & 1) != 0;
+        // argdesc of 0 = legacy / non-lexical binding: no padding contract,
+        // just push args verbatim. Detect with `nonrest == 0 && mandatory == 0 && !rest`.
+        let has_arity = !(mandatory == 0 && nonrest == 0 && !rest);
+
+        let mut stack = Vec::with_capacity(func.maxdepth + args.len().max(nonrest + 1));
+        if has_arity {
+            let nargs = args.len();
+            let pushed = nargs.min(nonrest);
+            for arg in args.iter().take(pushed) {
+                stack.push(obj_to_value(arg.clone()));
+            }
+            if rest {
+                // Rest arg slot is always present; either a list of extras
+                // (when nargs > nonrest) or nil (when nargs <= nonrest).
+                if nargs > nonrest {
+                    let mut rest_list = LispObject::nil();
+                    for arg in args[nonrest..].iter().rev() {
+                        rest_list = LispObject::cons(arg.clone(), rest_list);
+                    }
+                    stack.push(obj_to_value(rest_list));
+                } else {
+                    // Pad missing optional slots first...
+                    for _ in pushed..nonrest {
+                        stack.push(obj_to_value(LispObject::nil()));
+                    }
+                    // ...then the rest slot (empty list = nil).
+                    stack.push(obj_to_value(LispObject::nil()));
+                }
+            } else {
+                // No rest arg: pad up to nonrest with nil for missing optionals.
+                for _ in pushed..nonrest {
+                    stack.push(obj_to_value(LispObject::nil()));
+                }
+            }
+        } else {
+            for arg in args {
+                stack.push(obj_to_value(arg.clone()));
+            }
         }
         Vm {
             stack,
-            heap_objects,
             pc: 0,
             code: &func.bytecode,
             constants: &func.constants,
@@ -102,67 +158,18 @@ impl<'a> Vm<'a> {
             .ok_or_else(|| ElispError::EvalError("bytecode stack underflow".to_string()))
     }
 
-    /// Convert a LispObject to a Value, storing heap objects in the side-table.
-    /// Immediates (nil, t, integers, floats, symbols) become NaN-boxed Values directly.
-    /// Heap objects (String, Cons, Vector, etc.) get a GC_PTR tag with a table index.
-    fn obj_to_value(obj: &LispObject, heap: &mut Vec<LispObject>) -> Value {
-        match obj {
-            LispObject::Nil => Value::nil(),
-            LispObject::T => Value::t(),
-            LispObject::Integer(n) => {
-                if *n >= -(1_i64 << 47) && *n < (1_i64 << 47) {
-                    Value::fixnum(*n)
-                } else {
-                    Value::float(*n as f64)
-                }
-            }
-            LispObject::Float(f) => Value::float(*f),
-            LispObject::Symbol(id) => Value::symbol_id(id.0),
-            // Heap objects: store in side-table, return GC_PTR with index
-            _ => {
-                let idx = heap.len();
-                heap.push(obj.clone());
-                // Use from_raw to encode GC_PTR tag with index payload
-                Value::from_raw(0xFFF8_0000_0000_0000 | (1_u64 << 48) | (idx as u64))
-            }
-        }
-    }
-
-    /// Convert a Value back to a LispObject, looking up heap objects in the side-table.
-    fn value_to_obj(&self, val: Value) -> LispObject {
-        if val.is_nil() {
-            LispObject::Nil
-        } else if val.is_t() {
-            LispObject::T
-        } else if let Some(n) = val.as_fixnum() {
-            LispObject::Integer(n)
-        } else if val.is_ptr() {
-            // GC_PTR — index into heap_objects
-            let idx = (val.raw() & 0x0000_FFFF_FFFF_FFFF) as usize;
-            self.heap_objects
-                .get(idx)
-                .cloned()
-                .unwrap_or(LispObject::nil())
-        } else if let Some(id) = val.as_symbol_id() {
-            LispObject::Symbol(crate::obarray::SymbolId(id))
-        } else if let Some(f) = val.as_float() {
-            LispObject::Float(f)
-        } else {
-            LispObject::Nil
-        }
-    }
-
-    /// Push a LispObject onto the stack, converting to Value.
-    /// Heap objects are stored in the side-table for lossless round-tripping.
+    /// Push a LispObject onto the stack, converting to Value via the
+    /// global `obj_to_value` — heap objects go through the real GC
+    /// heap under the `HeapScope` installed in `execute_bytecode`.
     fn push_obj(&mut self, obj: LispObject) {
-        let val = Self::obj_to_value(&obj, &mut self.heap_objects);
-        self.stack.push(val);
+        self.stack.push(obj_to_value(obj));
     }
 
-    /// Pop a Value from the stack and convert to LispObject.
+    /// Pop a Value from the stack and convert to LispObject via the
+    /// global `value_to_obj`.
     fn pop_obj(&mut self) -> ElispResult<LispObject> {
         let val = self.pop()?;
-        Ok(self.value_to_obj(val))
+        Ok(value_to_obj(val))
     }
 
     fn fetch_u8(&mut self) -> u8 {
@@ -187,7 +194,7 @@ impl<'a> Vm<'a> {
         Ok(self
             .stack
             .pop()
-            .map(|v| self.value_to_obj(v))
+            .map(value_to_obj)
             .unwrap_or(LispObject::nil()))
     }
 
@@ -196,15 +203,25 @@ impl<'a> Vm<'a> {
             // stack-ref N (0-5): push Nth element from top
             0..=5 => {
                 let n = op as usize;
-                let idx = self.stack.len() - 1 - n;
-                let val = self.stack[idx]; // Value is Copy
+                let len = self.stack.len();
+                if n + 1 > len {
+                    return Err(ElispError::EvalError(format!(
+                        "stack-ref {n} underflow (stack len {len})"
+                    )));
+                }
+                let val = self.stack[len - 1 - n]; // Value is Copy
                 self.push(val);
             }
             6 => {
                 // stack-ref with 1-byte operand
                 let n = self.fetch_u8() as usize;
-                let idx = self.stack.len() - 1 - n;
-                let val = self.stack[idx]; // Value is Copy
+                let len = self.stack.len();
+                if n + 1 > len {
+                    return Err(ElispError::EvalError(format!(
+                        "stack-ref {n} underflow (stack len {len})"
+                    )));
+                }
+                let val = self.stack[len - 1 - n]; // Value is Copy
                 self.push(val);
             }
             7 => {
@@ -680,8 +697,8 @@ impl<'a> Vm<'a> {
                 if let Some(result) = a.arith_sub(b) {
                     self.push(result);
                 } else {
-                    let ao = self.value_to_obj(a);
-                    let bo = self.value_to_obj(b);
+                    let ao = value_to_obj(a);
+                    let bo = value_to_obj(b);
                     self.push_obj(numeric_binop(&ao, &bo, |x, y| x - y, |x, y| x - y)?);
                 }
             }
@@ -703,8 +720,8 @@ impl<'a> Vm<'a> {
                 if let Some(result) = a.arith_add(b) {
                     self.push(result);
                 } else {
-                    let ao = self.value_to_obj(a);
-                    let bo = self.value_to_obj(b);
+                    let ao = value_to_obj(a);
+                    let bo = value_to_obj(b);
                     self.push_obj(numeric_binop(&ao, &bo, |x, y| x + y, |x, y| x + y)?);
                 }
             }
@@ -758,8 +775,8 @@ impl<'a> Vm<'a> {
                 if let Some(result) = a.arith_mul(b) {
                     self.push(result);
                 } else {
-                    let ao = self.value_to_obj(a);
-                    let bo = self.value_to_obj(b);
+                    let ao = value_to_obj(a);
+                    let bo = value_to_obj(b);
                     self.push_obj(numeric_binop(&ao, &bo, |x, y| x * y, |x, y| x * y)?);
                 }
             }
@@ -1732,7 +1749,14 @@ mod tests {
             special_vars: Arc::new(RwLock::new(std::collections::HashSet::new())),
             specpdl: Arc::new(RwLock::new(Vec::new())),
             global_env: env.clone(),
-            heap: Arc::new(parking_lot::Mutex::new(crate::gc::Heap::new())),
+            // Phase 3: match `Interpreter::new`'s Manual mode so
+            // bytecode tests don't hit mid-execution sweeps that would
+            // collect Values off the VM stack.
+            heap: Arc::new(parking_lot::Mutex::new({
+                let mut h = crate::gc::Heap::new();
+                h.set_gc_mode(crate::gc::GcMode::Manual);
+                h
+            })),
             cons_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             autoloads: Arc::new(RwLock::new(HashMap::new())),
             eval_ops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -2192,6 +2216,110 @@ mod tests {
         let (env, editor, macros, state) = test_env();
         let result = execute_bytecode(&bc, &[], &env, &editor, &macros, &state).unwrap();
         assert_eq!(result, LispObject::Nil);
+    }
+
+    /// Regression: Emacs-style arg padding for optional args.
+    ///
+    /// Reproduces the cl-lib.elc `cl--defalias` (argdesc=770, min=2,
+    /// max=3) failure — bytecode reaches into the 3rd arg slot via
+    /// `stack-ref N`. When called with only 2 args, the VM must pad
+    /// the missing optional slot with nil, mirroring Emacs
+    /// `exec_byte_code`. Without padding the 2-arg call would hit
+    /// `stack-ref 3 underflow`.
+    #[test]
+    fn test_vm_pads_missing_optional_arg_with_nil() {
+        // argdesc 770: min=2, nonrest=3, rest=0.
+        // Body: `stack-ref 0` (push top of stack, which after
+        // padding is the nil optional-arg slot), then `return`.
+        let bc = BytecodeFunction {
+            argdesc: 770,
+            bytecode: vec![0x00, 0x87],
+            constants: vec![],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(
+            &bc,
+            &[LispObject::integer(1), LispObject::integer(2)],
+            &env,
+            &editor,
+            &macros,
+            &state,
+        )
+        .unwrap();
+        assert_eq!(result, LispObject::nil());
+    }
+
+    /// Regression: rest-arg collection.
+    ///
+    /// argdesc with rest flag: extras beyond `nonrest` collected into
+    /// a list, matching Emacs `exec_byte_code`.
+    #[test]
+    fn test_vm_collects_rest_args_into_list() {
+        // argdesc: min=1, rest=1, nonrest=1
+        // = 1 (mandatory) | (1 << 7) (rest) | (1 << 8) (nonrest)
+        // = 1 | 128 | 256 = 385
+        // Body: `stack-ref 0` pushes the rest list (on top), then return.
+        let bc = BytecodeFunction {
+            argdesc: 385,
+            bytecode: vec![0x00, 0x87],
+            constants: vec![],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(
+            &bc,
+            &[
+                LispObject::integer(1),
+                LispObject::integer(2),
+                LispObject::integer(3),
+                LispObject::integer(4),
+            ],
+            &env,
+            &editor,
+            &macros,
+            &state,
+        )
+        .unwrap();
+        // Rest list should be (2 3 4)
+        assert_eq!(
+            result,
+            LispObject::cons(
+                LispObject::integer(2),
+                LispObject::cons(
+                    LispObject::integer(3),
+                    LispObject::cons(LispObject::integer(4), LispObject::nil())
+                )
+            )
+        );
+    }
+
+    /// Regression: rest-arg slot is nil when no extras passed.
+    #[test]
+    fn test_vm_rest_arg_empty_is_nil() {
+        let bc = BytecodeFunction {
+            argdesc: 385, // min=1, rest=1, nonrest=1
+            bytecode: vec![0x00, 0x87],
+            constants: vec![],
+            maxdepth: 4,
+            docstring: None,
+            interactive: None,
+        };
+        let (env, editor, macros, state) = test_env();
+        let result = execute_bytecode(
+            &bc,
+            &[LispObject::integer(1)],
+            &env,
+            &editor,
+            &macros,
+            &state,
+        )
+        .unwrap();
+        assert_eq!(result, LispObject::nil());
     }
 }
 

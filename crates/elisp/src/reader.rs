@@ -1260,7 +1260,7 @@ mod tests {
 
     #[test]
     fn test_parse_debug_early_el() {
-        let source = std::fs::read_to_string("/tmp/elisp-stdlib/debug-early.el");
+        let source = std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/debug-early.el");
         if let Ok(source) = source {
             let forms = read_all(&source).expect("failed to parse debug-early.el");
             assert!(
@@ -1273,7 +1273,7 @@ mod tests {
 
     #[test]
     fn test_parse_byte_run_el() {
-        let source = std::fs::read_to_string("/tmp/elisp-stdlib/byte-run.el");
+        let source = std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/byte-run.el");
         if let Ok(source) = source {
             let forms = read_all(&source).expect("failed to parse byte-run.el");
             assert!(
@@ -1286,7 +1286,7 @@ mod tests {
 
     #[test]
     fn test_parse_backquote_el() {
-        let source = std::fs::read_to_string("/tmp/elisp-stdlib/backquote.el");
+        let source = std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/backquote.el");
         if let Ok(source) = source {
             let forms = read_all(&source).expect("failed to parse backquote.el");
             assert!(

@@ -8,7 +8,203 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 
 use super::dynamic::{bind_param_dynamic, unwind_specpdl};
-use super::{eval, eval_progn, Environment, InterpreterState, MacroTable};
+use super::{eval, eval_progn, Environment, InterpreterState, Macro, MacroTable};
+
+/// Phase 7a: **stateful primitives** — functions that are traditionally
+/// implemented as special forms in the source-level dispatch (because
+/// they need env/macros/state access) but are *semantically* regular
+/// functions with evaluated arguments. When a bytecode function from
+/// the VM (or any other caller that resolves through the symbol's
+/// function cell) invokes `defalias`, `fset`, `eval`, `funcall`,
+/// `apply`, etc., we route through this table instead of the regular
+/// stateless `primitives::call_primitive` — the caller has already
+/// evaluated the arguments, so we must not re-evaluate.
+///
+/// Returns `Some(result)` when `name` matches; `None` when the caller
+/// should fall through to the regular primitive dispatch.
+pub(crate) fn call_stateful_primitive(
+    name: &str,
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> Option<ElispResult<LispObject>> {
+    match name {
+        "defalias" => Some(stateful_defalias(args, macros)),
+        "fset" => Some(stateful_fset(args)),
+        "eval" => Some(stateful_eval(args, env, editor, macros, state)),
+        "funcall" => Some(stateful_funcall(args, env, editor, macros, state)),
+        "apply" => Some(stateful_apply(args, env, editor, macros, state)),
+        "put" => Some(stateful_put(args)),
+        "get" => Some(stateful_get(args)),
+        _ => None,
+    }
+}
+
+/// `(defalias SYMBOL DEFINITION)` — set SYMBOL's function definition.
+/// When DEFINITION is `(macro lambda ARGS . BODY)`, register as a
+/// macro in the macros table; otherwise write the obarray function
+/// cell. Args are pre-evaluated.
+fn stateful_defalias(args: &LispObject, macros: &MacroTable) -> ElispResult<LispObject> {
+    let name = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let value = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let name_str = name
+        .as_symbol()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+
+    // Macro case: DEFINITION = (macro lambda ARGS . BODY)
+    if let Some((car, rest)) = value.destructure_cons() {
+        if car.as_symbol().as_deref() == Some("macro") {
+            if let Some((lambda_sym, lambda_rest)) = rest.destructure_cons() {
+                if lambda_sym.as_symbol().as_deref() == Some("lambda") {
+                    let macro_args = lambda_rest.first().unwrap_or(LispObject::nil());
+                    let macro_body = lambda_rest.rest().unwrap_or(LispObject::nil());
+                    macros.write().insert(
+                        name_str.clone(),
+                        Macro {
+                            args: macro_args,
+                            body: macro_body,
+                        },
+                    );
+                    return Ok(LispObject::symbol(&name_str));
+                }
+            }
+        }
+    }
+
+    // Function case: write the obarray function cell directly.
+    let id = crate::obarray::intern(&name_str);
+    crate::obarray::set_function_cell(id, value);
+    Ok(LispObject::symbol(&name_str))
+}
+
+/// `(fset SYMBOL DEFINITION)` — set SYMBOL's function cell. Like
+/// `defalias` but doesn't check for the macro form. Args pre-evaluated.
+fn stateful_fset(args: &LispObject) -> ElispResult<LispObject> {
+    let name = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let def = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let sym_id = name
+        .as_symbol_id()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    crate::obarray::set_function_cell(sym_id, def.clone());
+    Ok(def)
+}
+
+/// `(eval FORM)` — evaluate FORM. Args pre-evaluated means FORM is the
+/// ACTUAL form to evaluate (not wrapped in another eval).
+fn stateful_eval(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let form = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let result = eval(obj_to_value(form), env, editor, macros, state)?;
+    Ok(value_to_obj(result))
+}
+
+/// `(funcall FUNC &rest ARGS)` — call FUNC with ARGS. All args
+/// pre-evaluated.
+fn stateful_funcall(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let func = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let rest = args.rest().unwrap_or(LispObject::nil());
+    let result = call_function(
+        obj_to_value(func),
+        obj_to_value(rest),
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+    Ok(value_to_obj(result))
+}
+
+/// `(put SYMBOL PROPERTY VALUE)` — set SYMBOL's plist PROPERTY to
+/// VALUE. All args pre-evaluated.
+fn stateful_put(args: &LispObject) -> ElispResult<LispObject> {
+    let sym = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let prop = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let val = args.nth(2).ok_or(ElispError::WrongNumberOfArguments)?;
+    let sym_id = sym
+        .as_symbol_id()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let prop_id = prop
+        .as_symbol_id()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    crate::obarray::put_plist(sym_id, prop_id, val.clone());
+    Ok(val)
+}
+
+/// `(get SYMBOL PROPERTY)` — get SYMBOL's plist PROPERTY. Args
+/// pre-evaluated.
+fn stateful_get(args: &LispObject) -> ElispResult<LispObject> {
+    let sym = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let prop = args.nth(1).ok_or(ElispError::WrongNumberOfArguments)?;
+    let sym_id = sym
+        .as_symbol_id()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    let prop_id = prop
+        .as_symbol_id()
+        .ok_or_else(|| ElispError::WrongTypeArgument("symbol".to_string()))?;
+    Ok(crate::obarray::get_plist(sym_id, prop_id))
+}
+
+/// `(apply FUNC &rest ARGS)` — last ARG is a list; splice its contents
+/// as trailing arguments. All args pre-evaluated.
+fn stateful_apply(
+    args: &LispObject,
+    env: &Arc<RwLock<Environment>>,
+    editor: &Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
+    macros: &MacroTable,
+    state: &InterpreterState,
+) -> ElispResult<LispObject> {
+    let func = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+
+    // Walk args[1..], collecting into `collected`; the final element
+    // stays in `last` until we know whether more arguments follow.
+    // When the loop exits, `last` is the list to splice.
+    let mut collected: Vec<LispObject> = Vec::new();
+    let mut last: Option<LispObject> = None;
+    let mut current = args.rest().unwrap_or(LispObject::nil());
+    while let Some((car, cdr)) = current.destructure_cons() {
+        if let Some(prev) = last.take() {
+            collected.push(prev);
+        }
+        last = Some(car);
+        current = cdr;
+    }
+    if let Some(list) = last {
+        let mut cur = list;
+        while let Some((car, cdr)) = cur.destructure_cons() {
+            collected.push(car);
+            cur = cdr;
+        }
+    }
+
+    // Rebuild a proper Lisp argument list (nil-terminated cons chain).
+    let mut arg_list = LispObject::nil();
+    for item in collected.into_iter().rev() {
+        arg_list = LispObject::cons(item, arg_list);
+    }
+
+    let result = call_function(
+        obj_to_value(func),
+        obj_to_value(arg_list),
+        env,
+        editor,
+        macros,
+        state,
+    )?;
+    Ok(value_to_obj(result))
+}
 
 pub(super) fn eval_funcall(
     func: Value,
@@ -239,6 +435,16 @@ pub fn call_function(
         }
         LispObject::Primitive(ref name) => {
             let args_obj = value_to_obj(args);
+            // Phase 7a: try state-aware primitives first (defalias,
+            // fset, eval, funcall, apply…). These are registered as
+            // `LispObject::Primitive` in the function cell so they're
+            // reachable from the VM's function-call path, not just
+            // the source-level special-form dispatch.
+            if let Some(result) =
+                call_stateful_primitive(name, &args_obj, env, editor, macros, state)
+            {
+                return Ok(obj_to_value(result?));
+            }
             let result = crate::primitives::call_primitive(name, &args_obj)?;
             Ok(obj_to_value(result))
         }

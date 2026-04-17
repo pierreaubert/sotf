@@ -13,15 +13,14 @@ const TAG_MASK: u64 = 0xF;
 /// Lower 48 bits carry the payload.
 const PAYLOAD_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
 
-// Tag values
+// Tag values.
+//
+// Phase 3 reclaimed tag 1 (previously `TAG_GC_PTR`, a legacy
+// side-table index used by the VM and pre-Phase-2m main interpreter).
+// It's currently unused; reserved for future use (dedicated Bignum
+// tag, extension types, etc.).
 const TAG_FIXNUM: u64 = 0;
-/// Legacy tag kept ONLY for the `vm.rs` bytecode interpreter, which
-/// has its own independent side-table (`VM::heap_objects`). The main
-/// interpreter's `obj_to_value` never produces `TAG_GC_PTR` after
-/// Phase 2o — every heap object goes through the real GC heap via a
-/// `HeapScope`. Migrating the VM to use the real heap would kill the
-/// last user of this tag; until then the constant stays.
-const TAG_GC_PTR: u64 = 1;
+// tag 1 — reserved (was TAG_GC_PTR, retired in Phase 3)
 const TAG_SYMBOL: u64 = 2;
 const TAG_CHAR: u64 = 3;
 const TAG_SPECIAL: u64 = 4;
@@ -92,15 +91,6 @@ impl Value {
     #[inline]
     pub fn float(f: f64) -> Self {
         Self(f.to_bits())
-    }
-
-    /// Construct a tagged GC pointer.  `ptr` must be 16-byte aligned
-    /// (lower 4 bits zero) so it fits in 48 bits on current architectures.
-    #[inline]
-    pub fn from_ptr(tag: u8, ptr: *const u8) -> Self {
-        let addr = ptr as u64;
-        debug_assert!(addr & !PAYLOAD_MASK == 0, "pointer does not fit in 48 bits");
-        Self(NANBOX_PREFIX | ((tag as u64 & TAG_MASK) << TAG_SHIFT) | (addr & PAYLOAD_MASK))
     }
 
     /// Store a symbol table index (up to 2^48 - 1 symbols).
@@ -183,11 +173,6 @@ impl Value {
         (self.0 >> 51) == 0x1FFF
     }
 
-    #[inline]
-    pub fn is_ptr(self) -> bool {
-        self.has_tag(TAG_GC_PTR)
-    }
-
     /// True when this Value holds a real GC-heap pointer (TAG_HEAP_PTR).
     #[inline]
     pub fn is_heap_ptr(self) -> bool {
@@ -256,18 +241,8 @@ impl Value {
         }
     }
 
-    /// Extract a GC pointer.  Returns `None` unless the tag is `TAG_GC_PTR`.
-    #[inline]
-    pub fn as_ptr(self) -> Option<*const u8> {
-        if !self.is_ptr() {
-            return None;
-        }
-        Some(self.payload() as *const u8)
-    }
-
     /// Extract the heap pointer payload (TAG_HEAP_PTR only).
-    /// Returns `None` for all other tags, including the legacy side-table
-    /// TAG_GC_PTR.
+    /// Returns `None` for all other tags.
     #[inline]
     pub fn as_heap_ptr(self) -> Option<*mut u8> {
         if !self.is_heap_ptr() {
@@ -339,14 +314,33 @@ impl Value {
 
     // ---- cons cell access ----
 
-    /// True when this Value is a cons pointer — either a legacy
-    /// TAG_GC_PTR side-table index (which may point at any heap type) or
-    /// a real TAG_HEAP_PTR cons cell. The two tags coexist during the
-    /// Phase 2 transition; callers that need to distinguish must branch
-    /// on `is_ptr()` vs `is_heap_ptr()` explicitly.
+    /// True when this Value is a cons pointer (either `ObjectTag::Cons`
+    /// — native Value-based cell — or `ObjectTag::ConsArc` —
+    /// Arc-wrapping variant).
+    ///
+    /// # Safety
+    /// This method dereferences the Value's heap pointer to read the
+    /// `GcHeader.tag`. The Value MUST be live — i.e. not referring to
+    /// a heap object that has been swept. In practice every Value
+    /// reachable from the interpreter's stack, env, or root stack
+    /// satisfies this invariant. A swept-and-reused Value would
+    /// produce a misleading answer (or UB, depending on what replaced
+    /// the freed memory). Callers that can't guarantee liveness
+    /// should stick to `is_heap_ptr`.
     #[inline]
     pub fn is_cons(&self) -> bool {
-        self.is_ptr() || self.is_heap_ptr()
+        let Some(ptr) = self.as_heap_ptr() else {
+            return false;
+        };
+        // SAFETY: the caller's contract guarantees the Value is live
+        // (see method doc). `TAG_HEAP_PTR` always points at a
+        // `GcHeader`-prefixed object, so reading `(*header).tag` is
+        // well-defined when the object is alive.
+        let tag = unsafe { (*(ptr as *const crate::gc::GcHeader)).tag };
+        matches!(
+            tag,
+            crate::gc::ObjectTag::Cons | crate::gc::ObjectTag::ConsArc
+        )
     }
 
     /// True when this Value is a proper list (nil or cons).
@@ -561,8 +555,8 @@ impl fmt::Debug for Value {
             write!(f, "#<symbol {}>", self.as_symbol_id().unwrap())
         } else if self.is_char() {
             write!(f, "?{}", self.as_char().unwrap_or('\u{FFFD}'))
-        } else if self.is_ptr() {
-            write!(f, "#<ptr {:p}>", self.payload() as *const u8)
+        } else if self.is_heap_ptr() {
+            write!(f, "#<heap-ptr {:p}>", self.payload() as *const u8)
         } else if self.is_subr() {
             write!(f, "#<subr {}>", self.as_subr().unwrap())
         } else {
@@ -1304,10 +1298,6 @@ mod bridge_tests {
         assert!(
             v.is_heap_ptr(),
             "String must land on the real heap under scope"
-        );
-        assert!(
-            !v.is_ptr(),
-            "must NOT produce a legacy TAG_GC_PTR side-table value"
         );
 
         // Round-trip back produces the same content.

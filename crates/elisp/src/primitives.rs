@@ -153,6 +153,22 @@ pub fn add_primitives(interp: &mut crate::eval::Interpreter) {
     interp.define("error", LispObject::primitive("error"));
     interp.define("user-error", LispObject::primitive("user-error"));
     interp.define("signal", LispObject::primitive("signal"));
+
+    // Phase 7a: state-aware primitives — semantically regular
+    // functions (evaluated args) that happen to need env/macros/state
+    // access. Registered on the function cell so the VM and any other
+    // function-cell caller can dispatch them; `call_function` routes
+    // through `call_stateful_primitive` before the regular primitive
+    // dispatch. Source-level `(defalias ...)` etc. still hit the
+    // special-form dispatch in eval_inner (same effect, different
+    // entry point).
+    interp.define("defalias", LispObject::primitive("defalias"));
+    interp.define("fset", LispObject::primitive("fset"));
+    interp.define("eval", LispObject::primitive("eval"));
+    interp.define("funcall", LispObject::primitive("funcall"));
+    interp.define("apply", LispObject::primitive("apply"));
+    interp.define("put", LispObject::primitive("put"));
+    interp.define("get", LispObject::primitive("get"));
 }
 
 pub fn call_primitive(name: &str, args: &LispObject) -> ElispResult<LispObject> {
