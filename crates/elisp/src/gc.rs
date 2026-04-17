@@ -25,6 +25,18 @@ pub enum ObjectTag {
     ByteCode = 4,
     Symbol = 5,
     Bignum = 6,
+    /// Identity-preserving cons cell that wraps the same
+    /// `Arc<Mutex<(LispObject, LispObject)>>` as `LispObject::Cons`.
+    /// Used by `obj_to_value` migrations where `setcar`/`setcdr`
+    /// semantics must survive the Value round-trip. Contrast with
+    /// `Cons`, which stores `car`/`cdr` as raw `Value::raw()` bits
+    /// for bump-allocation efficiency (used by native Value-based
+    /// list builders: `sort`, `nreverse`, `garbage-collect`, etc.).
+    ConsArc = 7,
+    /// Builtin primitive (subr). Wraps a `String` name; the actual
+    /// Rust fn pointer is resolved by `add_primitives`' dispatch
+    /// table, keyed by name. Immutable value, no identity concerns.
+    Primitive = 8,
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +52,127 @@ pub struct ConsCell {
     pub header: GcHeader,
     pub car: u64,
     pub cdr: u64,
+}
+
+// ---------------------------------------------------------------------------
+// ConsArcCell — identity-preserving cons cell
+// ---------------------------------------------------------------------------
+
+/// A cons cell allocated on the GC heap that wraps the same
+/// `Arc<Mutex<(LispObject, LispObject)>>` as `LispObject::Cons`, so
+/// `obj_to_value`/`value_to_obj` round-trips preserve pointer
+/// identity — `setcar` / `setcdr` mutations propagate, and
+/// `(eq x x)` stays true.
+///
+/// Contrast with `ConsCell`, which stores `car`/`cdr` as raw u64
+/// `Value` bits for bump-allocation efficiency and is used by
+/// native list builders that don't need `Arc` identity (`sort`,
+/// `nreverse`, `garbage-collect`, etc.).
+#[repr(C)]
+pub struct ConsArcCell {
+    pub header: GcHeader,
+    pub arc: crate::object::ConsCell,
+}
+
+// ---------------------------------------------------------------------------
+// StringObject — heap-allocated variable-length string
+// ---------------------------------------------------------------------------
+
+/// A string allocated on the GC heap.
+///
+/// Unlike `ConsCell`, strings are variable-length and don't fit in a typed
+/// arena, so they are individually `Box`-allocated. Sweep reconstructs the
+/// `Box<StringObject>` via `Box::from_raw` to run the Drop glue on the
+/// contained `Box<str>`.
+///
+/// `#[repr(C)]` pins `header` at offset zero so a `*mut GcHeader` cast from
+/// a `*mut StringObject` is always valid.
+#[repr(C)]
+pub struct StringObject {
+    pub header: GcHeader,
+    pub data: Box<str>,
+}
+
+// ---------------------------------------------------------------------------
+// VectorObject — heap-allocated fixed-length array of Values
+// ---------------------------------------------------------------------------
+
+/// A Lisp vector allocated on the GC heap.
+///
+/// Phase 2n: wraps the existing `SharedVec`
+/// (`Arc<Mutex<Vec<LispObject>>>`) so `obj_to_value` round-trips on a
+/// `LispObject::Vector(arc)` preserve pointer identity — both the
+/// heap's Arc and the caller's Arc reference the same inner
+/// `Vec<LispObject>`, so `(eq x x)` and `aset`/`aref` mutation
+/// propagate correctly. Tracing becomes a no-op for this type:
+/// element lifetimes are governed by `Arc` refcounting, not the
+/// mark-sweep GC.
+#[repr(C)]
+pub struct VectorObject {
+    pub header: GcHeader,
+    pub v: crate::object::SharedVec,
+}
+
+// ---------------------------------------------------------------------------
+// HashTableObject — heap-allocated hash table
+// ---------------------------------------------------------------------------
+
+/// A Lisp hash table allocated on the GC heap.
+///
+/// Phase 2n: wraps the existing `SharedHashTable`
+/// (`Arc<Mutex<LispHashTable>>`) so `obj_to_value` round-trips
+/// preserve pointer identity — `puthash`/`gethash` on the same
+/// decoded binding see the same underlying map. Tracing is a no-op:
+/// keys and values are `LispObject`, not `Value`, and their
+/// lifetimes are governed by `Arc` refcounting.
+#[repr(C)]
+pub struct HashTableObject {
+    pub header: GcHeader,
+    pub table: crate::object::SharedHashTable,
+}
+
+// ---------------------------------------------------------------------------
+// BytecodeFnObject — heap-allocated bytecode function
+// ---------------------------------------------------------------------------
+
+/// A compiled bytecode function allocated on the GC heap. Wraps the
+/// existing `BytecodeFunction` whose internal fields (constants vector
+/// of `LispObject`, instruction bytes, stack depth, arity, docstring)
+/// are unchanged. No child tracing yet — constants are `LispObject`.
+#[repr(C)]
+pub struct BytecodeFnObject {
+    pub header: GcHeader,
+    pub func: crate::object::BytecodeFunction,
+}
+
+// ---------------------------------------------------------------------------
+// BignumObject — heap-allocated big integer
+// ---------------------------------------------------------------------------
+
+/// A big integer that doesn't fit in a 48-bit fixnum Value. For now
+/// this just stores an `i64` — oversized integers in the current
+/// codebase never exceed `i64::MAX`, and wrapping Emacs's arbitrary-
+/// precision semantics is a separate project. The object is here so
+/// `Heap` can replace the side-table fallback path.
+#[repr(C)]
+pub struct BignumObject {
+    pub header: GcHeader,
+    pub value: i64,
+}
+
+// ---------------------------------------------------------------------------
+// PrimitiveObject — heap-allocated builtin function reference
+// ---------------------------------------------------------------------------
+
+/// A builtin primitive (subr) allocated on the GC heap. Wraps the
+/// primitive's name as an owned `String`; dispatch is handled at
+/// call time by looking up the name in the primitives table. This
+/// mirrors the `LispObject::Primitive(String)` representation and
+/// unblocks Phase 2o's removal of the `HEAP_OBJECTS` side-table.
+#[repr(C)]
+pub struct PrimitiveObject {
+    pub header: GcHeader,
+    pub name: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +199,28 @@ impl GcHeader {
 }
 
 // ---------------------------------------------------------------------------
+// GcMode — controls when automatic collection fires
+// ---------------------------------------------------------------------------
+
+/// Controls whether allocations may trigger a collection.
+///
+/// `Auto` preserves the original behaviour: every allocation past the
+/// threshold triggers a sweep via `maybe_gc`. `Manual` disables that
+/// implicit trigger so only explicit `Heap::collect()` calls sweep.
+///
+/// The interpreter runs in `Manual` mode (see `Interpreter::new`) so that
+/// GC only happens at well-defined safepoints — the `(garbage-collect)`
+/// primitive — and never interrupts a multi-step allocation sequence
+/// holding unrooted intermediate Values on the stack. Standalone `Heap`
+/// instances (e.g. in the gc.rs unit tests) default to `Auto`, which
+/// keeps the existing threshold-driven tests honest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GcMode {
+    Auto,
+    Manual,
+}
+
+// ---------------------------------------------------------------------------
 // Heap — the main GC state
 // ---------------------------------------------------------------------------
 
@@ -81,6 +236,8 @@ pub struct Heap {
     gc_threshold: usize,
     /// Number of collections performed so far.
     gc_count: u64,
+    /// Controls whether `maybe_gc` fires automatically past the threshold.
+    gc_mode: GcMode,
     /// Explicit root stack. Entries are raw pointers to GcHeaders that the
     /// mutator considers live. Managed via `RootGuard` RAII handles.
     root_stack: Vec<*const GcHeader>,
@@ -104,6 +261,7 @@ impl Heap {
             bytes_allocated: 0,
             gc_threshold: DEFAULT_GC_THRESHOLD,
             gc_count: 0,
+            gc_mode: GcMode::Auto,
             root_stack: Vec::new(),
             cons_arena: Arena::new(Self::CONS_PAGE_SIZE),
             _not_send: PhantomData,
@@ -113,6 +271,16 @@ impl Heap {
     /// Set the GC threshold (useful for testing).
     pub fn set_gc_threshold(&mut self, threshold: usize) {
         self.gc_threshold = threshold;
+    }
+
+    /// Switch between automatic and manual GC policy. See [`GcMode`].
+    pub fn set_gc_mode(&mut self, mode: GcMode) {
+        self.gc_mode = mode;
+    }
+
+    /// Current collection policy.
+    pub fn gc_mode(&self) -> GcMode {
+        self.gc_mode
     }
 
     /// Returns `true` when the heap has exceeded its allocation threshold
@@ -153,17 +321,203 @@ impl Heap {
     }
 
     /// Allocate a cons cell with Value car/cdr and return a Value
-    /// tagged as a GC pointer (tag 1).
+    /// tagged as a real heap pointer (TAG_HEAP_PTR).
     ///
     /// This is the preferred allocation path for code that works with
-    /// `Value` directly, avoiding the LispObject round-trip.
+    /// `Value` directly, avoiding the LispObject round-trip. The resulting
+    /// Value is traceable by mark-and-sweep via `Value::trace`.
+    ///
+    /// Note: this produces a `ConsCell` (u64 car/cdr, bump-allocated)
+    /// not a `ConsArcCell`. `value_to_obj` of the resulting Value
+    /// decodes into a FRESH `LispObject::Cons(Arc::new(...))` — Arc
+    /// identity is not preserved across round-trips. For callers that
+    /// need identity-preserving semantics (obj_to_value migrations),
+    /// use `cons_arc_value` instead.
     pub fn cons_value(&mut self, car: u64, cdr: u64) -> crate::value::Value {
         let cell = self.cons(car, cdr);
-        crate::value::Value::from_ptr(1, cell as *const u8)
+        crate::value::Value::heap_ptr(cell as *const u8)
     }
 
-    /// Trigger a GC cycle if the allocation threshold has been exceeded.
+    // -- Identity-preserving cons allocation --------------------------------
+
+    /// Allocate a `ConsArcCell` on the heap wrapping an existing
+    /// `Arc<Mutex<(LispObject, LispObject)>>`. Returns a Value tagged
+    /// as a real heap pointer with `ObjectTag::ConsArc`.
+    ///
+    /// Phase 2n-cons chokepoint for migrating `LispObject::Cons(arc)`
+    /// through `obj_to_value` while preserving `setcar`/`setcdr`
+    /// identity. `value_to_obj` decodes via `Arc::clone` — the
+    /// decoded LispObject and the allocation site's Arc share the
+    /// same inner `Mutex`.
+    pub fn cons_arc_value(&mut self, arc: crate::object::ConsCell) -> crate::value::Value {
+        self.maybe_gc();
+        let boxed = Box::new(ConsArcCell {
+            header: GcHeader::new(ObjectTag::ConsArc),
+            arc,
+        });
+        let ptr: *mut ConsArcCell = Box::into_raw(boxed);
+        // SAFETY: fresh Box::into_raw produces a valid pointer.
+        unsafe {
+            (*ptr).header.next = self.all_objects;
+            self.all_objects = &mut (*ptr).header;
+        }
+        self.bytes_allocated += std::mem::size_of::<ConsArcCell>();
+        crate::value::Value::heap_ptr(ptr as *const u8)
+    }
+
+    // -- String allocation --------------------------------------------------
+
+    /// Allocate a `StringObject` on the heap, copying `s` into owned
+    /// `Box<str>` storage. Returns a Value tagged as a real heap
+    /// pointer (TAG_HEAP_PTR); callers disambiguate strings from cons
+    /// cells by inspecting the pointed-to `GcHeader.tag`.
+    ///
+    /// The returned Value is traced by `mark_object` (no children —
+    /// strings are leaves) and freed by `sweep` via `Box::from_raw`
+    /// when unreachable.
+    pub fn string_value(&mut self, s: &str) -> crate::value::Value {
+        self.maybe_gc();
+        let boxed = Box::new(StringObject {
+            header: GcHeader::new(ObjectTag::String),
+            data: Box::<str>::from(s),
+        });
+        let size = std::mem::size_of::<StringObject>() + s.len();
+        let ptr: *mut StringObject = Box::into_raw(boxed);
+        // SAFETY: `ptr` was just produced by `Box::into_raw` and points
+        // to a fully-initialised `StringObject`. Linking it into the
+        // intrusive all_objects list is the standard registration step
+        // the sweep phase relies on.
+        unsafe {
+            (*ptr).header.next = self.all_objects;
+            self.all_objects = &mut (*ptr).header;
+        }
+        self.bytes_allocated += size;
+        crate::value::Value::heap_ptr(ptr as *const u8)
+    }
+
+    // -- Vector allocation --------------------------------------------------
+
+    /// Allocate a `VectorObject` on the heap wrapping an existing
+    /// `SharedVec`. Returns a Value tagged as a real heap pointer.
+    ///
+    /// Phase 2n: the caller owns the Arc; the heap stores a clone.
+    /// `value_to_obj` returns another `Arc::clone` — identity is
+    /// preserved across `obj_to_value`/`value_to_obj` round-trips.
+    pub fn vector_value(&mut self, v: crate::object::SharedVec) -> crate::value::Value {
+        self.maybe_gc();
+        let size = std::mem::size_of::<VectorObject>();
+        let boxed = Box::new(VectorObject {
+            header: GcHeader::new(ObjectTag::Vector),
+            v,
+        });
+        let ptr: *mut VectorObject = Box::into_raw(boxed);
+        // SAFETY: fresh Box::into_raw produces a valid pointer.
+        unsafe {
+            (*ptr).header.next = self.all_objects;
+            self.all_objects = &mut (*ptr).header;
+        }
+        self.bytes_allocated += size;
+        crate::value::Value::heap_ptr(ptr as *const u8)
+    }
+
+    // -- HashTable allocation -----------------------------------------------
+
+    /// Allocate a `HashTableObject` on the heap wrapping an existing
+    /// `SharedHashTable`. Returns a Value tagged as a real heap pointer.
+    ///
+    /// Phase 2n: identity-preserving, as for vectors.
+    pub fn hashtable_value(
+        &mut self,
+        table: crate::object::SharedHashTable,
+    ) -> crate::value::Value {
+        self.maybe_gc();
+        let boxed = Box::new(HashTableObject {
+            header: GcHeader::new(ObjectTag::HashTable),
+            table,
+        });
+        let ptr: *mut HashTableObject = Box::into_raw(boxed);
+        // SAFETY: fresh Box::into_raw produces a valid pointer.
+        unsafe {
+            (*ptr).header.next = self.all_objects;
+            self.all_objects = &mut (*ptr).header;
+        }
+        self.bytes_allocated += std::mem::size_of::<HashTableObject>();
+        crate::value::Value::heap_ptr(ptr as *const u8)
+    }
+
+    // -- Bytecode function allocation ---------------------------------------
+
+    /// Allocate a `BytecodeFnObject` wrapping an existing
+    /// `BytecodeFunction`. Returns a Value tagged as a real heap pointer.
+    pub fn bytecode_value(&mut self, func: crate::object::BytecodeFunction) -> crate::value::Value {
+        self.maybe_gc();
+        let boxed = Box::new(BytecodeFnObject {
+            header: GcHeader::new(ObjectTag::ByteCode),
+            func,
+        });
+        let ptr: *mut BytecodeFnObject = Box::into_raw(boxed);
+        // SAFETY: fresh Box::into_raw produces a valid pointer.
+        unsafe {
+            (*ptr).header.next = self.all_objects;
+            self.all_objects = &mut (*ptr).header;
+        }
+        self.bytes_allocated += std::mem::size_of::<BytecodeFnObject>();
+        crate::value::Value::heap_ptr(ptr as *const u8)
+    }
+
+    // -- Primitive allocation -----------------------------------------------
+
+    /// Allocate a `PrimitiveObject` wrapping a primitive's name.
+    /// Returns a Value tagged as a real heap pointer (TAG_HEAP_PTR
+    /// with `ObjectTag::Primitive`).
+    ///
+    /// Phase 2o chokepoint: `obj_to_value(LispObject::Primitive(name))`
+    /// under a HeapScope allocates one of these instead of pushing
+    /// into the thread-local side-table.
+    pub fn primitive_value(&mut self, name: &str) -> crate::value::Value {
+        self.maybe_gc();
+        let size = std::mem::size_of::<PrimitiveObject>() + name.len();
+        let boxed = Box::new(PrimitiveObject {
+            header: GcHeader::new(ObjectTag::Primitive),
+            name: name.to_string(),
+        });
+        let ptr: *mut PrimitiveObject = Box::into_raw(boxed);
+        // SAFETY: fresh Box::into_raw produces a valid pointer.
+        unsafe {
+            (*ptr).header.next = self.all_objects;
+            self.all_objects = &mut (*ptr).header;
+        }
+        self.bytes_allocated += size;
+        crate::value::Value::heap_ptr(ptr as *const u8)
+    }
+
+    // -- Bignum allocation --------------------------------------------------
+
+    /// Allocate a `BignumObject` holding an integer outside the 48-bit
+    /// fixnum range. Returns a Value tagged as a real heap pointer.
+    pub fn bignum_value(&mut self, n: i64) -> crate::value::Value {
+        self.maybe_gc();
+        let boxed = Box::new(BignumObject {
+            header: GcHeader::new(ObjectTag::Bignum),
+            value: n,
+        });
+        let ptr: *mut BignumObject = Box::into_raw(boxed);
+        // SAFETY: fresh Box::into_raw produces a valid pointer.
+        unsafe {
+            (*ptr).header.next = self.all_objects;
+            self.all_objects = &mut (*ptr).header;
+        }
+        self.bytes_allocated += std::mem::size_of::<BignumObject>();
+        crate::value::Value::heap_ptr(ptr as *const u8)
+    }
+
+    /// Trigger a GC cycle if the allocation threshold has been exceeded
+    /// and the heap is in `Auto` mode. In `Manual` mode this is a no-op —
+    /// only explicit `Heap::collect()` calls sweep.
     fn maybe_gc(&mut self) {
+        if self.gc_mode == GcMode::Manual {
+            return;
+        }
         if self.should_gc() {
             self.collect();
         }
@@ -268,14 +622,45 @@ impl Heap {
             }
             hdr.marked = true;
 
-            // Trace children based on object type.
-            // Currently only Cons cells have traceable children. The car/cdr
-            // fields are u64 placeholders; when they become real Values we
-            // will decode them here and push GC pointers onto `work`.
-            // For now, no child tracing is needed since u64 values are not
-            // GC pointers.
-            if hdr.tag == ObjectTag::Cons {
-                // Future: decode car/cdr as Values, push heap pointers onto `work`.
+            // Trace children. Cons cells store `car` and `cdr` as raw u64
+            // bits that are interpreted as `Value`. Only TAG_HEAP_PTR
+            // bit-patterns are real heap pointers that need traversal; all
+            // other bit-patterns (immediates, side-table indices, or raw
+            // test u64s) visit nothing thanks to `Value::trace`.
+            let tag = hdr.tag;
+            match tag {
+                ObjectTag::Cons => {
+                    let cell = h as *const ConsCell;
+                    // SAFETY: `h` was validated as a live GcHeader above,
+                    // and a ConsCell has a GcHeader as its first field, so
+                    // the cast and field accesses are sound.
+                    let (car_raw, cdr_raw) = unsafe { ((*cell).car, (*cell).cdr) };
+                    crate::value::Value::from_raw(car_raw).trace(|p| work.push(p));
+                    crate::value::Value::from_raw(cdr_raw).trace(|p| work.push(p));
+                }
+                ObjectTag::String => {
+                    // Strings are leaves — their `data: Box<str>` payload
+                    // contains no Lisp Values. Marking is enough.
+                }
+                ObjectTag::Vector
+                | ObjectTag::HashTable
+                | ObjectTag::ByteCode
+                | ObjectTag::ConsArc
+                | ObjectTag::Primitive => {
+                    // Phase 2n/2n-cons/2o: these wrap existing
+                    // `Arc<Mutex<_>>` containers, owned LispObject
+                    // content, or leaf data (Primitive holds a
+                    // String). No child Values to trace — lifetimes
+                    // are governed by `Arc` refcounting (for shared
+                    // containers) or owned data (leaf types).
+                }
+                ObjectTag::Bignum => {
+                    // Leaf — just an i64.
+                }
+                ObjectTag::Symbol => {
+                    // Symbols aren't heap-allocated via `Heap` yet; they
+                    // live in the process-global obarray.
+                }
             }
         }
     }
@@ -306,7 +691,9 @@ impl Heap {
                     let obj_size = Self::object_size(header);
                     self.bytes_allocated = self.bytes_allocated.saturating_sub(obj_size);
 
-                    // Return the slot to the appropriate arena's free list.
+                    // Return the slot to the appropriate arena's free list,
+                    // or drop the individually-allocated Box for types that
+                    // aren't arena-managed.
                     match header.tag {
                         ObjectTag::Cons => {
                             // SAFETY: the header is the first field of a
@@ -315,11 +702,59 @@ impl Heap {
                             let cons = current as *mut ConsCell;
                             self.cons_arena.free(cons);
                         }
-                        _ => {
-                            // Other object types are not yet arena-managed.
-                            // Objects registered via `register` (e.g. stack-
-                            // local headers in tests) are just unlinked; the
-                            // caller owns the backing memory.
+                        ObjectTag::String => {
+                            // SAFETY: Box::into_raw-allocated in
+                            // `Heap::string_value`; reconstituting + drop
+                            // runs the `Box<str>` destructor.
+                            let string_ptr = current as *mut StringObject;
+                            let _ = Box::from_raw(string_ptr);
+                        }
+                        ObjectTag::Vector => {
+                            // SAFETY: Box::into_raw-allocated in
+                            // `Heap::vector_value`.
+                            let vec_ptr = current as *mut VectorObject;
+                            let _ = Box::from_raw(vec_ptr);
+                        }
+                        ObjectTag::HashTable => {
+                            // SAFETY: Box::into_raw-allocated in
+                            // `Heap::hashtable_value`.
+                            let ht_ptr = current as *mut HashTableObject;
+                            let _ = Box::from_raw(ht_ptr);
+                        }
+                        ObjectTag::ByteCode => {
+                            // SAFETY: Box::into_raw-allocated in
+                            // `Heap::bytecode_value`.
+                            let bc_ptr = current as *mut BytecodeFnObject;
+                            let _ = Box::from_raw(bc_ptr);
+                        }
+                        ObjectTag::Bignum => {
+                            // SAFETY: Box::into_raw-allocated in
+                            // `Heap::bignum_value`.
+                            let bn_ptr = current as *mut BignumObject;
+                            let _ = Box::from_raw(bn_ptr);
+                        }
+                        ObjectTag::Symbol => {
+                            // Symbols aren't allocated through `Heap`
+                            // — they live in the process-global obarray.
+                            // If a Symbol-tagged header ever reaches
+                            // sweep it was externally registered by a
+                            // test via `register`, so we just unlink.
+                        }
+                        ObjectTag::ConsArc => {
+                            // SAFETY: Box::into_raw-allocated in
+                            // `Heap::cons_arc_value`. Reconstituting
+                            // and dropping the Box drops the inner
+                            // `Arc` reference; if no other references
+                            // survive, the Arc's content is freed too.
+                            let arc_ptr = current as *mut ConsArcCell;
+                            let _ = Box::from_raw(arc_ptr);
+                        }
+                        ObjectTag::Primitive => {
+                            // SAFETY: Box::into_raw-allocated in
+                            // `Heap::primitive_value`. Dropping the
+                            // Box runs the inner `String` destructor.
+                            let p_ptr = current as *mut PrimitiveObject;
+                            let _ = Box::from_raw(p_ptr);
                         }
                     }
 
@@ -330,13 +765,37 @@ impl Heap {
     }
 
     /// Return the size in bytes attributed to a GC object based on its tag.
+    ///
+    /// SAFETY for each arm: when `header.tag == T`, the enclosing object
+    /// is the struct corresponding to that tag (enforced by `#[repr(C)]`
+    /// with `header` at offset zero). Taking an explicit `&T` first
+    /// before calling methods avoids implicit autoref through the raw
+    /// pointer, which the `dangerous_implicit_autorefs` lint flags.
     fn object_size(header: &GcHeader) -> usize {
         match header.tag {
             ObjectTag::Cons => std::mem::size_of::<ConsCell>(),
-            // Other object types will get real sizes when they are
-            // arena-managed. For now, externally registered objects don't
-            // have their size tracked here.
-            _ => 0,
+            ObjectTag::String => {
+                let string_ptr = header as *const GcHeader as *const StringObject;
+                let obj: &StringObject = unsafe { &*string_ptr };
+                std::mem::size_of::<StringObject>() + obj.data.len()
+            }
+            ObjectTag::Vector => {
+                // Phase 2n: the inner Vec lives inside the Arc<Mutex<_>>
+                // (allocator-managed, shared with LispObject references).
+                // Only the wrapper is attributed to the GC heap; inner
+                // element memory is governed by Arc refcounting.
+                std::mem::size_of::<VectorObject>()
+            }
+            ObjectTag::HashTable => std::mem::size_of::<HashTableObject>(),
+            ObjectTag::ByteCode => std::mem::size_of::<BytecodeFnObject>(),
+            ObjectTag::Bignum => std::mem::size_of::<BignumObject>(),
+            ObjectTag::Symbol => 0,
+            ObjectTag::ConsArc => std::mem::size_of::<ConsArcCell>(),
+            ObjectTag::Primitive => {
+                let p_ptr = header as *const GcHeader as *const PrimitiveObject;
+                let obj: &PrimitiveObject = unsafe { &*p_ptr };
+                std::mem::size_of::<PrimitiveObject>() + obj.name.len()
+            }
         }
     }
 }
@@ -454,6 +913,29 @@ impl<'heap> RootGuard<'heap> {
 impl Drop for RootGuard<'_> {
     fn drop(&mut self) {
         self.heap.pop_root(self.idx);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Value-aware rooting helpers
+// ---------------------------------------------------------------------------
+
+impl Heap {
+    /// Push `val` onto the root stack if it carries a real heap pointer.
+    ///
+    /// Returns `Some(index)` that must later be passed to `pop_root`, or
+    /// `None` for immediates, side-table indices, and other Values that
+    /// don't need rooting. The `None` case is typically safe to ignore.
+    ///
+    /// The index-returning API mirrors `push_root` / `pop_root` and is
+    /// compatible with the existing rooting contract: roots must be
+    /// popped in LIFO order. A stricter RAII wrapper would require an
+    /// exclusive borrow of `Heap` for the whole scope, which would
+    /// prevent the caller from allocating or collecting while holding
+    /// the guard — too restrictive for interpreter use.
+    pub fn root_value(&mut self, val: crate::value::Value) -> Option<usize> {
+        let ptr = val.as_heap_ptr()?;
+        Some(self.push_root(ptr as *const GcHeader))
     }
 }
 
@@ -698,6 +1180,496 @@ mod tests {
         for &(_, idx) in rooted.iter().rev() {
             heap.pop_root(idx);
         }
+    }
+
+    // -- Phase 2a: traceable heap cons cells -------------------------------
+
+    #[test]
+    fn cons_chain_rooted_survives_gc() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        // Keep the default (generous) threshold during construction so no GC
+        // fires mid-build — the intermediate `tail` Values are held only in
+        // this stack frame, not on the root stack, and would otherwise be
+        // swept while we're still stitching the chain together.
+
+        // Build (0 . (1 . (2 . ... (99 . nil))))
+        let mut tail = Value::nil();
+        for i in (0..100i64).rev() {
+            tail = heap.cons_value(Value::fixnum(i).raw(), tail.raw());
+        }
+        let head_ptr = tail
+            .as_heap_ptr()
+            .expect("cons_value must produce a heap ptr");
+        let root_idx = heap.push_root(head_ptr as *const GcHeader);
+
+        // Now it's safe to force frequent GC — only the rooted head should
+        // keep the chain alive.
+        heap.set_gc_threshold(1024);
+        for _ in 0..2_000u64 {
+            let _ = heap.cons_value(0, Value::nil().raw());
+        }
+        heap.collect(); // one final explicit sweep
+        assert!(heap.gc_count() > 0, "GC should have triggered");
+
+        // Walk the rooted chain and verify integrity.
+        let mut current = tail;
+        for expected in 0..100i64 {
+            // SAFETY: the head is rooted, which transitively keeps every
+            // cell reachable via cdr alive. `from_raw` on the car/cdr bits
+            // decodes them as Values.
+            let ptr = current
+                .as_heap_ptr()
+                .expect("chain element must still be a heap ptr");
+            let cell = ptr as *const ConsCell;
+            let (car, cdr) =
+                unsafe { (Value::from_raw((*cell).car), Value::from_raw((*cell).cdr)) };
+            assert_eq!(
+                car.as_fixnum(),
+                Some(expected),
+                "car at pos {expected} lost"
+            );
+            current = cdr;
+        }
+        assert!(current.is_nil(), "chain should terminate in nil");
+
+        heap.pop_root(root_idx);
+    }
+
+    #[test]
+    fn unrooted_cons_chain_swept() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        heap.set_gc_threshold(1024);
+
+        // Allocate 50 cells with no roots.
+        let mut tail = Value::nil();
+        for i in 0..50i64 {
+            tail = heap.cons_value(Value::fixnum(i).raw(), tail.raw());
+        }
+        // `tail` is Copy; no explicit drop needed — we simply never add it
+        // to the root stack, so the mark phase has nothing to visit.
+        let _ = tail;
+
+        // Force a full collection with no roots on the stack.
+        heap.collect();
+        assert_eq!(
+            heap.bytes_allocated(),
+            0,
+            "all unrooted cons cells must be swept"
+        );
+    }
+
+    #[test]
+    fn cycle_is_collected_when_unrooted() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        heap.set_gc_threshold(1024);
+
+        // Two cons cells that we will wire into a cdr-cycle.
+        let a = heap.cons_value(Value::fixnum(1).raw(), Value::nil().raw());
+        let b = heap.cons_value(Value::fixnum(2).raw(), Value::nil().raw());
+        let a_ptr = a.as_heap_ptr().unwrap() as *mut ConsCell;
+        let b_ptr = b.as_heap_ptr().unwrap() as *mut ConsCell;
+        // SAFETY: both pointers were just returned by cons_value and are
+        // live. We mutate the cdr fields directly to form a.cdr -> b,
+        // b.cdr -> a.
+        unsafe {
+            (*a_ptr).cdr = b.raw();
+            (*b_ptr).cdr = a.raw();
+        }
+
+        assert_eq!(heap.bytes_allocated(), 2 * std::mem::size_of::<ConsCell>());
+
+        // `a` and `b` are Copy Values carrying only raw pointer bits — we
+        // never add them to the root stack, so nothing keeps the cells
+        // reachable from the GC's point of view.
+        let _ = (a, b);
+
+        heap.collect();
+        assert_eq!(
+            heap.bytes_allocated(),
+            0,
+            "unrooted cycle must be collected — mark phase breaks cycles via marked flag"
+        );
+    }
+
+    #[test]
+    fn cons_value_produces_tag_heap_ptr() {
+        // Phase 2o: the legacy `TAG_GC_PTR` side-table path is gone
+        // from the main interpreter. `Heap::cons_value` still
+        // produces `TAG_HEAP_PTR` — this test now just confirms that
+        // single property (was previously paired with a side-table
+        // distinctness check which is no longer meaningful).
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        let heap_cons = heap.cons_value(Value::fixnum(1).raw(), Value::fixnum(2).raw());
+        assert!(heap_cons.is_heap_ptr());
+        assert!(!heap_cons.is_ptr());
+    }
+
+    // -- Phase 2f: String objects on the heap -----------------------------
+
+    #[test]
+    fn string_allocation_basic() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+        let val: Value = heap.string_value("hello");
+        assert!(val.is_heap_ptr());
+
+        // SAFETY: we just allocated and did not collect; the pointer is
+        // live. Header tag must be String; data must round-trip.
+        let ptr = val.as_heap_ptr().unwrap();
+        let header = unsafe { &*(ptr as *const GcHeader) };
+        assert_eq!(header.tag, ObjectTag::String);
+        let obj = unsafe { &*(ptr as *const StringObject) };
+        assert_eq!(&*obj.data, "hello");
+
+        // bytes_allocated reflects the StringObject header + payload.
+        assert_eq!(
+            heap.bytes_allocated(),
+            std::mem::size_of::<StringObject>() + "hello".len(),
+        );
+    }
+
+    #[test]
+    fn string_unrooted_swept() {
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+        for i in 0..10 {
+            let _ = heap.string_value(&format!("string {i}"));
+        }
+        assert!(heap.bytes_allocated() > 0);
+
+        heap.collect();
+        assert_eq!(
+            heap.bytes_allocated(),
+            0,
+            "all unrooted strings must be swept, Box::from_raw must run"
+        );
+    }
+
+    #[test]
+    fn string_rooted_survives_gc() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+
+        let s: Value = heap.string_value("live string");
+        let root_idx = heap.root_value(s).expect("heap string must be rootable");
+
+        // Allocate garbage and collect.
+        for _ in 0..50 {
+            let _ = heap.string_value("garbage");
+        }
+        heap.collect();
+
+        // Only the rooted string survives.
+        assert_eq!(
+            heap.bytes_allocated(),
+            std::mem::size_of::<StringObject>() + "live string".len(),
+        );
+        // SAFETY: rooted so still live.
+        let ptr = s.as_heap_ptr().unwrap();
+        let obj = unsafe { &*(ptr as *const StringObject) };
+        assert_eq!(&*obj.data, "live string");
+
+        heap.pop_root(root_idx);
+    }
+
+    #[test]
+    fn cons_containing_string_survives_gc_rooted() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+
+        // Build the string first at a "safe" moment, then fold it into
+        // a cons. Root the cons; tracing must visit the string via the
+        // car, preventing it from being swept.
+        let s = heap.string_value("kept by cons");
+        let cell = heap.cons_value(s.raw(), Value::nil().raw());
+        let root_idx = heap.root_value(cell).unwrap();
+
+        // Pile up garbage of both shapes.
+        for i in 0..30 {
+            let _ = heap.string_value(&format!("garbage-str-{i}"));
+            let _ = heap.cons_value(Value::fixnum(i).raw(), Value::nil().raw());
+        }
+        heap.collect();
+
+        // Both the cons and the string survived — verify the chain.
+        let cell_ptr = cell.as_heap_ptr().unwrap() as *const ConsCell;
+        let car = unsafe { Value::from_raw((*cell_ptr).car) };
+        assert_eq!(
+            car.raw(),
+            s.raw(),
+            "cons car must still point at the rooted string"
+        );
+        let string_ptr = s.as_heap_ptr().unwrap() as *const StringObject;
+        let obj = unsafe { &*string_ptr };
+        assert_eq!(&*obj.data, "kept by cons");
+
+        heap.pop_root(root_idx);
+    }
+
+    // -- Phase 2h-2k: Vector / HashTable / BytecodeFn / Bignum -------------
+
+    #[test]
+    fn vector_allocation_and_identity() {
+        use crate::object::LispObject;
+        use parking_lot::Mutex;
+        use std::sync::Arc;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+
+        // Phase 2n: build an Arc-wrapped vector and allocate.
+        let items: Vec<LispObject> = vec![LispObject::integer(1), LispObject::integer(2)];
+        let arc: crate::object::SharedVec = Arc::new(Mutex::new(items));
+        let vec = heap.vector_value(arc.clone());
+        assert!(vec.is_heap_ptr());
+
+        // Mutate the Arc from outside — the heap's view of the vector
+        // reflects the change because both share the same Arc.
+        arc.lock().push(LispObject::integer(42));
+
+        // SAFETY: we hold `arc`, which the heap also holds; the Box
+        // behind `vec` is alive.
+        let obj = unsafe { &*(vec.as_heap_ptr().unwrap() as *const VectorObject) };
+        assert_eq!(obj.v.lock().len(), 3);
+        assert_eq!(obj.v.lock()[2], LispObject::integer(42));
+
+        // Identity: the heap Arc and the external Arc point at the same
+        // underlying Mutex.
+        assert!(Arc::ptr_eq(&obj.v, &arc));
+    }
+
+    #[test]
+    fn vector_unrooted_swept() {
+        use crate::object::LispObject;
+        use parking_lot::Mutex;
+        use std::sync::Arc;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+        let arc: crate::object::SharedVec = Arc::new(Mutex::new(vec![LispObject::integer(1)]));
+        let _ = heap.vector_value(arc);
+        heap.collect();
+        assert_eq!(heap.bytes_allocated(), 0);
+    }
+
+    #[test]
+    fn hashtable_allocation_and_sweep() {
+        use crate::object::{HashTableTest, LispHashTable};
+        use parking_lot::Mutex;
+        use std::sync::Arc;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+        let table: crate::object::SharedHashTable =
+            Arc::new(Mutex::new(LispHashTable::new(HashTableTest::Eq)));
+        let ht = heap.hashtable_value(table);
+        assert!(ht.is_heap_ptr());
+        assert_eq!(
+            heap.bytes_allocated(),
+            std::mem::size_of::<HashTableObject>()
+        );
+        heap.collect();
+        assert_eq!(
+            heap.bytes_allocated(),
+            0,
+            "unrooted hash table must be swept"
+        );
+    }
+
+    #[test]
+    fn bytecode_allocation_and_sweep() {
+        use crate::object::BytecodeFunction;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+        let func = BytecodeFunction {
+            argdesc: 0,
+            bytecode: vec![],
+            constants: vec![],
+            maxdepth: 0,
+            docstring: None,
+            interactive: None,
+        };
+        let bc = heap.bytecode_value(func);
+        assert!(bc.is_heap_ptr());
+        heap.collect();
+        assert_eq!(heap.bytes_allocated(), 0);
+    }
+
+    #[test]
+    fn cons_arc_preserves_identity_across_decode() {
+        // Phase 2n-cons: ConsArcCell wraps the caller's Arc; two
+        // `value_to_obj`-equivalent reads return Arc clones of the
+        // same inner Mutex, so mutation via one is visible via the
+        // other. This test inspects the heap layer directly to make
+        // the identity guarantee explicit.
+        use crate::object::LispObject;
+        use parking_lot::Mutex;
+        use std::sync::Arc;
+
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+
+        let arc: crate::object::ConsCell =
+            Arc::new(Mutex::new((LispObject::integer(1), LispObject::integer(2))));
+        let v = heap.cons_arc_value(arc.clone());
+        assert!(v.is_heap_ptr());
+
+        // SAFETY: we hold `arc` and the heap holds a clone — the Box
+        // behind `v` is alive.
+        let obj = unsafe { &*(v.as_heap_ptr().unwrap() as *const ConsArcCell) };
+        assert!(Arc::ptr_eq(&obj.arc, &arc));
+
+        // Mutate through the external Arc handle; the heap sees the
+        // same Mutex.
+        arc.lock().0 = LispObject::integer(99);
+        assert_eq!(obj.arc.lock().0, LispObject::integer(99));
+    }
+
+    #[test]
+    fn cons_arc_unrooted_swept() {
+        use crate::object::LispObject;
+        use parking_lot::Mutex;
+        use std::sync::Arc;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+        let arc: crate::object::ConsCell =
+            Arc::new(Mutex::new((LispObject::nil(), LispObject::nil())));
+        let _ = heap.cons_arc_value(arc);
+        heap.collect();
+        assert_eq!(heap.bytes_allocated(), 0);
+    }
+
+    #[test]
+    fn primitive_allocation_and_sweep() {
+        // Phase 2o: Primitive now lives on the heap as an owned-name
+        // wrapper. This replaces the last side-table caller from the
+        // main interpreter's `obj_to_value`.
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+        let v = heap.primitive_value("car");
+        assert!(v.is_heap_ptr());
+
+        // SAFETY: we haven't collected yet, the pointer is live.
+        let obj = unsafe { &*(v.as_heap_ptr().unwrap() as *const PrimitiveObject) };
+        assert_eq!(obj.name, "car");
+
+        heap.collect();
+        assert_eq!(
+            heap.bytes_allocated(),
+            0,
+            "unrooted primitive must be swept"
+        );
+    }
+
+    #[test]
+    fn bignum_allocation_rooted_survives() {
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+        let big = heap.bignum_value(1_i64 << 50); // beyond fixnum range
+        assert!(big.is_heap_ptr());
+        let root_idx = heap.root_value(big).unwrap();
+        heap.collect();
+        assert_eq!(heap.bytes_allocated(), std::mem::size_of::<BignumObject>());
+        // SAFETY: rooted.
+        let obj = unsafe { &*(big.as_heap_ptr().unwrap() as *const BignumObject) };
+        assert_eq!(obj.value, 1_i64 << 50);
+        heap.pop_root(root_idx);
+    }
+
+    // -- Phase 2b: GcMode + Value rooting ---------------------------------
+
+    #[test]
+    fn gc_mode_manual_suppresses_automatic_sweeps() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+        heap.set_gc_threshold(0); // would force GC on every alloc in Auto mode
+
+        for i in 0..200i64 {
+            let _ = heap.cons_value(Value::fixnum(i).raw(), Value::nil().raw());
+        }
+        assert_eq!(
+            heap.gc_count(),
+            0,
+            "Manual mode must not trigger sweeps even past the threshold"
+        );
+        // The un-swept cells are all still on the all_objects list.
+        assert_eq!(
+            heap.bytes_allocated(),
+            200 * std::mem::size_of::<ConsCell>()
+        );
+
+        // An explicit collect still runs.
+        heap.collect();
+        assert_eq!(heap.gc_count(), 1);
+        assert_eq!(
+            heap.bytes_allocated(),
+            0,
+            "explicit collect sweeps the accumulated garbage"
+        );
+    }
+
+    #[test]
+    fn gc_mode_auto_still_sweeps_past_threshold() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        // Default mode is Auto — sanity check the old behaviour survives.
+        assert_eq!(heap.gc_mode(), GcMode::Auto);
+        heap.set_gc_threshold(1024);
+
+        for i in 0..500i64 {
+            let _ = heap.cons_value(Value::fixnum(i).raw(), Value::nil().raw());
+        }
+        assert!(
+            heap.gc_count() > 0,
+            "Auto mode should sweep once threshold is exceeded"
+        );
+    }
+
+    #[test]
+    fn root_value_returns_none_for_immediates() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+
+        assert!(heap.root_value(Value::nil()).is_none());
+        assert!(heap.root_value(Value::t()).is_none());
+        assert!(heap.root_value(Value::fixnum(42)).is_none());
+        assert!(heap.root_value(Value::float(3.14)).is_none());
+        assert!(heap.root_value(Value::symbol_id(0)).is_none());
+        // Root stack stays empty because nothing was pushed.
+        assert!(heap.root_stack.is_empty());
+    }
+
+    #[test]
+    fn root_value_keeps_heap_cons_alive_across_gc() {
+        use crate::value::Value;
+        let mut heap = Heap::new();
+        heap.set_gc_mode(GcMode::Manual);
+
+        let cell = heap.cons_value(Value::fixnum(7).raw(), Value::nil().raw());
+
+        // Root the cell, then run an explicit collection. The cell must
+        // survive until we pop the root.
+        let root_idx = heap.root_value(cell).expect("heap cons must be rootable");
+        heap.collect();
+        assert_eq!(
+            heap.bytes_allocated(),
+            std::mem::size_of::<ConsCell>(),
+            "rooted cell must not be swept"
+        );
+        // SAFETY: cell is still alive because we rooted it.
+        let ptr = cell.as_heap_ptr().unwrap() as *const ConsCell;
+        let car = unsafe { Value::from_raw((*ptr).car) };
+        assert_eq!(car.as_fixnum(), Some(7));
+
+        // Pop the root. The next collection sweeps the cell.
+        heap.pop_root(root_idx);
+        heap.collect();
+        assert_eq!(heap.bytes_allocated(), 0);
     }
 
     #[test]

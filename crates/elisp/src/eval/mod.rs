@@ -210,6 +210,163 @@ pub struct InterpreterState {
     pub eval_ops_limit: Arc<std::sync::atomic::AtomicU64>,
 }
 
+impl InterpreterState {
+    /// Allocate a cons cell on the interpreter's real GC heap and return
+    /// it as a Value (TAG_HEAP_PTR). This is the chokepoint for every
+    /// future `LispObject::cons` → heap migration: callers that need a
+    /// traceable cons go through this method rather than constructing a
+    /// `LispObject::Cons(Arc<Mutex<_>>)`.
+    ///
+    /// The returned Value is safe to use between safepoints. The
+    /// interpreter runs the heap in `GcMode::Manual`, so no allocation
+    /// implicitly sweeps — only the `(garbage-collect)` primitive does.
+    /// If you need the Value to survive an explicit collection, push it
+    /// onto the heap's root stack via `with_heap(|h| h.root_value(v))`
+    /// before the collection and pop afterwards.
+    pub fn heap_cons(
+        &self,
+        car: crate::value::Value,
+        cdr: crate::value::Value,
+    ) -> crate::value::Value {
+        self.heap.lock().cons_value(car.raw(), cdr.raw())
+    }
+
+    /// Run `f` with exclusive access to the heap. Use this when a flow
+    /// allocates several cons cells and wants to hold the heap lock
+    /// once, rather than re-locking for every cell. Multi-step rooting
+    /// (push several roots, allocate, pop) also goes through here.
+    pub fn with_heap<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut crate::gc::Heap) -> R,
+    {
+        f(&mut self.heap.lock())
+    }
+
+    /// Build a proper Lisp list on the real GC heap from `items`, in
+    /// natural order: `[a, b, c]` becomes `(a b c)`.
+    ///
+    /// All cons cells are allocated under one `with_heap` closure so
+    /// the heap lock is taken only once. Each item is routed through
+    /// the existing `obj_to_value` bridge — immediate types stay
+    /// immediate, heap-typed `LispObject`s land in the thread-local
+    /// side-table. Only the *spine* of the list (the cons cells) lives
+    /// on the real GC heap; the items themselves still use whatever
+    /// representation `obj_to_value` picks.
+    ///
+    /// The returned Value carries `TAG_HEAP_PTR` and is safe to use
+    /// until the next explicit `(garbage-collect)`. `value_to_obj`
+    /// decodes the chain back into `LispObject::Cons` at the eval
+    /// boundary.
+    pub fn list_from_objects<I>(&self, items: I) -> Value
+    where
+        I: IntoIterator<Item = LispObject>,
+        I::IntoIter: DoubleEndedIterator,
+    {
+        // Phase 2m note: `obj_to_value` may lock the heap mutex (for
+        // String / oversized Integer routed through the HeapScope). We
+        // MUST convert items to Values BEFORE entering the `with_heap`
+        // closure — otherwise the nested lock acquisition deadlocks
+        // `parking_lot::Mutex`, which is not reentrant.
+        let converted: Vec<Value> = items.into_iter().map(obj_to_value).collect();
+        self.with_heap(|heap| {
+            let mut result = Value::nil();
+            for v in converted.into_iter().rev() {
+                result = heap.cons_value(v.raw(), result.raw());
+            }
+            result
+        })
+    }
+
+    /// Build a Lisp list on the real GC heap from `items`, with each
+    /// item prepended in iteration order: `[a, b, c]` becomes
+    /// `(c b a)`. This is the "destructive reverse" shape used by
+    /// `nreverse` and similar primitives where the caller collected
+    /// items from a source list and wants the output reversed.
+    ///
+    /// Contrast with [`Self::list_from_objects`], which produces the
+    /// items in natural order. Same rooting/GC semantics — all cons
+    /// cells are allocated under one `with_heap` closure.
+    pub fn list_from_objects_reversed<I>(&self, items: I) -> Value
+    where
+        I: IntoIterator<Item = LispObject>,
+    {
+        // See the note in `list_from_objects`: `obj_to_value` may lock
+        // the heap under Phase 2m, so conversion must precede the
+        // `with_heap` closure to avoid a reentrant lock.
+        let converted: Vec<Value> = items.into_iter().map(obj_to_value).collect();
+        self.with_heap(|heap| {
+            let mut result = Value::nil();
+            for v in converted {
+                result = heap.cons_value(v.raw(), result.raw());
+            }
+            result
+        })
+    }
+
+    /// Allocate a string on the real GC heap and return a Value. This
+    /// is the chokepoint for migrating `LispObject::String(...)` sites
+    /// away from the `HEAP_OBJECTS` side-table.
+    ///
+    /// The returned Value is safe to use until the next explicit
+    /// `(garbage-collect)`; it carries `TAG_HEAP_PTR` and decodes back
+    /// to `LispObject::String` via `value_to_obj` at the eval boundary.
+    pub fn heap_string(&self, s: &str) -> Value {
+        self.heap.lock().string_value(s)
+    }
+
+    /// Allocate a vector on the real GC heap from an iterator of
+    /// `Value`s. Phase 2n: the resulting heap object wraps a fresh
+    /// `SharedVec` (Arc<Mutex<Vec<LispObject>>>) so identity is
+    /// preserved across `value_to_obj` round-trips.
+    pub fn heap_vector<I>(&self, elements: I) -> Value
+    where
+        I: IntoIterator<Item = Value>,
+    {
+        // Convert Values to LispObjects BEFORE acquiring the heap lock
+        // (value_to_obj may decode heap-allocated Values via the heap
+        // itself — doing it under the lock would deadlock the
+        // non-reentrant parking_lot::Mutex).
+        let items: Vec<LispObject> = elements.into_iter().map(value_to_obj).collect();
+        let arc: crate::object::SharedVec = std::sync::Arc::new(parking_lot::Mutex::new(items));
+        self.heap.lock().vector_value(arc)
+    }
+
+    /// Allocate a vector on the real GC heap from a slice of
+    /// `LispObject`s. Phase 2n: wraps a fresh `SharedVec`.
+    pub fn heap_vector_from_objects(&self, items: &[LispObject]) -> Value {
+        let arc: crate::object::SharedVec =
+            std::sync::Arc::new(parking_lot::Mutex::new(items.to_vec()));
+        self.heap.lock().vector_value(arc)
+    }
+
+    /// Allocate a hash table on the real GC heap wrapping the given
+    /// `LispHashTable`. Phase 2n: wraps a fresh `SharedHashTable`.
+    pub fn heap_hashtable(&self, table: crate::object::LispHashTable) -> Value {
+        let arc: crate::object::SharedHashTable =
+            std::sync::Arc::new(parking_lot::Mutex::new(table));
+        self.heap.lock().hashtable_value(arc)
+    }
+
+    /// Build a proper Lisp list on the real GC heap from already-valued
+    /// items in natural order: `[a, b, c]` becomes `(a b c)`. Mirror of
+    /// `list_from_objects` but takes `Value`s directly, so call sites
+    /// that already produce heap-allocated Values (e.g. via
+    /// `heap_string`) don't round-trip through `LispObject`.
+    pub fn list_from_values<I>(&self, values: I) -> Value
+    where
+        I: IntoIterator<Item = Value>,
+        I::IntoIter: DoubleEndedIterator,
+    {
+        self.with_heap(|heap| {
+            let mut result = Value::nil();
+            for v in values.into_iter().rev() {
+                result = heap.cons_value(v.raw(), result.raw());
+            }
+            result
+        })
+    }
+}
+
 pub struct Interpreter {
     env: Arc<RwLock<Environment>>,
     editor: Arc<RwLock<Option<Box<dyn EditorCallbacks>>>>,
@@ -261,7 +418,17 @@ impl Interpreter {
                 special_vars: Arc::new(RwLock::new(special_vars)),
                 specpdl: Arc::new(RwLock::new(Vec::new())),
                 global_env: env,
-                heap: Arc::new(parking_lot::Mutex::new(crate::gc::Heap::new())),
+                heap: Arc::new(parking_lot::Mutex::new({
+                    let mut h = crate::gc::Heap::new();
+                    // The interpreter runs in Manual mode so that GC only
+                    // fires at explicit safepoints — the `(garbage-collect)`
+                    // primitive. This removes an entire class of rooting
+                    // bugs where a future migration builds a multi-cons
+                    // structure whose intermediate Values aren't on the
+                    // root stack yet. See crates/elisp/src/gc.rs GcMode.
+                    h.set_gc_mode(crate::gc::GcMode::Manual);
+                    h
+                })),
                 cons_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
                 autoloads: Arc::new(RwLock::new(HashMap::new())),
                 eval_ops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -273,6 +440,14 @@ impl Interpreter {
     /// Public API: evaluate a LispObject expression, returning a LispObject.
     /// Converts at the boundary to/from the internal Value representation.
     pub fn eval(&self, expr: LispObject) -> ElispResult<LispObject> {
+        // Phase 2m: install the interpreter's heap as the current thread's
+        // active heap so identity-safe `obj_to_value` conversions (String,
+        // oversized Integer) route directly to real heap allocations
+        // instead of the `HEAP_OBJECTS` side-table. Scope drops on return,
+        // restoring the previous value — nested `Interpreter::eval` calls
+        // from hooks re-enter with the same heap, harmless under the LIFO
+        // restore.
+        let _scope = crate::value::HeapScope::enter(self.state.heap.clone());
         let val = obj_to_value(expr);
         let result = eval(val, &self.env, &self.editor, &self.macros, &self.state)?;
         Ok(value_to_obj(result))
@@ -330,12 +505,18 @@ impl Interpreter {
 
     /// Evaluate a Value expression directly (internal Value representation).
     pub fn eval_value(&self, expr: Value) -> ElispResult<Value> {
+        // Phase 2m: install HeapScope here too — any `obj_to_value` call
+        // inside the evaluator (primitives, let bindings, function
+        // dispatch) needs the current-heap routing to be active.
+        let _scope = crate::value::HeapScope::enter(self.state.heap.clone());
         eval(expr, &self.env, &self.editor, &self.macros, &self.state)
     }
 
     /// Evaluate all forms in a source string and return a Value.
     pub fn eval_source_value(&self, source: &str) -> Result<Value, (usize, ElispError)> {
         let forms = crate::read_all(source).map_err(|e| (0, e))?;
+        // Phase 2m: one scope covers every form evaluated in this batch.
+        let _scope = crate::value::HeapScope::enter(self.state.heap.clone());
         let mut result = Value::nil();
         for (i, form) in forms.into_iter().enumerate() {
             let val = obj_to_value(form);
@@ -526,10 +707,12 @@ fn eval_inner(
                     )?;
                     Ok(name)
                 }
-                "buffer-list" => Ok(obj_to_value(LispObject::cons(
-                    LispObject::string("*scratch*"),
-                    LispObject::nil(),
-                ))),
+                "buffer-list" => {
+                    // Phase 2g: "*scratch*" is allocated on the real heap
+                    // via state.heap_string; the surrounding cons cell
+                    // via list_from_values. No side-table round-trip.
+                    Ok(state.list_from_values(std::iter::once(state.heap_string("*scratch*"))))
+                }
                 "buffer-live-p" => {
                     let _buf = eval(
                         obj_to_value(cdr.first().ok_or(ElispError::WrongNumberOfArguments)?),
@@ -678,31 +861,32 @@ fn eval_inner(
                     Ok(obj_to_value(sym))
                 }
                 "garbage-collect" => {
-                    let mut heap = state.heap.lock();
-                    heap.collect();
-                    let allocated = heap.bytes_allocated() as i64;
-                    let gc_count = heap.gc_count() as i64;
+                    // Phase 2c: first real call-site migration. The stats
+                    // alist is built on the real GC heap via the Phase-2b
+                    // chokepoint. `value_to_obj` decodes the TAG_HEAP_PTR
+                    // chain back into a legacy `LispObject::Cons` tree at
+                    // the eval boundary, so external callers (tests,
+                    // `Interpreter::eval`) see the same shape as before.
                     let cons_total = crate::object::global_cons_count() as i64;
-                    drop(heap);
-                    Ok(obj_to_value(LispObject::cons(
-                        LispObject::cons(
-                            LispObject::symbol("bytes-allocated"),
-                            LispObject::integer(allocated),
-                        ),
-                        LispObject::cons(
-                            LispObject::cons(
-                                LispObject::symbol("gc-count"),
-                                LispObject::integer(gc_count),
-                            ),
-                            LispObject::cons(
-                                LispObject::cons(
-                                    LispObject::symbol("cons-total"),
-                                    LispObject::integer(cons_total),
-                                ),
-                                LispObject::nil(),
-                            ),
-                        ),
-                    )))
+                    // Intern symbols outside the heap lock to keep the
+                    // critical section minimal and avoid nested locking.
+                    let sym_bytes = Value::symbol_id(obarray::intern("bytes-allocated").0);
+                    let sym_gc = Value::symbol_id(obarray::intern("gc-count").0);
+                    let sym_cons = Value::symbol_id(obarray::intern("cons-total").0);
+                    let result = state.with_heap(|heap| {
+                        heap.collect();
+                        let allocated = heap.bytes_allocated() as i64;
+                        let gc_count = heap.gc_count() as i64;
+                        let bytes_pair =
+                            heap.cons_value(sym_bytes.raw(), Value::fixnum(allocated).raw());
+                        let gc_pair = heap.cons_value(sym_gc.raw(), Value::fixnum(gc_count).raw());
+                        let cons_pair =
+                            heap.cons_value(sym_cons.raw(), Value::fixnum(cons_total).raw());
+                        let list3 = heap.cons_value(cons_pair.raw(), Value::nil().raw());
+                        let list2 = heap.cons_value(gc_pair.raw(), list3.raw());
+                        heap.cons_value(bytes_pair.raw(), list2.raw())
+                    });
+                    Ok(result)
                 }
                 "eval" => {
                     let form = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
@@ -767,9 +951,8 @@ fn eval_inner(
                         }
                         cur = rest;
                     }
-                    Ok(obj_to_value(LispObject::HashTable(std::sync::Arc::new(
-                        parking_lot::Mutex::new(crate::object::LispHashTable::new(test)),
-                    ))))
+                    // Phase 2l: hash table allocated on the real heap.
+                    Ok(state.heap_hashtable(crate::object::LispHashTable::new(test)))
                 }
                 "gethash" => {
                     let key = value_to_obj(eval(
@@ -1060,14 +1243,19 @@ fn eval_inner(
                     if let Some(val) = env.read().get_function(&name) {
                         Ok(obj_to_value(val))
                     } else if let Some(m) = macros.read().get(&name).cloned() {
-                        let lambda_form = LispObject::cons(
-                            LispObject::symbol("lambda"),
-                            LispObject::cons(m.args, m.body),
-                        );
-                        Ok(obj_to_value(LispObject::cons(
-                            LispObject::symbol("macro"),
-                            lambda_form,
-                        )))
+                        // Build `(macro lambda ARGS . BODY)` on the real
+                        // heap under one lock. The shape is
+                        // cons(macro, cons(lambda, cons(args, body))).
+                        let sym_macro = Value::symbol_id(obarray::intern("macro").0);
+                        let sym_lambda = Value::symbol_id(obarray::intern("lambda").0);
+                        let args_val = obj_to_value(m.args);
+                        let body_val = obj_to_value(m.body);
+                        let result = state.with_heap(|heap| {
+                            let args_body = heap.cons_value(args_val.raw(), body_val.raw());
+                            let lambda_form = heap.cons_value(sym_lambda.raw(), args_body.raw());
+                            heap.cons_value(sym_macro.raw(), lambda_form.raw())
+                        });
+                        Ok(result)
                     } else {
                         Ok(Value::nil())
                     }
@@ -1111,11 +1299,7 @@ fn eval_inner(
                             _ => std::cmp::Ordering::Greater,
                         }
                     });
-                    let mut result = LispObject::nil();
-                    for item in items.into_iter().rev() {
-                        result = LispObject::cons(item, result);
-                    }
-                    Ok(obj_to_value(result))
+                    Ok(state.list_from_objects(items))
                 }
                 "nconc" => {
                     let mut lists = Vec::new();
@@ -1179,11 +1363,7 @@ fn eval_inner(
                             items.push(car_val);
                             cur = cdr_val;
                         }
-                        let mut result = LispObject::nil();
-                        for item in items.into_iter() {
-                            result = LispObject::cons(item, result);
-                        }
-                        Ok(obj_to_value(result))
+                        Ok(state.list_from_objects_reversed(items))
                     } else {
                         Ok(obj_to_value(arg))
                     }
@@ -1221,9 +1401,8 @@ fn eval_inner(
                         )?));
                         current = rest;
                     }
-                    Ok(obj_to_value(LispObject::Vector(std::sync::Arc::new(
-                        parking_lot::Mutex::new(items),
-                    ))))
+                    // Phase 2l: vector spine allocated on the real heap.
+                    Ok(state.heap_vector_from_objects(&items))
                 }
                 "make-vector" => {
                     let len_val = value_to_obj(eval(
@@ -1242,9 +1421,8 @@ fn eval_inner(
                     )?);
                     let len = len_val.as_integer().unwrap_or(0).max(0) as usize;
                     let items = vec![init_val; len];
-                    Ok(obj_to_value(LispObject::Vector(std::sync::Arc::new(
-                        parking_lot::Mutex::new(items),
-                    ))))
+                    // Phase 2l: make-vector on the real heap.
+                    Ok(state.heap_vector_from_objects(&items))
                 }
                 "vconcat" => {
                     // Concatenate sequences into a vector
@@ -1272,9 +1450,8 @@ fn eval_inner(
                         }
                         current = rest;
                     }
-                    Ok(obj_to_value(LispObject::Vector(std::sync::Arc::new(
-                        parking_lot::Mutex::new(items),
-                    ))))
+                    // Phase 2l: vconcat result on the real heap.
+                    Ok(state.heap_vector_from_objects(&items))
                 }
                 "byte-code" => {
                     // Stub: we don't have a bytecode interpreter.
@@ -1468,13 +1645,11 @@ fn eval_inner(
                     let ver_str = ver
                         .as_string()
                         .ok_or_else(|| ElispError::WrongTypeArgument("string".to_string()))?;
-                    let mut result = LispObject::nil();
-                    let parts: Vec<&str> = ver_str.split('.').collect();
-                    for part in parts.into_iter().rev() {
-                        let n = part.parse::<i64>().unwrap_or(0);
-                        result = LispObject::cons(LispObject::integer(n), result);
-                    }
-                    Ok(obj_to_value(result))
+                    let parts: Vec<LispObject> = ver_str
+                        .split('.')
+                        .map(|p| LispObject::integer(p.parse::<i64>().unwrap_or(0)))
+                        .collect();
+                    Ok(state.list_from_objects(parts))
                 }
                 "read-from-string" => {
                     let str_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
@@ -1494,13 +1669,22 @@ fn eval_inner(
                     match reader.read() {
                         Ok(obj) => {
                             let end_pos = start + reader.position();
-                            Ok(obj_to_value(LispObject::cons(
-                                obj,
-                                LispObject::Integer(end_pos as i64),
-                            )))
+                            // Dotted pair (obj . end_pos) — use the
+                            // Phase 2b chokepoint directly. Route the
+                            // integer through obj_to_value so oversized
+                            // positions fall back to the side-table
+                            // instead of panicking in the fixnum range
+                            // check.
+                            Ok(state.heap_cons(
+                                obj_to_value(obj),
+                                obj_to_value(LispObject::Integer(end_pos as i64)),
+                            ))
                         }
                         Err(e) => Err(ElispError::Signal(Box::new(crate::error::SignalData {
                             symbol: LispObject::symbol("invalid-read-syntax"),
+                            // `data` is a LispObject field on SignalData,
+                            // so we still materialise it as Lisp. This is
+                            // an error path, allocated once per signal.
                             data: LispObject::cons(
                                 LispObject::string(&e.to_string()),
                                 LispObject::nil(),
@@ -1552,11 +1736,20 @@ fn eval_inner(
                         parts
                     };
 
-                    let mut result = LispObject::nil();
-                    for p in parts.iter().rev() {
-                        result = LispObject::cons(LispObject::string(p), result);
-                    }
-                    Ok(obj_to_value(result))
+                    // Phase 2g: each part is allocated on the real heap
+                    // directly, and the list spine is built from the
+                    // resulting Values — side-table is bypassed entirely.
+                    //
+                    // Eager `.collect()` is critical: `list_from_values`
+                    // takes the heap lock for the spine build, so the
+                    // per-element `heap_string` calls must complete
+                    // BEFORE we enter that closure — otherwise
+                    // `heap_string` inside the lazy iterator would try to
+                    // re-acquire the same `parking_lot::Mutex`, which is
+                    // not reentrant, and the test suite deadlocks.
+                    let string_values: Vec<Value> =
+                        parts.into_iter().map(|p| state.heap_string(&p)).collect();
+                    Ok(state.list_from_values(string_values))
                 }
                 "mapconcat" => {
                     let func = value_to_obj(eval(

@@ -2656,6 +2656,231 @@ fn test_buffer_list() {
     );
 }
 
+// Phase 2d migrations: sort / version-to-list / list_from_objects coverage.
+
+#[test]
+fn test_version_to_list_heap_migration() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read(r#"(version-to-list "1.2.3")"#).unwrap())
+        .unwrap();
+    assert_eq!(
+        result,
+        LispObject::cons(
+            LispObject::integer(1),
+            LispObject::cons(
+                LispObject::integer(2),
+                LispObject::cons(LispObject::integer(3), LispObject::nil()),
+            ),
+        )
+    );
+}
+
+#[test]
+fn test_version_to_list_empty_parts() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Non-numeric parts fall back to 0 per the primitive's contract.
+    let result = interp
+        .eval(read(r#"(version-to-list "10.0.x")"#).unwrap())
+        .unwrap();
+    assert_eq!(
+        result,
+        LispObject::cons(
+            LispObject::integer(10),
+            LispObject::cons(
+                LispObject::integer(0),
+                LispObject::cons(LispObject::integer(0), LispObject::nil()),
+            ),
+        )
+    );
+}
+
+#[test]
+fn test_nreverse_heap_migration() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(nreverse (list 1 2 3 4))").unwrap())
+        .unwrap();
+    let expected = [4i64, 3, 2, 1]
+        .into_iter()
+        .rev()
+        .fold(LispObject::nil(), |acc, n| {
+            LispObject::cons(LispObject::integer(n), acc)
+        });
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn test_nreverse_empty_list() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp.eval(read("(nreverse nil)").unwrap()).unwrap();
+    assert_eq!(result, LispObject::nil());
+}
+
+#[test]
+fn test_split_string_heap_migration() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read(r#"(split-string "a.b.c" "\\.")"#).unwrap())
+        .unwrap();
+    assert_eq!(
+        result,
+        LispObject::cons(
+            LispObject::string("a"),
+            LispObject::cons(
+                LispObject::string("b"),
+                LispObject::cons(LispObject::string("c"), LispObject::nil()),
+            ),
+        )
+    );
+}
+
+#[test]
+fn test_read_from_string_heap_migration() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Phase 2e: the (obj . end_pos) dotted pair is now built on the
+    // real GC heap via state.heap_cons. value_to_obj bridges back to
+    // a dotted LispObject::Cons.
+    let result = interp
+        .eval(read(r#"(read-from-string "42")"#).unwrap())
+        .unwrap();
+    assert_eq!(
+        result,
+        LispObject::cons(LispObject::integer(42), LispObject::integer(2))
+    );
+}
+
+#[test]
+fn test_hashtable_identity_preserved_under_heap_scope() {
+    // Phase 2n regression: heap-allocated hash tables must preserve
+    // Arc identity across obj_to_value/value_to_obj round-trips.
+    // puthash on a let-bound ht, then gethash must see the value —
+    // this would break if the heap stored cloned content instead of
+    // the Arc.
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(
+            read(
+                r#"(let ((h (make-hash-table :test 'equal)))
+                  (puthash "a" 1 h)
+                  (puthash "b" 2 h)
+                  (+ (gethash "a" h) (gethash "b" h)))"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(result, LispObject::integer(3));
+}
+
+#[test]
+fn test_vector_decode_preserves_content() {
+    // Phase 2n: make-vector produces a heap-allocated vector whose
+    // content survives obj_to_value/value_to_obj round-tripping via
+    // the bound environment. (aref does not mutate, so content
+    // equality is the right guarantee to assert here — the
+    // interpreter's `aset` is currently a stub.)
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(let ((v (make-vector 3 7))) (length v))").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::integer(3));
+}
+
+#[test]
+fn test_cons_setcar_after_heap_round_trip() {
+    // Phase 2n-cons regression: `obj_to_value(LispObject::Cons(arc))`
+    // now routes through `Heap::cons_arc_value`, which wraps the
+    // same Arc. `setcar` must still mutate the Arc that `(car x)`
+    // reads. This was the motivating test for Option (b) — keep the
+    // existing u64 `ConsCell` for native Value-based chains AND add
+    // a separate Arc-wrapping `ConsArcCell` for identity-critical
+    // migrations.
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(let ((x (cons 'a 'b))) (setcar x 'z) (car x))").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::symbol("z"));
+}
+
+#[test]
+fn test_cons_setcdr_after_heap_round_trip() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(read("(let ((x (cons 'a 'b))) (setcdr x 'z) (cdr x))").unwrap())
+        .unwrap();
+    assert_eq!(result, LispObject::symbol("z"));
+}
+
+#[test]
+fn test_hashtable_puthash_persists_across_rebindings() {
+    // Phase 2n: after `setq h`, the same hash table can be reached
+    // through a second binding — the Arc is shared.
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    let result = interp
+        .eval(
+            read(
+                r#"(progn
+                  (setq h1 (make-hash-table :test 'equal))
+                  (puthash "key" 99 h1)
+                  (setq h2 h1)
+                  (gethash "key" h2))"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(result, LispObject::integer(99));
+}
+
+#[test]
+fn test_symbol_function_macro_form_heap_migration() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Define a macro and then query its function-value; the result
+    // shape is `(macro lambda (ARGS...) BODY...)`. Phase 2e builds the
+    // wrapper on the real heap via state.with_heap.
+    interp
+        .eval(read("(defmacro my-mac (x) (list 'quote x))").unwrap())
+        .unwrap();
+    let result = interp
+        .eval(read("(symbol-function 'my-mac)").unwrap())
+        .unwrap();
+    // Check the shape: (macro lambda (x) (list 'quote x))
+    let first = result.car().unwrap();
+    assert_eq!(first, LispObject::symbol("macro"));
+    let rest = result.rest().unwrap();
+    let second = rest.car().unwrap();
+    assert_eq!(second, LispObject::symbol("lambda"));
+}
+
+#[test]
+fn test_sort_ascending_heap_migration() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // sort now builds its result list on the real GC heap via
+    // list_from_objects. value_to_obj bridges back to LispObject::Cons.
+    let result = interp
+        .eval(read("(sort (list 3 1 4 1 5 9 2 6) '<)").unwrap())
+        .unwrap();
+    let expected = [1i64, 1, 2, 3, 4, 5, 6, 9]
+        .into_iter()
+        .rev()
+        .fold(LispObject::nil(), |acc, n| {
+            LispObject::cons(LispObject::integer(n), acc)
+        });
+    assert_eq!(result, expected);
+}
+
 #[test]
 fn test_buffer_live_p() {
     let mut interp = Interpreter::new();

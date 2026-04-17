@@ -15,11 +15,21 @@ const PAYLOAD_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
 
 // Tag values
 const TAG_FIXNUM: u64 = 0;
+/// Legacy tag kept ONLY for the `vm.rs` bytecode interpreter, which
+/// has its own independent side-table (`VM::heap_objects`). The main
+/// interpreter's `obj_to_value` never produces `TAG_GC_PTR` after
+/// Phase 2o — every heap object goes through the real GC heap via a
+/// `HeapScope`. Migrating the VM to use the real heap would kill the
+/// last user of this tag; until then the constant stays.
 const TAG_GC_PTR: u64 = 1;
 const TAG_SYMBOL: u64 = 2;
 const TAG_CHAR: u64 = 3;
 const TAG_SPECIAL: u64 = 4;
 const TAG_SUBR: u64 = 5;
+/// Real GC-heap pointer. The payload is a `*mut GcHeader` address
+/// (low 48 bits) returned from `Heap::cons_value` and friends. Objects
+/// behind this tag participate in mark-and-sweep tracing.
+const TAG_HEAP_PTR: u64 = 6;
 
 // Special-tag payloads
 const SPECIAL_NIL: u64 = 0;
@@ -111,6 +121,20 @@ impl Value {
         Self(NANBOX_PREFIX | (TAG_SUBR << TAG_SHIFT) | (index as u64))
     }
 
+    /// Construct a real GC-heap pointer Value (TAG_HEAP_PTR).
+    ///
+    /// `ptr` must fit in 48 bits, which is true for all user-space pointers
+    /// on every supported target (x86_64, aarch64).
+    #[inline]
+    pub fn heap_ptr(ptr: *const u8) -> Self {
+        let addr = ptr as u64;
+        debug_assert!(
+            addr & !PAYLOAD_MASK == 0,
+            "heap pointer does not fit in 48 bits"
+        );
+        Self(NANBOX_PREFIX | (TAG_HEAP_PTR << TAG_SHIFT) | (addr & PAYLOAD_MASK))
+    }
+
     // ---- predicates ----
 
     /// True when the value is a tagged value with the given tag.
@@ -162,6 +186,12 @@ impl Value {
     #[inline]
     pub fn is_ptr(self) -> bool {
         self.has_tag(TAG_GC_PTR)
+    }
+
+    /// True when this Value holds a real GC-heap pointer (TAG_HEAP_PTR).
+    #[inline]
+    pub fn is_heap_ptr(self) -> bool {
+        self.has_tag(TAG_HEAP_PTR)
     }
 
     #[inline]
@@ -235,6 +265,17 @@ impl Value {
         Some(self.payload() as *const u8)
     }
 
+    /// Extract the heap pointer payload (TAG_HEAP_PTR only).
+    /// Returns `None` for all other tags, including the legacy side-table
+    /// TAG_GC_PTR.
+    #[inline]
+    pub fn as_heap_ptr(self) -> Option<*mut u8> {
+        if !self.is_heap_ptr() {
+            return None;
+        }
+        Some(self.payload() as *mut u8)
+    }
+
     /// Extract a symbol table index.
     #[inline]
     pub fn as_symbol_id(self) -> Option<u32> {
@@ -296,12 +337,16 @@ impl Value {
         }
     }
 
-    // ---- cons cell access (GC pointer tag 1) ----
+    // ---- cons cell access ----
 
-    /// True when this Value is a GC cons pointer.
+    /// True when this Value is a cons pointer — either a legacy
+    /// TAG_GC_PTR side-table index (which may point at any heap type) or
+    /// a real TAG_HEAP_PTR cons cell. The two tags coexist during the
+    /// Phase 2 transition; callers that need to distinguish must branch
+    /// on `is_ptr()` vs `is_heap_ptr()` explicitly.
     #[inline]
     pub fn is_cons(&self) -> bool {
-        self.is_ptr() // tag 1 = GC pointer, which is the cons tag
+        self.is_ptr() || self.is_heap_ptr()
     }
 
     /// True when this Value is a proper list (nil or cons).
@@ -310,32 +355,42 @@ impl Value {
         self.is_nil() || self.is_cons()
     }
 
-    /// Get the car of a cons cell.
+    /// Get the car of a real heap-allocated cons cell (TAG_HEAP_PTR).
     ///
     /// # Safety
-    /// The Value must be a live GC cons pointer allocated from a `Heap`.
-    /// The caller must ensure the pointer has not been collected.
+    /// The Value must be a live TAG_HEAP_PTR pointer returned by
+    /// `Heap::cons_value`. The caller must ensure the cell has not been
+    /// collected. Returns `None` for any other tag (including side-table
+    /// TAG_GC_PTR indices, which are not real pointers).
     #[inline]
     pub unsafe fn cons_car(self) -> Option<Value> {
-        if !self.is_cons() {
-            return None;
-        }
-        let ptr = self.as_ptr()? as *const crate::gc::ConsCell;
-        Some(Value::from_raw((*ptr).car))
+        let ptr = self.as_heap_ptr()? as *const crate::gc::ConsCell;
+        // SAFETY: caller guarantees the pointer is live.
+        Some(unsafe { Value::from_raw((*ptr).car) })
     }
 
-    /// Get the cdr of a cons cell.
+    /// Get the cdr of a real heap-allocated cons cell (TAG_HEAP_PTR).
     ///
     /// # Safety
-    /// The Value must be a live GC cons pointer allocated from a `Heap`.
-    /// The caller must ensure the pointer has not been collected.
+    /// See `cons_car`.
     #[inline]
     pub unsafe fn cons_cdr(self) -> Option<Value> {
-        if !self.is_cons() {
-            return None;
+        let ptr = self.as_heap_ptr()? as *const crate::gc::ConsCell;
+        // SAFETY: caller guarantees the pointer is live.
+        Some(unsafe { Value::from_raw((*ptr).cdr) })
+    }
+
+    /// Invoke `visit` once for each real heap pointer this Value holds.
+    ///
+    /// Used by the GC mark phase to enumerate reachable objects.
+    /// Immediates (fixnum, float, nil/t, symbol, char, subr) and legacy
+    /// TAG_GC_PTR side-table indices visit nothing — only TAG_HEAP_PTR
+    /// payloads are real `GcHeader` pointers.
+    #[inline]
+    pub fn trace(self, mut visit: impl FnMut(*mut crate::gc::GcHeader)) {
+        if let Some(ptr) = self.as_heap_ptr() {
+            visit(ptr as *mut crate::gc::GcHeader);
         }
-        let ptr = self.as_ptr()? as *const crate::gc::ConsCell;
-        Some(Value::from_raw((*ptr).cdr))
     }
 
     // ---- arithmetic fast path ----
@@ -922,18 +977,72 @@ mod tests {
 // ---------------------------------------------------------------------------
 
 thread_local! {
-    /// Side-table storing LispObject heap values (cons, string, vector, etc.)
-    /// that cannot be encoded inline in a 64-bit NaN-boxed Value.
-    /// Values are indexed by their position in this vector.
-    static HEAP_OBJECTS: RefCell<Vec<crate::object::LispObject>> = const { RefCell::new(Vec::new()) };
+    /// The real GC heap that `obj_to_value` routes heap-typed
+    /// `LispObject`s through. `None` means no scope is installed —
+    /// heap-typed conversions that need a heap will return `nil`
+    /// (see `obj_to_value`). Installed by `HeapScope::enter`.
+    static CURRENT_HEAP: RefCell<Option<std::sync::Arc<parking_lot::Mutex<crate::gc::Heap>>>> =
+        const { RefCell::new(None) };
+}
+
+/// RAII guard that installs `heap` as the current thread's active heap for
+/// the lifetime of the scope. Nested scopes stack (the previous value is
+/// restored on drop) so reentrant `Interpreter::eval` calls are safe.
+///
+/// Construction intentionally doesn't assert uniqueness: the same heap can
+/// be installed repeatedly in practice (a hook running under the
+/// interpreter's own eval re-enters with the same `Arc<Mutex<Heap>>`),
+/// and the LIFO restore keeps the behaviour correct either way.
+pub struct HeapScope {
+    previous: Option<std::sync::Arc<parking_lot::Mutex<crate::gc::Heap>>>,
+}
+
+impl HeapScope {
+    /// Install `heap` as the current scope's active heap. The returned
+    /// guard restores the previous heap on drop.
+    pub fn enter(heap: std::sync::Arc<parking_lot::Mutex<crate::gc::Heap>>) -> Self {
+        let previous = CURRENT_HEAP.with(|h| h.borrow_mut().replace(heap));
+        HeapScope { previous }
+    }
+}
+
+impl Drop for HeapScope {
+    fn drop(&mut self) {
+        CURRENT_HEAP.with(|h| *h.borrow_mut() = self.previous.take());
+    }
+}
+
+/// Run `f` against the current thread's active heap, if one is installed.
+/// Returns `Some(f(heap))` when a scope is active, `None` otherwise —
+/// callers use the `None` case to fall back to the side-table.
+///
+/// Implementation detail: the Arc is cloned out of the RefCell before the
+/// Mutex lock is taken so neither borrow is held across the lock. This
+/// also means `f` is free to call back into any `obj_to_value` /
+/// `value_to_obj` path that reads `CURRENT_HEAP`, as long as it doesn't
+/// re-acquire the same Mutex (which would deadlock — `parking_lot::Mutex`
+/// is not reentrant).
+fn with_current_heap<R>(f: impl FnOnce(&mut crate::gc::Heap) -> R) -> Option<R> {
+    let heap_arc = CURRENT_HEAP.with(|h| h.borrow().as_ref().cloned());
+    heap_arc.map(|arc| f(&mut arc.lock()))
 }
 
 /// Convert a LispObject into a NaN-boxed Value.
 ///
 /// Immediate types (nil, t, fixnum, float, symbol) are encoded directly.
-/// Heap types (cons, string, vector, primitive, bytecode, hash-table) are stored
-/// in the thread-local `HEAP_OBJECTS` side-table and represented as a GC pointer
-/// whose payload is the side-table index.
+/// All heap types go through the current `HeapScope`'s `Heap` — this is
+/// the only path after Phase 2o removed the legacy `HEAP_OBJECTS`
+/// side-table. Callers that evaluate outside of any `HeapScope` get a
+/// `Value::nil()` fallback (with a debug assertion). In practice every
+/// interpreter entry point (`Interpreter::eval`, `eval_value`,
+/// `eval_source_value`) installs a `HeapScope` first, so the fallback
+/// only fires in standalone `obj_to_value` calls from tests that don't
+/// bother setting up a heap.
+///
+/// Identity is preserved across `obj_to_value`/`value_to_obj`
+/// round-trips: Cons/Vector/HashTable heap objects wrap the same `Arc`
+/// the caller provided, so `setcar`/`setcdr`/`puthash`/mutation
+/// primitives see a consistent view.
 pub fn obj_to_value(obj: LispObject) -> Value {
     use crate::object::LispObject;
     match &obj {
@@ -943,20 +1052,43 @@ pub fn obj_to_value(obj: LispObject) -> Value {
             if *n >= FIXNUM_MIN && *n <= FIXNUM_MAX {
                 Value::fixnum(*n)
             } else {
-                // Store large integers in the side-table to avoid lossy float conversion
-                store_heap_object(obj)
+                // Out-of-range integer → Bignum object on the real heap.
+                with_current_heap(|h| h.bignum_value(*n)).unwrap_or_else(no_heap_nil_fallback)
             }
         }
         LispObject::Float(f) => Value::float(*f),
         LispObject::Symbol(id) => Value::symbol_id(id.0),
-        // All heap types go into the side-table
-        LispObject::Cons(_)
-        | LispObject::String(_)
-        | LispObject::Primitive(_)
-        | LispObject::Vector(_)
-        | LispObject::BytecodeFn(_)
-        | LispObject::HashTable(_) => store_heap_object(obj),
+        LispObject::String(s) => {
+            with_current_heap(|h| h.string_value(s)).unwrap_or_else(no_heap_nil_fallback)
+        }
+        LispObject::Vector(arc) => {
+            with_current_heap(|h| h.vector_value(arc.clone())).unwrap_or_else(no_heap_nil_fallback)
+        }
+        LispObject::HashTable(arc) => with_current_heap(|h| h.hashtable_value(arc.clone()))
+            .unwrap_or_else(no_heap_nil_fallback),
+        LispObject::BytecodeFn(func) => with_current_heap(|h| h.bytecode_value(func.clone()))
+            .unwrap_or_else(no_heap_nil_fallback),
+        LispObject::Cons(arc) => with_current_heap(|h| h.cons_arc_value(arc.clone()))
+            .unwrap_or_else(no_heap_nil_fallback),
+        LispObject::Primitive(name) => {
+            with_current_heap(|h| h.primitive_value(name)).unwrap_or_else(no_heap_nil_fallback)
+        }
     }
+}
+
+/// Fallback used by `obj_to_value` when no `HeapScope` is installed.
+/// Returns `Value::nil()` so callers don't panic in release; a debug
+/// assertion fires so tests that forget to install a scope are caught.
+#[cold]
+#[inline]
+fn no_heap_nil_fallback() -> Value {
+    debug_assert!(
+        false,
+        "obj_to_value called on a heap type without an active HeapScope; \
+         install one via `HeapScope::enter(heap)` or call through \
+         `Interpreter::eval` / `eval_value` / `eval_source_value`."
+    );
+    Value::nil()
 }
 
 /// Recover a LispObject from a NaN-boxed Value.
@@ -980,28 +1112,89 @@ pub fn value_to_obj(val: Value) -> LispObject {
     if let Some(id) = val.as_symbol_id() {
         return LispObject::Symbol(crate::obarray::SymbolId(id));
     }
-    // GC pointer tag: look up in the side-table
-    if val.is_ptr() {
-        let idx = val.payload() as usize;
-        return HEAP_OBJECTS.with(|h| h.borrow().get(idx).cloned().unwrap_or(LispObject::Nil));
+    // Real heap pointer: dispatch on the pointed-to `GcHeader.tag`.
+    // Each case recursively decodes the heap object back into a legacy
+    // `LispObject` so existing call sites keep working. Object types
+    // whose heap representation hasn't been added yet fall through to
+    // Nil for forward compatibility.
+    if val.is_heap_ptr() {
+        let ptr = match val.as_heap_ptr() {
+            Some(p) => p,
+            None => return LispObject::Nil,
+        };
+        // SAFETY: the Value carries a TAG_HEAP_PTR, which by construction
+        // points at a live GcHeader prefix of an object allocated by
+        // `Heap`. Callers are responsible for keeping the object rooted.
+        unsafe {
+            let header = &*(ptr as *const crate::gc::GcHeader);
+            match header.tag {
+                crate::gc::ObjectTag::Cons => {
+                    let cell = ptr as *const crate::gc::ConsCell;
+                    let car = Value::from_raw((*cell).car);
+                    let cdr = Value::from_raw((*cell).cdr);
+                    return LispObject::cons(value_to_obj(car), value_to_obj(cdr));
+                }
+                crate::gc::ObjectTag::String => {
+                    // SAFETY: `header.tag == String` means the object is
+                    // a `StringObject` whose `data: Box<str>` is fully
+                    // initialised at offset `size_of::<GcHeader>()`. Take
+                    // an explicit `&StringObject` first so the subsequent
+                    // `.data.to_string()` call uses the sanctioned autoref
+                    // path rather than an implicit reborrow.
+                    let obj: &crate::gc::StringObject = &*(ptr as *const crate::gc::StringObject);
+                    return LispObject::String(obj.data.to_string());
+                }
+                crate::gc::ObjectTag::Vector => {
+                    // Phase 2n: the heap object wraps the same
+                    // `SharedVec` the LispObject references. Cloning
+                    // the Arc preserves identity: `(eq x x)` on a
+                    // heap-allocated vector stays true across
+                    // obj_to_value/value_to_obj round-trips.
+                    let obj: &crate::gc::VectorObject = &*(ptr as *const crate::gc::VectorObject);
+                    return LispObject::Vector(obj.v.clone());
+                }
+                crate::gc::ObjectTag::HashTable => {
+                    // Phase 2n: identity-preserving via Arc::clone.
+                    let obj: &crate::gc::HashTableObject =
+                        &*(ptr as *const crate::gc::HashTableObject);
+                    return LispObject::HashTable(obj.table.clone());
+                }
+                crate::gc::ObjectTag::ByteCode => {
+                    let obj: &crate::gc::BytecodeFnObject =
+                        &*(ptr as *const crate::gc::BytecodeFnObject);
+                    return LispObject::BytecodeFn(obj.func.clone());
+                }
+                crate::gc::ObjectTag::Bignum => {
+                    let obj: &crate::gc::BignumObject = &*(ptr as *const crate::gc::BignumObject);
+                    return LispObject::Integer(obj.value);
+                }
+                crate::gc::ObjectTag::Symbol => {
+                    // Symbols aren't heap-allocated via Heap; live in
+                    // the process-global obarray. Defensive fallthrough.
+                }
+                crate::gc::ObjectTag::ConsArc => {
+                    // Phase 2n-cons: identity-preserving. Arc::clone
+                    // shares the same inner Mutex as the original
+                    // `LispObject::Cons(arc)`; `setcar`/`setcdr`
+                    // mutations propagate across round-trips.
+                    let obj: &crate::gc::ConsArcCell = &*(ptr as *const crate::gc::ConsArcCell);
+                    return LispObject::Cons(obj.arc.clone());
+                }
+                crate::gc::ObjectTag::Primitive => {
+                    // Phase 2o: primitives live on the real heap as
+                    // owned-name wrappers. Decode clones the name
+                    // into a fresh LispObject — primitives are
+                    // immutable (dispatch is by name), so there's no
+                    // identity story to preserve.
+                    let obj: &crate::gc::PrimitiveObject =
+                        &*(ptr as *const crate::gc::PrimitiveObject);
+                    return LispObject::Primitive(obj.name.clone());
+                }
+            }
+        }
+        return LispObject::Nil;
     }
     LispObject::Nil
-}
-
-fn store_heap_object(obj: LispObject) -> Value {
-    HEAP_OBJECTS.with(|h| {
-        let mut h = h.borrow_mut();
-        let idx = h.len();
-        h.push(obj);
-        // Use TAG_GC_PTR (1) with the index as payload
-        Value::from_raw(NANBOX_PREFIX | (TAG_GC_PTR << TAG_SHIFT) | idx as u64)
-    })
-}
-
-/// Clear the thread-local heap side-table. Call between top-level eval
-/// invocations to avoid unbounded growth.
-pub fn clear_heap_objects() {
-    HEAP_OBJECTS.with(|h| h.borrow_mut().clear());
 }
 
 impl Value {
@@ -1096,6 +1289,83 @@ mod bridge_tests {
             assert!(v.is_float());
             assert_eq!(v.to_lisp_object(), LispObject::Float(f));
         }
+    }
+
+    #[test]
+    fn bridge_string_routes_to_heap_when_scope_active() {
+        // Phase 2m + 2o: when a HeapScope is installed, obj_to_value for
+        // String produces a TAG_HEAP_PTR Value and the string lives on
+        // the real GC heap.
+        let heap = std::sync::Arc::new(parking_lot::Mutex::new(crate::gc::Heap::new()));
+        heap.lock().set_gc_mode(crate::gc::GcMode::Manual);
+        let _scope = crate::value::HeapScope::enter(heap.clone());
+
+        let v = obj_to_value(LispObject::string("phase-2m"));
+        assert!(
+            v.is_heap_ptr(),
+            "String must land on the real heap under scope"
+        );
+        assert!(
+            !v.is_ptr(),
+            "must NOT produce a legacy TAG_GC_PTR side-table value"
+        );
+
+        // Round-trip back produces the same content.
+        assert_eq!(value_to_obj(v), LispObject::string("phase-2m"));
+    }
+
+    #[test]
+    fn bridge_string_without_scope_returns_nil() {
+        // Phase 2o: the legacy side-table is gone. `obj_to_value` for a
+        // heap type without an active HeapScope returns `Value::nil()`
+        // (and trips a `debug_assert` — harmless in release tests when
+        // we explicitly assert the fallback).
+        //
+        // Test is `#[cfg(not(debug_assertions))]` because the debug
+        // assertion would panic in debug builds. The assertion is a
+        // safety rail for real interpreter callers, not the standalone
+        // out-of-scope path exercised here.
+        #[cfg(not(debug_assertions))]
+        {
+            let v = obj_to_value(LispObject::string("no-scope"));
+            assert!(
+                v.is_nil(),
+                "out-of-scope heap-typed obj_to_value returns nil"
+            );
+        }
+    }
+
+    #[test]
+    fn bridge_bignum_routes_to_heap_when_scope_active() {
+        // Phase 2m: oversized integers route to heap.bignum_value under scope.
+        let heap = std::sync::Arc::new(parking_lot::Mutex::new(crate::gc::Heap::new()));
+        heap.lock().set_gc_mode(crate::gc::GcMode::Manual);
+        let _scope = crate::value::HeapScope::enter(heap.clone());
+
+        let big = 1_i64 << 50;
+        let v = obj_to_value(LispObject::Integer(big));
+        assert!(v.is_heap_ptr(), "oversized Integer must land on the heap");
+        assert_eq!(value_to_obj(v), LispObject::Integer(big));
+    }
+
+    #[test]
+    fn bridge_heap_string_decodes_via_value_to_obj() {
+        // Phase 2f: a Value produced by `Heap::string_value` decodes
+        // through `value_to_obj` into a legacy `LispObject::String`.
+        // The side-table and the real heap coexist; this exercises the
+        // heap path end-to-end.
+        let mut heap = crate::gc::Heap::new();
+        heap.set_gc_mode(crate::gc::GcMode::Manual);
+        let v = heap.string_value("phase-2f");
+        assert!(v.is_heap_ptr());
+        let obj = value_to_obj(v);
+        assert_eq!(obj, LispObject::string("phase-2f"));
+
+        // Sweeping the heap reclaims the string, but `obj` is a fully
+        // owned `LispObject::String` so the assertion above held even
+        // though the heap cell is about to be freed.
+        heap.collect();
+        assert_eq!(heap.bytes_allocated(), 0);
     }
 
     #[test]
