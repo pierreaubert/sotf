@@ -1,6 +1,6 @@
 //! Main workflow canvas component
 
-use super::bezier::connection_path;
+use super::bezier::{connection_path, connection_path_avoiding, ObstacleRect};
 use super::history::{
     AddConnectionCommand, AddNodeCommand, HistoryManager, MoveNodesCommand,
     RemoveConnectionCommand, RemoveNodeCommand,
@@ -790,7 +790,22 @@ impl Render for WorkflowCanvas {
                 let to_pos = port_screen_position(to_node, conn.to_port, true, &viewport);
                 let selected = self.state.selection.is_connection_selected(conn.id);
                 let link_type = conn.link_type;
-                Some((from_pos, to_pos, selected, link_type))
+                Some((from_pos, to_pos, selected, link_type, conn.from_node, conn.to_node))
+            })
+            .collect();
+
+        // Collect node bounding rects in screen coordinates for obstacle avoidance
+        let node_screen_rects: Vec<(NodeId, ObstacleRect)> = self
+            .state
+            .graph
+            .nodes
+            .values()
+            .map(|node| {
+                let sp = viewport.canvas_to_screen(&node.position);
+                (
+                    node.id,
+                    ObstacleRect::new(sp.x, sp.y, node.width * viewport.zoom, node.height * viewport.zoom),
+                )
             })
             .collect();
 
@@ -823,21 +838,31 @@ impl Render for WorkflowCanvas {
                     connection_drag.clone(),
                     graph.clone(),
                     bounds,
+                    node_screen_rects.clone(),
                 )
             },
-            move |_, (connections, connection_drag, graph, bounds), window, _| {
+            move |_, (connections, connection_drag, graph, bounds, node_screen_rects), window, _| {
                 // Use fresh bounds from callback - bounds.origin gives us the canvas element position
                 let origin_x: f32 = bounds.origin.x.into();
                 let origin_y: f32 = bounds.origin.y.into();
 
                 // Draw connections - positions are already in screen coordinates
                 // Shorten lines by port_radius at each end so they don't overlap ports
-                for (from_pos, to_pos, selected, link_type) in &connections {
+                for (from_pos, to_pos, selected, link_type, from_node_id, to_node_id) in
+                    &connections
+                {
                     let color = if *selected { conn_selected } else { conn_color };
                     let width = match link_type {
                         LinkType::Fat => conn_width_fat,
                         LinkType::Thin => conn_width_thin,
                     };
+
+                    // Obstacles = all nodes except the connection's source and target
+                    let obstacles: Vec<ObstacleRect> = node_screen_rects
+                        .iter()
+                        .filter(|(id, _)| id != from_node_id && id != to_node_id)
+                        .map(|(_, r)| r.clone())
+                        .collect();
 
                     draw_connection(
                         window,
@@ -846,6 +871,7 @@ impl Render for WorkflowCanvas {
                         color,
                         width,
                         port_radius,
+                        &obstacles,
                         origin_x,
                         origin_y,
                     );
@@ -1071,7 +1097,8 @@ impl Render for WorkflowCanvas {
     }
 }
 
-/// Draw a connection line between two ports, shortened at both ends by port_radius
+/// Draw a connection line between two ports, shortened at both ends by port_radius.
+/// Routes around `obstacles` (other node bounding rects) when necessary.
 fn draw_connection(
     window: &mut Window,
     from: Position,
@@ -1079,6 +1106,7 @@ fn draw_connection(
     color: Rgba,
     width: f32,
     port_radius: f32,
+    obstacles: &[ObstacleRect],
     offset_x: f32,
     offset_y: f32,
 ) {
@@ -1099,7 +1127,8 @@ fn draw_connection(
     let shortened_from = Position::new(from.x + nx * port_radius, from.y + ny * port_radius);
     let shortened_to = Position::new(to.x - nx * port_radius, to.y - ny * port_radius);
 
-    let path_points = connection_path(shortened_from, shortened_to, 2.0);
+    let margin = 15.0;
+    let path_points = connection_path_avoiding(shortened_from, shortened_to, obstacles, margin, 2.0);
 
     if path_points.len() < 2 {
         return;
