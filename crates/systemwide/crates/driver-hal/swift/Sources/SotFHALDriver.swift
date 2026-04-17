@@ -188,6 +188,43 @@ final class DriverState {
     // Loopback mode (when Rust engine not connected)
     var loopbackEnabled: Bool = true
 
+    // Shared-memory init retry cooldown.
+    //
+    // The daemon creates /tmp/sotf-{uid}/audio.shm on its first launch.
+    // coreaudiod starts at boot (before the user logs in), so the initial
+    // call to sharedAudio.initialize() can fail with ENOENT because the
+    // directory doesn't exist yet. Without retry, isConnected stays false
+    // forever and no audio reaches the daemon — user must killall coreaudiod
+    // after the daemon comes up. This cooldown lets us retry at most once
+    // per second from the IO callback.
+    private var _lastInitRetry: Double = 0  // monotonic seconds
+    private let initRetryLock = NSLock()
+
+    /// Attempt to re-initialise shared memory if we're not connected.
+    /// Throttled to one call per second. Safe to call from any thread.
+    func attemptInitRetryIfNeeded() {
+        if sharedAudio.isConnected {
+            return
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        initRetryLock.lock()
+        let should = (now - _lastInitRetry) > 1.0
+        if should {
+            _lastInitRetry = now
+        }
+        initRetryLock.unlock()
+        if !should {
+            return
+        }
+        halLog("[RETRY] sharedAudio not connected, attempting re-initialise")
+        let ok = sharedAudio.initialize(
+            sampleRate: UInt32(sampleRate),
+            bufferFrames: bufferFrameSize,
+            channelCount: channelCount
+        )
+        halLog("[RETRY] sharedAudio.initialize -> \(ok), isConnected=\(sharedAudio.isConnected)")
+    }
+
     // Flag to indicate driver is being disposed (prevents race conditions in StartIO)
     private var _isDisposed: Int32 = 0
     var isDisposed: Bool {
@@ -1014,6 +1051,12 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
         }
 
         let shouldLogDiag = (DiagCounter.count % 200) == 0
+
+        // If shared memory failed to initialise at coreaudiod startup (boot-time
+        // race: daemon hasn't yet created /tmp/sotf-{uid}/), retry now. The
+        // helper is internally throttled to at most one attempt per second so
+        // this check is cheap when we're already connected (the common path).
+        state.attemptInitRetryIfNeeded()
 
         let isConnected = state.sharedAudio.isConnected
         let engineReady = state.sharedAudio.engineReady

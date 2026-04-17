@@ -151,6 +151,29 @@ fn playback_buffer_capacity(sample_rate: u32, channels: usize, buffer_ms: u32) -
     (((sample_rate as u64 * buffer_ms as u64) / 1000) as usize) * channels
 }
 
+/// Push `samples` zeros into the producer to give the cpal callback a cushion
+/// before real audio arrives. Silently truncates if the ring has less free
+/// space (newly-created ring is fully empty so this only happens after a
+/// rebuild that races with cpal startup).
+fn prefill_silence(producer: &mut Producer<f32>, samples: usize) {
+    let to_write = samples.min(producer.slots());
+    if to_write == 0 {
+        return;
+    }
+    let Ok(mut chunk) = producer.write_chunk_uninit(to_write) else {
+        return;
+    };
+    let (first, second) = chunk.as_mut_slices();
+    for slot in first.iter_mut() {
+        slot.write(0.0);
+    }
+    for slot in second.iter_mut() {
+        slot.write(0.0);
+    }
+    // Safety: we initialized exactly `to_write` elements across the two slices.
+    unsafe { chunk.commit(to_write) };
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FlushMode {
     Normal,
@@ -341,6 +364,16 @@ fn run_playback_thread(
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
     let mut state = Arc::new(PlaybackState::new(buffer_capacity));
 
+    // Pre-fill the ring with silence to give cpal a cushion before the producer
+    // starts feeding real audio. Without this the cpal callback fires before any
+    // AudioFrame has arrived (producer takes a few ms to spin up and the upstream
+    // pipeline takes longer when the source is HAL-driven), every callback
+    // underruns until the queue stabilises, and steady-state callback timing
+    // jitter then keeps poking through to a near-empty queue. Half the ring is
+    // ~100 ms of latency at 200 ms buffer_ms — enough cushion to absorb cpal
+    // callback variance, small enough not to be perceptible.
+    prefill_silence(&mut producer, buffer_capacity / 2);
+
     // Pre-allocate buffer for channel conversions (fallback downmix/upmix)
     let mut conversion_buffer = Vec::with_capacity(4096);
 
@@ -367,8 +400,9 @@ fn run_playback_thread(
                 channels = native_ch as usize;
                 config.channels = native_ch;
                 buffer_capacity = playback_buffer_capacity(sample_rate, channels, buffer_ms);
-                let (new_producer, new_consumer) = RingBuffer::<f32>::new(buffer_capacity);
+                let (mut new_producer, new_consumer) = RingBuffer::<f32>::new(buffer_capacity);
                 state = Arc::new(PlaybackState::new(buffer_capacity));
+                prefill_silence(&mut new_producer, buffer_capacity / 2);
                 producer = new_producer;
                 build_output_stream(
                     &device,
@@ -1480,6 +1514,17 @@ fn read_ring_buffer(
                 .send(ThreadEvent::PlaybackUnderrun(current_underruns))
                 .ok();
         }
+        // TEMP DEBUG: REMOVE AFTER DIAGNOSIS — log the shape of the underrun
+        // so we can tell if cpal is asking for more than the producer delivers
+        // (systemic deficit) vs empty queue (scheduling). Log only on the
+        // first ~5 underruns to avoid flooding.
+        if current_underruns <= 5 {
+            log::warn!(
+                "[UNDERRUN_DIAG] underrun #{current_underruns}: requested={requested}, available={available}, deficit={} (missing {:.1}%)",
+                requested - available,
+                (requested - available) as f64 / requested as f64 * 100.0,
+            );
+        }
     }
 
     // Update buffer level metric
@@ -1560,7 +1605,17 @@ fn build_output_stream_f32(
         .build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
+                let cb_idx = state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
+                // TEMP DEBUG: REMOVE AFTER DIAGNOSIS — one-shot log of the
+                // actual cpal chunk size so we can compare against producer
+                // frame size (usually 2048 samples = 1024 stereo frames).
+                if cb_idx == 0 {
+                    log::warn!(
+                        "[CPAL_F32] first callback: data.len()={} samples (= {} stereo frames)",
+                        data.len(),
+                        data.len() / 2,
+                    );
+                }
                 read_ring_buffer(
                     &mut consumer,
                     data,

@@ -290,6 +290,25 @@ impl PluginType {
         ]
     }
 
+    /// Parse a plugin type from its name or serde variant (case-insensitive).
+    ///
+    /// Accepts both human names (e.g. `"Loudness Compensation"`) and short
+    /// serde names (e.g. `"loudnesscompensation"`, `"eq"`, `"EQ"`).
+    pub fn from_name(name: &str) -> Option<Self> {
+        let lower = name.to_lowercase();
+        Self::all()
+            .into_iter()
+            .find(|pt| pt.name().to_lowercase() == lower)
+            .or_else(|| {
+                // Also try matching with spaces/hyphens/underscores stripped
+                let normalized = lower.replace([' ', '-', '_'], "");
+                Self::all().into_iter().find(|pt| {
+                    let variant = format!("{:?}", pt).to_lowercase();
+                    variant == normalized
+                })
+            })
+    }
+
     /// Returns true if this is a monitoring/analyzer plugin (non-processing)
     pub fn is_monitoring(&self) -> bool {
         matches!(

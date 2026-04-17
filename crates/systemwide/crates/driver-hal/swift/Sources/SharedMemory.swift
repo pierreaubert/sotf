@@ -134,9 +134,15 @@ final class SharedAudioBuffer {
         return hasMem && hasMagic
     }
 
-    /// Whether the Rust engine is connected
+    /// Whether the Rust engine is connected.
+    ///
+    /// Important: when `header` is nil (shared memory never initialised or
+    /// init failed), we must return `false`. The previous formulation
+    /// `header?.pointee.engineReady != 0` returns `true` when `header` is nil
+    /// because Swift treats `nil != 0` as true for optional comparisons —
+    /// callers then see `engineReady=1, isConnected=0` which is nonsense.
     var engineReady: Bool {
-        return header?.pointee.engineReady != 0
+        return (header?.pointee.engineReady ?? 0) != 0
     }
 
     /// Debug: get connection state details
