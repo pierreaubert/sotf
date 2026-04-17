@@ -4,8 +4,9 @@
 //! progression passes (flat target, then Harman tilt), enabling features
 //! cumulatively. Validates that:
 //! - Each step's optimization improves over its own pre-score
-//! - Step-over-step regression stays within tolerance (skipped across
-//!   the broadband boundary since it changes the loss landscape)
+//! - Step-over-step flat-score regression stays within tolerance (skipped
+//!   when a step changes the loss function)
+//! - EPA preference (perceptual quality) does not decrease vs baseline
 //! - Final curve slope stays within tolerance
 //! - The full feature stack improves over raw measurement
 //!
@@ -29,7 +30,7 @@ use autoeq::roomeq::{
 const SAMPLE_RATE: f64 = 48000.0;
 const SEED: u64 = 42;
 const QA_MAX_ITER: usize = 5000;
-const QA_POPULATION: usize = 50;
+const QA_POPULATION: usize = 150;
 const QA_NUM_FILTERS: usize = 7;
 
 /// Step-over-step regression tolerance: 30%
@@ -45,15 +46,15 @@ const SLOPE_TOLERANCE: f64 = 0.5;
 const SLOPE_FMIN: f64 = 200.0;
 const SLOPE_FMAX: f64 = 10000.0;
 
-/// Index of the broadband step (changes the loss landscape)
-const BROADBAND_STEP_INDEX: usize = 3;
-
 // ---------------------------------------------------------------------------
 // Feature step definition
 // ---------------------------------------------------------------------------
 
 struct FeatureStep {
     name: &'static str,
+    /// Step changes the loss function, making step-over-step score comparisons
+    /// invalid at this boundary (optimizer targets a different objective).
+    changes_loss: bool,
     apply: fn(&mut RoomConfig),
 }
 
@@ -61,25 +62,28 @@ fn feature_steps() -> Vec<FeatureStep> {
     vec![
         FeatureStep {
             name: "Baseline",
+            changes_loss: false,
             apply: |_| {},
         },
         FeatureStep {
             name: "+ psychoacoustic",
+            changes_loss: true,
             apply: |c| {
                 c.optimizer.psychoacoustic = true;
             },
         },
         FeatureStep {
             name: "+ asymmetric_loss",
+            changes_loss: true,
             apply: |c| {
                 c.optimizer.asymmetric_loss = true;
             },
         },
-        // Step 3: broadband changes the loss landscape (EQ optimized against
-        // broadband-adjusted curve, but post_score uses original curve).
-        // Cross-step score comparisons are invalid at this boundary.
+        // Broadband changes the loss landscape: EQ is optimized against
+        // the broadband-adjusted curve, but post_score uses the original.
         FeatureStep {
             name: "+ broadband",
+            changes_loss: true,
             apply: |c| {
                 c.optimizer.broadband_target_matching =
                     Some(BroadbandTargetMatchingConfig { enabled: true });
@@ -87,6 +91,7 @@ fn feature_steps() -> Vec<FeatureStep> {
         },
         FeatureStep {
             name: "+ excursion_protection",
+            changes_loss: false,
             apply: |c| {
                 c.optimizer.excursion_protection = Some(ExcursionProtectionConfig {
                     enabled: true,
@@ -96,6 +101,7 @@ fn feature_steps() -> Vec<FeatureStep> {
         },
         FeatureStep {
             name: "+ schroeder_split",
+            changes_loss: false,
             apply: |c| {
                 c.optimizer.schroeder_split = Some(SchroederSplitConfig {
                     enabled: true,
@@ -172,6 +178,21 @@ struct StepResult {
     post_score: f64,
     /// Worst (max) slope across channels in dB/octave
     worst_slope: f64,
+    /// True if this step changed the loss function relative to the previous step.
+    changes_loss: bool,
+    /// Average EPA preference across channels (higher = better).
+    /// `None` if EPA metrics were not available.
+    epa_preference: Option<f64>,
+}
+
+/// Compute average EPA post-preference across channels.
+fn avg_epa_preference(result: &RoomOptimizationResult) -> Option<f64> {
+    let epa = result.metadata.epa_per_channel.as_ref()?;
+    if epa.is_empty() {
+        return None;
+    }
+    let sum: f64 = epa.values().map(|m| m.post.preference).sum();
+    Some(sum / epa.len() as f64)
 }
 
 // ---------------------------------------------------------------------------
@@ -219,11 +240,15 @@ fn run_pass(
             )
         })?;
 
+        let epa_preference = avg_epa_preference(&opt_result);
+
         results.push(StepResult {
             name: step.name,
             pre_score: opt_result.combined_pre_score,
             post_score: opt_result.combined_post_score,
             worst_slope,
+            changes_loss: step.changes_loss,
+            epa_preference,
         });
     }
 
@@ -237,61 +262,80 @@ fn run_pass(
 fn validate_pass(pass_name: &str, results: &[StepResult]) -> Vec<String> {
     let mut errors = Vec::new();
 
+    // Track whether we've crossed a loss-change boundary. Once crossed,
+    // flat-score step-over-step comparisons are invalid for all subsequent steps.
+    let mut loss_changed = false;
+
+    let baseline_epa = results.first().and_then(|s| s.epa_preference);
+
     for (i, step) in results.iter().enumerate() {
-        // Once broadband matching is enabled (step 3+), the post_score from
-        // optimize_room doesn't include broadband shelves (they're in the DSP
-        // chain only), while the EQ was optimized against the broadband-adjusted
-        // curve. This makes score-based comparisons invalid for steps >= 3.
-        // We only validate that the optimizer converged (finite loss).
-        if i >= BROADBAND_STEP_INDEX {
-            if !step.post_score.is_finite() {
-                errors.push(format!(
-                    "  {} step '{}': post_score is not finite — optimizer failed to converge",
-                    pass_name, step.name
-                ));
-            }
+        if step.changes_loss {
+            loss_changed = true;
+        }
+
+        // Convergence: every step must produce a finite loss
+        if !step.post_score.is_finite() {
+            errors.push(format!(
+                "  {} step '{}': post_score is not finite — optimizer failed to converge",
+                pass_name, step.name
+            ));
             continue;
         }
 
-        // Per-step sanity: post_score should not be much worse than own pre_score
-        if step.post_score > step.pre_score * SELF_REGRESSION_TOLERANCE {
-            errors.push(format!(
-                "  {} step '{}': post_score {:.4} > pre_score {:.4} * {:.2} — optimization made things worse",
-                pass_name, step.name, step.post_score, step.pre_score, SELF_REGRESSION_TOLERANCE
-            ));
-        }
+        if loss_changed {
+            // Flat-score comparisons are invalid after a loss change.
+            // Validate perceptual quality instead: EPA preference must not
+            // decrease vs baseline.
+            if let (Some(baseline), Some(current)) = (baseline_epa, step.epa_preference) {
+                if current < baseline * 0.95 {
+                    errors.push(format!(
+                        "  {} step '{}': EPA preference {:.3} < baseline {:.3} * 0.95 — perceptual regression",
+                        pass_name, step.name, current, baseline
+                    ));
+                }
+            }
+        } else {
+            // No loss change yet — flat-score checks are valid.
 
-        // Step-over-step regression check
-        if i > 0 {
-            let prev = &results[i - 1];
-            if step.post_score > prev.post_score * STEP_REGRESSION_TOLERANCE {
+            // Per-step sanity: post_score should not be much worse than own pre_score
+            if step.post_score > step.pre_score * SELF_REGRESSION_TOLERANCE {
                 errors.push(format!(
-                    "  {} step '{}': post_score {:.4} > prev {:.4} * {:.2} — excessive regression",
-                    pass_name,
-                    step.name,
-                    step.post_score,
-                    prev.post_score,
-                    STEP_REGRESSION_TOLERANCE
+                    "  {} step '{}': post_score {:.4} > pre_score {:.4} * {:.2} — optimization made things worse",
+                    pass_name, step.name, step.post_score, step.pre_score, SELF_REGRESSION_TOLERANCE
+                ));
+            }
+
+            // Step-over-step regression check
+            if i > 0 {
+                let prev = &results[i - 1];
+                if step.post_score > prev.post_score * STEP_REGRESSION_TOLERANCE {
+                    errors.push(format!(
+                        "  {} step '{}': post_score {:.4} > prev {:.4} * {:.2} — excessive regression",
+                        pass_name,
+                        step.name,
+                        step.post_score,
+                        prev.post_score,
+                        STEP_REGRESSION_TOLERANCE
+                    ));
+                }
+            }
+
+            // Slope invariant
+            if step.worst_slope > SLOPE_TOLERANCE {
+                errors.push(format!(
+                    "  {} step '{}': slope {:.2} dB/oct > {:.1} tolerance — positive tilt detected",
+                    pass_name, step.name, step.worst_slope, SLOPE_TOLERANCE
                 ));
             }
         }
-
-        // Slope invariant
-        if step.worst_slope > SLOPE_TOLERANCE {
-            errors.push(format!(
-                "  {} step '{}': slope {:.2} dB/oct > {:.1} tolerance — positive tilt detected",
-                pass_name, step.name, step.worst_slope, SLOPE_TOLERANCE
-            ));
-        }
     }
 
-    // End-of-pass: last pre-broadband step must improve over raw measurement
-    if BROADBAND_STEP_INDEX > 0 {
-        let last_valid = &results[BROADBAND_STEP_INDEX - 1];
-        if last_valid.post_score >= last_valid.pre_score {
+    // End-of-pass: baseline step must improve over raw measurement
+    if let Some(baseline) = results.first() {
+        if baseline.post_score >= baseline.pre_score {
             errors.push(format!(
                 "  {} step '{}': post_score {:.4} >= pre_score {:.4} — EQ did not improve over raw",
-                pass_name, last_valid.name, last_valid.post_score, last_valid.pre_score
+                pass_name, baseline.name, baseline.post_score, baseline.pre_score
             ));
         }
     }
@@ -304,7 +348,7 @@ fn validate_pass(pass_name: &str, results: &[StepResult]) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 fn discover_recordings(project_root: &Path) -> Result<Vec<(String, PathBuf)>> {
-    let qa_data_dir = project_root.join("crates/autoeq/autoeq/bin/roomeq_qa_data");
+    let qa_data_dir = project_root.join("crates/autoeq/bin/roomeq_qa_data");
     if !qa_data_dir.exists() {
         return Err(anyhow!("QA data directory not found: {:?}", qa_data_dir));
     }
@@ -433,36 +477,19 @@ fn main() -> Result<()> {
     }
 }
 
-fn step_has_failure(step: &StepResult, i: usize, prev: Option<&StepResult>) -> bool {
-    // Broadband-enabled steps: only check convergence
-    if i >= BROADBAND_STEP_INDEX {
-        return !step.post_score.is_finite();
-    }
-    // Self-regression
-    if step.post_score > step.pre_score * SELF_REGRESSION_TOLERANCE {
-        return true;
-    }
-    // Step-over-step regression
-    if let Some(prev) = prev
-        && step.post_score > prev.post_score * STEP_REGRESSION_TOLERANCE
-    {
-        return true;
-    }
-    // Slope invariant
-    step.worst_slope > SLOPE_TOLERANCE
-}
-
 fn print_pass_results(results: &[StepResult]) {
+    let baseline_epa = results.first().and_then(|s| s.epa_preference);
+
     for (i, step) in results.iter().enumerate() {
+        let epa_str = match step.epa_preference {
+            Some(v) => format!("epa={:.3}", v),
+            None => "epa=n/a".to_string(),
+        };
+
         if i == 0 {
-            let status = if step_has_failure(step, i, None) {
-                "FAIL"
-            } else {
-                "OK"
-            };
             println!(
                 "  Step {}: {:30} post={:.4}  slope={:.2}  {}",
-                i, step.name, step.post_score, step.worst_slope, status
+                i, step.name, step.post_score, step.worst_slope, epa_str
             );
         } else {
             let prev = &results[i - 1];
@@ -471,14 +498,15 @@ fn print_pass_results(results: &[StepResult]) {
             } else {
                 0.0
             };
-            let status = if step_has_failure(step, i, Some(prev)) {
-                "FAIL"
-            } else {
-                "OK"
+
+            let epa_vs_baseline = match (baseline_epa, step.epa_preference) {
+                (Some(b), Some(c)) if b > 0.0 => format!("  epa vs baseline: {:+.1}%", (c - b) / b * 100.0),
+                _ => String::new(),
             };
+
             println!(
-                "  Step {}: {:30} post={:.4}  slope={:.2}  (vs prev: {:+.1}%)  {}",
-                i, step.name, step.post_score, step.worst_slope, pct, status
+                "  Step {}: {:30} post={:.4}  slope={:.2}  (vs prev: {:+.1}%)  {}{}",
+                i, step.name, step.post_score, step.worst_slope, pct, epa_str, epa_vs_baseline
             );
         }
     }

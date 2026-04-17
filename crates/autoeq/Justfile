@@ -147,7 +147,8 @@ qa-roomeq: qa-roomeq-small-stereo-20 \
 	qa-roomeq-small-stereo-22 \
 	qa-roomeq-convergence \
 	qa-roomeq-coverage \
-	qa-roomeq-synthetic
+	qa-roomeq-synthetic \
+	qa-roomeq-features
 
 [group('qa-roomeq')]
 qa-roomeq-convergence:
@@ -288,4 +289,8 @@ qa-roomeq-matrix:
 [group('qa-roomeq')]
 qa-roomeq-synthetic:
 	cargo run --bin roomeq-qa-synthetic --no-default-features --release
+
+[group('qa-roomeq')]
+qa-roomeq-features:
+	cargo run --bin roomeq-qa-features --no-default-features --release
 

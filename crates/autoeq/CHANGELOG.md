@@ -1,5 +1,25 @@
 # 0.4.26
 
+## Fixes
+
+### `roomeq-qa-features` binary now works
+
+- Fixed broken data directory path (`crates/autoeq/autoeq/bin/roomeq_qa_data`
+  → `crates/autoeq/bin/roomeq_qa_data`). The binary was unusable before
+  this fix.
+- Replaced hardcoded `BROADBAND_STEP_INDEX` with per-step `changes_loss`
+  flag on `FeatureStep`. Steps that change the loss function
+  (`psychoacoustic`, `asymmetric_loss`, `broadband`) now correctly skip
+  flat-score step-over-step regression instead of only broadband.
+- Added EPA preference tracking: each step records the average EPA
+  `preference` score (higher = better) across channels. After a
+  loss-change boundary, validation checks that EPA preference does not
+  drop below 95% of baseline instead of comparing flat scores.
+- Output now shows `epa=X.XXX` per step and `epa vs baseline: +X.X%`
+  for steps after baseline.
+- Added `qa-roomeq-features` recipe to `crates/autoeq/Justfile` and
+  wired it into the `qa-roomeq` aggregate target.
+
 ## Features
 
 ### Measurement-derived target tilt (`TargetShape::FromMeasurement`)
