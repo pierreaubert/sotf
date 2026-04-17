@@ -31,7 +31,9 @@ impl PlayerView {
     fn apply_plugin_update(state: &mut AppState, update_type: PluginUpdateType) {
         let plugin_state_snapshot = match update_type {
             PluginUpdateType::Structural => Some(state.app.plugin_state.clone()),
-            PluginUpdateType::Parameter { .. } => None,
+            PluginUpdateType::Parameter { .. } | PluginUpdateType::ParameterByNodeId { .. } => {
+                None
+            }
         };
 
         let result = match update_type {
@@ -67,6 +69,37 @@ impl PlayerView {
                     }
                 } else {
                     Ok(()) // Plugin not found, ignore
+                }
+            }
+            PluginUpdateType::ParameterByNodeId {
+                node_id,
+                param_index,
+            } => {
+                // Zero-dropout parameter update via graph node ID (works for non-linear graphs)
+                if let Some(node) = state.app.plugin_state.graph.nodes.get(&node_id) {
+                    if let Some(engine_index) =
+                        state.app.plugin_state.graph.get_engine_index(node_id)
+                    {
+                        if let Some((param_id, value)) =
+                            param_index_to_engine_param(&node.plugin.settings, param_index)
+                        {
+                            state
+                                .player
+                                .lock()
+                                .set_plugin_parameter(engine_index, param_id, value)
+                        } else {
+                            // Fall back to structural rebuild
+                            let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
+                            let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
+                            let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
+                            let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
+                            state.player.lock().update_plugins(plugins)
+                        }
+                    } else {
+                        Ok(()) // Node disabled or not in engine
+                    }
+                } else {
+                    Ok(()) // Node not found
                 }
             }
             PluginUpdateType::Structural => {

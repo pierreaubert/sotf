@@ -127,6 +127,7 @@ impl PlayerView {
 
             // Clone state for the callback
             let state_for_callback = self.state.clone();
+            let canvas_for_callback = canvas.clone();
 
             canvas.update(cx, |canvas, _cx| {
                 canvas.set_theme(workflow_theme);
@@ -134,8 +135,19 @@ impl PlayerView {
 
                 // Set double-click callback to open node editor modal
                 canvas.set_on_node_double_click(move |node_id, _window, cx| {
+                    // Resolve the GraphNodeId UUID from the workflow node's user_data
+                    let graph_node_uuid = canvas_for_callback
+                        .read(cx)
+                        .graph()
+                        .nodes
+                        .get(&node_id)
+                        .and_then(|n| n.user_data.get("plugin_node_id"))
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
+
                     state_for_callback.update(cx, |state, _cx| {
                         state.app.plugin_state.editing_plugin_node = Some(node_id);
+                        state.app.plugin_state.editing_graph_node_uuid = graph_node_uuid;
                         state.app.ui_state.input_mode = crate::app::InputMode::EditingPluginNode;
                     });
                 });
@@ -218,13 +230,26 @@ impl PlayerView {
     fn handle_palette_drop(&mut self, data: &PaletteDragData, cx: &mut Context<Self>) {
         let canvas = self.state.read(cx).app.plugin_state.workflow_canvas.clone();
         if let Some(canvas) = canvas {
+            // Offset drop position by existing node count so nodes don't stack
+            let node_count = self.state.read(cx).app.plugin_state.graph.nodes.len()
+                + self
+                    .state
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .graph
+                    .special_nodes
+                    .len();
+            let drop_x = 300.0 + (node_count as f32 % 4.0) * 180.0;
+            let drop_y = 150.0 + (node_count as f32 / 4.0).floor() * 120.0;
+
             // Also persist plugin drops into the PluginGraph
             let graph_node_id = match &data.item_type {
                 PaletteItemType::Plugin(plugin_type) => {
                     let id = self.state.update(cx, |state, _| {
                         state.app.plugin_state.graph.add_plugin_node(
                             plugin_type,
-                            sotf_audio_player::NodePosition::new(300.0, 200.0),
+                            sotf_audio_player::NodePosition::new(drop_x, drop_y),
                         )
                     });
                     Some(id)
@@ -254,7 +279,7 @@ impl PlayerView {
                     if let Some(id) = graph_node_id {
                         user_data["plugin_node_id"] = serde_json::Value::String(id.to_string());
                     }
-                    WorkflowNodeData::new(plugin_type.name(), Position::new(300.0, 200.0))
+                    WorkflowNodeData::new(plugin_type.name(), Position::new(drop_x, drop_y))
                         .with_ports(inputs, outputs)
                         .with_size(160.0, 90.0)
                         .with_user_data(user_data)
@@ -1002,10 +1027,13 @@ impl PlayerView {
         let (node_name, node_type, plugin_type, plugin_node_id) =
             node_info.unwrap_or_else(|| ("Unknown".to_string(), "unknown".to_string(), None, None));
 
-        // Look up the actual plugin settings and linear index from the plugin graph
-        let (plugin_settings, plugin_linear_idx) = plugin_node_id
+        // Look up the actual plugin settings and linear index from the plugin graph.
+        // Also resolve the GraphNodeId UUID for the node-ID-based editing path.
+        let graph_node_uuid = plugin_node_id
             .as_ref()
-            .and_then(|id_str| sotf_audio_player::GraphNodeId::parse_str(id_str).ok())
+            .and_then(|id_str| sotf_audio_player::GraphNodeId::parse_str(id_str).ok());
+
+        let (plugin_settings, plugin_linear_idx) = graph_node_uuid
             .map(|uuid| {
                 let graph = &state.app.plugin_state.graph;
                 let settings = graph.nodes.get(&uuid).map(|n| n.plugin.settings.clone());
@@ -1013,6 +1041,13 @@ impl PlayerView {
                 (settings, linear_idx)
             })
             .unwrap_or((None, None));
+
+        // For non-linear graphs, linear_idx is None but the node still exists.
+        // Enable editing whenever the plugin exists in the graph — the
+        // `editing_graph_node_uuid` (set on double-click) ensures parameter
+        // changes are dispatched via GraphNodeId, bypassing linear indices.
+        let node_exists_in_graph = graph_node_uuid
+            .is_some_and(|uuid| state.app.plugin_state.graph.nodes.contains_key(&uuid));
 
         let state_for_close = self.state.clone();
 
@@ -1043,6 +1078,7 @@ impl PlayerView {
                     state.update(cx, |state, _cx| {
                         state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                         state.app.plugin_state.editing_plugin_node = None;
+                        state.app.plugin_state.editing_graph_node_uuid = None;
                     });
                 }
             })
@@ -1134,6 +1170,8 @@ impl PlayerView {
                                                         crate::app::InputMode::Normal;
                                                     state.app.plugin_state.editing_plugin_node =
                                                         None;
+                                                    state.app.plugin_state.editing_graph_node_uuid =
+                                                        None;
                                                 });
                                             })
                                             .child("Close")
@@ -1152,6 +1190,7 @@ impl PlayerView {
                                 plugin_type.as_deref(),
                                 plugin_settings.as_ref(),
                                 plugin_linear_idx,
+                                node_exists_in_graph,
                                 &theme,
                                 cx,
                             )),
@@ -1162,23 +1201,28 @@ impl PlayerView {
     /// Render the content for a plugin node based on its type.
     ///
     /// `plugin_linear_idx` is the linear index in the plugin graph when available
-    /// (enables interactive editing); `None` falls back to read-only display.
+    /// (for linear graphs). `node_exists` indicates the node exists in the
+    /// `PluginGraph` even if a linear index isn't available (non-linear graph).
+    /// Editing is enabled when either is true — the `editing_graph_node_uuid`
+    /// context handles dispatching parameter changes via node ID.
     fn render_plugin_node_content(
         &self,
         node_type: &str,
         plugin_type: Option<&str>,
         plugin_settings: Option<&PluginSettings>,
         plugin_linear_idx: Option<usize>,
+        node_exists: bool,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
         match node_type {
             NODE_TYPE_PLUGIN => {
-                // If we have actual plugin settings, render the real plugin UI
+                // If we have actual plugin settings, render the real plugin UI.
+                // Enable editing when the node is in the graph (linear or non-linear).
                 if let Some(settings) = plugin_settings {
                     let idx = plugin_linear_idx.unwrap_or(0);
-                    let editing = plugin_linear_idx.is_some();
+                    let editing = plugin_linear_idx.is_some() || node_exists;
                     return self.render_plugin_settings_ui(settings, idx, editing, theme, cx);
                 }
 

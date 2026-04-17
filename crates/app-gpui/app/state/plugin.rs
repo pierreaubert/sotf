@@ -29,6 +29,10 @@ pub struct PluginState {
     pub workflow_canvas: Option<Entity<WorkflowCanvas>>,
     pub workflow_node_mapping: Option<WorkflowNodeMapping>,
     pub editing_plugin_node: Option<gpui_ui_kit::workflow::NodeId>,
+    /// The `GraphNodeId` (UUID) of the plugin being edited in the graph modal.
+    /// When set, `set_plugin_param` redirects to the node-ID-based path so
+    /// parameter edits work even in non-linear graphs.
+    pub editing_graph_node_uuid: Option<sotf_audio_player::GraphNodeId>,
     /// Dropdown states for AB Compare plugin
     pub ab_compare_dropdowns: ABCompareDropdowns,
     /// File paths for AB Compare loaded configs (for display)
@@ -173,6 +177,7 @@ impl Default for PluginState {
             workflow_canvas: None,
             workflow_node_mapping: None,
             editing_plugin_node: None,
+            editing_graph_node_uuid: None,
             ab_compare_dropdowns: ABCompareDropdowns::default(),
             ab_compare_file_a: None,
             ab_compare_file_b: None,

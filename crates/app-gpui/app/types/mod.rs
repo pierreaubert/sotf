@@ -157,6 +157,11 @@ pub enum PluginUpdateType {
         plugin_index: usize,
         param_index: usize,
     },
+    /// Parameter change addressed by graph node ID (works for non-linear graphs)
+    ParameterByNodeId {
+        node_id: sotf_audio_player::GraphNodeId,
+        param_index: usize,
+    },
     /// Structural change (add/remove/reorder/toggle) - use update_plugins() for full rebuild
     Structural,
 }

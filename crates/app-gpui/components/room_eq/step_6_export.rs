@@ -987,6 +987,17 @@ impl PlayerView {
                 .unwrap_or(sotf_audio::plugins::PluginType::EQ);
 
             let node_id = graph.add_plugin_node(&plugin_type, NodePosition::new(x, y));
+
+            // Apply actual parameters from the DSP output to the plugin settings
+            // so the modal shows the real optimized values, not defaults.
+            if let Some(node) = graph.nodes.get_mut(&node_id) {
+                apply_dsp_params_to_settings(
+                    &mut node.plugin.settings,
+                    &node_config.plugin_type,
+                    &node_config.parameters,
+                );
+            }
+
             id_map.insert(node_config.id, node_id);
         }
 
@@ -1033,5 +1044,44 @@ impl PlayerView {
         }
 
         graph
+    }
+}
+
+/// Apply DSP output parameters to a `PluginSettings` in-place.
+///
+/// Handles the common plugin types from roomeq: EQ (filters), Gain (gain_db),
+/// and Delay (delay_ms). Unknown types are left at their defaults.
+fn apply_dsp_params_to_settings(
+    settings: &mut sotf_audio::plugins::PluginSettings,
+    plugin_type_str: &str,
+    parameters: &serde_json::Value,
+) {
+    use sotf_audio::plugins::PluginSettings;
+    use sotf_audio_player::room_eq_types::parse_eq_filters_from_json;
+
+    let lower = plugin_type_str.to_lowercase();
+    match lower.as_str() {
+        "eq" => {
+            if let PluginSettings::EQ { filters, .. } = settings {
+                if let Some(filter_arr) = parameters.get("filters").and_then(|v| v.as_array()) {
+                    *filters = parse_eq_filters_from_json(filter_arr);
+                }
+            }
+        }
+        "gain" => {
+            if let PluginSettings::Gain { gain_db, .. } = settings {
+                if let Some(v) = parameters.get("gain_db").and_then(|v| v.as_f64()) {
+                    *gain_db = v;
+                }
+            }
+        }
+        "delay" => {
+            if let PluginSettings::Delay { delay_ms, .. } = settings {
+                if let Some(v) = parameters.get("delay_ms").and_then(|v| v.as_f64()) {
+                    *delay_ms = v;
+                }
+            }
+        }
+        _ => {} // Other types keep defaults
     }
 }

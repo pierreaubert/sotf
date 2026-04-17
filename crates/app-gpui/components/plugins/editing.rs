@@ -76,6 +76,13 @@ fn effect_to_update_type(
             plugin_index,
             param_index,
         }),
+        sotf_audio_player::PluginUpdateEffect::ParameterByNodeId {
+            node_id,
+            param_index,
+        } => Some(PluginUpdateType::ParameterByNodeId {
+            node_id,
+            param_index,
+        }),
     }
 }
 
@@ -148,6 +155,15 @@ impl PluginEditingManager for App {
     }
 
     fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64) {
+        // When editing a graph node (non-linear graph), redirect to the
+        // node-ID-based path so the update reaches the correct engine plugin.
+        if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+            let effect =
+                self.plugin_state
+                    .set_plugin_param_by_node_id(node_id, param_idx, value);
+            self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+            return;
+        }
         let effect = self
             .plugin_state
             .set_plugin_param(plugin_idx, param_idx, value);
@@ -160,6 +176,13 @@ impl PluginEditingManager for App {
         param_idx: usize,
         value: String,
     ) -> Result<(), String> {
+        if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+            let effect = self
+                .plugin_state
+                .set_plugin_param_string_by_node_id(node_id, param_idx, value)?;
+            self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+            return Ok(());
+        }
         let effect = self
             .plugin_state
             .set_plugin_param_string(plugin_idx, param_idx, value)?;
@@ -172,6 +195,9 @@ impl PluginEditingManager for App {
         plugin_idx: usize,
         correction: SpectralTiltCorrection,
     ) {
+        // Spectrum tilt is always a structural update — node-ID redirect not needed
+        // because `set_spectrum_tilt_correction` returns Structural which uses a full
+        // chain rebuild (no per-plugin engine index needed).
         let effect = self
             .plugin_state
             .set_spectrum_tilt_correction(plugin_idx, correction);
@@ -186,6 +212,13 @@ impl PluginEditingManager for App {
     }
 
     fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize) {
+        if let Some(node_id) = self.plugin_state.editing_graph_node_uuid {
+            let effect = self
+                .plugin_state
+                .reset_plugin_param_by_node_id(node_id, param_idx);
+            self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
+            return;
+        }
         let effect = self.plugin_state.reset_plugin_param(plugin_idx, param_idx);
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }
