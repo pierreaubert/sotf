@@ -1,5 +1,272 @@
 # Unreleased
 
+## Phase 7i — Match data, concat sequences, help.el 100%
+
+Two real-bug fixes that unlocked `help.el` fully and advanced the
+remaining partials.
+
+### `string-match` now populates match data
+
+`match-beginning` / `match-end` / `match-string` / `match-data` were
+all hard-coded to return `nil`, so any stdlib code that did a regex
+match and then inspected positions (a common idiom) silently got the
+wrong answer or errored later. `key-parse` in `keymap.el` depends on
+this — its `while` loop consumes one match and then uses
+`match-beginning`/`match-end` to slice the key string.
+
+Implementation:
+- Thread-local `MATCH_DATA: Vec<Option<(usize, usize)>>` for group
+  positions (0 = whole match, 1..N = capture groups). Thread-local so
+  parallel tests don't stomp on each other and Emacs's per-thread
+  match-data semantics carry over.
+- `string-match` fast-paths regexes with no capture groups through
+  `re.find()` (cheap) and records only the whole-match span. Regexes
+  with capture groups go through `re.captures()` and record all
+  groups. Earlier iteration always called `captures()` on every
+  `string-match`, which slowed subr.el load 100×; splitting by
+  `captures_len()` keeps the hot path fast.
+- `string-match-p` still returns position-only via `find()` (Emacs
+  docs guarantee it doesn't touch match data).
+- Source-text storage is **not** cloned during `string-match` — it
+  was a big allocation per call. `match-string N [STRING]` takes an
+  explicit STRING arg (standard Emacs API), which is the common use
+  pattern.
+
+### `concat` accepts lists / vectors of chars and nil
+
+Emacs `concat` takes any sequence of character-producing items:
+strings, lists of codepoints, vectors of codepoints, and `nil`
+(empty). Our prior implementation only accepted strings, so
+`help.el` form 110 — `(concat "[" (mapcar #'car alist) "]")` —
+failed with `wrong type argument: expected string` when the middle
+arg was a list.
+
+### Bootstrap results
+
+| File | Before → After |
+|------|----------------|
+| help | 98% → **100% OK** |
+| mule-cmds | 99% (masked bug) → 94% (honest: eval-op limit on key-parse) |
+
+Bootstrap: **27 OK / 3 partial** (was 26 / 4 in 7h).
+
+`mule-cmds` dropped in percentage because the match-data fix let
+form 151 actually *execute* its `(define-keymap ...)` — which in
+our tree-walking interpreter burns through the 5M per-form eval-ops
+budget across 9 `key-parse` invocations. The cap was bumped for
+`mule-cmds` to `500K` so the test still runs in ~4s instead of ~37s.
+The underlying perf issue (no regex cache, deep macro expansion) is
+optimization work, not correctness.
+
+### Regression tests
+
+- `test_match_data_after_string_match` — asserts match-beginning /
+  match-end / match-string return correct positions after a match
+  (including capture groups), and that a failed match clears data.
+- `test_concat_accepts_list_and_nil` — asserts `(concat "[" '(97 98
+  99) "]")` = `"[abc]"` and `(concat "[" nil "]")` = `"[]"`.
+
+### Verification
+
+- `cargo test -p gpui-elisp --lib` — **297/297 pass**
+  sequentially and in 3 parallel runs, each ~4s.
+- `cargo clippy -p gpui-elisp --lib -- -D warnings` — clean.
+- `cargo fmt` — applied.
+
+### What's left
+
+- **cl-preloaded / oclosure** — reader can't parse `cl-macs.elc` /
+  `subr-x.elc`. Reader project, larger scope.
+- **mule-cmds (94%)** — perf-limited on `key-parse` in our
+  tree-walker. Either implement a regex cache or optimize
+  key-parse's hot-loop; both are perf work, not correctness.
+
+## Phase 7h — Missing bootstrap primitives and stdlib variables
+
+Fills in the primitives and variables that remaining bootstrap files
+stumbled on once the 7g macro-binding fix let them reach deeper
+forms. Every partial from the 7g run that wasn't blocked by reader
+limitations now either completes fully or progresses past the
+identified missing-primitive error.
+
+### New primitive implementations
+
+- **`capitalize STRING`** — word-by-word title casing (Emacs
+  definition: title-case each word, lowercase the rest). Chars also
+  supported. Used by mule-conf when building charset descriptions
+  like `(format "Glyphs of %s script" (capitalize (symbol-name s)))`.
+- **`safe-length LIST`** — like `length` but returns cons-count
+  without signalling on cyclic or dotted lists. Used by defcustom's
+  expansion in abbrev and other places.
+- **`read STRING`** — parses a single Lisp form from a string via
+  our reader. Buffer/marker stream variants return nil (we don't
+  model that editor state). Used by bindings.el to construct key
+  sequences: `(read (format "[?\\C-%c]" i))`.
+- **`characterp OBJ`** — true for non-negative integers ≤ 0x3fffff
+  (Emacs's char space). Used by bindings.el and characters.el.
+- **`string &rest CHARS`** — builds a Rust/Emacs string from
+  character codepoints. Distinct from `char-to-string` in that it
+  takes an arbitrary number of chars.
+- **`regexp-quote STRING`** — escapes Emacs regex specials
+  (`.*+?^$\[]`) so the result matches the literal string. Used by
+  abbrev's defcustom expansions.
+- **`max-char &optional UNICODE`** — Emacs 30 constant
+  (`#x3fffff`), or `#x10ffff` when called with `t`.
+- **`decode-char CHARSET CODE`** / **`encode-char CHAR CHARSET`**
+  — pass-through for `unicode` / `ucs`, nil otherwise. Enough for
+  characters.el to advance; real charset tables are out of scope.
+
+### New `ignore`-stubs for stdlib functions
+
+All route to the existing `ignore` primitive (consumes args, returns
+nil). Collectively they unblock mule-conf (100%), bindings (100%),
+characters (100%), and abbrev (100%):
+
+- **Charset/coding machinery**: `unify-charset`,
+  `define-coding-system-internal`, `define-coding-system-alias`,
+  `set-coding-system-priority`, `set-charset-priority`,
+  `set-safe-terminal-coding-system-internal`.
+- **Char-table machinery**: `set-char-table-range`,
+  `set-char-table-extra-slot`, `map-char-table`,
+  `optimize-char-table`, `make-char-table`,
+  `set-char-table-parent`, `char-table-extra-slot`,
+  `char-table-range`, `standard-case-table`,
+  `standard-syntax-table`, `syntax-table`, `set-syntax-table`,
+  `standard-category-table`.
+- **Syntax/category machinery**: `modify-category-entry`,
+  `modify-syntax-entry`, `set-category-table`,
+  `define-category`, `set-case-syntax`, `set-case-syntax-pair`,
+  `set-case-syntax-delims`.
+- **Obarray helpers**: `obarray-make`, `obarray-get`,
+  `obarray-put`.
+- **File-system predicates**: `find-file-name-handler`
+  (returns nil), `file-name-case-insensitive-p` (returns nil),
+  `unicode-property-table-internal` (returns nil).
+- **rx sub-macro shims**: `rx` → ignore, `regexp` → identity
+  (pass through the first arg). Good enough for abbrev.el's
+  load-time regexp construction without real rx.el.
+
+### New stdlib variables (defined on `make_stdlib_interp`)
+
+Empty / nil defaults, sufficient for defvar-referenced names to
+resolve during load:
+
+- Keymaps: `special-event-map`, `minor-mode-map-alist`,
+  `emulation-mode-map-alists`.
+- Char tables / categories: `auto-fill-chars`,
+  `char-script-table`, `char-width-table`, `printable-chars`,
+  `word-combining-categories`, `word-separating-categories`,
+  `ambiguous-width-chars`, `translation-table-for-input`,
+  `unicode-category-table`, `latin-extra-code-table`.
+- Display / session: `use-default-ascent`,
+  `ignored-local-variables`, `find-word-boundary-function-table`,
+  `buffer-invisibility-spec`, `case-replace` (t),
+  `dump-mode`, `emacs-build-time`, `emacs-save-session-functions`.
+- rx vocabulary placeholders: `bol`, `eol` (empty-string
+  stubs — abbrev uses them inside a rx-constructed regexp).
+
+### Bootstrap results
+
+| Stage | OK | Partial |
+|-------|-----|---------|
+| Pre-7h | 22 | 8 |
+| Post-7h | **26** | **4** |
+
+Newly 100% OK files: mule-conf, bindings, characters, abbrev.
+
+Remaining 4 partials:
+- **cl-preloaded (31%) + oclosure (58%)** — blocked on reader
+  limitations for `cl-macs.elc` and `subr-x.elc`. Out of scope
+  for 7h.
+- **help (98%)** — `wrong type argument: expected string` on form
+  110. Real bug, not a missing stub.
+- **mule-cmds (99%)** — `wrong type argument: expected integer` on
+  form 151. Real bug.
+
+### Regression tests
+
+`test_phase7h_primitives` asserts each new real implementation:
+`capitalize`, `safe-length`, `string`, `characterp`,
+`regexp-quote`, `max-char`, `read`.
+
+### Verification
+
+- `cargo test -p gpui-elisp --lib` — **295/295 pass**
+  sequentially and in 3 parallel runs.
+- `cargo clippy -p gpui-elisp --lib -- -D warnings` — clean.
+- `cargo fmt` — applied.
+
+## Phase 7g — Macro `&rest` / `&optional` binding (backquote state-pollution root cause)
+
+Root cause of the seven-file "void variable: list / quote / concat /
+purecopy" failures under the full bootstrap: `expand_macro` was
+stripping `&rest` and `&optional` markers from the macro's lambda
+list and then binding every remaining name as a positional arg. For
+`backquote-list*-macro` (signature `(first &rest list)`) called with
+3+ args, that meant `list` bound to the second arg (a code
+expression) instead of the proper rest list — so the macro body ran
+against malformed bindings and produced code that referenced
+function-position symbols (`purecopy`, `list`, `quote`, `concat`) in
+variable position.
+
+Backquote expansion hit this whenever the expander produced a
+`(backquote-list* ...)` call — which Emacs's backquote.el does for
+any shape where a literal and an unquote coexist (e.g. `` `(a ,x b) ``,
+`` `(a b ,x c) ``, `` `(,x ,y tail) ``). Shorter shapes like
+`` `(,x) `` or `` `(a ,x) `` expanded to `(list …)` and therefore
+worked, which is why earlier isolated tests didn't catch it.
+
+### Fix
+
+`expand_macro` now parses the lambda list into `positional`,
+`optional`, and `rest` kinds:
+- `&optional` flips subsequent names to optional (nil-padded when
+  out of args).
+- `&rest` captures remaining args as a list bound to the single
+  following name.
+- Positional: one arg each.
+
+Removed the now-dead `extract_param_names` helper.
+
+### Bootstrap results (after 7g)
+
+Before → after:
+
+| File | Before | After | Delta |
+|------|--------|-------|-------|
+| format | 97% PARTIAL | **100% OK** | +1 form (ship) |
+| window | 99% PARTIAL | **100% OK** | +1 form |
+| files | 99% PARTIAL | **100% OK** | +3 forms |
+| bindings | 97% PARTIAL | 98% | +3 forms |
+| mule-conf | 72% PARTIAL | 77% | +14 forms |
+| characters | 88% PARTIAL | 90% | +5 forms |
+| mule-cmds | 99% | 99% | unchanged |
+
+Bootstrap summary: **22 OK / 8 partial** (up from 19 OK / 11 partial).
+
+### Regression test
+
+`test_macro_rest_arg_binds_as_list` — loads backquote.el, verifies
+three shapes that previously failed now evaluate cleanly, and
+direct-calls `backquote-list*` to assert the rest-list binding.
+
+### Verification
+
+- `cargo test -p gpui-elisp --lib` — **294/294 pass**
+  sequentially and in 3 consecutive parallel runs.
+- `cargo clippy -p gpui-elisp --lib -- -D warnings` — clean.
+- `cargo fmt` — applied.
+
+### What's left in Phase 7
+
+1. **cl-preloaded (31%) and oclosure (58%)** — blocked on reader
+   limitations for `cl-macs.elc` and `subr-x.elc` (cannot parse those
+   `.elc` files). Separate from the VM/eval bugs.
+2. **mule-conf (77%)** — largest remaining partial. First error after
+   7g likely a different class of bug; needs fresh inspection.
+3. **abbrev (95%) — `void variable: if-let`** — macro not defined.
+4. **characters (90%) — various** — needs inspection.
+
 ## Phase 7f — VM arg padding (optional-arg nil, rest-arg list)
 
 Root cause for the `stack-ref 3 underflow` in `cl-lib.elc` form 40

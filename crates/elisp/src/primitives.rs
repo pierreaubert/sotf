@@ -112,6 +112,69 @@ pub fn add_primitives(interp: &mut crate::eval::Interpreter) {
     // String — extended
     interp.define("upcase", LispObject::primitive("upcase"));
     interp.define("downcase", LispObject::primitive("downcase"));
+    interp.define("capitalize", LispObject::primitive("capitalize"));
+    interp.define("safe-length", LispObject::primitive("safe-length"));
+    interp.define("read", LispObject::primitive("read"));
+    interp.define("characterp", LispObject::primitive("characterp"));
+    // (string &rest CHARS) → make a string from character codepoints.
+    interp.define("string", LispObject::primitive("string"));
+    interp.define(
+        "file-name-case-insensitive-p",
+        LispObject::primitive("ignore"),
+    );
+    interp.define(
+        "define-coding-system-internal",
+        LispObject::primitive("ignore"),
+    );
+    interp.define(
+        "define-coding-system-alias",
+        LispObject::primitive("ignore"),
+    );
+    interp.define(
+        "set-coding-system-priority",
+        LispObject::primitive("ignore"),
+    );
+    interp.define("set-charset-priority", LispObject::primitive("ignore"));
+    interp.define(
+        "set-safe-terminal-coding-system-internal",
+        LispObject::primitive("ignore"),
+    );
+    interp.define("regexp-quote", LispObject::primitive("regexp-quote"));
+    interp.define("max-char", LispObject::primitive("max-char"));
+    interp.define("obarray-make", LispObject::primitive("ignore"));
+    interp.define("obarray-get", LispObject::primitive("ignore"));
+    interp.define("obarray-put", LispObject::primitive("ignore"));
+    interp.define("optimize-char-table", LispObject::primitive("ignore"));
+    interp.define("make-char-table", LispObject::primitive("ignore"));
+    interp.define("set-char-table-parent", LispObject::primitive("ignore"));
+    interp.define("standard-case-table", LispObject::primitive("ignore"));
+    interp.define("standard-syntax-table", LispObject::primitive("ignore"));
+    interp.define("syntax-table", LispObject::primitive("ignore"));
+    interp.define("set-syntax-table", LispObject::primitive("ignore"));
+    interp.define("char-table-extra-slot", LispObject::primitive("ignore"));
+    interp.define("char-table-range", LispObject::primitive("ignore"));
+    // charset/unicode stubs: return the code as-is for decode-char,
+    // and pass-through for encode-char. Enough for mule-conf /
+    // characters.el to load without blowing up on unsupported charsets.
+    interp.define("decode-char", LispObject::primitive("decode-char"));
+    interp.define("encode-char", LispObject::primitive("encode-char"));
+    // Deep stdlib stubs — all return nil / no-op so load can continue.
+    interp.define("unify-charset", LispObject::primitive("ignore"));
+    interp.define("find-file-name-handler", LispObject::primitive("ignore"));
+    interp.define(
+        "unicode-property-table-internal",
+        LispObject::primitive("ignore"),
+    );
+    interp.define("set-char-table-range", LispObject::primitive("ignore"));
+    interp.define("set-char-table-extra-slot", LispObject::primitive("ignore"));
+    interp.define("map-char-table", LispObject::primitive("ignore"));
+    interp.define("modify-category-entry", LispObject::primitive("ignore"));
+    interp.define("modify-syntax-entry", LispObject::primitive("ignore"));
+    interp.define("set-category-table", LispObject::primitive("ignore"));
+    interp.define("define-category", LispObject::primitive("ignore"));
+    interp.define("set-case-syntax", LispObject::primitive("ignore"));
+    interp.define("set-case-syntax-pair", LispObject::primitive("ignore"));
+    interp.define("set-case-syntax-delims", LispObject::primitive("ignore"));
     interp.define("string-replace", LispObject::primitive("string-replace"));
     interp.define("string-trim", LispObject::primitive("string-trim"));
     interp.define("string-prefix-p", LispObject::primitive("string-prefix-p"));
@@ -276,6 +339,15 @@ pub fn call_primitive(name: &str, args: &LispObject) -> ElispResult<LispObject> 
         // String — extended
         "upcase" => prim_upcase(args),
         "downcase" => prim_downcase(args),
+        "capitalize" => prim_capitalize(args),
+        "safe-length" => prim_safe_length(args),
+        "read" => prim_read(args),
+        "characterp" => prim_characterp(args),
+        "string" => prim_string(args),
+        "regexp-quote" => prim_regexp_quote(args),
+        "max-char" => prim_max_char(args),
+        "decode-char" => prim_decode_char(args),
+        "encode-char" => prim_encode_char(args),
         "string-replace" => prim_string_replace(args),
         "string-trim" => prim_string_trim(args),
         "string-prefix-p" => prim_string_prefix_p(args),
@@ -808,12 +880,58 @@ fn prim_string_lt(args: &LispObject) -> ElispResult<LispObject> {
 }
 
 fn prim_concat(args: &LispObject) -> ElispResult<LispObject> {
+    // Emacs `concat` accepts any sequence of character-producing items:
+    // - String: text appended verbatim.
+    // - Nil: empty list, contributes nothing.
+    // - List of integers: each integer pushed as a character codepoint.
+    // - Vector of integers: same.
+    // This matches help.el's pattern `(concat "[" (mapcar #'car alist) "]")`
+    // where the middle arg is a list of character codes.
     let mut result = String::new();
     let mut current = args.clone();
     while let Some((arg, rest)) = current.destructure_cons() {
         match arg {
             LispObject::String(s) => result.push_str(&s),
-            _ => return Err(ElispError::WrongTypeArgument("string".to_string())),
+            LispObject::Nil => {}
+            LispObject::Cons(_) => {
+                // Treat as a list of character codepoints.
+                let mut list_cur = arg;
+                while let Some((car, lrest)) = list_cur.destructure_cons() {
+                    match car {
+                        LispObject::Integer(n) => {
+                            let ch = char::from_u32(n as u32).ok_or_else(|| {
+                                ElispError::WrongTypeArgument("character".to_string())
+                            })?;
+                            result.push(ch);
+                        }
+                        _ => {
+                            return Err(ElispError::WrongTypeArgument(
+                                "sequence of chars".to_string(),
+                            ));
+                        }
+                    }
+                    list_cur = lrest;
+                }
+            }
+            LispObject::Vector(v) => {
+                let guard = v.lock();
+                for item in guard.iter() {
+                    match item {
+                        LispObject::Integer(n) => {
+                            let ch = char::from_u32(*n as u32).ok_or_else(|| {
+                                ElispError::WrongTypeArgument("character".to_string())
+                            })?;
+                            result.push(ch);
+                        }
+                        _ => {
+                            return Err(ElispError::WrongTypeArgument(
+                                "sequence of chars".to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => return Err(ElispError::WrongTypeArgument("sequence".to_string())),
         }
         current = rest;
     }
@@ -1444,6 +1562,160 @@ fn prim_downcase(args: &LispObject) -> ElispResult<LispObject> {
             ))
         }
         _ => Err(ElispError::WrongTypeArgument("string-or-char".to_string())),
+    }
+}
+
+fn prim_capitalize(args: &LispObject) -> ElispResult<LispObject> {
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    match &arg {
+        LispObject::String(s) => {
+            // Emacs `capitalize`: title-case each word. Word boundary =
+            // any non-alphanumeric char.
+            let mut out = String::with_capacity(s.len());
+            let mut start_of_word = true;
+            for ch in s.chars() {
+                if ch.is_alphanumeric() {
+                    if start_of_word {
+                        out.extend(ch.to_uppercase());
+                        start_of_word = false;
+                    } else {
+                        out.extend(ch.to_lowercase());
+                    }
+                } else {
+                    out.push(ch);
+                    start_of_word = true;
+                }
+            }
+            Ok(LispObject::string(&out))
+        }
+        LispObject::Integer(c) => {
+            let ch = char::from_u32(*c as u32).unwrap_or('?');
+            let upper: String = ch.to_uppercase().collect();
+            Ok(LispObject::integer(
+                upper.chars().next().unwrap_or('?') as i64
+            ))
+        }
+        _ => Err(ElispError::WrongTypeArgument("string-or-char".to_string())),
+    }
+}
+
+fn prim_safe_length(args: &LispObject) -> ElispResult<LispObject> {
+    // Like `length`, but returns the number of cons cells traversed
+    // without signalling an error on a cyclic or dotted list. Uses
+    // `destructure_cons` which clones the Arc — cheap enough for
+    // loader-time use. Caps to stop cycles.
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let mut count: i64 = 0;
+    let mut cur = arg;
+    while let Some((_, rest)) = cur.destructure_cons() {
+        count += 1;
+        cur = rest;
+        if count > 1_000_000 {
+            break;
+        }
+    }
+    Ok(LispObject::integer(count))
+}
+
+fn prim_read(args: &LispObject) -> ElispResult<LispObject> {
+    // (read STRING-OR-STREAM) — we only support string input. For
+    // buffer/marker streams we'd need editor state; nil args in Emacs
+    // read from stdin, which we don't model. Return nil instead of
+    // erroring so callers that don't care about the result survive.
+    let arg = args.first().unwrap_or(LispObject::nil());
+    match arg {
+        LispObject::String(s) => {
+            crate::reader::read(&s).map_err(|e| ElispError::EvalError(format!("read: {e}")))
+        }
+        _ => Ok(LispObject::nil()),
+    }
+}
+
+fn prim_max_char(args: &LispObject) -> ElispResult<LispObject> {
+    // (max-char &optional UNICODE) — max character code in Emacs char
+    // space. Emacs 30 returns #x3fffff. Argument selects Unicode-only
+    // max (`#x10ffff`) when t. We return the Emacs constant for nil/no
+    // arg and the Unicode constant for `t`.
+    let unicode_arg = args.first().unwrap_or(LispObject::nil());
+    if matches!(unicode_arg, LispObject::T) {
+        Ok(LispObject::integer(0x10ffff))
+    } else {
+        Ok(LispObject::integer(0x3fffff))
+    }
+}
+
+fn prim_regexp_quote(args: &LispObject) -> ElispResult<LispObject> {
+    // (regexp-quote STRING) → STRING with all regex special chars escaped.
+    // Emacs's regex engine treats these as specials: . * + ? ^ $ \ [ ]
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    match &arg {
+        LispObject::String(s) => {
+            let mut out = String::with_capacity(s.len() + 8);
+            for ch in s.chars() {
+                if matches!(ch, '.' | '*' | '+' | '?' | '^' | '$' | '\\' | '[' | ']') {
+                    out.push('\\');
+                }
+                out.push(ch);
+            }
+            Ok(LispObject::string(&out))
+        }
+        _ => Err(ElispError::WrongTypeArgument("string".to_string())),
+    }
+}
+
+fn prim_string(args: &LispObject) -> ElispResult<LispObject> {
+    // (string &rest CHARS) → build a string from character codepoints.
+    let mut out = String::new();
+    let mut cur = args.clone();
+    while let Some((car, rest)) = cur.destructure_cons() {
+        match car {
+            LispObject::Integer(n) => {
+                let ch = char::from_u32(n as u32)
+                    .ok_or_else(|| ElispError::WrongTypeArgument("character".to_string()))?;
+                out.push(ch);
+            }
+            _ => return Err(ElispError::WrongTypeArgument("character".to_string())),
+        }
+        cur = rest;
+    }
+    Ok(LispObject::string(&out))
+}
+
+fn prim_characterp(args: &LispObject) -> ElispResult<LispObject> {
+    // (characterp OBJ) → t if OBJ is a valid character. In Emacs a
+    // character is a non-negative integer that is a valid Unicode
+    // code point (< 0x3fffff in Emacs's char space).
+    let arg = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    match &arg {
+        LispObject::Integer(n) if *n >= 0 && *n < 0x3fffff => Ok(LispObject::t()),
+        _ => Ok(LispObject::nil()),
+    }
+}
+
+fn prim_decode_char(args: &LispObject) -> ElispResult<LispObject> {
+    // (decode-char CHARSET CODE-POINT &optional RESTRICTION)
+    // Proper implementation requires a charset registry. Stub: return
+    // CODE-POINT as a character for the `unicode` / `ucs` charsets,
+    // nil otherwise (Emacs signals nil for unsupported mappings). This
+    // is enough for `characters.el` to advance past the call.
+    let charset = args.first().ok_or(ElispError::WrongNumberOfArguments)?;
+    let code = args.nth(1).unwrap_or(LispObject::nil());
+    let charset_name = charset.as_symbol().unwrap_or_default();
+    match (charset_name.as_str(), &code) {
+        ("unicode" | "ucs", LispObject::Integer(_)) => Ok(code),
+        _ => Ok(LispObject::nil()),
+    }
+}
+
+fn prim_encode_char(args: &LispObject) -> ElispResult<LispObject> {
+    // (encode-char CHAR CHARSET) — inverse of decode-char. Same stub
+    // strategy: pass-through for unicode/ucs, nil otherwise.
+    let ch = args.first().unwrap_or(LispObject::nil());
+    let charset = args.nth(1).unwrap_or(LispObject::nil());
+    let charset_name = charset.as_symbol().unwrap_or_default();
+    match (charset_name.as_str(), &ch) {
+        ("unicode" | "ucs", LispObject::Integer(_)) => Ok(ch),
+        _ => Ok(LispObject::nil()),
     }
 }
 

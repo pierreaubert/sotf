@@ -137,15 +137,56 @@ pub(super) fn expand_macro(
     let params = &macro_.args;
     let body = &macro_.body;
 
-    let param_names: Vec<String> = extract_param_names(params)?;
+    // Parse the parameter list into positional, optional and rest kinds.
+    // Emacs Lisp macro lambda lists look like
+    //   (a b &optional c d &rest r)
+    // `&optional` flips subsequent names to optional (nil-padded if
+    // no arg is provided); `&rest` captures the remaining args as a
+    // list bound to the single following name.
+    let mut positional: Vec<String> = Vec::new();
+    let mut optional: Vec<String> = Vec::new();
+    let mut rest_name: Option<String> = None;
+    let mut mode = 0u8; // 0=positional, 1=optional, 2=rest
+    let mut cur = Some(params.clone());
+    while let Some(curr) = cur {
+        match curr.destructure_cons() {
+            Some((car, tail)) => {
+                if let Some(s) = car.as_symbol() {
+                    match s.as_str() {
+                        "&optional" => mode = 1,
+                        "&rest" => mode = 2,
+                        _ => match mode {
+                            0 => positional.push(s),
+                            1 => optional.push(s),
+                            2 => {
+                                rest_name = Some(s);
+                                break;
+                            }
+                            _ => unreachable!(),
+                        },
+                    }
+                    cur = Some(tail);
+                } else {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
 
     let mut arg_list = args;
     let mut bindings: Vec<(String, LispObject)> = Vec::new();
 
-    for name in &param_names {
-        if name.starts_with("&rest ") || name.starts_with("&optional ") {
-            continue;
-        }
+    // Positional: each takes one arg (or nil if missing — Emacs would
+    // signal wrong-number-of-args, but we stay permissive like the
+    // prior implementation).
+    for name in &positional {
+        let arg = arg_list.first().unwrap_or(LispObject::nil());
+        bindings.push((name.clone(), arg));
+        arg_list = arg_list.rest().unwrap_or(LispObject::nil());
+    }
+    // Optional: like positional but nil when out of args.
+    for name in &optional {
         if arg_list.is_nil() {
             bindings.push((name.clone(), LispObject::nil()));
         } else {
@@ -153,6 +194,11 @@ pub(super) fn expand_macro(
             bindings.push((name.clone(), arg));
             arg_list = arg_list.rest().unwrap_or(LispObject::nil());
         }
+    }
+    // Rest: bind to the whole remaining arg list (including unevaluated
+    // forms — macro args are NOT evaluated before binding).
+    if let Some(rest) = rest_name {
+        bindings.push((rest, arg_list));
     }
 
     let parent_env = Arc::new(env.read().clone());
@@ -164,29 +210,6 @@ pub(super) fn expand_macro(
 
     let result = eval_progn(obj_to_value(body.clone()), &temp_env, editor, macros, state)?;
     Ok(value_to_obj(result))
-}
-pub(super) fn extract_param_names(params: &LispObject) -> ElispResult<Vec<String>> {
-    let mut names = Vec::new();
-    let mut current = Some(params.clone());
-
-    while let Some(curr) = current {
-        if let Some((car, rest)) = curr.destructure_cons() {
-            if let Some(s) = car.as_symbol() {
-                if s == "&rest" || s == "&optional" {
-                    current = Some(rest);
-                    continue;
-                }
-                names.push(s);
-                current = Some(rest);
-            } else {
-                break;
-            }
-        } else {
-            break;
-        }
-    }
-
-    Ok(names)
 }
 pub(super) fn eval_let(
     args: Value,

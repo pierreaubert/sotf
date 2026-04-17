@@ -26,6 +26,32 @@ const MAX_EVAL_DEPTH: usize = 1000;
 
 thread_local! {
     static EVAL_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Match data populated by `string-match` / `looking-at` / etc.
+    /// Each successful match stores alternating (start, end) positions for
+    /// group 0..=N. Group 0 is the whole match; 1..=N are capture groups.
+    /// Used by `match-beginning`, `match-end`, `match-string`, `match-data`.
+    /// Thread-local so parallel tests don't stomp on each other (matches
+    /// Emacs semantics — match data is per-thread of execution).
+    static MATCH_DATA: std::cell::RefCell<Vec<Option<(usize, usize)>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// String the last match was run against. Needed by `match-string`.
+    static MATCH_STRING: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Set match data after a regex match. `captures` is `Vec<Option<(start,
+/// end)>>` where index 0 is the whole match and later indices are capture
+/// groups (None for unmatched optional groups). `text` is the string that
+/// was matched against.
+fn set_match_data(captures: Vec<Option<(usize, usize)>>, text: Option<String>) {
+    MATCH_DATA.with(|d| *d.borrow_mut() = captures);
+    MATCH_STRING.with(|s| *s.borrow_mut() = text);
+}
+
+/// Get (start, end) for the Nth match group, or None if unmatched or N is
+/// out of range.
+fn get_match_group(n: usize) -> Option<(usize, usize)> {
+    MATCH_DATA.with(|d| d.borrow().get(n).and_then(|x| *x))
 }
 
 fn inc_eval_depth() -> Result<usize, ElispError> {
@@ -1652,21 +1678,126 @@ fn eval_inner(
                         0
                     };
                     let rust_re = emacs_regex_to_rust(&re_str);
+                    // string-match-p doesn't set match data → cheap
+                    // `find()`. string-match uses `captures_len` to decide
+                    // whether captures are needed: if the regex has no
+                    // groups we use `find()` and record just the whole
+                    // match; otherwise we use `captures()` once.
+                    // Storing the source text is lazy — we don't clone it
+                    // here (subr.el calls string-match on many long
+                    // strings). `match-string` takes an explicit STRING
+                    // argument in the Emacs API, so this is fine.
+                    let set_data = sym_name == "string-match";
                     match regex::Regex::new(&rust_re) {
                         Ok(re) => {
-                            if let Some(m) = re.find(&text[start..]) {
+                            if set_data && re.captures_len() > 1 {
+                                // Regex has explicit capture groups — use
+                                // captures() to record all of them.
+                                if let Some(caps) = re.captures(&text[start..]) {
+                                    let mut data: Vec<Option<(usize, usize)>> =
+                                        Vec::with_capacity(caps.len());
+                                    for i in 0..caps.len() {
+                                        data.push(
+                                            caps.get(i)
+                                                .map(|m| (start + m.start(), start + m.end())),
+                                        );
+                                    }
+                                    set_match_data(data, None);
+                                    let m = caps.get(0).unwrap();
+                                    Ok(obj_to_value(LispObject::integer(
+                                        (start + m.start()) as i64,
+                                    )))
+                                } else {
+                                    set_match_data(Vec::new(), None);
+                                    Ok(Value::nil())
+                                }
+                            } else if let Some(m) = re.find(&text[start..]) {
+                                if set_data {
+                                    // No capture groups → record just the
+                                    // whole-match positions.
+                                    set_match_data(
+                                        vec![Some((start + m.start(), start + m.end()))],
+                                        None,
+                                    );
+                                }
                                 Ok(obj_to_value(LispObject::integer(
                                     (start + m.start()) as i64,
                                 )))
                             } else {
+                                if set_data {
+                                    set_match_data(Vec::new(), None);
+                                }
                                 Ok(Value::nil())
                             }
                         }
                         Err(_) => Ok(Value::nil()),
                     }
                 }
-                "match-data" | "match-beginning" | "match-end" | "match-string"
-                | "replace-match" | "looking-at" | "re-search-forward" | "re-search-backward"
+                "match-beginning" => {
+                    let n_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let n = value_to_obj(eval(obj_to_value(n_expr), env, editor, macros, state)?)
+                        .as_integer()
+                        .unwrap_or(0) as usize;
+                    match get_match_group(n) {
+                        Some((s, _)) => Ok(obj_to_value(LispObject::integer(s as i64))),
+                        None => Ok(Value::nil()),
+                    }
+                }
+                "match-end" => {
+                    let n_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let n = value_to_obj(eval(obj_to_value(n_expr), env, editor, macros, state)?)
+                        .as_integer()
+                        .unwrap_or(0) as usize;
+                    match get_match_group(n) {
+                        Some((_, e)) => Ok(obj_to_value(LispObject::integer(e as i64))),
+                        None => Ok(Value::nil()),
+                    }
+                }
+                "match-string" => {
+                    let n_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;
+                    let n = value_to_obj(eval(obj_to_value(n_expr), env, editor, macros, state)?)
+                        .as_integer()
+                        .unwrap_or(0) as usize;
+                    // Optional STRING arg — if provided, use it instead of
+                    // the stored match-string. Required for non-buffer
+                    // matches since we don't model buffer positions.
+                    let src = if let Some(str_expr) = cdr.nth(1) {
+                        let s =
+                            value_to_obj(eval(obj_to_value(str_expr), env, editor, macros, state)?);
+                        s.as_string().cloned()
+                    } else {
+                        MATCH_STRING.with(|s| s.borrow().clone())
+                    };
+                    match (get_match_group(n), src) {
+                        (Some((s, e)), Some(text)) => Ok(obj_to_value(LispObject::string(
+                            text.get(s..e).unwrap_or(""),
+                        ))),
+                        _ => Ok(Value::nil()),
+                    }
+                }
+                "match-data" => {
+                    // Return match data as a list of positions: (m0-start
+                    // m0-end m1-start m1-end ...). Unmatched groups are nil.
+                    let data: Vec<LispObject> = MATCH_DATA.with(|d| {
+                        let borrowed = d.borrow();
+                        let mut out = Vec::with_capacity(borrowed.len() * 2);
+                        for group in borrowed.iter() {
+                            match group {
+                                Some((s, e)) => {
+                                    out.push(LispObject::integer(*s as i64));
+                                    out.push(LispObject::integer(*e as i64));
+                                }
+                                None => {
+                                    out.push(LispObject::nil());
+                                    out.push(LispObject::nil());
+                                }
+                            }
+                        }
+                        out
+                    });
+                    Ok(state.list_from_objects(data))
+                }
+                "replace-match" | "looking-at" | "re-search-forward" | "re-search-backward"
                 | "search-forward" | "search-backward" => Ok(Value::nil()),
                 "version-to-list" => {
                     let ver_expr = cdr.first().ok_or(ElispError::WrongNumberOfArguments)?;

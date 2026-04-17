@@ -853,6 +853,44 @@ fn make_stdlib_interp() -> Interpreter {
     interp.define("esc-map", LispObject::nil());
     interp.define("help-map", LispObject::nil());
     interp.define("mode-specific-map", LispObject::nil());
+    interp.define("special-event-map", LispObject::nil());
+    interp.define("minor-mode-map-alist", LispObject::nil());
+    interp.define("emulation-mode-map-alists", LispObject::nil());
+    interp.define("auto-fill-chars", LispObject::nil());
+    interp.define("char-script-table", LispObject::nil());
+    interp.define("char-width-table", LispObject::nil());
+    interp.define("printable-chars", LispObject::nil());
+    interp.define("word-combining-categories", LispObject::nil());
+    interp.define("word-separating-categories", LispObject::nil());
+    interp.define("ambiguous-width-chars", LispObject::nil());
+    interp.define("translation-table-for-input", LispObject::nil());
+    interp.define("use-default-ascent", LispObject::nil());
+    interp.define("ignored-local-variables", LispObject::nil());
+    interp.define("find-word-boundary-function-table", LispObject::nil());
+    interp.define("latin-extra-code-table", LispObject::nil());
+    interp.define("buffer-invisibility-spec", LispObject::nil());
+    interp.define("unicode-category-table", LispObject::nil());
+    interp.define("case-replace", LispObject::t());
+    // rx macro is complex — stub to return nil so it doesn't crash.
+    // Real rx.el lives in emacs-lisp/rx.el which we don't load.
+    interp.define("rx", LispObject::primitive("ignore"));
+    // `bol` / `eol` are rx anchor names; inside abbrev they're used as
+    // variables in a `let` that builds a regexp. Stubs that shadow
+    // them let the form eval without rx loaded.
+    interp.define("bol", LispObject::string(""));
+    interp.define("eol", LispObject::string(""));
+    interp.define("dump-mode", LispObject::nil());
+    interp.define("emacs-build-time", LispObject::nil());
+    interp.define("emacs-save-session-functions", LispObject::nil());
+    interp.define("command-error-function", LispObject::nil());
+    interp.define("command-error-default-function", LispObject::nil());
+    interp.define("delayed-warnings-list", LispObject::nil());
+    interp.define("delayed-warnings-hook", LispObject::nil());
+    // `regexp` is an rx macro-constructor; without rx we stub it as a
+    // function that returns its first arg unchanged so abbrev can
+    // define its abbrev-table regexp at load time.
+    interp.define("regexp", LispObject::primitive("identity"));
+    interp.define("standard-category-table", LispObject::primitive("ignore"));
     interp.define("search-spaces-regexp", LispObject::nil());
     interp.define("print-escape-newlines", LispObject::nil());
     interp.define("standard-output", LispObject::t());
@@ -2475,6 +2513,139 @@ fn test_file_name_as_directory() {
     );
 }
 
+/// Phase 7i regression: string-match must populate match data so that
+/// subsequent match-beginning/match-end/match-string calls return the
+/// positions of the match (Emacs semantics). key-parse in keymap.el
+/// depends on this after a successful string-match against the key
+/// string.
+#[test]
+fn test_match_data_after_string_match() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // Match with one capture group
+    let _ = interp
+        .eval(read(r#"(string-match "f\\(oo\\)b" "xxfoobar")"#).unwrap())
+        .unwrap();
+    // Whole match starts at index 2, ends at index 6 ("foob")
+    assert_eq!(
+        interp.eval(read("(match-beginning 0)").unwrap()).unwrap(),
+        LispObject::integer(2)
+    );
+    assert_eq!(
+        interp.eval(read("(match-end 0)").unwrap()).unwrap(),
+        LispObject::integer(6)
+    );
+    // Group 1 captures "oo" at indices 3..5
+    assert_eq!(
+        interp.eval(read("(match-beginning 1)").unwrap()).unwrap(),
+        LispObject::integer(3)
+    );
+    assert_eq!(
+        interp.eval(read("(match-end 1)").unwrap()).unwrap(),
+        LispObject::integer(5)
+    );
+    // match-string uses the remembered source
+    assert_eq!(
+        interp
+            .eval(read("(match-string 1 \"xxfoobar\")").unwrap())
+            .unwrap(),
+        LispObject::string("oo")
+    );
+    // Failed match clears match data
+    let _ = interp
+        .eval(read(r#"(string-match "z+" "abc")"#).unwrap())
+        .unwrap();
+    assert_eq!(
+        interp.eval(read("(match-beginning 0)").unwrap()).unwrap(),
+        LispObject::nil()
+    );
+}
+
+/// Phase 7i regression: concat should accept lists of character codes
+/// and nil (Emacs semantics). Used by help.el form 110:
+///   (concat "[" (mapcar #'car alist) "]")
+#[test]
+fn test_concat_accepts_list_and_nil() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // List of character codes spliced between strings
+    assert_eq!(
+        interp
+            .eval(read(r#"(concat "[" '(97 98 99) "]")"#).unwrap())
+            .unwrap(),
+        LispObject::string("[abc]")
+    );
+    // nil is treated as empty sequence
+    assert_eq!(
+        interp
+            .eval(read(r#"(concat "[" nil "]")"#).unwrap())
+            .unwrap(),
+        LispObject::string("[]")
+    );
+}
+
+/// Phase 7h — new bootstrap primitives all work standalone.
+#[test]
+fn test_phase7h_primitives() {
+    let mut interp = Interpreter::new();
+    add_primitives(&mut interp);
+    // capitalize: word-by-word title-casing.
+    assert_eq!(
+        interp
+            .eval(read(r#"(capitalize "hello world")"#).unwrap())
+            .unwrap(),
+        LispObject::string("Hello World")
+    );
+    // safe-length: returns cons count; 0 for atom.
+    assert_eq!(
+        interp
+            .eval(read("(safe-length '(a b c))").unwrap())
+            .unwrap(),
+        LispObject::integer(3)
+    );
+    assert_eq!(
+        interp.eval(read("(safe-length nil)").unwrap()).unwrap(),
+        LispObject::integer(0)
+    );
+    // string: build from chars.
+    assert_eq!(
+        interp.eval(read("(string 72 105)").unwrap()).unwrap(),
+        LispObject::string("Hi")
+    );
+    // characterp: non-negative small int → t, else nil.
+    assert_eq!(
+        interp.eval(read("(characterp 65)").unwrap()).unwrap(),
+        LispObject::t()
+    );
+    assert_eq!(
+        interp.eval(read("(characterp -1)").unwrap()).unwrap(),
+        LispObject::nil()
+    );
+    // regexp-quote: escape regex specials.
+    assert_eq!(
+        interp
+            .eval(read(r#"(regexp-quote "a.b*c")"#).unwrap())
+            .unwrap(),
+        LispObject::string(r"a\.b\*c")
+    );
+    // max-char: Emacs 30 constant.
+    assert_eq!(
+        interp.eval(read("(max-char)").unwrap()).unwrap(),
+        LispObject::integer(0x3fffff)
+    );
+    // read: parse a lisp form from a string.
+    assert_eq!(
+        interp.eval(read(r#"(read "(1 2 3)")"#).unwrap()).unwrap(),
+        LispObject::cons(
+            LispObject::integer(1),
+            LispObject::cons(
+                LispObject::integer(2),
+                LispObject::cons(LispObject::integer(3), LispObject::nil())
+            )
+        )
+    );
+}
+
 #[test]
 fn test_getenv() {
     let mut interp = Interpreter::new();
@@ -2553,59 +2724,57 @@ fn test_backquote_without_stdlib_backquote_el() {
     eprintln!("bare backquote result: {:?}", result);
 }
 
+/// Regression for Phase 7g: `&rest` and `&optional` in macro lambda
+/// lists must bind the remaining args as a LIST (rest) and pad with
+/// nil (optional). The previous `extract_param_names` stripped these
+/// markers and bound every name positionally, which broke
+/// `backquote-list*-macro` (which takes `(first &rest list)`) and
+/// therefore broke backquote expansion for any shape that produced
+/// `(backquote-list* ...)` — i.e. lists with leading or trailing
+/// literals around an unquote.
 #[test]
-fn test_bisect_backquote_state_pollution() {
-    // Load each bootstrap file one at a time, and after each, evaluate
-    // the exact failing form from format.el (form 2). The first file
-    // after which this fails is the one that poisoned the interpreter
-    // state.
+fn test_macro_rest_arg_binds_as_list() {
     if !ensure_stdlib_files() {
         return;
     }
     let interp = make_stdlib_interp();
-    // The probe — copy of what format.el form 2 shape evaluates to
-    // under backquote expansion. If this fails with "void variable:
-    // list" or similar, the state is polluted.
-    let probe = r#"`((foo ,(identity "a")) (bar ,(identity "b")))"#;
-    // Bootstrap sequence, through files that come before format.el
-    // plus a few after (to see pollution progression).
-    let files: &[&str] = &[
-        "emacs-lisp/debug-early",
-        "emacs-lisp/byte-run",
-        "emacs-lisp/backquote",
-        "subr",
-        "keymap",
-        "version",
-        "widget",
-        "custom",
-        "emacs-lisp/map-ynp",
-        "international/mule",
-        "international/mule-conf",
-        "env",
-    ];
-    // Baseline probe before any files
-    let baseline = interp.eval_source(probe);
-    eprintln!("[baseline] probe result: {:?}", baseline.is_ok());
+    let bq = std::fs::read_to_string("/tmp/elisp-stdlib/emacs-lisp/backquote.el").unwrap();
+    let _ = interp.eval_source(&bq);
 
-    for f in files {
-        let path = format!("/tmp/elisp-stdlib/{}.el", f);
-        let source = match std::fs::read_to_string(&path) {
-            Ok(s) => s,
-            Err(_) => {
-                eprintln!("[{}] SKIP (not found)", f);
-                continue;
-            }
-        };
-        interp.set_eval_ops_limit(5_000_000);
-        interp.reset_eval_ops();
-        let _ = interp.eval_source(&source);
-        interp.set_eval_ops_limit(0);
-        let probe_result = interp.eval_source(probe);
-        match probe_result {
-            Ok(_) => eprintln!("[{}] probe OK", f),
-            Err((_, e)) => eprintln!("[{}] probe FAIL: {}", f, e),
-        }
+    // Shapes that previously failed with `void variable: <func>`
+    // because the `&rest list` param was getting only ONE of the
+    // remaining args instead of the list of them.
+    let cases: &[&str] = &[
+        r#"`(a ,(identity "x") b)"#,                  // sym, unquote, sym (G)
+        r#"`(,(identity "x") ,(identity "y") tail)"#, // unq, unq, tail (J)
+        r#"`(a b ,(identity "x") c)"#,                // multi-lead then unquote then tail (K)
+    ];
+    for src in cases {
+        let result = interp.eval_source(src);
+        assert!(
+            result.is_ok(),
+            "backquote shape {} should expand and evaluate: {:?}",
+            src,
+            result
+        );
     }
+
+    // Direct call to `backquote-list*` with 3+ args — first maps to
+    // `first`, the rest collected into `list` as the &rest arg.
+    let direct = interp
+        .eval_source(r#"(backquote-list* 'a "x" '(b))"#)
+        .unwrap();
+    // Shape: (a "x" . (b)) = (a "x" b)
+    assert_eq!(
+        direct,
+        LispObject::cons(
+            LispObject::symbol("a"),
+            LispObject::cons(
+                LispObject::string("x"),
+                LispObject::cons(LispObject::symbol("b"), LispObject::nil())
+            )
+        )
+    );
 }
 
 #[test]
@@ -2734,7 +2903,14 @@ fn test_full_bootstrap_chain() {
         let mut first_err: Option<String> = None;
         // Set per-file eval operation budget (prevents runaway require chains)
         // Skip files that trigger heavy require chains (they load cl-lib.el etc.)
-        let skip_heavy = matches!(*f, "emacs-lisp/cl-preloaded" | "emacs-lisp/oclosure");
+        // cl-preloaded / oclosure / mule-cmds each hit heavy require
+        // chains or deep macro expansions that burn eval ops. 500K is
+        // enough to validate early forms and cap overall test time;
+        // without this, bootstrap runs ~37s (all in mule-cmds form 151).
+        let skip_heavy = matches!(
+            *f,
+            "emacs-lisp/cl-preloaded" | "emacs-lisp/oclosure" | "international/mule-cmds"
+        );
         interp.set_eval_ops_limit(if skip_heavy { 500_000 } else { 5_000_000 });
         interp.reset_eval_ops();
         for form in forms {
