@@ -22,6 +22,11 @@ pub enum PluginUpdateEffect {
         plugin_index: usize,
         param_index: usize,
     },
+    /// Parameter change addressed by graph node ID (works for non-linear graphs).
+    ParameterByNodeId {
+        node_id: crate::plugin_graph::GraphNodeId,
+        param_index: usize,
+    },
     /// Structural change (add/remove/reorder/toggle) — full chain rebuild
     Structural,
 }
@@ -262,6 +267,96 @@ impl PluginController {
         }
     }
 
+    /// Set a parameter value for a plugin identified by its graph node ID.
+    ///
+    /// Works for both linear and non-linear graph topologies, unlike
+    /// `set_plugin_param` which requires a linear index.
+    pub fn set_plugin_param_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        param_idx: usize,
+        value: f64,
+    ) -> PluginUpdateEffect {
+        let mut channel_count_changed = false;
+        let mut update_needed = false;
+
+        if let Some(node) = self.graph.nodes.get_mut(&node_id) {
+            update_needed = set_plugin_param_value(
+                &mut node.plugin.settings,
+                param_idx,
+                value,
+                &mut channel_count_changed,
+            );
+        }
+
+        if channel_count_changed {
+            self.graph.update_channel_dependent_plugins();
+        }
+
+        if update_needed {
+            self.determine_update_effect_by_node_id(node_id, param_idx, channel_count_changed)
+        } else {
+            PluginUpdateEffect::None
+        }
+    }
+
+    /// Set a string parameter value for a plugin by node ID.
+    pub fn set_plugin_param_string_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        param_idx: usize,
+        value: String,
+    ) -> Result<PluginUpdateEffect, String> {
+        let mut update_needed = false;
+
+        if let Some(node) = self.graph.nodes.get_mut(&node_id) {
+            match &mut node.plugin.settings {
+                PluginSettings::ABCompare {
+                    path_a_config,
+                    path_b_config,
+                    ..
+                } => match param_idx {
+                    9 => {
+                        *path_a_config = value;
+                        update_needed = true;
+                    }
+                    10 => {
+                        *path_b_config = value;
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
+                PluginSettings::Convolution { ir_file, .. } => {
+                    if param_idx == 0 {
+                        if !value.is_empty() {
+                            crate::security::validate_plugin_file_path(Path::new(&value))
+                                .map_err(|e| e.to_string())?;
+                        }
+                        *ir_file = value;
+                        update_needed = true;
+                    }
+                }
+                PluginSettings::BinauralDecoder { sofa_file, .. } => {
+                    if param_idx == 0 {
+                        if !value.is_empty() {
+                            crate::security::validate_plugin_file_path(Path::new(&value))
+                                .map_err(|e| e.to_string())?;
+                        }
+                        *sofa_file = value;
+                        update_needed = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if update_needed {
+            Ok(PluginUpdateEffect::Structural)
+        } else {
+            Ok(PluginUpdateEffect::None)
+        }
+    }
+
     /// Set a string parameter value for a plugin (e.g., file paths).
     ///
     /// File path parameters (IR file, SOFA file) are validated against
@@ -356,6 +451,68 @@ impl PluginController {
             }
         }
         PluginUpdateEffect::None
+    }
+
+    /// Reset a specific parameter to its default value, addressed by node ID.
+    pub fn reset_plugin_param_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        param_idx: usize,
+    ) -> PluginUpdateEffect {
+        let plugin_type = if let Some(node) = self.graph.nodes.get(&node_id) {
+            node.plugin.plugin_type()
+        } else {
+            return PluginUpdateEffect::None;
+        };
+
+        let default_settings = PluginSettings::default_for(&plugin_type);
+        let default_value = match default_settings.param_value(param_idx) {
+            Some(v) => v,
+            None => return PluginUpdateEffect::None,
+        };
+
+        let mut channel_count_changed = false;
+
+        if let Some(node) = self.graph.nodes.get_mut(&node_id) {
+            node.plugin.settings.set_param_value(param_idx, default_value);
+
+            match &mut node.plugin.settings {
+                PluginSettings::Upmixer { .. } if param_idx == 0 => {
+                    channel_count_changed = true;
+                }
+                PluginSettings::MultibandCompressor {
+                    num_bands, bands, ..
+                } if param_idx == 0 => {
+                    bands.resize_with(*num_bands, Default::default);
+                    for (i, band) in bands.iter_mut().enumerate() {
+                        band.active = match *num_bands {
+                            4 | 5 => i < 3,
+                            _ => true,
+                        };
+                    }
+                    channel_count_changed = true;
+                }
+                PluginSettings::MultibandExpander {
+                    num_bands, bands, ..
+                } if param_idx == 0 => {
+                    bands.resize_with(*num_bands, Default::default);
+                    for (i, band) in bands.iter_mut().enumerate() {
+                        band.active = match *num_bands {
+                            4 | 5 => i < 3,
+                            _ => true,
+                        };
+                    }
+                    channel_count_changed = true;
+                }
+                _ => {}
+            }
+        }
+
+        if channel_count_changed {
+            self.graph.update_channel_dependent_plugins();
+        }
+
+        self.determine_update_effect_by_node_id(node_id, param_idx, channel_count_changed)
     }
 
     /// Reset a specific parameter to its default value.
@@ -1036,6 +1193,27 @@ impl PluginController {
             }
         }
 
+        PluginUpdateEffect::Structural
+    }
+
+    /// Determine the update effect for a node-ID-addressed parameter change.
+    fn determine_update_effect_by_node_id(
+        &self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        param_idx: usize,
+        channel_count_changed: bool,
+    ) -> PluginUpdateEffect {
+        if channel_count_changed {
+            return PluginUpdateEffect::Structural;
+        }
+        if let Some(node) = self.graph.nodes.get(&node_id) {
+            if param_index_to_engine_param(&node.plugin.settings, param_idx).is_some() {
+                return PluginUpdateEffect::ParameterByNodeId {
+                    node_id,
+                    param_index: param_idx,
+                };
+            }
+        }
         PluginUpdateEffect::Structural
     }
 

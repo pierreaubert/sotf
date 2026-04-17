@@ -1274,6 +1274,13 @@ impl PluginGraph {
             .position(|n| n.plugin.plugin_type() == *plugin_type)
     }
 
+    /// Find the linear index of a plugin node by its `GraphNodeId`.
+    pub fn linear_index_of_node(&self, node_id: GraphNodeId) -> Option<usize> {
+        self.plugins_linear()?
+            .iter()
+            .position(|n| n.id == node_id)
+    }
+
     /// Clear all suspensions.
     pub fn clear_suspensions(&mut self) {
         for node in self.nodes.values_mut() {
