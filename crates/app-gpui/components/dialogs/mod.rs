@@ -682,7 +682,7 @@ impl PlayerView {
                                     }
                                     (crate::app::ContextMenuType::QueueItem, "play-from-here") => {
                                         state.app.playback.current_queue_index = Some(item_idx);
-                                        if let Some(queue_item) = state.app.queue.get(item_idx)
+                                        if let Some(queue_item) = state.app.queue_state.get(item_idx)
                                             && let Some(first_track) =
                                                 queue_item.album.tracks.first()
                                         {

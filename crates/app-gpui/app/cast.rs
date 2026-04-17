@@ -14,7 +14,7 @@ impl App {
         self.audio_device_state.cast_discovery_running = true;
 
         let (tx, rx) = std::sync::mpsc::channel();
-        self.cast_discovery_receiver = Some(rx);
+        self.federation.cast_discovery_receiver = Some(rx);
 
         std::thread::Builder::new()
             .name("cast-discovery".into())
@@ -50,7 +50,7 @@ impl App {
 
     /// Poll for Cast discovery results. Call from the UI update loop.
     pub fn update_cast_discovery(&mut self) {
-        let rx = match &self.cast_discovery_receiver {
+        let rx = match &self.federation.cast_discovery_receiver {
             Some(rx) => rx,
             None => return,
         };
@@ -60,12 +60,12 @@ impl App {
                 log::info!("Cast discovery found {} devices", devices.len());
                 self.audio_device_state.cast_devices = devices;
                 self.audio_device_state.cast_discovery_running = false;
-                self.cast_discovery_receiver = None;
+                self.federation.cast_discovery_receiver = None;
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 self.audio_device_state.cast_discovery_running = false;
-                self.cast_discovery_receiver = None;
+                self.federation.cast_discovery_receiver = None;
             }
         }
     }

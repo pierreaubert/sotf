@@ -25,7 +25,7 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
     pub fn toggle_mute(&mut self, group_idx: usize) {
         self.driver.update_app(|app, _| {
             // Mirror UI behavior: Read current state, invert, and set
-            if let Some(group) = app.level_meter_groups.get(group_idx) {
+            if let Some(group) = app.level_meters.groups.get(group_idx) {
                 let new_state = !group.muted;
                 app.set_level_meter_mute(group_idx, new_state);
             }
@@ -35,7 +35,7 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn toggle_solo(&mut self, group_idx: usize) {
         self.driver.update_app(|app, _| {
-            if let Some(group) = app.level_meter_groups.get(group_idx) {
+            if let Some(group) = app.level_meters.groups.get(group_idx) {
                 let new_state = !group.soloed;
                 app.set_level_meter_solo(group_idx, new_state);
             }
@@ -45,7 +45,7 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn toggle_dim(&mut self, group_idx: usize) {
         self.driver.update_app(|app, _| {
-            if let Some(group) = app.level_meter_groups.get(group_idx) {
+            if let Some(group) = app.level_meters.groups.get(group_idx) {
                 let new_state = !group.dimmed;
                 app.set_level_meter_dim(group_idx, new_state);
             }
@@ -55,7 +55,7 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn is_muted(&mut self, group_idx: usize) -> bool {
         self.driver.read_app(|app| {
-            app.level_meter_groups
+            app.level_meters.groups
                 .get(group_idx)
                 .map(|g| g.muted)
                 .unwrap_or(false)
@@ -64,7 +64,7 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn is_soloed(&mut self, group_idx: usize) -> bool {
         self.driver.read_app(|app| {
-            app.level_meter_groups
+            app.level_meters.groups
                 .get(group_idx)
                 .map(|g| g.soloed)
                 .unwrap_or(false)
@@ -73,7 +73,7 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn is_dimmed(&mut self, group_idx: usize) -> bool {
         self.driver.read_app(|app| {
-            app.level_meter_groups
+            app.level_meters.groups
                 .get(group_idx)
                 .map(|g| g.dimmed)
                 .unwrap_or(false)

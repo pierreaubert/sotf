@@ -40,31 +40,33 @@ impl App {
     }
 
     pub fn select_next_queue_item(&mut self) {
-        if !self.queue.is_empty() {
-            self.selected_queue_index = (self.selected_queue_index + 1) % self.queue.len();
+        if !self.queue_state.is_empty() {
+            self.queue_state.selected_index =
+                (self.queue_state.selected_index + 1) % self.queue_state.len();
         }
     }
 
     pub fn select_previous_queue_item(&mut self) {
-        if !self.queue.is_empty() {
-            if self.selected_queue_index == 0 {
-                self.selected_queue_index = self.queue.len() - 1;
+        if !self.queue_state.is_empty() {
+            if self.queue_state.selected_index == 0 {
+                self.queue_state.selected_index = self.queue_state.len() - 1;
             } else {
-                self.selected_queue_index -= 1;
+                self.queue_state.selected_index -= 1;
             }
         }
     }
 
     pub fn page_down_queue(&mut self, page_size: usize) {
-        if !self.queue.is_empty() {
-            self.selected_queue_index =
-                (self.selected_queue_index + page_size).min(self.queue.len() - 1);
+        if !self.queue_state.is_empty() {
+            self.queue_state.selected_index =
+                (self.queue_state.selected_index + page_size).min(self.queue_state.len() - 1);
         }
     }
 
     pub fn page_up_queue(&mut self, page_size: usize) {
-        if !self.queue.is_empty() {
-            self.selected_queue_index = self.selected_queue_index.saturating_sub(page_size);
+        if !self.queue_state.is_empty() {
+            self.queue_state.selected_index =
+                self.queue_state.selected_index.saturating_sub(page_size);
         }
     }
 

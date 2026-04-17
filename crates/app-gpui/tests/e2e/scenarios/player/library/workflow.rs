@@ -85,7 +85,7 @@ impl TestScenario for LibraryEmptyStateScenario {
         }
 
         // Queue should be empty
-        let queue_len = driver.read_app(|app| app.queue.len());
+        let queue_len = driver.read_app(|app| app.queue_state.len());
         if queue_len != 0 {
             return Err(format!("Expected empty queue, got {} items", queue_len).into());
         }

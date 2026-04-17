@@ -19,7 +19,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
-        let server_config = state.app.server_config.clone();
+        let server_config = state.app.federation.server_config.clone();
 
         div()
             .flex()

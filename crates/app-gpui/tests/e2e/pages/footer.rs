@@ -19,7 +19,7 @@ impl<'a, 'b> FooterPage<'a, 'b> {
 
     pub fn get_current_track_title(&mut self) -> Option<String> {
         self.driver.read_app(|app| {
-            app.queue
+            app.queue_state
                 .current_track()
                 .map(|t| t.title.clone().unwrap_or_else(|| "Unknown".to_string()))
         })

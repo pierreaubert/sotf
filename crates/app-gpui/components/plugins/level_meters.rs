@@ -1112,18 +1112,18 @@ impl PlayerView {
                 MouseButton::Left,
                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
-                        if group_idx < state.app.level_meter_groups.len() {
+                        if group_idx < state.app.level_meters.groups.len() {
                             match button_type {
                                 "mute" => {
-                                    let new_state = !state.app.level_meter_groups[group_idx].muted;
+                                    let new_state = !state.app.level_meters.groups[group_idx].muted;
                                     state.app.set_level_meter_mute(group_idx, new_state);
                                 }
                                 "solo" => {
-                                    let new_state = !state.app.level_meter_groups[group_idx].soloed;
+                                    let new_state = !state.app.level_meters.groups[group_idx].soloed;
                                     state.app.set_level_meter_solo(group_idx, new_state);
                                 }
                                 "dim" => {
-                                    let new_state = !state.app.level_meter_groups[group_idx].dimmed;
+                                    let new_state = !state.app.level_meters.groups[group_idx].dimmed;
                                     state.app.set_level_meter_dim(group_idx, new_state);
                                 }
                                 _ => {}
@@ -1145,9 +1145,9 @@ impl PlayerView {
             (
                 state.app.ui_state.theme.clone(),
                 state.app.playback.loudness_info.clone(),
-                state.app.level_meter_groups.clone(),
-                state.app.selected_level_meter_group,
-                state.app.level_meter_peak_hold.clone(),
+                state.app.level_meters.groups.clone(),
+                state.app.level_meters.selected_group,
+                state.app.level_meters.peak_hold.clone(),
             )
         };
         div()
@@ -1399,20 +1399,20 @@ impl LevelMeterManager for AppState {
             .output_speaker_config();
 
         // Skip rebuilding if nothing has changed
-        if num_channels == self.level_meter_last_channel_count
-            && current_speaker_config == self.level_meter_last_speaker_config
-            && !self.level_meter_groups.is_empty()
+        if num_channels == self.level_meters.last_channel_count
+            && current_speaker_config == self.level_meters.last_speaker_config
+            && !self.level_meters.groups.is_empty()
         {
             return;
         }
 
         // Update cache
-        self.level_meter_last_channel_count = num_channels;
-        self.level_meter_last_speaker_config = current_speaker_config.clone();
+        self.level_meters.last_channel_count = num_channels;
+        self.level_meters.last_speaker_config = current_speaker_config.clone();
 
         // Capture previous states to preserve them
         let old_groups: Vec<(String, bool, bool, bool)> = self
-            .level_meter_groups
+            .level_meters.groups
             .iter()
             .map(|g| (g.name.clone(), g.muted, g.soloed, g.dimmed))
             .collect();
@@ -1426,7 +1426,7 @@ impl LevelMeterManager for AppState {
                 .unwrap_or((false, false, false))
         };
 
-        self.level_meter_groups.clear();
+        self.level_meters.groups.clear();
 
         // Try to get meter groups from the speaker config (via upmixer plugin)
         // This handles collisions like 5.1.4 vs 7.1.2 (both 10 channels)
@@ -1439,7 +1439,7 @@ impl LevelMeterManager for AppState {
             // Convert static specs to runtime groups
             for group_spec in groups {
                 let (muted, soloed, dimmed) = get_previous_state(group_spec.name);
-                self.level_meter_groups.push(ChannelGroup {
+                self.level_meters.groups.push(ChannelGroup {
                     name: group_spec.name.to_string(),
                     channels: group_spec
                         .channels
@@ -1465,7 +1465,7 @@ impl LevelMeterManager for AppState {
                 1 => {
                     // Mono
                     let (muted, soloed, dimmed) = get_previous_state("Mono");
-                    self.level_meter_groups.push(ChannelGroup {
+                    self.level_meters.groups.push(ChannelGroup {
                         name: "Mono".to_string(),
                         channels: vec![ChannelInfo {
                             index: 0,
@@ -1480,7 +1480,7 @@ impl LevelMeterManager for AppState {
                 4 => {
                     // Quad (FL, FR, SL, SR) - not a standard speaker config
                     let (muted_lr, soloed_lr, dimmed_lr) = get_previous_state("L/R");
-                    self.level_meter_groups.push(ChannelGroup {
+                    self.level_meters.groups.push(ChannelGroup {
                         name: "L/R".to_string(),
                         channels: vec![
                             ChannelInfo {
@@ -1500,7 +1500,7 @@ impl LevelMeterManager for AppState {
                     });
 
                     let (muted_sr, soloed_sr, dimmed_sr) = get_previous_state("Surrounds");
-                    self.level_meter_groups.push(ChannelGroup {
+                    self.level_meters.groups.push(ChannelGroup {
                         name: "Surrounds".to_string(),
                         channels: vec![
                             ChannelInfo {
@@ -1536,7 +1536,7 @@ impl LevelMeterManager for AppState {
                             }
                         })
                         .collect();
-                    self.level_meter_groups.push(ChannelGroup {
+                    self.level_meters.groups.push(ChannelGroup {
                         name: "All Channels".to_string(),
                         channels,
                         muted,
@@ -1568,32 +1568,32 @@ impl LevelMeterManager for AppState {
             .unwrap_or(&[]);
 
         // Resize peak hold array if needed
-        if self.level_meter_peak_hold.len() != current_peaks.len() {
-            self.level_meter_peak_hold.resize(current_peaks.len(), 0.0);
+        if self.level_meters.peak_hold.len() != current_peaks.len() {
+            self.level_meters.peak_hold.resize(current_peaks.len(), 0.0);
         }
 
         // Update each channel's peak hold
         for (i, &current_peak) in current_peaks.iter().enumerate() {
             // If current peak is higher than held peak, update immediately
-            if current_peak > self.level_meter_peak_hold[i] {
-                self.level_meter_peak_hold[i] = current_peak;
+            if current_peak > self.level_meters.peak_hold[i] {
+                self.level_meters.peak_hold[i] = current_peak;
             } else {
                 // Apply decay to held peak
-                self.level_meter_peak_hold[i] *= PEAK_HOLD_DECAY_RATE;
+                self.level_meters.peak_hold[i] *= PEAK_HOLD_DECAY_RATE;
 
                 // Clamp to zero if below threshold
-                if self.level_meter_peak_hold[i] < PEAK_HOLD_DECAY_THRESHOLD {
-                    self.level_meter_peak_hold[i] = 0.0;
+                if self.level_meters.peak_hold[i] < PEAK_HOLD_DECAY_THRESHOLD {
+                    self.level_meters.peak_hold[i] = 0.0;
                 }
             }
         }
 
-        self.level_meter_peak_hold_last_update = Some(now);
+        self.level_meters.peak_hold_last_update = Some(now);
     }
 
     /// Clear all mutes, solos, and dims in level meter groups
     fn clear_level_meter_mutes_and_solos(&mut self) {
-        for group in &mut self.level_meter_groups {
+        for group in &mut self.level_meters.groups {
             group.muted = false;
             group.soloed = false;
             group.dimmed = false;
@@ -1603,7 +1603,7 @@ impl LevelMeterManager for AppState {
 
     /// Set mute state for a specific group
     fn set_level_meter_mute(&mut self, group_idx: usize, muted: bool) {
-        if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
+        if let Some(group) = self.level_meters.groups.get_mut(group_idx) {
             group.muted = muted;
             self.update_matrix_plugin();
         }
@@ -1611,13 +1611,13 @@ impl LevelMeterManager for AppState {
 
     /// Set solo state for a specific group (with exclusivity logic)
     fn set_level_meter_solo(&mut self, group_idx: usize, soloed: bool) {
-        if group_idx >= self.level_meter_groups.len() {
+        if group_idx >= self.level_meters.groups.len() {
             return;
         }
 
         if soloed {
             // Solo behavior: only one group can be soloed at a time
-            for (idx, g) in self.level_meter_groups.iter_mut().enumerate() {
+            for (idx, g) in self.level_meters.groups.iter_mut().enumerate() {
                 if idx == group_idx {
                     g.soloed = true;
                     // When soloing, ensure it's unmuted? Logic says:
@@ -1627,7 +1627,7 @@ impl LevelMeterManager for AppState {
                     g.soloed = false;
                 }
             }
-        } else if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
+        } else if let Some(group) = self.level_meters.groups.get_mut(group_idx) {
             group.soloed = false;
         }
         self.update_matrix_plugin();
@@ -1635,7 +1635,7 @@ impl LevelMeterManager for AppState {
 
     /// Set dim state for a specific group
     fn set_level_meter_dim(&mut self, group_idx: usize, dimmed: bool) {
-        if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
+        if let Some(group) = self.level_meters.groups.get_mut(group_idx) {
             group.dimmed = dimmed;
             self.update_matrix_plugin();
         }
@@ -1643,22 +1643,22 @@ impl LevelMeterManager for AppState {
 
     /// Toggle mute for the selected level meter group
     fn toggle_level_meter_mute(&mut self) {
-        if let Some(group) = self.level_meter_groups.get(self.selected_level_meter_group) {
-            self.set_level_meter_mute(self.selected_level_meter_group, !group.muted);
+        if let Some(group) = self.level_meters.groups.get(self.level_meters.selected_group) {
+            self.set_level_meter_mute(self.level_meters.selected_group, !group.muted);
         }
     }
 
     /// Toggle solo for the selected level meter group
     fn toggle_level_meter_solo(&mut self) {
-        if let Some(group) = self.level_meter_groups.get(self.selected_level_meter_group) {
-            self.set_level_meter_solo(self.selected_level_meter_group, !group.soloed);
+        if let Some(group) = self.level_meters.groups.get(self.level_meters.selected_group) {
+            self.set_level_meter_solo(self.level_meters.selected_group, !group.soloed);
         }
     }
 
     /// Toggle dim for the selected level meter group
     fn toggle_level_meter_dim(&mut self) {
-        if let Some(group) = self.level_meter_groups.get(self.selected_level_meter_group) {
-            self.set_level_meter_dim(self.selected_level_meter_group, !group.dimmed);
+        if let Some(group) = self.level_meters.groups.get(self.level_meters.selected_group) {
+            self.set_level_meter_dim(self.level_meters.selected_group, !group.dimmed);
         }
     }
 
@@ -1666,7 +1666,7 @@ impl LevelMeterManager for AppState {
     fn update_matrix_plugin(&mut self) {
         // Calculate total channel count
         let num_channels: usize = self
-            .level_meter_groups
+            .level_meters.groups
             .iter()
             .map(|g| g.channels.len())
             .sum();
@@ -1685,7 +1685,7 @@ impl LevelMeterManager for AppState {
             num_channels
         ];
 
-        for group in &self.level_meter_groups {
+        for group in &self.level_meters.groups {
             for channel_info in &group.channels {
                 if channel_info.index < num_channels {
                     channel_states[channel_info.index] = ChannelState {
@@ -1722,40 +1722,40 @@ impl LevelMeterManager for AppState {
 
     /// Navigate to next level meter group
     fn select_next_level_meter_group(&mut self) {
-        if !self.level_meter_groups.is_empty() {
-            self.selected_level_meter_group =
-                (self.selected_level_meter_group + 1) % self.level_meter_groups.len();
+        if !self.level_meters.groups.is_empty() {
+            self.level_meters.selected_group =
+                (self.level_meters.selected_group + 1) % self.level_meters.groups.len();
         }
     }
 
     /// Navigate to previous level meter group
     fn select_previous_level_meter_group(&mut self) {
-        if !self.level_meter_groups.is_empty() {
-            if self.selected_level_meter_group == 0 {
-                self.selected_level_meter_group = self.level_meter_groups.len() - 1;
+        if !self.level_meters.groups.is_empty() {
+            if self.level_meters.selected_group == 0 {
+                self.level_meters.selected_group = self.level_meters.groups.len() - 1;
             } else {
-                self.selected_level_meter_group -= 1;
+                self.level_meters.selected_group -= 1;
             }
         }
     }
 
     /// Navigate between mute, solo, and dim controls
     fn select_next_level_meter_control(&mut self) {
-        self.level_meter_control_selection = (self.level_meter_control_selection + 1) % 3;
+        self.level_meters.control_selection = (self.level_meters.control_selection + 1) % 3;
     }
 
     /// Navigate between mute, solo, and dim controls (previous)
     fn select_previous_level_meter_control(&mut self) {
-        self.level_meter_control_selection = if self.level_meter_control_selection == 0 {
+        self.level_meters.control_selection = if self.level_meters.control_selection == 0 {
             2
         } else {
-            self.level_meter_control_selection - 1
+            self.level_meters.control_selection - 1
         };
     }
 
     /// Toggle the currently selected level meter control (mute/solo/dim)
     fn toggle_selected_level_meter_control(&mut self) {
-        match self.level_meter_control_selection {
+        match self.level_meters.control_selection {
             0 => self.toggle_level_meter_mute(),
             1 => self.toggle_level_meter_solo(),
             2 => self.toggle_level_meter_dim(),

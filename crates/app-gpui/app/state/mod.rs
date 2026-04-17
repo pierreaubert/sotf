@@ -14,7 +14,7 @@ pub mod plugin;
 pub mod shared;
 pub mod ui;
 
-pub use app::{App, AppState, DividerDragState, DividerType, WorkflowNodeMapping};
+pub use app::{App, AppState, DividerDragState, DividerType, QueueState, WorkflowNodeMapping};
 pub use audio_device::AudioDeviceState;
 pub use input::InputState;
 pub use library::LibraryState;

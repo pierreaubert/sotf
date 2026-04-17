@@ -19,9 +19,7 @@ impl PlayerView {
                     is_dragging_queue_list,
                     is_dragging_meters,
                     is_dragging_lufs,
-                    is_dragging_volume,
-                    volume_start_y,
-                    volume_start_value,
+                    volume_drag,
                     window_height,
                 ) = {
                     let state = view.state.read(cx);
@@ -31,9 +29,7 @@ impl PlayerView {
                         layout.is_dragging_queue_list_divider,
                         layout.is_dragging_meters_divider,
                         layout.is_dragging_lufs_divider,
-                        state.app.is_dragging_volume,
-                        state.app.volume_drag_start_y,
-                        state.app.volume_drag_start_value,
+                        state.app.volume_drag,
                         state.app.ui_state.window_height,
                     )
                 };
@@ -100,13 +96,12 @@ impl PlayerView {
                 }
 
                 // Handle volume dragging (drag up = increase, drag down = decrease)
-                if is_dragging_volume
-                    && let Some(start_y) = volume_start_y {
+                if let Some(vd) = volume_drag {
                         let mouse_y: f32 = mouse_pos.y.into();
-                        let delta_y = start_y - mouse_y; // Inverted: up = positive
+                        let delta_y = vd.start_y - mouse_y; // Inverted: up = positive
                         // Scale: 100px drag = full volume range
                         let volume_delta = delta_y / 100.0;
-                        let new_volume: f32 = (volume_start_value + volume_delta).clamp(0.0, 1.0);
+                        let new_volume: f32 = (vd.start_value + volume_delta).clamp(0.0, 1.0);
                         view.state.update(cx, |state, _cx| {
                             state.app.playback.volume = new_volume;
                             let _ = state.player.lock().set_volume(new_volume);
@@ -169,9 +164,8 @@ impl PlayerView {
                             }
                         });
 
-                        if state.app.is_dragging_volume {
-                            state.app.is_dragging_volume = false;
-                            state.app.volume_drag_start_y = None;
+                        if state.app.volume_drag.is_some() {
+                            state.app.volume_drag = None;
                         }
 
                         if needs_save {

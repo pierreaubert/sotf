@@ -228,7 +228,7 @@ impl PlayerView {
 
         // Get album art path from current queue item
         let album_art_path = if let Some(queue_idx) = state.app.playback.current_queue_index {
-            if let Some(item) = state.app.queue.get(queue_idx) {
+            if let Some(item) = state.app.queue_state.get(queue_idx) {
                 item.album.album_art_path.clone()
             } else {
                 None
@@ -317,7 +317,7 @@ impl PlayerView {
         // Get current track info from queue
         let (title, album_name, artist) =
             if let Some(queue_idx) = state.app.playback.current_queue_index {
-                if let Some(item) = state.app.queue.get(queue_idx) {
+                if let Some(item) = state.app.queue_state.get(queue_idx) {
                     let track_title = item
                         .current_track()
                         .and_then(|t| t.title.clone())
@@ -425,7 +425,7 @@ impl PlayerView {
 
         // Get waveform data
         let waveform = if let Some(queue_idx) = state.app.playback.current_queue_index {
-            if let Some(item) = state.app.queue.get(queue_idx) {
+            if let Some(item) = state.app.queue_state.get(queue_idx) {
                 item.current_track().and_then(|t| t.waveform.clone())
             } else {
                 None
@@ -1007,7 +1007,7 @@ impl PlayerView {
                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                             view.state.update(cx, |state, _cx| {
                                 let was_playing = state.app.playback.is_playing;
-                                let current_path = state.app.queue.current_track_source();
+                                let current_path = state.app.queue_state.current_track_source();
                                 let current_pos = state.app.playback.position_secs;
 
                                 state.app.audio_device_state.selected_output_device_index = idx;
@@ -1292,9 +1292,10 @@ impl PlayerView {
                     }
                     // Start volume drag
                     view.state.update(cx, |state, _cx| {
-                        state.app.is_dragging_volume = true;
-                        state.app.volume_drag_start_y = Some(event.position.y.into());
-                        state.app.volume_drag_start_value = state.app.playback.volume;
+                        state.app.volume_drag = Some(crate::app::state::app::VolumeDragState {
+                            start_y: event.position.y.into(),
+                            start_value: state.app.playback.volume,
+                        });
                     });
                 }),
             )

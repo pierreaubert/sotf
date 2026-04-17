@@ -185,35 +185,25 @@ impl PlayerView {
                 let state_read = view.state.read(cx);
 
                 // Handle knob/slider dragging
-                let (is_knob_dragging, start_y, start_value, min, max, plugin_idx, param_idx) = (
-                    state_read.app.is_dragging_knob,
-                    state_read.app.knob_drag_start_y,
-                    state_read.app.knob_drag_start_value,
-                    state_read.app.knob_drag_min,
-                    state_read.app.knob_drag_max,
-                    state_read.app.knob_drag_plugin_idx,
-                    state_read.app.knob_drag_param_idx,
-                );
+                let knob_drag = state_read.app.knob_drag;
 
                 // Handle divider dragging
                 let divider_drag = state_read.app.dragging_divider.clone();
 
-                if is_knob_dragging {
-                    if let Some(start_y) = start_y {
-                        let mouse_y: f32 = event.position.y.into();
-                        let delta_y = start_y - mouse_y; // Inverted: up = positive (increase)
-                        // Scale: 150px drag = full range
-                        let range = max - min;
-                        let value_delta = (delta_y as f64 / 150.0) * range;
-                        let new_value = (start_value + value_delta).clamp(min, max);
+                if let Some(drag) = knob_drag {
+                    let mouse_y: f32 = event.position.y.into();
+                    let delta_y = drag.start_y - mouse_y; // Inverted: up = positive (increase)
+                    // Scale: 150px drag = full range
+                    let range = drag.max - drag.min;
+                    let value_delta = (delta_y as f64 / 150.0) * range;
+                    let new_value = (drag.start_value + value_delta).clamp(drag.min, drag.max);
 
-                        // Update the parameter value via the plugin editing system
-                        // (set_plugin_param already sets pending_plugin_update)
-                        view.state.update(cx, |state, _cx| {
-                            state.app.set_plugin_param(plugin_idx, param_idx, new_value);
-                        });
-                        cx.notify();
-                    }
+                    // Update the parameter value via the plugin editing system
+                    // (set_plugin_param already sets pending_plugin_update)
+                    view.state.update(cx, |state, _cx| {
+                        state.app.set_plugin_param(drag.plugin_idx, drag.param_idx, new_value);
+                    });
+                    cx.notify();
                 } else if let Some(drag) = divider_drag {
                     let mouse_x: f32 = event.position.x.into();
                     let delta_x = mouse_x - drag.start_x;
@@ -241,9 +231,8 @@ impl PlayerView {
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
-                        if state.app.is_dragging_knob {
-                            state.app.is_dragging_knob = false;
-                            state.app.knob_drag_start_y = None;
+                        if state.app.knob_drag.is_some() {
+                            state.app.knob_drag = None;
                         }
                         if state.app.dragging_divider.is_some() {
                             state.app.dragging_divider = None;
@@ -2017,7 +2006,7 @@ impl PlayerView {
                     // Each group: 2×2px padding (p_0p5) = 4px
                     // Legend: ~16px
                     // Input group: 2 bars (L/R) = 2×16 + 1 gap + 4 padding = 37px
-                    let num_output_groups = state.app.level_meter_groups.len();
+                    let num_output_groups = state.app.level_meters.groups.len();
                     let meter_bar_width: f32 = 16.0; // 1rem
                     let bar_gap: f32 = 1.0; // gap_px()
                     let group_padding: f32 = 4.0; // p_0p5 = 2px each side
@@ -2280,7 +2269,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let input_loudness = state.app.playback.input_loudness_info.clone();
         let output_loudness = state.app.playback.loudness_info.clone();
-        let peak_hold = state.app.level_meter_peak_hold.clone();
+        let peak_hold = state.app.level_meters.peak_hold.clone();
 
         // Build input groups (always stereo L/R)
         let in_groups = [ChannelGroup {
@@ -2303,7 +2292,7 @@ impl PlayerView {
         }];
 
         // Use the app's canonical level_meter_groups for output (M/S/D state is preserved)
-        let out_groups = state.app.level_meter_groups.clone();
+        let out_groups = state.app.level_meters.groups.clone();
 
         // Fake index for input (no M/S/D control on input)
         let fake_in_idx = 1000;

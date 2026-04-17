@@ -21,7 +21,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
-        let sources = state.app.federation_sources.clone();
+        let sources = state.app.federation.sources.clone();
 
         let mut content = div()
             .flex()
@@ -495,7 +495,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let progress = state.app.federation_scan_progress.clone();
+        let progress = state.app.federation.scan_progress.clone();
 
         let (text, pct) = match &progress {
             Some(p) if p.albums_total > 0 => {
