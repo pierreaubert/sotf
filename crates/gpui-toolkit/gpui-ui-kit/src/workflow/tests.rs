@@ -746,3 +746,147 @@ fn test_hit_test_priority() {
         _ => panic!("Expected InputPort hit result"),
     }
 }
+
+// ============================================================================
+// Port Bounds Validation Tests
+// ============================================================================
+
+#[test]
+fn test_add_connection_port_out_of_bounds() {
+    let mut graph = WorkflowGraph::new();
+
+    let node1 = WorkflowNodeData::new("N1", Position::new(0.0, 0.0)).with_ports(0, 2);
+    let node2 = WorkflowNodeData::new("N2", Position::new(200.0, 0.0)).with_ports(2, 0);
+    let id1 = node1.id;
+    let id2 = node2.id;
+    graph.add_node(node1);
+    graph.add_node(node2);
+
+    // Valid indices
+    assert!(graph.add_connection(id1, 0, id2, 0).is_ok());
+    assert!(graph.add_connection(id1, 1, id2, 1).is_ok());
+
+    // Output index out of bounds (node1 has 2 outputs: 0,1)
+    assert!(graph.add_connection(id1, 2, id2, 0).is_err());
+    // Input index out of bounds (node2 has 2 inputs: 0,1)
+    assert!(graph.add_connection(id1, 0, id2, 2).is_err());
+}
+
+// ============================================================================
+// Max Port Capacity Tests
+// ============================================================================
+
+#[test]
+fn test_with_max_ports() {
+    let node = WorkflowNodeData::new("N", Position::new(0.0, 0.0))
+        .with_ports(2, 2)
+        .with_max_ports(Some(4), Some(3));
+
+    assert_eq!(node.max_input_count, Some(4));
+    assert_eq!(node.max_output_count, Some(3));
+}
+
+#[test]
+fn test_grow_inputs_to() {
+    let mut node = WorkflowNodeData::new("N", Position::new(0.0, 0.0))
+        .with_ports(2, 2)
+        .with_max_ports(Some(5), None);
+
+    // Grow within limit
+    assert_eq!(node.grow_inputs_to(4), 4);
+    assert_eq!(node.input_count, 4);
+
+    // Clamped by max
+    assert_eq!(node.grow_inputs_to(8), 5);
+    assert_eq!(node.input_count, 5);
+}
+
+#[test]
+fn test_grow_inputs_no_limit() {
+    let mut node = WorkflowNodeData::new("N", Position::new(0.0, 0.0))
+        .with_ports(2, 2);
+    // No max set — grows freely
+    assert_eq!(node.grow_inputs_to(10), 10);
+    assert_eq!(node.input_count, 10);
+}
+
+#[test]
+fn test_grow_inputs_height_grows() {
+    let mut node = WorkflowNodeData::new("N", Position::new(0.0, 0.0))
+        .with_ports(1, 1)
+        .with_size(160.0, 80.0);
+    let old_height = node.height;
+
+    node.grow_inputs_to(6);
+    // Height should have grown to fit 6 ports
+    assert!(node.height > old_height);
+}
+
+// ============================================================================
+// ChangePortCountsCommand Tests
+// ============================================================================
+
+#[test]
+fn test_change_port_counts_undo_redo() {
+    use super::history::{ChangePortCountsCommand, Command};
+
+    let mut graph = WorkflowGraph::new();
+    let node = WorkflowNodeData::new("N", Position::new(0.0, 0.0))
+        .with_ports(2, 2)
+        .with_size(160.0, 90.0);
+    let id = node.id;
+    graph.add_node(node);
+
+    let cmd = ChangePortCountsCommand {
+        node_id: id,
+        old_input_count: 2,
+        new_input_count: 5,
+        old_output_count: 2,
+        new_output_count: 2,
+        old_height: 90.0,
+        new_height: 128.0,
+    };
+
+    cmd.execute(&mut graph);
+    let n = graph.nodes.get(&id).unwrap();
+    assert_eq!(n.input_count, 5);
+    assert_eq!(n.height, 128.0);
+
+    cmd.undo(&mut graph);
+    let n = graph.nodes.get(&id).unwrap();
+    assert_eq!(n.input_count, 2);
+    assert_eq!(n.height, 90.0);
+}
+
+// ============================================================================
+// Serialization with max ports
+// ============================================================================
+
+#[test]
+fn test_serialization_max_ports_roundtrip() {
+    let mut graph = WorkflowGraph::new();
+    let node = WorkflowNodeData::new("N", Position::new(0.0, 0.0))
+        .with_ports(2, 3)
+        .with_max_ports(Some(8), Some(6));
+    let id = node.id;
+    graph.add_node(node);
+
+    let json = serde_json::to_string(&graph).unwrap();
+    let restored: WorkflowGraph = serde_json::from_str(&json).unwrap();
+
+    let n = restored.nodes.get(&id).unwrap();
+    assert_eq!(n.max_input_count, Some(8));
+    assert_eq!(n.max_output_count, Some(6));
+}
+
+#[test]
+fn test_serialization_old_format_compat() {
+    // Simulate old format without max_*_count fields
+    let json = r#"{"nodes":{"00000000-0000-0000-0000-000000000001":{"id":"00000000-0000-0000-0000-000000000001","position":{"x":0.0,"y":0.0},"width":180.0,"height":100.0,"title":"N","input_count":1,"output_count":1}},"connections":[]}"#;
+    let graph: WorkflowGraph = serde_json::from_str(json).unwrap();
+
+    let node = graph.nodes.values().next().unwrap();
+    // Should default to None (no limit)
+    assert_eq!(node.max_input_count, None);
+    assert_eq!(node.max_output_count, None);
+}

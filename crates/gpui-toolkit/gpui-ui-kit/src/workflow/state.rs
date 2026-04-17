@@ -39,6 +39,12 @@ pub struct WorkflowNodeData {
     pub title: String,
     pub input_count: usize,
     pub output_count: usize,
+    /// Maximum number of input ports this node can have (None = no limit)
+    #[serde(default)]
+    pub max_input_count: Option<usize>,
+    /// Maximum number of output ports this node can have (None = no limit)
+    #[serde(default)]
+    pub max_output_count: Option<usize>,
     /// Custom data associated with this node (application-specific)
     #[serde(default)]
     pub user_data: serde_json::Value,
@@ -54,6 +60,8 @@ impl WorkflowNodeData {
             title: title.into(),
             input_count: 1,
             output_count: 1,
+            max_input_count: None,
+            max_output_count: None,
             user_data: serde_json::Value::Null,
         }
     }
@@ -72,10 +80,40 @@ impl WorkflowNodeData {
         self
     }
 
+    /// Set maximum port counts (None = no limit)
+    pub fn with_max_ports(
+        mut self,
+        max_inputs: Option<usize>,
+        max_outputs: Option<usize>,
+    ) -> Self {
+        self.max_input_count = max_inputs;
+        self.max_output_count = max_outputs;
+        self
+    }
+
     /// Create with user data
     pub fn with_user_data(mut self, data: serde_json::Value) -> Self {
         self.user_data = data;
         self
+    }
+
+    /// Grow input_count up to `target`, clamped by max_input_count.
+    /// Returns the resulting input_count.
+    pub fn grow_inputs_to(&mut self, target: usize) -> usize {
+        let max = self.max_input_count.unwrap_or(usize::MAX);
+        let new_count = target.min(max);
+        if new_count > self.input_count {
+            self.input_count = new_count;
+            self.ensure_min_height();
+        }
+        self.input_count
+    }
+
+    /// Ensure the node is tall enough for the current port count.
+    pub fn ensure_min_height(&mut self) {
+        let ports = self.input_count.max(self.output_count);
+        let min_height = 48.0 + ports as f32 * 16.0;
+        self.height = self.height.max(min_height);
     }
 
     /// Get the center position of this node
@@ -227,11 +265,21 @@ impl WorkflowGraph {
         to_port: usize,
     ) -> Result<ConnectionId, &'static str> {
         // Validate nodes exist
-        if !self.nodes.contains_key(&from_node) {
-            return Err("Source node not found");
+        let from_data = match self.nodes.get(&from_node) {
+            Some(n) => n,
+            None => return Err("Source node not found"),
+        };
+        let to_data = match self.nodes.get(&to_node) {
+            Some(n) => n,
+            None => return Err("Target node not found"),
+        };
+
+        // Validate port indices
+        if from_port >= from_data.output_count {
+            return Err("Output port index out of bounds");
         }
-        if !self.nodes.contains_key(&to_node) {
-            return Err("Target node not found");
+        if to_port >= to_data.input_count {
+            return Err("Input port index out of bounds");
         }
 
         // Check for self-loops
@@ -266,7 +314,7 @@ impl WorkflowGraph {
     }
 
     /// Check if adding an edge from -> to would create a cycle
-    fn would_create_cycle(&self, from_node: NodeId, to_node: NodeId) -> bool {
+    pub fn would_create_cycle(&self, from_node: NodeId, to_node: NodeId) -> bool {
         use std::collections::VecDeque;
 
         let mut visited = HashSet::new();
@@ -427,6 +475,8 @@ pub enum InteractionMode {
     CreatingConnection,
     /// Box selection
     BoxSelecting,
+    /// Alt+drag from node body for bulk-connect
+    BulkConnecting,
 }
 
 /// State for dragging nodes
@@ -446,6 +496,13 @@ pub struct ConnectionDrag {
     pub from_node: NodeId,
     pub from_port: usize,
     pub is_output: bool,
+    pub current_position: Position,
+}
+
+/// State for bulk-connect drag (Alt+drag from node body to another node)
+#[derive(Debug, Clone)]
+pub struct BulkConnectDrag {
+    pub from_node: NodeId,
     pub current_position: Position,
 }
 
@@ -489,6 +546,7 @@ pub struct CanvasState {
     pub mode: InteractionMode,
     pub node_drag: Option<NodeDragState>,
     pub connection_drag: Option<ConnectionDrag>,
+    pub bulk_connect_drag: Option<BulkConnectDrag>,
     pub box_selection: Option<BoxSelection>,
     pub context_menu: Option<ContextMenuState>,
 }
@@ -502,6 +560,7 @@ impl Default for CanvasState {
             mode: InteractionMode::None,
             node_drag: None,
             connection_drag: None,
+            bulk_connect_drag: None,
             box_selection: None,
             context_menu: None,
         }

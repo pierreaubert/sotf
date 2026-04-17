@@ -1,5 +1,15 @@
 # 0.6.17
 
+## Features
+
+- **Workflow**: Bulk-connect gesture — Alt+drag from one node's body to another to wire all matching output→input ports in one go. The target node's input count grows automatically if allowed by `max_input_count`. Single undo reverts the entire operation.
+- **Workflow**: `WorkflowNodeData` gains `max_input_count` / `max_output_count` (both `Option<usize>`, backward-compatible). Nodes can declare their maximum port capacity; `grow_inputs_to()` grows ports up to the limit and adjusts node height.
+- **Workflow**: Port index validation in `add_connection()` — rejects out-of-bounds port indices.
+
+## Fixes
+
+- **Workflow**: Connection lines now route around intermediate nodes instead of passing behind them. The routing algorithm detects obstacle nodes in each connection's path and detours above or below with a 15px margin. Updates live during node drag.
+
 # 0.6.16
 
 ## Features

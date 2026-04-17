@@ -2,15 +2,15 @@
 
 use super::bezier::{connection_path, connection_path_avoiding, ObstacleRect};
 use super::history::{
-    AddConnectionCommand, AddNodeCommand, HistoryManager, MoveNodesCommand,
-    RemoveConnectionCommand, RemoveNodeCommand,
+    AddConnectionCommand, AddNodeCommand, ChangePortCountsCommand, CompositeCommand,
+    HistoryManager, MoveNodesCommand, RemoveConnectionCommand, RemoveNodeCommand,
 };
 use super::hit_test::{HitTestResult, HitTester};
 use super::node::WorkflowNode;
 use super::state::{
-    BoxSelection, CanvasState, Connection, ConnectionDrag, ContextMenuState, InteractionMode,
-    LinkType, NodeDragState, NodeId, Position, SelectionState, ViewportState, WorkflowGraph,
-    WorkflowNodeData,
+    BoxSelection, BulkConnectDrag, CanvasState, Connection, ConnectionDrag, ContextMenuState,
+    InteractionMode, LinkType, NodeDragState, NodeId, Position, SelectionState, ViewportState,
+    WorkflowGraph, WorkflowNodeData,
 };
 use super::theme::WorkflowTheme;
 use crate::menu::{Menu, MenuItem};
@@ -352,7 +352,13 @@ impl WorkflowCanvas {
 
     // === Internal event handlers ===
 
-    fn handle_mouse_down(&mut self, position: Position, shift: bool, cx: &mut Context<Self>) {
+    fn handle_mouse_down(
+        &mut self,
+        position: Position,
+        shift: bool,
+        alt: bool,
+        cx: &mut Context<Self>,
+    ) {
         // Clear context menu on any click if visible
         if self.state.context_menu.is_some() {
             self.state.context_menu = None;
@@ -389,32 +395,43 @@ impl WorkflowCanvas {
                 });
             }
             HitTestResult::Node(node_id) => {
-                if shift {
-                    self.state.selection.toggle_node(node_id);
-                } else if !self.state.selection.is_node_selected(node_id) {
-                    self.state.selection.clear();
-                    self.state.selection.select_node(node_id, false);
+                if alt {
+                    // Alt+click on node body: start bulk-connect drag
+                    self.state.mode = InteractionMode::BulkConnecting;
+                    self.state.bulk_connect_drag = Some(BulkConnectDrag {
+                        from_node: node_id,
+                        current_position: canvas_pos,
+                    });
+                } else {
+                    if shift {
+                        self.state.selection.toggle_node(node_id);
+                    } else if !self.state.selection.is_node_selected(node_id) {
+                        self.state.selection.clear();
+                        self.state.selection.select_node(node_id, false);
+                    }
+
+                    // Start dragging
+                    let dragging_nodes: Vec<NodeId> = self
+                        .state
+                        .selection
+                        .selected_nodes
+                        .iter()
+                        .copied()
+                        .collect();
+                    let original_positions: HashMap<NodeId, Position> = dragging_nodes
+                        .iter()
+                        .filter_map(|id| {
+                            self.state.graph.nodes.get(id).map(|n| (*id, n.position))
+                        })
+                        .collect();
+
+                    self.state.mode = InteractionMode::DraggingNodes;
+                    self.state.node_drag = Some(NodeDragState {
+                        dragging_nodes,
+                        start_mouse: canvas_pos,
+                        original_positions,
+                    });
                 }
-
-                // Start dragging
-                let dragging_nodes: Vec<NodeId> = self
-                    .state
-                    .selection
-                    .selected_nodes
-                    .iter()
-                    .copied()
-                    .collect();
-                let original_positions: HashMap<NodeId, Position> = dragging_nodes
-                    .iter()
-                    .filter_map(|id| self.state.graph.nodes.get(id).map(|n| (*id, n.position)))
-                    .collect();
-
-                self.state.mode = InteractionMode::DraggingNodes;
-                self.state.node_drag = Some(NodeDragState {
-                    dragging_nodes,
-                    start_mouse: canvas_pos,
-                    original_positions,
-                });
             }
             HitTestResult::Connection(conn_id) => {
                 self.state.selection.select_connection(conn_id, shift);
@@ -464,6 +481,12 @@ impl WorkflowCanvas {
             InteractionMode::BoxSelecting => {
                 if let Some(ref mut selection) = self.state.box_selection {
                     selection.current = canvas_pos;
+                    cx.notify();
+                }
+            }
+            InteractionMode::BulkConnecting => {
+                if let Some(ref mut drag) = self.state.bulk_connect_drag {
+                    drag.current_position = canvas_pos;
                     cx.notify();
                 }
             }
@@ -547,6 +570,20 @@ impl WorkflowCanvas {
                     }
                 }
             }
+            InteractionMode::BulkConnecting => {
+                if let Some(drag) = self.state.bulk_connect_drag.take() {
+                    let hit = self.hit_tester.hit_test_with_viewport(
+                        position,
+                        &self.state.graph,
+                        &self.state.viewport,
+                    );
+                    if let HitTestResult::Node(target_id) = hit {
+                        if target_id != drag.from_node {
+                            self.execute_bulk_connect(drag.from_node, target_id);
+                        }
+                    }
+                }
+            }
             InteractionMode::BoxSelecting => {
                 if let Some(selection) = self.state.box_selection.take() {
                     // Box selection rect is in canvas coordinates
@@ -590,6 +627,80 @@ impl WorkflowCanvas {
             && let Some(ref callback) = self.on_node_double_click
         {
             callback(node_id, window, cx);
+        }
+    }
+
+    /// Bulk-connect: wire source output[i] → target input[i] for all matching ports.
+    /// Grows the target's input_count if allowed by max_input_count.
+    fn execute_bulk_connect(&mut self, source_id: NodeId, target_id: NodeId) {
+        let source = match self.state.graph.nodes.get(&source_id) {
+            Some(n) => n.clone(),
+            None => return,
+        };
+        let target = match self.state.graph.nodes.get(&target_id) {
+            Some(n) => n.clone(),
+            None => return,
+        };
+
+        let source_outputs = source.output_count;
+        if source_outputs == 0 {
+            return;
+        }
+
+        // Would adding any edge create a cycle?
+        if self
+            .state
+            .graph
+            .would_create_cycle(source_id, target_id)
+        {
+            return;
+        }
+
+        // How many connections can we make?
+        let max_target = target.max_input_count.unwrap_or(usize::MAX);
+        let connect_count = source_outputs.min(max_target);
+        if connect_count == 0 {
+            return;
+        }
+
+        let mut composite = CompositeCommand::new("Bulk connect");
+
+        // Grow target input_count if needed
+        if connect_count > target.input_count {
+            let old_height = target.height;
+            let new_input_count = connect_count;
+            let ports = new_input_count.max(target.output_count);
+            let new_height = old_height.max(48.0 + ports as f32 * 16.0);
+
+            composite.add(Box::new(ChangePortCountsCommand {
+                node_id: target_id,
+                old_input_count: target.input_count,
+                new_input_count,
+                old_output_count: target.output_count,
+                new_output_count: target.output_count,
+                old_height,
+                new_height,
+            }));
+        }
+
+        // Create connections for each matching index
+        for i in 0..connect_count {
+            let already_exists = self.state.graph.connections.iter().any(|c| {
+                c.from_node == source_id
+                    && c.from_port == i
+                    && c.to_node == target_id
+                    && c.to_port == i
+            });
+            if already_exists {
+                continue;
+            }
+            let conn = Connection::new(source_id, i, target_id, i);
+            composite.add(Box::new(AddConnectionCommand { connection: conn }));
+        }
+
+        if !composite.commands.is_empty() {
+            self.history
+                .execute(Box::new(composite), &mut self.state.graph);
         }
     }
 
@@ -810,6 +921,7 @@ impl Render for WorkflowCanvas {
             .collect();
 
         let connection_drag = self.state.connection_drag.clone();
+        let bulk_connect_drag = self.state.bulk_connect_drag.clone();
         let graph = self.state.graph.clone();
 
         let conn_color = theme.connection_color;
@@ -836,12 +948,16 @@ impl Render for WorkflowCanvas {
                 (
                     connections.clone(),
                     connection_drag.clone(),
+                    bulk_connect_drag.clone(),
                     graph.clone(),
                     bounds,
                     node_screen_rects.clone(),
                 )
             },
-            move |_, (connections, connection_drag, graph, bounds, node_screen_rects), window, _| {
+            move |_,
+                  (connections, connection_drag, bulk_connect_drag, graph, bounds, node_screen_rects),
+                  window,
+                  _| {
                 // Use fresh bounds from callback - bounds.origin gives us the canvas element position
                 let origin_x: f32 = bounds.origin.x.into();
                 let origin_y: f32 = bounds.origin.y.into();
@@ -908,6 +1024,27 @@ impl Render for WorkflowCanvas {
                         conn_width_fat,
                         port_radius,
                         drag.is_output,
+                        origin_x,
+                        origin_y,
+                    );
+                }
+
+                // Draw bulk-connect preview (line from source node center to cursor)
+                if let Some(ref drag) = bulk_connect_drag
+                    && let Some(from_node) = graph.nodes.get(&drag.from_node)
+                {
+                    let center = from_node.center();
+                    let center_screen = viewport.canvas_to_screen(&center);
+                    let cursor_screen = viewport.canvas_to_screen(&drag.current_position);
+
+                    draw_connection_preview(
+                        window,
+                        center_screen,
+                        cursor_screen,
+                        conn_preview,
+                        conn_width_fat,
+                        0.0, // no port shortening
+                        true,
                         origin_x,
                         origin_y,
                     );
@@ -1042,7 +1179,8 @@ impl Render for WorkflowCanvas {
                         this.handle_double_click(pos, window, cx);
                     } else {
                         let shift = event.modifiers.shift;
-                        this.handle_mouse_down(pos, shift, cx);
+                        let alt = event.modifiers.alt;
+                        this.handle_mouse_down(pos, shift, alt, cx);
                     }
                 }),
             )
