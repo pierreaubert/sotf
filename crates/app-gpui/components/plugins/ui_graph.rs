@@ -210,10 +210,28 @@ impl PlayerView {
             )
     }
 
-    /// Handle dropping a palette item onto the canvas
+    /// Handle dropping a palette item onto the canvas.
+    ///
+    /// Adds the node to both the `WorkflowCanvas` (visual) and the
+    /// `PluginGraph` (persistent data model) so the node survives canvas
+    /// rebuilds.
     fn handle_palette_drop(&mut self, data: &PaletteDragData, cx: &mut Context<Self>) {
         let canvas = self.state.read(cx).app.plugin_state.workflow_canvas.clone();
         if let Some(canvas) = canvas {
+            // Also persist plugin drops into the PluginGraph
+            let graph_node_id = match &data.item_type {
+                PaletteItemType::Plugin(plugin_type) => {
+                    let id = self.state.update(cx, |state, _| {
+                        state.app.plugin_state.graph.add_plugin_node(
+                            plugin_type,
+                            sotf_audio_player::NodePosition::new(300.0, 200.0),
+                        )
+                    });
+                    Some(id)
+                }
+                PaletteItemType::Player => None, // Player nodes are special, not plugin nodes
+            };
+
             // Create node based on item type
             let node = match &data.item_type {
                 PaletteItemType::Player => {
@@ -227,14 +245,19 @@ impl PlayerView {
                 }
                 PaletteItemType::Plugin(plugin_type) => {
                     let (inputs, outputs) = plugin_channel_counts(plugin_type);
+                    let mut user_data = serde_json::json!({
+                        "node_type": NODE_TYPE_PLUGIN,
+                        "plugin_type": format!("{:?}", plugin_type),
+                        "enabled": true,
+                    });
+                    // Store the PluginGraph node ID so the modal can look up settings
+                    if let Some(id) = graph_node_id {
+                        user_data["plugin_node_id"] = serde_json::Value::String(id.to_string());
+                    }
                     WorkflowNodeData::new(plugin_type.name(), Position::new(300.0, 200.0))
                         .with_ports(inputs, outputs)
                         .with_size(160.0, 90.0)
-                        .with_user_data(serde_json::json!({
-                            "node_type": NODE_TYPE_PLUGIN,
-                            "plugin_type": format!("{:?}", plugin_type),
-                            "enabled": true,
-                        }))
+                        .with_user_data(user_data)
                 }
             };
 
@@ -369,13 +392,31 @@ impl PlayerView {
         // Plugin categories
         let plugin_categories = vec![
             (
-                "Effects",
+                "EQ",
                 vec![
-                    (PluginType::EQ, "EQ"),
+                    (PluginType::EQ, "Parametric"),
+                    (PluginType::LinearPhaseEq, "Linear Phase"),
+                    (PluginType::DynamicEq, "Dynamic EQ"),
+                ],
+            ),
+            (
+                "Dynamics",
+                vec![
                     (PluginType::Gain, "Gain"),
                     (PluginType::Compressor, "Comp"),
-                    (PluginType::Limiter, "Limit"),
+                    (PluginType::Limiter, "Limiter"),
                     (PluginType::Gate, "Gate"),
+                    (PluginType::Expander, "Expander"),
+                    (PluginType::DeEsser, "De-Esser"),
+                    (PluginType::TransientShaper, "Transient"),
+                    (PluginType::SpectralCompressor, "Spectral C."),
+                ],
+            ),
+            (
+                "Color",
+                vec![
+                    (PluginType::Saturation, "Saturation"),
+                    (PluginType::Crossfeed, "Crossfeed"),
                 ],
             ),
             (
@@ -387,15 +428,27 @@ impl PlayerView {
                     (PluginType::MonoToStereo, "Mono->2.0"),
                     (PluginType::BinauralDecoder, "Binaural"),
                     (PluginType::Convolution, "Convo"),
+                    (PluginType::XTC, "XTC"),
+                    (PluginType::StereoImager, "Stereo Img"),
+                    (PluginType::Delay, "Delay"),
                 ],
             ),
             (
                 "Monitor",
                 vec![
                     (PluginType::LoudnessCompensation, "Loud Comp"),
+                    (PluginType::FletcherMunson, "F-Munson"),
                     (PluginType::LoudnessMonitor, "LUFS"),
                     (PluginType::SpectrumAnalyzer, "Spectrum"),
                     (PluginType::ChannelMuteSolo, "M/S"),
+                ],
+            ),
+            (
+                "Utility",
+                vec![
+                    (PluginType::Matrix, "Matrix"),
+                    (PluginType::ABCompare, "A/B"),
+                    (PluginType::Denoiser, "Denoise"),
                 ],
             ),
         ];
@@ -842,26 +895,61 @@ fn build_menu_items(
 
     items.push(MenuItem::separator());
 
-    // Plugins section
-    items.push(MenuItem::new("plugins-header", "Plugins").disabled(true));
+    // EQ section
+    items.push(MenuItem::new("eq-header", "EQ").disabled(true));
     items.push(MenuItem::new("plugin-eq", "Parametric EQ"));
+    items.push(MenuItem::new("plugin-linear-phase-eq", "Linear-Phase EQ"));
+    items.push(MenuItem::new("plugin-dynamic-eq", "Dynamic EQ"));
+
+    items.push(MenuItem::separator());
+
+    // Dynamics section
+    items.push(MenuItem::new("dynamics-header", "Dynamics").disabled(true));
     items.push(MenuItem::new("plugin-gain", "Gain"));
     items.push(MenuItem::new("plugin-compressor", "Compressor"));
     items.push(MenuItem::new("plugin-limiter", "Limiter"));
     items.push(MenuItem::new("plugin-gate", "Gate"));
+    items.push(MenuItem::new("plugin-expander", "Expander"));
     items.push(MenuItem::new("plugin-de-esser", "De-Esser"));
+    items.push(MenuItem::new("plugin-transient-shaper", "Transient Shaper"));
+    items.push(MenuItem::new("plugin-spectral-comp", "Spectral Compressor"));
+    items.push(MenuItem::new("plugin-saturation", "Saturation"));
+
+    items.push(MenuItem::separator());
+
+    // Spatial section
+    items.push(MenuItem::new("spatial-header", "Spatial").disabled(true));
     items.push(MenuItem::new("plugin-upmixer", "Upmixer"));
+    items.push(MenuItem::new("plugin-aae", "AAE Reverb"));
     items.push(MenuItem::new("plugin-downmix", "Downmix"));
     items.push(MenuItem::new("plugin-mono-to-stereo", "Mono to Stereo"));
     items.push(MenuItem::new("plugin-binaural", "Binaural Decoder"));
     items.push(MenuItem::new("plugin-convolution", "Convolution"));
+    items.push(MenuItem::new("plugin-xtc", "Crosstalk Cancellation"));
+    items.push(MenuItem::new("plugin-stereo-imager", "Stereo Imager"));
+    items.push(MenuItem::new("plugin-crossfeed", "Crossfeed"));
+    items.push(MenuItem::new("plugin-delay", "Delay"));
+
+    items.push(MenuItem::separator());
+
+    // Monitor section
+    items.push(MenuItem::new("monitor-header", "Monitor").disabled(true));
     items.push(MenuItem::new(
         "plugin-loudness-comp",
         "Loudness Compensation",
     ));
+    items.push(MenuItem::new("plugin-fletcher-munson", "Fletcher-Munson"));
     items.push(MenuItem::new("plugin-loudness-mon", "Loudness Monitor"));
     items.push(MenuItem::new("plugin-spectrum", "Spectrum Analyzer"));
     items.push(MenuItem::new("plugin-mute-solo", "Channel Mute/Solo"));
+
+    items.push(MenuItem::separator());
+
+    // Utility section
+    items.push(MenuItem::new("utility-header", "Utility").disabled(true));
+    items.push(MenuItem::new("plugin-matrix", "Matrix Mixer"));
+    items.push(MenuItem::new("plugin-ab-compare", "A/B Compare"));
+    items.push(MenuItem::new("plugin-denoiser", "Denoiser"));
 
     items
 }
@@ -914,20 +1002,17 @@ impl PlayerView {
         let (node_name, node_type, plugin_type, plugin_node_id) =
             node_info.unwrap_or_else(|| ("Unknown".to_string(), "unknown".to_string(), None, None));
 
-        // Look up the actual plugin settings from the plugin graph
-        let plugin_settings = plugin_node_id.as_ref().and_then(|id_str| {
-            sotf_audio_player::GraphNodeId::parse_str(id_str)
-                .ok()
-                .and_then(|uuid| {
-                    state
-                        .app
-                        .plugin_state
-                        .graph
-                        .nodes
-                        .get(&uuid)
-                        .map(|node| node.plugin.settings.clone())
-                })
-        });
+        // Look up the actual plugin settings and linear index from the plugin graph
+        let (plugin_settings, plugin_linear_idx) = plugin_node_id
+            .as_ref()
+            .and_then(|id_str| sotf_audio_player::GraphNodeId::parse_str(id_str).ok())
+            .map(|uuid| {
+                let graph = &state.app.plugin_state.graph;
+                let settings = graph.nodes.get(&uuid).map(|n| n.plugin.settings.clone());
+                let linear_idx = graph.linear_index_of_node(uuid);
+                (settings, linear_idx)
+            })
+            .unwrap_or((None, None));
 
         let state_for_close = self.state.clone();
 
@@ -1066,6 +1151,7 @@ impl PlayerView {
                                 &node_type,
                                 plugin_type.as_deref(),
                                 plugin_settings.as_ref(),
+                                plugin_linear_idx,
                                 &theme,
                                 cx,
                             )),
@@ -1073,12 +1159,16 @@ impl PlayerView {
             )
     }
 
-    /// Render the content for a plugin node based on its type
+    /// Render the content for a plugin node based on its type.
+    ///
+    /// `plugin_linear_idx` is the linear index in the plugin graph when available
+    /// (enables interactive editing); `None` falls back to read-only display.
     fn render_plugin_node_content(
         &self,
         node_type: &str,
         plugin_type: Option<&str>,
         plugin_settings: Option<&PluginSettings>,
+        plugin_linear_idx: Option<usize>,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -1087,7 +1177,9 @@ impl PlayerView {
             NODE_TYPE_PLUGIN => {
                 // If we have actual plugin settings, render the real plugin UI
                 if let Some(settings) = plugin_settings {
-                    return self.render_plugin_settings_ui(settings, theme, cx);
+                    let idx = plugin_linear_idx.unwrap_or(0);
+                    let editing = plugin_linear_idx.is_some();
+                    return self.render_plugin_settings_ui(settings, idx, editing, theme, cx);
                 }
 
                 // Fallback: show placeholder based on plugin type
@@ -1197,16 +1289,21 @@ impl PlayerView {
         }
     }
 
-    /// Render the actual plugin UI based on settings
+    /// Render the actual plugin UI based on settings.
+    ///
+    /// `plugin_idx` is the linear index in the plugin graph (used to dispatch
+    /// parameter changes back to the engine). `is_editing` controls whether
+    /// the UI is interactive or read-only.
     fn render_plugin_settings_ui(
         &self,
         settings: &PluginSettings,
+        plugin_idx: usize,
+        is_editing: bool,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
         let entity = self.state.clone();
-        let plugin_idx = 0; // Modal doesn't need actual index for display
 
         match settings {
             PluginSettings::EQ {
@@ -1223,7 +1320,7 @@ impl PlayerView {
                     filters,
                     channel_filters,
                     per_channel_mode: *per_channel_mode,
-                    is_editing: false,
+                    is_editing,
                     selected_param: 0,
                     selected_band_idx: 0,
                     midi_overlay: None,
@@ -1239,7 +1336,7 @@ impl PlayerView {
                 plugin_idx,
                 ui_gain::GainRenderState {
                     gain_db: *gain_db,
-                    is_editing: false,
+                    is_editing,
                     selected_param: 0,
                 },
                 theme,
@@ -1273,7 +1370,7 @@ impl PlayerView {
                     auto_makeup: *auto_makeup,
                     link_channels: *link_channels,
                     sidechain_hpf_hz: *sidechain_hpf_hz,
-                    is_editing: false,
+                    is_editing,
                     selected_param: 0,
                     data: None,
                 },
@@ -1298,7 +1395,7 @@ impl PlayerView {
                     lookahead_ms: *lookahead_ms,
                     soft: *soft,
                     mix: *mix,
-                    is_editing: false,
+                    is_editing,
                     selected_param: 0,
                     data: None,
                 },
@@ -1329,7 +1426,7 @@ impl PlayerView {
                     mix: *mix,
                     link_channels: *link_channels,
                     sidechain_hpf_hz: *sidechain_hpf_hz,
-                    is_editing: false,
+                    is_editing,
                     selected_param: 0,
                     data: None,
                 },
@@ -1430,7 +1527,7 @@ impl PlayerView {
                     frequency_resolution: *frequency_resolution,
                     multi_source_extraction: *multi_source_extraction,
                     multi_source_threshold: *multi_source_threshold,
-                    is_editing: false,
+                    is_editing,
                     selected_param: 0,
                     config_open: false,
                     upmixer_tab: 0,
@@ -1460,7 +1557,7 @@ impl PlayerView {
                     phase_coherence: *phase_coherence,
                     phase_blend_low_hz: *phase_blend_low_hz,
                     phase_blend_high_hz: *phase_blend_high_hz,
-                    is_editing: false,
+                    is_editing,
                     selected_param: 0,
                 },
                 theme,
@@ -1486,7 +1583,7 @@ impl PlayerView {
                     comp_eq_depth_db: *comp_eq_depth_db,
                     decor_low_hz: *decor_low_hz,
                     decor_high_hz: *decor_high_hz,
-                    is_editing: false,
+                    is_editing,
                     selected_param: 0,
                 },
                 theme,

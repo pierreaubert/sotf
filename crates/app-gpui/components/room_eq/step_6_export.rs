@@ -894,10 +894,18 @@ impl PlayerView {
             graph_config.edges.len()
         );
 
-        // Send the graph config to the engine
+        // Build a matching PluginGraph for the UI so the graph view reflects
+        // the topology we're sending to the engine.
+        let ui_graph = Self::build_ui_graph_from_config(&graph_config);
+
+        // Send the graph config to the engine AND update the UI graph
         self.state.update(cx, |state, _| {
             match state.player.lock().update_plugin_graph(graph_config) {
                 Ok(()) => {
+                    // Update the UI graph and invalidate canvas
+                    state.app.plugin_state.graph = ui_graph;
+                    state.app.plugin_state.workflow_canvas = None;
+                    state.app.plugin_state.plugin_graph_modified = true;
                     // Switch to graph view mode
                     state.app.plugin_state.plugin_view_mode =
                         crate::app::state::plugin::PluginViewMode::Graph;
@@ -916,5 +924,114 @@ impl PlayerView {
         });
 
         cx.notify();
+    }
+
+    /// Build a `PluginGraph` (UI-level) from a `PluginGraphConfig` (engine-level).
+    ///
+    /// Creates plugin nodes with default settings for each engine node, adds
+    /// Input/Output special nodes, wires connections, and auto-lays-out
+    /// positions left-to-right.
+    fn build_ui_graph_from_config(
+        config: &sotf_audio::engine::PluginGraphConfig,
+    ) -> sotf_audio_player::PluginGraph {
+        use sotf_audio_player::{NodePosition, PluginGraph, SpecialNodeType};
+
+        let mut graph = PluginGraph::new();
+
+        // Add Input special node at the left
+        let input_id =
+            graph.add_special_node(SpecialNodeType::Input, NodePosition::new(50.0, 200.0), 2);
+
+        // Map engine node IDs (usize) to graph node IDs (Uuid)
+        let mut id_map = std::collections::HashMap::new();
+
+        // Auto-layout: position nodes in columns
+        let x_spacing = 200.0;
+        let y_spacing = 120.0;
+
+        // Simple topological layout: assign each node an x based on its longest
+        // incoming path, and stack siblings vertically.
+        let mut node_depth: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
+        // BFS to compute depth
+        for node in &config.nodes {
+            node_depth.entry(node.id).or_insert(0);
+        }
+        for edge in &config.edges {
+            let from_depth = node_depth.get(&edge.from_node).copied().unwrap_or(0);
+            let to_entry = node_depth.entry(edge.to_node).or_insert(0);
+            *to_entry = (*to_entry).max(from_depth + 1);
+        }
+        // Multiple passes for longer chains
+        for _ in 0..config.nodes.len() {
+            for edge in &config.edges {
+                let from_depth = node_depth.get(&edge.from_node).copied().unwrap_or(0);
+                let to_entry = node_depth.entry(edge.to_node).or_insert(0);
+                *to_entry = (*to_entry).max(from_depth + 1);
+            }
+        }
+
+        // Group nodes by depth for vertical stacking
+        let mut depth_counts: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
+
+        for node_config in &config.nodes {
+            let depth = node_depth.get(&node_config.id).copied().unwrap_or(0);
+            let y_index = depth_counts.entry(depth).or_insert(0);
+            let x = 250.0 + (depth as f32) * x_spacing;
+            let y = 100.0 + (*y_index as f32) * y_spacing;
+            *y_index += 1;
+
+            // Parse plugin type from the string name
+            let plugin_type = sotf_audio::plugins::PluginType::from_name(&node_config.plugin_type)
+                .unwrap_or(sotf_audio::plugins::PluginType::EQ);
+
+            let node_id = graph.add_plugin_node(&plugin_type, NodePosition::new(x, y));
+            id_map.insert(node_config.id, node_id);
+        }
+
+        // Add Output special node at the right
+        let max_depth = node_depth.values().max().copied().unwrap_or(0);
+        let output_x = 250.0 + ((max_depth + 1) as f32) * x_spacing;
+        let output_id = graph.add_special_node(
+            SpecialNodeType::Output,
+            NodePosition::new(output_x, 200.0),
+            2,
+        );
+
+        // Wire connections between plugin nodes
+        for edge in &config.edges {
+            if let (Some(&from), Some(&to)) = (id_map.get(&edge.from_node), id_map.get(&edge.to_node))
+            {
+                let _ = graph.add_connection(from, 0, to, 0);
+                let _ = graph.add_connection(from, 1, to, 1);
+            }
+        }
+
+        // Connect Input to first-depth nodes (nodes with no incoming edges)
+        let nodes_with_incoming: std::collections::HashSet<usize> =
+            config.edges.iter().map(|e| e.to_node).collect();
+        for node_config in &config.nodes {
+            if !nodes_with_incoming.contains(&node_config.id) {
+                if let Some(&graph_id) = id_map.get(&node_config.id) {
+                    let _ = graph.add_connection(input_id, 0, graph_id, 0);
+                    let _ = graph.add_connection(input_id, 1, graph_id, 1);
+                }
+            }
+        }
+
+        // Connect last-depth nodes (nodes with no outgoing edges) to Output
+        let nodes_with_outgoing: std::collections::HashSet<usize> =
+            config.edges.iter().map(|e| e.from_node).collect();
+        for node_config in &config.nodes {
+            if !nodes_with_outgoing.contains(&node_config.id) {
+                if let Some(&graph_id) = id_map.get(&node_config.id) {
+                    let _ = graph.add_connection(graph_id, 0, output_id, 0);
+                    let _ = graph.add_connection(graph_id, 1, output_id, 1);
+                }
+            }
+        }
+
+        graph
     }
 }
