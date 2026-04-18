@@ -10,7 +10,7 @@ use d3rs::axis::{AxisConfig, AxisTheme, render_axis};
 use d3rs::color::D3Color;
 use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale};
-use d3rs::shape::{CurveType, LineConfig, LinePoint, render_line};
+use d3rs::shape::{CurveType, LineConfig, LinePoint, StrokeDashArray, render_line};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ElementId, IntoElement, Rgba, Window, div, px, rgb};
@@ -173,6 +173,8 @@ struct LineSeries {
     opacity: f32,
     /// Whether this series uses the secondary (right) Y-axis
     use_secondary_axis: bool,
+    /// Optional dash pattern for this series
+    dash_array: Option<StrokeDashArray>,
 }
 
 /// Callback type for legend click events
@@ -216,6 +218,8 @@ pub struct LineChart {
     hidden_series: HashSet<usize>,
     /// Callback when a legend item is clicked (receives series index)
     on_legend_click: Option<LegendClickCallback>,
+    /// Optional dash pattern for the primary series
+    dash_array: Option<StrokeDashArray>,
 }
 
 impl std::fmt::Debug for LineChart {
@@ -289,6 +293,20 @@ impl LineChart {
     /// Set line opacity (0.0 - 1.0).
     pub fn opacity(mut self, opacity: f32) -> Self {
         self.opacity = opacity.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set the stroke dash array pattern for the primary series.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::{line, StrokeDashArray};
+    /// let chart = line(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0])
+    ///     .dash_array(StrokeDashArray::Dashed)
+    ///     .build();
+    /// ```
+    pub fn dash_array(mut self, pattern: StrokeDashArray) -> Self {
+        self.dash_array = Some(pattern);
         self
     }
 
@@ -402,6 +420,7 @@ impl LineChart {
             stroke_width,
             opacity,
             use_secondary_axis: false,
+            dash_array: None,
         });
         // Auto-enable legend if any series has a label
         if self.series.iter().any(|s| s.label.is_some()) {
@@ -431,6 +450,7 @@ impl LineChart {
             stroke_width,
             opacity,
             use_secondary_axis: false,
+            dash_array: None,
         });
         // Auto-enable legend if any series has a label
         if self.series.iter().any(|s| s.label.is_some()) {
@@ -490,6 +510,7 @@ impl LineChart {
             stroke_width,
             opacity,
             use_secondary_axis: true,
+            dash_array: None,
         });
         // Auto-enable legend if any series has a label
         if self.series.iter().any(|s| s.label.is_some()) {
@@ -516,6 +537,7 @@ impl LineChart {
             stroke_width,
             opacity,
             use_secondary_axis: true,
+            dash_array: None,
         });
         // Auto-enable legend if any series has a label
         if self.series.iter().any(|s| s.label.is_some()) {
@@ -886,12 +908,15 @@ impl LineChart {
             .collect();
 
         // Create configs for primary series
-        let primary_config = LineConfig::new()
+        let mut primary_config = LineConfig::new()
             .stroke_color(D3Color::from_hex(self.color))
             .stroke_width(self.stroke_width)
             .opacity(self.opacity)
             .curve(self.curve)
             .show_points(self.show_points);
+        if let Some(da) = self.dash_array.clone() {
+            primary_config = primary_config.dash_array(da);
+        }
 
         // Prepare additional series data and configs, separating primary and secondary axis series
         // Skip hidden series
@@ -911,12 +936,15 @@ impl LineChart {
                 .map(|(&x, &y)| LinePoint::new(x, y))
                 .collect();
 
-            let series_config = LineConfig::new()
+            let mut series_config = LineConfig::new()
                 .stroke_color(D3Color::from_hex(series.color))
                 .stroke_width(series.stroke_width)
                 .opacity(series.opacity)
                 .curve(self.curve)
                 .show_points(self.show_points);
+            if let Some(da) = series.dash_array.clone() {
+                series_config = series_config.dash_array(da);
+            }
 
             if series.use_secondary_axis {
                 secondary_series_data_configs.push((series_points, series_config));
@@ -1655,6 +1683,7 @@ pub fn line(x: &[f64], y: &[f64]) -> LineChart {
         y2_range: None,
         hidden_series: HashSet::new(),
         on_legend_click: None,
+        dash_array: None,
     }
 }
 

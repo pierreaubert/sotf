@@ -18,6 +18,24 @@ pub enum CurveType {
     StepAfter,
 }
 
+/// Stroke dash array pattern for dashed/dotted lines.
+///
+/// Defines repeating on/off patterns for line rendering, similar to SVG's
+/// `stroke-dasharray` attribute.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StrokeDashArray {
+    /// Dotted line: small dash, equal gap (e.g., 2px on, 2px off)
+    Dotted,
+    /// Dashed line: longer dash, shorter gap (e.g., 6px on, 3px off)
+    Dashed,
+    /// Dash-dot pattern (e.g., 6px dash, 3px gap, 2px dot, 3px gap)
+    DashDot,
+    /// Custom pattern: alternating on/off lengths in pixels.
+    /// Must contain an even number of elements (on, off pairs).
+    /// E.g., `vec![10.0, 5.0]` means 10px dash, 5px gap, repeating.
+    Custom(Vec<f32>),
+}
+
 /// Configuration for line chart rendering
 #[derive(Clone)]
 pub struct LineConfig {
@@ -35,6 +53,8 @@ pub struct LineConfig {
     pub point_radius: f32,
     /// Fill color for points
     pub point_fill_color: Option<D3Color>,
+    /// Stroke dash array pattern (None = solid line)
+    pub dash_array: Option<StrokeDashArray>,
 }
 
 impl Default for LineConfig {
@@ -47,6 +67,7 @@ impl Default for LineConfig {
             show_points: false,
             point_radius: 3.0,
             point_fill_color: None,
+            dash_array: None,
         }
     }
 }
@@ -96,6 +117,18 @@ impl LineConfig {
     /// Set point fill color
     pub fn point_fill_color(mut self, color: D3Color) -> Self {
         self.point_fill_color = Some(color);
+        self
+    }
+
+    /// Set the stroke dash array pattern.
+    ///
+    /// Use predefined patterns or a custom one:
+    /// - `StrokeDashArray::Dotted` - small dots
+    /// - `StrokeDashArray::Dashed` - standard dashes
+    /// - `StrokeDashArray::DashDot` - alternating dash-dot
+    /// - `StrokeDashArray::Custom(vec![on, off, ...])` - custom pattern
+    pub fn dash_array(mut self, pattern: StrokeDashArray) -> Self {
+        self.dash_array = Some(pattern);
         self
     }
 }
@@ -258,6 +291,12 @@ where
         .as_ref()
         .unwrap_or(&config.stroke_color)
         .to_rgba();
+    let dash_pattern: Option<Vec<f32>> = config.dash_array.as_ref().map(|da| match da {
+        StrokeDashArray::Dotted => vec![2.0, 2.0],
+        StrokeDashArray::Dashed => vec![6.0, 3.0],
+        StrokeDashArray::DashDot => vec![6.0, 3.0, 2.0, 3.0],
+        StrokeDashArray::Custom(v) => v.clone(),
+    });
 
     canvas(
         // Prepaint: pass through the relative points and bounds info
@@ -331,34 +370,87 @@ where
 
             // Build continuous paths from clipped segments
             if !segments_to_draw.is_empty() {
-                let mut path_builder = PathBuilder::stroke(px(stroke_width));
-                let mut last_end: Option<(f32, f32)> = None;
+                let color_with_opacity = Rgba {
+                    r: stroke_color.r,
+                    g: stroke_color.g,
+                    b: stroke_color.b,
+                    a: stroke_color.a * opacity,
+                };
 
-                for (x0, y0, x1, y1) in &segments_to_draw {
-                    let start = (origin_x + x0 * width, origin_y + y0 * height);
-                    let end = (origin_x + x1 * width, origin_y + y1 * height);
+                if let Some(ref pattern) = dash_pattern {
+                    // Dashed line: walk along segments, emitting dash sub-segments
+                    let mut path_builder = PathBuilder::stroke(px(stroke_width));
+                    let mut pattern_idx = 0usize; // current index into pattern
+                    let mut remaining = pattern[0]; // remaining length in current dash/gap
+                    let mut has_segments = false;
 
-                    // Check if we need to start a new path segment
-                    let need_move = match last_end {
-                        Some((lx, ly)) => (lx - start.0).abs() > 0.5 || (ly - start.1).abs() > 0.5,
-                        None => true,
-                    };
+                    for &(rx0, ry0, rx1, ry1) in &segments_to_draw {
+                        let sx = origin_x + rx0 * width;
+                        let sy = origin_y + ry0 * height;
+                        let ex = origin_x + rx1 * width;
+                        let ey = origin_y + ry1 * height;
+                        let dx = ex - sx;
+                        let dy = ey - sy;
+                        let seg_len = (dx * dx + dy * dy).sqrt();
+                        if seg_len < 0.001 {
+                            continue;
+                        }
+                        let ux = dx / seg_len;
+                        let uy = dy / seg_len;
 
-                    if need_move {
-                        path_builder.move_to(gpui::point(px(start.0), px(start.1)));
+                        let mut traveled = 0.0f32;
+                        while traveled < seg_len {
+                            let step = remaining.min(seg_len - traveled);
+                            let is_dash = pattern_idx.is_multiple_of(2);
+
+                            if is_dash {
+                                let p0x = sx + ux * traveled;
+                                let p0y = sy + uy * traveled;
+                                let p1x = sx + ux * (traveled + step);
+                                let p1y = sy + uy * (traveled + step);
+                                path_builder.move_to(gpui::point(px(p0x), px(p0y)));
+                                path_builder.line_to(gpui::point(px(p1x), px(p1y)));
+                                has_segments = true;
+                            }
+
+                            traveled += step;
+                            remaining -= step;
+                            if remaining < 0.001 {
+                                pattern_idx = (pattern_idx + 1) % pattern.len();
+                                remaining = pattern[pattern_idx];
+                            }
+                        }
                     }
-                    path_builder.line_to(gpui::point(px(end.0), px(end.1)));
-                    last_end = Some(end);
-                }
 
-                if let Ok(path) = path_builder.build() {
-                    let color_with_opacity = Rgba {
-                        r: stroke_color.r,
-                        g: stroke_color.g,
-                        b: stroke_color.b,
-                        a: stroke_color.a * opacity,
-                    };
-                    window.paint_path(path, color_with_opacity);
+                    if has_segments && let Ok(path) = path_builder.build() {
+                        window.paint_path(path, color_with_opacity);
+                    }
+                } else {
+                    // Solid line: original path-building logic
+                    let mut path_builder = PathBuilder::stroke(px(stroke_width));
+                    let mut last_end: Option<(f32, f32)> = None;
+
+                    for (x0, y0, x1, y1) in &segments_to_draw {
+                        let start = (origin_x + x0 * width, origin_y + y0 * height);
+                        let end = (origin_x + x1 * width, origin_y + y1 * height);
+
+                        let need_move = match last_end {
+                            Some((lx, ly)) => {
+                                (lx - start.0).abs() > 0.5 || (ly - start.1).abs() > 0.5
+                            }
+                            None => true,
+                        };
+
+                        if need_move {
+                            path_builder.move_to(gpui::point(px(start.0), px(start.1)));
+                        }
+                        path_builder.line_to(gpui::point(px(end.0), px(end.1)));
+                        last_end = Some(end);
+                    }
+
+                    if let Ok(path) = path_builder.build() {
+                        window.paint_path(path, color_with_opacity);
+                    }
                 }
             }
 

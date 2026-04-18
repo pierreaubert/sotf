@@ -546,6 +546,84 @@ impl ShowcaseApp {
                 theme,
                 ds,
             ))
+            // Dash patterns demo
+            .child(
+                div()
+                    .mt(px(ds.spacing.section_gap * 1.5))
+                    .text_size(px(ds.typography.large_size))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
+                    .child("Stroke Dash Patterns"),
+            )
+            .child(
+                div()
+                    .text_size(px(ds.typography.small_size))
+                    .text_color(theme.text_secondary)
+                    .max_w(px(600.0))
+                    .child("Lines can use dotted, dashed, dash-dot, or custom stroke patterns. Useful for reference lines, thresholds, and distinguishing series."),
+            )
+            .child({
+                let dash_x: Vec<f64> = (0..80).map(|i| i as f64 * 0.1).collect();
+                let y_wave: Vec<f64> = dash_x.iter().map(|&x| (x * 1.5).sin() * 30.0 + 50.0).collect();
+                let small_w = 280.0;
+                let small_h = 200.0;
+
+                div().flex().flex_wrap().gap(px(ds.spacing.section_gap))
+                    .child(
+                        line(&dash_x, &y_wave)
+                            .title("Solid (default)")
+                            .color(0x1f77b4)
+                            .stroke_width(2.0)
+                            .size(small_w, small_h)
+                            .build()
+                            .unwrap()
+                    )
+                    .child(
+                        line(&dash_x, &y_wave)
+                            .title("Dashed")
+                            .color(0xff7f0e)
+                            .stroke_width(2.0)
+                            .dash_array(StrokeDashArray::Dashed)
+                            .size(small_w, small_h)
+                            .build()
+                            .unwrap()
+                    )
+                    .child(
+                        line(&dash_x, &y_wave)
+                            .title("Dotted")
+                            .color(0x2ca02c)
+                            .stroke_width(2.0)
+                            .dash_array(StrokeDashArray::Dotted)
+                            .size(small_w, small_h)
+                            .build()
+                            .unwrap()
+                    )
+                    .child(
+                        line(&dash_x, &y_wave)
+                            .title("Dash-Dot")
+                            .color(0xd62728)
+                            .stroke_width(2.0)
+                            .dash_array(StrokeDashArray::DashDot)
+                            .size(small_w, small_h)
+                            .build()
+                            .unwrap()
+                    )
+                    .child(
+                        line(&dash_x, &y_wave)
+                            .title("Custom [10, 4, 2, 4]")
+                            .color(0x9467bd)
+                            .stroke_width(2.0)
+                            .dash_array(StrokeDashArray::Custom(vec![10.0, 4.0, 2.0, 4.0]))
+                            .size(small_w, small_h)
+                            .build()
+                            .unwrap()
+                    )
+            })
+            .child(self.code_block(
+                "line(&x, &y)\n    .dash_array(StrokeDashArray::Dashed)\n    .build()?\n\n// Patterns: Dotted, Dashed, DashDot\n// Custom:  StrokeDashArray::Custom(vec![10.0, 5.0])",
+                theme,
+                ds,
+            ))
             .child(
                 div()
                     .mt(px(ds.spacing.section_gap))
@@ -563,7 +641,8 @@ impl ShowcaseApp {
                     .child(div().text_size(px(ds.typography.small_size)).child("• Smooth curve interpolation options"))
                     .child(div().text_size(px(ds.typography.small_size)).child("• Configurable stroke width"))
                     .child(div().text_size(px(ds.typography.small_size)).child("• Optional data point markers"))
-                    .child(div().text_size(px(ds.typography.small_size)).child("• Automatic domain calculation")),
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Automatic domain calculation"))
+                    .child(div().text_size(px(ds.typography.small_size)).child("• Stroke dash patterns (Dotted, Dashed, DashDot, Custom)")),
             )
     }
 

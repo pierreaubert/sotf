@@ -192,7 +192,7 @@ pub use treemap::{TilingMethod, Treemap, TreemapNode, treemap};
 pub use d3rs::color::D3Color;
 #[cfg(feature = "gpu-3d")]
 pub use d3rs::gpu3d::{Colormap, Surface3DState};
-pub use d3rs::shape::CurveType;
+pub use d3rs::shape::{CurveType, StrokeDashArray};
 
 // ============================================================================
 // Scale Types

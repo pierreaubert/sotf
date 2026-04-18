@@ -73,7 +73,7 @@ pub use contour::{
     heat_color_scale, render_contour, render_contour_bands, render_heatmap, viridis_color_scale,
 };
 #[cfg(feature = "gpui")]
-pub use line::{CurveType, LineConfig, LinePoint, render_line};
+pub use line::{CurveType, LineConfig, LinePoint, StrokeDashArray, render_line};
 #[cfg(feature = "gpui")]
 pub use scatter::{ScatterConfig, ScatterPoint, render_scatter};
 
