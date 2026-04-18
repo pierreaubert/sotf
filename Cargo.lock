@@ -10578,7 +10578,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-player"
-version = "0.5.116"
+version = "0.5.118"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",

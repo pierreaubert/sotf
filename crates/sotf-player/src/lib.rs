@@ -23,6 +23,7 @@ pub mod headphone_eq_types;
 pub mod level_meter;
 pub mod library;
 pub mod library_scanner;
+pub mod peq_filter;
 pub mod play_tracker;
 pub mod player;
 pub mod plugin_graph;

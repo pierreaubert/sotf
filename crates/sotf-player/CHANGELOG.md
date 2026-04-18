@@ -1,3 +1,18 @@
+# 0.5.118
+
+## Code changes
+
+- Collapsed the two identical stripped biquad records
+  (`HeadphoneEqBiquad` and `SpinoramaBiquad`) into a single canonical
+  `PeqFilter` struct in the new `peq_filter` module. Both names remain
+  exported as type aliases, so all GPUI/TUI call sites keep compiling
+  unchanged. The duplicated 4-field struct definition with identical
+  derives and identical serde representation is gone.
+- `room_eq_types::EqFilterConfig` is **not** aliased here because it
+  uses the `frequency` / `gain_db` naming convention instead of the
+  autoeq-shaped `freq` / `db_gain` pair, so unifying it requires a
+  separate serde-alias migration.
+
 # 0.5.117
 
 ## Features

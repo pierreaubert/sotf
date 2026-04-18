@@ -233,11 +233,8 @@ pub struct SpinoramaEqResult {
     pub target_response: Option<Vec<(f64, f64)>>,
 }
 
-/// Biquad filter for Spinorama EQ
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SpinoramaBiquad {
-    pub filter_type: String,
-    pub freq: f64,
-    pub q: f64,
-    pub db_gain: f64,
-}
+/// Biquad filter for Spinorama EQ.
+///
+/// Aliased to the canonical [`PeqFilter`](crate::peq_filter::PeqFilter) — the
+/// 4-field JSON-shaped filter record shared with the headphone EQ flow.
+pub use crate::peq_filter::PeqFilter as SpinoramaBiquad;
