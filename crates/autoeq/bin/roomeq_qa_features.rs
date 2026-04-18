@@ -19,8 +19,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use autoeq::loss::regression_slope_per_octave_in_range;
 use autoeq::roomeq::{
-    BroadbandTargetMatchingConfig, CallbackAction, ExcursionProtectionConfig, RoomConfig,
-    RoomOptimizationResult, SchroederSplitConfig, TargetTiltConfig, TiltType, load_config,
+    BroadbandTargetMatchingConfig, CallbackAction, ChannelMatchingConfig,
+    DecomposedCorrectionSerdeConfig, ExcursionProtectionConfig, RoomConfig,
+    RoomOptimizationResult, SchroederSplitConfig, TargetTiltConfig, TiltType,
+    VoiceOfGodConfig, load_config,
 };
 
 // ---------------------------------------------------------------------------
@@ -59,6 +61,23 @@ struct FeatureStep {
 }
 
 fn feature_steps() -> Vec<FeatureStep> {
+    // The progression applies features cumulatively. Each step either
+    //   a) only changes the optimiser's implementation (`changes_loss=false`)
+    //      — step-over-step score comparison is valid, or
+    //   b) changes the loss function / pre-correction
+    //      (`changes_loss=true`) — comparison is only valid within the
+    //      same loss regime.
+    //
+    // Features requiring setups this QA fixture does not provide are
+    // intentionally omitted:
+    //   - `phase_alignment` / `group_delay_optimization` need a sub
+    //     crossover; QA data is stereo 2.0.
+    //   - `spatial_robustness` / `multi_measurement` require several
+    //     measurements per channel — covered by the fuzzer.
+    //   - `cea2034_correction` requires spinorama data keyed by
+    //     speaker_name; QA data intentionally omits the name.
+    //   - `reflection_cancel` requires a measured SSIR impulse response
+    //     captured via the probe step.
     vec![
         FeatureStep {
             name: "Baseline",
@@ -110,6 +129,44 @@ fn feature_steps() -> Vec<FeatureStep> {
                 });
             },
         },
+        // Channel matching runs after per-channel EQ and adds up to
+        // `max_filters` more PEQs per channel to reduce inter-channel
+        // deviation. It acts on the final curve so flat-score can
+        // improve, but only by a hair — count as non-loss-changing.
+        FeatureStep {
+            name: "+ channel_matching",
+            changes_loss: false,
+            apply: |c| {
+                c.optimizer.channel_matching = Some(ChannelMatchingConfig::default());
+            },
+        },
+        // Voice of God matches each channel's timbre to the reference
+        // channel. Pin the reference to "L" — QA data is 2.0 stereo so
+        // L/R are both valid references. This is a post-EQ timbre
+        // alignment stage, no effect on the pre/post flat loss of the
+        // reference channel itself but bounds R → L timbre.
+        FeatureStep {
+            name: "+ voice_of_god",
+            changes_loss: false,
+            apply: |c| {
+                c.optimizer.vog = Some(VoiceOfGodConfig {
+                    enabled: true,
+                    reference_channel: "L".to_string(),
+                });
+            },
+        },
+        // Decomposed correction splits the response into modal /
+        // reflection / steady-state components, applying cut-only
+        // correction above Schroeder. It changes the loss landscape
+        // (different weights per band) so mark it loss-changing.
+        FeatureStep {
+            name: "+ decomposed_correction",
+            changes_loss: true,
+            apply: |c| {
+                c.optimizer.decomposed_correction =
+                    Some(DecomposedCorrectionSerdeConfig::default());
+            },
+        },
     ]
 }
 
@@ -128,6 +185,10 @@ fn make_baseline(config: &RoomConfig, with_tilt: bool) -> RoomConfig {
     c.optimizer.excursion_protection = None;
     c.optimizer.schroeder_split = None;
     c.optimizer.target_tilt = None;
+    c.optimizer.target_response = None;
+    c.optimizer.channel_matching = None;
+    c.optimizer.vog = None;
+    c.optimizer.decomposed_correction = None;
 
     // QA optimizer overrides
     c.optimizer.algorithm = "autoeq:de".to_string();

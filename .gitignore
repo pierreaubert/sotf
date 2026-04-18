@@ -38,6 +38,10 @@ __pycache__
 /*.json.bz2
 /todos.md
 
+# fuzzer scratch output
+/crates/*/fuzzer_output
+fuzzer_output/
+
 # node
 /site/node_modules
 /site/dist

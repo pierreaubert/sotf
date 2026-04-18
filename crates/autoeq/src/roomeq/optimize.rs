@@ -92,10 +92,11 @@ type MixedModeResult = (
 /// it appears in the `roomeq` binary's stderr and in any consumer that
 /// attaches a log subscriber.
 ///
-/// The tolerance is 5 % on the log axis — small numerical mismatches (e.g.
-/// 19.99 Hz vs 20 Hz) are ignored, but a user who asks the optimizer to
-/// work down to 10 Hz with a measurement that only starts at 100 Hz gets
-/// the warning.
+/// The tolerance is `10^0.05 ≈ 1.122` on the frequency axis — about
+/// 1/6 octave. Small numerical mismatches (19.99 Hz vs 20 Hz) are
+/// ignored, but a user who asks the optimizer to work down to 10 Hz
+/// with a measurement that only starts at 100 Hz gets the warning
+/// (100 → 10 is exactly one decade, well past 1/6 octave).
 pub(super) fn warn_if_optimizer_bounds_exceed_data(
     channel_name: &str,
     curve: &Curve,
@@ -106,7 +107,10 @@ pub(super) fn warn_if_optimizer_bounds_exceed_data(
     }
     let data_min = curve.freq[0];
     let data_max = curve.freq[curve.freq.len() - 1];
-    // 5 % log-axis tolerance (~one-twelfth of an octave).
+    // 10^0.05 ≈ 1.122 on the frequency axis — about 1/6 octave. Wide
+    // enough to ignore floating-point mismatches at the edges (19.99 vs
+    // 20 Hz) yet still flag genuinely out-of-range optimizer settings
+    // (e.g. asking for 10 Hz when data starts at 100 Hz).
     let log_margin = 0.05;
     let min_tol = data_min * 10_f64.powf(-log_margin);
     let max_tol = data_max * 10_f64.powf(log_margin);
@@ -597,52 +601,69 @@ pub fn optimize_room_with_probe_arrivals(
     )
 }
 
-/// I6 — debug-only sanity invariants on the final `RoomOptimizationResult`.
+/// I6 — sanity invariants on the final `RoomOptimizationResult`.
 ///
 /// Catches silent corruption bugs that would otherwise produce garbage DSP
 /// chains (misaligned indexing, NaN fallout from the optimiser). A full
 /// chain resynthesis would need to simulate every plugin type (gain /
 /// delay / biquad / FIR) and reproduce each workflow's intermediate curve
-/// derivation — that invariant is deferred to Phase 5. A magnitude-delta
+/// derivation — that invariant is deferred. A magnitude-delta
 /// envelope was considered but had to be removed: in 2.1 / home-cinema
 /// workflows the Sub channel's `final_curve` legitimately reaches
 /// −300 dB where the LP crossover attenuates far-above-passband content,
 /// which is not a bug.
 ///
-/// Invariants that do hold universally:
+/// The function runs in both debug AND release:
+///   - In debug builds, panics on violation so tests surface the exact
+///     failed invariant.
+///   - In release builds, returns an `Err` instead so release QA / fuzz
+///     runs don't silently ship a corrupted result when the optimiser
+///     diverges — they get a clean error that downstream callers can
+///     handle.
+///
+/// Invariants:
 ///   1. Every channel's `freq` and `spl` lengths match (on both the
 ///      initial and final curves).
-///   2. No NaN or infinite SPL values in the final curve — they signal
-///      optimiser divergence.
-#[cfg(debug_assertions)]
-fn sanity_check_result(result: &RoomOptimizationResult) {
+///   2. No NaN or infinite SPL values in the final curve.
+fn sanity_check_result(result: &RoomOptimizationResult) -> Result<()> {
     for (name, ch) in &result.channel_results {
-        assert_eq!(
-            ch.initial_curve.freq.len(),
-            ch.initial_curve.spl.len(),
-            "channel '{}': initial_curve freq/spl length mismatch",
-            name,
-        );
-        assert_eq!(
-            ch.final_curve.freq.len(),
-            ch.final_curve.spl.len(),
-            "channel '{}': final_curve freq/spl length mismatch",
-            name,
-        );
-        for (i, v) in ch.final_curve.spl.iter().enumerate() {
-            assert!(
-                v.is_finite(),
-                "channel '{}': final_curve.spl[{}]={} is non-finite (optimiser diverged)",
+        if ch.initial_curve.freq.len() != ch.initial_curve.spl.len() {
+            let msg = format!(
+                "channel '{}': initial_curve freq/spl length mismatch ({} vs {})",
                 name,
-                i,
-                v,
+                ch.initial_curve.freq.len(),
+                ch.initial_curve.spl.len()
             );
+            debug_assert!(false, "{}", msg);
+            return Err(AutoeqError::OptimizationFailed { message: msg });
+        }
+        if ch.final_curve.freq.len() != ch.final_curve.spl.len() {
+            let msg = format!(
+                "channel '{}': final_curve freq/spl length mismatch ({} vs {})",
+                name,
+                ch.final_curve.freq.len(),
+                ch.final_curve.spl.len()
+            );
+            debug_assert!(false, "{}", msg);
+            return Err(AutoeqError::OptimizationFailed { message: msg });
+        }
+        if let Some((i, v)) = ch
+            .final_curve
+            .spl
+            .iter()
+            .enumerate()
+            .find(|(_, v)| !v.is_finite())
+        {
+            let msg = format!(
+                "channel '{}': final_curve.spl[{}]={} is non-finite (optimiser diverged)",
+                name, i, v
+            );
+            debug_assert!(false, "{}", msg);
+            return Err(AutoeqError::OptimizationFailed { message: msg });
         }
     }
+    Ok(())
 }
-
-#[cfg(not(debug_assertions))]
-fn sanity_check_result(_result: &RoomOptimizationResult) {}
 
 fn optimize_room_impl(
     config: &RoomConfig,
@@ -975,7 +996,7 @@ fn optimize_room_impl(
                     compute_and_correct_icd(&mut result, config, sample_rate);
                 }
 
-                sanity_check_result(&result);
+                sanity_check_result(&result)?;
                 return Ok(result);
             }
         }
@@ -1883,7 +1904,7 @@ fn optimize_room_impl(
         compute_and_correct_icd(&mut result, config, sample_rate);
     }
 
-    sanity_check_result(&result);
+    sanity_check_result(&result)?;
     Ok(result)
 }
 

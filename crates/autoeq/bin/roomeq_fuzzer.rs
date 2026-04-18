@@ -4,8 +4,8 @@
 //! Includes panic handling and config validation for robust fuzzing.
 
 use autoeq::roomeq::{
-    CrossoverConfig, DBAConfig, MultiSubGroup, OptimizerConfig, RoomConfig, SpeakerConfig,
-    SpeakerGroup, TargetCurveConfig,
+    CrossoverConfig, DBAConfig, MultiMeasurementConfig, MultiMeasurementStrategy, MultiSubGroup,
+    OptimizerConfig, RoomConfig, SpeakerConfig, SpeakerGroup, TargetCurveConfig,
 };
 use clap::Parser;
 use rand::Rng;
@@ -587,6 +587,47 @@ fn generate_random_config(
         None
     };
 
+    // Phase 5 — when any channel carries a `Multiple` source, exercise
+    // `OptimizerConfig.multi_measurement` with one of the strategies
+    // most likely to surface bugs (Minimax / VariancePenalized — each
+    // crunches a different per-measurement loss aggregation path the
+    // fuzzer didn't previously touch). `Average` stays the no-config
+    // default. Weights length must match measurement count or the
+    // validator errors out, so we mirror the observed count.
+    let multi_meas_count = speakers
+        .values()
+        .filter_map(|spk| match spk {
+            SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(m)) => {
+                Some(m.measurements.len())
+            }
+            _ => None,
+        })
+        .max();
+    let multi_measurement = multi_meas_count.and_then(|count| {
+        // Only attach a strategy 50% of the time to keep "Average" covered.
+        if !rng.random_bool(0.5) {
+            return None;
+        }
+        let strategy = match rng.random_range(0..4) {
+            0 => MultiMeasurementStrategy::Average,
+            1 => MultiMeasurementStrategy::WeightedSum,
+            2 => MultiMeasurementStrategy::Minimax,
+            _ => MultiMeasurementStrategy::VariancePenalized,
+        };
+        let weights = if matches!(strategy, MultiMeasurementStrategy::WeightedSum) {
+            // Random non-negative weights, exact count match (validator-required).
+            Some((0..count).map(|_| rng.random_range(0.1..1.0)).collect())
+        } else {
+            None
+        };
+        Some(MultiMeasurementConfig {
+            strategy,
+            weights,
+            variance_lambda: rng.random_range(0.5..2.0),
+            spatial_robustness: None,
+        })
+    });
+
     let room_config = RoomConfig {
         version: autoeq::roomeq::default_config_version(),
         system: None,
@@ -611,6 +652,7 @@ fn generate_random_config(
             peq_model,
             mode,
             fir: fir_config,
+            multi_measurement,
             ..OptimizerConfig::default()
         },
         recording_config: None,
@@ -650,10 +692,17 @@ fn generate_random_source(
         } else {
             format!("test_{}_{}_{}_{}.csv", test_idx, channel, role, idx)
         };
-        let path = output_dir.join(filename);
+        let path = output_dir.join(&filename);
         generate_measurement_csv(&path, &speaker_config, idx, count)?;
 
-        file_strings.push(path.to_string_lossy().to_string());
+        // Store only the leaf filename in the config. `load_config`
+        // resolves paths relative to the config.json directory
+        // (`output_dir == test_dir`), so the leaf filename sits directly
+        // alongside the config. Previously the full `output_dir/filename`
+        // string was written, which `resolve_paths` then joined to
+        // `config_dir` again — producing a double-prefixed path that
+        // could never be found.
+        file_strings.push(filename);
         paths.push(path);
     }
 

@@ -228,11 +228,57 @@
   weight vector for `WeightedSum` so the B10 validator doesn't
   reject the config. This is the first coverage path for the per-
   measurement loss aggregation code outside the unit tests.
-- NOTE: the fuzzer binary has a long-standing path-resolution bug
-  unrelated to Phase 5 — generated CSVs are written as relative paths
-  but `roomeq` is invoked via `cargo run` which changes cwd to the
-  workspace root. Tracked as follow-up; the Phase 5 additions are
-  validated by compile + clippy checks, not end-to-end runs.
+
+### Post-review hardening
+
+- **`run_channel_via_generic_path`**: added a `debug_assert!` that
+  `alignment_gain_db <= 0.01`. `align_channels_to_lowest` only ever
+  emits non-positive gains, so the assumption is always satisfied
+  today. The assert guards any future caller that tries to pass a
+  positive gain — which would under-size the excursion HPF computed
+  on the raw curve.
+- **`complex_sum_mains`**: added a debug-time grid-match assertion
+  across all input curves. Bin-wise complex summation is meaningless
+  when L, R, and Sub inhabit different frequency grids (e.g. post-
+  SampleRate mismatch). The workflows interpolate inputs onto a
+  common grid upstream today; the assert catches a regression if
+  that changes.
+- **DE `max_iter` clamp**: fixed an off-by-one where `maxeval ==
+  population_size` produced `max_iter = 1` and a total of 2 × maxeval
+  evals (initial population + 1 generation, each pop_size evals).
+  Now capped by `maxeval / population_size`. New test
+  `setup_de_common_honours_maxeval_equal_to_popsize` pins the edge.
+- **`workflow_feature_parity_test`**: strengthened from "chain not
+  empty / plugins.len() >= 3" to actually inspecting the serialized
+  `"eq"` plugin JSON for a `filter_type: "highpass"` when
+  `excursion_protection` is on. Added a negative-side test asserting
+  no HP appears when the feature is off. Catches silent feature-drop
+  regressions the earlier smoke check missed.
+- **`sanity_check_result`**: promoted from debug-only panic to a
+  release-safe `Err` path. In debug builds it still panics via
+  `debug_assert!` so tests surface the exact violated invariant;
+  in release builds it returns `AutoeqError::OptimizationFailed` so
+  optimiser divergence is reported cleanly to the caller instead of
+  silently producing a corrupted DSP chain.
+- **Tolerance doc fix**: `warn_if_optimizer_bounds_exceed_data` now
+  says `10^0.05 ≈ 1.122` (≈ 1/6 octave) instead of the incorrect
+  "~one-twelfth of an octave" comment.
+
+### Fuzzer path-resolution fix
+
+- `roomeq-fuzzer` had a long-standing path bug: generated CSVs were
+  written under `fuzzer_output/test_N/` and the config then stored the
+  *same* full relative path (`fuzzer_output/test_N/filename.csv`).
+  `load_config` resolves measurement paths relative to the config
+  file's directory — which is *also* `fuzzer_output/test_N/` — so the
+  join produced `fuzzer_output/test_N/fuzzer_output/test_N/filename.csv`
+  and every fuzzer run failed with "No such file or directory". Fixed
+  by storing only the leaf filename in the config; the resolver now
+  joins it with the correct test_dir. 0/10 → 7/10 success rate on the
+  default seed; the remaining failures are real internal bugs the
+  fuzzer now exposes (NaN in f64::clamp, DBA inline-measurement
+  fallthrough, ndarray broadcast mismatch) and are separate follow-up
+  work.
 
 ### QA: `just qa-roomeq-ci` recipe (Phase 5)
 

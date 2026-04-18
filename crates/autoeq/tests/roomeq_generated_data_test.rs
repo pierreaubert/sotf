@@ -181,23 +181,32 @@ struct ModeConfig {
 ///
 /// Findings from tightening (3 room sizes, 4 modes):
 ///
-/// **Score ratios**: Excellent — modes agree within 4% on combined score.
+/// **Score ratios**: Before Phase 3, `optimize_stereo_2_0` always called
+///   `eq::optimize_channel_eq` regardless of `processing_mode`, so iir / fir /
+///   hybrid / mixed_phase produced near-identical results. Phase 3 routes
+///   each channel through `process_single_speaker`, which honours
+///   `processing_mode` — so modes now genuinely diverge on bass-heavy
+///   scenarios (IIR targets narrow modes; FIR phase-linearizes; hybrid
+///   blends). Observed ratios: up to 1.7× on small rooms with a strong
+///   sub-100 Hz mode. The limit is loosened to 2.0× to reflect this.
 ///
 /// **FR peak diff**: Large (11-20 dB) at specific room mode frequencies.
 ///   IIR targets narrow modes precisely; FIR spreads correction broadly.
 ///   Worse in large rooms (more/denser modes). This is fundamental, not a bug.
 ///   Peak diff is reported for diagnostics but NOT asserted — it's not meaningful.
 ///
-/// **FR RMS diff**: The meaningful metric. Small rooms ~2.5 dB, large rooms ~4.4 dB.
-///   Large room R channel @425 Hz has a violent mode all methods handle differently.
+/// **FR RMS diff**: The meaningful metric. Small rooms ~2.5 dB, large rooms
+///   ~4.4 dB, edge-case stereo 2.0 after Phase 3 can reach ~5.3 dB because
+///   IIR and FIR handle the same modal peak with different filter shapes.
 ///
 /// **Improvement**: All modes achieve 34-58% per-channel, 45-55% combined.
-const CROSS_MODE_SCORE_RATIO_LIMIT: f64 = 1.10; // modes within 10% on combined score
+const CROSS_MODE_SCORE_RATIO_LIMIT: f64 = 2.0; // modes within 2× on combined score (post-Phase 3)
 const MIN_IMPROVEMENT_PCT: f64 = 0.25; // require 25% combined improvement
 const MAX_CHANNEL_REGRESSION: f64 = 1.02; // max 2% regression per channel
 /// RMS dB difference — the meaningful broadband agreement metric.
-/// 5 dB allows for the large room's violent 425 Hz mode in R channel.
-const CROSS_MODE_FR_RMS_DIFF_DB: f64 = 5.0;
+/// 6 dB allows for stereo 2.0 after Phase 3, where processing_mode now
+/// reaches the per-channel pipeline and legitimately diverges mode by mode.
+const CROSS_MODE_FR_RMS_DIFF_DB: f64 = 6.0;
 /// Peak diff reported but not a hard failure — logged for diagnostics
 const CROSS_MODE_FR_PEAK_WARN_DB: f64 = 10.0;
 

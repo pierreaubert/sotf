@@ -294,3 +294,13 @@ qa-roomeq-synthetic:
 qa-roomeq-features:
 	cargo run --bin roomeq-qa-features --no-default-features --release
 
+# Compact CI-friendly QA run: bounded fuzzer + small coverage subset.
+# Typical wall time is under 3 minutes on modern hardware. Runs the
+# fuzzer with a fixed scenario budget (not wall-clock) so results stay
+# reproducible across CI agents, and the quick coverage subset to pin
+# the core small/medium stereo scenarios.
+[group('qa-roomeq')]
+qa-roomeq-ci:
+	cargo run --bin roomeq-fuzzer --release -- -n 50
+	cargo run --bin roomeq-qa-coverage --release -- --quick --maxeval 200
+
