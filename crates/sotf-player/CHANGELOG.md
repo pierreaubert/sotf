@@ -1,3 +1,29 @@
+# 0.5.120
+
+## EqFilterConfig dedup re-audit (no code change)
+
+- The 0.5.118 CHANGELOG deferred unifying
+  `room_eq_types::EqFilterConfig` with the canonical `PeqFilter`
+  pending "a serde-alias migration". Re-audit shows
+  `EqFilterConfig` is **not** a stripped autoeq record — it is the
+  runtime/UI-side canonical matching `sotf-engine::EQFilter`
+  (`filter_type` / `frequency` / `q` / `gain_db`), which is the
+  wire format the engine plugin loader deserializes. `PeqFilter`
+  and its aliases (`HeadphoneEqBiquad`, `SpinoramaBiquad`) use the
+  autoeq-side convention (`filter_type` / `freq` / `q` / `db_gain`).
+  The two conventions exist by design and the codebase already has
+  an explicit bridge (see `app-tui::events::conf_roomeq` mapping
+  `b.freq → frequency` and `b.db_gain → gain_db`).
+- Adding `#[serde(alias = "frequency")]` + `#[serde(alias = "gain_db")]`
+  to `PeqFilter` would make deserialization tolerant but
+  serialization would still emit `freq` / `db_gain`, silently
+  breaking any consumer (including `sotf-engine::EQFilter`) that
+  parses JSON by field name. `#[serde(rename)]` flips the output
+  key — equally breaking. There is no painless serde-only
+  unification, so the two structs stay separate. Any future
+  consolidation needs a coordinated change across both wire formats
+  plus a deprecation window, not a quiet alias.
+
 # 0.5.119
 
 ## Bug fixes
