@@ -473,12 +473,29 @@ pub(super) fn process_single_speaker(
         );
     }
 
-    // When target tilt is active, clamp min_freq to the speaker's F3 rolloff.
-    // Without this, the tilt creates a massive target deficit below the speaker's
-    // capability (e.g. +4.5dB at 20Hz on a speaker that rolls off at 60Hz).
-    // The optimizer wastes filters on impossible bass boost, and the broad filter
-    // skirts cause collateral damage in the midrange.
-    if target_tilt_curve.is_some() {
+    // When target tilt is active AND a subwoofer handles the bass, clamp
+    // min_freq to the main speaker's F3 rolloff. Without this, the tilt
+    // creates a massive target deficit below the speaker's capability
+    // (e.g. +4.5dB at 20Hz on a speaker that rolls off at 60Hz). The
+    // optimizer wastes filters on impossible bass boost, and the broad
+    // filter skirts cause collateral damage in the midrange.
+    //
+    // For stereo (no sub), the full-range speakers ARE the bass source.
+    // Clamping min_freq would prevent the optimizer from placing filters
+    // on room modes below F3, which is counterproductive.
+    let system_has_subwoofer = room_config
+        .system
+        .as_ref()
+        .map(|sys| sys.subwoofers.as_ref().is_some_and(|s| !s.mapping.is_empty()))
+        .unwrap_or_else(|| {
+            // Legacy: check if any speaker name looks like a sub
+            room_config
+                .speakers
+                .keys()
+                .any(|k| k.eq_ignore_ascii_case("lfe") || k.to_lowercase().starts_with("sub"))
+        });
+
+    if target_tilt_curve.is_some() && system_has_subwoofer {
         match excursion::detect_f3(&curve, None) {
             Ok(f3_result) => {
                 // Only clamp if F3 is above the configured min_freq but still
@@ -486,7 +503,7 @@ pub(super) fn process_single_speaker(
                 // with no real rolloff) would invalidate the frequency range.
                 if f3_result.f3_hz > min_freq && f3_result.f3_hz < max_freq * 0.5 {
                     info!(
-                        "  Tilt active: clamping min_freq from {:.1}Hz to F3={:.1}Hz \
+                        "  Tilt active + subwoofer: clamping min_freq from {:.1}Hz to F3={:.1}Hz \
                          to prevent bass over-boost below rolloff",
                         min_freq, f3_result.f3_hz
                     );
@@ -500,6 +517,10 @@ pub(super) fn process_single_speaker(
                 );
             }
         }
+    } else if target_tilt_curve.is_some() {
+        debug!(
+            "  Tilt active but no subwoofer: skipping F3 min_freq clamping (full-range speakers)"
+        );
     }
 
     // Use range-based mean (same as optimizer) for consistent pre/post scoring

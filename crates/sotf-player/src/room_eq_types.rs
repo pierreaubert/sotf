@@ -248,7 +248,7 @@ impl SimplePresetConfig {
         // the user never visited the Full Wizard.
         config.num_filters = 7;
         config.algorithm = "autoeq:de".to_string();
-        config.population = 50;
+        config.population = 300;
         config.max_iter = 50_000;
         config.min_freq = 20.0;
         config.max_freq = 1600.0;
@@ -1326,7 +1326,7 @@ impl Default for RoomEqOptimizerConfig {
             max_freq: 1600.0,
             max_iter: 50000,
             peq_model: "pk".to_string(),
-            population: 50,
+            population: 300,
             refine: false,
             local_algo: "cobyla".to_string(),
             loss_type: "flat".to_string(),
@@ -2234,7 +2234,7 @@ mod tests {
             "min_freq": 20.0, "max_freq": 1600.0,
             "max_iter": 50000,
             "peq_model": "pk",
-            "population": 50,
+            "population": 300,
             "refine": false,
             "local_algo": "cobyla",
             "loss_type": "flat",

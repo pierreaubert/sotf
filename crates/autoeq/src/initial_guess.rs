@@ -154,31 +154,34 @@ pub fn create_smart_initial_guesses(
         // ourselves. Used when the caller has no upstream analysis.
         let smoothed = smooth_problem_response(freq_grid, target_response, config.smoothing_sigma);
 
-        // Find peaks (need cuts) and dips (need boosts)
+        // The deviation curve is `target - normalized_measurement`.
+        // Positive deviation = measurement below target → PEQ should boost.
+        // Negative deviation = measurement above target → PEQ should cut.
+        // Peaks in the deviation are boost targets; dips are cut targets.
         let peaks = find_peaks(&smoothed, config.min_peak_height, config.min_peak_distance);
         let inverted = -&smoothed;
         let dips = find_peaks(&inverted, config.min_peak_height, config.min_peak_distance);
 
         let mut auto_problems = Vec::new();
 
-        // Add peaks (need cuts)
+        // Add peaks in deviation (measurement below target → need boost)
         for &peak_idx in &peaks {
             if peak_idx < freq_grid.len() {
                 auto_problems.push(FrequencyProblem {
                     frequency: freq_grid[peak_idx],
-                    magnitude: -smoothed[peak_idx].abs(), // Negative for cuts
-                    q_factor: 1.0,
+                    magnitude: smoothed[peak_idx], // Positive = boost
+                    q_factor: 0.7,                 // Lower Q for boosts
                 });
             }
         }
 
-        // Add dips (need boosts)
+        // Add dips in deviation (measurement above target → need cut)
         for &dip_idx in &dips {
             if dip_idx < freq_grid.len() {
                 auto_problems.push(FrequencyProblem {
                     frequency: freq_grid[dip_idx],
-                    magnitude: smoothed[dip_idx].abs(), // Positive for boosts
-                    q_factor: 0.7,                      // Lower Q for boosts
+                    magnitude: smoothed[dip_idx], // Negative = cut
+                    q_factor: 1.0,
                 });
             }
         }

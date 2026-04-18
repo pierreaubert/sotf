@@ -354,6 +354,21 @@ fn prepare_single_channel_eq(
     let effective_min_freq = config.min_freq.max(data_min_freq);
     let effective_max_freq = config.max_freq.min(data_max_freq);
 
+    let points_in_range = curve
+        .freq
+        .iter()
+        .filter(|&&f| f >= effective_min_freq && f <= effective_max_freq)
+        .count();
+    log::info!(
+        "  Optimizer freq range: configured=[{:.1}, {:.1}], data=[{:.1}, {:.1}], effective=[{:.1}, {:.1}], {} points in range",
+        config.min_freq,
+        config.max_freq,
+        data_min_freq,
+        data_max_freq,
+        effective_min_freq,
+        effective_max_freq,
+        points_in_range,
+    );
     if effective_max_freq < config.max_freq || effective_min_freq > config.min_freq {
         log::warn!(
             "  Clamping optimizer freq range [{:.1}, {:.1}] to measurement data range [{:.1}, {:.1}]",
@@ -622,6 +637,27 @@ fn prepare_single_channel_eq(
         phase: None,
     };
 
+    // Log deviation at key frequencies for diagnostics
+    {
+        let key_freqs = [30.0, 55.0, 80.0, 100.0, 150.0, 200.0, 300.0];
+        let mut diag = String::from("  Deviation at key freqs:");
+        for &kf in &key_freqs {
+            if kf >= effective_min_freq && kf <= effective_max_freq {
+                if let Some(idx) = deviation_curve
+                    .freq
+                    .iter()
+                    .position(|&f| f >= kf * 0.95 && f <= kf * 1.05)
+                {
+                    diag.push_str(&format!(
+                        " {:.0}Hz={:+.1}dB",
+                        deviation_curve.freq[idx], deviation_curve.spl[idx]
+                    ));
+                }
+            }
+        }
+        log::info!("{}", diag);
+    }
+
     // Setup objective data
     let (mut objective_data, _use_cea) = setup_objective_data(
         &args_template,
@@ -681,6 +717,25 @@ fn run_optimization_pass(
     args.maxeval = max_iter;
 
     let (lower_bounds, mut upper_bounds) = crate::workflow::setup_bounds(&args);
+
+    // Log per-filter frequency bounds for diagnostics
+    {
+        let ppf = crate::param_utils::params_per_filter(prep.peq_model);
+        for i in 0..num_filters {
+            let freq_idx = i * ppf;
+            let f_low = 10.0_f64.powf(lower_bounds[freq_idx]);
+            let f_high = 10.0_f64.powf(upper_bounds[freq_idx]);
+            let gain_idx = freq_idx + ppf - 1;
+            log::debug!(
+                "  Filter {} bounds: freq=[{:.1}, {:.1}] Hz, gain=[{:+.1}, {:+.1}] dB",
+                i,
+                f_low,
+                f_high,
+                lower_bounds[gain_idx],
+                upper_bounds[gain_idx],
+            );
+        }
+    }
 
     // Physics constraint: below the Schroeder frequency the room is
     // modal — mode peaks can be cut with EQ but mode nulls can't be

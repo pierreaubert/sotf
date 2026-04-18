@@ -123,21 +123,21 @@ doc:
 # Run the GPUI player (debug mode with ad-hoc signing for macOS file dialogs)
 [group('run')]
 run-gpui:
-	cargo build --bin SotF --features "onnx, gpu-2d, gpu-3d, iamf"
+	cargo build --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf"
 	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/SotF
 	./target/debug/SotF
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-release:
-	cargo build --release --bin SotF --features "onnx, gpu-2d, gpu-3d, iamf"
+	cargo build --release --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf"
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
 	./target/release/SotF
 
 # Run the GPUI player (release mode)
 [group('run')]
 run-gpui-leaks:
-	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin SotF --features onnx
+	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin SotF --features "onnx, hal, gpu-2d, gpu-3d, iamf"
 	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
 	./target/release/SotF
 
@@ -218,21 +218,21 @@ prod-roomeq:
 [group('build')]
 [macos]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx, hal"
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx, hal, iamf"
 
 [group('build')]
 [linux]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx"
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx,hal,iamf"
 
 [group('build')]
 [windows]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx"
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx,hal,iamf"
 
 [group('build')]
 gpui:
-	cargo run --release --bin SotF -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d"
+	cargo run --release --bin SotF -p sotf-gpui --features "onnx,hal,gpu-2d,gpu-3d,iamf"
 
 # ----------------------------------------------------------------------
 # CLEAN

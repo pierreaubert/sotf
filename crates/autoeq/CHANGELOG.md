@@ -1,3 +1,35 @@
+# 0.4.27
+
+## Fixes
+
+### Initial guess sign inversion for peaks/dips
+
+- The smart initial guess generator (`initial_guess.rs`) had inverted
+  magnitude signs: peaks in the deviation (measurement below target,
+  needing boost) were seeded as cuts, and dips (measurement above target,
+  needing cuts) were seeded as boosts. This caused the DE optimizer to
+  start from a wrong initial population, slowing convergence and often
+  missing obvious room modes — especially bass peaks below 100 Hz.
+
+### F3 min_freq clamping skipped for stereo (no subwoofer)
+
+- When target tilt was active, `process_single_speaker` clamped the
+  optimizer's `min_freq` up to the speaker's F3 rolloff to prevent
+  impossible bass boost. For stereo (2.0) setups without a subwoofer,
+  the full-range speakers ARE the bass source — clamping prevented the
+  optimizer from placing filters on bass room modes below F3. The
+  clamping now only applies when the system has a subwoofer.
+
+## Improvements
+
+### Diagnostic logging for optimizer frequency range
+
+- `prepare_single_channel_eq` now logs the configured, data, and
+  effective frequency ranges plus the number of data points in range.
+  Deviation values at key frequencies (30–300 Hz) are logged to help
+  diagnose cases where filters are not placed in the expected region.
+- `run_optimization_pass` logs per-filter frequency and gain bounds.
+
 # 0.4.26
 
 ## Fixes

@@ -737,6 +737,19 @@ fn optimize_room_impl(
                     config.optimizer.processing_mode,
                     ProcessingMode::PhaseLinear | ProcessingMode::Hybrid
                 ) {
+                    send_progress(
+                        &mut callback,
+                        &RoomOptimizationProgress {
+                            current_speaker: "FIR generation".to_string(),
+                            speaker_index: 0,
+                            total_speakers: result.channel_results.len(),
+                            iteration: 0,
+                            max_iterations: 0,
+                            loss: 0.0,
+                            overall_progress: 0.95,
+                            message: Some("Generating FIR coefficients...".to_string()),
+                        },
+                    );
                     let out_dir = output_dir.unwrap_or(Path::new("."));
                     for (name, ch) in result.channel_results.iter_mut() {
                         if ch.fir_coeffs.is_some() {
@@ -756,6 +769,19 @@ fn optimize_room_impl(
                 // MixedPhase: post-generate short excess-phase FIR for each channel
                 // and add convolution plugin to the DSP chain.
                 if config.optimizer.processing_mode == ProcessingMode::MixedPhase {
+                    send_progress(
+                        &mut callback,
+                        &RoomOptimizationProgress {
+                            current_speaker: "Mixed-phase FIR".to_string(),
+                            speaker_index: 0,
+                            total_speakers: result.channel_results.len(),
+                            iteration: 0,
+                            max_iterations: 0,
+                            loss: 0.0,
+                            overall_progress: 0.95,
+                            message: Some("Generating mixed-phase FIR...".to_string()),
+                        },
+                    );
                     let out_dir = output_dir.unwrap_or(Path::new("."));
                     for (name, ch) in result.channel_results.iter_mut() {
                         if ch.fir_coeffs.is_some() {
@@ -779,6 +805,21 @@ fn optimize_room_impl(
                     }
                 }
                 // Standalone phase correction (rePhase-style)
+                if config.optimizer.phase_correction.is_some() {
+                    send_progress(
+                        &mut callback,
+                        &RoomOptimizationProgress {
+                            current_speaker: "Phase correction".to_string(),
+                            speaker_index: 0,
+                            total_speakers: result.channel_results.len(),
+                            iteration: 0,
+                            max_iterations: 0,
+                            loss: 0.0,
+                            overall_progress: 0.96,
+                            message: Some("Phase correction...".to_string()),
+                        },
+                    );
+                }
                 if let Some(ref pc_config) = config.optimizer.phase_correction {
                     let out_dir = output_dir.unwrap_or(Path::new("."));
                     let names: Vec<String> = result.channel_results.keys().cloned().collect();
@@ -799,6 +840,19 @@ fn optimize_room_impl(
                 }
 
                 // Compute IR waveforms for the workflow result
+                send_progress(
+                    &mut callback,
+                    &RoomOptimizationProgress {
+                        current_speaker: "IR computation".to_string(),
+                        speaker_index: 0,
+                        total_speakers: result.channel_results.len(),
+                        iteration: 0,
+                        max_iterations: 0,
+                        loss: 0.0,
+                        overall_progress: 0.97,
+                        message: Some("Computing impulse responses...".to_string()),
+                    },
+                );
                 for (channel_name, ch_result) in &result.channel_results {
                     let delay_ms = result
                         .channels
@@ -823,6 +877,19 @@ fn optimize_room_impl(
 
                 // Compute inter-channel deviation and optionally correct it
                 if result.channel_results.len() > 1 {
+                    send_progress(
+                        &mut callback,
+                        &RoomOptimizationProgress {
+                            current_speaker: "Channel matching".to_string(),
+                            speaker_index: 0,
+                            total_speakers: result.channel_results.len(),
+                            iteration: 0,
+                            max_iterations: 0,
+                            loss: 0.0,
+                            overall_progress: 0.98,
+                            message: Some("Channel matching analysis...".to_string()),
+                        },
+                    );
                     compute_and_correct_icd(&mut result, config, sample_rate);
                 }
 
@@ -1119,6 +1186,22 @@ fn optimize_room_impl(
                 config.optimizer.processing_mode,
                 ProcessingMode::LowLatency | ProcessingMode::MixedPhase
             ) {
+            send_progress(
+                &mut callback_shared.lock().unwrap(),
+                &RoomOptimizationProgress {
+                    current_speaker: format!("FIR: {}", channel_name),
+                    speaker_index: 0,
+                    total_speakers,
+                    iteration: 0,
+                    max_iterations: 0,
+                    loss: 0.0,
+                    overall_progress: 0.95,
+                    message: Some(format!(
+                        "Generating FIR coefficients for {}...",
+                        channel_name
+                    )),
+                },
+            );
             post_generate_fir(
                 &channel_name,
                 &initial_curve,
@@ -1221,6 +1304,19 @@ fn optimize_room_impl(
     // channel's deviation from the average post-EQ curve. This corrects both broadband
     // level differences and frequency-dependent tilt between channels.
     if curves.len() > 1 {
+        send_progress(
+            &mut callback_shared.lock().unwrap(),
+            &RoomOptimizationProgress {
+                current_speaker: "Spectral alignment".to_string(),
+                speaker_index: 0,
+                total_speakers,
+                iteration: 0,
+                max_iterations: 0,
+                loss: 0.0,
+                overall_progress: 0.92,
+                message: Some("Spectral channel alignment...".to_string()),
+            },
+        );
         let min_freq = config.optimizer.min_freq;
         let max_freq = config.optimizer.max_freq;
         let sample_rate = config
@@ -1295,6 +1391,22 @@ fn optimize_room_impl(
     if let Some(vog_config) = &config.optimizer.vog
         && vog_config.enabled
     {
+        send_progress(
+            &mut callback_shared.lock().unwrap(),
+            &RoomOptimizationProgress {
+                current_speaker: "Voice of God".to_string(),
+                speaker_index: 0,
+                total_speakers,
+                iteration: 0,
+                max_iterations: 0,
+                loss: 0.0,
+                overall_progress: 0.93,
+                message: Some(format!(
+                    "Voice of God alignment (ref: '{}')...",
+                    vog_config.reference_channel
+                )),
+            },
+        );
         info!(
             "Running Voice of God alignment (reference: '{}')...",
             vog_config.reference_channel
@@ -1519,6 +1631,21 @@ fn optimize_room_impl(
     }
 
     // Standalone phase correction (rePhase-style)
+    if config.optimizer.phase_correction.is_some() {
+        send_progress(
+            &mut callback_shared.lock().unwrap(),
+            &RoomOptimizationProgress {
+                current_speaker: "Phase correction".to_string(),
+                speaker_index: 0,
+                total_speakers,
+                iteration: 0,
+                max_iterations: 0,
+                loss: 0.0,
+                overall_progress: 0.96,
+                message: Some("Phase correction...".to_string()),
+            },
+        );
+    }
     if let Some(ref pc_config) = config.optimizer.phase_correction {
         let names: Vec<String> = channel_results.keys().cloned().collect();
         for name in &names {
@@ -1531,6 +1658,19 @@ fn optimize_room_impl(
     }
 
     // Compute IR waveforms (pre- and post-correction) for each channel
+    send_progress(
+        &mut callback_shared.lock().unwrap(),
+        &RoomOptimizationProgress {
+            current_speaker: "IR computation".to_string(),
+            speaker_index: 0,
+            total_speakers,
+            iteration: 0,
+            max_iterations: 0,
+            loss: 0.0,
+            overall_progress: 0.97,
+            message: Some("Computing impulse responses...".to_string()),
+        },
+    );
     for (channel_name, result) in &channel_results {
         let delay_ms = channel_chains
             .get(channel_name)
@@ -1603,6 +1743,19 @@ fn optimize_room_impl(
 
     // Compute inter-channel deviation and optionally correct it
     if curves.len() > 1 {
+        send_progress(
+            &mut callback_shared.lock().unwrap(),
+            &RoomOptimizationProgress {
+                current_speaker: "Channel matching".to_string(),
+                speaker_index: 0,
+                total_speakers,
+                iteration: 0,
+                max_iterations: 0,
+                loss: 0.0,
+                overall_progress: 0.98,
+                message: Some("Channel matching analysis...".to_string()),
+            },
+        );
         compute_and_correct_icd(&mut result, config, sample_rate);
     }
 

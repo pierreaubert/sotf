@@ -407,6 +407,8 @@ pub struct RoomEqTuiState {
     pub opt_current_speaker: String,
     /// Total number of speakers being optimized
     pub opt_total_speakers: usize,
+    /// Status message from the optimizer (e.g. post-processing phase name)
+    pub opt_status_message: Option<String>,
     pub channel_results: Vec<ChannelOptResult>,
     pub loss_history: Vec<(usize, f64)>,
     /// Log buffer for optimization messages (max 300 lines)
@@ -451,6 +453,7 @@ impl Default for RoomEqTuiState {
             opt_loss: 0.0,
             opt_current_speaker: String::new(),
             opt_total_speakers: 0,
+            opt_status_message: None,
             channel_results: Vec::new(),
             loss_history: Vec::new(),
             opt_log_lines: VecDeque::new(),

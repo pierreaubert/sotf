@@ -334,7 +334,8 @@ pub fn optimize_filters_autoeq_with_callback(
             ..SmartInitConfig::default()
         };
 
-        // Use the inverted target as the response to analyze for problems
+        // Use the deviation curve (target - measurement) to identify problems.
+        // Positive deviation = needs boost, negative = needs cut.
         let target_response = &setup.penalty_data.deviation;
         let freq_grid = &setup.penalty_data.freqs;
 

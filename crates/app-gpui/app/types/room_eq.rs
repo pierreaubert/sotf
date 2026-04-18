@@ -391,7 +391,11 @@ impl RoomEqState {
             config.target_tilt.enabled = true;
             config.target_tilt.tilt_type = "harman".to_string();
             config.excursion_protection.enabled = true;
-            config.schroeder_split.enabled = true;
+            // Schroeder split only makes sense with a subwoofer: the modal
+            // crossover separates bass (sub) from mid/treble (mains). For a
+            // 2.0 stereo setup the full-range speakers cover everything and
+            // a single-pass optimizer is more effective.
+            config.schroeder_split.enabled = has_subwoofer;
             config.allow_delay = true;
             config.broadband_target_matching.enabled = true;
             config.gd_opt.enabled = has_subwoofer;
@@ -875,7 +879,7 @@ impl RoomEqState {
                 None
             },
             smooth_n: self.optimizer_config.smooth_n,
-            decomposed_correction: None,
+            decomposed_correction: Some(autoeq::roomeq::DecomposedCorrectionSerdeConfig::default()),
             target_response: None,
             cea2034_correction: None,
             sub_config: if self.optimizer_config.sub_config.enabled {

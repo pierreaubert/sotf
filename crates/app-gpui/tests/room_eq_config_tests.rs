@@ -391,9 +391,11 @@ fn test_fresh_measurement_gets_smart_defaults() {
         opt.excursion_protection.is_some(),
         "excursion_protection should be enabled"
     );
+    // Schroeder split is only enabled when a subwoofer is present.
+    // This test has L+R only (no sub), so it should be None.
     assert!(
-        opt.schroeder_split.is_some(),
-        "schroeder_split should be enabled"
+        opt.schroeder_split.is_none(),
+        "schroeder_split should be disabled for stereo without subwoofer"
     );
     assert!(
         opt.broadband_target_matching.is_some(),

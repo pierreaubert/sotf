@@ -275,6 +275,7 @@ impl PlayerView {
                 }
                 PaletteItemType::Plugin(plugin_type) => {
                     let (inputs, outputs) = plugin_channel_counts(plugin_type);
+                    let (max_in, max_out) = plugin_max_ports(plugin_type);
                     let mut user_data = serde_json::json!({
                         "node_type": NODE_TYPE_PLUGIN,
                         "plugin_type": format!("{:?}", plugin_type),
@@ -286,6 +287,7 @@ impl PlayerView {
                     }
                     WorkflowNodeData::new(plugin_type.name(), Position::new(drop_x, drop_y))
                         .with_ports(inputs, outputs)
+                        .with_max_ports(max_in, max_out)
                         .with_size(160.0, 90.0)
                         .with_user_data(user_data)
                 }
@@ -632,6 +634,23 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
 }
 
 /// Get input and output channel counts for a plugin type
+/// Maximum port counts for a plugin type (None = fixed, matches default counts)
+fn plugin_max_ports(plugin_type: &PluginType) -> (Option<usize>, Option<usize>) {
+    match plugin_type {
+        // Matrix is growable up to 8x8
+        PluginType::Matrix => (Some(8), Some(8)),
+        // Downmix: can accept up to 8 input channels
+        PluginType::Downmix => (Some(8), Some(2)),
+        // Ambisonics decoder: can output up to 8 channels
+        PluginType::AmbisonicsDecoder => (Some(4), Some(8)),
+        // All other plugins: fixed port counts (no growth allowed)
+        _ => {
+            let (i, o) = plugin_channel_counts(plugin_type);
+            (Some(i), Some(o))
+        }
+    }
+}
+
 fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
     match plugin_type {
         // Most plugins are 2-in, 2-out (stereo passthrough)
@@ -782,11 +801,19 @@ fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
         };
 
         let height = 80.0 + (input_ports.max(output_ports) as f32 * 8.0);
+        // Special nodes: allow growth up to 8 ports on the variable side
+        let (max_in, max_out) = match special_node.node_type {
+            SpecialNodeType::Input => (Some(0), Some(8)),
+            SpecialNodeType::Output => (Some(8), Some(0)),
+            SpecialNodeType::Split => (Some(1), Some(8)),
+            SpecialNodeType::Merge => (Some(8), Some(1)),
+        };
         let workflow_node = WorkflowNodeData::new(
             special_node.display_name(),
             Position::new(special_node.position.x, special_node.position.y),
         )
         .with_ports(input_ports, output_ports)
+        .with_max_ports(max_in, max_out)
         .with_size(160.0, height)
         .with_user_data(serde_json::json!({
             "node_type": node_type,
@@ -804,11 +831,13 @@ fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
         let (input_ports, output_ports) = (node.input_channels.min(8), node.output_channels.min(8));
 
         let height = 90.0 + ((input_ports.max(output_ports)).saturating_sub(2) as f32 * 8.0);
+        let (max_in, max_out) = plugin_max_ports(&plugin_type);
         let workflow_node = WorkflowNodeData::new(
             plugin_type.name(),
             Position::new(node.position.x, node.position.y),
         )
         .with_ports(input_ports, output_ports)
+        .with_max_ports(max_in, max_out)
         .with_size(160.0, height)
         .with_user_data(serde_json::json!({
             "node_type": NODE_TYPE_PLUGIN,

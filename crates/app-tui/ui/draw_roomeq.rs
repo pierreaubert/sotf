@@ -427,27 +427,49 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     Style::default().fg(app.theme.fg_secondary),
                 ),
                 OptimizationStatus::Running => {
-                    let speaker_info = if !s.opt_current_speaker.is_empty() {
-                        if s.opt_total_speakers > 1 {
-                            format!(
-                                " | {}/{} {}",
-                                s.opt_total_speakers.min(s.channel_results.len() + 1),
-                                s.opt_total_speakers,
-                                s.opt_current_speaker
+                    // Post-processing phases set iteration=0 and max_iterations=0
+                    // with a descriptive status message. Show that instead of
+                    // the frozen "iter 0/0 | loss: 0.0000".
+                    if s.opt_iteration == 0 && s.opt_max_iter == 0 {
+                        if let Some(msg) = &s.opt_status_message {
+                            (
+                                msg.clone(),
+                                Style::default().fg(app.theme.accent_primary),
+                            )
+                        } else if !s.opt_current_speaker.is_empty() {
+                            (
+                                format!("{}...", s.opt_current_speaker),
+                                Style::default().fg(app.theme.accent_primary),
                             )
                         } else {
-                            format!(" | {}", s.opt_current_speaker)
+                            (
+                                "Starting optimization...".to_string(),
+                                Style::default().fg(app.theme.accent_primary),
+                            )
                         }
                     } else {
-                        String::new()
-                    };
-                    (
-                        format!(
-                            "Optimizing... iter {}/{} | loss: {:.4}{}",
-                            s.opt_iteration, s.opt_max_iter, s.opt_loss, speaker_info
-                        ),
-                        Style::default().fg(app.theme.accent_primary),
-                    )
+                        let speaker_info = if !s.opt_current_speaker.is_empty() {
+                            if s.opt_total_speakers > 1 {
+                                format!(
+                                    " | {}/{} {}",
+                                    s.opt_total_speakers.min(s.channel_results.len() + 1),
+                                    s.opt_total_speakers,
+                                    s.opt_current_speaker
+                                )
+                            } else {
+                                format!(" | {}", s.opt_current_speaker)
+                            }
+                        } else {
+                            String::new()
+                        };
+                        (
+                            format!(
+                                "Optimizing... iter {}/{} | loss: {:.4}{}",
+                                s.opt_iteration, s.opt_max_iter, s.opt_loss, speaker_info
+                            ),
+                            Style::default().fg(app.theme.accent_primary),
+                        )
+                    }
                 }
                 OptimizationStatus::Completed => (
                     format!("Completed! {} channel results", s.channel_results.len()),

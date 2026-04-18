@@ -227,10 +227,17 @@ impl PlayerView {
                                             })
                                             .child(
                                                 Text::new(if is_running {
-                                                    format!(
-                                                        "Iteration: {} | Loss: {:.4}",
-                                                        current_iteration, current_loss
-                                                    )
+                                                    if current_iteration == 0
+                                                        && !status_msg.is_empty()
+                                                        && current_loss == 0.0
+                                                    {
+                                                        status_msg.clone()
+                                                    } else {
+                                                        format!(
+                                                            "Iteration: {} | Loss: {:.4}",
+                                                            current_iteration, current_loss
+                                                        )
+                                                    }
                                                 } else {
                                                     format!("Progress: {:.0}%", display_progress)
                                                 })
@@ -851,7 +858,8 @@ impl PlayerView {
         let state_clone = self.state.clone();
 
         // Create async channel for progress updates from blocking thread
-        let (progress_tx, progress_rx) = smol::channel::bounded::<(usize, f64, f32, String)>(100);
+        let (progress_tx, progress_rx) =
+            smol::channel::bounded::<(usize, f64, f32, String, Option<String>)>(100);
 
         // Clone state for progress receiver task
         let state_for_progress = self.state.clone();
@@ -873,7 +881,8 @@ impl PlayerView {
                 loop {
                     // Block until at least one message arrives (or channel closes).
                     let first = progress_rx.recv().await;
-                    let Ok((mut iteration, mut loss, mut overall_progress, mut speaker)) = first
+                    let Ok((mut iteration, mut loss, mut overall_progress, mut speaker, mut message)) =
+                        first
                     else {
                         break;
                     };
@@ -881,12 +890,15 @@ impl PlayerView {
                     // Drain all additional pending messages without blocking.
                     let mut batch: Vec<(usize, f64, String)> =
                         vec![(iteration, loss, speaker.clone())];
-                    while let Ok((it, l, op, sp)) = progress_rx.try_recv() {
+                    while let Ok((it, l, op, sp, msg)) = progress_rx.try_recv() {
                         batch.push((it, l, sp.clone()));
                         iteration = it;
                         loss = l;
                         overall_progress = op;
                         speaker = sp;
+                        if msg.is_some() {
+                            message = msg;
+                        }
                     }
 
                     state_for_progress.update(&mut cx.clone(), |state, cx| {
@@ -895,6 +907,9 @@ impl PlayerView {
                         room_eq.current_loss = loss;
                         room_eq.overall_progress = overall_progress;
                         room_eq.current_channel = Some(speaker);
+                        if let Some(msg) = message {
+                            room_eq.status_message = msg;
+                        }
 
                         let history = &mut room_eq.progress_history;
                         for (it, l, sp) in batch {
@@ -930,17 +945,16 @@ impl PlayerView {
                 Box::new(move |progress: &RoomOptimizationProgress| {
                     let iteration = progress.iteration;
                     let loss = progress.loss;
-                    let max_iterations = progress.max_iterations;
                     let speaker = progress.current_speaker.clone();
+                    let message = progress.message.clone();
 
-                    let overall = if max_iterations > 0 {
-                        iteration as f32 / max_iterations as f32
-                    } else {
-                        0.0
-                    };
+                    // Use the backend's overall_progress directly — it already
+                    // accounts for which channel we're on (base + speaker/total).
+                    let overall = progress.overall_progress as f32;
 
                     // Send progress update (non-blocking)
-                    let _ = progress_tx_clone.try_send((iteration, loss, overall, speaker));
+                    let _ =
+                        progress_tx_clone.try_send((iteration, loss, overall, speaker, message));
                     CallbackAction::Continue
                 });
 

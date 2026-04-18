@@ -1,3 +1,21 @@
+# 0.5.16
+
+## Fixes
+
+### Room EQ: Schroeder split disabled for stereo without subwoofer
+
+- `apply_smart_defaults` now only enables Schroeder split when a
+  subwoofer is present. For 2.0 stereo, a single-pass optimizer across
+  the full frequency range is more effective — the Schroeder split was
+  fragmenting the optimization and preventing filters from landing on
+  bass room modes.
+
+### Room EQ: decomposed correction enabled
+
+- `to_room_config()` now passes `DecomposedCorrectionSerdeConfig::default()`
+  instead of `None`. This enables room mode detection and seeds the
+  optimizer's initial guesses with detected modes at correct frequencies.
+
 # 0.5.15
 
 ## Features

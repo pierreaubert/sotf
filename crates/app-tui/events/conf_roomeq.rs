@@ -720,6 +720,7 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         app.room_eq.opt_loss = p.loss;
         app.room_eq.opt_current_speaker = p.current_speaker.clone();
         app.room_eq.opt_total_speakers = p.total_speakers;
+        app.room_eq.opt_status_message = p.message.clone();
         if p.loss > 0.0 {
             // Use running index as X so the chart shows all iterations across all speakers
             let idx = app.room_eq.loss_history.len();
@@ -764,6 +765,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
     app.room_eq.opt_loss = 0.0;
     app.room_eq.opt_current_speaker = String::new();
     app.room_eq.opt_total_speakers = 0;
+    app.room_eq.opt_status_message = None;
     app.room_eq.channel_results.clear();
     app.room_eq.loss_history.clear();
     app.room_eq.opt_log_lines.clear();
